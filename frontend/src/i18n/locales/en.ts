@@ -8393,6 +8393,7 @@ export default {
     openSettings: 'Open calculator settings',
     valNonNegative: 'Must be 0 or more',
     valQuantityMin: 'Must be at least 1',
+    valRange: 'Must be between {{min}} and {{max}}',
     allMaterials: 'All materials',
     allBrands: 'All brands',
     noMatches: 'No matches found',
@@ -8417,6 +8418,7 @@ export default {
     syncSummary:
       '{{updated}} updated · {{unchanged}} unchanged · {{skipped}} without a dealer price · {{missing}} missing in Zoho',
     syncFailed: 'Sync stopped: {{error}}',
+    syncTimedOut: 'Sync timed out; some chunks may have applied',
     zohoDuplicateWarning: 'A filament for {{name}} already exists',
     addFilament: 'Add filament',
     editFilament: 'Edit filament',

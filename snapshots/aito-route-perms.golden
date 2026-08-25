@@ -1,9 +1,0 @@
-### exit: 0
-### stdout:
-4 RequirePermissionIfAuthEnabled(Permission.AITO_CREATE)
-2 RequirePermissionIfAuthEnabled(Permission.AITO_DELETE)
-9 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
-9 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
-
-### stderr:
-

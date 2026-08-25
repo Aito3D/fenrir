@@ -1,0 +1,281 @@
+### exit: 0
+### stdout:
+{
+ "constants": {
+  "FILAMENT_CATEGORY": "Filaments",
+  "_CACHE_TTL_seconds": 600.0,
+  "_MAX_PAGES": 20,
+  "_NULLABLE_FILAMENT_FIELDS": [
+   "spool_weight_kg",
+   "zoho_item_id",
+   "zoho_item_name",
+   "zoho_sku"
+  ],
+  "_PAGE_SIZE": 200
+ },
+ "derive_sale_price": [
+  {
+   "cost": 11094.75,
+   "margin": 50.0,
+   "sale": 16642.12
+  },
+  {
+   "cost": 3731.0,
+   "margin": 50.0,
+   "sale": 5596.5
+  },
+  {
+   "cost": 25.0,
+   "margin": 60.0,
+   "sale": 40.0
+  },
+  {
+   "cost": 25.0,
+   "margin": 0.0,
+   "sale": 25.0
+  },
+  {
+   "cost": 0.0,
+   "margin": 50.0,
+   "sale": 0.0
+  },
+  {
+   "cost": 25.0,
+   "margin": -100.0,
+   "sale": 0.0
+  },
+  {
+   "cost": 0.005,
+   "margin": 50.0,
+   "sale": 0.01
+  },
+  {
+   "cost": 1000000.0,
+   "margin": 33.333,
+   "sale": 1333330.0
+  }
+ ],
+ "display_name": [
+  "SUNLU PLA Matte",
+  "SUNLU",
+  ""
+ ],
+ "map_item": [
+  {
+   "brand": "SUNLU",
+   "colour": "Grey",
+   "cost_per_kg": 11.5,
+   "dealer_price": 11.5,
+   "has_price": true,
+   "item_id": "1",
+   "material": "PLA Matte",
+   "name": "SUNLU - PLA Matte - Grey - 1.75mm - 1kg",
+   "sku": "SL-PLAM-GY",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": false
+  },
+  {
+   "brand": "eSUN",
+   "colour": "Black",
+   "cost_per_kg": 13.0,
+   "dealer_price": 13.0,
+   "has_price": true,
+   "item_id": "2",
+   "material": "PETG",
+   "name": "eSUN - PETG - Black - 1.75mm - 1kg - 1.75mm - 1kg",
+   "sku": "ES-PETG-BK",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": false
+  },
+  {
+   "brand": "Polymaker",
+   "colour": "White",
+   "cost_per_kg": 19.0,
+   "dealer_price": 47.5,
+   "has_price": true,
+   "item_id": "3",
+   "material": "ASA",
+   "name": "Polymaker - ASA - White - 1.75mm - 2,5 kg",
+   "sku": "PM-ASA-WH",
+   "spool_weight_kg": 2.5,
+   "weight_inferred": false
+  },
+  {
+   "brand": "Bambu Lab",
+   "colour": "Jade White",
+   "cost_per_kg": 0.0,
+   "dealer_price": 0.0,
+   "has_price": false,
+   "item_id": "4",
+   "material": "PLA Basic",
+   "name": "Bambu Lab - PLA Basic - Jade White",
+   "sku": "BL-PLAB-JW",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  {
+   "brand": "NoBrand",
+   "colour": "Clear",
+   "cost_per_kg": 22.0,
+   "dealer_price": 22.0,
+   "has_price": true,
+   "item_id": "5",
+   "material": "TPU",
+   "name": "NoBrand - TPU - Clear - 1.75mm - 0kg",
+   "sku": "NB-TPU-CL",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  {
+   "brand": "Filament",
+   "colour": "",
+   "cost_per_kg": 0.0,
+   "dealer_price": 0.0,
+   "has_price": false,
+   "item_id": "6",
+   "material": "",
+   "name": "Filament",
+   "sku": "",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  }
+ ],
+ "parse_filament_name": {
+  "": {
+   "brand": "",
+   "colour": "",
+   "material": "",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  " - - - ": {
+   "brand": "",
+   "colour": "",
+   "material": "-",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  "Bambu Lab - PLA Basic - Jade White": {
+   "brand": "Bambu Lab",
+   "colour": "Jade White",
+   "material": "PLA Basic",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  "Filament": {
+   "brand": "Filament",
+   "colour": "",
+   "material": "",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  "NoBrand - TPU - Clear - 1.75mm - 0kg": {
+   "brand": "NoBrand",
+   "colour": "Clear",
+   "material": "TPU",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": true
+  },
+  "Polymaker - ASA - White - 1.75mm - 2,5 kg": {
+   "brand": "Polymaker",
+   "colour": "White",
+   "material": "ASA",
+   "spool_weight_kg": 2.5,
+   "weight_inferred": false
+  },
+  "SUNLU - PLA Matte - Grey - 1.75mm - 1kg": {
+   "brand": "SUNLU",
+   "colour": "Grey",
+   "material": "PLA Matte",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": false
+  },
+  "eSUN - PETG - Black - 1.75mm - 1kg - 1.75mm - 1kg": {
+   "brand": "eSUN",
+   "colour": "Black",
+   "material": "PETG",
+   "spool_weight_kg": 1.0,
+   "weight_inferred": false
+  }
+ },
+ "scores": {
+  "petg": {
+   "1": 0,
+   "2": 5,
+   "3": 0,
+   "4": 0,
+   "5": 0,
+   "6": 0
+  },
+  "pla": {
+   "1": 5,
+   "2": 0,
+   "3": 0,
+   "4": 5,
+   "5": 0,
+   "6": 0
+  },
+  "sunlu pla": {
+   "1": 7,
+   "2": 0,
+   "3": 0,
+   "4": 5,
+   "5": 0,
+   "6": 0
+  },
+  "white": {
+   "1": 0,
+   "2": 0,
+   "3": 1,
+   "4": 1,
+   "5": 0,
+   "6": 0
+  }
+ },
+ "search": {
+  "": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5",
+   "6"
+  ],
+  "  ": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5",
+   "6"
+  ],
+  "PETG": [
+   "2"
+  ],
+  "asa 2": [
+   "3"
+  ],
+  "bk": [
+   "2"
+  ],
+  "nomatch": [],
+  "pla": [
+   "4",
+   "1"
+  ],
+  "sunlu pla": [
+   "1"
+  ],
+  "white": [
+   "4",
+   "3"
+  ]
+ },
+ "search_limit": [
+  "1",
+  "2"
+ ]
+}
+
+### stderr:
+

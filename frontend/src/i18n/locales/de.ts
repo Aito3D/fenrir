@@ -8340,6 +8340,7 @@ export default {
     openSettings: 'Rechner-Einstellungen öffnen',
     valNonNegative: 'Muss 0 oder größer sein',
     valQuantityMin: 'Muss mindestens 1 sein',
+    valRange: 'Muss zwischen {{min}} und {{max}} liegen',
     allMaterials: 'Alle Materialien',
     allBrands: 'Alle Marken',
     noMatches: 'Keine Treffer gefunden',
@@ -8364,6 +8365,7 @@ export default {
     syncSummary:
       '{{updated}} aktualisiert · {{unchanged}} unverändert · {{skipped}} ohne Händlerpreis · {{missing}} in Zoho fehlend',
     syncFailed: 'Synchronisierung gestoppt: {{error}}',
+    syncTimedOut: 'Synchronisierung abgelaufen; einige Blöcke wurden möglicherweise dennoch übernommen',
     zohoDuplicateWarning: 'Für {{name}} existiert bereits ein Filament',
     addFilament: 'Filament hinzufügen',
     editFilament: 'Filament bearbeiten',

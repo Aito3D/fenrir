@@ -8327,6 +8327,7 @@ export default {
     openSettings: 'Ouvrir les paramètres',
     valNonNegative: 'Doit être supérieur ou égal à 0',
     valQuantityMin: 'Doit être au moins 1',
+    valRange: 'Doit être compris entre {{min}} et {{max}}',
     allMaterials: 'Tous les matériaux',
     allBrands: 'Toutes les marques',
     noMatches: 'Aucun résultat',
@@ -8351,6 +8352,7 @@ export default {
     syncSummary:
       '{{updated}} mis à jour · {{unchanged}} inchangés · {{skipped}} sans prix revendeur · {{missing}} introuvables dans Zoho',
     syncFailed: 'Synchronisation arrêtée : {{error}}',
+    syncTimedOut: 'La synchronisation a expiré ; certains blocs ont peut-être quand même été appliqués',
     zohoDuplicateWarning: 'Un filament pour {{name}} existe déjà',
     addFilament: 'Ajouter un filament',
     editFilament: 'Modifier le filament',

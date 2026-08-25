@@ -2,14 +2,22 @@
  * Tests for the CalculatorPage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { computePricing, formatMoney } from '../../utils/pricing';
+import { buildQuoteSummary } from '../../utils/quoteSummary';
+import { DEFAULT_STATE, num, splitDecimalHours } from '../../hooks/useCalculatorState';
+import { correctedTimeH } from '../../utils/calculatorInsights';
+// Pinned by name (not re-derived) so a wiring mistake in CalculatorBulkTable
+// or CalculatorDiscountTable — pointing at calculatorSettingsShared's
+// differently-styled tdCls instead of this one — shows up as a real
+// assertion failure below (T-097).
+import { tdCls } from '../../components/calculator/shared';
 
 const mockFilaments = [
   {
@@ -83,6 +91,22 @@ const failureCheckInsights = {
   usage_by_printer: [],
 };
 
+// Reality-check insights with every row-triggering field neutralized —
+// callers spread this and add back only the field(s) under test, so a check
+// that isn't the one being tested never sneaks in and creates an ambiguous
+// second row (e.g. two "Update profile" buttons, which share label text).
+const neutralInsights = {
+  window_days: 365,
+  failure: { overall_pct: null, sample: 0, by_printer: [], by_material: [] },
+  // Equal to mockDefaults.electricity_tariff → no tariff row.
+  energy_cost_per_kwh: 120,
+  spool_cost_by_material: [],
+  spool_cost_by_brand: [],
+  time_accuracy: { overall_pct: null, sample: 0, by_printer: [] },
+  power_by_printer: [],
+  usage_by_printer: [],
+};
+
 // Pricing-engine inputs mirroring the reference case (40 g, 2 h, qty 1,
 // mockFilaments[0]/mockPrinters[0]/mockDefaults) — used to compute the exact
 // expected total after the 8% measured failure rate is applied, so the
@@ -143,6 +167,50 @@ const measuredFailureTotal = collapseSpaces(
   ),
 );
 
+// Global-defaults-edit scenario: saving a new electricity tariff (5000) on
+// the Defaults tab must recompute the Calculator tab's total using that new
+// tariff — not merely make the old total disappear (a blank or "NaN FCFP"
+// render would also satisfy that).
+const tariffUpdateTotal = collapseSpaces(
+  formatMoney(
+    computePricing(referencePricingInputs, referencePricingFilament, referencePricingPrinter, {
+      ...referencePricingDefaults,
+      electricity_tariff: 5000,
+    }).total_ttc,
+    'XPF',
+  ),
+);
+
+// Time-correction chip scenario: the reference case's 2 h slicer estimate
+// measured at 120% of actual (accuracy_pct) → the corrected wall-clock time
+// is shorter. Both the corrected field split and the resulting total are
+// derived from the real correctedTimeH/splitDecimalHours/computePricing
+// helpers — exactly what the component itself computes on Apply — instead
+// of a hand-typed literal that could silently drift from the source.
+const timeCorrectionAccuracyPct = 120;
+const timeCorrectionSplit = splitDecimalHours(correctedTimeH(2, timeCorrectionAccuracyPct));
+const timeCorrectionReconstructedH =
+  num(timeCorrectionSplit.timeD) * 24 + num(timeCorrectionSplit.timeH) + num(timeCorrectionSplit.timeM) / 60;
+const timeCorrectionTotal = collapseSpaces(
+  formatMoney(
+    computePricing(
+      { ...referencePricingInputs, printing_time_h: timeCorrectionReconstructedH },
+      referencePricingFilament,
+      referencePricingPrinter,
+      referencePricingDefaults,
+    ).total_ttc,
+    'XPF',
+  ),
+);
+
+// Expected clipboard payload for the "copy summary" tests below, built from
+// the exact same helper the totals card calls (buildQuoteSummary) fed the
+// same filament/printer/state the reference-case tests use (weight '40',
+// time '2' -> timeH '2'). Deriving it this way pins the real content instead
+// of a hand-typed string that could silently drift from the component.
+const summaryState = { ...DEFAULT_STATE, weight: '40', timeH: '2' };
+const expectedSummaryText = buildQuoteSummary(mockFilaments[0], mockPrinters[0], summaryState);
+
 function useCalculatorHandlers({ filaments = mockFilaments, printers = mockPrinters, currency = 'XPF' } = {}) {
   server.use(
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
@@ -156,6 +224,17 @@ function useCalculatorHandlers({ filaments = mockFilaments, printers = mockPrint
 }
 
 describe('CalculatorPage', () => {
+  // This file's reality-check flows chain several findBy* waits (server
+  // round-trip → recompute → toast) inside vitest's 10s testTimeout, but
+  // RTL's findBy*/waitFor default to a much thinner 1s asyncUtilTimeout
+  // (@testing-library/dom's default, never overridden repo-wide via
+  // `configure()`). Under host load that 1s budget is exactly what flakes
+  // — raise it to something the file's own 10s budget can actually cover,
+  // and restore the library default afterwards so it can't leak into
+  // whatever test file vitest runs next in this worker.
+  beforeAll(() => configure({ asyncUtilTimeout: 5000 }));
+  afterAll(() => configure({ asyncUtilTimeout: 1000 }));
+
   beforeEach(() => {
     vi.mocked(localStorage.getItem).mockReset();
     vi.mocked(localStorage.setItem).mockReset();
@@ -331,6 +410,299 @@ describe('CalculatorPage', () => {
     expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
   });
 
+  it('reality check: reverting an applied override restores the original total', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    server.use(http.get('/api/v1/calculator/insights', () => HttpResponse.json(failureCheckInsights)));
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    await screen.findByText(measuredFailureTotal);
+    expect(screen.getByText('Applied')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Revert' }));
+
+    // Positive proof: the ORIGINAL total is back, not merely that the
+    // overridden one left.
+    await screen.findByText('2 031 FCFP');
+    expect(screen.queryByText(measuredFailureTotal)).not.toBeInTheDocument();
+    expect(screen.queryByText('Applied')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument();
+  });
+
+  it('reality check: updating the filament profile from a spool-cost check calls the API with the measured value', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    let capturedBody: Record<string, number> | null = null;
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          spool_cost_by_material: [{ material: 'PA6-CF', avg_cost_per_kg: 4500, sample: 12 }],
+        }),
+      ),
+      http.patch('/api/v1/calculator/filaments/:id', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, number>;
+        return HttpResponse.json({ ...mockFilaments[0], ...capturedBody });
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    // Row-scoped: this label text only exists inside the spool-cost row.
+    const row = screen.getByText('Filament cost (PA6-CF)').closest('.animate-calc-tab-in') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Update profile' }));
+
+    await screen.findByText('Filament profile updated');
+    expect(capturedBody).toEqual({ cost_per_kg: 4500 });
+  });
+
+  it('reality check: updating the printer profile from power/dailyHours checks calls the API with the measured values', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    const capturedBodies: Record<string, number>[] = [];
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          power_by_printer: [{ printer_id: 1, printer_name: 'H2S', avg_watts: 500, sample: 20 }],
+          usage_by_printer: [{ printer_id: 1, printer_name: 'H2S', hours_per_day: 8, observed_days: 30, sample: 20 }],
+        }),
+      ),
+      http.patch('/api/v1/calculator/printers/:id', async ({ request }) => {
+        const body = (await request.json()) as Record<string, number>;
+        capturedBodies.push(body);
+        return HttpResponse.json({ ...mockPrinters[0], ...body });
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    // Both rows are present at once — scope every click/query to its own row
+    // since "Update profile" labels both buttons identically.
+    const powerRow = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
+    await user.click(within(powerRow).getByRole('button', { name: 'Update profile' }));
+    await screen.findByText('Printer profile updated');
+    expect(capturedBodies).toContainEqual({ power_watts: 500 });
+
+    const hoursRow = screen.getByText('Daily usage (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
+    await user.click(within(hoursRow).getByRole('button', { name: 'Update profile' }));
+    await waitFor(() => expect(capturedBodies).toContainEqual({ daily_usage_hours: 8 }));
+  });
+
+  it('reality check: a failed printer-profile update keeps the applied power override and shows an error toast', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          power_by_printer: [{ printer_id: 1, printer_name: 'H2S', avg_watts: 500, sample: 20 }],
+        }),
+      ),
+      http.patch('/api/v1/calculator/printers/:id', () =>
+        HttpResponse.json({ detail: 'Could not update printer' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    let row = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Apply' }));
+
+    // The exact recomputed total with power_watts overridden to the measured
+    // 500 W — positive proof the override is live before the failed save.
+    const overriddenTotal = collapseSpaces(
+      formatMoney(
+        computePricing(
+          referencePricingInputs,
+          referencePricingFilament,
+          { ...referencePricingPrinter, power_watts: 500 },
+          referencePricingDefaults,
+        ).total_ttc,
+        'XPF',
+      ),
+    );
+    await screen.findByText(overriddenTotal);
+    row = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
+    expect(within(row).getByText('Applied')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'Update profile' }));
+
+    await screen.findByText('Could not update printer');
+    // The session override survives the failed profile-update save — still
+    // applied, still priced off the measured figure, not silently reverted.
+    row = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
+    expect(within(row).getByText('Applied')).toBeInTheDocument();
+    expect(screen.getByText(overriddenTotal)).toBeInTheDocument();
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+  });
+
+  it('reality check: a failed filament-cost profile update leaves the check in place and shows an error toast', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          spool_cost_by_material: [{ material: 'PA6-CF', avg_cost_per_kg: 4500, sample: 12 }],
+        }),
+      ),
+      http.patch('/api/v1/calculator/filaments/:id', () =>
+        HttpResponse.json({ detail: 'Could not update filament' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    const row = screen.getByText('Filament cost (PA6-CF)').closest('.animate-calc-tab-in') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Update profile' }));
+
+    await screen.findByText('Could not update filament');
+    // Spool cost has no session override to revert to — the invariant here
+    // is that the check (and its retry button) is still there, not silently
+    // dropped, after the failed save.
+    const rowAfter = screen.getByText('Filament cost (PA6-CF)').closest('.animate-calc-tab-in') as HTMLElement;
+    expect(within(rowAfter).getByRole('button', { name: 'Update profile' })).toBeInTheDocument();
+  });
+
+  it('easy mode: the time-correction chip applies the corrected time split and re-prices the job', async () => {
+    // Gate: easyMode (showTimeChip) + timeFromEstimate true, both seeded via
+    // the persisted state — typing into the time fields would itself clear
+    // timeFromEstimate and un-gate the chip, so the reference case's 2 h
+    // estimate is seeded as already "from a slicer" instead.
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '40', time: '2', easyMode: true, timeFromEstimate: true })
+        : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          // 120% vs the assumed 100% is a 20-point drift, well past the 2%
+          // gate; by_printer empty falls through to the overall figure.
+          time_accuracy: { overall_pct: timeCorrectionAccuracyPct, sample: 10, by_printer: [] },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+
+    // Baseline fields before any correction — the reference case's 2 h.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(null);
+
+    // The chip is up with the measured-accuracy hint text.
+    expect(screen.getByText('Your printers average 120% of slicer estimates')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Apply corrected time' }));
+
+    // Fields updated to the exact corrected split (derived from the real
+    // correctedTimeH/splitDecimalHours helpers, not a hand-typed literal).
+    await waitFor(() => {
+      expect(screen.getByLabelText('Hours')).toHaveValue(num(timeCorrectionSplit.timeH) || null);
+    });
+    expect(screen.getByLabelText('Minutes')).toHaveValue(num(timeCorrectionSplit.timeM) || null);
+    expect(screen.getByLabelText('Days')).toHaveValue(num(timeCorrectionSplit.timeD) || null);
+
+    // Total recomputes to the exact value computePricing predicts for the
+    // corrected time.
+    await screen.findByText(timeCorrectionTotal);
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+
+    // Applying clears timeFromEstimate, so the chip is gone even though the
+    // drift condition alone would still be satisfied.
+    expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
+  });
+
+  it('easy mode: dismissing the time-correction chip hides it and leaves the time fields unchanged', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '40', time: '2', easyMode: true, timeFromEstimate: true })
+        : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          time_accuracy: { overall_pct: timeCorrectionAccuracyPct, sample: 10, by_printer: [] },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    // Positive evidence the chip rendered before we dismiss it.
+    await screen.findByText('Your printers average 120% of slicer estimates');
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    // Positive evidence the card itself is still there (not merely gone as
+    // a side effect of an unmount), then assert the chip's absence.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+    expect(screen.queryByText('Your printers average 120% of slicer estimates')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
+
+    // The time fields are untouched — dismiss only clears timeFromEstimate,
+    // it never rewrites the split.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(null);
+    expect(screen.getByLabelText('Days')).toHaveValue(null);
+    // The total is still the untouched reference-case total.
+    expect(screen.getByText('2 031 FCFP')).toBeInTheDocument();
+  });
+
+  it('easy mode: the time-correction chip stays hidden when the measured drift is below the 2% threshold', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '40', time: '2', easyMode: true, timeFromEstimate: true })
+        : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          // 101% vs 100% is only a 1-point drift — below the 2% gate.
+          time_accuracy: { overall_pct: 101, sample: 10, by_printer: [] },
+        }),
+      ),
+    );
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    // Positive evidence the inputs card (and its time fields) rendered
+    // before asserting the chip's absence.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+
+    expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/of slicer estimates/)).not.toBeInTheDocument();
+  });
+
   it('reality check card stays hidden without insights data', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
@@ -388,6 +760,18 @@ describe('CalculatorPage', () => {
     expect(screen.getByText('Potential profit')).toBeInTheDocument();
     // Break-even on the pre-tax price = the margin fraction (all margins at the end)
     expect(screen.getByText(/Break-even discount: 38\.1%/)).toBeInTheDocument();
+
+    // Both tables render their price cells with shared.tsx's tdCls (T-097),
+    // not calculatorSettingsShared.ts's — pin the wiring at the DOM level.
+    // Discount table is the first <table>, bulk the second (JSX order).
+    const [discountTable, bulkTable] = screen.getAllByRole('table');
+    const machineCostRow = within(discountTable).getByText('Machine cost w/ discount').closest('tr')!;
+    const machineCostDataCell = within(machineCostRow).getAllByRole('cell')[1]; // 0% column: colCls is empty
+    expect(machineCostDataCell.className).toBe(tdCls);
+
+    const bulkDataRows = within(bulkTable).getAllByRole('row').slice(1); // drop header row
+    const firstBulkPriceCell = within(bulkDataRows[0]).getAllByRole('cell')[1]; // [0] is the sticky qty cell
+    expect(firstBulkPriceCell.className).toBe(tdCls);
   });
 
   it('easy mode hides breakdown, bulk table and profit rows but keeps discounted prices', async () => {
@@ -465,6 +849,95 @@ describe('CalculatorPage', () => {
     await user.clear(screen.getByLabelText('Target price (incl. tax)'));
     await user.type(screen.getByLabelText('Target price (incl. tax)'), '1130');
     expect(await screen.findByText('-113 FCFP')).toBeInTheDocument();
+  });
+
+  it('typing labor and stuff costs in each Labor collapsible recomputes the total by the exact predicted amount', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+
+    // "Modeling" etc. also label a line in the Cost breakdown card, so all
+    // clicks/queries for the Labor card's own controls are scoped to it.
+    const laborCard = screen.getByRole('heading', { name: 'Labor', level: 2 }).closest('.bg-bambu-dark-secondary') as HTMLElement;
+    const labor = within(laborCard);
+
+    const priceFor = (inputs: typeof referencePricingInputs) =>
+      collapseSpaces(
+        formatMoney(
+          computePricing(inputs, referencePricingFilament, referencePricingPrinter, referencePricingDefaults)
+            .total_ttc,
+          'XPF',
+        ),
+      );
+
+    // ── Modeling ──────────────────────────────────────────────────────
+    await user.click(labor.getByText('Modeling'));
+    await user.type(labor.getByLabelText('Working hours'), '1');
+    await user.type(labor.getByLabelText('Base price'), '500');
+    const stage1Inputs = { ...referencePricingInputs, modeling_hours: 1, modeling_base_price: 500 };
+    const stage1Total = priceFor(stage1Inputs);
+    await screen.findByText(stage1Total);
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+
+    // ── Preparation ───────────────────────────────────────────────────
+    await user.click(labor.getByText('Preparation'));
+    await user.type(labor.getByLabelText('Model preparation'), '10');
+    await user.type(labor.getByLabelText('Slicing'), '5');
+    await user.type(labor.getByLabelText('Transfer & start'), '2');
+    const stage2Inputs = { ...stage1Inputs, prep_model_min: 10, prep_slicing_min: 5, prep_transfer_min: 2 };
+    const stage2Total = priceFor(stage2Inputs);
+    await screen.findByText(stage2Total);
+    expect(screen.queryByText(stage1Total)).not.toBeInTheDocument();
+
+    // ── Post-processing ───────────────────────────────────────────────
+    await user.click(labor.getByText('Post-processing'));
+    await user.type(labor.getByLabelText('Job removal'), '3');
+    await user.type(labor.getByLabelText('Support removal'), '4');
+    await user.type(labor.getByLabelText('Additional work'), '1');
+    await user.type(labor.getByLabelText('Fulfillment'), '2');
+    const stage3Inputs = {
+      ...stage2Inputs,
+      post_removal_min: 3,
+      post_support_min: 4,
+      post_additional_min: 1,
+      post_fulfillment_min: 2,
+    };
+    const stage3Total = priceFor(stage3Inputs);
+    await screen.findByText(stage3Total);
+    expect(screen.queryByText(stage2Total)).not.toBeInTheDocument();
+
+    // ── Stuff (extras & supplies) ────────────────────────────────────
+    await user.click(labor.getByText('Extras & supplies'));
+    await user.type(labor.getByLabelText('Amount'), '100');
+    await user.type(labor.getByLabelText('Markup'), '25');
+    const stage4Inputs = { ...stage3Inputs, stuff_amount: 100, stuff_markup_pct: 25 };
+    const stage4Total = priceFor(stage4Inputs);
+    await screen.findByText(stage4Total);
+    expect(screen.queryByText(stage3Total)).not.toBeInTheDocument();
+  });
+
+  it('shows the labor amortization hint once modeling costs are split across multiple units', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    // Quantity 1, no modeling/prep cost yet — hint absent.
+    expect(screen.queryByText(/one-time costs, split across/)).not.toBeInTheDocument();
+
+    const laborCard = screen.getByRole('heading', { name: 'Labor', level: 2 }).closest('.bg-bambu-dark-secondary') as HTMLElement;
+    const labor = within(laborCard);
+
+    await user.click(screen.getByRole('button', { name: 'Increase quantity' }));
+    await user.click(labor.getByText('Modeling'));
+    await user.type(labor.getByLabelText('Working hours'), '1');
+
+    // Positive evidence: the exact interpolated hint text for 2 units.
+    await screen.findByText('Modeling & preparation are one-time costs, split across 2 units.');
   });
 
   it('prefills measured energy from the URL and clears it via the chip', async () => {
@@ -743,9 +1216,11 @@ describe('CalculatorPage', () => {
     await screen.findByText('Defaults saved');
 
     await user.click(screen.getByRole('tab', { name: 'Calculator' }));
-    await waitFor(() => {
-      expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
-    });
+    // Positive proof: the recomputed total matches computePricing() with the
+    // new electricity_tariff applied, not merely "the old total is gone".
+    await screen.findByText(tariffUpdateTotal);
+    // Secondary sanity check: the stale total must also be gone.
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
   });
 
   it('persists inputs to localStorage (debounced)', async () => {
@@ -763,5 +1238,70 @@ describe('CalculatorPage', () => {
       },
       { timeout: 2000 },
     );
+  });
+
+  // navigator.clipboard is a global; stub-and-restore around each test so a
+  // leaked stub can't affect later tests in this file (or other files run
+  // in the same worker).
+  describe('totals card — copy summary button', () => {
+    let originalClipboard: PropertyDescriptor | undefined;
+
+    beforeEach(() => {
+      originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      vi.mocked(localStorage.getItem).mockImplementation((key) =>
+        key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+      );
+    });
+
+    afterEach(() => {
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      } else {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+      }
+    });
+
+    it('writes the job summary to the clipboard and shows a success toast', async () => {
+      // userEvent.setup() installs its own clipboard stub on the view, which
+      // would clobber ours if defined first — so the stub must be set up
+      // *after* setup(), matching VirtualPrinterCard.test.tsx / PrinterInfoModal.test.tsx.
+      const user = userEvent.setup();
+      const writeTextMock = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      render(<CalculatorPage />);
+      await screen.findByText('2 031 FCFP');
+
+      await user.click(screen.getByRole('button', { name: 'Copy summary' }));
+
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(expectedSummaryText);
+      });
+      await screen.findByText('Summary copied to clipboard');
+    });
+
+    it('shows an error toast when the clipboard write is rejected', async () => {
+      const user = userEvent.setup();
+      const writeTextMock = vi.fn().mockRejectedValue(new Error('permission denied'));
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      render(<CalculatorPage />);
+      await screen.findByText('2 031 FCFP');
+
+      await user.click(screen.getByRole('button', { name: 'Copy summary' }));
+
+      // Positive proof the real summary was attempted (not a vacuous reject).
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(expectedSummaryText);
+      });
+      await screen.findByText('Copy failed — your browser blocked clipboard access');
+      expect(screen.queryByText('Summary copied to clipboard')).not.toBeInTheDocument();
+    });
   });
 });

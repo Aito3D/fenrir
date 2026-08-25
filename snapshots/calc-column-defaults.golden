@@ -1,0 +1,213 @@
+### exit: 0
+### stdout:
+{
+ "calculator_defaults": {
+  "ads_rate_pct": [
+   "5.0",
+   "FLOAT",
+   false
+  ],
+  "base_fee_flat": [
+   "0.0",
+   "FLOAT",
+   false
+  ],
+  "consumables_packaging_flat": [
+   "30.0",
+   "FLOAT",
+   false
+  ],
+  "created_at": [
+   null,
+   "DATETIME",
+   false
+  ],
+  "default_difficulty_pct": [
+   "100.0",
+   "FLOAT",
+   false
+  ],
+  "default_margin_over_cost_pct": [
+   "50.0",
+   "FLOAT",
+   false
+  ],
+  "electricity_tariff": [
+   "120.0",
+   "FLOAT",
+   false
+  ],
+  "failure_rate_pct": [
+   "30.0",
+   "FLOAT",
+   false
+  ],
+  "filament_markup_pct": [
+   "5.0",
+   "FLOAT",
+   false
+  ],
+  "global_markup_pct": [
+   "50.0",
+   "FLOAT",
+   false
+  ],
+  "id": [
+   null,
+   "INTEGER",
+   false
+  ],
+  "labor_rate_per_hour": [
+   "3000.0",
+   "FLOAT",
+   false
+  ],
+  "prototype_rate_pct": [
+   "30.0",
+   "FLOAT",
+   false
+  ],
+  "stuff_markup_pct": [
+   "20.0",
+   "FLOAT",
+   false
+  ],
+  "tax_pct": [
+   "13.0",
+   "FLOAT",
+   false
+  ],
+  "updated_at": [
+   null,
+   "DATETIME",
+   false
+  ]
+ },
+ "calculator_filaments": {
+  "brand": [
+   "''",
+   "VARCHAR(100)",
+   false
+  ],
+  "cost_per_kg": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "created_at": [
+   null,
+   "DATETIME",
+   false
+  ],
+  "difficulty_pct": [
+   "100.0",
+   "FLOAT",
+   false
+  ],
+  "id": [
+   null,
+   "INTEGER",
+   false
+  ],
+  "margin_pct": [
+   "50.0",
+   "FLOAT",
+   false
+  ],
+  "material": [
+   "''",
+   "VARCHAR(100)",
+   false
+  ],
+  "name": [
+   null,
+   "VARCHAR(100)",
+   false
+  ],
+  "sale_price_per_kg": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "spool_weight_kg": [
+   null,
+   "FLOAT",
+   true
+  ],
+  "updated_at": [
+   null,
+   "DATETIME",
+   false
+  ],
+  "zoho_item_id": [
+   null,
+   "VARCHAR(50)",
+   true
+  ],
+  "zoho_item_name": [
+   null,
+   "VARCHAR(255)",
+   true
+  ],
+  "zoho_sku": [
+   null,
+   "VARCHAR(100)",
+   true
+  ],
+  "zoho_synced_at": [
+   null,
+   "DATETIME",
+   true
+  ]
+ },
+ "calculator_printers": {
+  "created_at": [
+   null,
+   "DATETIME",
+   false
+  ],
+  "daily_usage_hours": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "id": [
+   null,
+   "INTEGER",
+   false
+  ],
+  "lifetime_years": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "name": [
+   null,
+   "VARCHAR(100)",
+   false
+  ],
+  "power_watts": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "purchase_price": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "repair_rate_pct": [
+   null,
+   "FLOAT",
+   false
+  ],
+  "updated_at": [
+   null,
+   "DATETIME",
+   false
+  ]
+ }
+}
+
+### stderr:
+

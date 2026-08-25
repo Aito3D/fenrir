@@ -1,6 +1,7 @@
 """API routes for the 3D print pricing calculator (filaments, printers, defaults)."""
 
 import logging
+import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +15,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter
 from backend.app.models.user import User
 from backend.app.schemas.calculator import (
+    _MONEY_CEILING,
     CalculatorDefaultsResponse,
     CalculatorDefaultsUpdate,
     CalculatorFilamentCreate,
@@ -25,6 +27,7 @@ from backend.app.schemas.calculator import (
     CalculatorPrinterCreate,
     CalculatorPrinterResponse,
     CalculatorPrinterUpdate,
+    InsightsWindowDays,
     ZohoFilamentProduct,
 )
 from backend.app.services import zoho_filaments
@@ -154,7 +157,7 @@ async def search_zoho_filaments(
     q: str = Query(default="", max_length=100, description="Free-text search over brand, material, colour and SKU"),
     limit: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Zoho products in the Filaments category, for linking to a calculator filament.
 
@@ -166,8 +169,14 @@ async def search_zoho_filaments(
         raise HTTPException(status_code=503, detail="Zoho is not configured")
     try:
         catalogue = await zoho_filaments.fetch_catalogue(db)
+    except zoho_filaments.ZohoFilamentMappingError as exc:
+        # A mapping/programming bug in the catalogue service, not an
+        # unreachable Zoho — surfaced distinctly (500) so it is never mistaken
+        # for the network failure below (T-074).
+        logger.error("Zoho filament catalogue mapping failure: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
     except Exception as exc:
-        logger.warning("Zoho filament catalogue unavailable: %s", exc)
+        logger.warning("Zoho filament catalogue unavailable: %s", exc, exc_info=True)
         raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
     return zoho_filaments.search_catalogue(catalogue, q, limit)
 
@@ -195,8 +204,12 @@ async def sync_calculator_filaments_from_zoho(
         raise HTTPException(status_code=503, detail="Zoho is not configured")
     try:
         catalogue = await zoho_filaments.fetch_catalogue(db)
+    except zoho_filaments.ZohoFilamentMappingError as exc:
+        # See the identical branch in search_zoho_filaments above (T-074).
+        logger.error("Zoho filament catalogue mapping failure during sync: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
     except Exception as exc:
-        logger.warning("Zoho filament catalogue unavailable during sync: %s", exc)
+        logger.warning("Zoho filament catalogue unavailable during sync: %s", exc, exc_info=True)
         raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
 
     total_result = await db.execute(
@@ -233,11 +246,25 @@ async def sync_calculator_filaments_from_zoho(
         # name on every sync would let an upstream rename re-scale the price.
         weight = filament.spool_weight_kg or product.spool_weight_kg or 1.0
         new_cost = round(product.dealer_price / weight, 2)
+        new_sale = derive_sale_price(new_cost, filament.margin_pct)
 
-        # Guard the value about to be written, not just the upstream flag: a
+        # Guard the values about to be written, not just the upstream flag: a
         # tiny dealer price over a large stored weight can round to 0.0 even
-        # when ``product.has_price`` is true, and a zero cost is never written.
-        if not product.has_price or new_cost <= 0:
+        # when ``product.has_price`` is true, and a zero cost is never
+        # written. ``isfinite`` matters too: a sub-denormal weight parsed out
+        # of a Zoho item name can divide a normal dealer price into inf,
+        # which ``new_cost <= 0`` does not catch (``inf <= 0`` is False).
+        # The derived sale price is checked as well as new_cost itself: a
+        # cost within bounds can still blow past the ceiling (or overflow to
+        # inf) once the margin is applied, and either write would poison the
+        # row for every later PATCH, which re-derives off the stored value.
+        if (
+            not product.has_price
+            or new_cost <= 0
+            or new_cost > _MONEY_CEILING
+            or not math.isfinite(new_cost)
+            or not math.isfinite(new_sale)
+        ):
             skipped_no_price += 1
             continue
 
@@ -246,7 +273,7 @@ async def sync_calculator_filaments_from_zoho(
             unchanged += 1
             continue
         filament.cost_per_kg = new_cost
-        filament.sale_price_per_kg = derive_sale_price(new_cost, filament.margin_pct)
+        filament.sale_price_per_kg = new_sale
         updated += 1
 
     await db.commit()
@@ -394,7 +421,7 @@ async def update_calculator_defaults(
 
 @router.get("/insights", response_model=CalculatorInsightsResponse)
 async def get_calculator_insights(
-    days: int = Query(default=365, ge=7, le=3650),
+    days: InsightsWindowDays = Query(default=InsightsWindowDays.ONE_YEAR, description="Lookback window in days."),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
 ):

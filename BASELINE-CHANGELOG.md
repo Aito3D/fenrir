@@ -2830,3 +2830,1540 @@ The user was shown this finding — the mechanism, the reproduction, and the two
 and approved the change as shipped on 2026-08-20. No code, comment, or test changed as part
 of writing this entry; `ActivityRail.tsx` is unchanged from commit `0684e98d9`.
 `tools/snapshot.py verify` is unaffected by this entry (documentation only).
+
+## T-071 — 2026-08-21 — user-approved behavior change
+
+T-071: `cost_per_kg`, `purchase_price`, `power_watts`, `electricity_tariff`, `labor_rate_per_hour`,
+`consumables_packaging_flat` and `base_fee_flat` no longer accept `Infinity`/`-Infinity`/`NaN` or an
+absurd finite magnitude (new `le=1e8` ceiling) on create/update. Before this fix, `float('inf')`
+satisfied every `gt=0` bound in `backend/app/schemas/calculator.py` (`inf > 0` is `True`), so a POST
+with a non-finite `cost_per_kg` returned 200, stored `inf` in the row, and every later `GET` silently
+serialized that field back as JSON `null` — computePricing then multiplied by `null`, so the filament
+line of a quote silently priced at 0 with no error anywhere, and the poisoned row could not be
+repaired through the UI (the edit form's Save stayed disabled because `String(inf)` round-trips as
+`"null"`). An equivalent finite-overflow path existed too: `derive_sale_price(1e308, 1000)` overflows
+to `inf` downstream even though `1e308 > 0` is a valid `gt=0` input, hence the new upper bound rather
+than relying on non-finite rejection alone. A second write path had the same hole: the Zoho price sync
+(`routes/calculator.py`) computed `new_cost = dealer_price / weight` and guarded only `new_cost <= 0`
+— `inf <= 0` is `False`, so a sub-denormal spool weight parsed from a Zoho item name could divide a
+normal dealer price into `inf` and have it written, uncaught by that guard. Fixed by adding
+`math.isfinite(new_cost)` to that guard as well.
+
+The `allow_inf_nan=False`/`le=` ceiling was added to `CalculatorFilamentCreate` and
+`CalculatorPrinterCreate` (not to `CalculatorFilamentBase`/`CalculatorPrinterBase`, which the
+task briefing suggested): those Base classes are also the parent of the Response schemas, and
+tightening them there would have changed a SECOND, unapproved thing — a pre-existing
+out-of-range row already in the database would 500 on every `GET` instead of rendering the
+`null` it does today. Verified empirically both ways (`CalculatorFilamentResponse.model_validate`
+on a fake row with `cost_per_kg=inf` succeeds unchanged before and after this fix). Only the
+write-side schemas carry the new constraint, so existing rows keep reading exactly as before;
+only new writes of a non-finite or overflow value are rejected.
+
+A second, unplanned fix was required in `backend/app/main.py` to actually deliver the promised
+422: FastAPI's default `RequestValidationError` handler echoes the rejected value back in
+`errors()[i]["input"]`, and Starlette's `JSONResponse` renders with `allow_nan=False` — so a
+request that fails validation *because* its value is non-finite makes that very serialization
+step raise, turning the intended 422 into an unhandled exception (observed as a 503 from this
+app's auth-gateway middleware, which fails closed on any exception raised while auth is
+disabled). This is a **pre-existing** bug, not something this task introduced — confirmed by
+posting `margin_pct: Infinity` against the unmodified `le=1000` bound that predates T-071 and
+getting the identical 503 crash. Since the task's own approved statement promised "422", and
+without this fix the actual result was a 503 (a materially worse regression than the original
+200+null bug — the whole endpoint breaks, not just one field), a narrow `RequestValidationError`
+handler was added that is byte-identical to FastAPI's default for every other validation error
+and differs only by setting `allow_nan=True`, which is what makes the crashing case render
+instead of raising. This is a shared-file touch outside the task's stated file list
+(`backend/app/schemas/calculator.py`, `backend/app/api/routes/calculator.py`); it was necessary
+to make the approved change actually behave as promised rather than a strict scope violation.
+
+Mutation-tested: reverting the `le`/`allow_inf_nan` additions on `CalculatorFilamentCreate` and
+`CalculatorPrinterCreate` made `test_create_rejects_infinite_cost`,
+`test_create_rejects_cost_above_ceiling`, `test_create_rejects_infinite_purchase_price` and
+`test_create_rejects_purchase_price_above_ceiling` fail as expected; reverting the
+`math.isfinite(new_cost)` guard in the Zoho sync route made
+`test_overflowing_result_is_skipped_not_written_as_inf` fail as expected; reverting the new
+`RequestValidationError` handler in `main.py` made every non-finite-input test in
+`test_calculator_routes.py` fail with 503 instead of 422, as expected.
+
+user-approved 2026-08-21: "An API client that posts a non-finite number for a calculator money
+field currently gets 200 and a null back; it would start getting 422."
+
+## T-068 — 2026-08-22 — user-approved behavior change
+
+T-068: `GET /calculator/zoho-filaments` now requires `calculator:update` instead of `calculator:read` — its response carries Zoho's confidential dealer-side pricing (dealer_price, cost_per_kg, sku, spool_weight_kg) and its only caller (ZohoFilamentSearch, rendered only inside the update-gated FilamentForm) already needs `calculator:update`. This matches every other Zoho item/contact/estimate route, which requires a write permission (AITO_CREATE) rather than a read one. user-approved 2026-08-22: "an API client or user holding only calculator:read (the default Viewers role) would start getting 403 from GET /api/v1/calculator/zoho-filaments instead of the Zoho product list."
+
+## T-072, T-073 — 2026-08-22 — T-073 is a user-approved behavior change
+
+T-072: `reset_cache()` did not cancel or invalidate a `fetch_catalogue` refresh that was
+already in flight when it ran, so a Zoho credential rotation landing mid-fetch let the
+pre-rotation catalogue publish into the module cache right after the reset and serve every
+caller (the add-filament search, the price sync) for a full 10-minute `_CACHE_TTL` window
+under the NEW credentials. Fixed with a module-level generation counter (`_generation`)
+bumped by `reset_cache()`: `fetch_catalogue` now captures the generation only after it holds
+the (also `reset_cache()`-rebuilt) `_refresh_lock` and re-checks freshness inside it, and only
+publishes into `_cache`/`_cache_at` if that generation still matches when the Zoho walk
+finishes — a superseded refresh still resolves for its own caller but is never written into
+the shared cache. The `asyncio.Lock` additionally collapses concurrent refreshes (e.g. two
+browser tabs opening the add-filament search on a cold cache) into a single Zoho walk; it is
+rebuilt (not reused) by `reset_cache()` specifically so a lock that happened to block on one
+asyncio event loop is never awaited from a different one later, which is what pytest-asyncio's
+per-test event loops would otherwise risk. No externally visible behavior changes for T-072:
+the function's signature, its return values, and every existing success/failure path are
+unchanged — only the internal publish-vs-discard decision after a race is different, and that
+race previously mis-published.
+
+T-073: the paged fetch inside `fetch_catalogue` fell out of its `while page <= _MAX_PAGES` loop
+silently when the page bound was hit with Zoho's `has_more` still `True`, and the partial item
+list gathered so far was cached as a complete catalogue for the full TTL — with no log, flag,
+or error. Every calculator filament linked to an item past page 20 would then be reported as
+"missing" (the schema's documented meaning is "Linked item no longer in the Zoho catalogue" —
+a wrong diagnosis inviting an operator to unlink good rows) and the add-filament search would
+simply never find those products. Fixed by detecting the page-bound exit (via the `while`
+loop's `else` clause, which only runs when the loop is *not* exited via `break`), logging an
+`ERROR` naming `_MAX_PAGES` and the total item count fetched, and raising instead of falling
+through to caching — routing the truncation through the exact same stale-cache-or-raise
+handling an ordinary Zoho fetch failure already uses. This is a **behavior change**: if a usable
+cached catalogue exists it is still served (the stale-cache branch, unchanged for callers); only
+with no usable cache does `fetch_catalogue` now raise, which `GET /calculator/zoho-filaments`
+and `POST /calculator/filaments/zoho-sync` already turn into a 502 for any other refresh
+failure. Before this fix, hitting `_MAX_PAGES` returned 200 with a silently truncated catalogue
+instead. user-approved 2026-08-22: "If the catalogue ever exceeds 20 pages, the filament search
+and price sync would start returning 502 instead of quietly operating on the first 4000 items."
+
+`fetch_catalogue`'s public signature (`async def fetch_catalogue(db, *, refresh: bool = True) ->
+list[FilamentProduct]`) is unchanged; `SURFACE.md` was regenerated and is byte-identical to the
+committed copy.
+
+Mutation-tested: reverting the `generation == _generation` publish guard back to an
+unconditional publish made `test_reset_cache_during_inflight_fetch_does_not_publish_stale_catalogue`
+fail as expected (the pre-rotation catalogue landed in `_cache`). Reverting the truncation
+`else`-clause guard (restoring the old loop with no `else` branch) made both
+`test_truncated_fetch_is_not_cached_and_raises_with_cold_cache` and
+`test_truncated_fetch_serves_the_stale_cache_when_warm` fail as expected (no `RuntimeError` was
+raised, and the partial 1-item list overwrote the 4-item warm cache instead of being discarded
+in favor of it).
+
+## T-074 — 2026-08-22 — user-approved behavior change
+
+T-074: `search_zoho_filaments` (`GET /calculator/zoho-filaments`) and
+`sync_calculator_filaments_from_zoho` (`POST /calculator/filaments/zoho-sync`) each caught
+every exception `fetch_catalogue` could raise — a genuinely unreachable Zoho, T-073's
+truncation-at-`_MAX_PAGES` guard, and `fetch_catalogue`'s own "None of the N active Zoho
+filament items could be mapped" mapping-failure guard (plus any stray `TypeError`/`AttributeError`
+from `_map_item`) — in one `except Exception` block, logged a one-line `logger.warning(...)`
+with no `exc_info`, and always raised `HTTPException(502, "Could not reach Zoho")`. A mapping or
+programming bug inside the catalogue service was therefore indistinguishable, both to the
+caller and in the logs, from Zoho's network genuinely being down, and the log carried no stack
+trace to tell them apart after the fact.
+
+Fixed by giving `backend/app/services/zoho_filaments.py` a dedicated
+`ZohoFilamentMappingError(RuntimeError)`, raised only by the "every active item failed to map"
+guard; the truncation guard (T-073) continues to raise a plain `RuntimeError`, unchanged. Both
+routes now catch `ZohoFilamentMappingError` first — logging at `ERROR` with `exc_info=True` and
+raising `HTTPException(500, "Zoho filament catalogue could not be mapped")` — before falling
+through to the existing `except Exception` branch, which now also logs with `exc_info=True` but
+keeps its `HTTPException(502, "Could not reach Zoho")` detail string unchanged for every other
+failure, including T-073's truncation `RuntimeError`. This is a **behavior change**: a mapping
+failure inside the catalogue service now returns 500 with a different detail instead of the
+previous 502 "Could not reach Zoho". user-approved 2026-08-22: "A mapping failure inside the
+catalogue service would return 500 with a different detail instead of the current 502 'Could not
+reach Zoho'."
+
+`SURFACE.md` moved: `ZohoFilamentMappingError(RuntimeError)` is a new public class in
+`backend/app/services/zoho_filaments.py`, picked up by `gen_surface_calc.sh`'s
+`^(def|class|async def) [a-zA-Z]` grep over that file's "Calculator backend callables" section.
+Regenerated and committed alongside this entry.
+
+Mutation-tested: reverting the `except zoho_filaments.ZohoFilamentMappingError` branch in both
+routes (folding mapping failures back into the generic `except Exception` 502 branch) made
+`test_mapping_failure_is_reported_as_internal_server_error` and
+`test_sync_mapping_failure_returns_500_not_bad_gateway` fail as expected (502 instead of 500) —
+`test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` and its sync
+counterpart still passed, confirming the truncation path was untouched by the revert. Reverting
+`exc_info=True` on all four `logger.warning`/`logger.error` calls made
+`test_upstream_failure_logs_a_stack_trace`, `test_mapping_failure_is_reported_as_internal_server_error`,
+`test_sync_upstream_failure_returns_502_and_logs_a_stack_trace` and
+`test_sync_mapping_failure_returns_500_not_bad_gateway` all fail as expected (`record.exc_info`
+was `None`). Both mutations were reverted afterward and the full suite re-verified green.
+
+## T-075 (calculator) — 2026-08-22 — user-approved behavior change
+
+Fix-up to the T-075 Zoho price-sync fix (`frontend/src/components/CalculatorSettingsPanels.tsx`),
+after independent verification found the first attempt shipped a third, unapproved user-visible
+change alongside the approved one.
+
+The reported bug: `CalculatorFilamentsPanel`'s `runSync` chunk walk had no `AbortController` and
+its guard/progress lived in local `useState`, so `CalculatorPage` unmounting the panel on a tab
+switch (or any remount) discarded the guard while the walk itself kept running and kept issuing
+chunk POSTs. An operator could tab away and back mid-walk, see an idle "Sync Zoho prices" button
+with no progress, and click it again — starting a second overlapping walk over the same rows.
+
+The first attempt fixed that, but did so by moving the walk's *entire* state — in-flight guard,
+live progress, the completed summary, and any error — into the app-lifetime `QueryClient` cache
+(`gcTime`/`staleTime: Infinity`). That over-fixed it: a completed summary or a failed walk's error
+text then persisted across tab switches **and** page navigation for the rest of the page session,
+with no dismissal path, and a chunk request that never settled (no timeout, no abort) left the
+button disabled for the same unbounded window. The user was shown all three effects and decided:
+keep the guard/progress survival (the reported bug), narrow the summary/error persistence back to
+the pre-fix (BASE) behavior, and add a per-chunk timeout so a stalled request cannot wedge the
+button.
+
+This fix-up:
+- Keeps only the in-flight guard and live `{ done, total }` progress in the shared `QueryClient`
+  cache (`ZOHO_SYNC_PROGRESS_KEY`), unchanged from the first attempt: a remount mid-walk still
+  shows live progress and still refuses to start a second walk (the actually-reported bug stays
+  fixed).
+- **Narrows the completed summary and any sync error back to ordinary component `useState`**,
+  exactly as the panel had them before T-075 shipped. Because `runSync`'s closure belongs to the
+  mount that started it, a walk that ends while its panel is unmounted has nothing to write into a
+  now-defunct closure's setters, so the panel's summary/error simply cannot outlive the mount that
+  is watching them — restoring the invariant "unmount after the walk ends ⇒ next mount shows no
+  summary and no error" without any special-casing. Direct, user-approved consequence, quoted from
+  the brief: "an error that occurs while the panel is unmounted is again not shown on return."
+- Adds a **60-second per-chunk timeout** (`SYNC_CHUNK_TIMEOUT_MS`, via a small `withTimeout`
+  helper that races the chunk request against a `setTimeout` and never touches or aborts the
+  underlying request itself): a chunk that never settles now ends the walk with the same
+  `catch`/`finally` path as any other sync failure — a normal "Sync stopped: sync request timed
+  out" error and a released guard — instead of leaving the button disabled for the rest of the
+  page session. 60 s was chosen against the backend's own budget: `zoho.py`'s
+  `httpx.AsyncClient(timeout=10.0)` bounds each individual Zoho HTTP call, and a chunk only
+  triggers more than one of those when the 10-minute filament-catalogue cache
+  (`zoho_filaments.py`, `_CACHE_TTL`) is cold, in which case `fetch_catalogue` pages the catalogue
+  in up to `_MAX_PAGES` (20) page fetches — a real but rare worst case of several tens of seconds.
+  60 s comfortably covers that case (and any ordinary slow network) without being so tight that a
+  slow-but-healthy sync is misreported as hung. Unmount never aborts the walk — it is only ever
+  ended early by this timeout (or by a genuine request failure/success), so every remaining chunk
+  still gets written even if the panel that started the sync is long gone, exactly as before this
+  fix-up.
+- This is itself a **user-approved behavior change**: quoting the brief, "a Zoho price sync whose
+  chunk request never settles now ends with a sync error and re-enables the button, instead of
+  leaving it disabled for the page session."
+
+No `SURFACE.md` change: `withTimeout` and `SYNC_CHUNK_PROGRESS_KEY`/`ZOHO_SYNC_PROGRESS_KEY` are
+module-scope but not exported; the file's only exports (`CalculatorFilamentsPanel`,
+`CalculatorPrintersPanel`, `CalculatorDefaultsPanel`, `MARGIN_STEPS`) are unchanged.
+
+Tests: updated `CalculatorSettingsPanels.test.tsx`'s "keeps the guard and progress alive across an
+unmount/remount..." test — its guard/progress/second-click assertions are unchanged, but its final
+step no longer expects the completed summary to reappear on the remounted panel once the
+background-continuing walk finishes (that expectation belonged to the reverted design; the
+narrowed design cannot and should not route a finished walk's summary into a different mount's
+state). Replaced "surfaces a sync error after a remount even though it failed while the panel was
+unmounted" (which asserted exactly the unapproved persistence) with "does not surface a sync error
+that happened while the panel was unmounted (narrowed to BASE semantics)", asserting positive
+evidence of a clean remount (`Sync prices` present and enabled) before asserting the error text is
+absent. Added "does not show a completed sync summary after an unmount/remount" (the same
+narrowing for the success path) and "ends a chunk request that never settles with a sync error and
+re-enables the button" (the new timeout, driven entirely by vitest fake timers — `vi.useFakeTimers
+({ shouldAdvanceTime: true })` plus `vi.advanceTimersByTimeAsync`, never `msw`'s `delay()` or a
+wall-clock sleep). No test was deleted.
+
+Mutation-tested: reverting the narrowing (moving `syncSummary`/`syncError` back into a
+session-scoped store instead of component `useState`) made "does not show a completed sync summary
+after an unmount/remount" fail as expected (`expected <p>...9 updated...</p> to be null`, i.e. the
+stale summary reappeared). Reverting the timeout (calling
+`api.syncCalculatorFilamentsFromZoho` directly instead of through `withTimeout`) made "ends a chunk
+request that never settles with a sync error and re-enables the button" fail as expected (the
+`findByText(/sync stopped/i)` wait timed out — the walk never ended). Both mutations were reverted
+afterward; `CalculatorSettingsPanels.test.tsx` re-verified at 51/51 passing, 3 consecutive clean
+runs.
+
+Frontend: `npx tsc -b --noEmit` clean, `npx eslint .` clean. `tools/coverage_calc.sh frontend`:
+statements 90.69% (985/1086), at/above the 90.58% (972/1073) ratchet (two unrelated documented
+load flakes, `PrintModal.test.tsx` and `StatsPageUserFilter1894.test.tsx`, both re-verified passing
+alone). `tools/snapshot.py verify`: 10/10, nothing moved.
+
+## T-094, T-101 — 2026-08-22 — T-094 is a user-approved behavior change
+
+T-094: `fetch_catalogue`'s `_refresh_lock` (T-072) wrapped the entire paged Zoho walk with no
+acquisition timeout. Each page goes through `zoho.py::_send`'s `httpx.AsyncClient(timeout=10.0)`
+with one 401-retry, so the critical section was bounded only at roughly `_MAX_PAGES(20) x 2 x 10s
+~= 400s` — far longer than the frontend's 60s per-chunk timeout budget. A second caller arriving
+during a cold-cache refresh queued behind the whole walk with no way out, pinning its
+`Depends(get_db)` pool connection for the wait. The failure path also recorded nothing on a
+cold-cache failure, so a burst of concurrent callers each repeated the full walk in turn instead
+of learning from the first one's failure — measured by the auditor as 4 concurrent cold requests
+producing 4 separate upstream walks.
+
+Fixed with the two auditor/user-approved halves:
+- **Bounded lock acquisition**: `asyncio.wait_for(lock.acquire(), timeout=_LOCK_ACQUIRE_TIMEOUT)`
+  (20.0s), `lock` captured once up front (not re-read from the module global at release time, so a
+  `reset_cache()` landing mid-wait — which rebinds `_refresh_lock` to a new `Lock()`, T-072/T-095 —
+  can never make the release target the wrong lock). On `asyncio.TimeoutError`, the stale cache is
+  returned if one exists, otherwise a plain `RuntimeError` is raised (the route's existing generic
+  `except Exception` branch turns this into a 502, matching T-073's contract for "Zoho isn't
+  answering"). 20s was chosen well under the 60s client budget (so the route still answers before
+  the client gives up) while staying roughly 2x a single (possibly 401-retried) page fetch, so a
+  healthy walk of a page or two is not punished by an early bail-out — and nowhere near the ~400s
+  pathological worst case, so waiters no longer pile up behind it.
+- **Negative caching**: a cold-cache failure (no `_cache` to fall back to) records `_fail_at` +
+  the failing exception (`_fail_exc`); the next call checks this *before* touching the lock at all
+  and, if still within `_FAIL_COOLDOWN` (30s), re-raises a fresh instance of the *same exception
+  class* immediately — no Zoho walk, no lock contention. The class is reconstructed
+  (`type(_fail_exc)(str(_fail_exc))`) rather than reusing the stored instance, so a persistent
+  all-malformed batch (`ZohoFilamentMappingError`, 500) is never silently downgraded to "Zoho is
+  unreachable" (502) by the fast path, and vice versa. 30s is deliberately longer than the 20s
+  lock-acquire timeout (so a caller that just timed out waiting for the lock and retries lands on
+  this fast path instead of starting its own walk) but far shorter than the 10-minute `_CACHE_TTL`
+  (a real recovery is only masked for seconds, not minutes). `reset_cache()` also clears
+  `_fail_at`/`_fail_exc` (a credential rotation must not keep answering "Zoho is down" under the
+  new, presumably-working credentials) — this does **not** touch the `_refresh_lock` rebind line
+  itself, which stays exactly as T-072 left it (T-095's territory).
+- The walk itself was deliberately left unbounded: bounding it would change what the *leader*
+  request gets back (turning a slow-but-eventually-successful walk into a failure), which is a
+  materially different, larger behavior change than the approved statement ("a second caller...
+  would get a fast 502/503 ... instead of waiting") calls for. The lock-acquisition timeout already
+  protects every other waiter; only the single in-flight leader can still run the full worst-case
+  duration, same as before this fix.
+
+user-approved 2026-08-22: "a second caller arriving during a cold-cache refresh would get a fast
+502/503 (or a stale catalogue) instead of waiting for the in-flight Zoho walk to finish."
+
+`SURFACE.md` moved: two new module-level constants, `_FAIL_COOLDOWN` and `_LOCK_ACQUIRE_TIMEOUT`,
+in `backend/app/services/zoho_filaments.py`, picked up by `gen_surface_calc.sh`'s
+`^_?[A-Z][A-Z0-9_]+ =` grep over that file's "Calculator backend module constants" section. No
+new module-level `def`/`class` was added (the pre-lock negative-cache check and lock handling were
+written inline rather than as new helpers), so the "Calculator backend callables" section is
+unchanged. Regenerated and committed alongside this entry.
+
+T-101: mutation-proven by the auditor that changing `raise ZohoFilamentMappingError(...)` (the
+"every active item failed to map" guard) to `raise RuntimeError(...)` left the full suite green —
+`test_zoho_filaments_catalogue.py`'s `test_entirely_malformed_batch_with_cold_cache_raises` only
+asserted `pytest.raises(RuntimeError)` (the parent class, satisfied by any subclass or the plain
+class alike), and both route-level mapping-failure tests (`test_calculator_zoho_routes.py`,
+`test_calculator_zoho_sync.py`) monkeypatched `zoho_filaments.fetch_catalogue` itself to raise
+`ZohoFilamentMappingError`, bypassing the service's own mapping-failure branch entirely. So T-074's
+approved "all items fail to map => 500" contract was pinned only by two halves that shared an
+unproven assumption: that the real service actually raises that specific subclass.
+
+Fixed by tightening `test_entirely_malformed_batch_with_cold_cache_raises`'s assertion to
+`pytest.raises(zoho_filaments.ZohoFilamentMappingError)`, and adding
+`test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error` to
+`test_calculator_zoho_routes.py`, which stubs only `zoho_service.list_items_page` (an
+all-malformed batch) — never `fetch_catalogue` itself — so it proves the real service raising the
+subclass is what actually drives the route's 500 branch. The auditor's other referenced line
+(`test_zoho_filaments_catalogue.py`'s `test_failed_refresh_with_cold_cache_raises`) was
+deliberately left untouched: its `boom()` raises a plain `RuntimeError` simulating an unreachable
+Zoho, an entirely different failure mode (T-073/T-074's 502 contract) — tightening that assertion
+to the mapping subclass would have made the test permanently fail and would have been factually
+wrong, not a real gap.
+
+The critical regression guard for T-094 touching this same function: the pre-existing
+`test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` (already stubbing
+`list_items_page` through the real `fetch_catalogue`, not `fetch_catalogue` itself) continues to
+pin the *other* direction — a catalogue truncated at `_MAX_PAGES` must still raise a plain
+`RuntimeError` (502), never `ZohoFilamentMappingError` (500) — and was re-verified against both new
+T-094 code paths (the bounded lock and the negative cache) to confirm neither accidentally routes
+the truncation raise through the mapping-error subclass.
+
+Mutation-tested: mutating the mapping-failure raise site to plain `RuntimeError` made
+`test_entirely_malformed_batch_with_cold_cache_raises`,
+`test_negative_cache_preserves_the_mapping_failure_exception_type`, and the new
+`test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error` all fail as
+expected (502 instead of 500, or `RuntimeError` not matching the tightened `pytest.raises`).
+Mutating the truncation raise site to `ZohoFilamentMappingError` made
+`test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` fail as expected
+(500 instead of 502). For T-094: removing the `asyncio.wait_for` around the lock acquisition made
+`test_lock_acquire_timeout_raises_promptly_with_cold_cache` hang indefinitely (no
+`pytest-timeout` plugin is installed in this project, so the run had to be killed manually — the
+mutation genuinely reintroduces the reported unbounded-wait bug). Removing the pre-lock
+negative-cache check made `test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk` fail as
+expected (`assert 2 == 1`, i.e. a second upstream walk happened). All mutations were reverted
+afterward and the full suite re-verified green (52/52 across the three Zoho filament test files,
+3 consecutive runs, no flakes).
+
+`ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10, nothing moved.
+
+## T-094 fix — 2026-08-23 — negative-cache memo now stamped when the failure is observed
+
+Loop-7's blind verifier found that the negative cache described above did not actually protect a
+*slow* Zoho outage. Inside `_refresh_lock`, `now = datetime.now(timezone.utc)` was captured once,
+before the paged walk began; the `except` branch then wrote `_fail_at = now`, so the memo was
+timestamped with when the walk *started*, not when it *failed*. Since the walk itself is bounded
+only at roughly `_MAX_PAGES(20) x 2 x 10s ~= 400s` — far longer than `_FAIL_COOLDOWN`'s 30s — any
+cold-cache walk slow enough to actually need the memo wrote one that was already expired the
+instant it landed. Fails safe (never masks a recovery longer than intended), so this was a feature
+that silently didn't fire, not a correctness bug: the fast-outage case (loop-7's own repro, `boom()`
+raising immediately) was unaffected and its tests stayed green throughout.
+
+Fixed by re-reading the clock at the point each timestamp is actually meaningful, rather than
+reusing the pre-walk `now`: `_fail_at = datetime.now(timezone.utc)` in the failure branch, and
+`_cache_at = datetime.now(timezone.utc)` on the success branch (same class of bug — a slow
+*successful* walk would otherwise shorten its own `_CACHE_TTL` window). No new module-level name,
+no locking/generation-guard change, `_FAIL_COOLDOWN`'s value untouched.
+
+This does not change the approved behavior itself — the user already approved (2026-08-22) that a
+cold-cache failure is remembered for up to `_FAIL_COOLDOWN`; this only makes that hold for a walk
+slow enough to need it, which the fast-outage tests already exercised as working.
+
+New regression test `test_cold_cache_failure_memo_survives_a_walk_slower_than_the_cooldown` in
+`test_zoho_filaments_catalogue.py` monkeypatches the module's `datetime` name with a scripted clock
+(`_ScriptedClock`, no real sleeping) so a cold-cache walk can be simulated as taking longer than a
+monkeypatched, shortened `_FAIL_COOLDOWN` (5s) without slowing the suite down. Mutation-proven: with
+the pre-walk `now` restored (i.e. the original bug), the test fails with `assert 2 == 1` — the
+second call incorrectly falls outside the (mis-stamped) cooldown window and repeats the upstream
+walk; with the fix restored it passes at `1 == 1`. The two named T-094 regression tests
+(`test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk`,
+`test_negative_cache_preserves_the_mapping_failure_exception_type`) and the full
+`test_zoho_filaments_catalogue.py` file (21/21) were re-verified green. T-095 (the superseded-walk
+raise and the `_refresh_lock` rebind in `reset_cache()`) was left untouched, per that task's
+ownership.
+
+`ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10, nothing moved.
+`SURFACE.md`: unchanged — no module-level constant added, renamed or removed.
+
+## T-089 fix — 2026-08-23 — spool-cost rows now suppressed under the MIN_SAMPLE floor (user-approved behavior change)
+
+Audit `audit-security` found that `_spool_costs` and `_spool_costs_by_brand` in
+`calculator_insights.py` were the only two aggregates in that file NOT gated by the module's
+`MIN_SAMPLE` (5) floor — their comprehensions were guarded only by `if material` /
+`if brand and material`. With a single priced, unarchived spool in the database,
+`GET /api/v1/calculator/insights` returned a `sample: 1` row whose `avg_cost_per_kg` was that one
+spool's verbatim purchase cost, and — for the by-brand grouping — its exact supplier brand. Since
+the route is gated only on `CALCULATOR_READ` (held by the default Viewers role), this was a
+per-record inventory cost disclosure dressed up as an aggregate, not a permission bug.
+
+The user approved exactly one remedy: apply the file's existing `MIN_SAMPLE` floor to both
+methods, the same way `_failure_rates`, `_power_draw` and `_daily_usage` already do it. The
+auditor's alternative suggestion — requiring `Permission.INVENTORY_READ` for the per-brand block
+— was offered and explicitly declined; no permission change was made.
+
+**User-visible effect:** the calculator's reality-check panel now shows no spool-cost row (by
+material, or by brand+material) for any group with fewer than 5 unarchived priced spools. Small
+inventories that saw a row today (based on 1-4 spools) will see none. Groups at or above 5 are
+unaffected — same average, same `sample` count as before.
+
+Fixed with a one-line guard added to each comprehension's filter (`count >= MIN_SAMPLE`), matching
+the existing idiom exactly; no new module-level name, no permission change, no other aggregate
+touched.
+
+New/updated tests in `test_calculator_insights.py`: `test_spool_costs_average_by_material` and
+`test_spool_costs_average_by_brand` were rewritten to seed exactly `MIN_SAMPLE` priced spools for
+the surviving group (previously 2) and assert the under-`MIN_SAMPLE` group is now **absent** from
+the response, not merely present with a low `sample`. Two new boundary tests per grouping —
+`test_spool_costs_by_{material,brand}_below_min_sample_is_absent` (`MIN_SAMPLE - 1` spools, row
+absent) and `test_spool_costs_by_{material,brand}_at_min_sample_is_present` (`MIN_SAMPLE` spools,
+row present with the right average) — pin the exact off-by-one boundary. Mutation-proven: reverting
+the `count >= MIN_SAMPLE` guard back to the pre-fix filter made both `*_below_min_sample_is_absent`
+tests fail (`assert ("POLYMAKER", "PLA") not in rows` / `assert "PLA" not in rows` — the single-spool
+row reappeared), confirming the tests actually exercise the floor rather than passing vacuously.
+`ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10 after re-recording
+`calc-pydantic-schemas` (moved by T-090, see below) — `calc-insights-pure` (which pins this
+module's constants and pure helpers) did NOT move, confirming the fix is a local/inline guard, not
+a module-level signature change. `SURFACE.md`: unchanged — no new module-level def/class/constant.
+
+## T-090 fix — 2026-08-23 — Zoho filament sync no longer writes an unbounded derived price (user-approved behavior change)
+
+Audit `audit-security` found a hole in T-071 (shipped this same campaign): the sync's skip guard
+checked `math.isfinite(new_cost)` but never checked the *derived* `sale_price_per_kg` computed on
+the next lines, and the sync applied no upper ceiling of its own (unlike the write-side schemas,
+which gained `le=1e8` in T-071). Separately, `spool_weight_kg`'s `gt=0` bound admitted denormals
+like `1e-307`. End-to-end: `POST /calculator/filaments/` with `spool_weight_kg: 1e-307,
+margin_pct: 1000.0`, linked to an ordinary Zoho product priced at 5.0, then one sync chunk reported
+`updated: 1` and stored `cost_per_kg: 5e+307` / `sale_price_per_kg` serialized as JSON `null`
+(`inf` has no JSON representation) against a response schema that declares `sale_price_per_kg` as
+non-optional. The row was self-perpetuating: every later PATCH re-derives off the stored `5e+307`
+and writes `inf` again.
+
+The user approved both halves of the fix: (a) a client posting a spool weight below 1 g now gets a
+422 instead of a 200, and (b) a Zoho-linked filament whose derived cost exceeds the money ceiling
+is counted as `skipped_no_price` by the sync rather than having its price rewritten.
+
+**User-visible effect:** `POST`/`PATCH .../filaments/` now reject `spool_weight_kg` values below
+0.001 kg (1 g) with 422, where they were previously accepted. The Zoho sync now counts a filament
+as `skipped_no_price` (price left untouched) whenever the freshly-derived `cost_per_kg` would
+exceed the existing `_MONEY_CEILING` (1e8) or the derived `sale_price_per_kg` would not be finite,
+instead of writing the poisoned value and counting it as `updated`.
+
+Fixed in two files: `schemas/calculator.py` — `spool_weight_kg` changed from `gt=0` to `ge=0.001`
+on both `CalculatorFilamentCreate` (previously inherited unbounded from the base schema; now
+explicitly overridden there too, the same pattern `cost_per_kg` already uses) and
+`CalculatorFilamentUpdate`. `routes/calculator.py` — the sync loop now computes
+`new_sale = derive_sale_price(new_cost, filament.margin_pct)` *before* the guard, and the guard's
+condition gained `new_cost > _MONEY_CEILING or not math.isfinite(new_sale)`, reusing the existing
+`_MONEY_CEILING` constant imported from `schemas/calculator.py` (no second copy of `1e8`). The
+`filament.sale_price_per_kg = derive_sale_price(...)` write below was replaced with the
+already-computed `new_sale` to avoid a second derivation.
+
+Reproduced the auditor's exact 5e+307/inf scenario end-to-end BEFORE fixing (temporarily reverted
+both files to their pre-fix state in the worktree to confirm): `CREATE` returned 200 with
+`sale_price_per_kg: 11000.0`, `SYNC` returned `{'updated': 1, ...}`, and the subsequent `LIST`
+showed `cost_per_kg: 5e+307`, `sale_price_per_kg: null` — byte-for-byte the audit's reported
+values. After restoring the fix, the identical request sequence now 422s at `CREATE`.
+
+New tests: `test_create_rejects_denormal_spool_weight` / `test_update_rejects_denormal_spool_weight`
+in `test_calculator_routes.py` pin the 422 at `1e-307` on both the create and patch routes. Because
+the write-side floor closes the auditor's literal repro at the API boundary, a second, independent
+vector was added to `test_calculator_zoho_sync.py` —
+`test_derived_cost_beyond_the_money_ceiling_is_skipped_not_written` — which corrupts the
+*catalogue product's own* `spool_weight_kg` (parsed from a Zoho item name, never pydantic-validated)
+to `1e-307` instead, reproducing the identical `5e+307` overflow through the sync's other,
+still-untrusted input, and asserts `skipped_no_price: 1`, `updated: 0`, and the row's
+`cost_per_kg`/`sale_price_per_kg` left unchanged. Mutation-proven: reverting the guard to only
+`not product.has_price or new_cost <= 0 or not math.isfinite(new_cost)` (i.e. dropping the
+`new_cost > _MONEY_CEILING or not math.isfinite(new_sale)` clause) made
+`test_derived_cost_beyond_the_money_ceiling_is_skipped_not_written` fail exactly as expected,
+showing `updated: 1` and the poisoned `cost_per_kg: 5e+307` written to the row — the same failure
+mode the audit reported. All pre-existing `test_calculator_zoho_sync.py` /
+`test_calculator_routes.py` tests re-verified green (103/103 across the three
+`test_calculator_*.py` files).
+
+`ruff check`/`ruff format --check`: clean. Full backend suite: 11695 passed, 1 skipped. Scoped
+coverage (`tools/coverage_calc.sh backend`): 683/686 statements = 99.56% (no drop from the 681/684
+baseline; the 2 new statements are both covered). `tools/snapshot.py verify`: `calc-pydantic-schemas`
+moved as expected — `spool_weight_kg`'s JSON Schema gained `"minimum": 0.001` and lost
+`"exclusiveMinimum": 0` on both `CalculatorFilamentCreate` and `CalculatorFilamentUpdate` — and was
+re-recorded; all other 9 probes matched unchanged, including `calc-insights-pure`. `SURFACE.md`:
+unchanged — `_MONEY_CEILING` is imported/reused, not redefined; no new module-level def/class/constant.
+
+## T-095 — 2026-08-23 — a superseded Zoho walk now fails instead of returning the pre-rotation catalogue (user-approved behavior change)
+
+Audit `audit-robustness` found that the `_generation` guard added for T-072 only blocked the
+module cache WRITE when `reset_cache()` fired mid-walk (a Zoho credential rotation landing while a
+refresh was still parked on a paged fetch) — the superseded walk's freshly-mapped catalogue was
+still handed back to its own caller via `return mapped`, even though it belonged to the OLD
+organisation. Reproduced with a page fetch parked on an `asyncio.Event`, `reset_cache()` called
+mid-walk while flipping the fake org's dealer price 1000 -> 2000, then released: the superseded
+walk returned `cost_per_kg = 1000.0` (the pre-rotation org's price) with the module cache correctly
+left at `None`. `sync_calculator_filaments_from_zoho` consumes exactly that return value
+(`by_item_id = {product.item_id: product for product in catalogue}`) and writes
+`filament.cost_per_kg`, sets `filament.zoho_synced_at = now`, and commits — so an operator rotating
+Zoho credentials while a sync chunk was mid-walk could have up to `limit` rows of the OLD
+organisation's prices written into `calculator_filaments` and stamped as freshly synced, which is
+exactly what would stop anything from flagging them for correction.
+
+A second, related finding: `reset_cache()` rebound `_refresh_lock` to a brand new, unheld `Lock()`
+on every reset (a leftover from before T-094's bounded acquisition, originally there so a lock
+that blocked on one asyncio event loop could never be awaited from a different one — the test
+suite runs each async test on its own loop). This meant a caller arriving right after a reset could
+acquire the NEW lock immediately and start its own Zoho walk while the superseded walk — still
+holding the OLD lock object — was also still running: two concurrent walks instead of the one
+`_refresh_lock` exists to guarantee. The auditor measured this directly: 2 page fetches after a
+`reset_cache()` landing mid-walk, where 1 (the second caller queuing behind the first) was
+required.
+
+The user approved this exact framing: "a search or sync request that happens to be walking Zoho
+when someone saves new Zoho credentials would fail with 502 instead of answering from the previous
+organisation's catalogue."
+
+**User-visible effect:** if a Zoho credential/endpoint save (`reset_cache()`) lands while
+`/calculator/zoho-filaments` or `/calculator/filaments/zoho-sync` is mid-walk of a paged Zoho
+fetch, that in-flight request now fails with the same 502 "Could not reach Zoho" any other
+unreachable-Zoho failure gets (falling back to its own stale cache first, same as any other
+refresh failure), instead of succeeding with the pre-rotation organisation's catalogue. A second
+caller racing a reset that lands mid-walk now always queues behind the in-flight (superseded) walk
+rather than starting a concurrent second walk of its own.
+
+Fixed in `backend/app/services/zoho_filaments.py`:
+- The `if generation == _generation: _cache = mapped; ...` / `return mapped` branch was inverted:
+  `if generation != _generation:` now `raise RuntimeError("Zoho filament catalogue refresh was
+  superseded by a credential change; retry")` before ever reaching the cache-publish or return
+  lines. A **plain** `RuntimeError`, not the `ZohoFilamentMappingError` subclass — this is not a
+  mapping bug, and that subclass is reserved for T-074's 500 contract; both `search_zoho_filaments`
+  and `sync_calculator_filaments_from_zoho` in `routes/calculator.py` catch
+  `ZohoFilamentMappingError` first (-> 500) and everything else (-> 502), so the exception TYPE
+  alone decides the status code with no route change needed.
+- `reset_cache()` no longer rebinds `_refresh_lock` — the `global` statement dropped
+  `_refresh_lock`, and the `_refresh_lock = asyncio.Lock()` line inside it was removed. The single
+  module-level lock (created once at import) is now reused for the life of the process, so a reset
+  can never manufacture a second concurrent walk. The `lock = _refresh_lock` local capture in
+  `fetch_catalogue` (added for T-094 specifically to survive a mid-wait rebind) was deliberately
+  KEPT even though the rebind it was guarding against is gone — it is still cheap insurance against
+  any future reassignment of the module global, and removing it bought nothing.
+
+T-104 (an open task proposing a characterization test for the `reset_cache()` lock REBUILD) is now
+moot as originally scoped — the rebuild it would have characterized no longer exists — and should
+be re-scoped to "reset_cache() must not create a second concurrent walk" or retired.
+
+Test-suite-only consequence of removing the rebind: this repo's async tests each run on their OWN
+event loop (confirmed empirically — `asyncio.get_running_loop()` differs test-to-test despite a
+session-scoped `event_loop` fixture in `conftest.py`, which pytest-asyncio 1.3.0 no longer honors),
+and `asyncio.Lock` only binds to a loop the first time it is actually CONTENDED (the uncontended
+fast path in `Lock.acquire()` never touches `_get_loop()`). Reusing one `_refresh_lock` module
+singleton is exactly the correct, intended behavior for a real long-running single-event-loop
+process, but it meant a lock contended by one test's concurrency scenario would leak forward and
+raise "bound to a different event loop" the next time a DIFFERENT test's scenario contended it
+(observed directly: `test_lock_acquire_timeout_raises_promptly_with_cold_cache` followed by
+`test_lock_acquire_timeout_serves_the_stale_cache_when_warm` failed together, passed individually).
+Fixed as test-isolation bookkeeping only (no production equivalent) in the `_clear_cache` autouse
+fixture in `test_zoho_filaments_catalogue.py`: `zoho_filaments._refresh_lock = asyncio.Lock()` is
+now rebuilt directly by the fixture before and after every test in that file.
+
+New/changed tests in `test_zoho_filaments_catalogue.py`:
+- `test_reset_cache_during_inflight_fetch_raises_instead_of_returning_stale_catalogue` (replaces
+  the old `..._does_not_publish_stale_catalogue`, which asserted the now-superseded `return mapped`
+  behavior): reproduces the auditor's price-flip repro and asserts the superseded walk raises a
+  plain `RuntimeError` that is NOT a `ZohoFilamentMappingError`, that nothing lands in the module
+  cache, and that a subsequent fetch goes back to Zoho rather than resurrecting the pre-rotation
+  catalogue.
+- `test_reset_cache_mid_walk_does_not_permit_a_second_concurrent_walk`: reproduces the auditor's
+  2-concurrent-walks repro and asserts exactly 1 page fetch happens before the first (superseded)
+  walk releases the lock, and the second caller's own walk only starts after.
+
+New test in `test_calculator_zoho_routes.py`:
+- `test_reset_cache_mid_request_is_reported_as_bad_gateway_not_internal_error`: runs the SAME
+  scenario through the real route (`fetch_catalogue` un-stubbed, only `list_items_page` faked,
+  matching the existing pattern used by the T-073/T-101 real-service route tests) and asserts the
+  in-flight request comes back `502` / `"Could not reach Zoho"`, never `500`.
+
+Mutation-proven, each restored and re-verified green afterward:
+1. Reverted the `raise RuntimeError(...)` back to falling through to `return mapped` ->
+   `test_reset_cache_during_inflight_fetch_raises_instead_of_returning_stale_catalogue` AND
+   `test_reset_cache_mid_request_is_reported_as_bad_gateway_not_internal_error` both failed
+   (`assert 200 == 502` at the route level).
+2. Raised `ZohoFilamentMappingError` instead of the plain `RuntimeError` -> the route test failed
+   with `assert 500 == 502`, and the unit test's `not isinstance(..., ZohoFilamentMappingError)`
+   assertion also failed.
+3. Restored the `_refresh_lock = asyncio.Lock()` rebind inside `reset_cache()` ->
+   `test_reset_cache_mid_walk_does_not_permit_a_second_concurrent_walk` failed with
+   `assert 2 == 1` (both callers' page fetches ran before either released).
+
+Regression guard re-verified after the fix: the other three approved raise-path contracts are
+unchanged — `test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` (502),
+`test_mapping_failure_is_reported_as_internal_server_error` +
+`test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error` (500), and
+`test_lock_acquire_timeout_raises_promptly_with_cold_cache` +
+`test_lock_acquire_timeout_serves_the_stale_cache_when_warm` (502 / stale cache) all still pass.
+
+`ruff check`/`ruff format --check backend/`: clean. Full backend suite:
+11696 passed, 1 skipped, 1 failed (`test_library_slice_api.py::TestCrossClassSliceAllLoop::
+test_cross_class_arrange_survives_user_leaving_the_box_unticked`, a documented pre-existing flake
+unrelated to this file — re-ran alone and it passed). Scoped coverage
+(`tools/coverage_calc.sh backend`): 683/686 statements = 99.56%, matching the ratchet exactly (no
+drop). `tools/snapshot.py verify`: 10/10 probes matched, none moved — none exercise
+`fetch_catalogue`'s paging. `SURFACE.md`: unchanged (`bash tools/gen_surface_calc.sh` diffed clean)
+— a plain `RuntimeError` was used, no new exception class or module-level constant.
+
+## T-093, T-096 — 2026-08-23 — both are user-approved behavior changes
+
+T-093: the app-global `RequestValidationError` handler in `backend/app/main.py` (added by T-071)
+kept `allow_nan=True` to stop FastAPI's default handler crashing on a non-finite `input` value —
+but `json.dumps(..., allow_nan=True)` emits the bare Python literals `Infinity` / `-Infinity` /
+`NaN`, which are not valid JSON (RFC 8259). A strict parser (the frontend's
+`response.json().catch(() => ({}))` at `frontend/src/api/client.ts:136`) throws on that body,
+`detail` comes back `undefined`, and the toast falls through to the bare `HTTP 422` the comment
+three lines above that fallback exists to avoid — the exact defect the 422 was supposed to fix.
+Fixed by restoring `allow_nan=False` (byte-identical to Starlette's `JSONResponse.render`) and
+adding a new `_stringify_non_finite` helper that walks `jsonable_encoder(exc.errors())`
+recursively (dict values, list items, and tuple items) and replaces any `float('inf')` /
+`float('-inf')` / `float('nan')` with its `str()` form (`"inf"` / `"-inf"` / `"nan"`) before
+`json.dumps` ever sees it — so the encoder never has a non-finite value to choke on, and
+`allow_nan` itself no longer matters. The helper is a no-op for every other value, which is what
+keeps the handler byte-identical to FastAPI's own `request_validation_exception_handler` for
+every ordinary validation error: verified directly by calling both handlers with 6 synthetic
+`RequestValidationError`s (`gt=0` int, `string_too_short`, `missing`, `float_parsing`, a
+two-error list, and a Unicode message) and comparing `.body` byte-for-byte — all 6 matched. For
+the previously-crashing case (`cost_per_kg: Infinity`), FastAPI's own default handler was called
+directly and confirmed to still raise `ValueError: Out of range float values are not JSON
+compliant: inf`, while this handler returns `{"detail":[{...,"input":"inf"}]}`, which
+`json.loads(..., parse_constant=<reject>)` accepts (no bare literal reaches the parser).
+
+New tests: `backend/tests/unit/test_main_validation_handler.py` (`TestStringifyNonFinite`, 9
+cases) exercises `_stringify_non_finite` directly, including nested cases the route-level tests
+can't reach on their own — a non-finite float inside a list inside a dict inside a list — since a
+real Pydantic validation error's `input` is always the single rejected leaf value; the
+integration-level cases in `backend/tests/unit/test_calculator_routes.py`
+(`test_non_finite_cost_response_is_strict_json`, parametrized over inf/-inf/nan, and
+`test_ordinary_validation_error_body_unchanged`) drive the real route end-to-end and parse the
+raw response bytes with a `parse_constant` callback that raises `AssertionError` on any bare
+non-finite literal, so a regression back to `allow_nan=True` fails loudly rather than silently
+passing a lenient parse.
+
+Mutation-tested: reverting the handler to its exact pre-fix state (`content =
+{"detail": jsonable_encoder(exc.errors())}` and `allow_nan=True`, no sanitisation) made all three
+`test_non_finite_cost_response_is_strict_json` cases fail with `AssertionError: strict JSON parse
+hit a bare non-finite literal: 'NaN'` (and equivalents for inf/-inf) — confirming the strict-parse
+test actually exercises the fix. (Flipping `allow_nan` alone, with sanitisation left in place,
+does NOT reproduce the bug and was not used as the mutation — the sanitised payload has already
+removed every non-finite float by the time `json.dumps` runs, so `allow_nan` is inert in the
+fixed code; the real regression requires reverting the sanitisation too, which is what was done.)
+
+user-approved 2026-08-23: "a client sending Infinity/NaN would start receiving a parseable 422
+whose detail[].input is the string 'inf'/'nan' instead of a bare literal, so the UI toast would
+show 'Input should be a finite number' where it currently shows 'HTTP 422'."
+
+T-096: `CalculatorFilamentsPanel.tsx`'s Zoho price-sync walk (`runSync`) wraps each chunk request
+in `withTimeout` (T-075), which is documented as never aborting the underlying request — a chunk
+that crosses the 60s `SYNC_CHUNK_TIMEOUT_MS` budget is still running server-side when the walk
+gives up on it. The `catch` block treated a timeout exactly like any other chunk failure: set a
+flat "Sync stopped: ..." error and immediately `invalidateQueries(['calculatorFilaments'])`. That
+immediate refetch fires before the abandoned request has had any chance to land, so it reliably
+shows PRE-sync prices under a red failure banner, even though the walk itself is not actually
+done — the abandoned request can still commit up to 25 more rows seconds later, with nothing
+telling the table to look again.
+
+Fixed with a `SyncTimeoutError` subclass thrown by `withTimeout` in place of the previous plain
+`Error`, so the `catch` block can `instanceof`-distinguish a timeout from a genuine chunk failure
+without matching on message text. On a timeout specifically: (a) the wording switches to a new
+`calculator.syncTimedOut` i18n key ("Sync timed out; some chunks may have applied" in English,
+translated — not copied — into all 13 locale files) instead of interpolating the raw English
+`withTimeout` rejection message into `calculator.syncFailed`, fixing the known defect the task
+called out (that raw string was untranslated in every locale); (b) a second
+`invalidateQueries(['calculatorFilaments'])` is scheduled via `setTimeout` for
+`SYNC_CHUNK_TIMEOUT_MS` after the immediate one, giving the abandoned request the same worst-case
+window T-075 already budgets for a chunk to land, so the table picks up whatever it committed
+instead of being stuck on what the immediate refetch caught mid-flight. No `AbortController` was
+added — the auditor's alternative suggestion was explicitly declined by the user because aborting
+would leave a partially-synced catalogue where today the walk always runs to completion; the
+walk's actual behavior (never cancelled, may commit after the client gives up) is unchanged, only
+how the UI reports and re-checks it.
+
+i18n: `syncTimedOut` added directly after the existing `syncFailed` key in `calculator.*` in all
+13 locale files (en/de/es/fr/it/ja/ko/pt-BR/ru/tr/uk/zh-CN/zh-TW) — real translations, not
+English copies (`frontend/scripts/check-i18n-parity.mjs`'s identical-to-English gate passes with
+no new `IDENTICAL_TO_EN_ALLOWED` entries needed). `npx vitest run src/__tests__/i18n/` (26 tests)
+and `node scripts/check-i18n-parity.mjs` both pass; all 13 locales report the same 6867 leaf keys
+as `en`.
+
+New/changed test: `CalculatorSettingsPanels.test.tsx`'s existing T-075 timeout test (`ends a chunk
+request that never settles...`) was renamed and extended — `reports a timed-out chunk as
+indeterminate, re-enables the button, and refetches again to pick up what the abandoned request
+commits` — driven entirely with `vi.useFakeTimers`/`vi.advanceTimersByTimeAsync` (never a
+wall-clock sleep). It asserts the indeterminate wording appears (not "sync stopped: ..."), that
+exactly one `api.getCalculatorFilaments` refetch happens at the moment of timeout (table still
+shows the pre-sync row), and that a SECOND refetch after a further `SYNC_CHUNK_TIMEOUT_MS`
+(60s) picks up a row mutated in between — simulating the abandoned request's late commit.
+
+Mutation-tested: removing the scheduled second `invalidateQueries` call made the new test fail at
+`expect(await screen.findByRole('cell', { name: 'PETG' }))` (the late commit never surfaces,
+`getFilaments.mock.calls.length` stays one short) — confirming the test actually exercises the
+re-invalidation, not just the wording change.
+
+user-approved 2026-08-23: "a timed-out sync would stop leaving the table showing pre-sync prices,
+and its message would say the result is indeterminate rather than failed." AbortController
+explicitly declined.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean; `npx tsc -b
+--noEmit` and `npx eslint .` clean; full backend suite 11710 passed, 1 skipped (no new failures);
+full frontend suite passed apart from the documented known-flake files (PrintModal,
+CalculatorPage, StatsPageUserFilter1894, ModelViewerModal), each re-run alone and green.
+`tools/snapshot.py verify`: 10/10 probes matched, none moved. `SURFACE.md`
+(`bash tools/gen_surface_calc.sh`): unchanged — `SyncTimeoutError` and `_stringify_non_finite`
+are both module-private (not exported), so neither adds to the scanned surface.
+`tools/coverage_calc.sh backend`: 683/686 = 99.56%, exactly matching the ratchet in every run.
+`tools/coverage_calc.sh frontend`: this machine was under heavy, fluctuating concurrent load for
+the whole of this iteration (other agents' `pytest`/`vitest` processes observed running
+simultaneously via `ps`/`uptime`, load average 30-53). Measured 7 times: 5 runs read 90.31%
+(988/1094) and 2 runs read 92.23% (1009/1094), correlating exactly with host load at
+measurement time, not with any code change — the FAIL list on every low-reading run is 100%
+the pre-documented known-flake files (CalculatorPage.test.tsx, StatsPageUserFilter1894.test.tsx,
+ModelViewerModal.test.tsx, PrintModal.test.tsx; none touched by this change) exhausting the
+harness's own `--retry=3`, while `CalculatorFilamentsPanel`'s own coverage held flat at 92.3% and
+`CalculatorSettingsPanels.test.tsx` passed 100% of the time across every run. On the two clean
+(lower-load) reads, 1009/1094 clears the 92.16% (1000/1085) ratchet, and all 9 of the statements
+added by this change (1094-1085) are covered (1009-1000). Reported honestly per instruction rather
+than asserting a single confident number: this machine's shared-load condition made a
+majority-of-runs measurement land below the ratchet even though the change itself is fully
+covered and no in-scope file's own coverage dropped.
+
+## T-106 fix — 2026-08-24 — a material spool-cost row is now suppressed when its published brand rows leave a small, solvable residual (user-approved behavior change)
+
+Audit `audit-security` found that T-089's per-group `MIN_SAMPLE` floor on `_spool_costs` and
+`_spool_costs_by_brand` in `calculator_insights.py` closes the *direct* per-record disclosure but
+not an *arithmetic* one: both the average and the exact `sample` count are published for every
+surviving group, and `_spool_costs_by_brand` filters out spools with a NULL brand while
+`_spool_costs` does not. With 5 spools `brand='SUNLU' material='PLA' cost_per_kg=20.0` plus one
+spool `brand=NULL material='PLA' cost_per_kg=200.0`, `GET /api/v1/calculator/insights` published
+`by_material: [{material: 'PLA', avg_cost_per_kg: 50.0, sample: 6}]` and
+`by_brand: [{brand: 'SUNLU', material: 'PLA', avg_cost_per_kg: 20.0, sample: 5}]` — from which the
+one unbranded spool's exact `cost_per_kg` (200.0) is recoverable as `6*50.0 - 5*20.0`, even though
+neither query discloses it directly. Gated only by `CALCULATOR_READ` (held by the default Viewers
+role), same class of issue as T-089.
+
+The auditor offered three remedies; the user approved exactly one — **residual suppression**: drop
+a material row whenever its published brand subgroups leave a residual population strictly between
+0 and `MIN_SAMPLE` (`residual = material sample count - sum of that material's published
+brand-group sample counts`). The other two alternatives — adding a NULL-brand bucket to
+`_spool_costs_by_brand` so the two aggregates cover the same population, and no longer publishing
+exact `sample` counts — were explicitly NOT implemented, neither instead nor in addition.
+
+**User-visible effect:** `spool_cost_by_material` in the response will now omit a material's row
+whenever the difference between its own `sample` and the sum of its visible `spool_cost_by_brand`
+rows' `sample`s is between 1 and 4 (i.e. `MIN_SAMPLE`, 5, exclusive on both ends means residuals of
+1-4 trigger suppression; a residual of 0 or ≥5 does not). This affects only materials that have
+*both* a published brand breakdown *and* a small unbranded/off-brand remainder; `spool_cost_by_brand`
+itself is completely unchanged — the SUNLU/PLA row above still appears with `avg_cost_per_kg: 20.0,
+sample: 5`. The calculator's one-click "apply measured average" button disappears with the
+suppressed material row, same as any other `MIN_SAMPLE` suppression.
+
+Implemented in `backend/app/services/calculator_insights.py`: added a private helper
+`_published_brand_counts_by_material` — a `SELECT UPPER(material), COUNT(id) ... GROUP BY
+UPPER(brand), UPPER(material) HAVING COUNT(id) >= MIN_SAMPLE` (i.e. exactly the population
+`_spool_costs_by_brand` actually publishes), summed per material. `_spool_costs` now calls it once
+and, for each material row that already clears its own `MIN_SAMPLE` floor, computes
+`residual = count - published_brand_counts.get(material, 0)` and skips the row when
+`0 < residual < MIN_SAMPLE`. `_spool_costs_by_brand` itself was not touched — no NULL-brand bucket
+was added, and both methods still publish exact `sample` counts, per the chosen alternative.
+
+New tests in `test_calculator_insights.py`: `test_spool_costs_material_suppressed_when_residual_below_min_sample`
+reproduces the audit's exact repro (5 SUNLU/PLA @ 20.0 + 1 unbranded PLA @ 200.0) and asserts the
+`PLA` material row is absent while the `SUNLU`/`PLA` brand row is untouched (`avg_cost_per_kg:
+20.0, sample: 5`). Two boundary tests pin the edges of the new condition:
+`test_spool_costs_material_present_when_residual_at_min_sample` (residual exactly `MIN_SAMPLE` — 5
+SUNLU/PLA @ 20.0 + 5 unbranded PLA @ 100.0 — must still publish, `sample: 10, avg_cost_per_kg:
+60.0`, since a residual that large is itself a safe-to-publish group) and
+`test_spool_costs_material_present_when_no_residual` (residual exactly 0 — 5 SUNLU/PLA @ 20.0 and
+nothing else — must still publish `sample: 5, avg_cost_per_kg: 20.0`, since a zero residual is
+redundant with the brand row, not disclosive). All pre-existing `_spool_costs`/`_spool_costs_by_brand`
+tests (T-089's `test_spool_costs_average_by_material`, `..._by_brand`, and the four
+`..._{below,at}_min_sample_is_{absent,present}` boundary tests) pass unchanged — none of their
+fixtures produce a `0 < residual < MIN_SAMPLE` case.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean. Full backend suite:
+11731 passed, 1 skipped, 4 failed under `-n 30` (`test_scheduled_drying_routes.py::{test_create_and_list,
+test_cancel_pending, test_offline_printer_is_still_schedulable}` and
+`test_library_slice_api.py::TestCrossClassSliceAllLoop::test_user_requested_arrange_also_loops_per_plate`)
+— all four re-ran green in isolation (`test_scheduled_drying_routes.py` alone: 13/13 passed), confirming
+parallel-load flakiness unrelated to this change, matching the documented `test_library_slice_api.py`
+flake and the general "suite load flakes" pattern; no new failure. `tools/coverage_calc.sh backend`:
+703/707 = 99.43% statements, 122/130 = 93.85% branches (before: baseline 612/626 = 97.76%; most
+recent prior iteration 687/690 = 99.57%) — `calculator_insights.py` itself rose from its 92.05%
+baseline to 95.79%. Three lines remain uncovered in the file: two pre-existing (`_time_accuracy`
+line 203, `_power_draw` line 281, both untouched by this change) and one new defensive branch (`if
+not material: continue` in `_published_brand_counts_by_material`, mirroring the equally-uncovered
+`if brand and material` guard `_spool_costs_by_brand` already had) — `Spool.material` is a
+non-nullable column (`Mapped[str]`, no `| None`), so this guard is unreachable through the ORM and
+was left untested for the same reason its sibling guard was. `tools/snapshot.py verify`: 10/10
+probes matched, none moved — `calc-insights-pure` only exercises this module's constants,
+`_resolve_duration`, and `_split_materials`, none of which changed. `SURFACE.md`
+(`bash tools/gen_surface_calc.sh`): byte-identical — the new helper is a private class method
+(indented `async def`), invisible to the surface scanner's `^(def|class|async def)` anchor, same
+as every other private method in this file.
+
+## T-109 — 2026-08-24 — CONTRACT DISCLOSURE, not a behavior change (user-approved)
+
+Audit `audit-cleanliness` found that `calculatorSettingsShared.ts` and `CalculatorPanelParts.tsx`
+each justified their bare-footer export style (every binding declared without a leading `export`
+keyword, then re-exported via a trailing `export { ... }` / `export type { ... }` block) with an
+in-code comment claiming this is "what lets react-refresh/only-export-components pass without an
+extra ignore." That rationale was empirically false: rewriting either file with plain leading
+`export const` / `export function` declarations also passes the rule cleanly, because each file
+already exports only one kind of thing (all-non-components in `calculatorSettingsShared.ts`,
+all-components in `CalculatorPanelParts.tsx`) — exactly the case
+`react-refresh/only-export-components` already permits, with no ignore comment and no
+`eslint.config.js` exemption-list entry needed either way. The bare-footer style's only actual
+effect was to hide these files' 8 (now 9, see below) exports from `SURFACE.md`'s
+`^export (default function|function|const|type|interface|class|enum) ...` regex — a frozen-contract
+blind spot, not a lint workaround.
+
+The user was asked whether to approve the resulting `SURFACE.md` growth before this was done, since
+moving a frozen artifact needs an explicit decision. They approved it: switch both files to plain
+leading exports, regenerate `SURFACE.md`, and record the disclosure here.
+
+**This is not a behavior change.** No logic, JSX, control flow, or export *names* changed — only the
+syntax used to export the same 8 bindings each file already exported (`parseNum`, `settingsTdCls`,
+`useSortToggle`, `SortDir`, `SortHeader`, `SearchBox`, `CountBadge`, `NoMatches`), plus a 9th,
+`useEntityCrudMutations`, added earlier this same iteration by T-108 (committed before this task
+started, deliberately left on the old bare-footer convention pending this task). Every existing
+importer (`CalculatorFilamentsPanel.tsx`, `CalculatorPrintersPanel.tsx`,
+`CalculatorDefaultsPanel.tsx`, and the two test files) uses named imports and required no changes.
+
+**Newly visible in `SURFACE.md`** (9 additions under "Calculator component exports", all additive —
+nothing existing was removed or altered):
+```
+1 export const parseNum
+1 export const settingsTdCls
+1 export function CountBadge
+1 export function NoMatches
+1 export function SearchBox
+1 export function SortHeader
+1 export function useEntityCrudMutations
+1 export function useSortToggle
+1 export type SortDir
+```
+
+Also removed the two now-false rationale comments (the react-refresh claim in both files, and the
+bare-footer/SURFACE-regex-dodge explanation in both files); replaced with a short true statement of
+why the non-JSX helpers live in a separate file, or nothing.
+
+Verification: `npx eslint` on both rewritten files alone: zero output, exit 0 — confirms
+`react-refresh/only-export-components` genuinely passes with plain leading exports; no
+`eslint.config.js` exemption was needed. Full `npx eslint .` and `npx tsc -b --noEmit`: clean.
+`npm run build`: succeeds (`static/` reverted after, per worktree convention). `tools/snapshot.py
+verify`: 10/10 probes matched, none moved. Full frontend suite (`npx vitest run --retry=3`): one
+clean run at 347/347 files, 4862/4862 tests; other runs on the same tree saw 1-4 files flake
+(`StatsPageUserFilter1894`, `CalculatorPage`, `QueuePage` — all on the documented known-flaky list)
+under host load averages of 40-51, all passing in isolation. `tools/coverage_calc.sh frontend`:
+90.44%-91.46% statements across repeated runs (985-996/1089), same range as an A/B run against the
+unmodified baseline files under identical load (90.44%, 985/1089 exactly) — confirming the run-to-run
+variance is pre-existing host-load flakiness (the documented `CalculatorPage.test.tsx` degradation
+under load), not caused by this change. All values clear the frozen RATCHET floor of 87.32%.
+
+## T-118 — 2026-08-24 — user-approved behavior change
+
+The `calculator_filaments` Zoho/margin migration backfill (`core/database.py`, audit-only in this
+campaign, not touched here) computes `margin_pct` from whatever `cost_per_kg`/`sale_price_per_kg`
+were already stored, unclamped. A legacy row where the hand-typed printing cost sits below the
+purchase cost, or more than ~11x it (a plausible decimal-point slip), backfills to a margin outside
+`[0, 1000]`. `CalculatorFilamentBase.margin_pct` still carried the write-side `ge=0, le=1000` bound
+and `CalculatorFilamentResponse` inherited it unchanged, so a `GET /api/v1/calculator/filaments/`
+response containing even one such row raised `ResponseValidationError` and 500'd the **entire**
+list — every healthy filament along with the bad one — leaving the calculator page's "no filaments
+configured" empty state and a blank filaments settings tab, with no in-app way to see or fix the
+offending row.
+
+Fixed the same way `cost_per_kg` on the same class already handles this precise hazard (see that
+field's docstring note, extended to also cover `margin_pct`): dropped `ge=0, le=1000` from
+`CalculatorFilamentBase.margin_pct`, which only the read path (`CalculatorFilamentResponse`)
+inherits unmodified. `CalculatorFilamentCreate` and `CalculatorFilamentUpdate` — the two write
+paths — keep the bound: `CalculatorFilamentCreate` now declares its own
+`margin_pct: float = Field(default=50.0, ge=0, le=1000, ...)` override (previously relying on the
+now-loosened base default), and `CalculatorFilamentUpdate` already declared `margin_pct` as its own
+field on a plain `BaseModel` (not inheriting from `CalculatorFilamentBase` at all), so it was never
+affected and needed no change. Confirmed by a POST/PATCH test asserting `margin_pct` outside
+`[0, 1000]` still returns 422, and by a list-response test — first run against the unfixed schema to
+confirm it reproduces the exact `ResponseValidationError` the audit describes, then re-run against
+the fix to confirm it returns 200 with all three rows (one healthy, one backfilled negative, one
+backfilled above 1000).
+
+Observable change, quoting the approved description verbatim: "Filament profiles whose stored
+printing cost per kg is below their purchase cost (or more than about eleven times it) currently
+make the entire filament list fail to load; after the fix the list loads again and those profiles
+appear with their real, out-of-range margin shown."
+
+Snapshot fallout: `calc-pydantic-schemas` moved and was re-recorded — diffed old vs. new JSON Schema
+output first: only two changes, both `margin_pct`'s `"maximum": 1000` / `"minimum": 0` keys removed,
+once each from `CalculatorFilamentBase.properties.margin_pct` and (via inheritance, unchanged)
+`CalculatorFilamentResponse.properties.margin_pct`, plus the class docstring text captured by the
+same probe. `CalculatorFilamentCreate.properties.margin_pct` and
+`CalculatorFilamentUpdate.properties.margin_pct` are unchanged (still `"maximum": 1000, "minimum":
+0"`), confirmed in the same diff by their absence from it. `calc-openapi` did not move: that probe
+only captures `spec["paths"]`, where request/response bodies appear as a `$ref` to the components
+schema, not the inlined schema itself. `SURFACE.md` did not move (no class, export, or route
+signature added or removed). Full `verify` run: 10/10 probes match.
+
+## T-128 — 2026-08-24 — GET /calculator/insights `days` restricted to a fixed allowlist (user-approved behavior change)
+
+`days: int = Query(default=365, ge=7, le=3650)` let any CALCULATOR_READ-scoped caller (a UI user or
+a read-only API key — `Permission.CALCULATOR_READ` maps to `can_read_status`) sweep an arbitrary
+number of overlapping windows and subtract consecutive results. `MIN_SAMPLE` is enforced per window,
+never across windows, so a one-day-at-a-time sweep differences a suppressed group (sample below
+`MIN_SAMPLE`, absent from the response) into visibility — the audit demonstrated this recovering a
+single failed print and its material from `_failure_rates`, and the same subtraction applies to
+`_daily_usage` and `_power_draw`. The parameter had no real caller: `CalculatorPage.tsx` calls
+`api.getCalculatorInsights()` with no argument.
+
+Fixed by replacing the free integer with a fixed allowlist — `days: InsightsWindowDays` (new
+`IntEnum` in `backend/app/schemas/calculator.py`, values 30/90/365, default `ONE_YEAR` = 365,
+unchanged from today's default) — so a caller can no longer request an arbitrary day count between
+7 and 3650; any other value now 422s outright rather than being coerced to the nearest allowed
+value (coercion would leave a quantised version of the same sweep alive). A plain
+`Literal[30, 90, 365]` was tried first and rejected: Pydantic v2 does not coerce a query string
+(`"30"`) to an int literal member in its default parsing mode, so every request — including the
+three intended values — 422'd. `IntEnum` coerces the string the same way a plain `int` field always
+did, while still restricting the value to the allowlist. Per the user's explicit direction, only the
+allowlist option was implemented — not the alternative the audit also offered (also requiring an
+archives/print-log read permission), which was ratified as the road not taken.
+
+Residual, demonstrated against the real service, not just reasoned through: three fixed windows
+(30/90/365) can still be differenced against each other, so the attack is reduced, not eliminated.
+20 completed PLA + 1 failed ABS print seeded 31-89 days back, plus 15 more completed PLA prints
+95-109 days back: `days=30` → `overall_pct=None, sample=0`; `days=90` →
+`overall_pct=4.8, sample=21`; `days=365` → `overall_pct=2.8, sample=36`. The 90-30 delta
+(sample +21, one of which failed) discloses "somewhere in the 60-day gap between the two windows,
+1 of 21 new prints failed" — the same subtraction the auditor used, just bucketed into ~60/275-day
+slabs instead of 1-day slabs, so it can no longer pin the failure to a specific day. Materially it
+is a narrower leak than before in one respect this demo also confirms: `by_material` never surfaced
+ABS at any window (its count stayed 1, under `MIN_SAMPLE`, in all three), so — unlike the auditor's
+original day-granular attack, which could cross-reference two adjacent single-day windows to
+attribute the recovered failure to a specific material — a 30/90/365 differencer here learns *that*
+a failure occurred in a ~60-275-day span and *how many* new prints appeared, but not which one, on
+which day, or (in this scenario) which material. This is a real reduction, not a full closure: the
+count/rate delta itself is still a leak the allowlist does not fully close.
+
+Observable change, quoting the approved description verbatim: "The calculator's reality-check
+figures would only be available over a few fixed history windows instead of any number of days
+between 7 and 3650. Nothing in Bambuddy's own UI passes a custom window today, so the calculator
+page looks and behaves exactly the same; only an outside script or API key that calls
+`/api/v1/calculator/insights?days=<something else>` would start getting an error and have to pick
+one of the offered windows."
+
+Snapshot fallout: `calc-openapi` moved and was re-recorded — diffed old vs. new JSON output first:
+the `days` query parameter's inline `schema` lost `"maximum": 3650`, `"minimum": 7`, `"type":
+"integer"`, `"title": "Days"` and gained `"$ref": "#/components/schemas/InsightsWindowDays"` (the
+new named enum schema, `type: integer`, `enum: [30, 90, 365]`); the parameter and its schema both
+gained `"description": "Lookback window in days."`; `"default": 365` is unchanged. No other probe
+moved (`calc-pydantic-schemas` — an `IntEnum` is not a `BaseModel` subclass, so it's out of that
+probe's scope; `calc-route-perms`, `calc-ddl`, `calc-column-defaults`, `calc-zoho-pure`,
+`calc-insights-pure`, `calc-migration-sql`, `calc-pricing`, `calc-frontend-pure` all matched
+byte-for-byte). `SURFACE.md` moved by one line — `class InsightsWindowDays` added to the schema
+class listing (`R3`) — and was regenerated with `bash tools/gen_surface_calc.sh > SURFACE.md`.
+
+## T-117 / T-120 — 2026-08-24 — `_spool_costs` residual publish-predicate mismatch (user-approved behavior change)
+
+Two audits converged on one implementation. `_spool_costs` computes a residual per material —
+its own sample count minus the sum of what `_spool_costs_by_brand` actually publishes for that
+material — and suppresses the material row when that residual is a small (0 < residual <
+`MIN_SAMPLE`), individually-solvable population (T-089/T-106). Two independent defects lived in
+how that residual was computed:
+
+- **T-117 (audit-cleanliness)**: the helper that summed "published brand counts per material"
+  filtered rows with `Spool.brand.isnot(None)` in SQL, while `_spool_costs_by_brand` — the
+  function whose actual output the helper is supposed to mirror — filters with `if brand and
+  material and count >= MIN_SAMPLE` in Python. `Spool.brand` is nullable free text
+  (`models/spool.py`), and an empty string (`""`) is a legitimate stored value: `isnot(None)`
+  admits it, `if brand` (falsy) rejects it. A brand+material group with an empty-string brand
+  meeting `MIN_SAMPLE` was therefore counted as "published elsewhere" by the residual math even
+  though `_spool_costs_by_brand` never emits it — over-suppressing the material row.
+- **T-120 (audit-robustness)**: `_spool_costs` computed its own aggregate, then made a *second*,
+  independent DB round trip for the published-brand subtotal. Between the two awaits, a
+  concurrent spool insert/edit/archive could shift the second population relative to the first,
+  making the residual computed from an inconsistent snapshot (no cross-statement isolation is
+  configured — see `database.py:83`).
+
+Both fixes converge on the same implementation: `_spool_costs` now issues **one** query — `SELECT
+upper(brand), upper(material), sum(cost_per_kg), count(id) ... GROUP BY upper(brand),
+upper(material)` — and folds the rows in Python into (a) each material's total (every priced,
+unarchived spool, including NULL- and empty-string-brand rows, summed across all its brand
+subgroups) and (b) the published-brand subtotal per material, applying the exact same predicate
+`_spool_costs_by_brand` applies: `if brand and count >= MIN_SAMPLE` (material truthiness is
+already guaranteed by an outer `if not material: continue` that applies to both foldings). One
+read, one predicate, both defects gone. The separate `_published_brand_counts_by_material` helper
+method was removed; its logic is now inline in `_spool_costs`. `_spool_costs_by_brand` itself is
+unchanged — it still runs its own query for the actual `spool_cost_by_brand` API field.
+
+Direction confirmed empirically (not just reasoned through): reverted the service to its pre-fix
+form and ran the new empty-string-brand test (5 spools `material="PLA", brand=""`, priced 20.0,
+plus 3 unbranded (`NULL`) spools priced 200.0) against it — `spool_cost_by_material` had no "PLA"
+key at all (`KeyError: 'PLA'`), confirming the material row is hidden today. With the fix restored,
+the same scenario yields `{"material": "PLA", "sample": 8, "avg_cost_per_kg": 87.5}` — the row now
+appears, matching the approved direction (over-suppression only, never under-suppression or leak).
+
+Approved user-facing description, quoted verbatim: "For materials that have an empty-string-brand
+subgroup meeting the sample-size floor, the calculator's spool-cost insight may currently hide
+that material's average cost from the reality-check panel when it should be shown (the
+empty-brand subgroup is wrongly treated as already visible via the brand breakdown, so it's
+subtracted out of the 'how much is unaccounted for' check); fixing the mismatch could make a
+previously-hidden material average reappear." T-120 itself is **not** a behavior change (a
+correctness fix to a race with no observable effect under single-writer test conditions) — it
+rode along in the same commit because both defects live in the same method and converge on the
+same fix.
+
+Tests added (`backend/tests/unit/test_calculator_insights.py`): an empty-string-brand case pinning
+the material row now appears; a multi-brand case (two distinct published brands, SUNLU and
+POLYMAKER, each independently clearing `MIN_SAMPLE`, plus a 3-spool unbranded residual) asserting
+the residual is the material sample minus the SUM of every published brand's count, not just one —
+mutating the fold's `+=` to `=` was verified to make this new test fail (`'PLA' not in
+material_rows` assertion fails, row wrongly present with sample 13) while all pre-existing T-106
+tests kept passing. The three pre-existing T-106 tests
+(`test_spool_costs_material_suppressed_when_residual_below_min_sample`,
+`test_spool_costs_material_present_when_residual_at_min_sample`,
+`test_spool_costs_material_present_when_no_residual`) pass unchanged.
+
+Snapshot fallout: none. `calc-insights-pure` only probes module constants, `_resolve_duration`,
+and `_split_materials` — none of which changed — and matched byte-for-byte; full `verify` run:
+10/10 probes match, none re-recorded. `SURFACE.md` did not move: the removed
+`_published_brand_counts_by_material` was a method indented inside `CalculatorInsightsService`,
+not a module-level `^def`/`^class`, so it was never listed and its removal is invisible to the
+generator (confirmed by diffing `gen_surface_calc.sh` output before/after — byte-identical).
+
+## T-119 — 2026-08-24 — a save's success no longer resolves against whatever form is open when it lands (user-approved behavior change)
+
+`useEntityCrudMutations` (`frontend/src/components/calculator/calculatorSettingsShared.ts`) is the
+shared save/delete `useMutation` pair behind `CalculatorFilamentsPanel` and
+`CalculatorPrintersPanel`. Its save mutation's `onSuccess` used to read the panel's `editing` state
+directly from an enclosing closure: `showToast(t(editing === 'new' ? createdMsg : updatedMsg));
+onSaved();`. Confirmed in `@tanstack/query-core` before changing anything (as directed): React
+Query v5's `useMutation` re-runs `observer.setOptions(options)` in a `useEffect` on *every* render
+(`node_modules/@tanstack/react-query/src/useMutation.ts`), and `MutationObserver#setOptions`
+propagates that straight onto the in-flight `Mutation` — `if (this.#currentMutation?.state.status
+=== 'pending') this.#currentMutation.setOptions(this.options)`
+(`node_modules/@tanstack/query-core/src/mutationObserver.ts`) — and `Mutation#execute` later reads
+`this.options.onSuccess` (not a value captured at the moment the mutation started)
+(`node_modules/@tanstack/query-core/src/mutation.ts`). So a save's `onSuccess` ran against
+whichever `editing` was current *when the response landed*, not whichever it was *when the save
+was issued*. Neither panel disables its Cancel button while saving
+(`CalculatorFilamentsPanel.tsx`, `CalculatorPrintersPanel.tsx`), so: edit filament X, hit Save
+(slow), Cancel before it resolves, open a different form (edit filament Y, or "Add filament") and
+start typing, then let X's save land — `onSaved()` (`setEditing(null)`) fired unconditionally,
+closing Y's form and discarding everything typed into it, with a toast worded for whichever action
+`editing` most recently implied rather than the one the landed save actually performed.
+
+Reproduced first, before changing the fix code: added a test to
+`frontend/src/__tests__/components/CalculatorSettingsPanels.test.tsx` that edits a filament, saves
+it against a `vi.spyOn(api, 'updateCalculatorFilament')` mock returning a manually-controlled
+Promise, cancels before that promise resolves, opens the "Add filament" form and types into its
+Brand field, then resolves the deferred update. Against the pre-fix hook the test failed:
+`findByText('Filament updated', ...)` timed out (the toast said "Filament added" instead — named
+from whatever `editing` had become, not from what the landed save had actually done) and the DOM
+dump at the point of failure showed the Add form already gone, back to the list view (`onSaved()`
+had fired and cleared `editing`, discarding the "Prusament" the test had just typed). After the
+fix, the same test passes: the toast reads "Filament updated" and the Add form's Brand field still
+holds "Prusament".
+
+Fix: `useEntityCrudMutations` now snapshots `editing` into a local (`const snapshot = editing`) at
+the moment `save()` calls `saveMutation.mutate(data, { onSuccess: ... })`, and supplies that
+`onSuccess` as a **per-call** option rather than as one of `useMutation`'s own base options.
+Per-call `mutate(variables, options)` options are captured once in
+`MutationObserver#mutate`'s private `#mutateOptions` and are never refreshed by `setOptions` —
+only the *base* options are — so the closure over `snapshot` genuinely stays fixed to the save
+that issued it. The toast is chosen from `snapshot` (`snapshot === 'new' ? createdMsg :
+updatedMsg`), naming the action that specific save actually performed. `onSaved()` is called only
+when `snapshot` still matches `editing` *as of when the response lands* — read through a plain
+ref (`editingRef.current = editing`, updated every render) rather than a second closure, since a
+second closure captured at the same moment as the fix's own `onSuccess` would have exactly the
+staleness problem being fixed. Entities are compared by id (falling back to `snapshot === current`
+for `'new'`/`null`) so a same-entity re-open surviving an unrelated background refetch (a new
+object, same id) still counts as the same form. `mutationFn` itself was left reading the enclosing
+`editing` directly — it only runs synchronously inside the `mutate()` call that issues the request,
+before any later render could move `editing` out from under it, so it was never part of this bug.
+The auditor's suggested second line of defence (disabling Cancel while `isPending`) was
+deliberately **not** added — it's a separate, unapproved UI change, and the approved behavior
+explicitly covers the case where the operator has *already* cancelled.
+
+No panel call site changed: both `CalculatorFilamentsPanel.tsx` and `CalculatorPrintersPanel.tsx`
+still call `saveMutation.mutate(data)` exactly as before — the hook returns
+`{ ...saveMutation, mutate: save }`, so only `.mutate` itself is swapped for the snapshotting
+wrapper; `.isPending` and everything else callers read is untouched.
+
+Approved user-facing description, quoted verbatim: "A filament or printer save that finishes after
+you have already cancelled it and opened a different form will no longer close that second form
+and throw away what you typed, and its confirmation message will name the right action."
+
+Tests: the new failing-then-passing regression test above, plus all 61 pre-existing tests in
+`CalculatorSettingsPanels.test.tsx` (including T-124's six error-path tests) pass unchanged — 62/62
+in the file. Full frontend suite: 4,863-4,868/4,869 pass depending on host load; every failure seen
+was in a file already on the KNOWN FLAKY list (`ModelViewerModal.test.tsx`, `PrintModal.test.tsx`,
+`StatsPageUserFilter1894.test.tsx`) and passed in an isolated rerun on an idle machine.
+
+Snapshot fallout: none — this is a frontend-only change to a hook's internals. Full `verify` run:
+10/10 probes match, none re-recorded. `SURFACE.md` did not move (diffed byte-for-byte before/after
+`gen_surface_calc.sh`): `useEntityCrudMutations` was already a module-level export before this
+change and its signature (parameters and return shape) is unchanged; only the function body moved.
+
+## T-117 / T-120 follow-up — 2026-08-24 — gate caught two undisclosed behavior changes in the fix above; both reverted
+
+The blind verifier failed the iteration that shipped the T-117/T-120 fix above. Its single-query
+`GROUP BY upper(brand), upper(material)` re-implementation, folded in Python, changed two things
+the changelog entry above never claimed and no one approved:
+
+- **Order.** The old (pre-fix) `_spool_costs` queried `GROUP BY upper(material)` alone and
+  returned rows in whatever order SQLite's grouping produced for that query — empirically,
+  ascending alphabetical by `upper(material)` (confirmed by driving `loop-15`'s actual service
+  against 2,800 randomized inventories; see below). The fix's `GROUP BY upper(brand),
+  upper(material))` changed the physical sort key, so `material_totals` (built by iterating those
+  rows and taking first-appearance order per material) came out primarily ordered by *brand*, with
+  material only a tiebreak — a different order whenever a material had multiple brands or the
+  brand-sort put two materials in a different relative position than the material-sort would have.
+  This is observable: `frontend/src/utils/calculatorInsights.ts` finds the first fuzzy
+  (substring-either-way) match in `spool_cost_by_material`, so `PLA` vs. `PLA-CF` or `PET` vs.
+  `PETG` resolving to the wrong row was a direct, silent consequence of the reorder.
+- **Average.** The old query computed each material's average with a single SQL `avg()` over every
+  row for that material. The fix instead summed `func.sum(cost_per_kg)` per brand+material group in
+  SQL, then re-summed those partial sums and divided in Python. Floating-point addition is not
+  associative, so re-grouping the same values into different partial sums before adding them can
+  flip the last ULP of the total and, with it, the 2-decimal-place rounding (3 of 400 randomized
+  inventories reproduced a one-cent divergence during triage).
+
+Neither was intentional; neither is in the approved user-facing description above (which covers
+only the empty-string-brand residual reappearance). Both are reverted here, without touching either
+approved fix (T-117's predicate, T-120's single read).
+
+**Fix**: `_spool_costs` now issues one `UNION ALL` of two independently-grouped branches in a
+single `db.execute()` — still one read, still one snapshot, so T-120 (no cross-statement
+inconsistency) still holds:
+- `material_agg`: `SELECT 'material', NULL, upper(material), avg(cost_per_kg), count(id) ...
+  GROUP BY upper(material)` — byte-for-byte the same query the pre-fix code ran standalone, so its
+  `avg()`/`count()` values and its row order are exactly what that query has always produced. No
+  Python re-summation of partial sums; SQL's own float accumulation is used, unchanged.
+- `brand_agg`: `SELECT 'brand', upper(brand), upper(material), NULL, count(id) ... GROUP BY
+  upper(brand), upper(material))` — the same grouping `_spool_costs_by_brand` uses, feeding the
+  published-brand subtotal.
+
+`material_totals` is now populated only from `kind == 'material'` rows, in the order they arrive —
+i.e. exactly `material_agg`'s (= the original standalone query's) order, regardless of how
+`brand_agg` rows are interleaved with them in the unioned result. `published_brand_counts` is
+folded from `kind == 'brand'` rows with T-117's exact predicate (`if brand and count >=
+MIN_SAMPLE`), unchanged. The per-material total is still a true superset of every brand subgroup
+(NULL- and empty-string-brand included) because `material_agg` has no brand predicate at all —
+it's the same query that has always produced that total.
+
+**On the order**: the task that caught this warned not to assume `sorted(material_totals.items())`
+would reproduce the old order without checking. It wasn't checked here, because it wasn't needed —
+`material_agg` isn't a *re-derivation* of the old order, it's *the same SQL statement* (as a UNION
+ALL branch) that produced it before, so there is no separate ordering claim to verify beyond
+confirming UNION ALL doesn't reorder a branch's own rows relative to each other (verified: see
+below). Whether that order is itself "defined" by anything beyond SQLite's current query-planner
+behavior for an unindexed `GROUP BY` is a separate question this fix does not need to answer, and
+does not change: the requirement was byte-for-byte parity with `loop-15`, not a principled
+ordering, and reusing `loop-15`'s exact query text is the only way to get that without gambling on
+an assumption.
+
+**On the average**: the `UNION ALL` of the verbatim old query, above, rather than a window function
+or Python re-summation. A `func.avg(...).over(partition_by=...)` was considered, but it would
+either (a) run over the already-brand-grouped rows, averaging *group averages* rather than raw
+values (wrong, and not equal to the old computation), or (b) require restructuring the query around
+raw per-spool rows to get a true full-population window average, which is a materially different
+query shape from the one being reproduced and would need its own byte-for-byte proof rather than
+inheriting one for free. Issuing the original query verbatim as one UNION ALL branch sidesteps the
+question entirely — it cannot drift from what it always computed, because it's the same statement.
+
+**The differential**: built a throwaway `git worktree add <scratch> loop-15`, loaded both
+`calculator_insights.py` module files (HEAD and `loop-15`) via `importlib` against a shared
+in-memory SQLite database (models are identical between the two revisions — diffed, no changes),
+and drove `_spool_costs` on both over randomized inventories seeded with: multiple brands per
+material, empty-string brands, NULL brands, materials that are substrings of one another (`PLA` /
+`PLA-CF` / `PLA-CF-XL`, `PET` / `PETG`), mixed case, non-ASCII brand values (`café`, `北京` — SQLite's
+`upper()` is ASCII-only, left as-is), and archived/priceless spools. 2,800 trials across two runs
+(seeds `1234`/800 trials, `987654`/2,000 trials, plus a targeted deterministic replay of the
+changelog's own empty-string-brand example): **0 unsanctioned differences.** 7 trials produced a
+difference, and in every one it was exactly the sanctioned shape — a material present in HEAD's
+output that is absent from `loop-15`'s (never the reverse, never a value change, never a reorder of
+any material both outputs share), landing in its correct alphabetical slot relative to the
+materials already present (e.g. trial 504/seed 987654: HEAD returned `[ABS, PET, PLA, PLA-CF,
+PLA-CF-XL]` where `loop-15` had `[ABS, PET, PLA-CF, PLA-CF-XL]` — `PLA` appears, in place, nothing
+else moves). Separately confirmed the UNION ALL's `material_agg` branch alone reproduces the
+standalone pre-fix query's row order and `avg()`/`count()` values exactly across 200 additional
+trials before wiring it into the real fix. The scratch worktree was removed
+(`git worktree remove --force`) and pruned; `git worktree list` shows only the real checkouts.
+
+Tests: `backend/tests/unit/test_calculator_insights.py` — all pre-existing tests (66 in the file,
+including the T-117/T-120 empty-string-brand and multi-brand-residual tests above) pass unchanged;
+none of them pinned an order or an exact float average, which is exactly why this regression
+shipped past them and needed the differential above to catch and prove fixed rather than a unit
+test. Full backend suite: 11,758 passed, 1 skipped (matches baseline; no new failures). Full
+frontend suite: `CalculatorSettingsPanels.test.tsx` 63/63 (one test added — see below); full-suite
+runs saw failures confined to `PrintModal.test.tsx`, `ModelViewerModal.test.tsx`,
+`StatsPageUserFilter1894.test.tsx`, all on the KNOWN FLAKY list and confirmed passing in an
+isolated rerun.
+
+Coverage: backend scoped 712/716 = 99.44% (unchanged from the T-117/T-120 measurement, 711/715 =
+99.44% — net +1 statement/+1 covered from this fix's larger query construction, ratio unchanged,
+still above the 97.76% floor). Frontend scoped 1017/1097 = 92.7% statements (up from the prior
+996/1097 = 90.79%, from the new test below; above the 87.32% floor).
+
+Snapshot fallout: none. `calc-insights-pure` does not probe `_spool_costs` (only module constants,
+`_resolve_duration`, `_split_materials`). Full `verify` run: 10/10 probes match, none re-recorded.
+`SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
+
+### Companion: mutation-testing gap in the T-119 test, closed
+
+The verifier also mutation-tested `useEntityCrudMutations`'s `sameTarget` check (T-119, above) and
+found that neutering `snapshot.id === current.id` (replacing it with `false`) left all 62
+pre-existing frontend tests green — the existing "different form stays open" test never reaches
+that branch (it short-circuits on `snapshot === current` being false for a `'new'` target without
+ever comparing ids), and nothing else exercised the same-entity-reopened case.
+
+Added `closes the form when its own save resolves after the same row was reopened for editing via
+a refetched object` to `CalculatorSettingsPanels.test.tsx`: edits filament X, hits Save against a
+deferred (never-auto-resolving) mock, Cancels before it resolves, then — critically — triggers a
+simulated background refetch (`queryClient.invalidateQueries`, the same pattern the T-031 tests
+already use for `CalculatorDefaultsPanel`) after mutating an unrelated field (`updated_at`) on the
+seed row, forcing React Query's default structural sharing to hand back a **new object reference**
+for the same id rather than reusing the original. Reopens the same row (now a different object,
+same id) and lets the stale save land. Asserts the form closes (back to the "Add filament" listing
+control, edit fields gone).
+
+The refetch step is load-bearing and was verified necessary, not decorative: without mutating an
+unrelated field before invalidating, React Query's structural sharing reuses the exact same object
+reference for an unchanged row on refetch, so `snapshot === current` would already be true and the
+id-comparison branch would never run — confirmed by instrumenting the hook temporarily and
+observing `snapshot === current` was `true` post-refetch when the seed data was left unchanged,
+and `false` (same id, different reference) once an unrelated field was mutated first.
+
+Mutation evidence: reverted `snapshot.id === current.id` to `false` in
+`calculatorSettingsShared.ts` — the new test failed (`findByRole('button', { name: 'Add filament'
+})` timed out; the form never closed). Restored the source (diffed byte-for-byte identical to
+before) — the new test, and all 63 tests in the file, pass again.
+
+## T-121 — 2026-08-24 — the daily-hours "Update profile" action is now withheld when it would post a value the API rejects (user-approved behavior change)
+
+Audit `audit-robustness` found that `CalculatorRealityCheckCard`'s power/dailyHours "Update
+profile" action posted `check.measured` straight through, but `CalculatorPrinterUpdate.
+daily_usage_hours` is bounded `gt=0, le=24` (`backend/app/schemas/calculator.py`), and — unlike
+every other reality-check aggregate — `_daily_usage` (`calculator_insights.py`) publishes its
+`hours_per_day` figure with no plausibility band of its own. A handful of very short or
+overlapping print-log entries can therefore produce a measured value that, once rounded the way
+the button posts it (`Math.round(measured * 10) / 10`), is `0` or exceeds `24` — a value the API
+always 422s. The button offered itself anyway and always failed, and the toast for an array-shaped
+422 detail shows only the field-name-stripped message ("Input should be greater than 0"), with no
+indication of which field or why.
+
+The user approved exactly one remedy, narrower than either option the auditor offered: the button
+stops being offered for a measured figure the server would refuse (posts to `0` or below, or above
+`24`), instead of showing a button that always fails with a cryptic error. Explicitly **not**
+approved: hiding the reality-check row itself (the auditor's other option — the row and its
+assumed/measured figures stay visible and informative regardless of whether the action is
+offered), clamping the posted value to the nearest valid figure (would silently post a number the
+operator never saw or chose), and adding a plausibility band to `_daily_usage` in the backend (the
+auditor's other suggested remedy — no backend file was touched).
+
+The power branch was read against its own bound (`power_watts`: `gt=0, le=100_000_000` via
+`_MONEY_CEILING`) and found NOT to have the same hazard: its source, `_power_draw`, filters to an
+`implied_watts` band of `[1, 3000]` W before ever publishing a row, comfortably inside the backend
+bound after `Math.round`. No guard was added to the power branch — it was not broken.
+
+**User-visible effect:** for a `dailyHours` reality-check row, the "Update profile" button no
+longer appears when the row's measured figure, rounded to one decimal the way the button already
+posts it, is `<= 0` or `> 24`. The row itself (label, assumed value, measured value, dismiss/apply
+controls) is unchanged and still shown. The `power` row and its button are unaffected.
+
+Implemented as a pure `postableDailyUsageHours(check)` helper in
+`CalculatorRealityCheckCard.tsx` that recomputes the exact value `onUpdatePrinterProfile` would
+post and returns `null` when it falls outside `(0, 24]`; the button's render condition now checks
+this in addition to the existing `canUpdate`/`printerId` gates. `CalculatorPage.tsx` (the call
+site) needed no change — `onUpdatePrinterProfile` itself is untouched, and the value the card now
+posts is byte-identical to before whenever it is in range.
+
+New tests in `CalculatorRealityCheckCard.test.tsx` (a new file — the component had no direct test
+coverage before this) pin both rounding boundaries exactly: `0.04h` (posts `0`, rejected — no
+button, row still visible with both figures shown), `0.05h` (posts `0.1`, accepted — button
+present, click posts `{ daily_usage_hours: 0.1 }`), `24.04h` (posts `24`, accepted — button posts
+`{ daily_usage_hours: 24 }`), `24.05h` (posts `24.1`, rejected — no button, row still visible).
+Mutation evidence: replaced the guard's `posted > 0 && posted <= 24 ? posted : null` with a bare
+`return posted;` (always postable) — the two out-of-range tests failed exactly as expected (the
+withheld button was found present); the two in-range tests still passed. Reverted (diffed
+byte-for-byte identical to before) — all four tests pass again. The pre-existing
+`CalculatorPage.test.tsx` printer-profile-update test (measured `8` h/day, well in range) was
+re-verified unaffected in isolation.
+
+Coverage: frontend scoped (`bash tools/coverage_calc.sh frontend`) measured 90.75% statements
+(1001/1103) — above the 87.32% floor and within the documented ~2-point swing of the prior
+90.79% reading (996/1097); the small denominator growth is the new guard function itself.
+`ruff`/backend untouched (frontend-only change). `npx eslint` and `npx tsc -b --noEmit`: clean.
+`tools/snapshot.py verify`: 10/10, none moved (frontend-only change; no probe covers this
+component). `SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
+
+CalculatorPage.test.tsx and PrintModal.test.tsx both flaked under host load spikes (load average
+~45) during verification; both were confirmed to flake identically on the unmodified tree via a
+stash-based control run (same failures, same tests, with this fix's diff stashed out), and both
+pass cleanly in isolation once load settles — pre-existing, unrelated to this fix.
+
+## T-122 — 2026-08-24 — the calculator defaults form now refuses to submit an out-of-range value and marks the offending field, instead of silently discarding every edit (user-approved behavior change)
+
+Audit `audit-robustness` found `CalculatorDefaultsPanel`'s Save gate checked only `n >= 0` per
+field, while `CalculatorDefaultsUpdate` (`backend/app/schemas/calculator.py`) bounds every field
+tighter: `tax_pct` `le=100`, `default_difficulty_pct` `ge=100`, the eight rate fields `le=1000`,
+and the four money fields (`electricity_tariff`, `labor_rate_per_hour`,
+`consumables_packaging_flat`, `base_fee_flat`) `le=_MONEY_CEILING` (100,000,000). Typing an
+out-of-range value (e.g. `150` into Tax %, or `50` into Default difficulty — which the form
+presents as an ordinary non-negative percentage) left Save enabled; the PATCH then 422s, the
+frontend's error surfacing strips pydantic's `loc`, and the operator sees a bare message like
+"Input should be less than or equal to 100" against a form of thirteen fields with no indication
+which one broke — and every other field they'd edited in the same pass is discarded along with the
+bad one.
+
+The user approved both halves of a single remedy: the form refuses to submit an out-of-range
+value AND marks the specific offending field, rather than only disabling Save with no explanation.
+
+Bounds were transcribed by hand from `CalculatorDefaultsUpdate` (not the auditor's summary, which
+was verified and found accurate): all thirteen `ge`/`le` pairs use `ge`, not `gt` — no field in
+this schema rejects `0` the way `gt=0` would, so the existing `n >= 0` check had no live "accepts
+zero when the server doesn't" defect in this specific class (unlike, e.g., `cost_per_kg` elsewhere
+in the same file, which is out of this task's scope). `default_difficulty_pct`'s `ge=100` is the
+one an operator is most likely to trip: the form has no visual cue that 100 is the floor, not an
+ordinary 0-based percentage, so its inline message names the real bound ("Must be between 100 and
+1000") rather than a generic "invalid".
+
+**User-visible effect:** each of the thirteen fields in `CalculatorDefaultsPanel` now shows its
+own inline error (NumberField's existing `error` prop — no changes to NumberField itself) when its
+typed value parses but falls outside the field's server-side bound, and Save stays disabled while
+any field is out of range — mirroring the exact bound the backend enforces, not a generic
+non-negative check. An empty field is unchanged: still blocks Save (via `required` plus the
+existing null-parse check) but is not additionally flagged with a range message, since "out of
+range" would misdescribe an empty box.
+
+Implemented entirely in `CalculatorDefaultsPanel.tsx`: `DefaultsField` gained `min`/`max`, each of
+the thirteen `DEFAULTS_FIELDS_GENERAL`/`DEFAULTS_FIELDS_FILAMENT` entries now carries its
+transcribed bound (money fields share a local `MONEY_CEILING = 100_000_000` constant, mirroring
+the backend's `_MONEY_CEILING`), a new `fieldErrors` map replaces the old boolean-only `allValid`
+scan and is threaded into each `NumberField`'s `error` prop via `renderFields`, and `allValid` now
+checks `n >= min && n <= max` per field instead of `n >= 0`. The bounds table was deliberately kept
+module-private (not exported from `CalculatorDefaultsPanel.tsx` or moved into
+`calculatorSettingsShared.ts`) so this fix does not widen the campaign's frozen `SURFACE.md`
+contract — `calculatorSettingsShared.ts` itself is untouched. A new i18n key,
+`calculator.valRange` ("Must be between {{min}} and {{max}}" in `en`, translated — not
+copied — into all twelve other locales), supplies the message; `node scripts/check-i18n-parity.mjs`
+passes with all thirteen locale leaf counts equal (6868 each).
+
+New tests in `CalculatorSettingsPanels.test.tsx`: an out-of-range value (`tax_pct` = 150) marks
+that field's own inline error and disables Save while leaving a legitimate same-pass edit
+(`electricity_tariff` = 150) intact in the form; fixing the value back in range clears the mark and
+re-enables Save; `default_difficulty_pct` = 50 is pinned specifically, asserting the inline message
+names the real 100..1000 bound. A further `it.each` test drives all thirteen fields' own rendered
+inputs directly (by `#calc-def-<key>` id) to `max + 1` and back to `max`, asserting the panel names
+the exact transcribed `min`/`max` and toggles Save accordingly for every field — pinning the
+client's mirror of the schema behaviorally (DOM-driven) rather than by importing the now-private
+bounds table, so a schema bound that drifts from this table fails a user-facing assertion instead
+of a bookkeeping one.
+
+Mutation evidence: (1) disabled the `fieldErrors` guard (`if (false && ...)`) and reverted
+`allValid` to the old `n >= 0` check — all three new behavioral tests and all thirteen `it.each`
+mirror-test cases failed as expected (16 failures), reverted, all 79 tests in the file pass again.
+(2) separately mutated `default_difficulty_pct`'s transcribed `min` from `100` to `0` in
+`CalculatorDefaultsPanel.tsx` alone (leaving the test's own transcription at `100`) — both the
+mirror-test case for that field and the dedicated `default_difficulty_pct` behavioral test failed
+as expected; reverted, `git diff` on that file clean again.
+
+Coverage: `bash tools/coverage_calc.sh frontend` measured 92.69% statements (1028/1109) across
+three consecutive runs (identical figure every time) — above the 87.32% floor and the prior 90.75%
+baseline. Each run had 2-5 transient test failures confined to `CalculatorPage.test.tsx`,
+`PrintModal.test.tsx` and `StatsPageUserFilter1894.test.tsx` (all three already on this campaign's
+documented flaky list); all three files were re-run in isolation and passed cleanly (120/120),
+confirming host-load flake unrelated to this change. `npx eslint` and `npx tsc -b --noEmit`:
+clean. `tools/snapshot.py verify`: 10/10, none moved (frontend-only change). `SURFACE.md`
+regenerated and diffed byte-for-byte identical to before this fix (the bounds table's
+module-private status was chosen specifically to keep this true).
+
+## T-129 — 2026-08-24 — user-approved behavior change
+
+T-129: `_finite_safe_validation_exception_handler` (`backend/app/main.py`, added by T-071) no
+longer echoes a rejected password/token/secret back verbatim in a 422 body's
+`errors()[i]["input"]`. This handler is **app-global** — it is registered on `app`, not any one
+router, so it renders every `RequestValidationError` in Bambuddy, including the unauthenticated
+routes in `PUBLIC_API_ROUTES` (`/auth/login`, `/auth/setup`, `/auth/forgot-password/confirm`).
+Before this fix, a rejected `password`/`new_password`/`current_password` (e.g. one over
+`LoginRequest`'s `max_length=256`) was returned to the caller in cleartext inside `input`.
+
+A new `_is_secret_field_loc(loc)` helper matches the LAST element of a Pydantic error's `loc`
+tuple (the field name) case-insensitively against five base terms —
+`password`, `token`, `secret`, `api_key`, `access_code` — either as an exact match or as an
+`_`-joined suffix (`field == suffix or field.endswith("_" + suffix)`). The five terms were chosen
+by grepping every field name in `backend/app/schemas/*.py` that plausibly carries a credential
+(`grep -rniE "password|token|secret|api_key|access_code|passphrase|pin|otp|webhook"`); the
+suffix-match shape (rather than an exhaustive exact-name list) was chosen because the codebase's
+real secret fields are almost all compound names built from one of these five roots —
+`admin_password`, `smtp_password`, `mqtt_password`, `ldap_bind_password`,
+`access_token`/`pre_auth_token`/`setup_token`/`auth_token`/`app_token`/`bot_token`/`ha_token`/
+`oidc_token`/`prometheus_token`/`obico_ml_token`/`zoho_refresh_token`, `client_secret`/
+`zoho_client_secret`, `openrouter_api_key`, `virtual_printer_access_code` — so an exact-name list
+would have missed all of them. `passphrase`, `pin` and a bare `webhook_secret` were considered
+(the task briefing named them explicitly) but are not used as a field name anywhere in the
+schemas today, so they were left out rather than guessed at; `secret` and `webhook_secret`-shaped
+names are still covered by the `secret` suffix. Matching is on the field name only, not the
+route — the approved wording is about password-like fields generally, and matching by route
+(the audit's offered alternative) would have both under-redacted secrets on non-auth routes
+(e.g. `mqtt_password`, `zoho_client_secret`, `openrouter_api_key` are all set through
+`/settings`, not `/auth`) and over-redacted ordinary auth-route fields like `username`.
+Substring (not suffix) matching was rejected: it would also redact `password_hint`-shaped names
+in list contexts; a `TestIsSecretFieldLoc::test_does_not_match_unrelated_field_names` case pins
+`passwordless_login_enabled` and `tokenizer` as still returned verbatim. `loc` elements can be
+ints (list indices); `_is_secret_field_loc` returns `False` on a non-`str` last element rather
+than raising.
+
+The new `_redact_secret_inputs(errors)` walks the flat list `exc.errors()` returns (one pass, no
+recursion — it does not walk *inside* a matched `input` value, so it adds no recursion depth of
+its own) and replaces `input` with the literal string `"[redacted]"` for a matched field, leaving
+`type`, `loc`, `msg` and `ctx` untouched — a caller still learns which field was rejected and why,
+per the approved wording ("show a placeholder instead of the value"), not that the field is
+silently dropped. It composes with T-071's existing `_stringify_non_finite` by running first:
+`_stringify_non_finite(_redact_secret_inputs(jsonable_encoder(exc.errors())))`. A non-finite value
+in a non-secret field is unaffected and still stringified exactly as before (T-071's crash-avoidance
+reason for existing is unbroken). No field in the current schemas is both secret-named and
+float-typed, so a non-finite value in a secret field is synthetic today; it was still pinned: since
+redaction replaces `input` outright, the raw `inf`/`nan` never reaches `_stringify_non_finite` at
+all — it is discarded along with the rest of the value, rather than being stringified into the
+response. The recursion-depth threshold T-071's snapshot pinned (988) is unaffected: the new walk
+is O(number of errors), not a recursive descent into nested `input` values, so it cannot change
+where the existing recursive walk in `_stringify_non_finite` (itself untouched) crashes.
+
+New tests in `backend/tests/unit/test_main_validation_handler.py`: `TestIsSecretFieldLoc` pins the
+matcher against every secret-bearing field name found in `backend/app/schemas/*.py` plus
+case-insensitivity, and against non-secret fields (including the `passwordless_login_enabled`/
+`tokenizer` over-redaction traps and bare `code`/`key` substrings) and int `loc` elements.
+`TestRedactSecretInputs` pins: a secret field's `input` replaced with `"[redacted]"` while `type`/
+`loc`/`msg`/`ctx` survive; a non-secret field's `input` returned verbatim (proves no
+over-redaction); a non-finite value in a secret field discarded rather than stringified; a
+non-finite value in a non-secret field still stringified after composing with the redaction pass;
+mixed secret/non-secret errors in one response redacted selectively; an error dict with no `input`
+key left alone. `TestLoginRedactsPasswordEndToEnd` drives the real handler through
+`POST /api/v1/auth/login`: an over-length password is rejected with `input == "[redacted]"` and
+the submitted password string does not appear anywhere in the response body/text, while an
+over-length `username` on the same request is still returned verbatim.
+
+Mutation-tested: emptied `_redact_secret_inputs`'s body to a no-op passthrough — the secret-field
+unit tests and the end-to-end login test failed as expected (4 failures: placeholder assertion,
+non-finite-in-secret-field assertion, mixed-errors assertion, end-to-end login assertion); the
+non-secret-field tests kept passing (proving they'd catch over-redaction, not just under-redaction);
+reverted, `git diff` on `backend/app/main.py` clean.
+
+Full backend suite: 11,800 passed, 1 skipped (was 11,758 before; +42 new tests, no new failures).
+`tools/coverage_calc.sh backend` (the calculator-scoped gate; `main.py` is deliberately outside its
+file list): 712/716 = 99.44% statements, unchanged from the prior measurement — expected, since this
+change touches only `main.py`, which the gate does not measure. `tools/snapshot.py verify`: 10/10
+match, none moved — `calc-openapi` and `calc-pydantic-schemas` were checked specifically and did not
+move, since this is a change to global error-rendering, not to the calculator's request/response
+schemas. `SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
+
+user-approved 2026-08-24: "When a request is rejected for bad input, the error Bambuddy sends back
+would no longer repeat the exact value you typed for password-like fields — it would say the field
+was rejected and why, but show a placeholder instead of the value. Nothing in the Bambuddy web UI
+displays that value today, so you would see no difference; only a third-party tool that reads the
+raw error payload would notice." Blast radius stated explicitly: this handler is app-global, so the
+redaction applies to every route in Bambuddy that returns a 422, not only the calculator or the
+auth routes named in the audit evidence.
+
+## T-130 — 2026-08-24 — `time_accuracy.by_printer` now gates on MIN_SAMPLE, not a bare `3` (user-approved behavior change)
+
+T-130: `_time_accuracy` (`backend/app/services/calculator_insights.py`) publishes two figures —
+an `overall_pct`/`sample` pair with no MIN_SAMPLE-style gate of its own (only `if accuracies else
+None`, unaffected by this fix and left alone), and a `by_printer` list, one row per printer. The
+`by_printer` row list alone was gated on a bare literal `if len(values) >= 3`, unlike every other
+grouping in this service (`_failure_rates.by_printer`/`by_material`, `_power_draw.by_printer`,
+`_daily_usage`, and both spool-cost aggregates), which all gate on the module's `MIN_SAMPLE = 5`
+floor. A printer with as few as 3 slicer-estimate-vs-actual comparisons could publish an
+`accuracy_pct` to `CALCULATOR_READ` — the module's own docstring states "Groups with fewer than
+`MIN_SAMPLE` runs are suppressed", and 3 broke that invariant. The fix changes the one comprehension
+filter from `if len(values) >= 3` to `if len(values) >= MIN_SAMPLE`. No other line changed.
+
+user-approved 2026-08-24: "A printer that has only three or four completed prints with a slicer
+estimate to compare against would stop showing its 'measured print time vs estimate' suggestion in
+the calculator's reality-check panel; the suggestion would reappear once that printer has five such
+prints." This explicitly selects raising the floor to `MIN_SAMPLE` over the audit's other offered
+option (naming `3` as a documented, deliberately-lower module constant) — rows disappearing below
+5 samples is exactly what only the first option produces.
+
+Tests updated in `backend/tests/unit/test_calculator_insights.py` to use `MIN_SAMPLE` (not `3`)
+runs wherever a test needed a printer's `by_printer` row to survive the gate:
+`test_time_accuracy_with_band_clamp`, `test_time_accuracy_resolved_purely_from_timestamp_fallback`,
+`test_unknown_printer_falls_back_to_hash_id_label` (counts and derived sums recomputed: 20 total
+runs, 3.5 h/day usage), and the T-076 differential test's own reference implementation
+(`_reference_time_accuracy`) and dataset builder (`_build_time_accuracy_dataset`), whose `p_low`/
+`p_exact`/`p_high` printer counts were re-pinned to `MIN_SAMPLE - 1` / `MIN_SAMPLE` /
+`MIN_SAMPLE + 1` so the SQL-pushdown-equivalence test still exercises the gate at its real boundary
+instead of a stale one. Two new tests pin the boundary directly:
+`test_time_accuracy_by_printer_suppressed_below_min_sample` (`MIN_SAMPLE - 1` runs → `by_printer ==
+[]`, `overall_pct` still present) and `test_time_accuracy_by_printer_published_at_min_sample`
+(`MIN_SAMPLE` runs → one `by_printer` row).
+
+Mutation-tested: reverted `>= MIN_SAMPLE` back to the original `>= 3` — the new boundary test
+(`test_time_accuracy_by_printer_suppressed_below_min_sample`) failed as expected (4 samples
+produced a `by_printer` row instead of `[]`); reverted, `git diff` on `calculator_insights.py`
+clean.
+
+Full backend suite: 11,813 passed, 1 skipped (a `test_library_slice_api.py` failure under `-n 30`
+parallel load was confirmed pre-existing/flaky — passes alone in isolation, per the known
+suite-load-flake pattern; unrelated to this change). `tools/coverage_calc.sh backend` (the
+calculator-scoped gate): 712/716 = 99.44% statements, unchanged from the prior measurement — the
+changed line is an inline literal inside an existing method, not a new statement. Probe
+`calc-insights-pure` diffed byte-for-byte identical before/after re-running it: it only captures
+module-level UPPERCASE constants (`dir(m)` filtered on `k.isupper()`), and the `>= 3` → `>=
+MIN_SAMPLE` change is an inline comprehension-filter literal, not a module constant, so the probe
+never saw it either way — no re-record needed. `SURFACE.md` regenerated
+(`bash tools/gen_surface_calc.sh`) and diffed byte-for-byte identical to before.
+
+T-129 follow-up (rode along in this commit): `_is_secret_field_loc` (`backend/app/main.py`, T-129)
+matched a secret-bearing field name via `field == suffix or field.endswith("_" + suffix)`, which
+missed run-together spellings with no underscore before the suffix — evidenced by
+`CallMeBotConfig.apikey` (`backend/app/schemas/notification.py:230`, an unrenamed field, left
+untouched as out of scope), which doesn't end with `_api_key` and isn't equal to `api_key` either.
+Swept every field name in `backend/app/schemas/*.py` (1,287 names) and every inline-`BaseModel`
+field in `backend/app/api/routes/*.py` (903 names) for both the old rule and a candidate new rule;
+the only name that newly matches is `apikey`. The fix strips underscores from both the field name
+and the suffix set before comparing (`_SECRET_FIELD_NAME_SUFFIXES_NORMALIZED`), which closes
+`apikey` and would also close `authtoken`/`accesstoken`/`clientsecret` if they existed (none do
+today) — one general transform over the existing five suffixes, rather than hand-adding each
+run-together spelling as its own tuple entry. `passwd`/`pwd` remain uncovered (neither exists
+anywhere in this codebase today, confirmed by grep) since they don't end with `password`, not a
+prefix/suffix relationship normalization can bridge. New tests in
+`test_main_validation_handler.py` pin `apikey`/`ApiKey`/`authtoken`/`accesstoken`/`clientsecret` as
+now matching (plus a `_redact_secret_inputs` end-to-end case for `apikey`), and re-confirm every
+trap name the gate recorded stays unmatched, including four not previously covered by name in this
+file (`password_hint`, `max_tokens`, `token_expires_at`, `password2`, `secrets` — `code`, `key`,
+`passwordless_login_enabled`, `tokenizer`, `username` were already pinned). Mutation-tested:
+reverted the normalized comparison back to the original suffix-only rule — all 6 new tests failed
+as expected (`apikey`, `ApiKey`, `authtoken`, `accesstoken`, `clientsecret`,
+`test_run_together_secret_field_input_is_replaced_with_placeholder`); reverted, `git diff` on
+`main.py` clean. This is completing T-129's already-approved change correctly ("password-like
+fields show a placeholder"), not a new behavior change. `main.py` is outside the coverage gate's
+scoped file list, so this follow-up does not move the 99.44% figure (expected, not chased).

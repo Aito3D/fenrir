@@ -148,6 +148,22 @@ export function CalculatorRealityCheckCard({
   const overridable = (check: RealityCheck): boolean => check.kind !== 'spoolCost';
   const applyAllTargets = checks.filter((c) => overridable(c) && !applied[c.kind]);
 
+  // The `daily_usage_hours` profile field is bounded `gt=0, le=24`
+  // (backend/app/schemas/calculator.py). `_daily_usage` has no plausibility
+  // band of its own (unlike the sibling aggregates), so a handful of very
+  // short or overlapping print-log entries can produce a measured figure
+  // that rounds to 0 or above 24 — a value the API would reject with a 422.
+  // Compute the exact value `onUpdatePrinterProfile` would post and only
+  // offer the button when it is actually postable. (`power_watts` has no
+  // hazard here: its source is pre-banded to [1, 3000] W before publishing,
+  // comfortably inside the backend's `gt=0, le=100_000_000` bound, so no
+  // equivalent guard is needed for the power branch.)
+  const postableDailyUsageHours = (check: RealityCheck): number | null => {
+    if (check.kind !== 'dailyHours') return null;
+    const posted = Math.round(check.measured * 10) / 10;
+    return posted > 0 && posted <= 24 ? posted : null;
+  };
+
   return (
     // Delay matches the house `stagger-children` 50ms cadence; kept inline
     // because this card and its siblings live in separate grid columns, not
@@ -285,23 +301,33 @@ export function CalculatorRealityCheckCard({
                     {t('calculator.realityCheck.updateProfile')}
                   </Button>
                 )}
-                {(check.kind === 'power' || check.kind === 'dailyHours') && canUpdate && check.printerId !== undefined && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      onUpdatePrinterProfile(
-                        check.printerId!,
-                        check.kind === 'power'
-                          ? { power_watts: Math.round(check.measured) }
-                          : { daily_usage_hours: Math.round(check.measured * 10) / 10 },
-                      )
-                    }
-                    title={t('calculator.realityCheck.updatePrinterHint')}
-                  >
-                    {t('calculator.realityCheck.updatePrinter')}
-                  </Button>
-                )}
+                {check.kind === 'power' &&
+                  canUpdate &&
+                  check.printerId !== undefined && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onUpdatePrinterProfile(check.printerId!, { power_watts: Math.round(check.measured) })}
+                      title={t('calculator.realityCheck.updatePrinterHint')}
+                    >
+                      {t('calculator.realityCheck.updatePrinter')}
+                    </Button>
+                  )}
+                {check.kind === 'dailyHours' &&
+                  canUpdate &&
+                  check.printerId !== undefined &&
+                  postableDailyUsageHours(check) !== null && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        onUpdatePrinterProfile(check.printerId!, { daily_usage_hours: postableDailyUsageHours(check)! })
+                      }
+                      title={t('calculator.realityCheck.updatePrinterHint')}
+                    >
+                      {t('calculator.realityCheck.updatePrinter')}
+                    </Button>
+                  )}
               </div>
             </div>
           );

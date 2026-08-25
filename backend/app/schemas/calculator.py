@@ -1,6 +1,21 @@
 from datetime import datetime
+from enum import IntEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# Applied to every schema that accepts a user-supplied money/rate float: without
+# it, ``float("inf")`` satisfies every ``gt``/``ge`` bound (inf > 0 is True) and
+# is stored as-is, then serialized back as JSON ``null`` for a field the
+# response model declares non-optional. NaN is already rejected by those same
+# bounds (nan > 0 is False), but this makes the rejection explicit rather than
+# incidental.
+_FINITE_ONLY = ConfigDict(allow_inf_nan=False)
+
+# A generous but finite ceiling on unbounded money/rate fields. ``gt=0`` alone
+# does not stop overflow: a finite-but-astronomical input (e.g. 1e308) can
+# still overflow to inf downstream (see derive_sale_price), so these fields
+# also need an upper bound, not just a lower one.
+_MONEY_CEILING = 100_000_000.0
 
 
 class CalculatorFilamentBase(BaseModel):
@@ -8,12 +23,23 @@ class CalculatorFilamentBase(BaseModel):
 
     ``sale_price_per_kg`` is deliberately absent: it is derived server-side from
     ``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.
+
+    Deliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``, and
+    deliberately NOT given the ``ge=0, le=1000`` bounds on ``margin_pct``
+    either: this class is also the parent of ``CalculatorFilamentResponse``,
+    which reads back whatever is already in the database. Tightening either
+    field here would turn a pre-existing out-of-range row (e.g. a hand-typed
+    ``sale_price_per_kg`` below ``cost_per_kg``, backfilled to a negative
+    margin, or one more than ~11x cost, backfilled above 1000) into a 500 for
+    the ENTIRE list on every ``GET`` instead of the real, if unusual, value it
+    renders today; the write-side schemas below carry the new constraints
+    instead, so only new writes are rejected.
     """
 
     brand: str = Field(default="", max_length=100, description="Filament brand (optional)")
     material: str = Field(..., min_length=1, max_length=100, description="Filament material, e.g. PLA or PETG-CF")
     cost_per_kg: float = Field(..., gt=0, description="Purchase cost per kg (app currency)")
-    margin_pct: float = Field(default=50.0, ge=0, le=1000, description="Margin over cost, percent")
+    margin_pct: float = Field(default=50.0, description="Margin over cost, percent")
     difficulty_pct: float = Field(
         default=100.0, ge=100, le=1000, description="Difficulty multiplier for this filament (100 = no surcharge)"
     )
@@ -28,7 +54,16 @@ class CalculatorFilamentBase(BaseModel):
 class CalculatorFilamentCreate(CalculatorFilamentBase):
     """Schema for creating a calculator filament."""
 
-    pass
+    model_config = _FINITE_ONLY
+
+    cost_per_kg: float = Field(..., gt=0, le=_MONEY_CEILING, description="Purchase cost per kg (app currency)")
+    margin_pct: float = Field(default=50.0, ge=0, le=1000, description="Margin over cost, percent")
+    spool_weight_kg: float | None = Field(
+        default=None,
+        ge=0.001,
+        le=100,
+        description="Spool weight used to derive cost per kg from the dealer price",
+    )
 
 
 class CalculatorFilamentUpdate(BaseModel):
@@ -42,15 +77,17 @@ class CalculatorFilamentUpdate(BaseModel):
     itself whenever ``zoho_item_id`` changes, so no caller has to remember to.
     """
 
+    model_config = _FINITE_ONLY
+
     brand: str | None = Field(default=None, max_length=100)
     material: str | None = Field(default=None, min_length=1, max_length=100)
-    cost_per_kg: float | None = Field(default=None, gt=0)
+    cost_per_kg: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
     margin_pct: float | None = Field(default=None, ge=0, le=1000)
     difficulty_pct: float | None = Field(default=None, ge=100, le=1000)
     zoho_item_id: str | None = Field(default=None, max_length=50)
     zoho_item_name: str | None = Field(default=None, max_length=255)
     zoho_sku: str | None = Field(default=None, max_length=100)
-    spool_weight_kg: float | None = Field(default=None, gt=0, le=100)
+    spool_weight_kg: float | None = Field(default=None, ge=0.001, le=100)
 
 
 class CalculatorFilamentResponse(CalculatorFilamentBase):
@@ -67,7 +104,13 @@ class CalculatorFilamentResponse(CalculatorFilamentBase):
 
 
 class CalculatorPrinterBase(BaseModel):
-    """Base schema for calculator printers."""
+    """Base schema for calculator printers.
+
+    Deliberately NOT given ``_FINITE_ONLY``/ceilings on its money fields: see
+    the equivalent note on ``CalculatorFilamentBase`` — this class also backs
+    ``CalculatorPrinterResponse``, and tightening it here would turn a
+    pre-existing out-of-range row into a 500 on every ``GET``.
+    """
 
     name: str = Field(..., min_length=1, max_length=100, description="Printer name")
     purchase_price: float = Field(..., gt=0, description="Purchase price (app currency)")
@@ -82,17 +125,22 @@ class CalculatorPrinterBase(BaseModel):
 class CalculatorPrinterCreate(CalculatorPrinterBase):
     """Schema for creating a calculator printer."""
 
-    pass
+    model_config = _FINITE_ONLY
+
+    purchase_price: float = Field(..., gt=0, le=_MONEY_CEILING, description="Purchase price (app currency)")
+    power_watts: float = Field(..., gt=0, le=_MONEY_CEILING, description="Power draw in watts")
 
 
 class CalculatorPrinterUpdate(BaseModel):
     """Schema for updating a calculator printer (all fields optional)."""
 
+    model_config = _FINITE_ONLY
+
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    purchase_price: float | None = Field(default=None, gt=0)
+    purchase_price: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
     lifetime_years: float | None = Field(default=None, gt=0)
     daily_usage_hours: float | None = Field(default=None, gt=0, le=24)
-    power_watts: float | None = Field(default=None, gt=0)
+    power_watts: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
     repair_rate_pct: float | None = Field(default=None, ge=0, le=100)
 
 
@@ -114,9 +162,11 @@ class CalculatorPrinterResponse(CalculatorPrinterBase):
 class CalculatorDefaultsUpdate(BaseModel):
     """Schema for updating calculator defaults (all fields optional)."""
 
-    electricity_tariff: float | None = Field(default=None, ge=0)
-    labor_rate_per_hour: float | None = Field(default=None, ge=0)
-    consumables_packaging_flat: float | None = Field(default=None, ge=0)
+    model_config = _FINITE_ONLY
+
+    electricity_tariff: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    labor_rate_per_hour: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    consumables_packaging_flat: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
     failure_rate_pct: float | None = Field(default=None, ge=0, le=1000)
     prototype_rate_pct: float | None = Field(default=None, ge=0, le=1000)
     ads_rate_pct: float | None = Field(default=None, ge=0, le=1000)
@@ -126,7 +176,7 @@ class CalculatorDefaultsUpdate(BaseModel):
     default_difficulty_pct: float | None = Field(default=None, ge=100, le=1000)
     default_margin_over_cost_pct: float | None = Field(default=None, ge=0, le=1000)
     stuff_markup_pct: float | None = Field(default=None, ge=0, le=1000)
-    base_fee_flat: float | None = Field(default=None, ge=0)
+    base_fee_flat: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
 
 
 class CalculatorDefaultsResponse(BaseModel):
@@ -152,6 +202,22 @@ class CalculatorDefaultsResponse(BaseModel):
 
 
 # --- Insights (measured "reality check" figures) ---
+
+
+class InsightsWindowDays(IntEnum):
+    """Allowed lookback windows for GET /calculator/insights (T-128).
+
+    Fixed to a handful of values, not an arbitrary ``int`` range, so a
+    per-day sweep can't difference consecutive windows to recover
+    individual print-log rows that ``MIN_SAMPLE`` suppresses within any
+    single window. ``IntEnum`` (not ``Literal[30, 90, 365]``) so a query
+    string like ``"30"`` still coerces the same way a plain ``int`` field
+    always did.
+    """
+
+    THIRTY = 30
+    NINETY = 90
+    ONE_YEAR = 365
 
 
 class FailureRateEntry(BaseModel):

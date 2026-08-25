@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { http, HttpResponse } from 'msw';
@@ -32,6 +32,12 @@ import type {
   CalculatorDefaults,
   ZohoFilamentProduct,
 } from '../../api/client';
+// Pinned by name (not re-derived) so a wiring mistake — either panel
+// importing shared.tsx's right-aligned/tabular-nums `tdCls` instead of this
+// module's plain one, or vice versa — shows up as a real assertion failure
+// below rather than a test that trivially agrees with whatever the panel
+// happens to import (T-097).
+import { settingsTdCls } from '../../components/calculator/calculatorSettingsShared';
 
 const NOW = '2026-01-01T00:00:00Z';
 
@@ -181,6 +187,20 @@ async function openTheEditFormFor(filament: CalculatorFilament) {
   await renderFilamentsPanel([filament]);
   await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
   return update;
+}
+
+// Stands in for a background refetch of ['calculatorFilaments'] triggered
+// elsewhere (another tab's edit, a Zoho price sync) — invalidating the
+// query without the form itself doing anything. Used to hand back a
+// freshly-deserialized (so reference-distinct) row object for the same id,
+// the way a real refetch would.
+function InvalidateFilamentsButton() {
+  const queryClient = useQueryClient();
+  return (
+    <button type="button" onClick={() => queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] })}>
+      simulate background refetch
+    </button>
+  );
 }
 
 describe('CalculatorFilamentsPanel', () => {
@@ -340,6 +360,309 @@ describe('CalculatorFilamentsPanel', () => {
     expect(screen.queryByText('Delete filament')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  // T-124: useEntityCrudMutations' onError handlers (create/update/delete)
+  // were previously untested for both panels — a save or delete that starts
+  // failing could silently lose its error toast with nothing to catch it.
+  // These pin today's actual behavior (form/modal stay open, nothing is
+  // removed from the list) rather than any "should" behavior.
+  it('shows an error toast and keeps the add form open when the create request fails', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.post('/api/v1/calculator/filaments/', () =>
+        HttpResponse.json({ detail: 'Save failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add filament' }));
+    await user.type(screen.getByLabelText('Brand'), 'Prusament');
+    await user.type(screen.getByLabelText('Material'), 'PETG');
+    await user.type(screen.getByLabelText(/^Cost per kg/), '25');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument();
+    // Form stays open with the typed values intact — onSaved (which would
+    // clear `editing` and return to the list) never ran.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(25);
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the edit form open when the update request fails', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.patch('/api/v1/calculator/filaments/:id', () =>
+        HttpResponse.json({ detail: 'Update failed' }, { status: 422 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await user.clear(cost);
+    await user.type(cost, '22');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Update failed')).toBeInTheDocument();
+    // Still the edit form, still holding the edited (unsaved) value.
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(22);
+    expect(screen.getByLabelText('Brand')).toHaveValue('Sunlu');
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the confirm modal open when the delete request fails', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.delete('/api/v1/calculator/filaments/:id', () =>
+        HttpResponse.json({ detail: 'Delete failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete filament' }));
+    expect(await screen.findByText('Delete filament')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText('Delete failed')).toBeInTheDocument();
+    // Confirm modal recovers rather than closing: title still shown, the
+    // Confirm button is no longer stuck in its loading/disabled state.
+    expect(screen.getByText('Delete filament')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+    // The row is still there — onDeleted (which clears toDelete) never ran,
+    // and the failed delete never invalidated the listing query.
+    expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+  });
+
+  // T-119: useEntityCrudMutations must not resolve a save against whatever
+  // `editing` happens to be *when the response lands* — only against the
+  // form it was actually issued for. Reproduces the exact sequence from the
+  // audit: edit X, hit Save (slow), Cancel before it resolves, open a
+  // different (new) form and type into it, then let X's stale save land.
+  it('does not close a newly opened form or misname the toast when a cancelled save resolves late', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    let releaseUpdate: (f: CalculatorFilament) => void = () => {};
+    const deferredUpdate = new Promise<CalculatorFilament>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    vi.spyOn(api, 'updateCalculatorFilament').mockReturnValue(deferredUpdate);
+
+    await renderFilamentsPanel(filaments);
+
+    // Edit the only row (Sunlu PLA) and hit Save — the request never
+    // resolves until releaseUpdate() is called below.
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '22');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Cancel is not gated on the in-flight save, so this succeeds while the
+    // PATCH above is still pending.
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+
+    // Open a brand new form (a different `editing`) and start typing.
+    await userEvent.click(screen.getByRole('button', { name: 'Add filament' }));
+    await userEvent.type(screen.getByLabelText('Brand'), 'Prusament');
+
+    // The stale edit-of-X save now lands.
+    releaseUpdate({ ...baseFilament, cost_per_kg: 22 });
+
+    // The toast names what actually happened (an update), not whatever
+    // `editing` moved on to.
+    expect(await screen.findByText('Filament updated', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText('Filament added')).not.toBeInTheDocument();
+
+    // The newly opened Add form is untouched — still open, typed value intact.
+    expect(screen.getByLabelText('Brand')).toHaveValue('Prusament');
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  // Companion to the test above: reopening the *same* row (same id) while
+  // its own save is still in flight — rather than a different form — must
+  // still close it once the save lands. This is the `snapshot.id ===
+  // current.id` half of useEntityCrudMutations' `sameTarget` check
+  // (calculatorSettingsShared.ts); the test above never reaches it, since
+  // there `current` is `'new'` and short-circuits on `snapshot === current`
+  // being false without ever comparing ids. A background refetch between
+  // Cancel and reopening is folded in deliberately (see the source
+  // comment's own "even if a background refetch handed back a new object
+  // for it"): without it, `editing` would just be re-set to the exact same
+  // cached row object both times, so `snapshot === current` alone would
+  // already be true and the id comparison would never actually run.
+  it('closes the form when its own save resolves after the same row was reopened for editing via a refetched object', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    let releaseUpdate: (f: CalculatorFilament) => void = () => {};
+    const deferredUpdate = new Promise<CalculatorFilament>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    vi.spyOn(api, 'updateCalculatorFilament').mockReturnValue(deferredUpdate);
+
+    render(
+      <>
+        <InvalidateFilamentsButton />
+        <CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />
+      </>,
+    );
+    await screen.findByRole('button', { name: 'Add filament' });
+    await screen.findByRole('button', { name: 'Sync prices' });
+
+    // Edit the only row (Sunlu PLA) and hit Save — the request never
+    // resolves until releaseUpdate() is called below.
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '22');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Cancel is not gated on the in-flight save, so this succeeds while the
+    // PATCH above is still pending.
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+
+    // Something else (another tab) refetches the list after touching an
+    // unrelated field (`updated_at`) — React Query's default structural
+    // sharing would otherwise silently reuse the exact same object
+    // reference for an unchanged row, which would make `snapshot ===
+    // current` true on its own and never actually exercise the id
+    // comparison this test targets.
+    filaments[0] = { ...filaments[0], updated_at: '2026-01-02T00:00:00Z' };
+    await userEvent.click(screen.getByRole('button', { name: 'simulate background refetch' }));
+
+    // Reopen the SAME row (same id, now a different object). The reopened
+    // form shows the unedited value — Cancel discarded the '22' typed
+    // earlier, and the still-pending save hasn't landed yet.
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(20);
+
+    // The stale save for that same row now lands.
+    releaseUpdate({ ...baseFilament, cost_per_kg: 22 });
+
+    expect(await screen.findByText('Filament updated', {}, { timeout: 5000 })).toBeInTheDocument();
+
+    // Same entity by id (even though not the same object reference): the
+    // reopened form closes, back to the listing.
+    expect(await screen.findByRole('button', { name: 'Add filament' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+  });
+
+  // T-125: the Save button's `isSaving` (saveMutation.isPending) guard and
+  // the delete confirm's `isLoading` (deleteMutation.isPending) guard were
+  // never exercised — dropping either from its JSX left the whole suite
+  // green. These hold the mutation open on a controlled promise and assert
+  // the control is actually disabled mid-flight, then pin what happens once
+  // it resolves (the form/modal closes — onSaved/onDeleted, same as every
+  // other successful-save/-delete test in this file; there is no
+  // "re-enabled" state to observe on the success path since the control
+  // that was disabled unmounts with it).
+  it('disables the Save button while the create mutation is pending, then closes the form on success', async () => {
+    let releaseCreate: (f: CalculatorFilament) => void = () => {};
+    const deferredCreate = new Promise<CalculatorFilament>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const createSpy = vi.spyOn(api, 'createCalculatorFilament').mockReturnValue(deferredCreate);
+
+    await renderFilamentsPanel([baseFilament]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add filament' }));
+    await userEvent.type(screen.getByLabelText('Brand'), 'Prusament');
+    await userEvent.type(screen.getByLabelText('Material'), 'PETG');
+    await userEvent.type(screen.getByLabelText(/^Cost per kg/), '25');
+
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    expect(saveButton).toBeEnabled();
+    await userEvent.click(saveButton);
+
+    // Mid-flight: the create request is pending and unresolved.
+    await waitFor(() => expect(saveButton).toBeDisabled(), { timeout: 5000 });
+
+    releaseCreate({ ...baseFilament, id: 99, brand: 'Prusament', material: 'PETG', cost_per_kg: 25 });
+
+    // onSaved() closes the form back to the listing once the create lands.
+    expect(await screen.findByRole('button', { name: 'Add filament' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+
+    createSpy.mockRestore();
+  });
+
+  it('disables the Save button while the update mutation is pending, then closes the form on success', async () => {
+    let releaseUpdate: (f: CalculatorFilament) => void = () => {};
+    const deferredUpdate = new Promise<CalculatorFilament>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    const updateSpy = vi.spyOn(api, 'updateCalculatorFilament').mockReturnValue(deferredUpdate);
+
+    await renderFilamentsPanel([baseFilament]);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '22');
+
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    expect(saveButton).toBeEnabled();
+    await userEvent.click(saveButton);
+
+    // Mid-flight: the update request is pending and unresolved.
+    await waitFor(() => expect(saveButton).toBeDisabled(), { timeout: 5000 });
+
+    releaseUpdate({ ...baseFilament, cost_per_kg: 22 });
+
+    // onSaved() closes the form back to the listing once the update lands.
+    expect(await screen.findByRole('button', { name: 'Add filament' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+
+    updateSpy.mockRestore();
+  });
+
+  it('disables the delete Confirm button while the delete mutation is pending, then closes the modal on success', async () => {
+    let releaseDelete: (v: unknown) => void = () => {};
+    const deferredDelete = new Promise<unknown>((resolve) => {
+      releaseDelete = resolve;
+    });
+    const deleteSpy = vi.spyOn(api, 'deleteCalculatorFilament').mockReturnValue(deferredDelete);
+
+    await renderFilamentsPanel([baseFilament]);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete filament' }));
+    expect(await screen.findByText('Delete filament')).toBeInTheDocument();
+
+    const confirmButton = screen.getByRole('button', { name: 'Confirm' });
+    expect(confirmButton).toBeEnabled();
+    await userEvent.click(confirmButton);
+
+    // Mid-flight: the delete request is pending and unresolved. The same
+    // element's accessible name changes ("Confirm" -> the loading label)
+    // once isLoading flips, so this asserts on the captured node, not a
+    // fresh name-based query.
+    await waitFor(() => expect(confirmButton).toBeDisabled(), { timeout: 5000 });
+
+    releaseDelete({ message: 'deleted' });
+
+    // onDeleted() closes the modal once the delete lands.
+    await waitFor(() => expect(screen.queryByText('Delete filament')).not.toBeInTheDocument(), { timeout: 5000 });
+
+    deleteSpy.mockRestore();
   });
 });
 
@@ -745,10 +1068,238 @@ describe('CalculatorFilamentsPanel Zoho price sync', () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  // T-075: the walk is a plain async loop with no AbortController, so it
+  // keeps running (and keeps issuing chunk requests) even after the panel
+  // that started it unmounts — CalculatorPage unmounts this panel on every
+  // tab switch. The in-flight guard and live progress must survive that, or
+  // the operator can start a second overlapping walk. (Its completed summary
+  // is a separate, narrower story — see "does not show a completed sync
+  // summary after an unmount/remount" below: the walk keeps running and
+  // keeps committing chunks either way, but only the guard/progress are
+  // shared across mounts, so a completion the original mount is no longer
+  // around to hear about is not reported on this later, different mount.)
+  it('keeps the guard and progress alive across an unmount/remount and blocks a second overlapping walk', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament, linkedFilament])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    // Chunk 1 is held open under our control so the panel can be unmounted
+    // while it is still in flight; chunk 2 resolves immediately once asked
+    // for and finishes the walk.
+    let releaseChunk1: (result: CalculatorFilamentSyncResult) => void = () => {};
+    const chunk1 = new Promise<CalculatorFilamentSyncResult>((resolve) => {
+      releaseChunk1 = resolve;
+    });
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockReturnValueOnce(chunk1)
+      .mockResolvedValueOnce(chunk({ processed: 1, total: 9, updated: 1 }));
+
+    const { rerender } = render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync prices' }));
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+    // Switch away — mirrors CalculatorPage unmounting this panel on a tab
+    // change — while chunk 1 is still pending.
+    rerender(<div />);
+    // ...and back, before the walk has finished.
+    rerender(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    // Attempt to start a second walk from the remount, via a selector that
+    // matches the sync button under either label (idle "Sync prices" or a
+    // live "N / M") so this step runs identically whether or not the guard
+    // survived. This is the actual reported failure, checked first and on
+    // the request count, not the UI: a second walk would immediately issue
+    // its own first chunk request (afterId 0), so if the guard had been
+    // lost, the call count would grow past 1 right here — before either of
+    // the UI assertions below even run.
+    const button = screen.getByRole('button', { name: /sync prices|\d+\s*\/\s*\d+/i });
+    await userEvent.click(button);
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    // (a) The guard survived the remount, visibly too: the button still
+    // reads as in-progress and is disabled, not a fresh idle "Sync prices".
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleName(/^\d+\s*\/\s*\d+$/);
+
+    // Let the walk finish: chunk 1 resolves and the loop fetches chunk 2 (the
+    // only second call this test allows) — the walk that started on the
+    // first mount runs to completion exactly as it would have if nothing had
+    // been unmounted; nothing here aborts it. The completed summary itself
+    // belongs to the (now gone) first mount's own state and is not this
+    // test's concern (see the narrowed summary test below) — what this test
+    // guards is that the shared guard/progress correctly release once that
+    // walk is done, re-enabling the button on the panel that is actually on
+    // screen.
+    releaseChunk1(chunk({ processed: 0, total: 9, next_after_id: 187 }));
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(sync).toHaveBeenNthCalledWith(2, 187, 25);
+  });
+
+  // T-075 fix-up: the walk had no AbortController and no request timeout, so
+  // a chunk request that never settles (a real network black hole, not a
+  // server error) left the session-scoped guard stuck forever — the button
+  // stayed disabled for the rest of the page session. A per-chunk timeout
+  // ends the walk and releases the guard instead.
+  // Driven entirely with vitest fake timers — never a wall-clock sleep, never
+  // msw's `delay()`.
+  //
+  // T-096 fix-up: `withTimeout` never aborts the chunk request it gave up
+  // on — the request the test never resolves is still "running" server-side
+  // for the rest of this test, standing in for the real request that is
+  // still in flight past the client-side timeout. A timeout is therefore
+  // reported as indeterminate, not a flat failure, and the table is
+  // refetched a second time — after the abandoned request would have had the
+  // same worst-case window to land — so prices it committed after the first,
+  // immediate refetch are not left hidden.
+  it('reports a timed-out chunk as indeterminate, re-enables the button, and refetches again to pick up what the abandoned request commits', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const rows = [{ ...baseFilament }];
+      // Spied before the panel mounts so the initial listing fetch is
+      // counted too — every call after it must be an `invalidateQueries`
+      // refetch, not a coincidence of render timing.
+      const getFilaments = vi.spyOn(api, 'getCalculatorFilaments');
+      // Gated on nothing the test ever resolves: this promise simply never
+      // settles, standing in for a request that hangs indefinitely — and,
+      // per the never-abort contract above, is still pending at the end of
+      // this test too.
+      const sync = vi
+        .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+        .mockReturnValueOnce(new Promise<CalculatorFilamentSyncResult>(() => {}));
+
+      await renderFilamentsPanel(rows);
+      const fetchesBeforeSync = getFilaments.mock.calls.length;
+      await user.click(screen.getByRole('button', { name: 'Sync prices' }));
+      await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+      // Comfortably inside the timeout budget: still in flight, no error yet.
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(screen.queryByText(/timed out/i)).toBeNull();
+      expect(screen.getByRole('button', { name: /\d+\s*\/\s*\d+/ })).toBeDisabled();
+
+      // Cross the per-chunk timeout.
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      // (b) Indeterminate wording — not the flat "sync stopped: <error>"
+      // failure message a genuine chunk error (tested above) still gets.
+      expect(await screen.findByText(/timed out; some chunks may have applied/i)).toBeInTheDocument();
+      expect(screen.queryByText(/^sync stopped/i)).toBeNull();
+      expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+      // The immediate refetch on timeout has already landed, and only it —
+      // the abandoned request has not committed anything yet in this test.
+      expect(await screen.findByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+      expect(getFilaments.mock.calls.length).toBe(fetchesBeforeSync + 1);
+
+      // The abandoned chunk request now finally commits, server-side, well
+      // after the client gave up on it — exactly the scenario `withTimeout`
+      // documents as possible.
+      rows[0] = { ...baseFilament, material: 'PETG' };
+
+      // (a) The second, later invalidation picks up that late commit.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(await screen.findByRole('cell', { name: 'PETG' })).toBeInTheDocument();
+      expect(getFilaments.mock.calls.length).toBe(fetchesBeforeSync + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // T-075 fix-up: the first attempt kept summary/error in the same
+  // session-scoped cache as the guard, so an error from a walk that failed
+  // entirely off-screen would still appear on the next mount, for the rest
+  // of the page session, with no way to dismiss it. The user narrowed this
+  // back to BASE semantics: only the in-flight guard/progress survive an
+  // unmount — a walk's terminal outcome (summary or error) does not outlive
+  // the mount that was watching it.
+  it('does not surface a sync error that happened while the panel was unmounted (narrowed to BASE semantics)', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([linkedFilament])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    let rejectChunk: (error: Error) => void = () => {};
+    const chunk1 = new Promise<CalculatorFilamentSyncResult>((_resolve, reject) => {
+      rejectChunk = reject;
+    });
+    const sync = vi.spyOn(api, 'syncCalculatorFilamentsFromZoho').mockReturnValueOnce(chunk1);
+
+    const { rerender } = render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync prices' }));
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+    // Unmount, then the walk fails while nothing is listening.
+    rerender(<div />);
+    rejectChunk(new Error('502'));
+    // Come back — the failure happened entirely off-screen. BASE semantics
+    // say a remount after the walk has ended shows a clean panel.
+    rerender(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    // Positive evidence the panel actually remounted, the walk's rejection
+    // was processed, and the guard was released — before asserting the
+    // error is absent (never assert only an absence).
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    expect(screen.queryByText(/sync stopped/i)).toBeNull();
+  });
+
+  // The completed-summary half of the same narrowing.
+  it('does not show a completed sync summary after an unmount/remount', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([linkedFilament])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValueOnce(chunk({ processed: 9, total: 9, updated: 9 }));
+
+    const { rerender } = render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync prices' }));
+    // Let the walk complete while still mounted, so the summary is proven to
+    // exist before it is unmounted away.
+    expect(await screen.findByText(/9 updated/)).toBeInTheDocument();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    // Unmount after the walk has already ended, then come back.
+    rerender(<div />);
+    rerender(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    // Positive evidence the panel re-rendered cleanly (button present and
+    // enabled, i.e. no guard/progress state bled through either) before
+    // asserting the summary is gone.
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    expect(screen.queryByText(/9 updated/)).toBeNull();
+    // No second walk was ever started by the remount.
+    expect(sync).toHaveBeenCalledTimes(1);
+  });
+
   it('labels the price column as printing cost', async () => {
     await renderFilamentsPanel();
     expect(await screen.findByRole('button', { name: /printing cost per kg/i })).toBeInTheDocument();
     expect(screen.queryByText('calculator.salePerKg')).toBeNull();
+  });
+
+  it('renders profile-table cells with calculatorSettingsShared\'s tdCls, not shared.tsx\'s (T-097)', async () => {
+    await renderFilamentsPanel([baseFilament]);
+    const materialCell = await screen.findByRole('cell', { name: 'PLA' });
+    // shared.tsx's tdCls adds "text-right ... tabular-nums" which this
+    // left-aligned material column never carries under either wiring, so an
+    // exact match (not just a substring) is what actually pins the source
+    // module — a mis-wire would append the extra classes to "text-white".
+    expect(materialCell.className).toBe(`${settingsTdCls} text-white`);
   });
 
   it('marks the rows that are linked to a Zoho product', async () => {
@@ -797,6 +1348,34 @@ describe('CalculatorFilamentsPanel permission gating (T-020)', () => {
 
     expect(screen.getByRole('cell', { name: 'PETG' })).toBeInTheDocument();
     expect(screen.queryByRole('cell', { name: 'PLA' })).not.toBeInTheDocument();
+  });
+
+  it('toggles sort direction on repeated header clicks (useSortToggle)', async () => {
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament, bambuAbsGf])));
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: 'PLA' });
+
+    const materialColumnInOrder = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1) // drop the header row
+        .map((row) => within(row).getAllByRole('cell')[1].textContent);
+
+    // Default sort is by name ascending: "Bambu Lab ABS-GF" sorts before
+    // "Sunlu PLA".
+    expect(materialColumnInOrder()).toEqual(['ABS-GF', 'PLA']);
+
+    // Selecting a different column (Material) starts it ascending — same
+    // order here, since ABS-GF < PLA too.
+    await user.click(screen.getByRole('button', { name: 'Material' }));
+    expect(materialColumnInOrder()).toEqual(['ABS-GF', 'PLA']);
+
+    // Clicking the now-active Material column again flips the direction.
+    await user.click(screen.getByRole('button', { name: 'Material' }));
+    expect(materialColumnInOrder()).toEqual(['PLA', 'ABS-GF']);
   });
 });
 
@@ -927,6 +1506,205 @@ describe('CalculatorPrintersPanel', () => {
     expect(screen.queryByText('Delete printer')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  // T-124: same coverage gap as CalculatorFilamentsPanel's onError tests
+  // above — useEntityCrudMutations is shared, but each panel's tests are
+  // independent, so both need their own pin.
+  it('shows an error toast and keeps the add form open when the create request fails', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.post('/api/v1/calculator/printers/', () =>
+        HttpResponse.json({ detail: 'Save failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add printer' }));
+    await user.type(screen.getByLabelText('Name'), 'A1 Mini');
+    await user.type(screen.getByLabelText(/Purchase price/), '1000');
+    await user.type(screen.getByLabelText(/Lifetime \(years\)/), '2');
+    await user.type(screen.getByLabelText(/Daily usage/), '5');
+    await user.type(screen.getByLabelText(/Power \(W\)/), '200');
+    await user.type(screen.getByLabelText(/Repairs over lifetime/), '10');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('A1 Mini');
+    expect(screen.queryByRole('button', { name: 'Add printer' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the edit form open when the update request fails', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.patch('/api/v1/calculator/printers/:id', () =>
+        HttpResponse.json({ detail: 'Update failed' }, { status: 422 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit printer' }));
+    const name = screen.getByLabelText('Name');
+    await user.clear(name);
+    await user.type(name, 'H2S Pro');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Update failed')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('H2S Pro');
+    expect(screen.queryByRole('button', { name: 'Add printer' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the confirm modal open when the delete request fails', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.delete('/api/v1/calculator/printers/:id', () =>
+        HttpResponse.json({ detail: 'Delete failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete printer' }));
+    expect(await screen.findByText('Delete printer')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText('Delete failed')).toBeInTheDocument();
+    expect(screen.getByText('Delete printer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+    expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
+  });
+
+  it('renders profile-table cells with calculatorSettingsShared\'s tdCls, not shared.tsx\'s (T-097)', async () => {
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    const nameCell = await screen.findByRole('cell', { name: 'H2S' });
+    // Exact match (not substring) so a mis-wire to shared.tsx's
+    // right-aligned/tabular-nums tdCls — which this left-aligned name
+    // column never legitimately carries — is caught.
+    expect(nameCell.className).toBe(`${settingsTdCls} text-white`);
+  });
+
+  // T-125: same coverage gap as CalculatorFilamentsPanel's pending-state
+  // tests above — useEntityCrudMutations is shared, but each panel's tests
+  // are independent, so both need their own pin.
+  it('disables the Save button while the create mutation is pending, then closes the form on success', async () => {
+    let releaseCreate: (p: CalculatorPrinter) => void = () => {};
+    const deferredCreate = new Promise<CalculatorPrinter>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const createSpy = vi.spyOn(api, 'createCalculatorPrinter').mockReturnValue(deferredCreate);
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add printer' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'A1 Mini');
+    await userEvent.type(screen.getByLabelText(/Purchase price/), '1000');
+    await userEvent.type(screen.getByLabelText(/Lifetime \(years\)/), '2');
+    await userEvent.type(screen.getByLabelText(/Daily usage/), '5');
+    await userEvent.type(screen.getByLabelText(/Power \(W\)/), '200');
+    await userEvent.type(screen.getByLabelText(/Repairs over lifetime/), '10');
+
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    expect(saveButton).toBeEnabled();
+    await userEvent.click(saveButton);
+
+    // Mid-flight: the create request is pending and unresolved.
+    await waitFor(() => expect(saveButton).toBeDisabled(), { timeout: 5000 });
+
+    releaseCreate({
+      id: 2,
+      name: 'A1 Mini',
+      purchase_price: 1000,
+      lifetime_years: 2,
+      daily_usage_hours: 5,
+      power_watts: 200,
+      repair_rate_pct: 10,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+
+    // onSaved() closes the form back to the listing once the create lands.
+    expect(await screen.findByRole('button', { name: 'Add printer' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    createSpy.mockRestore();
+  });
+
+  it('disables the Save button while the update mutation is pending, then closes the form on success', async () => {
+    let releaseUpdate: (p: CalculatorPrinter) => void = () => {};
+    const deferredUpdate = new Promise<CalculatorPrinter>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    const updateSpy = vi.spyOn(api, 'updateCalculatorPrinter').mockReturnValue(deferredUpdate);
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit printer' }));
+    const name = screen.getByLabelText('Name');
+    await userEvent.clear(name);
+    await userEvent.type(name, 'H2S Pro');
+
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    expect(saveButton).toBeEnabled();
+    await userEvent.click(saveButton);
+
+    // Mid-flight: the update request is pending and unresolved.
+    await waitFor(() => expect(saveButton).toBeDisabled(), { timeout: 5000 });
+
+    releaseUpdate({ ...basePrinter, name: 'H2S Pro' });
+
+    // onSaved() closes the form back to the listing once the update lands.
+    expect(await screen.findByRole('button', { name: 'Add printer' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    updateSpy.mockRestore();
+  });
+
+  it('disables the delete Confirm button while the delete mutation is pending, then closes the modal on success', async () => {
+    let releaseDelete: (v: unknown) => void = () => {};
+    const deferredDelete = new Promise<unknown>((resolve) => {
+      releaseDelete = resolve;
+    });
+    const deleteSpy = vi.spyOn(api, 'deleteCalculatorPrinter').mockReturnValue(deferredDelete);
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete printer' }));
+    expect(await screen.findByText('Delete printer')).toBeInTheDocument();
+
+    const confirmButton = screen.getByRole('button', { name: 'Confirm' });
+    expect(confirmButton).toBeEnabled();
+    await userEvent.click(confirmButton);
+
+    // Mid-flight: the delete request is pending and unresolved. The same
+    // element's accessible name changes ("Confirm" -> the loading label)
+    // once isLoading flips, so this asserts on the captured node, not a
+    // fresh name-based query.
+    await waitFor(() => expect(confirmButton).toBeDisabled(), { timeout: 5000 });
+
+    releaseDelete({ message: 'deleted' });
+
+    // onDeleted() closes the modal once the delete lands.
+    await waitFor(() => expect(screen.queryByText('Delete printer')).not.toBeInTheDocument(), { timeout: 5000 });
+
+    deleteSpy.mockRestore();
   });
 });
 
@@ -1114,6 +1892,170 @@ describe('CalculatorDefaultsPanel', () => {
     await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
 
     await waitFor(() => expect(tariff).toHaveValue(777));
+  });
+});
+
+describe('CalculatorDefaultsPanel disables Save on a non-finite field (T-103)', () => {
+  // parseNum's `Number.isFinite` guard (calculatorSettingsShared.ts) is what
+  // stands between a non-finite value and CalculatorDefaultsPanel's
+  // `allValid` gate letting Save through. The obvious way to prove the gate
+  // is wired to it would be typing 'Infinity' into a field — but that
+  // doesn't reach parseNum at all here: NumberField renders a native
+  // `<input type="number">`, and per the HTML value-sanitization algorithm
+  // (which jsdom implements faithfully — verified directly: neither
+  // userEvent.type, userEvent.paste nor fireEvent.change can leave
+  // 'Infinity', '-Infinity', 'NaN' or an overflowing literal like '1e309' in
+  // a type="number" input's value; React's own reconciliation also
+  // continuously re-asserts `type="number"` on every render, so even
+  // forcing the DOM attribute to 'text' between renders gets reverted
+  // before a bypassed value can stick) — the browser's own input rejects
+  // those strings before onChange ever fires, so `form[key]` never becomes
+  // a non-finite-parsing string via typing. The literal scenario the task
+  // named is therefore untestable at the DOM level; it isn't reachable.
+  //
+  // The gate still matters for a value that reaches `form` state a
+  // different way: `defaultsFormValues` seeds the form straight from the
+  // GET /calculator/defaults response via `String(defaults[key])`, no DOM
+  // involved. A corrupted or overflowing row — e.g. a stale value left over
+  // from before T-071/T-090 closed the server-side holes, or any other
+  // upstream corruption — lands in `form` as the string "Infinity" this
+  // way, and it's this path the test below drives. JSON itself has no
+  // Infinity/NaN literal, so `HttpResponse.json({ ...Infinity })` cannot
+  // express it (JSON.stringify(Infinity) serializes to `null`); the raw
+  // response body below instead carries an overflowing numeric *literal*
+  // (`1e400`), which JSON.parse resolves to the actual `Infinity` value —
+  // exactly as a hand-crafted or corrupted payload could.
+  it('disables Save when the loaded row holds a value that resolves to Infinity', async () => {
+    const rawBody = JSON.stringify(baseDefaults).replace('"electricity_tariff":120', '"electricity_tariff":1e400');
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => new HttpResponse(rawBody, { headers: { 'Content-Type': 'application/json' } })),
+    );
+
+    render(<CalculatorDefaultsPanel canUpdate />);
+
+    // Positive evidence the panel actually rendered from this response
+    // before asserting on the Save button — an untouched, finite field.
+    expect(await screen.findByLabelText(/Labor rate/)).toHaveValue(3000);
+
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled();
+  });
+});
+
+describe('CalculatorDefaultsPanel field bounds mirror the server schema (T-122)', () => {
+  // Transcribed by hand from CalculatorDefaultsUpdate's ge/le Field(...)
+  // bounds (backend/app/schemas/calculator.py). The panel's own copy of
+  // these bounds (DEFAULTS_FIELDS in CalculatorDefaultsPanel.tsx) is
+  // deliberately module-private — exporting it would widen this component's
+  // public surface for a test-only need — so this pins the mirror
+  // behaviorally instead: drive each field's actual rendered input one
+  // past its bound and confirm the panel both names the right numbers and
+  // refuses to submit, then confirm the bound itself is accepted. A schema
+  // change that isn't mirrored in the panel shows up here as a real
+  // user-facing assertion failure (wrong message, or Save wrongly enabled/
+  // disabled) rather than a bookkeeping one.
+  const MONEY_CEILING = 100_000_000; // backend's _MONEY_CEILING
+  const bounds: Array<{ key: string; min: number; max: number }> = [
+    { key: 'electricity_tariff', min: 0, max: MONEY_CEILING },
+    { key: 'labor_rate_per_hour', min: 0, max: MONEY_CEILING },
+    { key: 'consumables_packaging_flat', min: 0, max: MONEY_CEILING },
+    { key: 'base_fee_flat', min: 0, max: MONEY_CEILING },
+    { key: 'failure_rate_pct', min: 0, max: 1000 },
+    { key: 'prototype_rate_pct', min: 0, max: 1000 },
+    { key: 'ads_rate_pct', min: 0, max: 1000 },
+    { key: 'filament_markup_pct', min: 0, max: 1000 },
+    { key: 'global_markup_pct', min: 0, max: 1000 },
+    { key: 'tax_pct', min: 0, max: 100 },
+    { key: 'stuff_markup_pct', min: 0, max: 1000 },
+    { key: 'default_difficulty_pct', min: 100, max: 1000 },
+    { key: 'default_margin_over_cost_pct', min: 0, max: 1000 },
+  ];
+
+  it.each(bounds)('$key rejects $max + 1 and accepts $max', async ({ key, min, max }) => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)));
+    const user = userEvent.setup();
+
+    const { container } = render(<CalculatorDefaultsPanel canUpdate />);
+    // Anchor on a field that's always first in the DOM so every case waits
+    // for the same full GET round-trip before looking up its own input.
+    await screen.findByLabelText(/Electricity tariff/, {}, { timeout: 5000 });
+
+    const input = container.querySelector<HTMLInputElement>(`#calc-def-${key}`);
+    expect(input, `no rendered input for ${key}`).not.toBeNull();
+    if (!input) return;
+
+    await user.clear(input);
+    await user.type(input, String(max + 1));
+    expect(await screen.findByText(`Must be between ${min} and ${max}`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled();
+
+    await user.clear(input);
+    await user.type(input, String(max));
+    await waitFor(() => expect(screen.queryByText(`Must be between ${min} and ${max}`)).not.toBeInTheDocument());
+    // Every other field in baseDefaults is already in range, so fixing the
+    // last offender re-enables Save.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save defaults' })).toBeEnabled());
+  });
+});
+
+describe('CalculatorDefaultsPanel out-of-range validation (T-122)', () => {
+  it('marks an out-of-range field inline and disables Save, without discarding another edit in the same pass', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)));
+    const user = userEvent.setup();
+
+    render(<CalculatorDefaultsPanel canUpdate />);
+
+    // A legitimate edit made in the same pass as the bad one below — it must
+    // survive, proving Save being disabled doesn't blow away other typing.
+    const tariff = await screen.findByLabelText(/Electricity tariff/, {}, { timeout: 5000 });
+    await user.clear(tariff);
+    await user.type(tariff, '150');
+
+    // tax_pct is bounded `le=100` server-side; the form otherwise presents
+    // it as an ordinary percentage field.
+    const tax = screen.getByLabelText(/Tax/);
+    await user.clear(tax);
+    await user.type(tax, '150');
+
+    expect(await screen.findByText('Must be between 0 and 100')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled();
+    expect(tariff).toHaveValue(150);
+  });
+
+  it('clears the mark and re-enables Save once the value is back in range', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)));
+    const user = userEvent.setup();
+
+    render(<CalculatorDefaultsPanel canUpdate />);
+
+    const tax = await screen.findByLabelText(/Tax/, {}, { timeout: 5000 });
+    await user.clear(tax);
+    await user.type(tax, '150');
+    expect(await screen.findByText('Must be between 0 and 100')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled();
+
+    await user.clear(tax);
+    await user.type(tax, '15');
+
+    await waitFor(() => expect(screen.queryByText('Must be between 0 and 100')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeEnabled();
+  });
+
+  it('rejects default_difficulty_pct below its 100 floor, with a message naming the real bound (T-122)', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)));
+    const user = userEvent.setup();
+
+    render(<CalculatorDefaultsPanel canUpdate />);
+
+    // 50 looks like a perfectly ordinary non-negative percentage, but the
+    // field is bounded `ge=100` server-side (100 = no surcharge is the
+    // floor, not a normal 0-based percentage).
+    const difficulty = await screen.findByLabelText(/Default difficulty/, {}, { timeout: 5000 });
+    expect(difficulty).toHaveValue(100);
+    await user.clear(difficulty);
+    await user.type(difficulty, '50');
+
+    expect(await screen.findByText('Must be between 100 and 1000')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled();
   });
 });
 

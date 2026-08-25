@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import posixpath
 import secrets
@@ -11,10 +12,13 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, or_, select, text
+from starlette.responses import Response
 
 from backend.app.api.routes import (
     aito,
@@ -8800,6 +8804,119 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+
+
+def _stringify_non_finite(value):
+    """Recursively replace non-finite floats with their ``str()`` form.
+
+    Leaves every other value (including finite floats) untouched, so this is
+    the identity transform for the overwhelming majority of validation
+    errors — it only ever changes something for the ``inf``/``-inf``/``nan``
+    case this handler exists to fix.
+    """
+    if isinstance(value, float):
+        return str(value) if (math.isnan(value) or math.isinf(value)) else value
+    if isinstance(value, dict):
+        return {key: _stringify_non_finite(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_stringify_non_finite(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_stringify_non_finite(item) for item in value)
+    return value
+
+
+# T-129: field names (matched on the last ``loc`` element) whose rejected
+# value must never be echoed back in a 422 body. Matched case-insensitively,
+# either exactly or as an ``_``-joined suffix, so a bare ``password`` and a
+# compound name like ``admin_password``/``zoho_client_secret``/
+# ``openrouter_api_key`` are both covered without hard-coding every field
+# this or a future schema happens to name.
+_SECRET_FIELD_NAME_SUFFIXES = ("password", "token", "secret", "api_key", "access_code")
+
+# T-129 follow-up: the ``_``-joined suffix rule above misses run-together
+# spellings of the same suffixes, e.g. ``apikey`` (CallMeBotConfig.apikey,
+# schemas/notification.py) doesn't end with ``_api_key`` and isn't equal to
+# ``api_key`` either. Comparing underscore-stripped field names against
+# underscore-stripped suffixes closes that gap for every suffix at once
+# (``apikey``, ``authtoken``, ``accesstoken``, ``clientsecret``, ...) without
+# hard-coding each spelling, and without widening the match to a bare
+# substring: a field still has to actually END with one of these normalised
+# suffixes, so short unrelated names like ``key``/``code``/``secrets`` (a
+# plural, one letter short of the ``secret`` tail) or names that merely
+# start with a suffix word (``password_hint``, ``token_expires_at``) still
+# don't match. Swept against every schema/route field name in this codebase
+# (backend/app/schemas/*.py, backend/app/api/routes/*.py): the only field
+# this newly matches is ``apikey``.
+_SECRET_FIELD_NAME_SUFFIXES_NORMALIZED = tuple(suffix.replace("_", "") for suffix in _SECRET_FIELD_NAME_SUFFIXES)
+
+_REDACTED_INPUT_PLACEHOLDER = "[redacted]"
+
+
+def _is_secret_field_loc(loc) -> bool:
+    """True if a Pydantic error ``loc`` identifies a secret-bearing field.
+
+    ``loc`` elements can be ints (list/tuple indices) when the rejected
+    field is inside an array — those never match and are skipped safely
+    rather than raising.
+    """
+    if not loc:
+        return False
+    field = loc[-1]
+    if not isinstance(field, str):
+        return False
+    field = field.lower().replace("_", "")
+    return any(field == suffix or field.endswith(suffix) for suffix in _SECRET_FIELD_NAME_SUFFIXES_NORMALIZED)
+
+
+def _redact_secret_inputs(errors):
+    """Replace ``input`` with a placeholder for secret-bearing fields.
+
+    Only the raw value is touched — ``type``, ``loc``, ``msg`` and ``ctx``
+    are left exactly as FastAPI's default handler would produce them, so a
+    caller still learns which field was rejected and why. This is a single
+    pass over the (flat) list of error dicts, not a recursive walk, so it
+    adds no recursion depth of its own.
+    """
+    redacted = []
+    for error in errors:
+        if isinstance(error, dict) and "input" in error and _is_secret_field_loc(error.get("loc")):
+            error = {**error, "input": _REDACTED_INPUT_PLACEHOLDER}
+        redacted.append(error)
+    return redacted
+
+
+@app.exception_handler(RequestValidationError)
+async def _finite_safe_validation_exception_handler(request: Request, exc: RequestValidationError) -> Response:
+    """The same 422 FastAPI's own default handler returns, minus a crash,
+    and minus echoing secret-bearing values back to the sender.
+
+    FastAPI's default handler echoes the rejected value back in
+    ``errors()[i]["input"]``, and Starlette's ``JSONResponse`` renders with
+    ``allow_nan=False`` — so a request that fails validation *because* its
+    value is ``inf``/``-inf``/``nan`` (e.g. a calculator money field given
+    ``Infinity``, T-071) makes that very serialization step raise instead of
+    responding, turning the intended 422 into an unhandled exception (which
+    surfaces as a 503 from the auth gateway below, or a bare 500 elsewhere).
+
+    The fix keeps ``allow_nan=False`` (the framework-standard, RFC 8259
+    compliant encoder) and instead sanitises the payload first, replacing any
+    non-finite float — however deeply nested inside a list/dict ``input`` —
+    with its string form (``"inf"``/``"-inf"``/``"nan"``). Byte-identical to
+    the framework default for every other validation error, since the
+    sanitisation step is a no-op unless a non-finite float is present.
+
+    This handler is app-global (registered on ``app``, not a single router),
+    so it also renders 422s for the unauthenticated routes in
+    PUBLIC_API_ROUTES (login, setup, password reset). T-129: for those,
+    Pydantic's ``input`` key would otherwise echo a rejected password/token/
+    secret verbatim in the response body. ``_redact_secret_inputs`` replaces
+    just that value with a placeholder for secret-bearing fields (identified
+    by name, not by route) before the non-finite sanitisation runs; every
+    other field's ``input`` — including a non-finite one — is unaffected.
+    """
+    content = {"detail": _stringify_non_finite(_redact_secret_inputs(jsonable_encoder(exc.errors())))}
+    body = json.dumps(content, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+    return Response(content=body, status_code=422, media_type="application/json")
 
 
 # =============================================================================

@@ -244,3 +244,50 @@ async def test_genuine_drift_still_heals_despite_the_tolerance(raw_conn):
     ).one()
     assert margin == pytest.approx(50.01)
     assert sale == pytest.approx(5596.87)
+
+
+@pytest.mark.asyncio
+async def test_a_sale_price_below_cost_backfills_a_negative_margin(raw_conn):
+    """A hand-typed printing cost that undercuts the purchase cost.
+
+    The migration must not clamp this: it backfills the arithmetic result
+    verbatim, even though it lands outside the ``[0, 1000]`` range the
+    write-side schemas enforce for new entries. Read-back tolerates it; only
+    new writes are rejected (schemas/calculator.py).
+    """
+    await _drop_margin_pct(raw_conn)
+    await raw_conn.execute(
+        text(
+            "INSERT INTO calculator_filaments (name, brand, material, cost_per_kg, "
+            "sale_price_per_kg, difficulty_pct) VALUES "
+            "('Legacy Cheap PLA', '', 'PLA', 25.0, 20.0, 100.0)"
+        )
+    )
+
+    await run_migrations(raw_conn)
+
+    margin = (await raw_conn.execute(text("SELECT margin_pct FROM calculator_filaments"))).scalar_one()
+    assert margin == pytest.approx(-20.0)
+
+
+@pytest.mark.asyncio
+async def test_a_sale_price_far_above_cost_backfills_a_margin_past_1000(raw_conn):
+    """A decimal-point slip on the purchase cost (e.g. 2.50 instead of 25.0).
+
+    ``(55.0 / 2.5 - 1) * 100 == 2100.0``, more than double the ``le=1000``
+    ceiling the write-side schemas enforce. The migration still backfills it
+    verbatim rather than clamping or dropping the row.
+    """
+    await _drop_margin_pct(raw_conn)
+    await raw_conn.execute(
+        text(
+            "INSERT INTO calculator_filaments (name, brand, material, cost_per_kg, "
+            "sale_price_per_kg, difficulty_pct) VALUES "
+            "('Legacy Typo PETG', '', 'PETG', 2.5, 55.0, 100.0)"
+        )
+    )
+
+    await run_migrations(raw_conn)
+
+    margin = (await raw_conn.execute(text("SELECT margin_pct FROM calculator_filaments"))).scalar_one()
+    assert margin == pytest.approx(2100.0)

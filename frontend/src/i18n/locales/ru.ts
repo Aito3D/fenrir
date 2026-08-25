@@ -7943,6 +7943,7 @@ export default {
     openSettings: "Открыть настройки калькулятора",
     valNonNegative: "Значение должно быть не меньше 0",
     valQuantityMin: "Значение должно быть не меньше 1",
+    valRange: "Должно быть от {{min}} до {{max}}",
     allMaterials: "Все материалы",
     allBrands: "Все бренды",
     noMatches: "Ничего не найдено",
@@ -7967,6 +7968,7 @@ export default {
     syncSummary:
       "{{updated}} обновлено · {{unchanged}} без изменений · {{skipped}} без цены дилера · {{missing}} отсутствует в Zoho",
     syncFailed: "Синхронизация остановлена: {{error}}",
+    syncTimedOut: "Истекло время ожидания синхронизации; некоторые блоки могли всё же примениться",
     zohoDuplicateWarning: "Филамент для {{name}} уже существует",
     addFilament: "Добавить филамент",
     editFilament: "Изменить филамент",

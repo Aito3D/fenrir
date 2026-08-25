@@ -18,7 +18,7 @@ from a couple of prints is noise dressed up as truth.
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, literal_column, null, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.archive import PrintArchive
@@ -50,6 +50,16 @@ _MAX_PRINT_SECONDS = 4 * 24 * 3600
 _MIN_USAGE_DAYS = 14
 
 _FAILED_STATUSES = ("failed", "aborted")
+
+
+def _duration_usable_expr():
+    """SQL predicate: ``duration_seconds`` is present and non-zero (usable as-is)."""
+    return and_(PrintLogEntry.duration_seconds.isnot(None), PrintLogEntry.duration_seconds != 0)
+
+
+def _duration_missing_expr():
+    """SQL predicate: ``duration_seconds`` is absent or zero (needs the elapsed-time fallback)."""
+    return or_(PrintLogEntry.duration_seconds.is_(None), PrintLogEntry.duration_seconds == 0)
 
 
 class CalculatorInsightsService:
@@ -138,6 +148,24 @@ class CalculatorInsightsService:
         }
 
     async def _time_accuracy(self, db: AsyncSession, since: datetime) -> dict:
+        # These extra predicates are a pure row-count optimization: they only
+        # exclude rows that `_resolve_duration` + the accuracy-band check
+        # below would discard anyway, so the Python fold that follows is
+        # untouched and sees the exact same (duration, estimate) pairs it
+        # always did. Two cases are pushed to SQL because they're exact
+        # integer/IEEE-754 float mirrors of the Python arithmetic:
+        #   - duration_seconds is usable (truthy) directly, no timestamp math;
+        #   - the accuracy ratio and its [50, 200] band, using `col * 1.0 / col`
+        #     to force float division exactly like Python's `int / int`.
+        # Rows needing the started_at/completed_at fallback (duration_seconds
+        # null or 0) are always fetched and still resolved/banded in Python,
+        # since replicating that elapsed-time fallback in SQL would risk
+        # timezone/precision drift this task explicitly warns against.
+        duration_usable = _duration_usable_expr()
+        duration_missing = _duration_missing_expr()
+        accuracy_in_band = (PrintArchive.print_time_seconds * 1.0 / PrintLogEntry.duration_seconds * 100).between(
+            _ACCURACY_BAND_LO, _ACCURACY_BAND_HI
+        )
         rows = await db.execute(
             select(
                 PrintLogEntry.duration_seconds,
@@ -151,6 +179,16 @@ class CalculatorInsightsService:
                 PrintLogEntry.status == "completed",
                 PrintLogEntry.created_at >= since,
                 PrintArchive.print_time_seconds.isnot(None),
+                # `not estimate_seconds` in the fold below also drops 0.
+                PrintArchive.print_time_seconds != 0,
+                or_(
+                    and_(duration_usable, accuracy_in_band),
+                    and_(
+                        duration_missing,
+                        PrintLogEntry.started_at.isnot(None),
+                        PrintLogEntry.completed_at.isnot(None),
+                    ),
+                ),
             )
         )
 
@@ -177,7 +215,7 @@ class CalculatorInsightsService:
                 "sample": len(values),
             }
             for printer_id, values in per_printer.items()
-            if len(values) >= 3
+            if len(values) >= MIN_SAMPLE
         ]
         return {
             "overall_pct": round(sum(accuracies) / len(accuracies), 1) if accuracies else None,
@@ -193,6 +231,18 @@ class CalculatorInsightsService:
         the plug powers only the printer; a plug also feeding a dryer or light
         inflates the figure (the outlier band catches the worst of it).
         """
+        # Same technique as `_time_accuracy`: only pre-filter rows that the
+        # Python fold below would discard anyway, for the duration_seconds-
+        # usable case where the arithmetic is an exact SQL mirror of the
+        # Python expressions (`hours = actual/3600`, `implied_watts =
+        # energy_kwh*1000/hours`, both forced to float division to match
+        # Python's automatic int/int promotion). Rows needing the
+        # started_at/completed_at fallback are always fetched, unresolved,
+        # and handled by the unchanged Python loop.
+        duration_usable = _duration_usable_expr()
+        duration_missing = _duration_missing_expr()
+        hours_expr = PrintLogEntry.duration_seconds * 1.0 / 3600
+        implied_watts_expr = PrintLogEntry.energy_kwh * 1000 / hours_expr
         rows = await db.execute(
             select(
                 PrintLogEntry.energy_kwh,
@@ -205,6 +255,18 @@ class CalculatorInsightsService:
                 PrintLogEntry.printer_id.isnot(None),
                 PrintLogEntry.created_at >= since,
                 PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+                or_(
+                    and_(
+                        duration_usable,
+                        PrintLogEntry.duration_seconds.between(_MIN_POWER_SECONDS, _MAX_PRINT_SECONDS),
+                        implied_watts_expr.between(_WATTS_BAND_LO, _WATTS_BAND_HI),
+                    ),
+                    and_(
+                        duration_missing,
+                        PrintLogEntry.started_at.isnot(None),
+                        PrintLogEntry.completed_at.isnot(None),
+                    ),
+                ),
             )
         )
 
@@ -278,20 +340,82 @@ class CalculatorInsightsService:
         return sorted(entries.values(), key=lambda r: -r["sample"])
 
     async def _spool_costs(self, db: AsyncSession) -> list[dict]:
-        rows = await db.execute(
+        # One round trip, two independently-aggregated branches unioned
+        # together — not one grouped-by-brand+material read re-folded in
+        # Python. Two things matter here and a single ``GROUP BY upper(brand),
+        # upper(material))`` can't give both at once:
+        #   - the per-material average/count must be bit-identical to a bare
+        #     ``avg(cost_per_kg) ... GROUP BY upper(material)`` (no brand in
+        #     the grouping key), both in the value (SQL's own float
+        #     accumulation, not a Python re-sum of per-brand partial sums,
+        #     which re-associates the additions and can flip the last ULP —
+        #     see the regression this fixes) and in row order (SQLite's
+        #     grouping/sort order for that exact query, which callers rely on
+        #     — see `calculatorInsights.ts`'s first-fuzzy-match lookup);
+        #   - the published-brand subtotal needs counts from exactly the
+        #     brand+material groups ``_spool_costs_by_brand`` emits, which
+        #     does require grouping by brand.
+        # `material_agg` is that bare per-material query, verbatim. `brand_agg`
+        # is `_spool_costs_by_brand`'s own grouping (predicate re-applied in
+        # Python below, identically). UNION ALL keeps both in one statement —
+        # one snapshot, so a spool inserted/edited/archived between the two
+        # populations can't skew the residual (T-120) — while each branch's
+        # own GROUP BY still computes and orders independently, so
+        # `material_agg`'s rows arrive exactly as they would standalone.
+        material_agg = (
             select(
-                func.upper(Spool.material),
-                func.avg(Spool.cost_per_kg),
-                func.count(Spool.id),
+                literal_column("'material'").label("kind"),
+                null().label("brand"),
+                func.upper(Spool.material).label("material"),
+                func.avg(Spool.cost_per_kg).label("avg_cost"),
+                func.count(Spool.id).label("cnt"),
             )
             .where(Spool.cost_per_kg.isnot(None), Spool.archived_at.is_(None))
             .group_by(func.upper(Spool.material))
         )
-        return [
-            {"material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
-            for material, avg_cost, count in rows.all()
-            if material
-        ]
+        brand_agg = (
+            select(
+                literal_column("'brand'").label("kind"),
+                func.upper(Spool.brand).label("brand"),
+                func.upper(Spool.material).label("material"),
+                null().label("avg_cost"),
+                func.count(Spool.id).label("cnt"),
+            )
+            .where(Spool.cost_per_kg.isnot(None), Spool.archived_at.is_(None))
+            .group_by(func.upper(Spool.brand), func.upper(Spool.material))
+        )
+        rows = await db.execute(union_all(material_agg, brand_agg))
+
+        # Insertion order into `material_totals` follows only the
+        # `material_agg` rows, in the order they arrive — i.e. exactly the
+        # order a standalone per-material query would emit them in.
+        material_totals: dict[str, dict[str, float]] = {}
+        published_brand_counts: dict[str, int] = {}
+        for kind, brand, material, avg_cost, count in rows.all():
+            if not material:
+                continue
+            if kind == "material":
+                material_totals[material] = {"avg": avg_cost, "count": count}
+            elif brand and count >= MIN_SAMPLE:
+                published_brand_counts[material] = published_brand_counts.get(material, 0) + count
+
+        result = []
+        for material, totals in material_totals.items():
+            count = totals["count"]
+            if count < MIN_SAMPLE:
+                continue
+            # The published brand+material rows for this material are a
+            # visible partition of it. If they leave a small residual
+            # population — this material's total minus the sum of its
+            # published brand subgroups — that residual's average is
+            # recoverable by subtraction even though no single query
+            # discloses it directly (see T-089/T-106). Suppress the whole
+            # material row rather than let that residual leak through it.
+            residual = count - published_brand_counts.get(material, 0)
+            if 0 < residual < MIN_SAMPLE:
+                continue
+            result.append({"material": material, "avg_cost_per_kg": round(totals["avg"], 2), "sample": count})
+        return result
 
     async def _spool_costs_by_brand(self, db: AsyncSession) -> list[dict]:
         """Like ``_spool_costs`` but grouped by brand+material for exact matches."""
@@ -312,7 +436,7 @@ class CalculatorInsightsService:
         return [
             {"brand": brand, "material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
             for brand, material, avg_cost, count in rows.all()
-            if brand and material
+            if brand and material and count >= MIN_SAMPLE
         ]
 
 

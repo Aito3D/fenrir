@@ -7953,6 +7953,7 @@ export default {
     openSettings: "Відкрити налаштування калькулятора",
     valNonNegative: "Має бути 0 або більше",
     valQuantityMin: "Має бути щонайменше 1",
+    valRange: "Має бути від {{min}} до {{max}}",
     allMaterials: "Усі матеріали",
     allBrands: "Усі бренди",
     noMatches: "Збігів не знайдено",
@@ -7977,6 +7978,7 @@ export default {
     syncSummary:
       "{{updated}} оновлено · {{unchanged}} без змін · {{skipped}} без ціни дилера · {{missing}} відсутні в Zoho",
     syncFailed: "Синхронізацію зупинено: {{error}}",
+    syncTimedOut: "Час очікування синхронізації вичерпано; деякі блоки могли все ж застосуватися",
     zohoDuplicateWarning: "Філамент для {{name}} вже існує",
     addFilament: "Додати філамент",
     editFilament: "Редагувати філамент",

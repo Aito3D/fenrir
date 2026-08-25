@@ -1,5 +1,7 @@
 """Tests for the chunked Zoho price sync."""
 
+import logging
+
 import pytest
 
 from backend.app.services import zoho_filaments
@@ -36,6 +38,10 @@ def zoho_catalogue(monkeypatch):
         # A dealer price so small that dividing by even a 1 kg spool rounds to
         # 0.0 per kg, while ``has_price`` (dealer_price > 0) is still True.
         _product("TINY", 0.001),
+        # A dealer price so large it overflows float division into inf once
+        # divided by the tiny stored spool weight the matching test uses.
+        # ``new_cost <= 0`` does not catch this (``inf <= 0`` is False).
+        _product("HUGE", 1.5e308),
         # Distinct item ids at distinct prices so a chunking test can prove
         # every row was visited exactly once (a repeat or a skip would leave
         # some price un-updated or double-applied). Offset from 1000 so none
@@ -123,6 +129,74 @@ async def test_subcent_result_is_skipped_not_written_as_zero(async_client, zoho_
     assert resp.json()["updated"] == 0
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
     assert row["cost_per_kg"] == 1000.0  # untouched
+
+
+@pytest.mark.asyncio
+async def test_overflowing_result_is_skipped_not_written_as_inf(async_client, zoho_catalogue):
+    """A dealer price divided by a near-zero stored spool weight overflows to inf.
+
+    ``product.has_price`` is True and ``new_cost <= 0`` is False for inf (it
+    is neither less than nor equal to 0), so a guard that only checks those
+    two things writes ``inf`` into ``cost_per_kg`` and counts it as
+    ``updated`` — reopening, via this second write path, the exact hole the
+    create/update schemas were fixed to close.
+    """
+    await _create(async_client, zoho_item_id="HUGE", material="PETG", spool_weight_kg=0.001)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    assert resp.json()["skipped_no_price"] == 1
+    assert resp.json()["updated"] == 0
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["cost_per_kg"] == 1000.0  # untouched, not inf
+
+
+@pytest.mark.asyncio
+async def test_derived_cost_beyond_the_money_ceiling_is_skipped_not_written(async_client, monkeypatch):
+    """T-090: the auditor's end-to-end 5e+307/inf reproduction.
+
+    ``spool_weight_kg`` now has a floor on the write side (T-090a), so this
+    reproduces the corruption from the OTHER, still-untrusted input: the
+    catalogue product's OWN ``spool_weight_kg``, which is parsed out of a
+    Zoho item name and never passes through the pydantic schema at all. A
+    filament created with no stored weight of its own falls back to it.
+
+    Before the fix, this chunk reported ``updated: 1`` and stored
+    ``cost_per_kg: 5e+307`` / ``sale_price_per_kg: null`` (``inf`` cannot be
+    serialized as JSON) — exactly the values the audit observed against the
+    real app.
+    """
+    catalogue = [
+        FilamentProduct(
+            item_id="CORRUPT",
+            name="Item CORRUPT",
+            sku="SKU-CORRUPT",
+            brand="Bambu Lab",
+            material="ABS-GF",
+            colour="Bleu (Blue)",
+            spool_weight_kg=1e-307,
+            weight_inferred=False,
+            dealer_price=5.0,
+            cost_per_kg=round(5.0 / 1e-307, 2),
+            has_price=True,
+        )
+    ]
+
+    async def configured(db):
+        return True
+
+    async def fetch(db, *, refresh=True):
+        return catalogue
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", fetch)
+
+    await _create(async_client, zoho_item_id="CORRUPT", material="ABS-GF", margin_pct=1000.0, spool_weight_kg=None)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    assert resp.json()["skipped_no_price"] == 1
+    assert resp.json()["updated"] == 0
+
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["cost_per_kg"] == 1000.0  # untouched, not 5e+307
+    assert row["sale_price_per_kg"] == 11000.0  # untouched, not inf/null
 
 
 @pytest.mark.asyncio
@@ -397,3 +471,84 @@ async def test_sync_is_unavailable_when_zoho_is_not_configured(async_client, mon
     monkeypatch.setattr(zoho_service, "is_configured", unconfigured)
     resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.status_code == 503
+
+
+# --- T-074: distinguish an unreachable Zoho from a mapping bug ---------------
+
+
+@pytest.mark.asyncio
+async def test_sync_upstream_failure_returns_502_and_logs_a_stack_trace(async_client, monkeypatch, caplog):
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+
+    with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.calculator"):
+        resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "Could not reach Zoho"
+    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
+    assert records, "expected the route to log the failure"
+    assert records[-1].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_mapping_failure_returns_500_not_bad_gateway(async_client, monkeypatch, caplog):
+    """Same distinction as the search endpoint (T-074): a mapping/programming
+    bug inside fetch_catalogue must not be told to the operator as "Zoho is
+    unreachable"."""
+
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise zoho_filaments.ZohoFilamentMappingError("none of the 2 active items could be mapped")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+
+    with caplog.at_level(logging.ERROR, logger="backend.app.api.routes.calculator"):
+        resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] != "Could not reach Zoho"
+    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
+    assert records, "expected the route to log the failure"
+    assert records[-1].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error(async_client, monkeypatch):
+    """T-073's approved contract survives T-074: a catalogue truncated at
+    _MAX_PAGES still returns 502 from the sync route, not the new 500."""
+
+    async def configured(db):
+        return True
+
+    async def always_more_page(db, *, category, page, per_page):
+        item = {
+            "item_id": f"item-{page}",
+            "name": "Bambu Lab - PLA - X - 1.75mm - 1kg",
+            "sku": "SKU",
+            "brand": "Bambu Lab",
+            "status": "active",
+            "cf_nature_du_produit": "Filaments",
+            "cf_prix_dealer_usd_unformatted": 100.0,
+        }
+        return [item], True  # never signals has_more=False
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_service, "list_items_page", always_more_page)
+    monkeypatch.setattr(zoho_filaments, "_MAX_PAGES", 1)
+    zoho_filaments.reset_cache()
+    try:
+        resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Could not reach Zoho"
+    finally:
+        zoho_filaments.reset_cache()

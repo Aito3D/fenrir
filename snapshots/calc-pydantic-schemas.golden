@@ -1,0 +1,1866 @@
+### exit: 0
+### stdout:
+{
+ "CalculatorDefaultsResponse": {
+  "description": "Response schema for calculator defaults.",
+  "properties": {
+   "ads_rate_pct": {
+    "title": "Ads Rate Pct",
+    "type": "number"
+   },
+   "base_fee_flat": {
+    "title": "Base Fee Flat",
+    "type": "number"
+   },
+   "consumables_packaging_flat": {
+    "title": "Consumables Packaging Flat",
+    "type": "number"
+   },
+   "default_difficulty_pct": {
+    "title": "Default Difficulty Pct",
+    "type": "number"
+   },
+   "default_margin_over_cost_pct": {
+    "title": "Default Margin Over Cost Pct",
+    "type": "number"
+   },
+   "electricity_tariff": {
+    "title": "Electricity Tariff",
+    "type": "number"
+   },
+   "failure_rate_pct": {
+    "title": "Failure Rate Pct",
+    "type": "number"
+   },
+   "filament_markup_pct": {
+    "title": "Filament Markup Pct",
+    "type": "number"
+   },
+   "global_markup_pct": {
+    "title": "Global Markup Pct",
+    "type": "number"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "labor_rate_per_hour": {
+    "title": "Labor Rate Per Hour",
+    "type": "number"
+   },
+   "prototype_rate_pct": {
+    "title": "Prototype Rate Pct",
+    "type": "number"
+   },
+   "stuff_markup_pct": {
+    "title": "Stuff Markup Pct",
+    "type": "number"
+   },
+   "tax_pct": {
+    "title": "Tax Pct",
+    "type": "number"
+   },
+   "updated_at": {
+    "format": "date-time",
+    "title": "Updated At",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "electricity_tariff",
+   "labor_rate_per_hour",
+   "consumables_packaging_flat",
+   "failure_rate_pct",
+   "prototype_rate_pct",
+   "ads_rate_pct",
+   "filament_markup_pct",
+   "global_markup_pct",
+   "tax_pct",
+   "default_difficulty_pct",
+   "default_margin_over_cost_pct",
+   "stuff_markup_pct",
+   "base_fee_flat",
+   "updated_at"
+  ],
+  "title": "CalculatorDefaultsResponse",
+  "type": "object"
+ },
+ "CalculatorDefaultsUpdate": {
+  "description": "Schema for updating calculator defaults (all fields optional).",
+  "properties": {
+   "ads_rate_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ads Rate Pct"
+   },
+   "base_fee_flat": {
+    "anyOf": [
+     {
+      "maximum": 100000000.0,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Base Fee Flat"
+   },
+   "consumables_packaging_flat": {
+    "anyOf": [
+     {
+      "maximum": 100000000.0,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Consumables Packaging Flat"
+   },
+   "default_difficulty_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 100,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Default Difficulty Pct"
+   },
+   "default_margin_over_cost_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Default Margin Over Cost Pct"
+   },
+   "electricity_tariff": {
+    "anyOf": [
+     {
+      "maximum": 100000000.0,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Electricity Tariff"
+   },
+   "failure_rate_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Failure Rate Pct"
+   },
+   "filament_markup_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Markup Pct"
+   },
+   "global_markup_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Global Markup Pct"
+   },
+   "labor_rate_per_hour": {
+    "anyOf": [
+     {
+      "maximum": 100000000.0,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Labor Rate Per Hour"
+   },
+   "prototype_rate_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Prototype Rate Pct"
+   },
+   "stuff_markup_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Stuff Markup Pct"
+   },
+   "tax_pct": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Pct"
+   }
+  },
+  "title": "CalculatorDefaultsUpdate",
+  "type": "object"
+ },
+ "CalculatorFilamentBase": {
+  "description": "Base schema for calculator filaments.\n\n``sale_price_per_kg`` is deliberately absent: it is derived server-side from\n``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.\n\nDeliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``, and\ndeliberately NOT given the ``ge=0, le=1000`` bounds on ``margin_pct``\neither: this class is also the parent of ``CalculatorFilamentResponse``,\nwhich reads back whatever is already in the database. Tightening either\nfield here would turn a pre-existing out-of-range row (e.g. a hand-typed\n``sale_price_per_kg`` below ``cost_per_kg``, backfilled to a negative\nmargin, or one more than ~11x cost, backfilled above 1000) into a 500 for\nthe ENTIRE list on every ``GET`` instead of the real, if unusual, value it\nrenders today; the write-side schemas below carry the new constraints\ninstead, so only new writes are rejected.",
+  "properties": {
+   "brand": {
+    "default": "",
+    "description": "Filament brand (optional)",
+    "maxLength": 100,
+    "title": "Brand",
+    "type": "string"
+   },
+   "cost_per_kg": {
+    "description": "Purchase cost per kg (app currency)",
+    "exclusiveMinimum": 0,
+    "title": "Cost Per Kg",
+    "type": "number"
+   },
+   "difficulty_pct": {
+    "default": 100.0,
+    "description": "Difficulty multiplier for this filament (100 = no surcharge)",
+    "maximum": 1000,
+    "minimum": 100,
+    "title": "Difficulty Pct",
+    "type": "number"
+   },
+   "margin_pct": {
+    "default": 50.0,
+    "description": "Margin over cost, percent",
+    "title": "Margin Pct",
+    "type": "number"
+   },
+   "material": {
+    "description": "Filament material, e.g. PLA or PETG-CF",
+    "maxLength": 100,
+    "minLength": 1,
+    "title": "Material",
+    "type": "string"
+   },
+   "spool_weight_kg": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Spool weight used to derive cost per kg from the dealer price",
+    "title": "Spool Weight Kg"
+   },
+   "zoho_item_id": {
+    "anyOf": [
+     {
+      "maxLength": 50,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item id",
+    "title": "Zoho Item Id"
+   },
+   "zoho_item_name": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item name",
+    "title": "Zoho Item Name"
+   },
+   "zoho_sku": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item SKU",
+    "title": "Zoho Sku"
+   }
+  },
+  "required": [
+   "material",
+   "cost_per_kg"
+  ],
+  "title": "CalculatorFilamentBase",
+  "type": "object"
+ },
+ "CalculatorFilamentCreate": {
+  "description": "Schema for creating a calculator filament.",
+  "properties": {
+   "brand": {
+    "default": "",
+    "description": "Filament brand (optional)",
+    "maxLength": 100,
+    "title": "Brand",
+    "type": "string"
+   },
+   "cost_per_kg": {
+    "description": "Purchase cost per kg (app currency)",
+    "exclusiveMinimum": 0,
+    "maximum": 100000000.0,
+    "title": "Cost Per Kg",
+    "type": "number"
+   },
+   "difficulty_pct": {
+    "default": 100.0,
+    "description": "Difficulty multiplier for this filament (100 = no surcharge)",
+    "maximum": 1000,
+    "minimum": 100,
+    "title": "Difficulty Pct",
+    "type": "number"
+   },
+   "margin_pct": {
+    "default": 50.0,
+    "description": "Margin over cost, percent",
+    "maximum": 1000,
+    "minimum": 0,
+    "title": "Margin Pct",
+    "type": "number"
+   },
+   "material": {
+    "description": "Filament material, e.g. PLA or PETG-CF",
+    "maxLength": 100,
+    "minLength": 1,
+    "title": "Material",
+    "type": "string"
+   },
+   "spool_weight_kg": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 0.001,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Spool weight used to derive cost per kg from the dealer price",
+    "title": "Spool Weight Kg"
+   },
+   "zoho_item_id": {
+    "anyOf": [
+     {
+      "maxLength": 50,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item id",
+    "title": "Zoho Item Id"
+   },
+   "zoho_item_name": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item name",
+    "title": "Zoho Item Name"
+   },
+   "zoho_sku": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item SKU",
+    "title": "Zoho Sku"
+   }
+  },
+  "required": [
+   "material",
+   "cost_per_kg"
+  ],
+  "title": "CalculatorFilamentCreate",
+  "type": "object"
+ },
+ "CalculatorFilamentResponse": {
+  "description": "Response schema for calculator filaments.",
+  "properties": {
+   "brand": {
+    "default": "",
+    "description": "Filament brand (optional)",
+    "maxLength": 100,
+    "title": "Brand",
+    "type": "string"
+   },
+   "cost_per_kg": {
+    "description": "Purchase cost per kg (app currency)",
+    "exclusiveMinimum": 0,
+    "title": "Cost Per Kg",
+    "type": "number"
+   },
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "difficulty_pct": {
+    "default": 100.0,
+    "description": "Difficulty multiplier for this filament (100 = no surcharge)",
+    "maximum": 1000,
+    "minimum": 100,
+    "title": "Difficulty Pct",
+    "type": "number"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "margin_pct": {
+    "default": 50.0,
+    "description": "Margin over cost, percent",
+    "title": "Margin Pct",
+    "type": "number"
+   },
+   "material": {
+    "description": "Filament material, e.g. PLA or PETG-CF",
+    "maxLength": 100,
+    "minLength": 1,
+    "title": "Material",
+    "type": "string"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "sale_price_per_kg": {
+    "title": "Sale Price Per Kg",
+    "type": "number"
+   },
+   "spool_weight_kg": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Spool weight used to derive cost per kg from the dealer price",
+    "title": "Spool Weight Kg"
+   },
+   "updated_at": {
+    "format": "date-time",
+    "title": "Updated At",
+    "type": "string"
+   },
+   "zoho_item_id": {
+    "anyOf": [
+     {
+      "maxLength": 50,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item id",
+    "title": "Zoho Item Id"
+   },
+   "zoho_item_name": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item name",
+    "title": "Zoho Item Name"
+   },
+   "zoho_sku": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Linked Zoho item SKU",
+    "title": "Zoho Sku"
+   },
+   "zoho_synced_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Zoho Synced At"
+   }
+  },
+  "required": [
+   "material",
+   "cost_per_kg",
+   "id",
+   "name",
+   "sale_price_per_kg",
+   "created_at",
+   "updated_at"
+  ],
+  "title": "CalculatorFilamentResponse",
+  "type": "object"
+ },
+ "CalculatorFilamentSyncRequest": {
+  "description": "One chunk of the Zoho price sync.\n\nKeyset paging by id, not offset: an offset would silently skip a row\nwhen a linked filament is deleted mid-run (the chunk boundary shifts\nunder the caller), and would still report success.",
+  "properties": {
+   "after_id": {
+    "default": 0,
+    "description": "Sync filaments with id greater than this; 0 starts from the beginning",
+    "minimum": 0,
+    "title": "After Id",
+    "type": "integer"
+   },
+   "limit": {
+    "default": 25,
+    "description": "Chunk size",
+    "maximum": 200,
+    "minimum": 1,
+    "title": "Limit",
+    "type": "integer"
+   }
+  },
+  "title": "CalculatorFilamentSyncRequest",
+  "type": "object"
+ },
+ "CalculatorFilamentSyncResponse": {
+  "description": "Outcome of one sync chunk. The four outcome counts sum to ``processed``.",
+  "properties": {
+   "missing": {
+    "description": "Linked item no longer in the Zoho catalogue; link and price kept",
+    "title": "Missing",
+    "type": "integer"
+   },
+   "next_after_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "Pass as after_id for the next chunk; null when finished",
+    "title": "Next After Id"
+   },
+   "processed": {
+    "description": "Filaments examined in this chunk",
+    "title": "Processed",
+    "type": "integer"
+   },
+   "skipped_no_price": {
+    "description": "Zoho dealer price was 0; nothing written",
+    "title": "Skipped No Price",
+    "type": "integer"
+   },
+   "total": {
+    "description": "Linked filaments overall, for progress display",
+    "title": "Total",
+    "type": "integer"
+   },
+   "unchanged": {
+    "description": "Zoho price matched the stored cost",
+    "title": "Unchanged",
+    "type": "integer"
+   },
+   "updated": {
+    "description": "Cost per kg changed",
+    "title": "Updated",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "processed",
+   "total",
+   "updated",
+   "unchanged",
+   "skipped_no_price",
+   "missing"
+  ],
+  "title": "CalculatorFilamentSyncResponse",
+  "type": "object"
+ },
+ "CalculatorFilamentUpdate": {
+  "description": "Schema for updating a calculator filament (all fields optional).\n\nThe Zoho fields and ``spool_weight_kg`` accept an explicit ``null`` \u2014 that\nis how the UI unlinks a filament from its Zoho product.\n\n``zoho_synced_at`` is deliberately NOT writable here: only a sync that\nactually applied a dealer price may stamp it. The patch route clears it by\nitself whenever ``zoho_item_id`` changes, so no caller has to remember to.",
+  "properties": {
+   "brand": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Brand"
+   },
+   "cost_per_kg": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Per Kg"
+   },
+   "difficulty_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 100,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Difficulty Pct"
+   },
+   "margin_pct": {
+    "anyOf": [
+     {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin Pct"
+   },
+   "material": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "minLength": 1,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Material"
+   },
+   "spool_weight_kg": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 0.001,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spool Weight Kg"
+   },
+   "zoho_item_id": {
+    "anyOf": [
+     {
+      "maxLength": 50,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Zoho Item Id"
+   },
+   "zoho_item_name": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Zoho Item Name"
+   },
+   "zoho_sku": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Zoho Sku"
+   }
+  },
+  "title": "CalculatorFilamentUpdate",
+  "type": "object"
+ },
+ "CalculatorInsightsResponse": {
+  "$defs": {
+   "DailyUsageEntry": {
+    "description": "Measured usage-hours/day for one printer over the observed window.",
+    "properties": {
+     "hours_per_day": {
+      "title": "Hours Per Day",
+      "type": "number"
+     },
+     "observed_days": {
+      "title": "Observed Days",
+      "type": "integer"
+     },
+     "printer_id": {
+      "title": "Printer Id",
+      "type": "integer"
+     },
+     "printer_name": {
+      "title": "Printer Name",
+      "type": "string"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "printer_id",
+     "printer_name",
+     "hours_per_day",
+     "observed_days",
+     "sample"
+    ],
+    "title": "DailyUsageEntry",
+    "type": "object"
+   },
+   "FailureInsights": {
+    "properties": {
+     "by_material": {
+      "items": {
+       "$ref": "#/$defs/FailureRateEntry"
+      },
+      "title": "By Material",
+      "type": "array"
+     },
+     "by_printer": {
+      "items": {
+       "$ref": "#/$defs/FailureRateEntry"
+      },
+      "title": "By Printer",
+      "type": "array"
+     },
+     "overall_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Overall Pct"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "overall_pct",
+     "sample",
+     "by_printer",
+     "by_material"
+    ],
+    "title": "FailureInsights",
+    "type": "object"
+   },
+   "FailureRateEntry": {
+    "description": "Measured failure rate for one printer or one material.",
+    "properties": {
+     "material": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Material"
+     },
+     "printer_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Printer Id"
+     },
+     "printer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Printer Name"
+     },
+     "rate_pct": {
+      "title": "Rate Pct",
+      "type": "number"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "rate_pct",
+     "sample"
+    ],
+    "title": "FailureRateEntry",
+    "type": "object"
+   },
+   "PowerDrawEntry": {
+    "description": "Energy-weighted average watts measured for one printer.",
+    "properties": {
+     "avg_watts": {
+      "title": "Avg Watts",
+      "type": "number"
+     },
+     "printer_id": {
+      "title": "Printer Id",
+      "type": "integer"
+     },
+     "printer_name": {
+      "title": "Printer Name",
+      "type": "string"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "printer_id",
+     "printer_name",
+     "avg_watts",
+     "sample"
+    ],
+    "title": "PowerDrawEntry",
+    "type": "object"
+   },
+   "SpoolCostBrandEntry": {
+    "properties": {
+     "avg_cost_per_kg": {
+      "title": "Avg Cost Per Kg",
+      "type": "number"
+     },
+     "brand": {
+      "title": "Brand",
+      "type": "string"
+     },
+     "material": {
+      "title": "Material",
+      "type": "string"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "brand",
+     "material",
+     "avg_cost_per_kg",
+     "sample"
+    ],
+    "title": "SpoolCostBrandEntry",
+    "type": "object"
+   },
+   "SpoolCostEntry": {
+    "properties": {
+     "avg_cost_per_kg": {
+      "title": "Avg Cost Per Kg",
+      "type": "number"
+     },
+     "material": {
+      "title": "Material",
+      "type": "string"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "material",
+     "avg_cost_per_kg",
+     "sample"
+    ],
+    "title": "SpoolCostEntry",
+    "type": "object"
+   },
+   "TimeAccuracyEntry": {
+    "properties": {
+     "accuracy_pct": {
+      "title": "Accuracy Pct",
+      "type": "number"
+     },
+     "printer_id": {
+      "title": "Printer Id",
+      "type": "integer"
+     },
+     "printer_name": {
+      "title": "Printer Name",
+      "type": "string"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "printer_id",
+     "printer_name",
+     "accuracy_pct",
+     "sample"
+    ],
+    "title": "TimeAccuracyEntry",
+    "type": "object"
+   },
+   "TimeAccuracyInsights": {
+    "properties": {
+     "by_printer": {
+      "items": {
+       "$ref": "#/$defs/TimeAccuracyEntry"
+      },
+      "title": "By Printer",
+      "type": "array"
+     },
+     "overall_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Overall Pct"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "overall_pct",
+     "sample",
+     "by_printer"
+    ],
+    "title": "TimeAccuracyInsights",
+    "type": "object"
+   }
+  },
+  "description": "Measured values the calculator can offer in place of its assumptions.",
+  "properties": {
+   "energy_cost_per_kwh": {
+    "title": "Energy Cost Per Kwh",
+    "type": "number"
+   },
+   "failure": {
+    "$ref": "#/$defs/FailureInsights"
+   },
+   "power_by_printer": {
+    "items": {
+     "$ref": "#/$defs/PowerDrawEntry"
+    },
+    "title": "Power By Printer",
+    "type": "array"
+   },
+   "spool_cost_by_brand": {
+    "items": {
+     "$ref": "#/$defs/SpoolCostBrandEntry"
+    },
+    "title": "Spool Cost By Brand",
+    "type": "array"
+   },
+   "spool_cost_by_material": {
+    "items": {
+     "$ref": "#/$defs/SpoolCostEntry"
+    },
+    "title": "Spool Cost By Material",
+    "type": "array"
+   },
+   "time_accuracy": {
+    "$ref": "#/$defs/TimeAccuracyInsights"
+   },
+   "usage_by_printer": {
+    "items": {
+     "$ref": "#/$defs/DailyUsageEntry"
+    },
+    "title": "Usage By Printer",
+    "type": "array"
+   },
+   "window_days": {
+    "title": "Window Days",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "window_days",
+   "failure",
+   "energy_cost_per_kwh",
+   "spool_cost_by_material",
+   "spool_cost_by_brand",
+   "time_accuracy",
+   "power_by_printer",
+   "usage_by_printer"
+  ],
+  "title": "CalculatorInsightsResponse",
+  "type": "object"
+ },
+ "CalculatorPrinterBase": {
+  "description": "Base schema for calculator printers.\n\nDeliberately NOT given ``_FINITE_ONLY``/ceilings on its money fields: see\nthe equivalent note on ``CalculatorFilamentBase`` \u2014 this class also backs\n``CalculatorPrinterResponse``, and tightening it here would turn a\npre-existing out-of-range row into a 500 on every ``GET``.",
+  "properties": {
+   "daily_usage_hours": {
+    "description": "Average daily usage in hours",
+    "exclusiveMinimum": 0,
+    "maximum": 24,
+    "title": "Daily Usage Hours",
+    "type": "number"
+   },
+   "lifetime_years": {
+    "description": "Expected lifetime in years",
+    "exclusiveMinimum": 0,
+    "title": "Lifetime Years",
+    "type": "number"
+   },
+   "name": {
+    "description": "Printer name",
+    "maxLength": 100,
+    "minLength": 1,
+    "title": "Name",
+    "type": "string"
+   },
+   "power_watts": {
+    "description": "Power draw in watts",
+    "exclusiveMinimum": 0,
+    "title": "Power Watts",
+    "type": "number"
+   },
+   "purchase_price": {
+    "description": "Purchase price (app currency)",
+    "exclusiveMinimum": 0,
+    "title": "Purchase Price",
+    "type": "number"
+   },
+   "repair_rate_pct": {
+    "description": "Expected repair cost over lifetime as % of purchase price",
+    "maximum": 100,
+    "minimum": 0,
+    "title": "Repair Rate Pct",
+    "type": "number"
+   }
+  },
+  "required": [
+   "name",
+   "purchase_price",
+   "lifetime_years",
+   "daily_usage_hours",
+   "power_watts",
+   "repair_rate_pct"
+  ],
+  "title": "CalculatorPrinterBase",
+  "type": "object"
+ },
+ "CalculatorPrinterCreate": {
+  "description": "Schema for creating a calculator printer.",
+  "properties": {
+   "daily_usage_hours": {
+    "description": "Average daily usage in hours",
+    "exclusiveMinimum": 0,
+    "maximum": 24,
+    "title": "Daily Usage Hours",
+    "type": "number"
+   },
+   "lifetime_years": {
+    "description": "Expected lifetime in years",
+    "exclusiveMinimum": 0,
+    "title": "Lifetime Years",
+    "type": "number"
+   },
+   "name": {
+    "description": "Printer name",
+    "maxLength": 100,
+    "minLength": 1,
+    "title": "Name",
+    "type": "string"
+   },
+   "power_watts": {
+    "description": "Power draw in watts",
+    "exclusiveMinimum": 0,
+    "maximum": 100000000.0,
+    "title": "Power Watts",
+    "type": "number"
+   },
+   "purchase_price": {
+    "description": "Purchase price (app currency)",
+    "exclusiveMinimum": 0,
+    "maximum": 100000000.0,
+    "title": "Purchase Price",
+    "type": "number"
+   },
+   "repair_rate_pct": {
+    "description": "Expected repair cost over lifetime as % of purchase price",
+    "maximum": 100,
+    "minimum": 0,
+    "title": "Repair Rate Pct",
+    "type": "number"
+   }
+  },
+  "required": [
+   "name",
+   "purchase_price",
+   "lifetime_years",
+   "daily_usage_hours",
+   "power_watts",
+   "repair_rate_pct"
+  ],
+  "title": "CalculatorPrinterCreate",
+  "type": "object"
+ },
+ "CalculatorPrinterResponse": {
+  "description": "Response schema for calculator printers.\n\nDerived per-hour values (lifetime hours, depreciation, repairs) are\ncomputed client-side by the pricing engine (frontend ``utils/pricing.ts``)\n\u2014 the single source of truth for calculator math.",
+  "properties": {
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "daily_usage_hours": {
+    "description": "Average daily usage in hours",
+    "exclusiveMinimum": 0,
+    "maximum": 24,
+    "title": "Daily Usage Hours",
+    "type": "number"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "lifetime_years": {
+    "description": "Expected lifetime in years",
+    "exclusiveMinimum": 0,
+    "title": "Lifetime Years",
+    "type": "number"
+   },
+   "name": {
+    "description": "Printer name",
+    "maxLength": 100,
+    "minLength": 1,
+    "title": "Name",
+    "type": "string"
+   },
+   "power_watts": {
+    "description": "Power draw in watts",
+    "exclusiveMinimum": 0,
+    "title": "Power Watts",
+    "type": "number"
+   },
+   "purchase_price": {
+    "description": "Purchase price (app currency)",
+    "exclusiveMinimum": 0,
+    "title": "Purchase Price",
+    "type": "number"
+   },
+   "repair_rate_pct": {
+    "description": "Expected repair cost over lifetime as % of purchase price",
+    "maximum": 100,
+    "minimum": 0,
+    "title": "Repair Rate Pct",
+    "type": "number"
+   },
+   "updated_at": {
+    "format": "date-time",
+    "title": "Updated At",
+    "type": "string"
+   }
+  },
+  "required": [
+   "name",
+   "purchase_price",
+   "lifetime_years",
+   "daily_usage_hours",
+   "power_watts",
+   "repair_rate_pct",
+   "id",
+   "created_at",
+   "updated_at"
+  ],
+  "title": "CalculatorPrinterResponse",
+  "type": "object"
+ },
+ "CalculatorPrinterUpdate": {
+  "description": "Schema for updating a calculator printer (all fields optional).",
+  "properties": {
+   "daily_usage_hours": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 24,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Daily Usage Hours"
+   },
+   "lifetime_years": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Lifetime Years"
+   },
+   "name": {
+    "anyOf": [
+     {
+      "maxLength": 100,
+      "minLength": 1,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "power_watts": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Power Watts"
+   },
+   "purchase_price": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Purchase Price"
+   },
+   "repair_rate_pct": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Repair Rate Pct"
+   }
+  },
+  "title": "CalculatorPrinterUpdate",
+  "type": "object"
+ },
+ "DailyUsageEntry": {
+  "description": "Measured usage-hours/day for one printer over the observed window.",
+  "properties": {
+   "hours_per_day": {
+    "title": "Hours Per Day",
+    "type": "number"
+   },
+   "observed_days": {
+    "title": "Observed Days",
+    "type": "integer"
+   },
+   "printer_id": {
+    "title": "Printer Id",
+    "type": "integer"
+   },
+   "printer_name": {
+    "title": "Printer Name",
+    "type": "string"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "printer_id",
+   "printer_name",
+   "hours_per_day",
+   "observed_days",
+   "sample"
+  ],
+  "title": "DailyUsageEntry",
+  "type": "object"
+ },
+ "FailureInsights": {
+  "$defs": {
+   "FailureRateEntry": {
+    "description": "Measured failure rate for one printer or one material.",
+    "properties": {
+     "material": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Material"
+     },
+     "printer_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Printer Id"
+     },
+     "printer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Printer Name"
+     },
+     "rate_pct": {
+      "title": "Rate Pct",
+      "type": "number"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "rate_pct",
+     "sample"
+    ],
+    "title": "FailureRateEntry",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "by_material": {
+    "items": {
+     "$ref": "#/$defs/FailureRateEntry"
+    },
+    "title": "By Material",
+    "type": "array"
+   },
+   "by_printer": {
+    "items": {
+     "$ref": "#/$defs/FailureRateEntry"
+    },
+    "title": "By Printer",
+    "type": "array"
+   },
+   "overall_pct": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Overall Pct"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "overall_pct",
+   "sample",
+   "by_printer",
+   "by_material"
+  ],
+  "title": "FailureInsights",
+  "type": "object"
+ },
+ "FailureRateEntry": {
+  "description": "Measured failure rate for one printer or one material.",
+  "properties": {
+   "material": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Material"
+   },
+   "printer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Printer Id"
+   },
+   "printer_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Printer Name"
+   },
+   "rate_pct": {
+    "title": "Rate Pct",
+    "type": "number"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "rate_pct",
+   "sample"
+  ],
+  "title": "FailureRateEntry",
+  "type": "object"
+ },
+ "PowerDrawEntry": {
+  "description": "Energy-weighted average watts measured for one printer.",
+  "properties": {
+   "avg_watts": {
+    "title": "Avg Watts",
+    "type": "number"
+   },
+   "printer_id": {
+    "title": "Printer Id",
+    "type": "integer"
+   },
+   "printer_name": {
+    "title": "Printer Name",
+    "type": "string"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "printer_id",
+   "printer_name",
+   "avg_watts",
+   "sample"
+  ],
+  "title": "PowerDrawEntry",
+  "type": "object"
+ },
+ "SpoolCostBrandEntry": {
+  "properties": {
+   "avg_cost_per_kg": {
+    "title": "Avg Cost Per Kg",
+    "type": "number"
+   },
+   "brand": {
+    "title": "Brand",
+    "type": "string"
+   },
+   "material": {
+    "title": "Material",
+    "type": "string"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "brand",
+   "material",
+   "avg_cost_per_kg",
+   "sample"
+  ],
+  "title": "SpoolCostBrandEntry",
+  "type": "object"
+ },
+ "SpoolCostEntry": {
+  "properties": {
+   "avg_cost_per_kg": {
+    "title": "Avg Cost Per Kg",
+    "type": "number"
+   },
+   "material": {
+    "title": "Material",
+    "type": "string"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "material",
+   "avg_cost_per_kg",
+   "sample"
+  ],
+  "title": "SpoolCostEntry",
+  "type": "object"
+ },
+ "TimeAccuracyEntry": {
+  "properties": {
+   "accuracy_pct": {
+    "title": "Accuracy Pct",
+    "type": "number"
+   },
+   "printer_id": {
+    "title": "Printer Id",
+    "type": "integer"
+   },
+   "printer_name": {
+    "title": "Printer Name",
+    "type": "string"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "printer_id",
+   "printer_name",
+   "accuracy_pct",
+   "sample"
+  ],
+  "title": "TimeAccuracyEntry",
+  "type": "object"
+ },
+ "TimeAccuracyInsights": {
+  "$defs": {
+   "TimeAccuracyEntry": {
+    "properties": {
+     "accuracy_pct": {
+      "title": "Accuracy Pct",
+      "type": "number"
+     },
+     "printer_id": {
+      "title": "Printer Id",
+      "type": "integer"
+     },
+     "printer_name": {
+      "title": "Printer Name",
+      "type": "string"
+     },
+     "sample": {
+      "title": "Sample",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "printer_id",
+     "printer_name",
+     "accuracy_pct",
+     "sample"
+    ],
+    "title": "TimeAccuracyEntry",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "by_printer": {
+    "items": {
+     "$ref": "#/$defs/TimeAccuracyEntry"
+    },
+    "title": "By Printer",
+    "type": "array"
+   },
+   "overall_pct": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Overall Pct"
+   },
+   "sample": {
+    "title": "Sample",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "overall_pct",
+   "sample",
+   "by_printer"
+  ],
+  "title": "TimeAccuracyInsights",
+  "type": "object"
+ },
+ "ZohoFilamentProduct": {
+  "description": "A Zoho filament item offered in the add-filament search.",
+  "properties": {
+   "brand": {
+    "title": "Brand",
+    "type": "string"
+   },
+   "colour": {
+    "title": "Colour",
+    "type": "string"
+   },
+   "cost_per_kg": {
+    "title": "Cost Per Kg",
+    "type": "number"
+   },
+   "dealer_price": {
+    "title": "Dealer Price",
+    "type": "number"
+   },
+   "has_price": {
+    "description": "False when the Zoho dealer price is 0; cost must not be filled from it",
+    "title": "Has Price",
+    "type": "boolean"
+   },
+   "item_id": {
+    "title": "Item Id",
+    "type": "string"
+   },
+   "material": {
+    "title": "Material",
+    "type": "string"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "sku": {
+    "title": "Sku",
+    "type": "string"
+   },
+   "spool_weight_kg": {
+    "title": "Spool Weight Kg",
+    "type": "number"
+   },
+   "weight_inferred": {
+    "description": "True when the item name carried no weight and 1 kg was assumed",
+    "title": "Weight Inferred",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "item_id",
+   "name",
+   "sku",
+   "brand",
+   "material",
+   "colour",
+   "spool_weight_kg",
+   "weight_inferred",
+   "dealer_price",
+   "cost_per_kg",
+   "has_price"
+  ],
+  "title": "ZohoFilamentProduct",
+  "type": "object"
+ }
+}
+
+### stderr:
+

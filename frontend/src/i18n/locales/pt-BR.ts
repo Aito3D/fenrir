@@ -8327,6 +8327,7 @@ export default {
     openSettings: 'Abrir configurações da calculadora',
     valNonNegative: 'Deve ser 0 ou maior',
     valQuantityMin: 'Deve ser pelo menos 1',
+    valRange: 'Deve estar entre {{min}} e {{max}}',
     allMaterials: 'Todos os materiais',
     allBrands: 'Todas as marcas',
     noMatches: 'Nenhum resultado encontrado',
@@ -8351,6 +8352,7 @@ export default {
     syncSummary:
       '{{updated}} atualizados · {{unchanged}} sem alteração · {{skipped}} sem preço de revendedor · {{missing}} não encontrados no Zoho',
     syncFailed: 'Sincronização interrompida: {{error}}',
+    syncTimedOut: 'A sincronização expirou; alguns blocos podem ter sido aplicados mesmo assim',
     zohoDuplicateWarning: 'Já existe um filamento para {{name}}',
     addFilament: 'Adicionar filamento',
     editFilament: 'Editar filamento',
