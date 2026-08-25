@@ -11,6 +11,7 @@ import {
   parseColorFromContent,
 } from './presetJson';
 import { materialFamilyClass } from './constants';
+import { Card } from '../Card';
 
 export interface PresetCardProps {
   preset: FilamentPreset;
@@ -73,16 +74,29 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
   };
 
   return (
-    <div
+    // The shared Card, not a hand-rolled copy of it: this row now gets the same
+    // resting `card-shadow` the printer tiles have (it had none, so it sat flat
+    // beside them), the same transition-[transform,box-shadow,border-color]
+    // curve, the same hover lift and green/40 border, and the motion-reduce
+    // guards — and it keeps getting them when Card changes.
+    //
+    // No `overflow-hidden` here, unlike VirtualPrinterCard: the row contains an
+    // absolutely-positioned z-30 dropdown, which clipping would cut off. The
+    // swatch rounds its own left corners instead, which is why it carries
+    // `rounded-l-xl`.
+    <Card
+      interactive
       onClick={onOpen}
-      className={`relative flex min-h-24 cursor-pointer group rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary transition-all hover:-translate-y-0.5 hover:shadow-lg hover:border-bambu-green/60 ${menuOpen ? 'z-20' : ''}`}
+      className={`relative flex min-h-24 group ${menuOpen ? 'z-20' : ''}`}
     >
       <div
         className="w-16 shrink-0 rounded-l-xl"
         style={{ backgroundColor: swatchColor || '#444' }}
         title={swatchColor}
       />
-      <div className="flex flex-1 min-w-0 items-center justify-between gap-2 px-4 py-2">
+      {/* p-4 is Card's own dense padding token, replacing an ad-hoc px-4 py-2 —
+          same spacing scale as the printer cards' CardContent. */}
+      <div className="flex flex-1 min-w-0 items-center justify-between gap-2 p-4">
         <div className="min-w-0 flex-1">
           {preset.brand !== '' && (
             <div className="text-xs font-bold uppercase tracking-wide text-bambu-gray/60">{preset.brand}</div>
@@ -150,6 +164,6 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -486,7 +486,7 @@ export function PresetEditorModal({
             type="button"
             onClick={handleDismiss}
             aria-label={t('filamentProfiles.close')}
-            className="absolute right-3 top-3 z-10 shrink-0 rounded p-1 text-bambu-gray/60 hover:bg-bambu-dark-tertiary hover:text-white"
+            className="absolute right-3 top-7 z-10 shrink-0 rounded p-1 text-bambu-gray/60 hover:bg-bambu-dark-tertiary hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
@@ -494,7 +494,11 @@ export function PresetEditorModal({
         {/* Tab bar with a sliding ink underline — measured from the active
             button so it fits any locale's label; the same slightly
             overshooting curve as the pane slide (see index.css .fp-ink). */}
-        <div className="relative flex gap-1 border-b border-bambu-dark-tertiary px-5 pr-12 pt-2">
+        {/* pt-6 and the close button's top-7 move together on purpose: the X is
+            centred on the tab row (X centre = top + 12.6px, tab centre = pt +
+            16.2px at this app's 14.4px root rem), so changing one alone knocks
+            them out of alignment. At pt-6 that puts both centres at 37.8px. */}
+        <div className="relative flex gap-1 border-b border-bambu-dark-tertiary px-5 pr-12 pt-6">
           {TABS.map((tab, i) => (
             <button
               key={tab.id}
