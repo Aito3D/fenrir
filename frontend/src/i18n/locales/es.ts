@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Mantén pulsado 1 s para eliminar',
     markSent: 'Marcar como enviado',
     printQuote: 'Imprimir presupuesto',
+    downloadQuote: 'Descargar presupuesto',
     printFailed: 'No se pudo obtener el PDF del presupuesto',
     printOpenedInTab: 'Abierto en una pestaña nueva: pulsa Ctrl+P para imprimir',
     printPopupBlocked: 'Ventana emergente bloqueada: se descargará el PDF en su lugar',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Abrir en Zoho Books',
     invoiceMoreCount: 'Otras facturas: {{count}}',
     printInvoice: 'Imprimir factura',
+    downloadInvoice: 'Descargar factura',
     invoicePrintFailed: 'No se pudo obtener el PDF de la factura',
     invoiceStatus: {
       draft: 'Borrador',

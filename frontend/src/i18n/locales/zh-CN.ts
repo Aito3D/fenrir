@@ -16,6 +16,7 @@ export default {
     holdToDelete: '长按 1 秒删除',
     markSent: '标记为已发送',
     printQuote: '打印报价单',
+    downloadQuote: '下载报价单',
     printFailed: '无法获取报价单 PDF',
     printOpenedInTab: '已在新标签页中打开 — 按 Ctrl+P 打印',
     printPopupBlocked: '弹出窗口被阻止 — 改为下载 PDF',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: '在 Zoho Books 中打开',
     invoiceMoreCount: '其他发票：{{count}}',
     printInvoice: '打印发票',
+    downloadInvoice: '下载发票',
     invoicePrintFailed: '无法获取发票 PDF',
     invoiceStatus: {
       draft: '草稿',

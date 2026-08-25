@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Mantenha pressionado por 1 s para excluir',
     markSent: 'Marcar como enviado',
     printQuote: 'Imprimir orçamento',
+    downloadQuote: 'Baixar orçamento',
     printFailed: 'Não foi possível obter o PDF do orçamento',
     printOpenedInTab: 'Aberto em uma nova aba — pressione Ctrl+P para imprimir',
     printPopupBlocked: 'Pop-up bloqueado — baixando o PDF em vez disso',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Abrir no Zoho Books',
     invoiceMoreCount: 'Outras faturas: {{count}}',
     printInvoice: 'Imprimir fatura',
+    downloadInvoice: 'Baixar fatura',
     invoicePrintFailed: 'Não foi possível obter o PDF da fatura',
     invoiceStatus: {
       draft: 'Rascunho',

@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Silmek için 1 sn basılı tutun',
     markSent: 'Gönderildi olarak işaretle',
     printQuote: 'Teklifi yazdır',
+    downloadQuote: 'Teklifi indir',
     printFailed: 'Teklif PDF’i alınamadı',
     printOpenedInTab: 'Yeni sekmede açıldı — yazdırmak için Ctrl+P’ye basın',
     printPopupBlocked: 'Açılır pencere engellendi — bunun yerine PDF indiriliyor',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Zoho Books\'ta aç',
     invoiceMoreCount: 'Diğer faturalar: {{count}}',
     printInvoice: 'Faturayı yazdır',
+    downloadInvoice: 'Faturayı indir',
     invoicePrintFailed: 'Fatura PDF\'i alınamadı',
     invoiceStatus: {
       draft: 'Taslak',

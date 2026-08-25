@@ -11,6 +11,7 @@ import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
 import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
+import { QuoteDownloadButton } from './QuoteDownloadButton';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { SendQuoteButton } from './SendQuoteButton';
@@ -1206,6 +1207,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
                       what got it removed. */}
                   <div className="flex gap-2 mt-3">
                     <QuotePrintButton project={project} withLabel className="flex-1 justify-center" />
+                    {/* Icon-only between the two labelled pills: a third full
+                        label does not fit the row in the longer locales. Reads
+                        the same PDF the print button does, but saves it. */}
+                    <QuoteDownloadButton project={project} />
                     {/* POST /{project_id}/quote-email enforces AITO_UPDATE. */}
                     {canUpdate && <SendQuoteButton project={project} className="flex-1 justify-center" />}
                   </div>

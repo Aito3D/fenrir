@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Zum Löschen 1 s gedrückt halten',
     markSent: 'Als versendet markieren',
     printQuote: 'Angebot drucken',
+    downloadQuote: 'Angebot herunterladen',
     printFailed: 'Angebots-PDF konnte nicht geladen werden',
     printOpenedInTab: 'In neuem Tab geöffnet – zum Drucken Strg+P drücken',
     printPopupBlocked: 'Pop-up blockiert – PDF wird stattdessen heruntergeladen',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'In Zoho Books öffnen',
     invoiceMoreCount: 'Weitere Rechnungen: {{count}}',
     printInvoice: 'Rechnung drucken',
+    downloadInvoice: 'Rechnung herunterladen',
     invoicePrintFailed: 'Rechnungs-PDF konnte nicht geladen werden',
     invoiceStatus: {
       draft: 'Entwurf',

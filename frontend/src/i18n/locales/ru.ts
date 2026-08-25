@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Удерживайте 1 с для удаления',
     markSent: 'Отметить как отправлено',
     printQuote: 'Печать сметы',
+    downloadQuote: 'Скачать смету',
     printFailed: 'Не удалось получить PDF сметы',
     printOpenedInTab: 'Открыто в новой вкладке — нажмите Ctrl+P для печати',
     printPopupBlocked: 'Всплывающее окно заблокировано — вместо этого PDF будет загружен',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Открыть в Zoho Books',
     invoiceMoreCount: 'Другие счета: {{count}}',
     printInvoice: 'Печать счёта',
+    downloadInvoice: 'Скачать счёт',
     invoicePrintFailed: 'Не удалось получить PDF счёта',
     invoiceStatus: {
       draft: 'Черновик',

@@ -17,6 +17,7 @@ export default {
     holdToDelete: "Утримуйте 1 с, щоб видалити",
     markSent: "Позначити як надіслану",
     printQuote: "Друк кошторису",
+    downloadQuote: 'Завантажити кошторис',
     printFailed: "Не вдалося отримати PDF кошторису",
     printOpenedInTab: "Відкрито в новій вкладці — натисніть Ctrl+P для друку",
     printPopupBlocked: "Спливаюче вікно заблоковано — натомість PDF буде завантажено",
@@ -239,6 +240,7 @@ export default {
     invoiceOpenInZoho: 'Відкрити в Zoho Books',
     invoiceMoreCount: 'Інші рахунки: {{count}}',
     printInvoice: 'Друк рахунку',
+    downloadInvoice: 'Завантажити рахунок',
     invoicePrintFailed: 'Не вдалося отримати PDF рахунку',
     invoiceStatus: {
       draft: 'Чернетка',

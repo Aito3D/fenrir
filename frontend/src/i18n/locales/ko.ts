@@ -16,6 +16,7 @@ export default {
     holdToDelete: '1초 길게 눌러 삭제',
     markSent: '발송됨으로 표시',
     printQuote: '견적서 인쇄',
+    downloadQuote: '견적서 다운로드',
     printFailed: '견적서 PDF를 가져오지 못했습니다',
     printOpenedInTab: '새 탭에서 열렸습니다. Ctrl+P를 눌러 인쇄하세요',
     printPopupBlocked: '팝업이 차단되었습니다 — 대신 PDF를 다운로드합니다',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Zoho Books에서 열기',
     invoiceMoreCount: '기타 청구서: {{count}}',
     printInvoice: '청구서 인쇄',
+    downloadInvoice: '청구서 다운로드',
     invoicePrintFailed: '청구서 PDF를 가져오지 못했습니다',
     invoiceStatus: {
       draft: '초안',

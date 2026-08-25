@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Hold 1s to delete',
     markSent: 'Mark as sent',
     printQuote: 'Print quote',
+    downloadQuote: 'Download quote',
     printFailed: 'Could not fetch the quote PDF',
     printOpenedInTab: 'Opened in a new tab — press Ctrl+P to print',
     printPopupBlocked: 'Pop-up blocked — downloading the PDF instead',
@@ -242,6 +243,7 @@ export default {
     invoiceOpenInZoho: 'Open in Zoho Books',
     invoiceMoreCount: 'Other invoices: {{count}}',
     printInvoice: 'Print invoice',
+    downloadInvoice: 'Download invoice',
     invoicePrintFailed: 'Could not fetch the invoice PDF',
     invoiceStatus: {
       draft: 'Draft',

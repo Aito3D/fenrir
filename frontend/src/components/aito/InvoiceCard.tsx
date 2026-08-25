@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { api, type AitoProject } from '../../api/client';
 import { PanelCard } from './PanelCard';
+import { InvoiceDownloadButton } from './InvoiceDownloadButton';
 import { InvoicePrintButton } from './InvoicePrintButton';
 import { SendInvoiceButton } from './SendInvoiceButton';
 import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from './invoiceStatus';
@@ -158,6 +159,10 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
           goes there. */}
       <div className="flex gap-2 mt-3">
         <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
+        {/* Icon-only between the two labelled pills, mirroring the Quote
+            card's row exactly. Saves the same PDF the print button fetches,
+            named after the invoice number. */}
+        <InvoiceDownloadButton projectId={project.id} invoiceId={invoice.id} invoiceNumber={invoice.number} />
         {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
             same call site pattern, as SendQuoteButton one card up. */}
         {canUpdate && (

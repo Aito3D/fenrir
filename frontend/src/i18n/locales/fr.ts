@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Maintenir 1 s pour supprimer',
     markSent: 'Marquer comme envoyé',
     printQuote: 'Imprimer le devis',
+    downloadQuote: 'Télécharger le devis',
     printFailed: 'Impossible de récupérer le PDF du devis',
     printOpenedInTab: 'Ouvert dans un nouvel onglet — appuyez sur Ctrl+P pour imprimer',
     printPopupBlocked: 'Fenêtre pop-up bloquée — téléchargement du PDF à la place',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Ouvrir dans Zoho Books',
     invoiceMoreCount: 'Autres factures : {{count}}',
     printInvoice: 'Imprimer la facture',
+    downloadInvoice: 'Télécharger la facture',
     invoicePrintFailed: 'Impossible de récupérer le PDF de la facture',
     invoiceStatus: {
       draft: 'Brouillon',

@@ -16,6 +16,7 @@ export default {
     holdToDelete: '1秒長押しで削除',
     markSent: '送信済みにする',
     printQuote: '見積書を印刷',
+    downloadQuote: '見積書をダウンロード',
     printFailed: '見積書の PDF を取得できませんでした',
     printOpenedInTab: '新しいタブで開きました。Ctrl+P で印刷してください',
     printPopupBlocked: 'ポップアップがブロックされました。代わりに PDF をダウンロードします',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Zoho Books で開く',
     invoiceMoreCount: 'その他の請求書: {{count}}',
     printInvoice: '請求書を印刷',
+    downloadInvoice: '請求書をダウンロード',
     invoicePrintFailed: '請求書PDFを取得できませんでした',
     invoiceStatus: {
       draft: '下書き',

@@ -16,6 +16,7 @@ export default {
     holdToDelete: 'Tieni premuto 1 s per eliminare',
     markSent: 'Segna come inviato',
     printQuote: 'Stampa preventivo',
+    downloadQuote: 'Scarica preventivo',
     printFailed: 'Impossibile recuperare il PDF del preventivo',
     printOpenedInTab: 'Aperto in una nuova scheda: premi Ctrl+P per stampare',
     printPopupBlocked: 'Popup bloccato: il PDF verrà scaricato al suo posto',
@@ -238,6 +239,7 @@ export default {
     invoiceOpenInZoho: 'Apri in Zoho Books',
     invoiceMoreCount: 'Altre fatture: {{count}}',
     printInvoice: 'Stampa fattura',
+    downloadInvoice: 'Scarica fattura',
     invoicePrintFailed: 'Impossibile recuperare il PDF della fattura',
     invoiceStatus: {
       draft: 'Bozza',
