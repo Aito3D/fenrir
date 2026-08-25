@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 type ThemeStyle = 'classic' | 'glow' | 'vibrant';
-type DarkBackground = 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest';
+type DarkBackground = 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest' | 'midnight';
 type LightBackground = 'neutral' | 'warm' | 'cool';
 type ThemeAccent = 'green' | 'teal' | 'blue' | 'orange' | 'purple' | 'red';
 

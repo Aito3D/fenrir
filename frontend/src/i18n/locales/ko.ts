@@ -2952,6 +2952,7 @@ export default {
     bgOled: 'OLED 블랙',
     bgSlate: '슬레이트 블루',
     bgForest: '포레스트 그린',
+    bgMidnight: '미드나이트 블루',
     accentGreen: '그린',
     accentTeal: '틸',
     accentBlue: '블루',

@@ -3083,6 +3083,7 @@ export default {
     bgOled: 'OLED 纯黑',
     bgSlate: '石板蓝',
     bgForest: '森林绿',
+    bgMidnight: '午夜蓝',
     accentGreen: '绿色',
     accentTeal: '青色',
     accentBlue: '蓝色',

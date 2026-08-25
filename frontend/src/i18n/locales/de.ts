@@ -3084,6 +3084,7 @@ export default {
     bgOled: 'OLED Schwarz',
     bgSlate: 'Schieferblau',
     bgForest: 'Waldgrün',
+    bgMidnight: 'Mitternachtsblau',
     accentGreen: 'Grün',
     accentTeal: 'Türkis',
     accentBlue: 'Blau',

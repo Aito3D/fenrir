@@ -1311,7 +1311,7 @@ export interface AppSettings {
   pipeline_max_copies: number;
   // Dark mode theme settings
   dark_style: 'classic' | 'glow' | 'vibrant';
-  dark_background: 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest';
+  dark_background: 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest' | 'midnight';
   dark_accent: 'green' | 'teal' | 'blue' | 'orange' | 'purple' | 'red';
   // Light mode theme settings
   light_style: 'classic' | 'glow' | 'vibrant';

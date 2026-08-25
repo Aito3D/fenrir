@@ -3039,6 +3039,7 @@ export default {
     bgOled: 'OLED Noir',
     bgSlate: 'Bleu ardoise',
     bgForest: 'Vert forêt',
+    bgMidnight: 'Bleu nuit',
     accentGreen: 'Vert',
     accentTeal: 'Sarcelle',
     accentBlue: 'Bleu',

@@ -1870,6 +1870,7 @@ export function SettingsPage() {
                       <option value="oled">{t('settings.bgOled')}</option>
                       <option value="slate">{t('settings.bgSlate')}</option>
                       <option value="forest">{t('settings.bgForest')}</option>
+                      <option value="midnight">{t('settings.bgMidnight')}</option>
                     </select>
                   </div>
                   <div>

@@ -3083,6 +3083,7 @@ export default {
     bgOled: 'OLEDブラック',
     bgSlate: 'スレートブルー',
     bgForest: 'フォレストグリーン',
+    bgMidnight: 'ミッドナイトブルー',
     accentGreen: 'グリーン',
     accentTeal: 'ティール',
     accentBlue: 'ブルー',
