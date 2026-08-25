@@ -53,6 +53,45 @@ function PlateRow({
   );
 }
 
+/** The print-temperature scale under the nozzle group ("Material Sheet"
+ *  design): a fixed 180–320°C axis — the span real filaments actually print
+ *  in — with a marker riding the current value. Purely presentational
+ *  (aria-hidden): the number lives in the Print field beside it; this shows
+ *  WHERE that number sits between "PLA territory" and "PC territory" at a
+ *  glance. Hidden entirely when the field is empty rather than parked at an
+ *  arbitrary spot. The marker's left transition is declared here and disabled
+ *  globally under prefers-reduced-motion via index.css's motion rules. */
+function TempScaleStrip({ value }: { value: string }) {
+  const temp = parseFloat(value);
+  if (Number.isNaN(temp)) return null;
+  const pct = Math.min(97, Math.max(2, ((temp - 180) / (320 - 180)) * 100));
+  return (
+    <div
+      aria-hidden="true"
+      className="relative mt-3 h-8 overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark"
+    >
+      <div
+        className="absolute inset-0 opacity-20"
+        style={{ background: 'linear-gradient(90deg,#0e7490 0%,#16a34a 34%,#ca8a04 62%,#dc2626 100%)' }}
+      />
+      <div
+        className="absolute bottom-0 top-0 w-0.5 bg-rose-300 transition-[left] duration-500 motion-reduce:transition-none"
+        style={{ left: `${pct}%` }}
+      >
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 whitespace-nowrap font-mono text-[10.5px] text-rose-300">
+          {temp}°C
+        </span>
+      </div>
+      <div className="absolute inset-x-2 bottom-0.5 flex justify-between font-mono text-[9px] text-bambu-gray/60">
+        <span>180</span>
+        <span>230</span>
+        <span>280</span>
+        <span>320</span>
+      </div>
+    </div>
+  );
+}
+
 /** Temps tab (spec §7.2): nozzle temps, material Tg, chamber temp, and the
  *  five-row bed-plate table. */
 export function EditorTabTemps({ form, setForm }: TabProps) {
@@ -88,6 +127,7 @@ export function EditorTabTemps({ form, setForm }: TabProps) {
             />
           </Field>
         </div>
+        <TempScaleStrip value={form.nozzle_temperature} />
       </div>
 
       <div>

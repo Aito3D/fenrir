@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RotateCw, X } from 'lucide-react';
 
@@ -120,6 +121,27 @@ export function PresetEditorModal({
   const [jsonError, setJsonError] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // "Material Sheet" design state. `dirty` is an explicit user-edit flag, not
+  // a form diff: the mount-time inherits merge and the JSON-tab regeneration
+  // both rewrite `form` without the user having touched anything, and a diff
+  // against an initial snapshot would count those as edits. Every USER-facing
+  // change goes through `editForm`; programmatic writes keep plain `setForm`.
+  const [dirty, setDirty] = useState(false);
+  const editForm: typeof setForm = (updater) => {
+    setDirty(true);
+    setForm(updater);
+  };
+  // Ink bar under the active tab: measured from the real button, so it fits
+  // each label in every locale. Direction of the pane slide comes from
+  // whether the user moved left or right in the tab row.
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [ink, setInk] = useState<{ left: number; width: number } | null>(null);
+  const [paneDir, setPaneDir] = useState(14);
+  useEffect(() => {
+    const el = tabRefs.current[TABS.findIndex((tab) => tab.id === activeTab)];
+    if (el) setInk({ left: el.offsetLeft, width: el.offsetWidth });
+  }, [activeTab]);
+
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: 220,
     // Escape must respect the same in-flight-save guard as the Cancel button
@@ -188,6 +210,7 @@ export function PresetEditorModal({
 
   const handleBasePresetSelect = (selection: string) => {
     setSelectedBase(selection);
+    setDirty(true);
     if (selection === '') {
       setForm((f) => ({ ...f, inherits: '' }));
       setResolvedParent(null);
@@ -211,7 +234,7 @@ export function PresetEditorModal({
   const computedName = computeName(form.filament_vendor.trim(), form.filament_type.trim(), form.color.trim());
 
   const handleNozzleChange = (size: string) => {
-    setForm((f) => ({
+    editForm((f) => ({
       ...f,
       nozzle_size: size,
       compatible_printers: rewriteCompatibleForNozzle(f.compatible_printers, size),
@@ -219,7 +242,7 @@ export function PresetEditorModal({
   };
 
   const handlePaKChange = (v: string) => {
-    setForm((f) => ({
+    editForm((f) => ({
       ...f,
       pa_k_value: v,
       filament_start_gcode: v ? `M900 L1000 M10\nM900 K${v}` : '',
@@ -227,7 +250,7 @@ export function PresetEditorModal({
   };
 
   const toggleExtruderVariant = (variant: string) => {
-    setForm((f) => ({
+    editForm((f) => ({
       ...f,
       filament_extruder_variant: f.filament_extruder_variant.includes(variant)
         ? f.filament_extruder_variant.filter((v) => v !== variant)
@@ -236,7 +259,7 @@ export function PresetEditorModal({
   };
 
   const handleQuickAdd = () => {
-    setForm((f) => {
+    editForm((f) => {
       const current = f.compatible_printers
         .split(',')
         .map((s) => s.trim())
@@ -265,6 +288,9 @@ export function PresetEditorModal({
       setRawJson(buildJson(form, baseData, resolvedParent, computedName));
       setJsonError(false);
     }
+    const from = TABS.findIndex((t2) => t2.id === activeTab);
+    const to = TABS.findIndex((t2) => t2.id === tab);
+    setPaneDir(to >= from ? 14 : -14);
     setActiveTab(tab);
   };
 
@@ -275,7 +301,7 @@ export function PresetEditorModal({
       setJsonError(false);
       const parsedObject = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
       setBaseData(parsedObject);
-      setForm((f) => ({ ...parseContentToForm(parsedObject, f.color), nozzle_size: f.nozzle_size }));
+      editForm((f) => ({ ...parseContentToForm(parsedObject, f.color), nozzle_size: f.nozzle_size }));
     } catch {
       setJsonError(true);
       // Leave form/baseData untouched — an in-progress edit shouldn't blow
@@ -341,87 +367,162 @@ export function PresetEditorModal({
         aria-label={computedName || t(isCreate ? 'filamentProfiles.editorNewTitle' : 'filamentProfiles.editorEditTitle')}
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
-        className={`flex h-[88vh] w-full max-w-5xl flex-col rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-xl focus:outline-none ${
+        className={`flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-xl focus:outline-none sm:flex-row ${
           closing ? 'opacity-0 transition-opacity duration-200' : 'animate-modal-in'
         }`}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-bambu-dark-tertiary px-5 py-4">
-          <div className="flex min-w-0 items-start gap-3">
+        {/* Identity rail ("Material Sheet" design): the filament itself is the
+            modal's spine. The material band and spool coin are painted with the
+            live picker colour, and the identity fields — the ones that name the
+            preset — live here rather than in a tab, so the name being assembled
+            and the fields assembling it sit together. On phones the rail
+            becomes a compact header block above the tabs. */}
+        <div className="flex max-h-[42%] flex-none flex-col border-b border-bambu-dark-tertiary bg-bambu-dark sm:max-h-none sm:w-72 sm:border-b-0 sm:border-r">
+          <div
+            className="relative h-10 flex-none sm:h-28"
+            style={{
+              backgroundColor: form.default_filament_colour || 'var(--color-bambu-dark-tertiary)',
+              backgroundImage:
+                'linear-gradient(120deg, rgba(255,255,255,.22), rgba(255,255,255,0) 42%), linear-gradient(0deg, rgba(0,0,0,.28), rgba(0,0,0,0) 55%)',
+            }}
+          >
             <span
-              className="mt-1 h-8 w-8 shrink-0 rounded-full border border-bambu-dark-tertiary bg-bambu-dark-tertiary"
-              style={form.default_filament_colour ? { backgroundColor: form.default_filament_colour } : undefined}
+              className="absolute -bottom-6 right-4 hidden h-14 w-14 rounded-full border-4 border-bambu-dark shadow-lg sm:block"
+              style={{
+                backgroundColor: form.default_filament_colour || 'var(--color-bambu-dark-tertiary)',
+                backgroundImage: 'radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), rgba(255,255,255,0) 45%)',
+              }}
             />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-lg font-semibold text-white">
-                  {computedName || t(isCreate ? 'filamentProfiles.editorNewTitle' : 'filamentProfiles.editorEditTitle')}
-                </h2>
-                {form.filament_type !== '' && (
-                  <span className="rounded-full bg-bambu-dark-tertiary px-2 py-0.5 font-mono text-xs text-bambu-gray-light">
-                    {form.filament_type}
-                  </span>
-                )}
+          </div>
+          <div className="px-4 pb-1 pt-3 sm:pt-5">
+            {form.filament_vendor !== '' && (
+              <div className="text-[10.5px] font-bold uppercase tracking-widest text-bambu-gray/70">
+                {form.filament_vendor}
               </div>
-              {form.inherits !== '' && (
-                <div className="mt-1 flex items-center gap-1.5 text-xs">
-                  <span
-                    className={
-                      parentStatus === 'resolving'
-                        ? 'animate-pulse text-bambu-gray'
-                        : parentStatus === 'found'
-                          ? 'text-bambu-green'
-                          : 'text-bambu-gray'
-                    }
-                  >
-                    ↳ {form.inherits}
-                    {parentStatus === 'not-found' && (
-                      <span className="ml-1 text-amber-400">{t('filamentProfiles.inheritsNotFound')}</span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleReload}
-                    aria-label={t('filamentProfiles.reload')}
-                    className="rounded p-0.5 text-bambu-gray/60 hover:text-white"
-                  >
-                    <RotateCw className={`h-3 w-3 ${parentStatus === 'resolving' ? 'animate-spin' : ''}`} />
-                  </button>
-                </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="min-w-0 truncate text-lg font-bold leading-snug tracking-tight text-white">
+                {computedName || t(isCreate ? 'filamentProfiles.editorNewTitle' : 'filamentProfiles.editorEditTitle')}
+              </h2>
+              {form.filament_type !== '' && (
+                <span className="rounded-full bg-bambu-dark-tertiary px-2 py-0.5 font-mono text-xs text-bambu-gray-light">
+                  {form.filament_type}
+                </span>
               )}
             </div>
           </div>
+          {form.inherits !== '' && (
+            <div className="mx-4 mt-2 flex items-center gap-1.5 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-2 text-xs">
+              <span
+                className={`min-w-0 truncate ${
+                  parentStatus === 'resolving'
+                    ? 'animate-pulse text-bambu-gray'
+                    : parentStatus === 'found'
+                      ? 'text-bambu-green'
+                      : 'text-bambu-gray'
+                }`}
+              >
+                ↳ {form.inherits}
+                {parentStatus === 'not-found' && (
+                  <span className="ml-1 text-amber-400">{t('filamentProfiles.inheritsNotFound')}</span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={handleReload}
+                aria-label={t('filamentProfiles.reload')}
+                className="ml-auto shrink-0 rounded p-0.5 text-bambu-gray/60 hover:text-white"
+              >
+                <RotateCw className={`h-3 w-3 ${parentStatus === 'resolving' ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          )}
+          <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-3 overflow-y-auto p-4 sm:grid-cols-1">
+            <Field label={t('filamentProfiles.brand')}>
+              <SearchableSelect
+                id={BRAND_ID}
+                value={form.filament_vendor}
+                onChange={(v) => editForm((f) => ({ ...f, filament_vendor: v }))}
+                options={vendorOptions}
+                allowCustom={false}
+                placeholderKey="filamentProfiles.brandSelect"
+              />
+            </Field>
+            <Field label={t('filamentProfiles.colorLabel')}>
+              <TextInput
+                value={form.color}
+                onChange={(v) => editForm((f) => ({ ...f, color: v }))}
+                placeholder={t('filamentProfiles.colorPlaceholder')}
+              />
+            </Field>
+            <Field label={t('filamentProfiles.filamentColour')}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(form.default_filament_colour) ? form.default_filament_colour : '#000000'}
+                  onChange={(e) => editForm((f) => ({ ...f, default_filament_colour: e.target.value }))}
+                  aria-label={t('filamentProfiles.filamentColour')}
+                  className="h-9 w-9 shrink-0 cursor-pointer rounded border border-bambu-dark-tertiary bg-transparent p-0.5"
+                />
+                <TextInput
+                  value={form.default_filament_colour}
+                  onChange={(v) => editForm((f) => ({ ...f, default_filament_colour: v }))}
+                  placeholder="#RRGGBB"
+                />
+              </div>
+            </Field>
+            <Field label={t('filamentProfiles.cost')} unit="€/kg">
+              <NumberInput
+                value={form.filament_cost}
+                onChange={(v) => editForm((f) => ({ ...f, filament_cost: v }))}
+              />
+            </Field>
+          </div>
+        </div>
+
+        {/* Main column: tabs, content, footer */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
           <button
             type="button"
             onClick={handleDismiss}
             aria-label={t('filamentProfiles.close')}
-            className="shrink-0 rounded p-1 text-bambu-gray/60 hover:bg-bambu-dark-tertiary hover:text-white"
+            className="absolute right-3 top-3 z-10 shrink-0 rounded p-1 text-bambu-gray/60 hover:bg-bambu-dark-tertiary hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
-        </div>
 
-        {/* Tab bar */}
-        <div className="flex gap-1 border-b border-bambu-dark-tertiary px-5 pt-2">
-          {TABS.map((tab) => (
+        {/* Tab bar with a sliding ink underline — measured from the active
+            button so it fits any locale's label; the same slightly
+            overshooting curve as the pane slide (see index.css .fp-ink). */}
+        <div className="relative flex gap-1 border-b border-bambu-dark-tertiary px-5 pr-12 pt-2">
+          {TABS.map((tab, i) => (
             <button
               key={tab.id}
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
               type="button"
               onClick={() => handleTabClick(tab.id)}
               aria-current={activeTab === tab.id}
               className={`rounded-t-lg px-3 py-2 text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'border-b-2 border-bambu-green text-white'
-                  : 'border-b-2 border-transparent text-bambu-gray hover:text-white'
+                activeTab === tab.id ? 'text-white' : 'text-bambu-gray hover:text-white'
               }`}
             >
               {t(tab.labelKey)}
             </button>
           ))}
+          {ink && (
+            <span
+              aria-hidden="true"
+              className="fp-ink absolute bottom-0 h-0.5 rounded-t bg-bambu-green"
+              style={{ left: ink.left, width: ink.width }}
+            />
+          )}
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div key={activeTab} className="fp-pane-in h-full" style={{ '--fp-dir': `${paneDir}px` } as CSSProperties}>
           {activeTab === 'general' && (
             <div className="flex flex-col gap-5">
               {isCreate && (
@@ -443,30 +544,13 @@ export function PresetEditorModal({
               )}
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label={t('filamentProfiles.brand')}>
-                  <SearchableSelect
-                    id={BRAND_ID}
-                    value={form.filament_vendor}
-                    onChange={(v) => setForm((f) => ({ ...f, filament_vendor: v }))}
-                    options={vendorOptions}
-                    allowCustom={false}
-                    placeholderKey="filamentProfiles.brandSelect"
-                  />
-                </Field>
                 <Field label={t('filamentProfiles.material')}>
                   <SearchableSelect
                     id="fp-editor-material"
                     value={form.filament_type}
-                    onChange={(v) => setForm((f) => ({ ...f, filament_type: v }))}
+                    onChange={(v) => editForm((f) => ({ ...f, filament_type: v }))}
                     options={materialOptions}
                     allowCustom
-                  />
-                </Field>
-                <Field label={t('filamentProfiles.colorLabel')}>
-                  <TextInput
-                    value={form.color}
-                    onChange={(v) => setForm((f) => ({ ...f, color: v }))}
-                    placeholder={t('filamentProfiles.colorPlaceholder')}
                   />
                 </Field>
                 <Field label={t('filamentProfiles.nozzleSize')}>
@@ -491,33 +575,11 @@ export function PresetEditorModal({
                 <Field label={t('filamentProfiles.paKValue')} unit="M900">
                   <NumberInput value={form.pa_k_value} onChange={handlePaKChange} step="0.001" />
                 </Field>
-                <Field label={t('filamentProfiles.cost')} unit="€/kg">
-                  <NumberInput
-                    value={form.filament_cost}
-                    onChange={(v) => setForm((f) => ({ ...f, filament_cost: v }))}
-                  />
-                </Field>
                 <Field label={t('filamentProfiles.density')} unit="g/cm³">
                   <NumberInput
                     value={form.filament_density}
-                    onChange={(v) => setForm((f) => ({ ...f, filament_density: v }))}
+                    onChange={(v) => editForm((f) => ({ ...f, filament_density: v }))}
                   />
-                </Field>
-                <Field label={t('filamentProfiles.filamentColour')}>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={/^#[0-9a-fA-F]{6}$/.test(form.default_filament_colour) ? form.default_filament_colour : '#000000'}
-                      onChange={(e) => setForm((f) => ({ ...f, default_filament_colour: e.target.value }))}
-                      aria-label={t('filamentProfiles.filamentColour')}
-                      className="h-9 w-9 shrink-0 cursor-pointer rounded border border-bambu-dark-tertiary bg-transparent p-0.5"
-                    />
-                    <TextInput
-                      value={form.default_filament_colour}
-                      onChange={(v) => setForm((f) => ({ ...f, default_filament_colour: v }))}
-                      placeholder="#RRGGBB"
-                    />
-                  </div>
                 </Field>
               </div>
 
@@ -556,7 +618,7 @@ export function PresetEditorModal({
                 </div>
                 <TagInput
                   value={form.compatible_printers}
-                  onChange={(v) => setForm((f) => ({ ...f, compatible_printers: v }))}
+                  onChange={(v) => editForm((f) => ({ ...f, compatible_printers: v }))}
                   placeholder={t('filamentProfiles.tagPlaceholder')}
                 />
               </div>
@@ -565,17 +627,17 @@ export function PresetEditorModal({
                 <textarea
                   rows={2}
                   value={form.filament_notes}
-                  onChange={(e) => setForm((f) => ({ ...f, filament_notes: e.target.value }))}
+                  onChange={(e) => editForm((f) => ({ ...f, filament_notes: e.target.value }))}
                   className="w-full resize-none rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                 />
               </Field>
             </div>
           )}
 
-          {activeTab === 'temps' && <EditorTabTemps form={form} setForm={setForm} />}
-          {activeTab === 'cooling' && <EditorTabCooling form={form} setForm={setForm} />}
-          {activeTab === 'extrusion' && <EditorTabExtrusion form={form} setForm={setForm} />}
-          {activeTab === 'retract' && <EditorTabRetract form={form} setForm={setForm} />}
+          {activeTab === 'temps' && <EditorTabTemps form={form} setForm={editForm} />}
+          {activeTab === 'cooling' && <EditorTabCooling form={form} setForm={editForm} />}
+          {activeTab === 'extrusion' && <EditorTabExtrusion form={form} setForm={editForm} />}
+          {activeTab === 'retract' && <EditorTabRetract form={form} setForm={editForm} />}
 
           {activeTab === 'json' && (
             <div className="flex h-full flex-col gap-2">
@@ -590,18 +652,34 @@ export function PresetEditorModal({
               <textarea
                 rows={24}
                 spellCheck={false}
+                aria-label={t('filamentProfiles.tabJson')}
                 value={rawJson}
                 onChange={(e) => handleRawJsonChange(e.target.value)}
                 className="w-full flex-1 resize-none rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 font-mono text-xs text-white focus:border-bambu-green focus:outline-none sm:text-sm"
               />
             </div>
           )}
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-5 py-3">
+        {/* Footer. Always present (Delete/Cancel must stay reachable), but it
+            acknowledges the dirty state the way the Material Sheet design's
+            save bar does: an accent dot rises in beside the filename and Save
+            gets its glow the moment the first edit lands. */}
+        <div
+          className={`flex items-center justify-between gap-3 border-t px-5 py-3 transition-colors duration-300 ${
+            dirty ? 'border-bambu-green/30' : 'border-bambu-dark-tertiary'
+          }`}
+        >
           <div className="min-w-0">
-            <p className="truncate font-mono text-xs text-bambu-gray/70">{filename}</p>
+            {dirty ? (
+              <p className="fp-rise flex items-center gap-1.5 text-xs text-bambu-gray-light">
+                <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-bambu-green" />
+                <span className="min-w-0 truncate font-mono">{filename}</span>
+              </p>
+            ) : (
+              <p className="truncate font-mono text-xs text-bambu-gray/70">{filename}</p>
+            )}
             {!computedName && <p className="text-xs text-amber-400">{t('filamentProfiles.nameRequiredHint')}</p>}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -617,10 +695,12 @@ export function PresetEditorModal({
               size="sm"
               onClick={() => void handleSave()}
               disabled={saving || !computedName || jsonError}
+              className={dirty ? 'shadow-[0_4px_18px_rgba(0,174,66,0.35)]' : ''}
             >
               {saving ? t('filamentProfiles.saving') : t(isCreate ? 'filamentProfiles.create' : 'filamentProfiles.save')}
             </Button>
           </div>
+        </div>
         </div>
       </div>
     </div>

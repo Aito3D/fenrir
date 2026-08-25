@@ -651,7 +651,7 @@ describe('PresetEditorModal — JSON tab (Task 14)', () => {
 
     await user.click(screen.getByRole('button', { name: 'JSON' }));
 
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const textarea = screen.getByRole('textbox', { name: 'JSON' }) as HTMLTextAreaElement;
     expect(textarea.value).toContain('"nozzle_temperature"');
     const parsed = JSON.parse(textarea.value);
     expect(parsed.custom_key).toEqual(['x']);
@@ -676,7 +676,7 @@ describe('PresetEditorModal — JSON tab (Task 14)', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'JSON' }));
-    const textarea = screen.getByRole('textbox');
+    const textarea = screen.getByRole('textbox', { name: 'JSON' });
     fireEvent.change(textarea, { target: { value: JSON.stringify({ nozzle_temperature: ['999'] }) } });
     expect(screen.queryByText('Invalid JSON')).not.toBeInTheDocument();
 
@@ -701,7 +701,7 @@ describe('PresetEditorModal — JSON tab (Task 14)', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'JSON' }));
-    const textarea = screen.getByRole('textbox');
+    const textarea = screen.getByRole('textbox', { name: 'JSON' });
     fireEvent.change(textarea, { target: { value: '{broken' } });
 
     expect(screen.getByText('Invalid JSON')).toBeInTheDocument();
@@ -729,7 +729,7 @@ describe('PresetEditorModal — JSON tab (Task 14)', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'JSON' }));
-    const textarea = screen.getByRole('textbox');
+    const textarea = screen.getByRole('textbox', { name: 'JSON' });
     fireEvent.change(textarea, {
       target: { value: JSON.stringify({ filament_vendor: ['SUNLU'], filament_type: ['PETG'], filament_cost: ['24.99'] }) },
     });

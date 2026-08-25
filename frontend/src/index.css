@@ -1793,3 +1793,31 @@ tbody .calc-table-row:hover {
     opacity: 1;
   }
 }
+
+/* ============================================
+   Filament-profiles preset editor — "Material Sheet" design.
+   Pane enter is direction-aware: the modal sets --fp-dir to ±14px so a pane
+   slides in from the side the user came from. The ink bar under the active
+   tab and the pane share the same slightly-overshooting curve so the tab
+   switch reads as one gesture, not two effects.
+   ============================================ */
+@keyframes fp-pane-in {
+  from { opacity: 0; transform: translateX(var(--fp-dir, 14px)); }
+  to { opacity: 1; transform: none; }
+}
+.fp-pane-in { animation: fp-pane-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.fp-ink {
+  transition:
+    left 0.45s cubic-bezier(0.3, 1.25, 0.45, 1),
+    width 0.45s cubic-bezier(0.3, 1.25, 0.45, 1);
+}
+@keyframes fp-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.fp-rise { animation: fp-rise 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .fp-pane-in,
+  .fp-rise { animation: none; }
+  .fp-ink { transition: none; }
+}

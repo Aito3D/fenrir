@@ -57,18 +57,49 @@ interface NumberInputProps {
 }
 
 export function NumberInput({ value, onChange, step, min, max, placeholder, className = '' }: NumberInputProps) {
+  // Nudge by ±step with click feedback. Precision comes from the step's own
+  // decimals ("0.001" → 3), so 0.02 + 0.001 never renders as 0.021000000000000002.
+  const nudge = (dir: 1 | -1) => {
+    const stepNum = parseFloat(step || '1') || 1;
+    const decimals = (step || '1').split('.')[1]?.length ?? 0;
+    let next = (parseFloat(value) || 0) + dir * stepNum;
+    if (min !== undefined && next < parseFloat(min)) next = parseFloat(min);
+    if (max !== undefined && next > parseFloat(max)) next = parseFloat(max);
+    onChange(next.toFixed(decimals));
+  };
   return (
-    <input
-      type="number"
-      inputMode="decimal"
-      step={step}
-      min={min}
-      max={max}
-      value={value}
-      onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`${inputCls} font-mono tabular-nums ${className}`.trim()}
-    />
+    <div
+      className="flex items-stretch overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark transition-colors focus-within:border-bambu-green"
+    >
+      <input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`w-full min-w-0 border-0 bg-transparent px-3 py-2 font-mono text-sm tabular-nums text-white placeholder-bambu-gray [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${className}`.trim()}
+      />
+      {/* Pointer-only nudge affordance (Material Sheet design): keyboard users
+          already have the number input's native arrow-key increment, so these
+          stay out of the tab order and the accessibility tree rather than
+          adding two unlabeled buttons per field. */}
+      <span className="flex flex-col border-l border-bambu-dark-tertiary" aria-hidden="true">
+        {([1, -1] as const).map((dir) => (
+          <button
+            key={dir}
+            type="button"
+            tabIndex={-1}
+            onClick={() => nudge(dir)}
+            className="flex-1 px-1.5 text-[8px] leading-none text-bambu-gray/60 transition-colors hover:bg-white/5 hover:text-white active:bg-bambu-green/20 active:text-bambu-green"
+          >
+            {dir === 1 ? '▲' : '▼'}
+          </button>
+        ))}
+      </span>
+    </div>
   );
 }
 
