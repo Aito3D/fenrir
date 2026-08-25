@@ -155,6 +155,89 @@ class FilamentProduct:
     has_price: bool
 
 
+@dataclass(frozen=True)
+class ProfileMatch:
+    """The result of matching one filament profile against the catalogue.
+
+    ``outcome`` is one of:
+
+    ``matched``    exactly one candidate, and it has a price — safe to write
+    ``no_match``   nothing in the catalogue shares its brand and material
+    ``ambiguous``  two or more candidates survived; picking one would be a guess
+    ``no_price``   one candidate, but its dealer price is 0
+
+    ``no_price`` is separate from ``no_match`` because it is a different problem
+    with a different fix: the item exists upstream and simply has no price.
+    Roughly a fifth of the catalogue is in that state and writing any of them
+    would silently zero out a profile's cost.
+    """
+
+    outcome: str
+    product: FilamentProduct | None
+    candidates: list[str]
+
+
+def _normalise(value: str) -> str:
+    """Lowercase and drop every non-alphanumeric character.
+
+    "Poly-maker" and "polymaker", "PET-G" and "PETG", "Bambu Lab" and
+    "BambuLab" must compare equal: the profile's fields are typed by hand while
+    the Zoho name is parsed out of a vendor string, so they agree on the word
+    and disagree on the separators.
+
+    Separators are REMOVED, not replaced with a space — replacing them leaves
+    "poly maker", which still does not equal "polymaker". Nothing needs
+    collapsing afterwards because no whitespace survives.
+    """
+    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+
+def match_profile(
+    catalogue: list[FilamentProduct],
+    brand: str,
+    material: str,
+    colour: str,
+) -> ProfileMatch:
+    """Find the one catalogue item that prices this profile, or say why not.
+
+    Brand AND material must both agree — brand alone matches every filament
+    that vendor sells. Colour only narrows a collision; a sole candidate is
+    accepted whatever its colour, because price per kg does not vary by colour
+    within a brand and material.
+
+    Deliberately not built on ``_score``: that is a relevance ranker for the
+    search box and always yields a best row, so it can order candidates but can
+    never answer "is this a match at all".
+    """
+    want_brand = _normalise(brand)
+    want_material = _normalise(material)
+    if not want_brand or not want_material:
+        return ProfileMatch("no_match", None, [])
+
+    candidates = [
+        item
+        for item in catalogue
+        if _normalise(item.brand) == want_brand and _normalise(item.material) == want_material
+    ]
+    if not candidates:
+        return ProfileMatch("no_match", None, [])
+
+    if len(candidates) > 1:
+        want_colour = _normalise(colour)
+        narrowed = [item for item in candidates if _normalise(item.colour) == want_colour] if want_colour else []
+        if len(narrowed) != 1:
+            # Either the colour matched nothing (report the whole collision) or
+            # it matched several (report those). Both are the operator's call.
+            collision = narrowed or candidates
+            return ProfileMatch("ambiguous", None, [item.name for item in collision])
+        candidates = narrowed
+
+    product = candidates[0]
+    if not product.has_price:
+        return ProfileMatch("no_price", product, [product.name])
+    return ProfileMatch("matched", product, [product.name])
+
+
 def reset_cache() -> None:
     """Drop the cached catalogue.
 
