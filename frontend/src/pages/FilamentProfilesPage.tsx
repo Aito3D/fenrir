@@ -23,6 +23,7 @@ import type {
   FilamentBaseSyncResult,
   FilamentPreset,
   FilamentPresetPayload,
+  FilamentPresetZohoSyncResponse,
   FilamentSyncStats,
 } from '../api/client';
 import { Button } from '../components/Button';
@@ -127,6 +128,8 @@ export function FilamentProfilesPage() {
   const [editorState, setEditorState] = useState<EditorState>({ mode: 'closed' });
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
   const [importing, setImporting] = useState(false);
+  const [zohoSyncing, setZohoSyncing] = useState(false);
+  const [zohoResult, setZohoResult] = useState<FilamentPresetZohoSyncResponse | null>(null);
   const [syncBaseBusy, setSyncBaseBusy] = useState(false);
   const [syncBaseModal, setSyncBaseModal] = useState<SyncBaseModalState>(null);
   const [syncModal, setSyncModal] = useState<SyncModalState>(null);
@@ -325,6 +328,21 @@ export function FilamentProfilesPage() {
     }
   };
 
+  // ── Sync prices from Zoho ────────────────────────────────────────────────
+  const handleZohoSync = async () => {
+    setZohoSyncing(true);
+    try {
+      const result = await api.syncFilamentPresetsFromZoho();
+      setZohoResult(result);
+      showToast(t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged }), 'success');
+      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
+    } finally {
+      setZohoSyncing(false);
+    }
+  };
+
   // ── Export ZIP (spec §5.9) ──────────────────────────────────────────────
   const handleExport = async () => {
     // Belt-and-braces: the Export button is disabled via `canExport` below,
@@ -433,6 +451,10 @@ export function FilamentProfilesPage() {
           <Button variant="secondary" size="sm" onClick={handleImport} disabled={importing}>
             <Upload className="h-4 w-4" />
             {t('filamentProfiles.import')}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
+            <RefreshCw className="h-4 w-4" />
+            {t('filamentProfiles.syncZohoPrices')}
           </Button>
           <Button
             variant="secondary"
@@ -553,6 +575,37 @@ export function FilamentProfilesPage() {
           </div>
         )}
       </div>
+
+      {zohoResult && (
+        <div className="mb-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 text-sm">
+          <div className="text-white">
+            {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
+          </div>
+          {zohoResult.attention.length > 0 && (
+            <>
+              <div className="mt-2 text-bambu-gray-light">
+                {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
+              </div>
+              <ul className="mt-1 space-y-0.5 text-bambu-gray-light">
+                {zohoResult.attention.map((entry) => (
+                  <li key={entry.id}>
+                    <span className="text-white">{entry.name}</span>
+                    {' — '}
+                    {t(
+                      entry.reason === 'no_match'
+                        ? 'filamentProfiles.syncZohoNoMatch'
+                        : entry.reason === 'ambiguous'
+                          ? 'filamentProfiles.syncZohoAmbiguous'
+                          : 'filamentProfiles.syncZohoNoPrice',
+                    )}
+                    {entry.candidates.length > 0 && `: ${entry.candidates.join(', ')}`}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       {presetsQuery.isError && (
         <div className="animate-rise py-8 text-center">

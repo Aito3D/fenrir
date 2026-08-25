@@ -4084,6 +4084,7 @@ export default {
     syncBase: '베이스 동기화',
     syncingBase: '베이스 동기화 중…',
     import: '가져오기',
+    syncZohoPrices: 'Zoho에서 가격 동기화',
     syncToPc: 'PC에 동기화',
     exportZip: 'ZIP 내보내기',
     newPreset: '새 프리셋',
@@ -4140,6 +4141,13 @@ export default {
     imported: '프리셋 {{n}}개를 가져왔습니다',
     importPartial: '{{ok}}개 성공, {{failed}}개 실패',
     exportEmpty: '내보낼 JSON 콘텐츠가 있는 프리셋이 없습니다.',
+    // Zoho 가격 동기화
+    syncZohoDone: '{{priced}}개 가격 설정, {{unchanged}}개 변경 없음',
+    syncZohoAttention: '{{count}}개 확인 필요',
+    syncZohoNoMatch: 'Zoho에 일치하는 항목이 없습니다',
+    syncZohoAmbiguous: '여러 항목이 일치했습니다',
+    syncZohoNoPrice: '일치했지만 항목에 가격이 없습니다',
+    syncZohoFailed: 'Zoho에서 가격을 동기화할 수 없습니다',
     // Toasts
     createdToast: '"{{name}}" 생성됨',
     updatedToast: '"{{name}}" 업데이트됨',

@@ -4271,6 +4271,7 @@ export default {
     syncBase: 'Basis synchronisieren',
     syncingBase: 'Basis wird synchronisiert…',
     import: 'Import',
+    syncZohoPrices: 'Preise von Zoho synchronisieren',
     syncToPc: 'Auf PC synchronisieren',
     exportZip: 'ZIP exportieren',
     newPreset: 'Neues Preset',
@@ -4327,6 +4328,13 @@ export default {
     imported: '{{n}} Preset(s) importiert',
     importPartial: '{{ok}} erfolgreich, {{failed}} fehlgeschlagen',
     exportEmpty: 'Keine Presets mit JSON-Inhalt zum Exportieren.',
+    // Zoho-Preissynchronisierung
+    syncZohoDone: 'Bepreist: {{priced}}, unverändert: {{unchanged}}',
+    syncZohoAttention: '{{count}} benötigen Aufmerksamkeit',
+    syncZohoNoMatch: 'Kein passender Artikel in Zoho gefunden',
+    syncZohoAmbiguous: 'Mehrere Artikel passen',
+    syncZohoNoPrice: 'Gefunden, aber der Artikel hat keinen Preis',
+    syncZohoFailed: 'Preise konnten nicht von Zoho synchronisiert werden',
     // Toasts
     createdToast: '"{{name}}" erstellt',
     updatedToast: '"{{name}}" aktualisiert',

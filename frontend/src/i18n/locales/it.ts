@@ -4259,6 +4259,7 @@ export default {
     syncBase: 'Sincronizza base',
     syncingBase: 'Sincronizzazione base…',
     import: 'Importa',
+    syncZohoPrices: 'Sincronizza prezzi da Zoho',
     syncToPc: 'Sincronizza su PC',
     exportZip: 'Esporta ZIP',
     newPreset: 'Nuovo preset',
@@ -4315,6 +4316,13 @@ export default {
     imported: '{{n}} preset importati',
     importPartial: '{{ok}} riusciti, {{failed}} falliti',
     exportEmpty: 'Nessun preset con contenuto JSON da esportare.',
+    // Sincronizzazione prezzi Zoho
+    syncZohoDone: '{{priced}} con prezzo, {{unchanged}} invariati',
+    syncZohoAttention: '{{count}} richiedono attenzione',
+    syncZohoNoMatch: 'Nessun articolo corrispondente in Zoho',
+    syncZohoAmbiguous: 'Più articoli corrispondono',
+    syncZohoNoPrice: "Trovata corrispondenza, ma l'articolo non ha un prezzo",
+    syncZohoFailed: 'Impossibile sincronizzare i prezzi da Zoho',
     // Toasts
     createdToast: '"{{name}}" creato',
     updatedToast: '"{{name}}" aggiornato',

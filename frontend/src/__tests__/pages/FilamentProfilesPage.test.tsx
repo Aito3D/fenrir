@@ -220,4 +220,28 @@ describe('FilamentProfilesPage', () => {
     await userEvent.click(gridButtons[0]);
     expect(readGridSize()).toBe('small');
   });
+
+  it('syncs prices from Zoho and reports what needs attention', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 2,
+          unchanged: 1,
+          attention: [{ id: 7, name: 'eSUN PETG', reason: 'ambiguous', candidates: ['A', 'B'] }],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    expect(await screen.findByText(/priced 2/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    // The needs-attention list is the safety property made visible — without it
+    // auto-matching would be silently lossy.
+    expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText(/several items matched/i, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
 });

@@ -4077,6 +4077,7 @@ export default {
     syncBase: "Синхронизировать базу",
     syncingBase: "Синхронизация базы…",
     import: "Импорт",
+    syncZohoPrices: "Синхронизировать цены из Zoho",
     syncToPc: "Синхронизировать с ПК",
     exportZip: "Экспорт в ZIP",
     newPreset: "Новый пресет",
@@ -4133,6 +4134,13 @@ export default {
     imported: "Импортировано пресетов: {{n}}",
     importPartial: "Успешно: {{ok}}, с ошибками: {{failed}}",
     exportEmpty: "Нет пресетов с содержимым JSON для экспорта.",
+    // Синхронизация цен из Zoho
+    syncZohoDone: "Оценено: {{priced}}, без изменений: {{unchanged}}",
+    syncZohoAttention: "{{count}} требуют внимания",
+    syncZohoNoMatch: "В Zoho нет подходящего товара",
+    syncZohoAmbiguous: "Найдено несколько подходящих товаров",
+    syncZohoNoPrice: "Найдено совпадение, но у товара нет цены",
+    syncZohoFailed: "Не удалось синхронизировать цены из Zoho",
     // Toasts
     createdToast: "«{{name}}» создан",
     updatedToast: "«{{name}}» обновлён",

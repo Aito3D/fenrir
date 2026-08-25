@@ -3510,6 +3510,17 @@ export interface FilamentSyncStats { added: number; updated: number; removed: nu
 export interface FilamentBaseSyncResult { added: number; updated: number; unchanged: number; total: number; }
 export interface BambuScanFile { filename: string; content: string; }
 export type FilamentPresetPayload = Omit<FilamentPreset, 'id' | 'created_at' | 'updated_at'>;
+export interface FilamentPresetZohoSyncAttention {
+  id: number;
+  name: string;
+  reason: 'no_match' | 'ambiguous' | 'no_price';
+  candidates: string[];
+}
+export interface FilamentPresetZohoSyncResponse {
+  priced: number;
+  unchanged: number;
+  attention: FilamentPresetZohoSyncAttention[];
+}
 
 // ── CSV import/export (#1576) ──────────────────────────────────────────────
 /** One row's outcome from the import preview / real import. */
@@ -6975,6 +6986,8 @@ export const api = {
     request<{ stats: FilamentSyncStats }>('/filament-profiles/bambu-sync', {
       method: 'POST', body: JSON.stringify({ presets, dry_run: dryRun }),
     }),
+  syncFilamentPresetsFromZoho: () =>
+    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST' }),
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.

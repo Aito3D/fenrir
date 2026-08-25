@@ -4259,6 +4259,7 @@ export default {
     syncBase: '同步基礎庫',
     syncingBase: '正在同步基礎庫…',
     import: '匯入',
+    syncZohoPrices: '從 Zoho 同步價格',
     syncToPc: '同步到電腦',
     exportZip: '匯出 ZIP',
     newPreset: '新增預設',
@@ -4315,6 +4316,13 @@ export default {
     imported: '已匯入 {{n}} 個預設',
     importPartial: '{{ok}} 個成功，{{failed}} 個失敗',
     exportEmpty: '沒有含 JSON 內容可匯出的預設。',
+    // Zoho 價格同步
+    syncZohoDone: '已定價 {{priced}} 個，未變更 {{unchanged}} 個',
+    syncZohoAttention: '{{count}} 個需要處理',
+    syncZohoNoMatch: 'Zoho 中沒有相符項目',
+    syncZohoAmbiguous: '符合多個項目',
+    syncZohoNoPrice: '已符合，但該項目沒有價格',
+    syncZohoFailed: '無法從 Zoho 同步價格',
     // Toasts
     createdToast: '「{{name}}」已建立',
     updatedToast: '「{{name}}」已更新',

@@ -4271,6 +4271,7 @@ export default {
     syncBase: 'ベースを同期',
     syncingBase: 'ベースを同期中…',
     import: 'インポート',
+    syncZohoPrices: 'Zohoから価格を同期',
     syncToPc: 'PCに同期',
     exportZip: 'ZIPをエクスポート',
     newPreset: '新しいプリセット',
@@ -4327,6 +4328,13 @@ export default {
     imported: '{{n}} 件のプリセットをインポートしました',
     importPartial: '{{ok}} 件成功、{{failed}} 件失敗',
     exportEmpty: 'エクスポートするJSON内容を持つプリセットがありません。',
+    // Zoho価格同期
+    syncZohoDone: '{{priced}}件を価格設定、{{unchanged}}件は変更なし',
+    syncZohoAttention: '{{count}}件が確認待ち',
+    syncZohoNoMatch: 'Zohoに一致する商品がありません',
+    syncZohoAmbiguous: '複数の商品が一致しました',
+    syncZohoNoPrice: '一致しましたが、価格が設定されていません',
+    syncZohoFailed: 'Zohoから価格を同期できませんでした',
     // Toasts
     createdToast: '「{{name}}」を作成しました',
     updatedToast: '「{{name}}」を更新しました',

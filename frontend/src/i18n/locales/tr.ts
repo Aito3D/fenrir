@@ -4266,6 +4266,7 @@ export default {
     syncBase: 'Temeli senkronize et',
     syncingBase: 'Temel senkronize ediliyor…',
     import: 'İçe aktar',
+    syncZohoPrices: "Zoho'dan fiyatları senkronize et",
     syncToPc: "PC'ye senkronize et",
     exportZip: 'ZIP olarak dışa aktar',
     newPreset: 'Yeni ön ayar',
@@ -4322,6 +4323,13 @@ export default {
     imported: '{{n}} ön ayar içe aktarıldı',
     importPartial: '{{ok}} başarılı, {{failed}} başarısız',
     exportEmpty: 'Dışa aktarılacak JSON içerikli ön ayar yok.',
+    // Zoho fiyat senkronizasyonu
+    syncZohoDone: '{{priced}} fiyatlandı, {{unchanged}} değişmedi',
+    syncZohoAttention: '{{count}} öğe dikkat gerektiriyor',
+    syncZohoNoMatch: "Zoho'da eşleşen öğe yok",
+    syncZohoAmbiguous: 'Birden fazla öğe eşleşti',
+    syncZohoNoPrice: 'Eşleşti, ancak öğenin fiyatı yok',
+    syncZohoFailed: "Zoho'dan fiyatlar senkronize edilemedi",
     // Toasts
     createdToast: '"{{name}}" oluşturuldu',
     updatedToast: '"{{name}}" güncellendi',
