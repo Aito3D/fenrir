@@ -151,7 +151,7 @@ export function SpoolFormModal({
             (async () => {
               const status = await api.getCloudStatus();
               if (!status.is_authenticated) return { connected: false, presets: [] as SlicerSetting[] };
-              const presets = await api.getFilamentPresets();
+              const presets = await api.getCloudFilamentPresets();
               return { connected: true, presets };
             })(),
             (async () => {

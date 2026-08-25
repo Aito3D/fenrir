@@ -486,7 +486,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
           (async () => {
             const status = await api.getCloudStatus();
             if (!status.is_authenticated) return { connected: false, presets: [] as SlicerSetting[] };
-            const presets = await api.getFilamentPresets();
+            const presets = await api.getCloudFilamentPresets();
             return { connected: true, presets };
           })(),
           (async () => {

@@ -103,11 +103,11 @@ export function BulkEditSpoolsModal({
     enabled: isOpen,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const out: Awaited<ReturnType<typeof api.getFilamentPresets>> = [];
+      const out: Awaited<ReturnType<typeof api.getCloudFilamentPresets>> = [];
       try {
         const status = await api.getCloudStatus();
         if (status.is_authenticated) {
-          const bambu = await api.getFilamentPresets();
+          const bambu = await api.getCloudFilamentPresets();
           out.push(...bambu);
         }
       } catch {/* cloud offline → empty */}

@@ -3496,6 +3496,21 @@ export interface SpoolmanBulkCreateResult {
   failed_count: number;
 }
 
+// ── Filament profile manager ────────────────────────────────────────────────
+export interface FilamentPreset {
+  id: number; name: string; brand: string; material: string; color: string;
+  color_hex: string; filename: string; content: string;
+  created_at?: string; updated_at?: string;
+}
+export interface BaseFilamentPreset {
+  id: number; name: string; inherits: string; brand: string; material: string;
+  color: string; color_hex: string; filename: string;
+}
+export interface FilamentSyncStats { added: number; updated: number; removed: number; unchanged: number; }
+export interface FilamentBaseSyncResult { added: number; updated: number; unchanged: number; total: number; }
+export interface BambuScanFile { filename: string; content: string; }
+export type FilamentPresetPayload = Omit<FilamentPreset, 'id' | 'created_at' | 'updated_at'>;
+
 // ── CSV import/export (#1576) ──────────────────────────────────────────────
 /** One row's outcome from the import preview / real import. */
 export interface CsvImportRow {
@@ -6940,6 +6955,26 @@ export const api = {
     }),
   unassignSpool: (printerId: number, amsId: number, trayId: number) =>
     request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  // Filament profile manager
+  getFilamentPresets: () => request<FilamentPreset[]>('/filament-profiles'),
+  createFilamentPreset: (data: FilamentPresetPayload) =>
+    request<FilamentPreset>('/filament-profiles', { method: 'POST', body: JSON.stringify(data) }),
+  updateFilamentPreset: (id: number, data: Partial<FilamentPresetPayload>) =>
+    request<FilamentPreset>(`/filament-profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteFilamentPreset: (id: number) =>
+    request<{ success: boolean }>(`/filament-profiles/${id}`, { method: 'DELETE' }),
+  duplicateFilamentPreset: (id: number) =>
+    request<FilamentPreset>(`/filament-profiles/${id}/duplicate`, { method: 'POST' }),
+  scanBambuStudioPresets: () => request<{ files: BambuScanFile[] }>('/filament-profiles/bambu-scan'),
+  getBaseFilamentPresets: () => request<BaseFilamentPreset[]>('/filament-profiles/base-presets'),
+  getBaseFilamentPresetContent: (filename: string) =>
+    request<{ content: string }>(`/filament-profiles/base-content?filename=${encodeURIComponent(filename)}`),
+  syncBaseFilamentPresets: () =>
+    request<FilamentBaseSyncResult>('/filament-profiles/sync-base', { method: 'POST' }),
+  syncFilamentPresetsToBambu: (presets: BambuScanFile[], dryRun: boolean) =>
+    request<{ stats: FilamentSyncStats }>('/filament-profiles/bambu-sync', {
+      method: 'POST', body: JSON.stringify({ presets, dry_run: dryRun }),
+    }),
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.
@@ -7065,7 +7100,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
-  getFilamentPresets: () =>
+  getCloudFilamentPresets: () =>
     request<SlicerSetting[]>('/cloud/filaments'),
 
   // Spoolman Inventory proxy (unified UI when Spoolman is enabled)

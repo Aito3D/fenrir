@@ -19,7 +19,7 @@ vi.mock('../../api/client', () => ({
     getSettings: vi.fn().mockResolvedValue({}),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
     getCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
-    getFilamentPresets: vi.fn().mockResolvedValue([]),
+    getCloudFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolCatalog: vi.fn().mockResolvedValue([]),
     getLocations: vi.fn().mockResolvedValue([]),
     getColorCatalog: vi.fn().mockResolvedValue([]),
