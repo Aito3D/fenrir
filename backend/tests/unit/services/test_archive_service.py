@@ -1108,3 +1108,215 @@ class TestThreeMFLayerHeightFromPlateGcode:
             zf.writestr("Metadata/project_settings.config", json.dumps({"layer_height": "0.28"}))
 
         assert ThreeMFParser(path).parse()["layer_height"] == 0.28
+
+
+class TestFilamentVendorExtraction:
+    """filament_vendor comes from project_settings.config, limited to the
+    slots slice_info.config says the print actually consumed (#calculator
+    brand matching)."""
+
+    def _write(self, path, *, slice_filaments=None, vendors=None, settings_ids=None, types=None):
+        import json
+        import zipfile
+
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            if slice_filaments is not None:
+                rows = "\n".join(
+                    f'<filament id="{fid}" type="{ftype}" color="#FFFFFF" used_m="1.0" used_g="{used_g}" />'
+                    for fid, ftype, used_g in slice_filaments
+                )
+                zf.writestr(
+                    "Metadata/slice_info.config",
+                    f'<?xml version="1.0" encoding="UTF-8"?><config><plate>{rows}</plate></config>',
+                )
+            project: dict = {}
+            if vendors is not None:
+                project["filament_vendor"] = vendors
+            if settings_ids is not None:
+                project["filament_settings_id"] = settings_ids
+            if types is not None:
+                project["filament_type"] = types
+            zf.writestr("Metadata/project_settings.config", json.dumps(project))
+        return path
+
+    def _parse(self, path):
+        from backend.app.services.archive import ThreeMFParser
+
+        return ThreeMFParser(path).parse()
+
+    def test_vendor_limited_to_used_slots(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PETG", "119.39"), (2, "PLA", "0")],
+            vendors=["SUNLU", "Bambu Lab"],
+            settings_ids=["SUNLU PETG - White", "Bambu PLA Basic"],
+            types=["PETG", "PLA"],
+        )
+        assert self._parse(path)["filament_vendor"] == "SUNLU"
+
+    def test_empty_vendor_falls_back_to_settings_id(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PLA", "50")],
+            vendors=[""],
+            settings_ids=["Polymaker PLA Pro"],
+            types=["PLA"],
+        )
+        assert self._parse(path)["filament_vendor"] == "Polymaker PLA Pro"
+
+    def test_source_3mf_without_slice_info_uses_all_slots(self, tmp_path):
+        path = self._write(
+            tmp_path / "source.3mf",
+            vendors=["SUNLU", "Bambu Lab"],
+            types=["PETG", "PLA"],
+        )
+        assert self._parse(path)["filament_vendor"] == "SUNLU, Bambu Lab"
+
+    def test_duplicate_vendors_joined_once(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PLA", "10"), (2, "PLA", "20")],
+            vendors=["SUNLU", "SUNLU"],
+            types=["PLA", "PLA"],
+        )
+        assert self._parse(path)["filament_vendor"] == "SUNLU"
+
+    def test_generic_vendor_is_stored_verbatim(self, tmp_path):
+        # The backend records the truth; treating "Generic" as no-vendor is
+        # the frontend matcher's job.
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PETG", "119.39")],
+            vendors=["Generic"],
+            types=["PETG"],
+        )
+        assert self._parse(path)["filament_vendor"] == "Generic"
+
+    def test_no_vendor_data_leaves_field_unset(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PETG", "119.39")],
+            types=["PETG"],
+        )
+        assert "filament_vendor" not in self._parse(path)
+
+    # ------------------------------------------------------------------
+    # Edge cases: the parser must never crash or leak internals, whatever
+    # shape the slicer (or a corrupted file) hands it.
+    # ------------------------------------------------------------------
+
+    def test_internal_used_slot_key_is_not_leaked(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PETG", "119.39")],
+            vendors=["SUNLU"],
+            types=["PETG"],
+        )
+        assert "_used_slot_ids" not in self._parse(path)
+
+    def test_vendor_as_string_instead_of_list_falls_back_to_settings_ids(self, tmp_path):
+        import json
+        import zipfile
+
+        path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/slice_info.config",
+                '<?xml version="1.0"?><config><plate>'
+                '<filament id="1" type="PLA" color="#FFFFFF" used_m="1.0" used_g="10" />'
+                "</plate></config>",
+            )
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps({"filament_vendor": "SUNLU", "filament_settings_id": ["SUNLU PLA"]}),
+            )
+        assert self._parse(path)["filament_vendor"] == "SUNLU PLA"
+
+    def test_non_string_entries_are_skipped_without_crashing(self, tmp_path):
+        import json
+        import zipfile
+
+        path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/slice_info.config",
+                '<?xml version="1.0"?><config><plate>'
+                '<filament id="1" type="PLA" color="#FFFFFF" used_m="1.0" used_g="10" />'
+                '<filament id="2" type="PLA" color="#000000" used_m="1.0" used_g="10" />'
+                "</plate></config>",
+            )
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps({"filament_vendor": [None, "SUNLU"], "filament_settings_id": [123, "SUNLU PLA"]}),
+            )
+        # Slot 1's vendor and settings_id are both unusable; slot 2 survives.
+        assert self._parse(path)["filament_vendor"] == "SUNLU"
+
+    def test_used_slot_beyond_array_bounds_is_ignored(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(5, "PLA", "10")],
+            vendors=["SUNLU"],
+            types=["PLA"],
+        )
+        assert "filament_vendor" not in self._parse(path)
+
+    def test_whitespace_vendor_falls_back_to_settings_id(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PLA", "10")],
+            vendors=["   "],
+            settings_ids=["Polymaker PLA Pro"],
+            types=["PLA"],
+        )
+        assert self._parse(path)["filament_vendor"] == "Polymaker PLA Pro"
+
+    def test_non_contiguous_used_slots_keep_order(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PLA", "10"), (3, "PETG", "20")],
+            vendors=["SUNLU", "eSUN", "Bambu Lab"],
+            types=["PLA", "PLA", "PETG"],
+        )
+        assert self._parse(path)["filament_vendor"] == "SUNLU, Bambu Lab"
+
+    def test_vendors_shorter_than_settings_ids_uses_settings_id_tail(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(2, "PETG", "20")],
+            vendors=["SUNLU"],
+            settings_ids=["SUNLU PLA", "Overture PETG"],
+            types=["PLA", "PETG"],
+        )
+        assert self._parse(path)["filament_vendor"] == "Overture PETG"
+
+    def test_malformed_project_settings_json_is_survived(self, tmp_path):
+        import zipfile
+
+        path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/slice_info.config",
+                '<?xml version="1.0"?><config><plate>'
+                '<filament id="1" type="PLA" color="#FFFFFF" used_m="1.0" used_g="10" />'
+                "</plate></config>",
+            )
+            zf.writestr("Metadata/project_settings.config", "{not json at all")
+        parsed = self._parse(path)
+        assert "filament_vendor" not in parsed
+        # slice_info data still comes through untouched
+        assert parsed["filament_type"] == "PLA"
+
+    def test_empty_vendor_arrays_leave_field_unset(self, tmp_path):
+        path = self._write(
+            tmp_path / "sliced.3mf",
+            slice_filaments=[(1, "PLA", "10")],
+            vendors=[],
+            settings_ids=[],
+            types=["PLA"],
+        )
+        assert "filament_vendor" not in self._parse(path)

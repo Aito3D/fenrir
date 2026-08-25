@@ -4665,6 +4665,7 @@ async def slice_and_persist_as_archive(
         filament_used_grams=filament_g or None,
         filament_type=new_filament_type,
         filament_color=new_filament_color,
+        filament_vendor=parsed_metadata.get("filament_vendor") or source_archive.filament_vendor,
         layer_height=source_archive.layer_height,
         nozzle_diameter=source_archive.nozzle_diameter,
         # The re-sliced output is for whatever printer the user just picked,

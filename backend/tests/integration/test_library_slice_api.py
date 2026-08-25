@@ -890,6 +890,7 @@ class TestCrossClassSliceAllLoop:
             filename="mewtwo.3mf",
             file_path=str(src_3mf.relative_to(tmp_path)),
             sliced_for_model="X1C",
+            filament_vendor="SUNLU",
             with_run=False,
         )
 
@@ -980,6 +981,9 @@ class TestCrossClassSliceAllLoop:
         # Per-plate-result totals are summed onto the merged archive.
         assert new_archive.print_time_seconds == 600 * 3
         assert new_archive.filament_used_grams == pytest.approx(5.0 * 3)
+        # The sliced output carries no vendor metadata, so the new archive
+        # inherits the source's (calculator brand matching survives re-slice).
+        assert new_archive.filament_vendor == "SUNLU"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

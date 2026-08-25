@@ -16,6 +16,9 @@ export interface NamedCalculatorFilament extends PricingFilament {
   /** Material of the filament profile (e.g. "PLA"); preferred for matching
    *  when present. Older callers may only have the display name. */
   material?: string;
+  /** Brand of the filament profile (e.g. "SUNLU"); when the archive knows the
+   *  vendor it was sliced with, a brand+material match beats cheapest-material. */
+  brand?: string;
 }
 
 export interface NamedCalculatorPrinter extends PricingPrinter {
@@ -28,6 +31,9 @@ export interface ArchivePricingSource {
   print_time_seconds: number | null;
   actual_time_seconds?: number | null;
   filament_type: string | null;
+  /** Brand(s) the file was sliced with (e.g. "SUNLU"), comma-separated for
+   *  multi-material jobs; null/absent on pre-existing or MQTT-only archives. */
+  filament_vendor?: string | null;
   /** Measured energy for the job in kWh; when present and > 0 it replaces the
    *  watts × hours estimate in the pricing. */
   energy_kwh?: number | null;
@@ -63,21 +69,42 @@ const cheapest = (candidates: NamedCalculatorFilament[]): NamedCalculatorFilamen
     undefined,
   );
 
+/** Vendor hints worth brand-matching on: split a comma-joined vendor string
+ *  and drop empties and "Generic" entries (a generic preset names no real
+ *  brand, so it must fall back to the cheapest-material match). */
+const vendorHints = (vendor: string | null | undefined): string[] =>
+  (vendor ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => v.length > 0 && !v.startsWith('generic'));
+
 /** Match an archive's filament type (e.g. "PLA") against the calculator's
- *  filaments by case-insensitive containment in either direction — first on
- *  the profile's material, then on its display name. When several profiles
+ *  filaments by case-insensitive containment in either direction. When the
+ *  archive also knows the vendor it was sliced with (e.g. "SUNLU"), a profile
+ *  matching both brand and material wins first — so a SUNLU PLA print is
+ *  priced with SUNLU PLA, not the cheapest PLA. Otherwise the match runs on
+ *  the profile's material, then on its display name; when several profiles
  *  match (e.g. Bambu Lab ASA and SUNLU ASA), the cheapest cost_per_kg wins.
  *  Falls back to the first filament with matched=false. */
 export function matchCalculatorFilament(
   filamentType: string | null | undefined,
   filaments: NamedCalculatorFilament[],
+  filamentVendor?: string | null,
 ): { filament: NamedCalculatorFilament; matched: boolean } | null {
   if (filaments.length === 0) return null;
   const type = filamentType?.trim().toLowerCase();
   if (type) {
+    const materialMatches = filaments.filter(
+      (f) => !!f.material && containsEitherWay(f.material.toLowerCase(), type),
+    );
+    for (const hint of vendorHints(filamentVendor)) {
+      const brandMatch = cheapest(
+        materialMatches.filter((f) => !!f.brand && containsEitherWay(f.brand.toLowerCase(), hint)),
+      );
+      if (brandMatch) return { filament: brandMatch, matched: true };
+    }
     const match =
-      cheapest(filaments.filter((f) => !!f.material && containsEitherWay(f.material.toLowerCase(), type))) ??
-      cheapest(filaments.filter((f) => containsEitherWay(f.name.toLowerCase(), type)));
+      cheapest(materialMatches) ?? cheapest(filaments.filter((f) => containsEitherWay(f.name.toLowerCase(), type)));
     if (match) return { filament: match, matched: true };
   }
   return { filament: filaments[0], matched: false };
@@ -107,14 +134,14 @@ export function matchCalculatorPrinter(
  *  calculator configuration or the print's weight is missing so callers can
  *  fall back to the stored spool-based cost. */
 export function estimateFilamentCost(
-  source: { filament_used_grams: number | null; filament_type: string | null },
+  source: { filament_used_grams: number | null; filament_type: string | null; filament_vendor?: string | null },
   filaments: NamedCalculatorFilament[],
   defaults: PricingDefaults | undefined,
 ): number | null {
   if (!defaults) return null;
   const weightG = source.filament_used_grams ?? 0;
   if (weightG <= 0) return null;
-  const matched = matchCalculatorFilament(source.filament_type, filaments);
+  const matched = matchCalculatorFilament(source.filament_type, filaments, source.filament_vendor);
   if (!matched) return null;
   return filamentLineCost(weightG, matched.filament, defaults);
 }
@@ -135,7 +162,7 @@ export function estimateArchiveSalePrice(
   const timeH = (archive.actual_time_seconds || archive.print_time_seconds || 0) / 3600;
   if (weightG <= 0 || timeH <= 0) return null;
 
-  const matched = matchCalculatorFilament(archive.filament_type, filaments);
+  const matched = matchCalculatorFilament(archive.filament_type, filaments, archive.filament_vendor);
   if (!matched) return null;
   const { printer, matched: printerMatched } = matchCalculatorPrinter(printerHints, printers)!;
 

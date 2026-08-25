@@ -80,6 +80,7 @@ class ArchiveResponse(BaseModel):
     filament_used_grams: float | None
     filament_type: str | None
     filament_color: str | None
+    filament_vendor: str | None = None  # Brand(s) the file was sliced with
     layer_height: float | None
     total_layers: int | None = None
     nozzle_diameter: float | None
@@ -150,6 +151,7 @@ class ArchiveSlim(BaseModel):
     filament_used_grams: float | None
     filament_type: str | None
     filament_color: str | None
+    filament_vendor: str | None = None
     status: str
     started_at: datetime | None
     completed_at: datetime | None

@@ -283,6 +283,7 @@ class ThreeMFParser:
                 self.metadata.pop("_slice_filament_type", None)
                 self.metadata.pop("_slice_filament_color", None)
                 self.metadata.pop("_plate_index", None)
+                self.metadata.pop("_used_slot_ids", None)
         except Exception as e:
             # Return whatever metadata was extracted before the error, but
             # surface the failure so corrupted / truncated 3MF archives are
@@ -438,6 +439,11 @@ class ThreeMFParser:
                             )
                     if filament_slots:
                         self.metadata["filament_slots"] = filament_slots
+                        # Remember which 1-based slots the print actually
+                        # consumes so project_settings parsing (which lists
+                        # every configured AMS slot) can limit vendor
+                        # extraction to them.
+                        self.metadata["_used_slot_ids"] = [s["slot_id"] for s in filament_slots]
         except Exception:
             pass  # Skip unparseable slice_info metadata
 
@@ -449,6 +455,7 @@ class ThreeMFParser:
                 try:
                     data = json.loads(content)
                     self._extract_filament_info(data)
+                    self._extract_filament_vendor(data)
                     self._extract_print_settings(data)
                 except json.JSONDecodeError:
                     pass  # Skip malformed project_settings JSON
@@ -577,6 +584,53 @@ class ThreeMFParser:
 
         except Exception:
             pass  # Filament info is optional; fall back to slice_info values
+
+    def _extract_filament_vendor(self, data: dict):
+        """Extract the filament brand(s) from project settings so the pricing
+        calculator can match the exact profile the file was sliced with
+        (e.g. SUNLU PLA) instead of falling back to the cheapest filament of
+        that material.
+
+        ``filament_vendor`` / ``filament_settings_id`` are 0-based arrays
+        covering every configured AMS slot; when slice_info told us which
+        1-based slots the print actually consumes, only those entries are
+        kept. A blank vendor falls back to the preset name
+        (``filament_settings_id``), which usually embeds the brand. "Generic"
+        is stored verbatim — deciding it means "no brand" is the matcher's
+        concern, not the parser's.
+        """
+        try:
+            vendors = data.get("filament_vendor", [])
+            settings_ids = data.get("filament_settings_id", [])
+            if not isinstance(vendors, list):
+                vendors = []
+            if not isinstance(settings_ids, list):
+                settings_ids = []
+            slot_count = max(len(vendors), len(settings_ids))
+            if slot_count == 0:
+                return
+
+            used_slot_ids = self.metadata.get("_used_slot_ids")
+            if used_slot_ids:
+                indices = [slot_id - 1 for slot_id in used_slot_ids if 0 <= slot_id - 1 < slot_count]
+            else:
+                # Unsliced source 3MF: no usage data, keep every slot (same
+                # rationale as _extract_filament_info).
+                indices = list(range(slot_count))
+
+            unique_vendors: list[str] = []
+            for i in indices:
+                vendor = vendors[i] if i < len(vendors) and isinstance(vendors[i], str) else ""
+                vendor = vendor.strip()
+                if not vendor and i < len(settings_ids) and isinstance(settings_ids[i], str):
+                    vendor = settings_ids[i].strip()
+                if vendor and vendor not in unique_vendors:
+                    unique_vendors.append(vendor)
+
+            if unique_vendors:
+                self.metadata["filament_vendor"] = ", ".join(unique_vendors)
+        except Exception:
+            pass  # Vendor info is optional; matching falls back to material
 
     def _extract_print_settings(self, data: dict):
         """Extract print settings from JSON config."""
@@ -1522,6 +1576,7 @@ class ArchiveService:
             filament_used_grams=metadata.get("filament_used_grams"),
             filament_type=metadata.get("filament_type"),
             filament_color=metadata.get("filament_color"),
+            filament_vendor=metadata.get("filament_vendor"),
             layer_height=metadata.get("layer_height"),
             total_layers=metadata.get("total_layers"),
             nozzle_diameter=metadata.get("nozzle_diameter"),

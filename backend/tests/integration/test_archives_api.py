@@ -2891,3 +2891,150 @@ class TestPrintLogSorting:
 
         resp = await async_client.get("/api/v1/print-log/")
         assert [e["print_name"] for e in resp.json()["items"]] == ["newest", "oldest"]
+
+
+class TestFilamentVendorAPI:
+    """filament_vendor (calculator brand matching) through the API surface:
+    rescan backfills it from the stored 3MF, and every archive response
+    carries it."""
+
+    @staticmethod
+    def _write_3mf(path: Path, vendor: str = "SUNLU", settings_id: str = "SUNLU PETG - White") -> None:
+        import json
+        import zipfile
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/slice_info.config",
+                '<?xml version="1.0"?><config><plate>'
+                '<metadata key="index" value="1"/>'
+                '<filament id="1" type="PETG" color="#FFFFFF" used_m="39.08" used_g="119.39" />'
+                "</plate></config>",
+            )
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps(
+                    {
+                        "filament_vendor": [vendor],
+                        "filament_settings_id": [settings_id],
+                        "filament_type": ["PETG"],
+                    }
+                ),
+            )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rescan_backfills_filament_vendor(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
+    ):
+        """POST /archives/{id}/rescan on a pre-feature archive (vendor NULL)
+        re-parses the stored 3MF and fills filament_vendor — the documented
+        backfill path for archives created before the column existed."""
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        printer = await printer_factory()
+        self._write_3mf(tmp_path / "archives" / "vendor.gcode.3mf")
+        archive = await archive_factory(
+            printer.id,
+            file_path="archives/vendor.gcode.3mf",
+            filament_vendor=None,
+        )
+
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/rescan")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_vendor"] == "SUNLU"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rescan_keeps_existing_vendor_when_file_has_none(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
+    ):
+        """A rescan of a 3MF without vendor metadata must not wipe a stored
+        vendor (same guarded-update convention as filament_type/color)."""
+        import zipfile
+
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        printer = await printer_factory()
+        path = tmp_path / "archives" / "novendor.gcode.3mf"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+        archive = await archive_factory(
+            printer.id,
+            file_path="archives/novendor.gcode.3mf",
+            filament_vendor="SUNLU",
+        )
+
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/rescan")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_vendor"] == "SUNLU"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rescan_all_backfills_every_archive(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        printer = await printer_factory()
+        self._write_3mf(tmp_path / "archives" / "a.gcode.3mf", vendor="SUNLU")
+        self._write_3mf(tmp_path / "archives" / "b.gcode.3mf", vendor="Bambu Lab")
+        a = await archive_factory(printer.id, file_path="archives/a.gcode.3mf")
+        b = await archive_factory(printer.id, file_path="archives/b.gcode.3mf")
+
+        response = await async_client.post("/api/v1/archives/rescan-all")
+        assert response.status_code == 200, response.text
+
+        detail_a = await async_client.get(f"/api/v1/archives/{a.id}")
+        detail_b = await async_client.get(f"/api/v1/archives/{b.id}")
+        assert detail_a.json()["filament_vendor"] == "SUNLU"
+        assert detail_b.json()["filament_vendor"] == "Bambu Lab"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_responses_carry_filament_vendor(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """Detail AND list responses expose the stored vendor; a vendor-less
+        archive serializes it as null, not a missing key."""
+        printer = await printer_factory()
+        with_vendor = await archive_factory(printer.id, filament_vendor="SUNLU, Bambu Lab")
+        without_vendor = await archive_factory(printer.id, filament_vendor=None)
+
+        detail = await async_client.get(f"/api/v1/archives/{with_vendor.id}")
+        assert detail.status_code == 200
+        assert detail.json()["filament_vendor"] == "SUNLU, Bambu Lab"
+
+        bare = await async_client.get(f"/api/v1/archives/{without_vendor.id}")
+        assert bare.status_code == 200
+        assert "filament_vendor" in bare.json()
+        assert bare.json()["filament_vendor"] is None
+
+        listing = await async_client.get("/api/v1/archives/")
+        assert listing.status_code == 200
+        items = listing.json()["archives"] if isinstance(listing.json(), dict) else listing.json()
+        by_id = {item["id"]: item for item in items}
+        assert by_id[with_vendor.id]["filament_vendor"] == "SUNLU, Bambu Lab"
+        assert by_id[without_vendor.id]["filament_vendor"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_stores_filament_vendor_end_to_end(
+        self, async_client: AsyncClient, printer_factory, tmp_path, monkeypatch
+    ):
+        """Full pipeline: a real .gcode.3mf uploaded through the API lands in
+        the archive with the vendor parsed out of project_settings.config."""
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
+        source = tmp_path / "upload.gcode.3mf"
+        self._write_3mf(source, vendor="Polymaker", settings_id="Polymaker PETG")
+
+        files = {"file": ("upload.gcode.3mf", source.read_bytes(), "application/octet-stream")}
+        response = await async_client.post("/api/v1/archives/upload", files=files)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["filament_vendor"] == "Polymaker"
+        assert body["filament_type"] == "PETG"

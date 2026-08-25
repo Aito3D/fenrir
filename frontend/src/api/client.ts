@@ -735,6 +735,8 @@ export interface Archive {
   filament_used_grams: number | null;
   filament_type: string | null;
   filament_color: string | null;
+  /** Brand(s) the file was sliced with (comma-separated for multi-material). */
+  filament_vendor: string | null;
   layer_height: number | null;
   total_layers: number | null;
   nozzle_diameter: number | null;
@@ -778,6 +780,7 @@ export interface ArchiveSlim {
   filament_used_grams: number | null;
   filament_type: string | null;
   filament_color: string | null;
+  filament_vendor: string | null;
   status: string;
   started_at: string | null;
   completed_at: string | null;

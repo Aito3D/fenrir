@@ -340,6 +340,7 @@ def archive_to_response(
         "filament_used_grams": archive.filament_used_grams,
         "filament_type": archive.filament_type,
         "filament_color": archive.filament_color,
+        "filament_vendor": archive.filament_vendor,
         "layer_height": archive.layer_height,
         "total_layers": archive.total_layers,
         "nozzle_diameter": archive.nozzle_diameter,
@@ -1841,6 +1842,8 @@ async def rescan_archive(
         archive.filament_type = metadata["filament_type"]
     if metadata.get("filament_color"):
         archive.filament_color = metadata["filament_color"]
+    if metadata.get("filament_vendor"):
+        archive.filament_vendor = metadata["filament_vendor"]
     if metadata.get("print_time_seconds"):
         archive.print_time_seconds = metadata["print_time_seconds"]
     if metadata.get("filament_used_grams"):
@@ -2006,6 +2009,8 @@ async def rescan_all_archives(
                 archive.filament_type = metadata["filament_type"]
             if metadata.get("filament_color"):
                 archive.filament_color = metadata["filament_color"]
+            if metadata.get("filament_vendor"):
+                archive.filament_vendor = metadata["filament_vendor"]
             if metadata.get("print_time_seconds"):
                 archive.print_time_seconds = metadata["print_time_seconds"]
             if metadata.get("filament_used_grams"):

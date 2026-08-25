@@ -5190,6 +5190,11 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
     )
 
+    # Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+    # match the exact filament profile (e.g. SUNLU PLA) instead of the
+    # cheapest one of that material. Backfilled per archive by rescan.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN filament_vendor VARCHAR(200)")
+
     # Migration: repair the tare of spools the RFID auto-add gave the wrong
     # Bambu spool row (#2909). Runs last so the spool catalogue it reads is
     # whatever this database actually holds.
