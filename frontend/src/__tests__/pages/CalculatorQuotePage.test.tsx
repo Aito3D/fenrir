@@ -3,12 +3,13 @@
  * persisted state and renders a client-facing document.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { render } from '../utils';
 import { CalculatorQuotePage } from '../../pages/CalculatorQuotePage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import i18n from '../../i18n';
 
 const mockFilaments = [
   {
@@ -74,10 +75,24 @@ describe('CalculatorQuotePage', () => {
     );
   });
 
+  afterEach(() => {
+    // Only the pinned-date test below moves the clock; restore real time so
+    // it can never leak into a sibling test in this file (or the next file
+    // in the same worker).
+    vi.useRealTimers();
+  });
+
   it('renders the persisted job as a quote with the reference total', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', timeH: '2', timeM: '' }) : null,
     );
+
+    // Pin the clock (no vi.useFakeTimers() — that also fakes the timers
+    // RTL's findBy* polls with and can hang the awaits below) to a fixed
+    // instant so the header's "date of quote" line is deterministic instead
+    // of drifting with the day the suite happens to run.
+    const pinned = new Date('2026-03-15T12:00:00Z');
+    vi.setSystemTime(pinned);
 
     render(<CalculatorQuotePage />);
 
@@ -95,6 +110,10 @@ describe('CalculatorQuotePage', () => {
     expect(screen.getAllByText('Filament')).toHaveLength(2);
     expect(screen.queryByText('Volume pricing')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Print/ })).toBeInTheDocument();
+    // Date-of-quote line: rendered in the app language (i18n.language), not
+    // hardcoded, since a formatted string is machine/ICU-dependent — only
+    // the underlying date is pinned by this test.
+    expect(screen.getByText(pinned.toLocaleDateString(i18n.language))).toBeInTheDocument();
   });
 
   it('shows the empty hint when no job is stored', async () => {

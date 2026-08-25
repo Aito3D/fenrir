@@ -2,8 +2,8 @@
  * Tests for the CalculatorPage component.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
@@ -224,6 +224,17 @@ function useCalculatorHandlers({ filaments = mockFilaments, printers = mockPrint
 }
 
 describe('CalculatorPage', () => {
+  // This file's reality-check flows chain several findBy* waits (server
+  // round-trip → recompute → toast) inside vitest's 10s testTimeout, but
+  // RTL's findBy*/waitFor default to a much thinner 1s asyncUtilTimeout
+  // (@testing-library/dom's default, never overridden repo-wide via
+  // `configure()`). Under host load that 1s budget is exactly what flakes
+  // — raise it to something the file's own 10s budget can actually cover,
+  // and restore the library default afterwards so it can't leak into
+  // whatever test file vitest runs next in this worker.
+  beforeAll(() => configure({ asyncUtilTimeout: 5000 }));
+  afterAll(() => configure({ asyncUtilTimeout: 1000 }));
+
   beforeEach(() => {
     vi.mocked(localStorage.getItem).mockReset();
     vi.mocked(localStorage.setItem).mockReset();

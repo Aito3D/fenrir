@@ -4204,3 +4204,91 @@ confirming host-load flake unrelated to this change. `npx eslint` and `npx tsc -
 clean. `tools/snapshot.py verify`: 10/10, none moved (frontend-only change). `SURFACE.md`
 regenerated and diffed byte-for-byte identical to before this fix (the bounds table's
 module-private status was chosen specifically to keep this true).
+
+## T-129 — 2026-08-24 — user-approved behavior change
+
+T-129: `_finite_safe_validation_exception_handler` (`backend/app/main.py`, added by T-071) no
+longer echoes a rejected password/token/secret back verbatim in a 422 body's
+`errors()[i]["input"]`. This handler is **app-global** — it is registered on `app`, not any one
+router, so it renders every `RequestValidationError` in Bambuddy, including the unauthenticated
+routes in `PUBLIC_API_ROUTES` (`/auth/login`, `/auth/setup`, `/auth/forgot-password/confirm`).
+Before this fix, a rejected `password`/`new_password`/`current_password` (e.g. one over
+`LoginRequest`'s `max_length=256`) was returned to the caller in cleartext inside `input`.
+
+A new `_is_secret_field_loc(loc)` helper matches the LAST element of a Pydantic error's `loc`
+tuple (the field name) case-insensitively against five base terms —
+`password`, `token`, `secret`, `api_key`, `access_code` — either as an exact match or as an
+`_`-joined suffix (`field == suffix or field.endswith("_" + suffix)`). The five terms were chosen
+by grepping every field name in `backend/app/schemas/*.py` that plausibly carries a credential
+(`grep -rniE "password|token|secret|api_key|access_code|passphrase|pin|otp|webhook"`); the
+suffix-match shape (rather than an exhaustive exact-name list) was chosen because the codebase's
+real secret fields are almost all compound names built from one of these five roots —
+`admin_password`, `smtp_password`, `mqtt_password`, `ldap_bind_password`,
+`access_token`/`pre_auth_token`/`setup_token`/`auth_token`/`app_token`/`bot_token`/`ha_token`/
+`oidc_token`/`prometheus_token`/`obico_ml_token`/`zoho_refresh_token`, `client_secret`/
+`zoho_client_secret`, `openrouter_api_key`, `virtual_printer_access_code` — so an exact-name list
+would have missed all of them. `passphrase`, `pin` and a bare `webhook_secret` were considered
+(the task briefing named them explicitly) but are not used as a field name anywhere in the
+schemas today, so they were left out rather than guessed at; `secret` and `webhook_secret`-shaped
+names are still covered by the `secret` suffix. Matching is on the field name only, not the
+route — the approved wording is about password-like fields generally, and matching by route
+(the audit's offered alternative) would have both under-redacted secrets on non-auth routes
+(e.g. `mqtt_password`, `zoho_client_secret`, `openrouter_api_key` are all set through
+`/settings`, not `/auth`) and over-redacted ordinary auth-route fields like `username`.
+Substring (not suffix) matching was rejected: it would also redact `password_hint`-shaped names
+in list contexts; a `TestIsSecretFieldLoc::test_does_not_match_unrelated_field_names` case pins
+`passwordless_login_enabled` and `tokenizer` as still returned verbatim. `loc` elements can be
+ints (list indices); `_is_secret_field_loc` returns `False` on a non-`str` last element rather
+than raising.
+
+The new `_redact_secret_inputs(errors)` walks the flat list `exc.errors()` returns (one pass, no
+recursion — it does not walk *inside* a matched `input` value, so it adds no recursion depth of
+its own) and replaces `input` with the literal string `"[redacted]"` for a matched field, leaving
+`type`, `loc`, `msg` and `ctx` untouched — a caller still learns which field was rejected and why,
+per the approved wording ("show a placeholder instead of the value"), not that the field is
+silently dropped. It composes with T-071's existing `_stringify_non_finite` by running first:
+`_stringify_non_finite(_redact_secret_inputs(jsonable_encoder(exc.errors())))`. A non-finite value
+in a non-secret field is unaffected and still stringified exactly as before (T-071's crash-avoidance
+reason for existing is unbroken). No field in the current schemas is both secret-named and
+float-typed, so a non-finite value in a secret field is synthetic today; it was still pinned: since
+redaction replaces `input` outright, the raw `inf`/`nan` never reaches `_stringify_non_finite` at
+all — it is discarded along with the rest of the value, rather than being stringified into the
+response. The recursion-depth threshold T-071's snapshot pinned (988) is unaffected: the new walk
+is O(number of errors), not a recursive descent into nested `input` values, so it cannot change
+where the existing recursive walk in `_stringify_non_finite` (itself untouched) crashes.
+
+New tests in `backend/tests/unit/test_main_validation_handler.py`: `TestIsSecretFieldLoc` pins the
+matcher against every secret-bearing field name found in `backend/app/schemas/*.py` plus
+case-insensitivity, and against non-secret fields (including the `passwordless_login_enabled`/
+`tokenizer` over-redaction traps and bare `code`/`key` substrings) and int `loc` elements.
+`TestRedactSecretInputs` pins: a secret field's `input` replaced with `"[redacted]"` while `type`/
+`loc`/`msg`/`ctx` survive; a non-secret field's `input` returned verbatim (proves no
+over-redaction); a non-finite value in a secret field discarded rather than stringified; a
+non-finite value in a non-secret field still stringified after composing with the redaction pass;
+mixed secret/non-secret errors in one response redacted selectively; an error dict with no `input`
+key left alone. `TestLoginRedactsPasswordEndToEnd` drives the real handler through
+`POST /api/v1/auth/login`: an over-length password is rejected with `input == "[redacted]"` and
+the submitted password string does not appear anywhere in the response body/text, while an
+over-length `username` on the same request is still returned verbatim.
+
+Mutation-tested: emptied `_redact_secret_inputs`'s body to a no-op passthrough — the secret-field
+unit tests and the end-to-end login test failed as expected (4 failures: placeholder assertion,
+non-finite-in-secret-field assertion, mixed-errors assertion, end-to-end login assertion); the
+non-secret-field tests kept passing (proving they'd catch over-redaction, not just under-redaction);
+reverted, `git diff` on `backend/app/main.py` clean.
+
+Full backend suite: 11,800 passed, 1 skipped (was 11,758 before; +42 new tests, no new failures).
+`tools/coverage_calc.sh backend` (the calculator-scoped gate; `main.py` is deliberately outside its
+file list): 712/716 = 99.44% statements, unchanged from the prior measurement — expected, since this
+change touches only `main.py`, which the gate does not measure. `tools/snapshot.py verify`: 10/10
+match, none moved — `calc-openapi` and `calc-pydantic-schemas` were checked specifically and did not
+move, since this is a change to global error-rendering, not to the calculator's request/response
+schemas. `SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
+
+user-approved 2026-08-24: "When a request is rejected for bad input, the error Bambuddy sends back
+would no longer repeat the exact value you typed for password-like fields — it would say the field
+was rejected and why, but show a placeholder instead of the value. Nothing in the Bambuddy web UI
+displays that value today, so you would see no difference; only a third-party tool that reads the
+raw error payload would notice." Blast radius stated explicitly: this handler is app-global, so the
+redaction applies to every route in Bambuddy that returns a 422, not only the calculator or the
+auth routes named in the audit evidence.
