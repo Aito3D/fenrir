@@ -1,0 +1,35 @@
+### exit: 0
+### stdout:
+syncFilamentPresetsFromZoho: () =>
+    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST' }),
+  // ── Spool label printing (#809) ──────────────────────────────────────────
+  // Both endpoints return application/pdf. Frontend opens the resulting Blob
+  // in a new tab so the user can print or save from the browser's PDF viewer.
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/inventory/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+export interface FilamentPresetZohoSyncAttention {
+  id: number;
+  name: string;
+  reason: 'no_match' | 'ambiguous' | 'no_price';
+  candidates: string[];
+}
+export interface FilamentPresetZohoSyncResponse {
+  priced: number;
+  unchanged: number;
+  attention: FilamentPresetZohoSyncAttention[];
+}
+
+### stderr:
+

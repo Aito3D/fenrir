@@ -1,0 +1,18 @@
+### exit: 0
+### stdout:
+CREATE TABLE filament_presets (
+	id INTEGER NOT NULL, 
+	name VARCHAR NOT NULL, 
+	brand VARCHAR NOT NULL, 
+	material VARCHAR NOT NULL, 
+	color VARCHAR NOT NULL, 
+	color_hex VARCHAR NOT NULL, 
+	filename VARCHAR NOT NULL, 
+	content TEXT NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+
+### stderr:
+

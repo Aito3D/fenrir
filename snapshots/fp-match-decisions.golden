@@ -1,0 +1,63 @@
+### exit: 0
+### stdout:
+=== parse_filament_name ===
+'Polymaker - PETG - Electric Blue - 1.75mm - 1kg' -> ParsedName(brand='Polymaker', material='PETG', colour='Electric Blue', spool_weight_kg=1.0, weight_inferred=False)
+'Polymaker - PETG - Electric Blue - 1.75mm - 0.75kg' -> ParsedName(brand='Polymaker', material='PETG', colour='Electric Blue', spool_weight_kg=0.75, weight_inferred=False)
+'Bambu Lab - PLA Basic - Jade White - 1.75mm - 1kg - 1.75mm - 1kg' -> ParsedName(brand='Bambu Lab', material='PLA Basic', colour='Jade White', spool_weight_kg=1.0, weight_inferred=False)
+'eSUN - PLA+ - Black - 1.75mm - 0,8 kg' -> ParsedName(brand='eSUN', material='PLA+', colour='Black', spool_weight_kg=0.8, weight_inferred=False)
+'Brand - Material - Colour' -> ParsedName(brand='Brand', material='Material', colour='Colour', spool_weight_kg=1.0, weight_inferred=True)
+'Brand - Material' -> ParsedName(brand='Brand', material='Material', colour='', spool_weight_kg=1.0, weight_inferred=True)
+'Brand' -> ParsedName(brand='Brand', material='', colour='', spool_weight_kg=1.0, weight_inferred=True)
+'' -> ParsedName(brand='', material='', colour='', spool_weight_kg=1.0, weight_inferred=True)
+'   ' -> ParsedName(brand='', material='', colour='', spool_weight_kg=1.0, weight_inferred=True)
+'No Separator At All 1kg' -> ParsedName(brand='No Separator At All 1kg', material='', colour='', spool_weight_kg=1.0, weight_inferred=False)
+'Weightless - PLA - Red - 1.75mm' -> ParsedName(brand='Weightless', material='PLA', colour='Red', spool_weight_kg=1.0, weight_inferred=True)
+'Zero - PLA - Red - 0kg' -> ParsedName(brand='Zero', material='PLA', colour='Red', spool_weight_kg=1.0, weight_inferred=True)
+'Trailing - PLA - Red - 2KG' -> ParsedName(brand='Trailing', material='PLA', colour='Red', spool_weight_kg=2.0, weight_inferred=False)
+'Diameter only - PLA - Red - 1.75mm' -> ParsedName(brand='Diameter only', material='PLA', colour='Red', spool_weight_kg=1.0, weight_inferred=True)
+
+=== match_profile ===
+--- exact single match | brand='Polymaker' material='PLA' colour='Electric Blue'
+outcome=matched product=Polymaker|PLA|Electric Blue cost_per_kg=15.0 candidates=['Polymaker - PLA - Electric Blue - 1.75mm - 1.0kg']
+--- two candidates narrowed by colour | brand='Polymaker' material='PETG' colour='Electric Blue'
+outcome=matched product=Polymaker|PETG|Electric Blue cost_per_kg=19.9 candidates=['Polymaker - PETG - Electric Blue - 1.75mm - 1.0kg']
+--- two candidates, colour matches neither | brand='Polymaker' material='PETG' colour='Pink'
+outcome=ambiguous product=None candidates=['Polymaker - PETG - Electric Blue - 1.75mm - 1.0kg', 'Polymaker - PETG - Black - 1.75mm - 1.0kg']
+--- two candidates, colour empty | brand='Polymaker' material='PETG' colour=''
+outcome=ambiguous product=None candidates=['Polymaker - PETG - Electric Blue - 1.75mm - 1.0kg', 'Polymaker - PETG - Black - 1.75mm - 1.0kg']
+--- separator-insensitive brand | brand='poly-maker' material='PLA' colour='electric blue'
+outcome=matched product=Polymaker|PLA|Electric Blue cost_per_kg=15.0 candidates=['Polymaker - PLA - Electric Blue - 1.75mm - 1.0kg']
+--- separator-insensitive material | brand='Polymaker' material='P.L.A' colour='Electric Blue'
+outcome=matched product=Polymaker|PLA|Electric Blue cost_per_kg=15.0 candidates=['Polymaker - PLA - Electric Blue - 1.75mm - 1.0kg']
+--- case-insensitive | brand='POLYMAKER' material='pla' colour='ELECTRIC BLUE'
+outcome=matched product=Polymaker|PLA|Electric Blue cost_per_kg=15.0 candidates=['Polymaker - PLA - Electric Blue - 1.75mm - 1.0kg']
+--- space-insensitive brand | brand='BambuLab' material='PLA Basic' colour='Jade White'
+outcome=matched product=Bambu Lab|PLA Basic|Jade White cost_per_kg=24.99 candidates=['Bambu Lab - PLA Basic - Jade White - 1.75mm - 1.0kg']
+--- sole candidate, wrong colour, still accepted | brand='Bambu Lab' material='PLA Basic' colour='Not A Colour'
+outcome=matched product=Bambu Lab|PLA Basic|Jade White cost_per_kg=24.99 candidates=['Bambu Lab - PLA Basic - Jade White - 1.75mm - 1.0kg']
+--- sole candidate without a price | brand='eSUN' material='PETG' colour='Grey'
+outcome=no_price product=eSUN|PETG|Grey cost_per_kg=0.0 candidates=['eSUN - PETG - Grey - 1.75mm - 1.0kg']
+--- sole candidate without a price, wrong colour | brand='eSUN' material='PETG' colour='Anything'
+outcome=no_price product=eSUN|PETG|Grey cost_per_kg=0.0 candidates=['eSUN - PETG - Grey - 1.75mm - 1.0kg']
+--- unknown brand | brand='Nobody' material='PLA' colour='Red'
+outcome=no_match product=None candidates=[]
+--- known brand, unknown material | brand='Polymaker' material='TPU' colour='Red'
+outcome=no_match product=None candidates=[]
+--- empty brand | brand='' material='PLA' colour='Red'
+outcome=no_match product=None candidates=[]
+--- empty material | brand='Polymaker' material='' colour='Red'
+outcome=no_match product=None candidates=[]
+--- both empty | brand='' material='' colour=''
+outcome=no_match product=None candidates=[]
+--- brand that is only punctuation | brand='---' material='PLA' colour='Red'
+outcome=no_match product=None candidates=[]
+--- duplicate rows, identical colour | brand='Dup' material='PLA' colour='Same Colour'
+outcome=ambiguous product=None candidates=['Dup - PLA - Same Colour - 1.75mm - 1.0kg', 'Dup - PLA - Same Colour - 1.75mm - 1.0kg']
+--- half-kg spool cost per kg | brand='Prusament' material='PLA' colour='Galaxy Black'
+outcome=matched product=Prusament|PLA|Galaxy Black cost_per_kg=59.8 candidates=['Prusament - PLA - Galaxy Black - 1.75mm - 0.5kg']
+
+=== match_profile on an empty catalogue ===
+ProfileMatch(outcome='no_match', product=None, candidates=[])
+
+### stderr:
+

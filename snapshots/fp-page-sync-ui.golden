@@ -1,0 +1,16 @@
+### exit: 0
+### stdout:
+zohoSync first referenced at char True
+const [zohoSyncing, setZohoSyncing] = useState(false);
+showToast(t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged }), 'success');
+showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
+<Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
+{t('filamentProfiles.syncZohoPrices')}
+{t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
+{t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
+? 'filamentProfiles.syncZohoNoMatch'
+? 'filamentProfiles.syncZohoAmbiguous'
+: 'filamentProfiles.syncZohoNoPrice',
+
+### stderr:
+

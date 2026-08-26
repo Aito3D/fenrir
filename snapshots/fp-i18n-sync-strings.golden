@@ -1,0 +1,241 @@
+### exit: 0
+### stdout:
+--- de (16 keys)
+syncBase = "Basis synchronisieren"
+syncConfirm = "Synchronisieren"
+syncDoneTitle = "Synchronisierung abgeschlossen"
+syncFailed = "Synchronisierung fehlgeschlagen: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Sync-Vorschau fehlgeschlagen: {{error}}"  placeholders={{error}}
+syncSubtitle = "Änderungen werden auf den BambuStudio-Filamentordner angewendet."
+syncTitle = "Auf PC synchronisieren"
+syncToPc = "Auf PC synchronisieren"
+syncZohoAmbiguous = "Mehrere Artikel passen"
+syncZohoAttention = "{{count}} benötigen Aufmerksamkeit"  placeholders={{count}}
+syncZohoDone = "Bepreist: {{priced}}, unverändert: {{unchanged}}"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Preise konnten nicht von Zoho synchronisiert werden"
+syncZohoNoMatch = "Kein passender Artikel in Zoho gefunden"
+syncZohoNoPrice = "Gefunden, aber der Artikel hat keinen Preis"
+syncZohoPrices = "Preise von Zoho synchronisieren"
+syncingBase = "Basis wird synchronisiert…"
+--- en (16 keys)
+syncBase = "Sync base"
+syncConfirm = "Sync"
+syncDoneTitle = "Sync complete"
+syncFailed = "Sync failed: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Sync preview failed: {{error}}"  placeholders={{error}}
+syncSubtitle = "Changes will be applied to the BambuStudio filament folder."
+syncTitle = "Sync to PC"
+syncToPc = "Sync to PC"
+syncZohoAmbiguous = "Several items matched"
+syncZohoAttention = "{{count}} need attention"  placeholders={{count}}
+syncZohoDone = "Priced {{priced}}, unchanged {{unchanged}}"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Could not sync prices from Zoho"
+syncZohoNoMatch = "No matching item in Zoho"
+syncZohoNoPrice = "Matched, but the item has no price"
+syncZohoPrices = "Sync prices from Zoho"
+syncingBase = "Syncing base…"
+--- es (16 keys)
+syncBase = "Sincronizar base"
+syncConfirm = "Sincronizar"
+syncDoneTitle = "Sincronización completa"
+syncFailed = "Error de sincronización: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Error en la vista previa de sincronización: {{error}}"  placeholders={{error}}
+syncSubtitle = "Los cambios se aplicarán a la carpeta de filamentos de BambuStudio."
+syncTitle = "Sincronizar con el PC"
+syncToPc = "Sincronizar con el PC"
+syncZohoAmbiguous = "Varios artículos coinciden"
+syncZohoAttention = "{{count}} requieren atención"  placeholders={{count}}
+syncZohoDone = "{{priced}} con precio, {{unchanged}} sin cambios"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "No se pudieron sincronizar los precios desde Zoho"
+syncZohoNoMatch = "No hay artículo coincidente en Zoho"
+syncZohoNoPrice = "Coincide, pero el artículo no tiene precio"
+syncZohoPrices = "Sincronizar precios desde Zoho"
+syncingBase = "Sincronizando base…"
+--- fr (16 keys)
+syncBase = "Synchroniser la base"
+syncConfirm = "Synchroniser"
+syncDoneTitle = "Synchronisation terminée"
+syncFailed = "Échec de la synchronisation : {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Échec de l'aperçu de synchronisation : {{error}}"  placeholders={{error}}
+syncSubtitle = "Les modifications seront appliquées au dossier de filaments de BambuStudio."
+syncTitle = "Synchronisation vers le PC"
+syncToPc = "Sync vers PC"
+syncZohoAmbiguous = "Plusieurs articles correspondent"
+syncZohoAttention = "{{count}} nécessitent une attention"  placeholders={{count}}
+syncZohoDone = "{{priced}} tarifés, {{unchanged}} inchangés"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Impossible de synchroniser les prix depuis Zoho"
+syncZohoNoMatch = "Aucun article correspondant dans Zoho"
+syncZohoNoPrice = "Correspondance trouvée, mais l'article n'a pas de prix"
+syncZohoPrices = "Synchroniser les prix depuis Zoho"
+syncingBase = "Synchronisation de la base…"
+--- it (16 keys)
+syncBase = "Sincronizza base"
+syncConfirm = "Sincronizza"
+syncDoneTitle = "Sincronizzazione completata"
+syncFailed = "Sincronizzazione non riuscita: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Anteprima di sincronizzazione non riuscita: {{error}}"  placeholders={{error}}
+syncSubtitle = "Le modifiche verranno applicate alla cartella filamenti di BambuStudio."
+syncTitle = "Sincronizza su PC"
+syncToPc = "Sincronizza su PC"
+syncZohoAmbiguous = "Più articoli corrispondono"
+syncZohoAttention = "{{count}} richiedono attenzione"  placeholders={{count}}
+syncZohoDone = "{{priced}} con prezzo, {{unchanged}} invariati"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Impossibile sincronizzare i prezzi da Zoho"
+syncZohoNoMatch = "Nessun articolo corrispondente in Zoho"
+syncZohoNoPrice = "Trovata corrispondenza, ma l'articolo non ha un prezzo"
+syncZohoPrices = "Sincronizza prezzi da Zoho"
+syncingBase = "Sincronizzazione base…"
+--- ja (16 keys)
+syncBase = "ベースを同期"
+syncConfirm = "同期"
+syncDoneTitle = "同期が完了しました"
+syncFailed = "同期に失敗しました: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "同期プレビューに失敗しました: {{error}}"  placeholders={{error}}
+syncSubtitle = "変更はBambuStudioのフィラメントフォルダに適用されます。"
+syncTitle = "PCに同期"
+syncToPc = "PCに同期"
+syncZohoAmbiguous = "複数の商品が一致しました"
+syncZohoAttention = "{{count}}件が確認待ち"  placeholders={{count}}
+syncZohoDone = "{{priced}}件を価格設定、{{unchanged}}件は変更なし"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Zohoから価格を同期できませんでした"
+syncZohoNoMatch = "Zohoに一致する商品がありません"
+syncZohoNoPrice = "一致しましたが、価格が設定されていません"
+syncZohoPrices = "Zohoから価格を同期"
+syncingBase = "ベースを同期中…"
+--- ko (16 keys)
+syncBase = "베이스 동기화"
+syncConfirm = "동기화"
+syncDoneTitle = "동기화 완료"
+syncFailed = "동기화 실패: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "동기화 미리보기 실패: {{error}}"  placeholders={{error}}
+syncSubtitle = "변경 사항이 BambuStudio 필라멘트 폴더에 적용됩니다."
+syncTitle = "PC에 동기화"
+syncToPc = "PC에 동기화"
+syncZohoAmbiguous = "여러 항목이 일치했습니다"
+syncZohoAttention = "{{count}}개 확인 필요"  placeholders={{count}}
+syncZohoDone = "{{priced}}개 가격 설정, {{unchanged}}개 변경 없음"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Zoho에서 가격을 동기화할 수 없습니다"
+syncZohoNoMatch = "Zoho에 일치하는 항목이 없습니다"
+syncZohoNoPrice = "일치했지만 항목에 가격이 없습니다"
+syncZohoPrices = "Zoho에서 가격 동기화"
+syncingBase = "베이스 동기화 중…"
+--- ptBR (16 keys)
+syncBase = "Sincronizar base"
+syncConfirm = "Sincronizar"
+syncDoneTitle = "Sincronização concluída"
+syncFailed = "Falha na sincronização: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Falha na pré-visualização da sincronização: {{error}}"  placeholders={{error}}
+syncSubtitle = "As alterações serão aplicadas à pasta de filamentos do BambuStudio."
+syncTitle = "Sincronizar com o PC"
+syncToPc = "Sincronizar com o PC"
+syncZohoAmbiguous = "Vários itens correspondem"
+syncZohoAttention = "{{count}} precisam de atenção"  placeholders={{count}}
+syncZohoDone = "{{priced}} precificados, {{unchanged}} inalterados"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Não foi possível sincronizar os preços do Zoho"
+syncZohoNoMatch = "Nenhum item correspondente no Zoho"
+syncZohoNoPrice = "Encontrado, mas o item não tem preço"
+syncZohoPrices = "Sincronizar preços do Zoho"
+syncingBase = "Sincronizando base…"
+--- ru (16 keys)
+syncBase = "Синхронизировать базу"
+syncConfirm = "Синхронизировать"
+syncDoneTitle = "Синхронизация завершена"
+syncFailed = "Ошибка синхронизации: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Ошибка предпросмотра синхронизации: {{error}}"  placeholders={{error}}
+syncSubtitle = "Изменения будут применены к папке филамента BambuStudio."
+syncTitle = "Синхронизировать с ПК"
+syncToPc = "Синхронизировать с ПК"
+syncZohoAmbiguous = "Найдено несколько подходящих товаров"
+syncZohoAttention = "{{count}} требуют внимания"  placeholders={{count}}
+syncZohoDone = "Оценено: {{priced}}, без изменений: {{unchanged}}"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Не удалось синхронизировать цены из Zoho"
+syncZohoNoMatch = "В Zoho нет подходящего товара"
+syncZohoNoPrice = "Найдено совпадение, но у товара нет цены"
+syncZohoPrices = "Синхронизировать цены из Zoho"
+syncingBase = "Синхронизация базы…"
+--- tr (16 keys)
+syncBase = "Temeli senkronize et"
+syncConfirm = "Senkronize et"
+syncDoneTitle = "Senkronizasyon tamamlandı"
+syncFailed = "Senkronizasyon başarısız: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Senkronizasyon önizlemesi başarısız: {{error}}"  placeholders={{error}}
+syncSubtitle = "Değişiklikler BambuStudio filament klasörüne uygulanacak."
+syncTitle = "PC'ye senkronize et"
+syncToPc = "PC'ye senkronize et"
+syncZohoAmbiguous = "Birden fazla öğe eşleşti"
+syncZohoAttention = "{{count}} öğe dikkat gerektiriyor"  placeholders={{count}}
+syncZohoDone = "{{priced}} fiyatlandı, {{unchanged}} değişmedi"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Zoho'dan fiyatlar senkronize edilemedi"
+syncZohoNoMatch = "Zoho'da eşleşen öğe yok"
+syncZohoNoPrice = "Eşleşti, ancak öğenin fiyatı yok"
+syncZohoPrices = "Zoho'dan fiyatları senkronize et"
+syncingBase = "Temel senkronize ediliyor…"
+--- uk (16 keys)
+syncBase = "Синхронізувати базу"
+syncConfirm = "Синхронізувати"
+syncDoneTitle = "Синхронізацію завершено"
+syncFailed = "Помилка синхронізації: {{error}}"  placeholders={{error}}
+syncPreviewFailed = "Помилка попереднього перегляду синхронізації: {{error}}"  placeholders={{error}}
+syncSubtitle = "Зміни буде застосовано до папки філаменту BambuStudio."
+syncTitle = "Синхронізувати з ПК"
+syncToPc = "Синхронізувати з ПК"
+syncZohoAmbiguous = "Знайдено кілька відповідних товарів"
+syncZohoAttention = "{{count}} потребують уваги"  placeholders={{count}}
+syncZohoDone = "Оцінено: {{priced}}, без змін: {{unchanged}}"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "Не вдалося синхронізувати ціни з Zoho"
+syncZohoNoMatch = "У Zoho немає відповідного товару"
+syncZohoNoPrice = "Знайдено збіг, але товар без ціни"
+syncZohoPrices = "Синхронізувати ціни з Zoho"
+syncingBase = "Синхронізація бази…"
+--- zhCN (16 keys)
+syncBase = "同步基础库"
+syncConfirm = "同步"
+syncDoneTitle = "同步完成"
+syncFailed = "同步失败：{{error}}"  placeholders={{error}}
+syncPreviewFailed = "同步预览失败：{{error}}"  placeholders={{error}}
+syncSubtitle = "更改将应用到 BambuStudio 的耗材文件夹。"
+syncTitle = "同步到电脑"
+syncToPc = "同步到电脑"
+syncZohoAmbiguous = "匹配到多个项目"
+syncZohoAttention = "{{count}} 个需要处理"  placeholders={{count}}
+syncZohoDone = "已定价 {{priced}} 个，未变更 {{unchanged}} 个"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "无法从 Zoho 同步价格"
+syncZohoNoMatch = "Zoho 中没有匹配项"
+syncZohoNoPrice = "已匹配，但该项目没有价格"
+syncZohoPrices = "从 Zoho 同步价格"
+syncingBase = "正在同步基础库…"
+--- zhTW (16 keys)
+syncBase = "同步基礎庫"
+syncConfirm = "同步"
+syncDoneTitle = "同步完成"
+syncFailed = "同步失敗：{{error}}"  placeholders={{error}}
+syncPreviewFailed = "同步預覽失敗：{{error}}"  placeholders={{error}}
+syncSubtitle = "變更將套用到 BambuStudio 的耗材資料夾。"
+syncTitle = "同步到電腦"
+syncToPc = "同步到電腦"
+syncZohoAmbiguous = "符合多個項目"
+syncZohoAttention = "{{count}} 個需要處理"  placeholders={{count}}
+syncZohoDone = "已定價 {{priced}} 個，未變更 {{unchanged}} 個"  placeholders={{priced}},{{unchanged}}
+syncZohoFailed = "無法從 Zoho 同步價格"
+syncZohoNoMatch = "Zoho 中沒有相符項目"
+syncZohoNoPrice = "已符合，但該項目沒有價格"
+syncZohoPrices = "從 Zoho 同步價格"
+syncingBase = "正在同步基礎庫…"
+
+--- parity against en
+de: missing=[] extra=[]
+en: missing=[] extra=[]
+es: missing=[] extra=[]
+fr: missing=[] extra=[]
+it: missing=[] extra=[]
+ja: missing=[] extra=[]
+ko: missing=[] extra=[]
+ptBR: missing=[] extra=[]
+ru: missing=[] extra=[]
+tr: missing=[] extra=[]
+uk: missing=[] extra=[]
+zhCN: missing=[] extra=[]
+zhTW: missing=[] extra=[]
+
+### stderr:
+
