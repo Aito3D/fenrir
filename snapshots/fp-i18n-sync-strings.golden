@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de (16 keys)
+--- de (17 keys)
 syncBase = "Basis synchronisieren"
 syncConfirm = "Synchronisieren"
 syncDoneTitle = "Synchronisierung abgeschlossen"
@@ -16,8 +16,9 @@ syncZohoFailed = "Preise konnten nicht von Zoho synchronisiert werden"
 syncZohoNoMatch = "Kein passender Artikel in Zoho gefunden"
 syncZohoNoPrice = "Gefunden, aber der Artikel hat keinen Preis"
 syncZohoPrices = "Preise von Zoho synchronisieren"
+syncZohoUnwritable = "Gefunden, aber die gespeicherten Daten des Presets sind leer oder unlesbar"
 syncingBase = "Basis wird synchronisiert…"
---- en (16 keys)
+--- en (17 keys)
 syncBase = "Sync base"
 syncConfirm = "Sync"
 syncDoneTitle = "Sync complete"
@@ -33,8 +34,9 @@ syncZohoFailed = "Could not sync prices from Zoho"
 syncZohoNoMatch = "No matching item in Zoho"
 syncZohoNoPrice = "Matched, but the item has no price"
 syncZohoPrices = "Sync prices from Zoho"
+syncZohoUnwritable = "Matched, but the preset's saved data is empty or unreadable"
 syncingBase = "Syncing base…"
---- es (16 keys)
+--- es (17 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
 syncDoneTitle = "Sincronización completa"
@@ -50,8 +52,9 @@ syncZohoFailed = "No se pudieron sincronizar los precios desde Zoho"
 syncZohoNoMatch = "No hay artículo coincidente en Zoho"
 syncZohoNoPrice = "Coincide, pero el artículo no tiene precio"
 syncZohoPrices = "Sincronizar precios desde Zoho"
+syncZohoUnwritable = "Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer"
 syncingBase = "Sincronizando base…"
---- fr (16 keys)
+--- fr (17 keys)
 syncBase = "Synchroniser la base"
 syncConfirm = "Synchroniser"
 syncDoneTitle = "Synchronisation terminée"
@@ -67,8 +70,9 @@ syncZohoFailed = "Impossible de synchroniser les prix depuis Zoho"
 syncZohoNoMatch = "Aucun article correspondant dans Zoho"
 syncZohoNoPrice = "Correspondance trouvée, mais l'article n'a pas de prix"
 syncZohoPrices = "Synchroniser les prix depuis Zoho"
+syncZohoUnwritable = "Correspondance trouvée, mais les données enregistrées du préréglage sont vides ou illisibles"
 syncingBase = "Synchronisation de la base…"
---- it (16 keys)
+--- it (17 keys)
 syncBase = "Sincronizza base"
 syncConfirm = "Sincronizza"
 syncDoneTitle = "Sincronizzazione completata"
@@ -84,8 +88,9 @@ syncZohoFailed = "Impossibile sincronizzare i prezzi da Zoho"
 syncZohoNoMatch = "Nessun articolo corrispondente in Zoho"
 syncZohoNoPrice = "Trovata corrispondenza, ma l'articolo non ha un prezzo"
 syncZohoPrices = "Sincronizza prezzi da Zoho"
+syncZohoUnwritable = "Trovata corrispondenza, ma i dati salvati del preset sono vuoti o illeggibili"
 syncingBase = "Sincronizzazione base…"
---- ja (16 keys)
+--- ja (17 keys)
 syncBase = "ベースを同期"
 syncConfirm = "同期"
 syncDoneTitle = "同期が完了しました"
@@ -101,8 +106,9 @@ syncZohoFailed = "Zohoから価格を同期できませんでした"
 syncZohoNoMatch = "Zohoに一致する商品がありません"
 syncZohoNoPrice = "一致しましたが、価格が設定されていません"
 syncZohoPrices = "Zohoから価格を同期"
+syncZohoUnwritable = "一致しましたが、プリセットの保存データが空か読み取れません"
 syncingBase = "ベースを同期中…"
---- ko (16 keys)
+--- ko (17 keys)
 syncBase = "베이스 동기화"
 syncConfirm = "동기화"
 syncDoneTitle = "동기화 완료"
@@ -118,8 +124,9 @@ syncZohoFailed = "Zoho에서 가격을 동기화할 수 없습니다"
 syncZohoNoMatch = "Zoho에 일치하는 항목이 없습니다"
 syncZohoNoPrice = "일치했지만 항목에 가격이 없습니다"
 syncZohoPrices = "Zoho에서 가격 동기화"
+syncZohoUnwritable = "일치했지만 프리셋의 저장된 데이터가 비어 있거나 읽을 수 없습니다"
 syncingBase = "베이스 동기화 중…"
---- ptBR (16 keys)
+--- ptBR (17 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
 syncDoneTitle = "Sincronização concluída"
@@ -135,8 +142,9 @@ syncZohoFailed = "Não foi possível sincronizar os preços do Zoho"
 syncZohoNoMatch = "Nenhum item correspondente no Zoho"
 syncZohoNoPrice = "Encontrado, mas o item não tem preço"
 syncZohoPrices = "Sincronizar preços do Zoho"
+syncZohoUnwritable = "Encontrado, mas os dados salvos do perfil estão vazios ou não podem ser lidos"
 syncingBase = "Sincronizando base…"
---- ru (16 keys)
+--- ru (17 keys)
 syncBase = "Синхронизировать базу"
 syncConfirm = "Синхронизировать"
 syncDoneTitle = "Синхронизация завершена"
@@ -152,8 +160,9 @@ syncZohoFailed = "Не удалось синхронизировать цены 
 syncZohoNoMatch = "В Zoho нет подходящего товара"
 syncZohoNoPrice = "Найдено совпадение, но у товара нет цены"
 syncZohoPrices = "Синхронизировать цены из Zoho"
+syncZohoUnwritable = "Найдено совпадение, но сохранённые данные пресета пусты или не читаются"
 syncingBase = "Синхронизация базы…"
---- tr (16 keys)
+--- tr (17 keys)
 syncBase = "Temeli senkronize et"
 syncConfirm = "Senkronize et"
 syncDoneTitle = "Senkronizasyon tamamlandı"
@@ -169,8 +178,9 @@ syncZohoFailed = "Zoho'dan fiyatlar senkronize edilemedi"
 syncZohoNoMatch = "Zoho'da eşleşen öğe yok"
 syncZohoNoPrice = "Eşleşti, ancak öğenin fiyatı yok"
 syncZohoPrices = "Zoho'dan fiyatları senkronize et"
+syncZohoUnwritable = "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor"
 syncingBase = "Temel senkronize ediliyor…"
---- uk (16 keys)
+--- uk (17 keys)
 syncBase = "Синхронізувати базу"
 syncConfirm = "Синхронізувати"
 syncDoneTitle = "Синхронізацію завершено"
@@ -186,8 +196,9 @@ syncZohoFailed = "Не вдалося синхронізувати ціни з Z
 syncZohoNoMatch = "У Zoho немає відповідного товару"
 syncZohoNoPrice = "Знайдено збіг, але товар без ціни"
 syncZohoPrices = "Синхронізувати ціни з Zoho"
+syncZohoUnwritable = "Знайдено збіг, але збережені дані пресету порожні або нечитабельні"
 syncingBase = "Синхронізація бази…"
---- zhCN (16 keys)
+--- zhCN (17 keys)
 syncBase = "同步基础库"
 syncConfirm = "同步"
 syncDoneTitle = "同步完成"
@@ -203,8 +214,9 @@ syncZohoFailed = "无法从 Zoho 同步价格"
 syncZohoNoMatch = "Zoho 中没有匹配项"
 syncZohoNoPrice = "已匹配，但该项目没有价格"
 syncZohoPrices = "从 Zoho 同步价格"
+syncZohoUnwritable = "已匹配，但该预设的保存数据为空或无法解析"
 syncingBase = "正在同步基础库…"
---- zhTW (16 keys)
+--- zhTW (17 keys)
 syncBase = "同步基礎庫"
 syncConfirm = "同步"
 syncDoneTitle = "同步完成"
@@ -220,6 +232,7 @@ syncZohoFailed = "無法從 Zoho 同步價格"
 syncZohoNoMatch = "Zoho 中沒有相符項目"
 syncZohoNoPrice = "已符合，但該項目沒有價格"
 syncZohoPrices = "從 Zoho 同步價格"
+syncZohoUnwritable = "已符合，但該預設的儲存資料為空或無法解析"
 syncingBase = "正在同步基礎庫…"
 
 --- parity against en

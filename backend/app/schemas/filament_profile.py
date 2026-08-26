@@ -100,11 +100,15 @@ class FilamentPresetZohoSyncAttention(BaseModel):
 
     id: int
     name: str
-    # "no_match" | "ambiguous" | "no_price" — mirrors ProfileMatch.outcome
+    # "no_match" | "ambiguous" | "no_price" — mirrors ProfileMatch.outcome.
+    # "unwritable_content" is not a match outcome: the item matched fine, but
+    # the preset's own content was empty or unparseable JSON, so there was
+    # nowhere to write the price. See apply_filament_cost's "unwritable".
     reason: str
     # Colliding item names for "ambiguous", the single unpriced item for
-    # "no_price", empty for "no_match". A list, not one name: naming only one
-    # of an ambiguous pair would hide the actual problem.
+    # "no_price", empty for "no_match" and "unwritable_content". A list, not
+    # one name: naming only one of an ambiguous pair would hide the actual
+    # problem.
     candidates: list[str] = []
 
 

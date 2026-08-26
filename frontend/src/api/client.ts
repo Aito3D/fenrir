@@ -3513,7 +3513,7 @@ export type FilamentPresetPayload = Omit<FilamentPreset, 'id' | 'created_at' | '
 export interface FilamentPresetZohoSyncAttention {
   id: number;
   name: string;
-  reason: 'no_match' | 'ambiguous' | 'no_price';
+  reason: 'no_match' | 'ambiguous' | 'no_price' | 'unwritable_content';
   candidates: string[];
 }
 export interface FilamentPresetZohoSyncResponse {

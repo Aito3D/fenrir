@@ -4336,6 +4336,7 @@ export default {
     syncZohoNoMatch: 'No hay artículo coincidente en Zoho',
     syncZohoAmbiguous: 'Varios artículos coinciden',
     syncZohoNoPrice: 'Coincide, pero el artículo no tiene precio',
+    syncZohoUnwritable: 'Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer',
     syncZohoFailed: 'No se pudieron sincronizar los precios desde Zoho',
     // Toasts
     createdToast: '"{{name}}" creado',

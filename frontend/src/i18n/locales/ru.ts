@@ -4140,6 +4140,7 @@ export default {
     syncZohoNoMatch: "В Zoho нет подходящего товара",
     syncZohoAmbiguous: "Найдено несколько подходящих товаров",
     syncZohoNoPrice: "Найдено совпадение, но у товара нет цены",
+    syncZohoUnwritable: "Найдено совпадение, но сохранённые данные пресета пусты или не читаются",
     syncZohoFailed: "Не удалось синхронизировать цены из Zoho",
     // Toasts
     createdToast: "«{{name}}» создан",

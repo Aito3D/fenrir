@@ -4322,6 +4322,7 @@ export default {
     syncZohoNoMatch: 'Nenhum item correspondente no Zoho',
     syncZohoAmbiguous: 'Vários itens correspondem',
     syncZohoNoPrice: 'Encontrado, mas o item não tem preço',
+    syncZohoUnwritable: 'Encontrado, mas os dados salvos do perfil estão vazios ou não podem ser lidos',
     syncZohoFailed: 'Não foi possível sincronizar os preços do Zoho',
     // Toasts
     createdToast: '"{{name}}" criado',

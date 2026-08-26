@@ -4329,6 +4329,7 @@ export default {
     syncZohoNoMatch: "Zoho'da eşleşen öğe yok",
     syncZohoAmbiguous: 'Birden fazla öğe eşleşti',
     syncZohoNoPrice: 'Eşleşti, ancak öğenin fiyatı yok',
+    syncZohoUnwritable: "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor",
     syncZohoFailed: "Zoho'dan fiyatlar senkronize edilemedi",
     // Toasts
     createdToast: '"{{name}}" oluşturuldu',

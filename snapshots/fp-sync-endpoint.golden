@@ -30,13 +30,25 @@ status=200
   },
   {
    "candidates": [],
+   "id": 7,
+   "name": "unparseable-content",
+   "reason": "unwritable_content"
+  },
+  {
+   "candidates": [],
+   "id": 8,
+   "name": "empty-content",
+   "reason": "unwritable_content"
+  },
+  {
+   "candidates": [],
    "id": 9,
    "name": "blank-brand",
    "reason": "no_match"
   }
  ],
  "priced": 2,
- "unchanged": 3
+ "unchanged": 1
 }
 --- presets after ---
 priced-fresh: REWRITTEN '{\n    "name": "priced-fresh",\n    "filament_cost": [\n        "15.00"\n    ]\n}'
@@ -79,13 +91,25 @@ status=200
   },
   {
    "candidates": [],
+   "id": 7,
+   "name": "unparseable-content",
+   "reason": "unwritable_content"
+  },
+  {
+   "candidates": [],
+   "id": 8,
+   "name": "empty-content",
+   "reason": "unwritable_content"
+  },
+  {
+   "candidates": [],
    "id": 9,
    "name": "blank-brand",
    "reason": "no_match"
   }
  ],
  "priced": 2,
- "unchanged": 3
+ "unchanged": 1
 }
 -- run 2
 status=200
@@ -116,13 +140,25 @@ status=200
   },
   {
    "candidates": [],
+   "id": 7,
+   "name": "unparseable-content",
+   "reason": "unwritable_content"
+  },
+  {
+   "candidates": [],
+   "id": 8,
+   "name": "empty-content",
+   "reason": "unwritable_content"
+  },
+  {
+   "candidates": [],
    "id": 9,
    "name": "blank-brand",
    "reason": "no_match"
   }
  ],
  "priced": 0,
- "unchanged": 5
+ "unchanged": 3
 }
 --- presets after ---
 priced-fresh: REWRITTEN '{\n    "name": "priced-fresh",\n    "filament_cost": [\n        "15.00"\n    ]\n}'

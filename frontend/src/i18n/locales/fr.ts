@@ -4323,6 +4323,7 @@ export default {
     syncZohoNoMatch: 'Aucun article correspondant dans Zoho',
     syncZohoAmbiguous: 'Plusieurs articles correspondent',
     syncZohoNoPrice: "Correspondance trouvée, mais l'article n'a pas de prix",
+    syncZohoUnwritable: "Correspondance trouvée, mais les données enregistrées du préréglage sont vides ou illisibles",
     syncZohoFailed: 'Impossible de synchroniser les prix depuis Zoho',
     // Toasts
     createdToast: '"{{name}}" créé',

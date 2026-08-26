@@ -4334,6 +4334,7 @@ export default {
     syncZohoNoMatch: 'Kein passender Artikel in Zoho gefunden',
     syncZohoAmbiguous: 'Mehrere Artikel passen',
     syncZohoNoPrice: 'Gefunden, aber der Artikel hat keinen Preis',
+    syncZohoUnwritable: 'Gefunden, aber die gespeicherten Daten des Presets sind leer oder unlesbar',
     syncZohoFailed: 'Preise konnten nicht von Zoho synchronisiert werden',
     // Toasts
     createdToast: '"{{name}}" erstellt',

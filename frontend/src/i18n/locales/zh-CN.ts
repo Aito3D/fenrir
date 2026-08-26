@@ -4322,6 +4322,7 @@ export default {
     syncZohoNoMatch: 'Zoho 中没有匹配项',
     syncZohoAmbiguous: '匹配到多个项目',
     syncZohoNoPrice: '已匹配，但该项目没有价格',
+    syncZohoUnwritable: '已匹配，但该预设的保存数据为空或无法解析',
     syncZohoFailed: '无法从 Zoho 同步价格',
     // Toasts
     createdToast: '“{{name}}” 已创建',

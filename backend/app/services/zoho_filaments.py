@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.zoho import zoho_service
@@ -474,6 +475,29 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         return mapped
     finally:
         lock.release()
+
+
+async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> list[FilamentProduct]:
+    """``fetch_catalogue`` wrapped in the is-configured check and error
+    contract every HTTP caller needs: 503 when Zoho isn't configured, 500 when
+    the catalogue fetched but failed to map, 502 for anything else.
+
+    ``context`` is folded into the log message (e.g. ``"during profile
+    sync"``) so a caller's logs can be told apart without duplicating this
+    block per route. Private (leading underscore): every current caller lives
+    in this codebase, so there is no reason to widen it into the module's
+    public surface.
+    """
+    if not await zoho_service.is_configured(db):
+        raise HTTPException(status_code=503, detail="Zoho is not configured")
+    try:
+        return await fetch_catalogue(db)
+    except ZohoFilamentMappingError as exc:
+        logger.error("Zoho filament catalogue mapping failure %s: %s", context, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
+    except Exception as exc:
+        logger.warning("Zoho filament catalogue unavailable %s: %s", context, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
 
 
 def _score(product: FilamentProduct, terms: list[str]) -> int:

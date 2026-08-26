@@ -118,6 +118,33 @@ async def test_unresolved_profiles_are_reported_and_left_untouched(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("content", ["", "{not json", "[1, 2]"])
+async def test_a_confident_match_with_unwritable_content_is_flagged_for_attention(
+    async_client, db_session, monkeypatch, content
+):
+    # A confident match (unique, priced item) whose preset content is empty,
+    # unparseable, or not a JSON object has nowhere to write the price. This
+    # must not be counted as "unchanged" — that means the price was already
+    # correct, and here it is unknown whether it is correct at all.
+    preset = await make_preset(db_session, content=content)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product()]))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert body["priced"] == 0
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["reason"] == "unwritable_content"
+    assert body["attention"][0]["id"] == preset.id
+    assert body["attention"][0]["name"] == "P"
+    assert body["attention"][0]["candidates"] == []
+
+    await db_session.refresh(preset)
+    assert preset.content == content  # byte-identical: never written
+
+
+@pytest.mark.asyncio
 async def test_503_when_zoho_is_not_configured(async_client, db_session, monkeypatch):
     await make_preset(db_session)
     _configured(monkeypatch, False)

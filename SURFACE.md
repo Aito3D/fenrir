@@ -39,7 +39,7 @@ class FilamentProduct:
 class ParsedName:
 class ProfileMatch:
 class ZohoFilamentMappingError(RuntimeError):
-def apply_filament_cost(content: str, cost_per_kg: float) -> tuple[str, bool]:
+def apply_filament_cost(content: str, cost_per_kg: float) -> tuple[str, ApplyFilamentCostOutcome]:
 def match_profile(
 def parse_filament_name(name: str) -> ParsedName:
 def reset_cache() -> None:

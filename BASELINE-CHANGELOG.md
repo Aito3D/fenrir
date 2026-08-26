@@ -4367,3 +4367,52 @@ as expected (`apikey`, `ApiKey`, `authtoken`, `accesstoken`, `clientsecret`,
 `main.py` clean. This is completing T-129's already-approved change correctly ("password-like
 fields show a placeholder"), not a new behavior change. `main.py` is outside the coverage gate's
 scoped file list, so this follow-up does not move the 99.44% figure (expected, not chased).
+
+---
+
+# Campaign 7 — the filament-profiles Zoho price sync
+
+## Approved 2026-08-25, round 1 — 11 of 11 behaviour-change findings approved by the user
+
+The round-1 panel filed 11 findings whose fixes change something a user observes.
+All 11 were quoted verbatim to the user and all 11 were approved. Each is worked
+as an ordinary task; the worker must re-record the affected golden probe(s),
+update the affected SURFACE.md sections, and append an "applied" line in the SAME
+commit, whose message must contain "(user-approved behaviour change)".
+
+| task | approved change (as quoted to the user) |
+|---|---|
+| T-002 | reason field typed as Literal; response model rejects an unknown outcome instead of passing it through |
+| T-005 | presets with empty or unparseable content move out of `unchanged` into the attention list with a new reason string |
+| T-006 | an open preset editor picks up changes made underneath it instead of silently reverting a synced price on save |
+| T-007 | the Zoho summary panel clears while a sync runs and stays gone when one fails |
+| T-008 | the post-sync toast gains a needs-attention count and stops being green when some profiles could not be priced |
+| T-009 | cleared credentials / a sync already in flight return 503/409 with a specific message instead of 502 "Could not reach Zoho" |
+| T-010 | the attention list shows a truncated set of colliding item names plus a remainder count |
+| T-012 | a non-finite or absurd cost per kg is no longer written; the profile is reported as needing attention |
+| T-014 | POST/PATCH filament-profiles return 422 for a filename containing '/', '\' or '..' |
+| T-015 | a match whose Zoho item name carries no weight is no longer auto-priced; reported for review with a new reason string |
+| T-016 | users holding only filaments:read stop seeing the mutating buttons |
+
+NOTE FOR EVERY WORKER: T-005, T-012 and T-015 each introduce a NEW reason string
+on the wire. The frontend must render it and all 13 locales must carry the key in
+the SAME commit, or the sync shows a raw i18n key to non-English users. The
+fp-i18n-sync-strings golden probe checks cross-locale parity and will catch a
+partial job.
+
+## applied
+
+- T-005 (2026-08-25, user-approved): `apply_filament_cost` now returns a three-state
+  outcome — `"written"` / `"unchanged"` / `"unwritable"` — instead of `(content,
+  bool)`. A confident Zoho match whose preset content is empty, unparseable JSON, or
+  not a JSON object is no longer counted in `unchanged`; it moves into `attention`
+  with a new `reason: "unwritable_content"`, plus a `logger.warning` naming the
+  preset id. Wired end-to-end: `FilamentProfilesPage.tsx`'s reason ternary gained a
+  dedicated branch (previously fell through to the "no price" copy), the typed API
+  client's `FilamentPresetZohoSyncAttention.reason` union gained the new literal,
+  and all 13 locale files gained a `syncZohoUnwritable` translation. Re-recorded
+  probes: `fp-pricing-write`, `fp-sync-endpoint`, `fp-i18n-sync-strings`,
+  `fp-client-method`, `fp-page-sync-ui` — each diff checked to contain only this
+  change. `calc-zoho-pure` still matches (calculator untouched). `reason` stays
+  typed as plain `str` in the Pydantic schema (Literal typing is T-002's job), so
+  OpenAPI/pydantic-schema probes did not move.

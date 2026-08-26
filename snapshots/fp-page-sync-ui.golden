@@ -10,6 +10,7 @@ showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoF
 {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
 ? 'filamentProfiles.syncZohoNoMatch'
 ? 'filamentProfiles.syncZohoAmbiguous'
+? 'filamentProfiles.syncZohoUnwritable'
 : 'filamentProfiles.syncZohoNoPrice',
 
 ### stderr:

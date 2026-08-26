@@ -244,4 +244,54 @@ describe('FilamentProfilesPage', () => {
     expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
     expect(await screen.findByText(/several items matched/i, {}, { timeout: 5000 })).toBeInTheDocument();
   });
+
+  it('reports a matched preset with unwritable content as needing attention, not as unchanged', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 9, name: 'Broken PLA', reason: 'unwritable_content', candidates: [] }],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Must render its own reason, never fall through to the "no price" copy
+    // (a matched item with unreadable content is a different problem).
+    expect(await screen.findByText(/Broken PLA/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/preset's saved data is empty or unreadable/i, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/the item has no price/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the backend error message when the Zoho sync fails', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({ detail: 'Zoho API rate limit exceeded' }, { status: 502 }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Real safety property: the toast must surface the backend's own detail
+    // message (the `error instanceof Error` branch), not the generic
+    // fallback string — if the ternary's branches were swapped, this
+    // specific text would never appear and the generic fallback would show
+    // in its place instead.
+    expect(
+      await screen.findByText(/zoho api rate limit exceeded/i, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/could not sync prices from zoho/i)).not.toBeInTheDocument();
+  });
 });

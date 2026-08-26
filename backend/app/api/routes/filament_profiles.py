@@ -37,7 +37,6 @@ from backend.app.services.bambu_studio import (
     scan_user_presets,
 )
 from backend.app.services.filament_profile_pricing import apply_filament_cost
-from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -194,19 +193,10 @@ async def sync_filament_presets_from_zoho(
     One pass, no chunking: profiles are a hand-curated set. If that stops being
     true, the calculator's keyset paging is the pattern to copy.
     """
-    if not await zoho_service.is_configured(db):
-        raise HTTPException(status_code=503, detail="Zoho is not configured")
-    try:
-        catalogue = await zoho_filaments.fetch_catalogue(db)
-    except zoho_filaments.ZohoFilamentMappingError as exc:
-        # 500, not 502: a catalogue we failed to parse is a bug on this side,
-        # and calling it an upstream outage sends the operator to the wrong
-        # system. Same split as the calculator's routes (T-074).
-        logger.error("Zoho filament catalogue mapping failure during profile sync: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
-    except Exception as exc:
-        logger.warning("Zoho filament catalogue unavailable during profile sync: %s", exc, exc_info=True)
-        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+    # 500, not 502, on a mapping failure: a catalogue we failed to parse is a
+    # bug on this side, and calling it an upstream outage sends the operator
+    # to the wrong system. Same split as the calculator's routes (T-074).
+    catalogue = await zoho_filaments._fetch_catalogue_or_502(db, context="during profile sync")
 
     result = await db.execute(select(FilamentPreset).order_by(FilamentPreset.id))
     presets = result.scalars().all()
@@ -227,12 +217,31 @@ async def sync_filament_presets_from_zoho(
             )
             continue
 
-        content, changed = apply_filament_cost(preset.content, match.product.cost_per_kg)
-        if changed:
+        content, outcome = apply_filament_cost(preset.content, match.product.cost_per_kg)
+        if outcome == "written":
             preset.content = content
             priced += 1
-        else:
+        elif outcome == "unchanged":
             unchanged += 1
+        else:
+            # Matched, but there was nowhere to write the price: empty,
+            # unparseable, or non-object content. Must not be counted as
+            # "unchanged" — that means the price was already correct, and
+            # here it is unknown whether it is correct at all.
+            logger.warning(
+                "Zoho sync: preset %s (%r) matched but its content is empty or unreadable; "
+                "skipping price write and flagging for attention",
+                preset.id,
+                preset.name,
+            )
+            attention.append(
+                FilamentPresetZohoSyncAttention(
+                    id=preset.id,
+                    name=preset.name,
+                    reason="unwritable_content",
+                    candidates=[],
+                )
+            )
 
     await db.commit()
     return FilamentPresetZohoSyncResponse(priced=priced, unchanged=unchanged, attention=attention)
