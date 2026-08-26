@@ -22,7 +22,7 @@ syncFilamentPresetsFromZoho: () =>
 export interface FilamentPresetZohoSyncAttention {
   id: number;
   name: string;
-  reason: 'no_match' | 'ambiguous' | 'no_price' | 'unwritable_content';
+  reason: 'no_match' | 'ambiguous' | 'no_price' | 'unwritable_content' | 'bad_price';
   candidates: string[];
 }
 export interface FilamentPresetZohoSyncResponse {

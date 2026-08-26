@@ -274,6 +274,34 @@ describe('FilamentProfilesPage', () => {
     expect(screen.queryByText(/the item has no price/i)).not.toBeInTheDocument();
   });
 
+  it('reports a matched preset with a bad upstream price as needing attention, not unwritable content', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 11, name: 'Infinite PLA', reason: 'bad_price', candidates: [] }],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Must render its own reason and never fall through to another reason's
+    // copy: a bad upstream price is not the same problem as an unreadable
+    // preset file or a missing price.
+    expect(await screen.findByText(/Infinite PLA/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/item's price is invalid or unusably large/i, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/the item has no price/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/preset's saved data is empty or unreadable/i)).not.toBeInTheDocument();
+  });
+
   it('reports the needs-attention count in the toast and downgrades it off success when some profiles need attention (T-008)', async () => {
     stubBase();
     server.use(

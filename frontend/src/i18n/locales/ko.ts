@@ -4148,6 +4148,7 @@ export default {
     syncZohoAmbiguous: '여러 항목이 일치했습니다',
     syncZohoNoPrice: '일치했지만 항목에 가격이 없습니다',
     syncZohoUnwritable: '일치했지만 프리셋의 저장된 데이터가 비어 있거나 읽을 수 없습니다',
+    syncZohoBadPrice: '일치했지만 항목의 가격이 유효하지 않거나 너무 큽니다',
     syncZohoFailed: 'Zoho에서 가격을 동기화할 수 없습니다',
     // Toasts
     createdToast: '"{{name}}" 생성됨',

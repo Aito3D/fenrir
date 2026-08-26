@@ -12,6 +12,7 @@ showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoF
 ? 'filamentProfiles.syncZohoNoMatch'
 ? 'filamentProfiles.syncZohoAmbiguous'
 ? 'filamentProfiles.syncZohoUnwritable'
+? 'filamentProfiles.syncZohoBadPrice'
 : 'filamentProfiles.syncZohoNoPrice',
 
 ### stderr:

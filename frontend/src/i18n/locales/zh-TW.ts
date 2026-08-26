@@ -4323,6 +4323,7 @@ export default {
     syncZohoAmbiguous: '符合多個項目',
     syncZohoNoPrice: '已符合，但該項目沒有價格',
     syncZohoUnwritable: '已符合，但該預設的儲存資料為空或無法解析',
+    syncZohoBadPrice: '已符合，但該項目的價格無效或過高',
     syncZohoFailed: '無法從 Zoho 同步價格',
     // Toasts
     createdToast: '「{{name}}」已建立',

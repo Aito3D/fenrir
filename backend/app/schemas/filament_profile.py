@@ -104,11 +104,14 @@ class FilamentPresetZohoSyncAttention(BaseModel):
     # "unwritable_content" is not a match outcome: the item matched fine, but
     # the preset's own content was empty or unparseable JSON, so there was
     # nowhere to write the price. See apply_filament_cost's "unwritable".
+    # "bad_price" is also not a match outcome: the item matched and the
+    # preset's content is fine, but the item's own cost_per_kg is non-finite,
+    # <= 0, or above the ceiling. See apply_filament_cost's "bad_price".
     reason: str
     # Colliding item names for "ambiguous", the single unpriced item for
-    # "no_price", empty for "no_match" and "unwritable_content". A list, not
-    # one name: naming only one of an ambiguous pair would hide the actual
-    # problem.
+    # "no_price", empty for "no_match", "unwritable_content" and "bad_price".
+    # A list, not one name: naming only one of an ambiguous pair would hide
+    # the actual problem.
     candidates: list[str] = []
 
 

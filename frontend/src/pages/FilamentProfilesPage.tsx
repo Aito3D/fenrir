@@ -627,7 +627,9 @@ export function FilamentProfilesPage() {
                           ? 'filamentProfiles.syncZohoAmbiguous'
                           : entry.reason === 'unwritable_content'
                             ? 'filamentProfiles.syncZohoUnwritable'
-                            : 'filamentProfiles.syncZohoNoPrice',
+                            : entry.reason === 'bad_price'
+                              ? 'filamentProfiles.syncZohoBadPrice'
+                              : 'filamentProfiles.syncZohoNoPrice',
                     )}
                     {entry.candidates.length > 0 && `: ${entry.candidates.join(', ')}`}
                   </li>

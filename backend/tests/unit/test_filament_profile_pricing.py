@@ -75,3 +75,68 @@ def test_rounds_to_two_decimals():
     content = json.dumps({}, indent=4)
     updated, _ = apply_filament_cost(content, 19.899999)
     assert json.loads(updated)["filament_cost"] == ["19.90"]
+
+
+def test_positive_infinity_is_a_bad_price():
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, float("inf"))
+    assert outcome == "bad_price"
+    assert updated == content  # untouched, not even parsed
+
+
+def test_negative_infinity_is_a_bad_price():
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, float("-inf"))
+    assert outcome == "bad_price"
+    assert updated == content
+
+
+def test_nan_is_a_bad_price():
+    # nan <= 0 is False and nan > ceiling is False, so only an explicit
+    # math.isfinite() check catches this. If that check were dropped, nan
+    # would sail through both the <= 0 guard and the ceiling guard and get
+    # formatted as the literal string "nan".
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, float("nan"))
+    assert outcome == "bad_price"
+    assert updated == content
+
+
+def test_zero_is_a_bad_price():
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, 0.0)
+    assert outcome == "bad_price"
+    assert updated == content
+
+
+def test_a_negative_cost_is_a_bad_price():
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, -19.9)
+    assert outcome == "bad_price"
+    assert updated == content
+
+
+def test_a_cost_just_above_the_ceiling_is_a_bad_price():
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, 100_000_000.01)
+    assert outcome == "bad_price"
+    assert updated == content
+
+
+def test_a_cost_just_below_the_ceiling_is_still_written():
+    content = json.dumps({"name": "X"}, indent=4)
+    updated, outcome = apply_filament_cost(content, 99_999_999.99)
+    assert outcome == "written"
+    assert json.loads(updated)["filament_cost"] == ["99999999.99"]
+
+
+def test_pathologically_deep_json_is_unwritable_not_a_crash():
+    # The auditor's exact repro: a JSON array nested deep enough to blow the
+    # interpreter's recursion limit while json.loads is still walking it.
+    # Before the fix this raised RecursionError, which is not a
+    # json.JSONDecodeError, so it escaped apply_filament_cost entirely and
+    # crashed the whole Zoho sync loop before `await db.commit()`.
+    content = "[" * 120000
+    updated, outcome = apply_filament_cost(content, 19.9)
+    assert outcome == "unwritable"
+    assert updated == content

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -477,10 +477,26 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         lock.release()
 
 
+# T-009: the exact message fetch_catalogue's lock-acquire timeout raises when
+# another refresh is already in flight and there is no cache to fall back to
+# (see the asyncio.TimeoutError branch above). fetch_catalogue is out of
+# scope for this change, so this is matched by string equality against a
+# bare RuntimeError rather than a dedicated exception type — fragile if that
+# message is ever reworded, but the two other RuntimeErrors fetch_catalogue
+# can raise (the _MAX_PAGES-exceeded truncation and the superseded-generation
+# retry) have different text and must keep falling through to the generic
+# 502 below rather than being mistaken for a busy sync.
+_SYNC_IN_PROGRESS_DETAIL = "Zoho filament catalogue refresh is still in progress; try again shortly"
+
+
 async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> list[FilamentProduct]:
     """``fetch_catalogue`` wrapped in the is-configured check and error
-    contract every HTTP caller needs: 503 when Zoho isn't configured, 500 when
-    the catalogue fetched but failed to map, 502 for anything else.
+    contract every HTTP caller needs: 503 when Zoho isn't configured (either
+    up front, or discovered mid-refresh if credentials were cleared in the
+    check-then-act window between the check above and the token refresh),
+    409 when another refresh is already in flight with no cache to answer
+    from, 500 when the catalogue fetched but failed to map, 502 for anything
+    else.
 
     ``context`` is folded into the log message (e.g. ``"during profile
     sync"``) so a caller's logs can be told apart without duplicating this
@@ -495,6 +511,18 @@ async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> list[Fil
     except ZohoFilamentMappingError as exc:
         logger.error("Zoho filament catalogue mapping failure %s: %s", context, exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
+    except ZohoNotConfiguredError as exc:
+        # Credentials were cleared between the is_configured() check above
+        # and the token refresh inside fetch_catalogue — a genuine
+        # check-then-act race, not an unreachable Zoho.
+        logger.warning("Zoho credentials were cleared %s: %s", context, exc)
+        raise HTTPException(status_code=503, detail="Zoho is not configured") from exc
+    except RuntimeError as exc:
+        if str(exc) == _SYNC_IN_PROGRESS_DETAIL:
+            logger.warning("Zoho filament catalogue refresh already in progress %s", context)
+            raise HTTPException(status_code=409, detail=_SYNC_IN_PROGRESS_DETAIL) from exc
+        logger.warning("Zoho filament catalogue unavailable %s: %s", context, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
     except Exception as exc:
         logger.warning("Zoho filament catalogue unavailable %s: %s", context, exc, exc_info=True)
         raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc

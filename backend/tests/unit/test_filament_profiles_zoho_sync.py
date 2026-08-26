@@ -145,6 +145,97 @@ async def test_a_confident_match_with_unwritable_content_is_flagged_for_attentio
 
 
 @pytest.mark.asyncio
+async def test_a_confident_match_with_a_bad_price_is_flagged_for_attention(async_client, db_session, monkeypatch):
+    # The item matches uniquely and the preset's content is perfectly fine —
+    # but the catalogue price itself is non-finite (a sub-denormal weight
+    # parsed out of a Zoho item name can divide a normal dealer price into
+    # inf; has_price only checks that dealer > 0, which inf passes). This
+    # must be reported under its own reason, not "unwritable_content" — the
+    # preset's file is not the problem, the upstream price is — and the
+    # preset must be left byte-identical, exactly like any other unresolved
+    # profile.
+    original = json.dumps({"name": "P"}, indent=4)
+    preset = await make_preset(db_session, content=original)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product(price=float("inf"))]))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert body["priced"] == 0
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["reason"] == "bad_price"
+    assert body["attention"][0]["id"] == preset.id
+    assert body["attention"][0]["name"] == "P"
+    assert body["attention"][0]["candidates"] == []
+
+    await db_session.refresh(preset)
+    assert preset.content == original  # byte-identical: never written
+
+
+@pytest.mark.asyncio
+async def test_a_bad_priced_profile_does_not_stop_healthy_profiles_from_being_priced(
+    async_client, db_session, monkeypatch
+):
+    healthy = await make_preset(db_session, name="Healthy", brand="Polymaker", material="PETG", colour="Red")
+    bad_priced = await make_preset(db_session, name="BadPriced", brand="eSUN", material="PLA", colour="Black")
+    monkeypatch.setattr(
+        zoho_filaments,
+        "fetch_catalogue",
+        _catalogue(
+            [
+                product(brand="Polymaker", material="PETG", colour="Red", price=19.9),
+                product(brand="eSUN", material="PLA", colour="Black", price=float("nan")),
+            ]
+        ),
+    )
+    _configured(monkeypatch, True)
+
+    response = await async_client.post(ENDPOINT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["priced"] == 1
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["id"] == bad_priced.id
+    assert body["attention"][0]["reason"] == "bad_price"
+
+    await db_session.refresh(healthy)
+    assert json.loads(healthy.content)["filament_cost"] == ["19.90"]
+
+
+@pytest.mark.asyncio
+async def test_a_pathologically_deep_preset_does_not_abort_the_whole_sync(async_client, db_session, monkeypatch):
+    # The real bug: one preset whose content is JSON so deeply nested that
+    # json.loads blows the recursion limit used to raise RecursionError out
+    # of apply_filament_cost and crash the loop before `await db.commit()`,
+    # discarding the prices already computed for every other preset in the
+    # same request. It must instead be reported like any other unwritable
+    # preset while its healthy siblings are still priced in the same run.
+    healthy = await make_preset(db_session, name="Healthy")
+    pathological = await make_preset(db_session, name="Pathological", content="[" * 120000)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product()]))
+    _configured(monkeypatch, True)
+
+    response = await async_client.post(ENDPOINT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["priced"] == 1
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["id"] == pathological.id
+    assert body["attention"][0]["reason"] == "unwritable_content"
+
+    await db_session.refresh(healthy)
+    assert json.loads(healthy.content)["filament_cost"] == ["19.90"]
+
+    await db_session.refresh(pathological)
+    assert pathological.content == "[" * 120000  # never touched
+
+
+@pytest.mark.asyncio
 async def test_503_when_zoho_is_not_configured(async_client, db_session, monkeypatch):
     await make_preset(db_session)
     _configured(monkeypatch, False)
@@ -172,4 +263,59 @@ async def test_502_when_zoho_is_unreachable(async_client, db_session, monkeypatc
         raise RuntimeError("connection reset")
 
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
-    assert (await async_client.post(ENDPOINT)).status_code == 502
+    response = await async_client.post(ENDPOINT)
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Could not reach Zoho"
+
+
+@pytest.mark.asyncio
+async def test_503_when_credentials_are_cleared_between_the_check_and_the_token_refresh(
+    async_client, db_session, monkeypatch
+):
+    # is_configured() passes (the route's up-front check), but fetch_catalogue
+    # itself hits ZohoNotConfiguredError — the check-then-act window where a
+    # credential is cleared in Settings after the check but before the token
+    # refresh inside the walk.
+    await make_preset(db_session)
+    _configured(monkeypatch, True)
+
+    from backend.app.services.zoho import ZohoNotConfiguredError
+
+    async def boom(_db):
+        raise ZohoNotConfiguredError("Zoho credentials are not configured")
+
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+    response = await async_client.post(ENDPOINT)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Zoho is not configured"
+
+
+@pytest.mark.asyncio
+async def test_409_when_a_sync_is_already_in_progress(async_client, db_session, monkeypatch):
+    await make_preset(db_session)
+    _configured(monkeypatch, True)
+
+    async def boom(_db):
+        raise RuntimeError("Zoho filament catalogue refresh is still in progress; try again shortly")
+
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+    response = await async_client.post(ENDPOINT)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Zoho filament catalogue refresh is still in progress; try again shortly"
+
+
+@pytest.mark.asyncio
+async def test_502_for_a_non_runtime_error_fallback(async_client, db_session, monkeypatch):
+    # Anything that isn't a ZohoFilamentMappingError, a ZohoNotConfiguredError,
+    # or the lock-busy RuntimeError still falls through to the generic 502 —
+    # e.g. an httpx/SQLAlchemy failure surfacing as some other exception type.
+    await make_preset(db_session)
+    _configured(monkeypatch, True)
+
+    async def boom(_db):
+        raise ValueError("unexpected shape")
+
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+    response = await async_client.post(ENDPOINT)
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Could not reach Zoho"

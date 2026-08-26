@@ -223,6 +223,27 @@ async def sync_filament_presets_from_zoho(
             priced += 1
         elif outcome == "unchanged":
             unchanged += 1
+        elif outcome == "bad_price":
+            # Matched, but the upstream price itself is unusable: non-finite,
+            # <= 0, or above the ceiling. Distinct from "unwritable_content" —
+            # the preset's own data is fine, the Zoho item's price is not —
+            # so it gets its own reason rather than being told its file is
+            # broken.
+            logger.warning(
+                "Zoho sync: preset %s (%r) matched an item with an unusable price (%r); "
+                "skipping price write and flagging for attention",
+                preset.id,
+                preset.name,
+                match.product.cost_per_kg,
+            )
+            attention.append(
+                FilamentPresetZohoSyncAttention(
+                    id=preset.id,
+                    name=preset.name,
+                    reason="bad_price",
+                    candidates=[],
+                )
+            )
         else:
             # Matched, but there was nowhere to write the price: empty,
             # unparseable, or non-object content. Must not be counted as

@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de (17 keys)
+--- de (18 keys)
 syncBase = "Basis synchronisieren"
 syncConfirm = "Synchronisieren"
 syncDoneTitle = "Synchronisierung abgeschlossen"
@@ -11,6 +11,7 @@ syncTitle = "Auf PC synchronisieren"
 syncToPc = "Auf PC synchronisieren"
 syncZohoAmbiguous = "Mehrere Artikel passen"
 syncZohoAttention = "{{count}} benötigen Aufmerksamkeit"  placeholders={{count}}
+syncZohoBadPrice = "Gefunden, aber der Preis des Artikels ist ungültig oder unbrauchbar hoch"
 syncZohoDone = "Bepreist: {{priced}}, unverändert: {{unchanged}}"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Preise konnten nicht von Zoho synchronisiert werden"
 syncZohoNoMatch = "Kein passender Artikel in Zoho gefunden"
@@ -18,7 +19,7 @@ syncZohoNoPrice = "Gefunden, aber der Artikel hat keinen Preis"
 syncZohoPrices = "Preise von Zoho synchronisieren"
 syncZohoUnwritable = "Gefunden, aber die gespeicherten Daten des Presets sind leer oder unlesbar"
 syncingBase = "Basis wird synchronisiert…"
---- en (17 keys)
+--- en (18 keys)
 syncBase = "Sync base"
 syncConfirm = "Sync"
 syncDoneTitle = "Sync complete"
@@ -29,6 +30,7 @@ syncTitle = "Sync to PC"
 syncToPc = "Sync to PC"
 syncZohoAmbiguous = "Several items matched"
 syncZohoAttention = "{{count}} need attention"  placeholders={{count}}
+syncZohoBadPrice = "Matched, but the item's price is invalid or unusably large"
 syncZohoDone = "Priced {{priced}}, unchanged {{unchanged}}"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Could not sync prices from Zoho"
 syncZohoNoMatch = "No matching item in Zoho"
@@ -36,7 +38,7 @@ syncZohoNoPrice = "Matched, but the item has no price"
 syncZohoPrices = "Sync prices from Zoho"
 syncZohoUnwritable = "Matched, but the preset's saved data is empty or unreadable"
 syncingBase = "Syncing base…"
---- es (17 keys)
+--- es (18 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
 syncDoneTitle = "Sincronización completa"
@@ -47,6 +49,7 @@ syncTitle = "Sincronizar con el PC"
 syncToPc = "Sincronizar con el PC"
 syncZohoAmbiguous = "Varios artículos coinciden"
 syncZohoAttention = "{{count}} requieren atención"  placeholders={{count}}
+syncZohoBadPrice = "Coincide, pero el precio del artículo no es válido o es excesivamente alto"
 syncZohoDone = "{{priced}} con precio, {{unchanged}} sin cambios"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "No se pudieron sincronizar los precios desde Zoho"
 syncZohoNoMatch = "No hay artículo coincidente en Zoho"
@@ -54,7 +57,7 @@ syncZohoNoPrice = "Coincide, pero el artículo no tiene precio"
 syncZohoPrices = "Sincronizar precios desde Zoho"
 syncZohoUnwritable = "Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer"
 syncingBase = "Sincronizando base…"
---- fr (17 keys)
+--- fr (18 keys)
 syncBase = "Synchroniser la base"
 syncConfirm = "Synchroniser"
 syncDoneTitle = "Synchronisation terminée"
@@ -65,6 +68,7 @@ syncTitle = "Synchronisation vers le PC"
 syncToPc = "Sync vers PC"
 syncZohoAmbiguous = "Plusieurs articles correspondent"
 syncZohoAttention = "{{count}} nécessitent une attention"  placeholders={{count}}
+syncZohoBadPrice = "Correspondance trouvée, mais le prix de l'article est invalide ou excessivement élevé"
 syncZohoDone = "{{priced}} tarifés, {{unchanged}} inchangés"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Impossible de synchroniser les prix depuis Zoho"
 syncZohoNoMatch = "Aucun article correspondant dans Zoho"
@@ -72,7 +76,7 @@ syncZohoNoPrice = "Correspondance trouvée, mais l'article n'a pas de prix"
 syncZohoPrices = "Synchroniser les prix depuis Zoho"
 syncZohoUnwritable = "Correspondance trouvée, mais les données enregistrées du préréglage sont vides ou illisibles"
 syncingBase = "Synchronisation de la base…"
---- it (17 keys)
+--- it (18 keys)
 syncBase = "Sincronizza base"
 syncConfirm = "Sincronizza"
 syncDoneTitle = "Sincronizzazione completata"
@@ -83,6 +87,7 @@ syncTitle = "Sincronizza su PC"
 syncToPc = "Sincronizza su PC"
 syncZohoAmbiguous = "Più articoli corrispondono"
 syncZohoAttention = "{{count}} richiedono attenzione"  placeholders={{count}}
+syncZohoBadPrice = "Trovata corrispondenza, ma il prezzo dell'articolo non è valido o è eccessivamente alto"
 syncZohoDone = "{{priced}} con prezzo, {{unchanged}} invariati"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Impossibile sincronizzare i prezzi da Zoho"
 syncZohoNoMatch = "Nessun articolo corrispondente in Zoho"
@@ -90,7 +95,7 @@ syncZohoNoPrice = "Trovata corrispondenza, ma l'articolo non ha un prezzo"
 syncZohoPrices = "Sincronizza prezzi da Zoho"
 syncZohoUnwritable = "Trovata corrispondenza, ma i dati salvati del preset sono vuoti o illeggibili"
 syncingBase = "Sincronizzazione base…"
---- ja (17 keys)
+--- ja (18 keys)
 syncBase = "ベースを同期"
 syncConfirm = "同期"
 syncDoneTitle = "同期が完了しました"
@@ -101,6 +106,7 @@ syncTitle = "PCに同期"
 syncToPc = "PCに同期"
 syncZohoAmbiguous = "複数の商品が一致しました"
 syncZohoAttention = "{{count}}件が確認待ち"  placeholders={{count}}
+syncZohoBadPrice = "一致しましたが、価格が無効か大きすぎます"
 syncZohoDone = "{{priced}}件を価格設定、{{unchanged}}件は変更なし"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Zohoから価格を同期できませんでした"
 syncZohoNoMatch = "Zohoに一致する商品がありません"
@@ -108,7 +114,7 @@ syncZohoNoPrice = "一致しましたが、価格が設定されていません"
 syncZohoPrices = "Zohoから価格を同期"
 syncZohoUnwritable = "一致しましたが、プリセットの保存データが空か読み取れません"
 syncingBase = "ベースを同期中…"
---- ko (17 keys)
+--- ko (18 keys)
 syncBase = "베이스 동기화"
 syncConfirm = "동기화"
 syncDoneTitle = "동기화 완료"
@@ -119,6 +125,7 @@ syncTitle = "PC에 동기화"
 syncToPc = "PC에 동기화"
 syncZohoAmbiguous = "여러 항목이 일치했습니다"
 syncZohoAttention = "{{count}}개 확인 필요"  placeholders={{count}}
+syncZohoBadPrice = "일치했지만 항목의 가격이 유효하지 않거나 너무 큽니다"
 syncZohoDone = "{{priced}}개 가격 설정, {{unchanged}}개 변경 없음"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Zoho에서 가격을 동기화할 수 없습니다"
 syncZohoNoMatch = "Zoho에 일치하는 항목이 없습니다"
@@ -126,7 +133,7 @@ syncZohoNoPrice = "일치했지만 항목에 가격이 없습니다"
 syncZohoPrices = "Zoho에서 가격 동기화"
 syncZohoUnwritable = "일치했지만 프리셋의 저장된 데이터가 비어 있거나 읽을 수 없습니다"
 syncingBase = "베이스 동기화 중…"
---- ptBR (17 keys)
+--- ptBR (18 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
 syncDoneTitle = "Sincronização concluída"
@@ -137,6 +144,7 @@ syncTitle = "Sincronizar com o PC"
 syncToPc = "Sincronizar com o PC"
 syncZohoAmbiguous = "Vários itens correspondem"
 syncZohoAttention = "{{count}} precisam de atenção"  placeholders={{count}}
+syncZohoBadPrice = "Encontrado, mas o preço do item é inválido ou excessivamente alto"
 syncZohoDone = "{{priced}} precificados, {{unchanged}} inalterados"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Não foi possível sincronizar os preços do Zoho"
 syncZohoNoMatch = "Nenhum item correspondente no Zoho"
@@ -144,7 +152,7 @@ syncZohoNoPrice = "Encontrado, mas o item não tem preço"
 syncZohoPrices = "Sincronizar preços do Zoho"
 syncZohoUnwritable = "Encontrado, mas os dados salvos do perfil estão vazios ou não podem ser lidos"
 syncingBase = "Sincronizando base…"
---- ru (17 keys)
+--- ru (18 keys)
 syncBase = "Синхронизировать базу"
 syncConfirm = "Синхронизировать"
 syncDoneTitle = "Синхронизация завершена"
@@ -155,6 +163,7 @@ syncTitle = "Синхронизировать с ПК"
 syncToPc = "Синхронизировать с ПК"
 syncZohoAmbiguous = "Найдено несколько подходящих товаров"
 syncZohoAttention = "{{count}} требуют внимания"  placeholders={{count}}
+syncZohoBadPrice = "Найдено совпадение, но цена товара недействительна или слишком велика"
 syncZohoDone = "Оценено: {{priced}}, без изменений: {{unchanged}}"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Не удалось синхронизировать цены из Zoho"
 syncZohoNoMatch = "В Zoho нет подходящего товара"
@@ -162,7 +171,7 @@ syncZohoNoPrice = "Найдено совпадение, но у товара н�
 syncZohoPrices = "Синхронизировать цены из Zoho"
 syncZohoUnwritable = "Найдено совпадение, но сохранённые данные пресета пусты или не читаются"
 syncingBase = "Синхронизация базы…"
---- tr (17 keys)
+--- tr (18 keys)
 syncBase = "Temeli senkronize et"
 syncConfirm = "Senkronize et"
 syncDoneTitle = "Senkronizasyon tamamlandı"
@@ -173,6 +182,7 @@ syncTitle = "PC'ye senkronize et"
 syncToPc = "PC'ye senkronize et"
 syncZohoAmbiguous = "Birden fazla öğe eşleşti"
 syncZohoAttention = "{{count}} öğe dikkat gerektiriyor"  placeholders={{count}}
+syncZohoBadPrice = "Eşleşti, ancak öğenin fiyatı geçersiz veya aşırı yüksek"
 syncZohoDone = "{{priced}} fiyatlandı, {{unchanged}} değişmedi"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Zoho'dan fiyatlar senkronize edilemedi"
 syncZohoNoMatch = "Zoho'da eşleşen öğe yok"
@@ -180,7 +190,7 @@ syncZohoNoPrice = "Eşleşti, ancak öğenin fiyatı yok"
 syncZohoPrices = "Zoho'dan fiyatları senkronize et"
 syncZohoUnwritable = "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor"
 syncingBase = "Temel senkronize ediliyor…"
---- uk (17 keys)
+--- uk (18 keys)
 syncBase = "Синхронізувати базу"
 syncConfirm = "Синхронізувати"
 syncDoneTitle = "Синхронізацію завершено"
@@ -191,6 +201,7 @@ syncTitle = "Синхронізувати з ПК"
 syncToPc = "Синхронізувати з ПК"
 syncZohoAmbiguous = "Знайдено кілька відповідних товарів"
 syncZohoAttention = "{{count}} потребують уваги"  placeholders={{count}}
+syncZohoBadPrice = "Знайдено збіг, але ціна товару недійсна або надто велика"
 syncZohoDone = "Оцінено: {{priced}}, без змін: {{unchanged}}"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "Не вдалося синхронізувати ціни з Zoho"
 syncZohoNoMatch = "У Zoho немає відповідного товару"
@@ -198,7 +209,7 @@ syncZohoNoPrice = "Знайдено збіг, але товар без ціни"
 syncZohoPrices = "Синхронізувати ціни з Zoho"
 syncZohoUnwritable = "Знайдено збіг, але збережені дані пресету порожні або нечитабельні"
 syncingBase = "Синхронізація бази…"
---- zhCN (17 keys)
+--- zhCN (18 keys)
 syncBase = "同步基础库"
 syncConfirm = "同步"
 syncDoneTitle = "同步完成"
@@ -209,6 +220,7 @@ syncTitle = "同步到电脑"
 syncToPc = "同步到电脑"
 syncZohoAmbiguous = "匹配到多个项目"
 syncZohoAttention = "{{count}} 个需要处理"  placeholders={{count}}
+syncZohoBadPrice = "已匹配，但该项目的价格无效或过高"
 syncZohoDone = "已定价 {{priced}} 个，未变更 {{unchanged}} 个"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "无法从 Zoho 同步价格"
 syncZohoNoMatch = "Zoho 中没有匹配项"
@@ -216,7 +228,7 @@ syncZohoNoPrice = "已匹配，但该项目没有价格"
 syncZohoPrices = "从 Zoho 同步价格"
 syncZohoUnwritable = "已匹配，但该预设的保存数据为空或无法解析"
 syncingBase = "正在同步基础库…"
---- zhTW (17 keys)
+--- zhTW (18 keys)
 syncBase = "同步基礎庫"
 syncConfirm = "同步"
 syncDoneTitle = "同步完成"
@@ -227,6 +239,7 @@ syncTitle = "同步到電腦"
 syncToPc = "同步到電腦"
 syncZohoAmbiguous = "符合多個項目"
 syncZohoAttention = "{{count}} 個需要處理"  placeholders={{count}}
+syncZohoBadPrice = "已符合，但該項目的價格無效或過高"
 syncZohoDone = "已定價 {{priced}} 個，未變更 {{unchanged}} 個"  placeholders={{priced}},{{unchanged}}
 syncZohoFailed = "無法從 Zoho 同步價格"
 syncZohoNoMatch = "Zoho 中沒有相符項目"

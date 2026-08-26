@@ -4369,6 +4369,7 @@ export default {
     syncZohoAmbiguous: 'Several items matched',
     syncZohoNoPrice: 'Matched, but the item has no price',
     syncZohoUnwritable: "Matched, but the preset's saved data is empty or unreadable",
+    syncZohoBadPrice: "Matched, but the item's price is invalid or unusably large",
     syncZohoFailed: 'Could not sync prices from Zoho',
     // Toasts
     createdToast: '"{{name}}" created',
