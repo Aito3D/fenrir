@@ -238,7 +238,10 @@ describe('FilamentProfilesPage', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
 
-    expect(await screen.findByText(/priced 2/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    // Anchored so this only matches the below-the-fold summary panel's own
+    // text and not the toast (T-008: the toast now appends its own
+    // needs-attention count onto the same "Priced N, unchanged N" prefix).
+    expect(await screen.findByText(/^Priced 2, unchanged 1$/i, {}, { timeout: 5000 })).toBeInTheDocument();
     // The needs-attention list is the safety property made visible — without it
     // auto-matching would be silently lossy.
     expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
@@ -271,6 +274,65 @@ describe('FilamentProfilesPage', () => {
     expect(screen.queryByText(/the item has no price/i)).not.toBeInTheDocument();
   });
 
+  it('reports the needs-attention count in the toast and downgrades it off success when some profiles need attention (T-008)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 2,
+          unchanged: 1,
+          attention: [
+            { id: 7, name: 'eSUN PETG', reason: 'ambiguous', candidates: ['A', 'B'] },
+            { id: 8, name: 'Generic ABS', reason: 'no_match', candidates: [] },
+          ],
+        }),
+      ),
+    );
+
+    const { container } = render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // The toast (not the below-the-fold summary panel) must itself carry the
+    // needs-attention count: "Priced 2, unchanged 1" alone would read as a
+    // full success even though 2 profiles were left unresolved.
+    const toastViewport = container.querySelector('[data-testid="toast-viewport"]') as HTMLElement;
+    const toastText = await within(toastViewport).findByText(/priced 2, unchanged 1/i, {}, { timeout: 5000 });
+    expect(toastText.textContent).toMatch(/2 need attention/i);
+
+    // ... and it must not render as the green "success" toast.
+    const toastShell = toastText.closest('.toast-slide') as HTMLElement;
+    expect(toastShell.className).not.toMatch(/border-green-500/);
+    expect(toastShell.className).toMatch(/border-yellow-500/);
+  });
+
+  it('downgrades the toast off success when a sync prices and changes nothing at all (T-008)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [],
+        }),
+      ),
+    );
+
+    const { container } = render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // A run that priced and changed nothing is not a success, even with an
+    // empty attention list — it must not show the green "success" toast.
+    const toastViewport = container.querySelector('[data-testid="toast-viewport"]') as HTMLElement;
+    const toastText = await within(toastViewport).findByText(/priced 0, unchanged 0/i, {}, { timeout: 5000 });
+    const toastShell = toastText.closest('.toast-slide') as HTMLElement;
+    expect(toastShell.className).not.toMatch(/border-green-500/);
+    expect(toastShell.className).toMatch(/border-yellow-500/);
+  });
+
   it('shows the backend error message when the Zoho sync fails', async () => {
     stubBase();
     server.use(
@@ -293,5 +355,94 @@ describe('FilamentProfilesPage', () => {
       await screen.findByText(/zoho api rate limit exceeded/i, {}, { timeout: 5000 }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/could not sync prices from zoho/i)).not.toBeInTheDocument();
+  });
+
+  it('clears the previous run summary panel when a later sync fails', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 12,
+          unchanged: 3,
+          attention: [{ id: 7, name: 'eSUN PETG', reason: 'ambiguous', candidates: ['A', 'B'] }],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+    // Anchored so this only matches the below-the-fold summary panel's own
+    // text and not the toast (T-008: the toast now appends its own
+    // needs-attention count onto the same "Priced N, unchanged N" prefix).
+    expect(await screen.findByText(/^Priced 12, unchanged 3$/i, {}, { timeout: 5000 })).toBeInTheDocument();
+
+    // A later sync fails — the stale "Priced 12, unchanged 3" panel from the
+    // first run must not linger once the toast reports the failure; the
+    // page must not assert a successful sync that did not happen.
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({ detail: 'Zoho API rate limit exceeded' }, { status: 502 }),
+      ),
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    await screen.findByText(/zoho api rate limit exceeded/i, {}, { timeout: 5000 });
+    // Anchored to the panel's exact text (T-008 gave the toast its own,
+    // longer "...— N need attention" text, and its dismiss window is now
+    // longer too since it's a warning toast — the still-fading first toast
+    // must not make this assertion about the panel flaky).
+    await waitFor(
+      () => expect(screen.queryByText(/^Priced 12, unchanged 3$/i)).not.toBeInTheDocument(),
+      { timeout: 5000 },
+    );
+    expect(screen.queryByText(/eSUN PETG/i)).not.toBeInTheDocument();
+  });
+
+  it('re-syncs the open editor with fresh data when a Zoho sync updates the preset underneath it', async () => {
+    // The GET handler answers differently before/after the sync — this
+    // stands in for "the Zoho price sync just wrote a new filament_cost and
+    // invalidated ['filamentPresets']" (T-006): a still-open editor must
+    // pick up the refetched content, not keep showing the pre-sync snapshot
+    // it was opened with.
+    let getCalls = 0;
+    server.use(
+      http.get('*/filament-profiles', () => {
+        getCalls += 1;
+        const primed = preset({
+          content: getCalls === 1 ? '{"filament_cost":["10"]}' : '{"filament_cost":["25"]}',
+          updated_at: getCalls === 1 ? '2026-08-01T00:00:00Z' : '2026-08-25T00:00:00Z',
+        });
+        return HttpResponse.json([primed, PRESETS[1]]);
+      }),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({ priced: 1, unchanged: 1, attention: [] }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('Black');
+
+    // Open the editor on the preset the sync is about to reprice.
+    await userEvent.click(screen.getByText('Black'));
+    expect(
+      await screen.findByRole('spinbutton', { name: /cost/i }, { timeout: 5000 }),
+    ).toHaveValue(10);
+
+    // Run the sync while the editor is still open — this is the
+    // invalidateQueries(['filamentPresets']) call in handleZohoSync.
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+    await screen.findByText(/priced 1/i, {}, { timeout: 5000 });
+
+    // The still-open editor must reflect the refetched preset, not the
+    // pre-sync snapshot it was opened with.
+    await waitFor(
+      () => expect(screen.getByRole('spinbutton', { name: /cost/i })).toHaveValue(25),
+      { timeout: 5000 },
+    );
   });
 });

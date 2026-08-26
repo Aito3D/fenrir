@@ -58,8 +58,12 @@ const GRID_CLASSES: Record<GridSize, string> = {
 const SORT_FIELDS: SortField[] = ['name', 'brand', 'material', 'color'];
 
 /** Every editor open state the page can be in — drives the PresetEditorModal
- *  rendered below (nothing renders for 'closed'). */
-type EditorState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; preset: FilamentPreset };
+ *  rendered below (nothing renders for 'closed'). 'edit' stores only the id:
+ *  the preset itself is re-derived from the `presets` query on every render
+ *  (see `editingPreset` below) so a cache invalidation — e.g. a Zoho price
+ *  sync completing while the editor is open — feeds the modal fresh data
+ *  instead of the pre-sync snapshot captured when it was opened. */
+type EditorState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; presetId: number };
 
 type SyncBaseModalState = { result?: FilamentBaseSyncResult; error?: string } | null;
 type SyncModalState = { state: 'syncing' | 'preview' | 'done'; stats?: FilamentSyncStats } | null;
@@ -166,6 +170,17 @@ export function FilamentProfilesPage() {
     }
   }, [presetsQuery.isLoading, presets.length, materials, materialFilter]);
 
+  // If the preset the editor has open is deleted elsewhere (another tab,
+  // or a background sync), it drops out of `presets` on the next
+  // invalidation — close rather than leave a modal open on a preset that no
+  // longer exists (there's nothing to save it back to).
+  useEffect(() => {
+    if (editorState.mode !== 'edit' || presetsQuery.isLoading) return;
+    if (!presets.some((p) => p.id === editorState.presetId)) {
+      setEditorState({ mode: 'closed' });
+    }
+  }, [editorState, presets, presetsQuery.isLoading]);
+
   const searchLower = search.trim().toLowerCase();
   const filteredPresets = useMemo(() => {
     return presets
@@ -228,7 +243,7 @@ export function FilamentProfilesPage() {
       const created = await api.duplicateFilamentPreset(preset.id);
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
       await presetsQuery.refetch();
-      setEditorState({ mode: 'edit', preset: created });
+      setEditorState({ mode: 'edit', presetId: created.id });
     } catch (err) {
       showToast(errorMessage(err), 'error');
     }
@@ -331,12 +346,26 @@ export function FilamentProfilesPage() {
   // ── Sync prices from Zoho ────────────────────────────────────────────────
   const handleZohoSync = async () => {
     setZohoSyncing(true);
+    setZohoResult(null);
     try {
       const result = await api.syncFilamentPresetsFromZoho();
       setZohoResult(result);
-      showToast(t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged }), 'success');
+      // A run that priced nothing must not read as a success: report the
+      // needs-attention count in the toast text itself (the detail panel with
+      // the full breakdown lives further down the page, off-screen on a
+      // normal viewport) and downgrade the toast color whenever some
+      // profiles couldn't be priced or nothing was priced/unchanged at all.
+      const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
+      const attentionCount = result.attention.length;
+      const toastMessage =
+        attentionCount > 0
+          ? `${doneMessage} — ${t('filamentProfiles.syncZohoAttention', { count: attentionCount })}`
+          : doneMessage;
+      const isFullSuccess = attentionCount === 0 && result.priced + result.unchanged > 0;
+      showToast(toastMessage, isFullSuccess ? 'success' : 'warning');
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
     } catch (error) {
+      setZohoResult(null);
       showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
     } finally {
       setZohoSyncing(false);
@@ -646,8 +675,8 @@ export function FilamentProfilesPage() {
             <PresetCard
               key={preset.id}
               preset={preset}
-              onOpen={() => setEditorState({ mode: 'edit', preset })}
-              onEdit={() => setEditorState({ mode: 'edit', preset })}
+              onOpen={() => setEditorState({ mode: 'edit', presetId: preset.id })}
+              onEdit={() => setEditorState({ mode: 'edit', presetId: preset.id })}
               onDuplicate={() => handleDuplicate(preset)}
               onDelete={() => setConfirmDelete(preset)}
             />
@@ -657,9 +686,15 @@ export function FilamentProfilesPage() {
 
       {editorState.mode !== 'closed' &&
         (() => {
-          const editingPreset = editorState.mode === 'edit' ? editorState.preset : null;
+          const editingPreset =
+            editorState.mode === 'edit' ? (presets.find((p) => p.id === editorState.presetId) ?? null) : null;
+          // 'edit' with no matching preset means it was just deleted out from
+          // under the open editor (see the effect above, which will close it
+          // on the next render) — don't flash a stale/empty editor meanwhile.
+          if (editorState.mode === 'edit' && !editingPreset) return null;
           return (
             <PresetEditorModal
+              key={editorState.mode === 'edit' ? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}` : 'create'}
               preset={editingPreset}
               presets={presets}
               basePresets={baseFilamentPresets}

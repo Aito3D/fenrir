@@ -2,7 +2,8 @@
 ### stdout:
 zohoSync first referenced at char True
 const [zohoSyncing, setZohoSyncing] = useState(false);
-showToast(t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged }), 'success');
+const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
+? `${doneMessage} — ${t('filamentProfiles.syncZohoAttention', { count: attentionCount })}`
 showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
 <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
 {t('filamentProfiles.syncZohoPrices')}
