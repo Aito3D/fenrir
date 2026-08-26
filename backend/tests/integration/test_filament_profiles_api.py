@@ -198,3 +198,69 @@ class TestFilamentProfilesFilesystem:
         r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json={"presets": [], "dryRun": True})
         assert r.status_code == 422
         assert (a / "precious.json").exists()
+
+
+class TestBaseUpload:
+    """POST /filament-profiles/base-upload — browser-side fallback for deploys
+    where the backend host has no Bambu Studio install (#sync-base upload)."""
+
+    @pytest.fixture
+    def data_dir_fallback(self, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+        from backend.app.services import bambu_studio
+
+        # No configured override, and the default app-bundle path is absent —
+        # the exact remote-deploy situation. The bundle dir must fall back to
+        # <data_dir>/base_presets.
+        monkeypatch.setattr(settings, "bambu_studio_bundle_dir", None)
+        monkeypatch.setattr(bambu_studio, "DEFAULT_BUNDLE_DIR", str(tmp_path / "no-such-app"))
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        return tmp_path
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_writes_syncs_and_serves_content(self, async_client, data_dir_fallback):
+        import json as _json
+
+        files = [
+            {
+                "filename": "p1.json",
+                "content": _json.dumps(
+                    {"name": "P1", "inherits": "Root", "filament_vendor": ["Bambu Lab"], "filament_type": ["PLA"]}
+                ),
+            },
+            {"filename": "root.json", "content": _json.dumps({"name": "Root"})},
+        ]
+        r = await async_client.post("/api/v1/filament-profiles/base-upload", json={"files": files})
+        assert r.status_code == 200
+        assert r.json() == {"added": 2, "updated": 0, "unchanged": 0, "total": 2}
+
+        # Files persisted into the data-dir fallback…
+        assert (data_dir_fallback / "base_presets" / "p1.json").is_file()
+        # …the index is queryable…
+        presets = (await async_client.get("/api/v1/filament-profiles/base-presets")).json()
+        assert [p["name"] for p in presets] == ["P1", "Root"]
+        # …and base-content serves the uploaded bytes.
+        r = await async_client.get("/api/v1/filament-profiles/base-content", params={"filename": "root.json"})
+        assert r.json() == {"content": _json.dumps({"name": "Root"})}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_is_idempotent_like_sync_base(self, async_client, data_dir_fallback):
+        files = [{"filename": "p1.json", "content": '{"name": "P1"}'}]
+        first = (await async_client.post("/api/v1/filament-profiles/base-upload", json={"files": files})).json()
+        assert first == {"added": 1, "updated": 0, "unchanged": 0, "total": 1}
+        second = (await async_client.post("/api/v1/filament-profiles/base-upload", json={"files": files})).json()
+        assert second == {"added": 0, "updated": 0, "unchanged": 1, "total": 1}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_rejects_bad_filenames(self, async_client, data_dir_fallback):
+        for bad in ["../evil.json", "a/b.json", "a\\b.json", "", "notjson.txt"]:
+            r = await async_client.post(
+                "/api/v1/filament-profiles/base-upload",
+                json={"files": [{"filename": bad, "content": "{}"}]},
+            )
+            assert r.status_code == 400, bad
+        # Nothing was written for any rejected batch.
+        assert not (data_dir_fallback / "base_presets").exists()

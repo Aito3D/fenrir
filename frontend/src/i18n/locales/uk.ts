@@ -4139,6 +4139,7 @@ export default {
     importPartial: "Успішно: {{ok}}, з помилками: {{failed}}",
     noServerPresets: "Теку BambuStudio на сервері не знайдено — виберіть JSON-файли пресетів (або експортований ZIP) для імпорту.",
     noJsonInSelection: "У вибраних файлах немає JSON-файлів пресетів.",
+    noServerBase: "Пакет BambuStudio на сервері не знайдено — виберіть JSON-файли базових пресетів (або ZIP теки BBL/filament) для завантаження.",
     exportEmpty: "Немає пресетів із вмістом JSON для експорту.",
     // Синхронізація цін із Zoho
     syncZohoDone: "Оцінено: {{priced}}, без змін: {{unchanged}}",

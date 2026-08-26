@@ -80,6 +80,12 @@ class BambuScanResponse(BaseModel):
     files: list[BambuScanFile]
 
 
+class BaseUploadRequest(BaseModel):
+    """Browser-uploaded base preset files (deploys without a local Bambu Studio)."""
+
+    files: list[BambuScanFile]
+
+
 class BaseSyncResult(BaseModel):
     added: int
     updated: int

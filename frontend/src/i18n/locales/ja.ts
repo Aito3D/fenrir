@@ -4329,6 +4329,7 @@ export default {
     importPartial: '{{ok}} 件成功、{{failed}} 件失敗',
     noServerPresets: 'サーバーに BambuStudio フォルダーがありません — インポートするプリセットの JSON ファイル（またはエクスポートした ZIP）を選択してください。',
     noJsonInSelection: '選択内容にプリセットの JSON ファイルがありません。',
+    noServerBase: 'サーバーに BambuStudio のバンドルがありません — アップロードするベースプリセットの JSON ファイル（または BBL/filament フォルダーの ZIP）を選択してください。',
     exportEmpty: 'エクスポートするJSON内容を持つプリセットがありません。',
     // Zoho価格同期
     syncZohoDone: '{{priced}}件を価格設定、{{unchanged}}件は変更なし',

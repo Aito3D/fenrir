@@ -60,11 +60,42 @@ def get_user_filament_dirs() -> list[Path]:
     return dirs
 
 
+def uploaded_base_presets_dir() -> Path:
+    """Where browser-uploaded base presets are stored (persists in DATA_DIR).
+
+    Used as the bundle-dir fallback on deploys where Bambu Studio isn't
+    installed on the backend host (e.g. Docker) — the base-upload endpoint
+    writes here, and reads fall back here via ``get_bundle_filament_dir``.
+    """
+    return Path(settings.base_dir) / "base_presets"
+
+
 def get_bundle_filament_dir() -> Path:
-    """The bundled base-preset directory shipped inside the Bambu Studio app."""
+    """The bundled base-preset directory.
+
+    Precedence: configured override > the Bambu Studio app bundle (when it
+    exists on this host) > the uploaded-copies folder under the data dir.
+    """
     if settings.bambu_studio_bundle_dir:
         return Path(settings.bambu_studio_bundle_dir)
-    return Path(DEFAULT_BUNDLE_DIR)
+    default = Path(DEFAULT_BUNDLE_DIR)
+    if default.is_dir():
+        return default
+    return uploaded_base_presets_dir()
+
+
+def save_base_presets(files: list[tuple[str, str]]) -> None:
+    """Write ``(filename, content)`` pairs into the uploaded-copies folder.
+
+    Callers must have validated the filenames as bare ``*.json`` basenames;
+    ``safe_join_under`` is the belt-and-braces containment check. Never
+    writes into the app bundle — only into the data-dir folder.
+    """
+    folder = uploaded_base_presets_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    for filename, content in files:
+        path = safe_join_under(folder, filename, http=False)
+        path.write_text(content, encoding="utf-8")
 
 
 def _read_json_files(folder: Path) -> list[tuple[str, str]]:

@@ -4324,6 +4324,7 @@ export default {
     importPartial: '{{ok}} başarılı, {{failed}} başarısız',
     noServerPresets: 'Sunucuda BambuStudio klasörü yok — içe aktarmak için ön ayar JSON dosyalarını (veya dışa aktarılmış bir ZIP) seçin.',
     noJsonInSelection: 'Seçimde ön ayar JSON dosyası yok.',
+    noServerBase: 'Sunucuda BambuStudio paketi yok — yüklemek için temel ön ayar JSON dosyalarını (veya BBL/filament klasörünün ZIP dosyasını) seçin.',
     exportEmpty: 'Dışa aktarılacak JSON içerikli ön ayar yok.',
     // Zoho fiyat senkronizasyonu
     syncZohoDone: '{{priced}} fiyatlandı, {{unchanged}} değişmedi',

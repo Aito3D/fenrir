@@ -20,6 +20,7 @@ from backend.app.schemas.filament_profile import (
     BaseContentResponse,
     BaseFilamentPresetResponse,
     BaseSyncResult,
+    BaseUploadRequest,
     FilamentPresetCreate,
     FilamentPresetResponse,
     FilamentPresetUpdate,
@@ -34,6 +35,7 @@ from backend.app.services.bambu_studio import (
     get_user_filament_dirs,
     read_bundle_preset,
     read_disk_state,
+    save_base_presets,
     scan_user_presets,
 )
 from backend.app.services.filament_profile_pricing import apply_filament_cost
@@ -78,11 +80,12 @@ async def bambu_scan(
     return {"files": files}
 
 
-@router.post("/sync-base", response_model=BaseSyncResult)
-async def sync_base_presets(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
-    db: AsyncSession = Depends(get_db),
-):
+async def _collect_and_sync_base(db: AsyncSession) -> dict[str, int]:
+    """Diff the bundle dir's base presets against the DB index and commit.
+
+    Shared by sync-base (server-side folder) and base-upload (browser files
+    written into the data-dir fallback) so both report identical stats.
+    """
     records = await asyncio.to_thread(collect_base_presets)
 
     result = await db.execute(select(BaseFilamentPreset))
@@ -110,6 +113,35 @@ async def sync_base_presets(
 
     await db.commit()
     return {"added": added, "updated": updated, "unchanged": unchanged, "total": len(records)}
+
+
+@router.post("/sync-base", response_model=BaseSyncResult)
+async def sync_base_presets(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _collect_and_sync_base(db)
+
+
+@router.post("/base-upload", response_model=BaseSyncResult)
+async def upload_base_presets(
+    payload: BaseUploadRequest,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest browser-uploaded base preset files (remote-deploy fallback).
+
+    Writes the files into the data-dir base_presets folder — never into the
+    app bundle — then runs the same diff/sync as sync-base. Validation runs
+    over the whole batch before anything is written, so a rejected batch
+    leaves no partial files behind.
+    """
+    for f in payload.files:
+        name = f.filename
+        if not name or ".." in name or "/" in name or "\\" in name or not name.lower().endswith(".json"):
+            raise HTTPException(400, f"Invalid filename: {name!r}")
+    await asyncio.to_thread(save_base_presets, [(f.filename, f.content) for f in payload.files])
+    return await _collect_and_sync_base(db)
 
 
 def _validate_bambu_sync_presets(presets: list) -> list[dict[str, str]]:

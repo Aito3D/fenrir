@@ -4329,6 +4329,7 @@ export default {
     importPartial: '{{ok}} erfolgreich, {{failed}} fehlgeschlagen',
     noServerPresets: 'Kein BambuStudio-Ordner auf dem Server — wähle Preset-JSON-Dateien (oder ein exportiertes ZIP) zum Importieren.',
     noJsonInSelection: 'Keine Preset-JSON-Dateien in der Auswahl.',
+    noServerBase: 'Kein BambuStudio-Bundle auf dem Server — wähle die Basis-Preset-JSON-Dateien (oder ein ZIP des BBL/filament-Ordners) zum Hochladen.',
     exportEmpty: 'Keine Presets mit JSON-Inhalt zum Exportieren.',
     // Zoho-Preissynchronisierung
     syncZohoDone: 'Bepreist: {{priced}}, unverändert: {{unchanged}}',

@@ -6982,6 +6982,10 @@ export const api = {
     request<{ content: string }>(`/filament-profiles/base-content?filename=${encodeURIComponent(filename)}`),
   syncBaseFilamentPresets: () =>
     request<FilamentBaseSyncResult>('/filament-profiles/sync-base', { method: 'POST' }),
+  uploadBaseFilamentPresets: (files: BambuScanFile[]) =>
+    request<FilamentBaseSyncResult>('/filament-profiles/base-upload', {
+      method: 'POST', body: JSON.stringify({ files }),
+    }),
   syncFilamentPresetsToBambu: (presets: BambuScanFile[], dryRun: boolean) =>
     request<{ stats: FilamentSyncStats }>('/filament-profiles/bambu-sync', {
       method: 'POST', body: JSON.stringify({ presets, dry_run: dryRun }),

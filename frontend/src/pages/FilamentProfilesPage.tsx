@@ -38,6 +38,7 @@ import {
   parseColorFromContent,
   displayColorLabel,
 } from '../components/filament-profiles/presetJson';
+import { collectPresetFiles } from '../components/filament-profiles/pickedFiles';
 import type { GridSize, SortField } from '../components/filament-profiles/types';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -66,18 +67,6 @@ type SyncModalState = { state: 'syncing' | 'preview' | 'done'; stats?: FilamentS
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Read a picked File as UTF-8 text. Prefers Blob.text(), with a FileReader
- *  fallback for environments that lack it (jsdom in tests). */
-function readFileText(file: File): Promise<string> {
-  if (typeof file.text === 'function') return file.text();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}`));
-    reader.readAsText(file);
-  });
 }
 
 function SkeletonCard() {
@@ -141,6 +130,7 @@ export function FilamentProfilesPage() {
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const baseFileInputRef = useRef<HTMLInputElement>(null);
   const [zohoSyncing, setZohoSyncing] = useState(false);
   const [zohoResult, setZohoResult] = useState<FilamentPresetZohoSyncResponse | null>(null);
   const [syncBaseBusy, setSyncBaseBusy] = useState(false);
@@ -370,28 +360,7 @@ export function FilamentProfilesPage() {
     if (pickedFiles.length === 0 || importing) return;
     setImporting(true);
     try {
-      const collected: BambuScanFile[] = [];
-      const seen = new Set<string>();
-      for (const file of pickedFiles) {
-        const lower = file.name.toLowerCase();
-        if (lower.endsWith('.zip')) {
-          // Round-trip with Export ZIP: unpack in the browser and import the
-          // archive's top-level JSON entries (the export writes a flat zip).
-          const { default: JSZip } = await import('jszip');
-          const zip = await JSZip.loadAsync(file);
-          for (const entry of Object.values(zip.files)) {
-            const entryLower = entry.name.toLowerCase();
-            if (entry.dir || entry.name.includes('/') || !entryLower.endsWith('.json')) continue;
-            if (seen.has(entry.name)) continue;
-            seen.add(entry.name);
-            collected.push({ filename: entry.name, content: await entry.async('string') });
-          }
-        } else if (lower.endsWith('.json')) {
-          if (seen.has(file.name)) continue;
-          seen.add(file.name);
-          collected.push({ filename: file.name, content: await readFileText(file) });
-        }
-      }
+      const collected = await collectPresetFiles(pickedFiles);
 
       if (collected.length === 0) {
         showToast(t('filamentProfiles.noJsonInSelection'), 'error');
@@ -481,6 +450,38 @@ export function FilamentProfilesPage() {
     setSyncBaseBusy(true);
     try {
       const result = await api.syncBaseFilamentPresets();
+      if (result.total === 0) {
+        // Remote-deploy case: no Bambu Studio bundle on the backend host.
+        // Fall back to a browser picker so the base preset JSONs (or a ZIP
+        // of the bundle folder) can be uploaded from the client machine.
+        showToast(t('filamentProfiles.noServerBase'), 'info');
+        baseFileInputRef.current?.click();
+        return;
+      }
+      setSyncBaseModal({ result });
+    } catch (err) {
+      setSyncBaseModal({ error: errorMessage(err) });
+    } finally {
+      setSyncBaseBusy(false);
+      await queryClient.invalidateQueries({ queryKey: ['filamentBasePresets'] });
+    }
+  };
+
+  // ── Base presets from browser-picked files (upload fallback) ────────────
+  const handleBaseFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    // Snapshot the live FileList before resetting the input — clearing
+    // `value` empties `files` (see handleFilesSelected).
+    const pickedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (pickedFiles.length === 0 || syncBaseBusy) return;
+    setSyncBaseBusy(true);
+    try {
+      const collected = await collectPresetFiles(pickedFiles);
+      if (collected.length === 0) {
+        showToast(t('filamentProfiles.noJsonInSelection'), 'error');
+        return;
+      }
+      const result = await api.uploadBaseFilamentPresets(collected);
       setSyncBaseModal({ result });
     } catch (err) {
       setSyncBaseModal({ error: errorMessage(err) });
@@ -541,6 +542,17 @@ export function FilamentProfilesPage() {
             multiple
             className="hidden"
             onChange={handleFilesSelected}
+          />
+          {/* Hidden picker for the sync-base upload fallback — opened by
+              handleSyncBase when the server-side bundle dir is empty. */}
+          <input
+            ref={baseFileInputRef}
+            data-testid="fp-base-file-input"
+            type="file"
+            accept=".json,.zip"
+            multiple
+            className="hidden"
+            onChange={handleBaseFilesSelected}
           />
           <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
             <RefreshCw className="h-4 w-4" />

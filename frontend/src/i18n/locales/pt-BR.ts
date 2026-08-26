@@ -4317,6 +4317,7 @@ export default {
     importPartial: '{{ok}} com sucesso, {{failed}} com falha',
     noServerPresets: 'Nenhuma pasta do BambuStudio no servidor — escolha arquivos JSON de perfis (ou um ZIP exportado) para importar.',
     noJsonInSelection: 'Nenhum arquivo JSON de perfil na seleção.',
+    noServerBase: 'Nenhum pacote do BambuStudio no servidor — escolha os arquivos JSON de perfis base (ou um ZIP da pasta BBL/filament) para enviar.',
     exportEmpty: 'Nenhum preset com conteúdo JSON para exportar.',
     // Sincronização de preços do Zoho
     syncZohoDone: '{{priced}} precificados, {{unchanged}} inalterados',

@@ -332,3 +332,50 @@ describe('FilamentProfilesPage upload-fallback import', () => {
     expect(await screen.findByText(/Imported 2 preset/i)).toBeInTheDocument();
   });
 });
+
+describe('FilamentProfilesPage sync-base upload fallback', () => {
+  it('opens the base file picker when sync-base reports an empty bundle (total 0)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/sync-base', () =>
+        HttpResponse.json({ added: 0, updated: 0, unchanged: 0, total: 0 }),
+      ),
+    );
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    const input = screen.getByTestId('fp-base-file-input') as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, 'click');
+
+    await userEvent.click(screen.getByRole('button', { name: /Sync base/i }));
+
+    await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+    // The result modal must NOT open for the empty case.
+    expect(screen.queryByText(/Base profiles synced/i)).not.toBeInTheDocument();
+  });
+
+  it('uploads picked base preset files to base-upload and shows the result modal', async () => {
+    stubBase();
+    let uploaded: { filename: string; content: string }[] = [];
+    server.use(
+      http.post('*/filament-profiles/base-upload', async ({ request }) => {
+        const body = (await request.json()) as { files: { filename: string; content: string }[] };
+        uploaded = body.files;
+        return HttpResponse.json({ added: 2, updated: 0, unchanged: 0, total: 2 });
+      }),
+    );
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    const input = screen.getByTestId('fp-base-file-input') as HTMLInputElement;
+    await userEvent.upload(input, [
+      new File(['{"name": "Base PLA"}'], 'base_pla.json', { type: 'application/json' }),
+      new File(['{"name": "Base PETG"}'], 'base_petg.json', { type: 'application/json' }),
+    ]);
+
+    await waitFor(() =>
+      expect(uploaded.map((f) => f.filename).sort()).toEqual(['base_petg.json', 'base_pla.json']),
+    );
+    expect(await screen.findByText(/Base profiles synced/i)).toBeInTheDocument();
+  });
+});

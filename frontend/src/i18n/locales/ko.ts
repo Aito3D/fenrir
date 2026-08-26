@@ -4142,6 +4142,7 @@ export default {
     importPartial: '{{ok}}개 성공, {{failed}}개 실패',
     noServerPresets: '서버에 BambuStudio 폴더가 없습니다 — 가져올 프리셋 JSON 파일(또는 내보낸 ZIP)을 선택하세요.',
     noJsonInSelection: '선택 항목에 프리셋 JSON 파일이 없습니다.',
+    noServerBase: '서버에 BambuStudio 번들이 없습니다 — 업로드할 기본 프리셋 JSON 파일(또는 BBL/filament 폴더의 ZIP)을 선택하세요.',
     exportEmpty: '내보낼 JSON 콘텐츠가 있는 프리셋이 없습니다.',
     // Zoho 가격 동기화
     syncZohoDone: '{{priced}}개 가격 설정, {{unchanged}}개 변경 없음',

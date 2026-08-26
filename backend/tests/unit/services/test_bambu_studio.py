@@ -104,3 +104,34 @@ def test_read_bundle_preset(bambu_dirs):
     (bundle / "p.json").write_text("CONTENT")
     assert svc.read_bundle_preset("p.json") == "CONTENT"
     assert svc.read_bundle_preset("missing.json") is None
+
+
+class TestBundleDirFallback:
+    """get_bundle_filament_dir precedence: override > app bundle > data dir."""
+
+    def test_falls_back_to_data_dir_when_app_bundle_missing(self, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+        from backend.app.services import bambu_studio
+
+        monkeypatch.setattr(settings, "bambu_studio_bundle_dir", None)
+        monkeypatch.setattr(bambu_studio, "DEFAULT_BUNDLE_DIR", str(tmp_path / "no-such-app"))
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        assert bambu_studio.get_bundle_filament_dir() == tmp_path / "base_presets"
+
+    def test_prefers_existing_app_bundle(self, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+        from backend.app.services import bambu_studio
+
+        app_dir = tmp_path / "app-bundle"
+        app_dir.mkdir()
+        monkeypatch.setattr(settings, "bambu_studio_bundle_dir", None)
+        monkeypatch.setattr(bambu_studio, "DEFAULT_BUNDLE_DIR", str(app_dir))
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        assert bambu_studio.get_bundle_filament_dir() == app_dir
+
+    def test_configured_override_wins(self, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+        from backend.app.services import bambu_studio
+
+        monkeypatch.setattr(settings, "bambu_studio_bundle_dir", str(tmp_path / "override"))
+        assert bambu_studio.get_bundle_filament_dir() == tmp_path / "override"
