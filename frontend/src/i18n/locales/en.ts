@@ -4361,6 +4361,8 @@ export default {
     importing: 'Importing presets… {{current}}/{{total}}',
     imported: 'Imported {{n}} preset(s)',
     importPartial: '{{ok}} succeeded, {{failed}} failed',
+    noServerPresets: 'No BambuStudio folder on the server — choose preset JSON files (or an exported ZIP) to import.',
+    noJsonInSelection: 'No preset JSON files in the selection.',
     exportEmpty: 'No presets with JSON content to export.',
     // Zoho price sync
     syncZohoDone: 'Priced {{priced}}, unchanged {{unchanged}}',

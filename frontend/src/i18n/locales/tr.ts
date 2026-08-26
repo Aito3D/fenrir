@@ -4322,6 +4322,8 @@ export default {
     importing: 'Ön ayarlar içe aktarılıyor… {{current}}/{{total}}',
     imported: '{{n}} ön ayar içe aktarıldı',
     importPartial: '{{ok}} başarılı, {{failed}} başarısız',
+    noServerPresets: 'Sunucuda BambuStudio klasörü yok — içe aktarmak için ön ayar JSON dosyalarını (veya dışa aktarılmış bir ZIP) seçin.',
+    noJsonInSelection: 'Seçimde ön ayar JSON dosyası yok.',
     exportEmpty: 'Dışa aktarılacak JSON içerikli ön ayar yok.',
     // Zoho fiyat senkronizasyonu
     syncZohoDone: '{{priced}} fiyatlandı, {{unchanged}} değişmedi',

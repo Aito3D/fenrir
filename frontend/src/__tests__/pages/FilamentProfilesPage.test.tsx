@@ -3,7 +3,7 @@
  * import/export/sync flows and the two sync modals.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
@@ -243,5 +243,92 @@ describe('FilamentProfilesPage', () => {
     // auto-matching would be silently lossy.
     expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
     expect(await screen.findByText(/several items matched/i, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+});
+
+describe('FilamentProfilesPage upload-fallback import', () => {
+  /** Stub an empty server-side scan (the remote-deploy case). */
+  function stubEmptyScan() {
+    server.use(http.get('*/filament-profiles/bambu-scan', () => HttpResponse.json({ files: [] })));
+  }
+
+  function jsonFile(filename: string, body: Record<string, unknown>): File {
+    return new File([JSON.stringify(body)], filename, { type: 'application/json' });
+  }
+
+  it('opens the file picker when the server scan finds nothing, instead of the "all imported" toast', async () => {
+    stubBase();
+    stubEmptyScan();
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    const input = screen.getByTestId('fp-import-file-input') as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, 'click');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Import$/ }));
+
+    await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+    expect(screen.queryByText(/all already imported/i)).not.toBeInTheDocument();
+  });
+
+  it('imports uploaded .json files sequentially, skipping filenames that already exist', async () => {
+    stubBase();
+    stubEmptyScan();
+    const createCalls: string[] = [];
+    server.use(
+      http.post('*/filament-profiles', async ({ request }) => {
+        const body = (await request.json()) as { filename: string };
+        createCalls.push(body.filename);
+        return HttpResponse.json(preset({ id: 200 + createCalls.length, filename: body.filename }));
+      }),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    const input = screen.getByTestId('fp-import-file-input') as HTMLInputElement;
+    await userEvent.upload(input, [
+      // Duplicate of a loaded preset's filename — must be skipped.
+      jsonFile('bambu_pla_basic_black.json', { name: 'Dup' }),
+      jsonFile('uploaded_new.json', {
+        name: 'Uploaded New',
+        filament_vendor: ['Generic'],
+        filament_type: ['PLA'],
+        filament_colour: ['#123456'],
+      }),
+    ]);
+
+    await waitFor(() => expect(createCalls).toEqual(['uploaded_new.json']));
+    expect(await screen.findByText(/Imported 1 preset/i)).toBeInTheDocument();
+  });
+
+  it('unpacks an uploaded export ZIP and imports its JSON entries', async () => {
+    stubBase();
+    stubEmptyScan();
+    const createCalls: string[] = [];
+    server.use(
+      http.post('*/filament-profiles', async ({ request }) => {
+        const body = (await request.json()) as { filename: string };
+        createCalls.push(body.filename);
+        return HttpResponse.json(preset({ id: 300 + createCalls.length, filename: body.filename }));
+      }),
+    );
+
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    zip.file('zipped_one.json', JSON.stringify({ name: 'Zipped One', filament_vendor: ['Generic'], filament_type: ['PLA'] }));
+    zip.file('zipped_two.json', JSON.stringify({ name: 'Zipped Two', filament_vendor: ['Generic'], filament_type: ['PETG'] }));
+    zip.file('notes.txt', 'not a preset');
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const zipFile = new File([blob], 'bambuddy-presets.zip', { type: 'application/zip' });
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    const input = screen.getByTestId('fp-import-file-input') as HTMLInputElement;
+    await userEvent.upload(input, zipFile);
+
+    await waitFor(() => expect(createCalls.sort()).toEqual(['zipped_one.json', 'zipped_two.json']));
+    expect(await screen.findByText(/Imported 2 preset/i)).toBeInTheDocument();
   });
 });

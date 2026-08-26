@@ -4315,6 +4315,8 @@ export default {
     importing: '正在匯入預設… {{current}}/{{total}}',
     imported: '已匯入 {{n}} 個預設',
     importPartial: '{{ok}} 個成功，{{failed}} 個失敗',
+    noServerPresets: '伺服器上沒有 BambuStudio 資料夾 — 請選擇要匯入的預設 JSON 檔案（或匯出的 ZIP）。',
+    noJsonInSelection: '所選內容中沒有預設 JSON 檔案。',
     exportEmpty: '沒有含 JSON 內容可匯出的預設。',
     // Zoho 價格同步
     syncZohoDone: '已定價 {{priced}} 個，未變更 {{unchanged}} 個',

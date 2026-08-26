@@ -4133,6 +4133,8 @@ export default {
     importing: "Импорт пресетов… {{current}}/{{total}}",
     imported: "Импортировано пресетов: {{n}}",
     importPartial: "Успешно: {{ok}}, с ошибками: {{failed}}",
+    noServerPresets: "Папка BambuStudio на сервере не найдена — выберите JSON-файлы пресетов (или экспортированный ZIP) для импорта.",
+    noJsonInSelection: "В выбранных файлах нет JSON-файлов пресетов.",
     exportEmpty: "Нет пресетов с содержимым JSON для экспорта.",
     // Синхронизация цен из Zoho
     syncZohoDone: "Оценено: {{priced}}, без изменений: {{unchanged}}",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -68,6 +68,18 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Read a picked File as UTF-8 text. Prefers Blob.text(), with a FileReader
+ *  fallback for environments that lack it (jsdom in tests). */
+function readFileText(file: File): Promise<string> {
+  if (typeof file.text === 'function') return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
 function SkeletonCard() {
   return (
     <div className="min-h-24 animate-pulse rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary" />
@@ -128,6 +140,7 @@ export function FilamentProfilesPage() {
   const [editorState, setEditorState] = useState<EditorState>({ mode: 'closed' });
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
   const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [zohoSyncing, setZohoSyncing] = useState(false);
   const [zohoResult, setZohoResult] = useState<FilamentPresetZohoSyncResponse | null>(null);
   const [syncBaseBusy, setSyncBaseBusy] = useState(false);
@@ -235,30 +248,20 @@ export function FilamentProfilesPage() {
   };
 
   // ── Import from disk (spec §5.7) ────────────────────────────────────────
-  const handleImport = async () => {
-    if (importing) return;
-    setImporting(true);
-    try {
-      // Only the scan call's failure is a "scanFailed" toast — per-file
-      // create failures below are counted and reported separately, and must
-      // never be mislabeled as a folder-read error.
-      let scanResult: { files: BambuScanFile[] };
-      try {
-        scanResult = await api.scanBambuStudioPresets();
-      } catch (err) {
-        showToast(t('filamentProfiles.scanFailed', { error: errorMessage(err) }), 'error');
-        return;
-      }
+  // Shared import core for both sources of preset files: the server-side
+  // Bambu Studio folder scan and the browser file-picker fallback below.
+  // Dedupe against loaded presets, then strictly sequential POSTs with a
+  // progress toast — semantics must stay identical for both paths.
+  const importPresetFiles = async (files: BambuScanFile[]) => {
+    const existingFilenames = new Set(presets.map((p) => p.filename));
+    const newFiles = files.filter((f) => !existingFilenames.has(f.filename));
 
-      const existingFilenames = new Set(presets.map((p) => p.filename));
-      const newFiles = scanResult.files.filter((f) => !existingFilenames.has(f.filename));
+    if (newFiles.length === 0) {
+      showToast(t('filamentProfiles.allImported', { n: files.length }));
+      return;
+    }
 
-      if (newFiles.length === 0) {
-        showToast(t('filamentProfiles.allImported', { n: scanResult.files.length }));
-        return;
-      }
-
-      showPersistentToast('fp-import', t('filamentProfiles.importing', { current: 0, total: newFiles.length }), 'loading');
+    showPersistentToast('fp-import', t('filamentProfiles.importing', { current: 0, total: newFiles.length }), 'loading');
       try {
         let ok = 0;
         let failed = 0;
@@ -323,6 +326,81 @@ export function FilamentProfilesPage() {
       } finally {
         dismissToast('fp-import');
       }
+  };
+
+  const handleImport = async () => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      // Only the scan call's failure is a "scanFailed" toast — per-file
+      // create failures are counted and reported separately inside
+      // importPresetFiles, and must never be mislabeled as a folder-read
+      // error.
+      let scanResult: { files: BambuScanFile[] };
+      try {
+        scanResult = await api.scanBambuStudioPresets();
+      } catch (err) {
+        showToast(t('filamentProfiles.scanFailed', { error: errorMessage(err) }), 'error');
+        return;
+      }
+
+      if (scanResult.files.length === 0) {
+        // Remote-deploy case: the backend host has no Bambu Studio install,
+        // so the folder scan legitimately finds nothing. Fall back to a
+        // browser-side file picker so the JSONs can come from the client
+        // machine instead of the server's filesystem.
+        showToast(t('filamentProfiles.noServerPresets'), 'info');
+        fileInputRef.current?.click();
+        return;
+      }
+
+      await importPresetFiles(scanResult.files);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // ── Import from browser-picked files (upload fallback) ──────────────────
+  const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    // Snapshot the live FileList before resetting the input — clearing
+    // `value` empties `files`, and the reset is what lets picking the same
+    // file(s) again re-fire the change event.
+    const pickedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (pickedFiles.length === 0 || importing) return;
+    setImporting(true);
+    try {
+      const collected: BambuScanFile[] = [];
+      const seen = new Set<string>();
+      for (const file of pickedFiles) {
+        const lower = file.name.toLowerCase();
+        if (lower.endsWith('.zip')) {
+          // Round-trip with Export ZIP: unpack in the browser and import the
+          // archive's top-level JSON entries (the export writes a flat zip).
+          const { default: JSZip } = await import('jszip');
+          const zip = await JSZip.loadAsync(file);
+          for (const entry of Object.values(zip.files)) {
+            const entryLower = entry.name.toLowerCase();
+            if (entry.dir || entry.name.includes('/') || !entryLower.endsWith('.json')) continue;
+            if (seen.has(entry.name)) continue;
+            seen.add(entry.name);
+            collected.push({ filename: entry.name, content: await entry.async('string') });
+          }
+        } else if (lower.endsWith('.json')) {
+          if (seen.has(file.name)) continue;
+          seen.add(file.name);
+          collected.push({ filename: file.name, content: await readFileText(file) });
+        }
+      }
+
+      if (collected.length === 0) {
+        showToast(t('filamentProfiles.noJsonInSelection'), 'error');
+        return;
+      }
+
+      await importPresetFiles(collected);
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     } finally {
       setImporting(false);
     }
@@ -452,6 +530,18 @@ export function FilamentProfilesPage() {
             <Upload className="h-4 w-4" />
             {t('filamentProfiles.import')}
           </Button>
+          {/* Hidden picker for the upload-fallback import — opened by
+              handleImport when the server-side scan finds no Bambu Studio
+              folder (remote deploys). */}
+          <input
+            ref={fileInputRef}
+            data-testid="fp-import-file-input"
+            type="file"
+            accept=".json,.zip"
+            multiple
+            className="hidden"
+            onChange={handleFilesSelected}
+          />
           <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
             <RefreshCw className="h-4 w-4" />
             {t('filamentProfiles.syncZohoPrices')}
