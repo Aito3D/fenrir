@@ -1095,6 +1095,27 @@ html[data-vt='aito-card']::view-transition-new(page-title) {
   }
 }
 
+/* Hold-to-unaccept settle: the pill deflates from its fully-charged 1.3 scale
+   back to rest through a small overshoot bounce, staying red. Its own
+   keyframes rather than hold-bounce because it starts where the CHARGED pill
+   ends (1.1, not 1.08) — reusing hold-bounce snapped the pill smaller on the
+   first frame. Duration must match UNACCEPT_SETTLE_MS in UnacceptHoldPill. */
+@keyframes unaccept-settle {
+  0% { transform: scale(1.1); }
+  40% { transform: scale(0.96); }
+  65% { transform: scale(1.02); }
+  85% { transform: scale(0.99); }
+  100% { transform: scale(1); }
+}
+.animate-unaccept-settle {
+  animation: unaccept-settle 0.6s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-unaccept-settle {
+    animation: none;
+  }
+}
+
 /* Closing with nothing to morph INTO — its own scope, because CSS has no way
    to ask whether a transition name got a `new` snapshot, and the answer
    changes what these rules have to do.

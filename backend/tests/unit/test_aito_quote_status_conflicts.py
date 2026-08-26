@@ -2,9 +2,11 @@
 
 The hybrid rule (user-chosen): requesting the status the quote already has
 returns 200 no_op=True — no rules re-run, no timeline event, no Zoho push.
-The conflict guard is ASYMMETRIC, matching what QuoteStatusActions.tsx
-actually offers a fresh UI: "accepted" is fully terminal (the UI offers no
-button off an accepted card, so any different request is stale); "declined"
+The conflict guard is ASYMMETRIC, matching what the UI
+actually offers on a fresh view: "accepted" blocks only a decline (the
+hold-to-unaccept pill offers accepted -> sent as the deliberate revoke path,
+tested in test_aito_quote_unaccept.py, but no fresh UI declines an accepted
+card); "declined"
 is terminal only against "sent" (re-sending an already-declined quote is not
 offered either). declined -> accepted is exempt on purpose: the UI puts an
 Accept button on a declined card, and "latest go-ahead wins" is the deliberate

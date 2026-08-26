@@ -1,7 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Archive, Check, Kanban, RotateCcw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Archive, Check, ExternalLink, Kanban, RotateCcw } from 'lucide-react';
 import { CardView } from '../components/aito/CardView';
 import { HoldButton } from '../components/aito/HoldButton';
+import { UnacceptHoldMark } from '../components/aito/UnacceptHoldPill';
+import { eyebrowCls } from '../components/aito/panelTypography';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
 import { CelebrationProvider, useCelebration, type CelebrationVariant } from '../components/aito/celebration';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -257,12 +259,155 @@ function Bench({ variant, onVariant }: { variant: CelebrationVariant; onVariant:
   );
 }
 
+/** A miniature board column for the unaccept bench: just enough chrome to
+ *  read as the real thing, at the size the move will actually be judged. */
+function MiniColumn({
+  title,
+  dotCls,
+  children,
+  count,
+}: {
+  title: string;
+  dotCls: string;
+  count: number;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="w-56 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border border-bambu-dark-tertiary">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-bambu-dark-tertiary/60">
+        <span className={`w-2 h-2 rounded-full ${dotCls}`} />
+        <h3 className="text-sm font-semibold text-white flex-1 truncate">{title}</h3>
+        <span className="min-w-[1.5rem] px-1.5 py-0.5 text-center text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums">
+          {count}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2 p-2 min-h-[7.5rem]">{children}</div>
+    </div>
+  );
+}
+
+/** Bench for the hold-to-unaccept gesture — the real `UnacceptHoldMark` on a
+ *  mock of the panel header it ships in, plus a two-column mini board so the
+ *  whole story can be watched end to end: hold the mark 1s (it inflates and
+ *  turns red), it settles with a bounce, the "panel" closes and the card
+ *  moves from the work column back to Waiting. Resets itself for replay. */
+function UnacceptBench() {
+  const [revoked, setRevoked] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  const commit = useCallback(() => {
+    setRevoked(true);
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setRevoked(false), 3200);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const card = (
+    <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-2.5 shadow-sm">
+      <p className="text-sm font-medium text-white truncate">Support de caméra sur mesure</p>
+      <p className="mt-0.5 text-xs text-bambu-gray truncate">ACME SARL · 48 000 XPF</p>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+        <Check className="w-7 h-7 text-bambu-green" />
+        Hold-to-unaccept
+        <span className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full">
+          panel header mark
+        </span>
+        <span className="flex-1" />
+        {/* Design-review aid: 3x slower gesture, same choreography. */}
+        <label className="flex items-center gap-2 text-sm font-medium text-bambu-gray-light cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={slow}
+            onChange={(e) => setSlow(e.target.checked)}
+            className="accent-bambu-green"
+          />
+          Slow motion (3x)
+        </label>
+      </h2>
+      <p className="max-w-2xl text-xs leading-relaxed text-bambu-gray">
+        Hold the green Accepted mark for one full second: it inflates and turns progressively red (the redness is the
+        progress), then deflates with a bounce — and only once it has settled does the panel close and the card move
+        back to Waiting. Release early and it springs back green. The bench resets itself after a few seconds.
+      </p>
+
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+        {/* The panel header, mocked at its real proportions: accent-washed
+            band, eyebrow row, the mark among its sibling pills. */}
+        <div
+          className={`w-full max-w-xl rounded-xl border border-bambu-dark-tertiary overflow-visible transition-[opacity,transform] duration-300 ${
+            revoked ? 'opacity-0 translate-y-2 scale-[0.98] pointer-events-none' : 'opacity-100'
+          }`}
+          style={{
+            backgroundImage:
+              'linear-gradient(135deg,' +
+              ' color-mix(in srgb, var(--accent) 12%, color-mix(in srgb, var(--bg-tertiary) 45%, var(--bg-secondary))),' +
+              ' color-mix(in srgb, var(--bg-tertiary) 45%, var(--bg-secondary)))',
+          }}
+        >
+          <div className="px-5 py-4">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className={`${eyebrowCls} text-bambu-gray`}>Projet #142</span>
+              <span className={`${eyebrowCls} text-bambu-gray opacity-45`}>·</span>
+              <span className={`${eyebrowCls} text-bambu-green-light inline-flex items-center gap-1`}>
+                DEV26-2462
+                <ExternalLink className="w-3 h-3" />
+              </span>
+              <UnacceptHoldMark onCommit={commit} holdMs={slow ? 3000 : undefined} settleMs={slow ? 1800 : undefined} />
+            </div>
+            <p className="text-lg font-semibold text-white truncate">ACME SARL</p>
+            <p className="text-sm text-bambu-gray truncate">Support de caméra sur mesure</p>
+          </div>
+        </div>
+
+        {/* Where the card lands. Waiting first, matching the board's order. */}
+        <div className="flex gap-4">
+          <MiniColumn title="En attente" dotCls="bg-amber-400" count={revoked ? 1 : 0}>
+            <div
+              className={`transition-[opacity,transform] duration-300 delay-150 ${
+                revoked ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
+              }`}
+            >
+              {card}
+            </div>
+          </MiniColumn>
+          <MiniColumn title="En impression" dotCls="bg-bambu-green" count={revoked ? 0 : 1}>
+            <div
+              className={`transition-[opacity,transform] duration-300 ${
+                revoked ? 'opacity-0 translate-y-2 pointer-events-none' : 'opacity-100'
+              }`}
+            >
+              {card}
+            </div>
+          </MiniColumn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AitoFxDemoPage() {
   const [variant, setVariant] = useState<CelebrationVariant>('firework');
 
   return (
     <CelebrationProvider variant={variant}>
       <Bench variant={variant} onVariant={setVariant} />
+      <div className="p-4 md:p-8 pt-0 border-t border-bambu-dark-tertiary/60">
+        <div className="pt-6">
+          <UnacceptBench />
+        </div>
+      </div>
     </CelebrationProvider>
   );
 }

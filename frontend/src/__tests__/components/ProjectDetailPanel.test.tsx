@@ -2908,3 +2908,75 @@ describe('ProjectDetailPanel — the footer cannot archive an untold job', () =>
     expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
   });
 });
+
+// The header's accepted mark, made revocable: hold it 1s and the acceptance
+// is removed (accepted -> sent, card back to Waiting) — see UnacceptHoldPill.
+// The pill keeps `panel-quote-status-pill` so the visual-parity pins above
+// keep pinning its rest-state recipe; these tests cover the panel's wiring
+// (who renders which variant, and that a completed hold closes the panel).
+// The gesture's own mechanics live in AitoUnacceptHoldPill.test.tsx.
+describe('ProjectDetailPanel header: hold-to-unaccept pill', () => {
+  it('renders the accepted mark as the hold-to-unaccept button when the user can update', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.tagName).toBe('BUTTON');
+    expect(pill).toHaveAccessibleName('Remove acceptance');
+    expect(pill).toHaveTextContent('Accepted');
+  });
+
+  it('keeps the static pill for a viewer without the update permission', () => {
+    render(
+      <ProjectDetailPanel
+        canCreate={false}
+        canUpdate={false}
+        canDelete={false}
+        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'accepted' }}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.tagName).not.toBe('BUTTON');
+    expect(pill).toHaveTextContent('Accepted');
+  });
+
+  it('only the accepted status gets the hold behavior — a sent quote keeps the static pill', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'sent' });
+    expect(screen.getByTestId('panel-quote-status-pill').tagName).not.toBe('BUTTON');
+  });
+
+  it('a completed hold revokes the acceptance and closes the panel after the settle', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const spy = vi
+        .spyOn(api, 'setAitoQuoteStatus')
+        .mockResolvedValue({ project: { ...project, quote_status: 'sent' }, zoho_synced: true, no_op: false });
+      const onClose = vi.fn();
+      render(
+        <ProjectDetailPanel
+          canCreate
+          canUpdate
+          canDelete
+          project={{ ...project, quote_status: 'accepted' }}
+          onClose={onClose}
+          onDelete={vi.fn()}
+        />,
+      );
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.pointer({ keys: '[MouseLeft>]', target: screen.getByTestId('panel-quote-status-pill') });
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+      });
+      // Hold complete, settle running: nothing committed, panel still open.
+      expect(spy).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      await waitFor(() => expect(spy).toHaveBeenCalledWith(project.id, { status: 'sent' }));
+      expect(onClose).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
