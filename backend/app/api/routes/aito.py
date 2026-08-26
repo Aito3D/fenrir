@@ -2651,14 +2651,18 @@ async def set_quote_status(
     # Asymmetric on purpose: 409 fires only on transitions a fresh UI never
     # offers, so they can only arrive from a stale view (someone else already
     # decided while this operator was looking at an older board). "accepted"
-    # is fully terminal here — QuoteStatusActions offers no button off an
-    # accepted card, so any different request naming it must be stale.
-    # "declined" is terminal only against "sent" (re-sending an already
+    # blocks only a decline: the detail panel's hold-to-unaccept pill offers
+    # accepted -> sent as the deliberate revoke path (a mistaken Accept, or a
+    # quote modified after acceptance that needs a fresh go-ahead), while no
+    # fresh UI offers Decline on an accepted card, so that request must be
+    # stale. "declined" is terminal only against "sent" (re-sending an already
     # -declined quote is not a flow the UI offers either). declined ->
     # accepted is deliberately exempt: QuoteStatusActions puts an Accept
     # button on a declined card, and "latest go-ahead wins" is the intended
     # reopen path, not a conflict.
-    if project.quote_status == "accepted" or (project.quote_status == "declined" and payload.status == "sent"):
+    if (project.quote_status == "accepted" and payload.status == "declined") or (
+        project.quote_status == "declined" and payload.status == "sent"
+    ):
         raise HTTPException(
             status_code=409,
             detail={
@@ -2668,6 +2672,11 @@ async def set_quote_status(
             },
         )
 
+    # Decided before adopt overwrites the old status: a revoked acceptance is
+    # recorded as its own kind so the timeline never passes it off as an
+    # ordinary "marked sent" — the audit trail is how the shop reconstructs
+    # who un-authorised work the board had already released.
+    unaccepting = project.quote_status == "accepted" and payload.status == "sent"
     adopt_quote_status(project, payload.status)
     # Our side just moved, so any recorded block describes an attempt that no
     # longer exists. This is what lets quote_status_remote alone identify a
@@ -2679,7 +2688,7 @@ async def set_quote_status(
     await record(
         db,
         project.id,
-        f"quote.{payload.status}",
+        "quote.unaccepted" if unaccepting else f"quote.{payload.status}",
         actor_class="user",
         actor_name=_actor(current_user),
         subject_type="project",

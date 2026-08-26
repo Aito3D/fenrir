@@ -29,7 +29,16 @@ type QuoteStatus = keyof typeof TOAST_KEYS;
  *  server exactly, so this is no longer correcting a counter mismatch; it is
  *  what picks up anything else the mutation's own response changed (Zoho
  *  fields, `updated_at`) that the optimistic write never predicted. */
-export function useQuoteStatusMutation(project: AitoProject) {
+export function useQuoteStatusMutation(
+  project: AitoProject,
+  /** Per-status overrides for the success toast. The one real caller is the
+   *  hold-to-unaccept pill: its target IS 'sent', but "Quote marked as sent"
+   *  would pass a revoked authorisation off as an ordinary send. Everything
+   *  else about the mutation — the optimistic write, the Zoho warning, the
+   *  conflict handling — must stay identical between callers, which is why
+   *  this is a toast override on the shared hook and not a second hook. */
+  toastKeys: Partial<Record<QuoteStatus, string>> = {},
+) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -46,7 +55,7 @@ export function useQuoteStatusMutation(project: AitoProject) {
       // A repeat of a decision someone already applied: the board row above is
       // fresh, but there is nothing to announce and no Zoho push happened.
       if (result.no_op) return;
-      showToast(t(TOAST_KEYS[status]), 'success');
+      showToast(t(toastKeys[status] ?? TOAST_KEYS[status]), 'success');
       // The board is right either way — only the push to Books failed. No
       // rollback: this is a warning about Zoho, not a refused change.
       if (project.quote_id && !result.zoho_synced) showToast(t('aito.zohoNotUpdated'), 'error');

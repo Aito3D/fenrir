@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
 import { PanelAgeStat } from './PanelAgeStat';
+import { UnacceptHoldPill } from './UnacceptHoldPill';
 import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
@@ -255,6 +256,7 @@ function PanelHeader({
   onCancelSocial,
   socialSaving,
   canUpdate,
+  onUnaccepted,
 }: {
   project: AitoProject;
   currency: string;
@@ -291,6 +293,10 @@ function PanelHeader({
   /** Gates FlagControl — PATCH /{project_id}/flag enforces AITO_UPDATE. See
    *  ProjectDetailPanelProps' own doc. */
   canUpdate: boolean;
+  /** Fired once a hold on the accepted mark has committed its revoke, after
+   *  the settle bounce — the panel passes its own `onClose`, which is what
+   *  lets the person watch the card land back in Waiting. */
+  onUnaccepted: () => void;
 }) {
   const { t } = useTranslation();
   // Same query key ShippingCard and the create drawer use, so this shares
@@ -382,14 +388,22 @@ function PanelHeader({
               aito_board_rules.evaluate), but "the quote itself was accepted"
               is a fact about Zoho, not about the board, and is otherwise only
               readable by opening the Quote card lower in the left column. */}
-          {project.quote_status && (
-            <span
-              data-testid="panel-quote-status-pill"
-              className={`${headerPillCls} ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
-            >
-              {quoteStatusText(t, project.quote_status)}
-            </span>
-          )}
+          {project.quote_status &&
+            (project.quote_status === 'accepted' && canUpdate ? (
+              // The mark is also the revoke control: hold it 1s to remove the
+              // acceptance (a mistaken Accept, or a quote modified after
+              // acceptance that needs a fresh go-ahead). Same testid and
+              // rest-state recipe as the static pill so the header parity
+              // pins keep holding.
+              <UnacceptHoldPill project={project} onDone={onUnaccepted} />
+            ) : (
+              <span
+                data-testid="panel-quote-status-pill"
+                className={`${headerPillCls} ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
+              >
+                {quoteStatusText(t, project.quote_status)}
+              </span>
+            ))}
           {/* Sky, not green: green is the colour of WORK on this board, and a
               destination is not work. Rendered in the header rather than only
               in the card below because this is the fact the person opening
@@ -1032,6 +1046,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
           onCancelSocial={() => setEditingSocial(false)}
           socialSaving={socialMutation.isPending}
           canUpdate={canUpdate}
+          onUnaccepted={onClose}
         />
 
         {/* Who else has this project open right now. Filtered to exclude

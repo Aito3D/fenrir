@@ -39,6 +39,11 @@ KINDS: dict[str, str] = {
     "invoice.emailed": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
+    # Acceptance revoked by hand (the detail panel's hold-to-unaccept pill) —
+    # distinct from quote.sent so the timeline never passes a withdrawn
+    # authorisation off as an ordinary send. Story: un-authorising released
+    # work is exactly the kind of fact the narrative exists to keep.
+    "quote.unaccepted": "story",
     "quote.declined": "story",
     "quote.expired": "story",
     "stage.changed": "story",
