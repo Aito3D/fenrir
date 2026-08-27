@@ -9,9 +9,10 @@
 // Non-JSX helpers live here (kept separate from ./CalculatorPanelParts.tsx
 // so this file only ever exports non-components).
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { api, type CalculatorDefaults } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Shared `<td>` class for the filament/printer profile tables (distinct
@@ -161,4 +162,78 @@ export function useEntityCrudMutations<TEntity extends { id: number }, TCreate>(
   // snapshotting wrapper above, everything else about the object is
   // untouched.
   return { saveMutation: { ...saveMutation, mutate: save }, deleteMutation };
+}
+
+/**
+ * Shared dirty/refetch/save mechanics for the two calculator-defaults-shaped
+ * settings forms (CalculatorDefaultsPanel, CalculatorMarginCurvePanel) — a
+ * flat form of string field values PATCHed back as `CalculatorDefaultsUpdate`.
+ *
+ * `dirty` tracks whether the operator has touched a field since the form was
+ * last seeded (either on mount or after their own save). While untouched,
+ * the form keeps following the server row — e.g. a save made from another
+ * session. Once dirty, a background refetch (including the invalidation
+ * this same hook's own save triggers) must not blow away in-progress typing.
+ *
+ * `toForm` is read through a ref rather than listed as an effect dependency:
+ * callers typically pass a fresh closure each render (it closes over the
+ * panel's own field table), and putting it in the dependency array would
+ * re-run the seeding effect — and therefore call `setForm` — on every
+ * render, not just when `defaults`/`dirty` actually change.
+ */
+export function useDefaultsForm<K extends string>(
+  {
+    fields,
+    toForm,
+    savedMsgKey,
+  }: {
+    /** The subset of CalculatorDefaults keys this form owns — everything
+     *  else on the row is left untouched by `save`. */
+    fields: readonly K[];
+    toForm: (d: CalculatorDefaults) => Record<K, string>;
+    /** i18n key for the toast shown after a successful save. */
+    savedMsgKey: string;
+  },
+  defaults: CalculatorDefaults,
+): { form: Record<K, string>; setField: (key: K, v: string) => void; save: () => void; isPending: boolean } {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<Record<K, string>>(() => toForm(defaults));
+  const [dirty, setDirty] = useState(false);
+
+  const toFormRef = useRef(toForm);
+  toFormRef.current = toForm;
+
+  useEffect(() => {
+    if (!dirty) setForm(toFormRef.current(defaults));
+  }, [defaults, dirty]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, number> = {};
+      for (const key of fields) {
+        const n = parseNum(form[key]);
+        if (n !== null) payload[key] = n;
+      }
+      return api.updateCalculatorDefaults(payload);
+    },
+    onSuccess: (saved) => {
+      queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
+      showToast(t(savedMsgKey));
+      // Adopt the operator's own successful save and clear dirty —
+      // otherwise the form would look perpetually dirty and ignore the very
+      // refetch its own save just triggered.
+      setForm(toFormRef.current(saved));
+      setDirty(false);
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const setField = (key: K, v: string) => {
+    setDirty(true);
+    setForm((f) => ({ ...f, [key]: v }));
+  };
+
+  return { form, setField, save: () => saveMutation.mutate(), isPending: saveMutation.isPending };
 }

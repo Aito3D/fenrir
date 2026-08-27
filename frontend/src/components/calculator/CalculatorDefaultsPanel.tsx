@@ -2,17 +2,15 @@
 // rates plus the prefill defaults for new filament profiles. Split out of
 // the former CalculatorSettingsPanels.tsx (T-078).
 
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { api, type CalculatorDefaults } from '../../api/client';
 import { Button } from '../Button';
 import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
-import { useToast } from '../../contexts/ToastContext';
-import { parseNum } from './calculatorSettingsShared';
+import { parseNum, useDefaultsForm } from './calculatorSettingsShared';
 
 type DefaultsField = {
   key: keyof Omit<CalculatorDefaults, 'id' | 'updated_at'>;
@@ -57,8 +55,12 @@ const DEFAULTS_FIELDS_FILAMENT: DefaultsField[] = [
 
 const DEFAULTS_FIELDS: DefaultsField[] = [...DEFAULTS_FIELDS_GENERAL, ...DEFAULTS_FIELDS_FILAMENT];
 
-const defaultsFormValues = (defaults: CalculatorDefaults): Record<string, string> =>
-  Object.fromEntries(DEFAULTS_FIELDS.map(({ key }) => [key, String(defaults[key])]));
+type DefaultsKey = DefaultsField['key'];
+
+const DEFAULTS_FIELD_KEYS: DefaultsKey[] = DEFAULTS_FIELDS.map(({ key }) => key);
+
+const defaultsFormValues = (defaults: CalculatorDefaults): Record<DefaultsKey, string> =>
+  Object.fromEntries(DEFAULTS_FIELDS.map(({ key }) => [key, String(defaults[key])])) as Record<DefaultsKey, string>;
 
 function DefaultsForm({
   defaults,
@@ -73,40 +75,13 @@ function DefaultsForm({
   canUpdate: boolean;
 }) {
   const { t } = useTranslation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState<Record<string, string>>(() => defaultsFormValues(defaults));
-  // Tracks whether the operator has touched a field since the form was last
-  // seeded (either on mount or after their own save). While untouched, the
-  // form keeps following the server row — e.g. a save from another session.
-  // Once dirty, a background refetch (like the invalidation this same panel
-  // triggers on save) must not blow away in-progress typing.
-  const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    if (!dirty) setForm(defaultsFormValues(defaults));
-  }, [defaults, dirty]);
-
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const payload: Record<string, number> = {};
-      for (const { key } of DEFAULTS_FIELDS) {
-        const n = parseNum(form[key]);
-        if (n !== null) payload[key] = n;
-      }
-      return api.updateCalculatorDefaults(payload);
-    },
-    onSuccess: (saved) => {
-      queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
-      showToast(t('calculator.defaultsSaved'));
-      // Adopt the operator's own successful save and clear dirty — otherwise
-      // the form would look perpetually dirty and ignore the very refetch
-      // its own save just triggered.
-      setForm(defaultsFormValues(saved));
-      setDirty(false);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
+  // Dirty/refetch/save mechanics (follow-server-until-dirty, PATCH only this
+  // form's own fields, invalidate + toast + adopt-and-undirty on success) are
+  // shared with CalculatorMarginCurvePanel — see useDefaultsForm.
+  const { form, setField, save, isPending } = useDefaultsForm(
+    { fields: DEFAULTS_FIELD_KEYS, toForm: defaultsFormValues, savedMsgKey: 'calculator.defaultsSaved' },
+    defaults,
+  );
 
   // Per-field range errors — only for a value that parses but falls outside
   // the field's server-side bound. An empty field is left error-free here
@@ -125,11 +100,6 @@ function DefaultsForm({
     const n = parseNum(form[key]);
     return n !== null && n >= min && n <= max;
   });
-
-  const setField = (key: string, v: string) => {
-    setDirty(true);
-    setForm((f) => ({ ...f, [key]: v }));
-  };
 
   const renderFields = (fields: DefaultsField[]) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -153,7 +123,7 @@ function DefaultsForm({
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
-        if (allValid && canUpdate) saveMutation.mutate();
+        if (allValid && canUpdate) save();
       }}
     >
       <Card className="animate-calc-rise">
@@ -172,8 +142,8 @@ function DefaultsForm({
       </Card>
       {canUpdate && (
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={!allValid || saveMutation.isPending}>
-            {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+          <Button type="submit" size="sm" disabled={!allValid || isPending}>
+            {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {t('calculator.saveDefaults')}
           </Button>
         </div>

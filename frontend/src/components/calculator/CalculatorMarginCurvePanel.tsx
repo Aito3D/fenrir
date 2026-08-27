@@ -3,10 +3,10 @@
 // floor, with a live preview drawn from the UNSAVED form values so the
 // operator sees what they are about to save.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, type CalculatorDefaults } from '../../api/client';
@@ -15,8 +15,7 @@ import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
 import { CURVE_DEFAULTS, formatMoney, qtyFactor, sizeMargin, type PricingDefaults } from '../../utils/pricing';
-import { useToast } from '../../contexts/ToastContext';
-import { parseNum } from './calculatorSettingsShared';
+import { parseNum, useDefaultsForm } from './calculatorSettingsShared';
 
 type CurveKey = keyof typeof CURVE_DEFAULTS;
 
@@ -54,6 +53,7 @@ const GROUPS: Array<{ labelKey: string; fields: CurveField[] }> = [
   },
 ];
 const FIELDS: CurveField[] = GROUPS.flatMap((g) => g.fields);
+const FIELD_KEYS: CurveKey[] = FIELDS.map(({ key }) => key);
 
 const formValues = (d: CalculatorDefaults): Record<CurveKey, string> =>
   Object.fromEntries(FIELDS.map(({ key }) => [key, String(d[key])])) as Record<CurveKey, string>;
@@ -61,19 +61,16 @@ const formValues = (d: CalculatorDefaults): Record<CurveKey, string> =>
 /** The form as PricingDefaults for the preview — unparsable fields fall
  *  back to the saved value so the chart never goes blank mid-edit. */
 function previewDefaults(form: Record<CurveKey, string>, saved: CalculatorDefaults): PricingDefaults {
-  const out: Record<string, unknown> = { ...saved };
+  const overrides: Partial<PricingDefaults> = {};
   for (const { key } of FIELDS) {
     const n = parseNum(form[key]);
-    if (n !== null) out[key] = n;
+    if (n !== null) overrides[key] = n;
   }
-  return out as unknown as PricingDefaults;
+  return { ...saved, ...overrides };
 }
 
 const SIZE_STRIP = [0.25, 0.5, 1, 2, 4, 10]; // × K
-// Fractions of (KQ + 1) — same relative spread as SIZE_STRIP, so the f = 1
-// point always lands exactly on the reference quantity (the ReferenceLine
-// below and where the discount is halfway to Q_MIN), whatever KQ is set to.
-const QTY_STRIP = [0.25, 0.5, 1, 2, 4, 10];
+const QTY_STRIP = [1, 2, 5, 10, 20, 50, 100];
 
 function Preview({ d, currency }: { d: PricingDefaults; currency: string }) {
   const { t } = useTranslation();
@@ -89,6 +86,15 @@ function Preview({ d, currency }: { d: PricingDefaults; currency: string }) {
   const qtyData = useMemo(
     () => Array.from({ length: 100 }, (_, i) => ({ q: i + 1, f: qtyFactor(i + 1, d) })),
     [d],
+  );
+  // The fixed ladder plus the model's own reference quantity (KQ + 1, the
+  // same point the ReferenceLine below marks — where the discount is
+  // halfway to Q_MIN), inserted in sorted position and deduped so it never
+  // shows up twice when it happens to coincide with a ladder rung.
+  const midQty = kq + 1;
+  const qtyStrip = useMemo(
+    () => Array.from(new Set([...QTY_STRIP, midQty])).sort((a, b) => a - b),
+    [midQty],
   );
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -128,12 +134,15 @@ function Preview({ d, currency }: { d: PricingDefaults; currency: string }) {
             <Line type="monotone" dataKey="f" stroke="var(--viz-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
-        <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
-          {QTY_STRIP.map((f) => {
-            const q = Math.max(1, Math.round((kq + 1) * f));
+        <dl
+          className="mt-2 grid gap-1 text-center"
+          style={{ gridTemplateColumns: `repeat(${qtyStrip.length}, minmax(0, 1fr))` }}
+        >
+          {qtyStrip.map((q) => {
+            const isMid = q === midQty;
             return (
-              <div key={f}>
-                <dt className="text-[11px] text-bambu-gray tabular-nums">{q}</dt>
+              <div key={q}>
+                <dt className={`text-[11px] tabular-nums ${isMid ? 'text-bambu-green' : 'text-bambu-gray'}`}>{q}</dt>
                 <dd className="text-sm text-white tabular-nums">{qtyFactor(q, d).toFixed(2)}</dd>
               </div>
             );
@@ -146,33 +155,13 @@ function Preview({ d, currency }: { d: PricingDefaults; currency: string }) {
 
 function CurveForm({ defaults, currencySymbol, currency, canUpdate }: { defaults: CalculatorDefaults; currencySymbol: string; currency: string; canUpdate: boolean }) {
   const { t } = useTranslation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState<Record<CurveKey, string>>(() => formValues(defaults));
-  // Same dirty discipline as CalculatorDefaultsPanel: follow the server row
-  // until the operator types, then protect in-progress edits from refetches.
-  const [dirty, setDirty] = useState(false);
-  useEffect(() => {
-    if (!dirty) setForm(formValues(defaults));
-  }, [defaults, dirty]);
-
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const payload: Record<string, number> = {};
-      for (const { key } of FIELDS) {
-        const n = parseNum(form[key]);
-        if (n !== null) payload[key] = n;
-      }
-      return api.updateCalculatorDefaults(payload);
-    },
-    onSuccess: (saved) => {
-      queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
-      showToast(t('calculator.marginCurveSaved'));
-      setForm(formValues(saved));
-      setDirty(false);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
+  // Dirty/refetch/save mechanics (follow-server-until-dirty, PATCH only this
+  // form's own fields, invalidate + toast + adopt-and-undirty on success) are
+  // shared with CalculatorDefaultsPanel — see useDefaultsForm.
+  const { form, setField, save, isPending } = useDefaultsForm(
+    { fields: FIELD_KEYS, toForm: formValues, savedMsgKey: 'calculator.marginCurveSaved' },
+    defaults,
+  );
 
   const inRange = ({ min, max, exclusiveMin }: CurveField, n: number) => (exclusiveMin ? n > min : n >= min) && n <= max;
   const fieldErrors: Partial<Record<CurveKey, string>> = {};
@@ -189,11 +178,6 @@ function CurveForm({ defaults, currencySymbol, currency, canUpdate }: { defaults
     return n !== null && inRange(f, n);
   }) && !pairError;
 
-  const setField = (key: CurveKey, v: string) => {
-    setDirty(true);
-    setForm((f) => ({ ...f, [key]: v }));
-  };
-
   const preview = useMemo(() => previewDefaults(form, defaults), [form, defaults]);
 
   return (
@@ -202,7 +186,7 @@ function CurveForm({ defaults, currencySymbol, currency, canUpdate }: { defaults
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
-        if (allValid && canUpdate) saveMutation.mutate();
+        if (allValid && canUpdate) save();
       }}
     >
       <Card className="animate-calc-rise">
@@ -238,8 +222,8 @@ function CurveForm({ defaults, currencySymbol, currency, canUpdate }: { defaults
       </Card>
       {canUpdate && (
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={!allValid || saveMutation.isPending}>
-            {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+          <Button type="submit" size="sm" disabled={!allValid || isPending}>
+            {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {t('calculator.saveMarginCurve')}
           </Button>
         </div>
