@@ -5,8 +5,9 @@ const [zohoSyncing, setZohoSyncing] = useState(false);
 const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
 ? t('filamentProfiles.syncZohoStale', { timestamp: new Date(result.catalogue_stale_since).toLocaleString() })
 .concat(attentionCount > 0 ? [t('filamentProfiles.syncZohoAttention', { count: attentionCount })] : [])
-showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
+showToast(!isAbort && error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
 <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
+{zohoSyncing ? (
 {t('filamentProfiles.syncZohoPrices')}
 {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
 {t('filamentProfiles.syncZohoStale', {

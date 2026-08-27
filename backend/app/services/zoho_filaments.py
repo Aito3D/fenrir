@@ -65,14 +65,16 @@ _MAX_REPORTED_CANDIDATES = 5
 # healthy walk of a page or two is not punished by a waiter bailing early.
 _LOCK_ACQUIRE_TIMEOUT = 20.0
 
-# T-094/T-091: how long a cold-cache (no previous catalogue at all) failure
-# is remembered so a burst of callers arriving during a Zoho outage gets a
-# fast failure each instead of every one of them repeating the full paged
-# walk in turn behind _refresh_lock. Deliberately longer than
-# _LOCK_ACQUIRE_TIMEOUT so a caller that just timed out waiting for the lock
-# and retries lands on this fast path rather than starting its own walk, but
-# far shorter than _CACHE_TTL so a real recovery is only masked for seconds,
-# not minutes.
+# T-094/T-091/T-035: how long a recent failure is remembered so a burst (or a
+# steady trickle) of callers arriving during a Zoho outage gets the fast
+# answer each instead of every one of them repeating the full paged walk in
+# turn behind _refresh_lock. This applies whether or not a catalogue exists
+# to fall back to: cold, the memoized failure is re-raised (see the pre-lock
+# check below); warm, the cached copy is served straight back without ever
+# taking the lock. Deliberately longer than _LOCK_ACQUIRE_TIMEOUT so a caller
+# that just timed out waiting for the lock and retries lands on this fast
+# path rather than starting its own walk, but far shorter than _CACHE_TTL so
+# a real recovery is only masked for seconds, not minutes.
 _FAIL_COOLDOWN = timedelta(seconds=30)
 
 _cache: list["FilamentProduct"] | None = None
@@ -92,9 +94,10 @@ _cache_at: datetime | None = None
 # every return point inside fetch_catalogue below.
 _last_stale_serve_at: datetime | None = None
 
-# T-094: set alongside a cold-cache failure (see the except branch in
-# fetch_catalogue) so the next caller can answer from this instead of
-# re-walking Zoho. Cleared on a successful refresh and by reset_cache().
+# T-094/T-035: set alongside EVERY refresh failure, cold or warm (see the
+# except branch in fetch_catalogue) so the next caller can answer from this
+# instead of re-walking Zoho. Cleared on a successful refresh and by
+# reset_cache().
 _fail_at: datetime | None = None
 _fail_exc: BaseException | None = None
 
@@ -353,9 +356,13 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     T-094: waiting for ``_refresh_lock`` is bounded by _LOCK_ACQUIRE_TIMEOUT —
     a caller that queues behind a slow in-flight walk gets the stale cache
     (or, cold, a raise) instead of parking indefinitely behind a walk that
-    can legitimately run for minutes. A cold-cache failure is also remembered
-    for _FAIL_COOLDOWN so a burst of callers arriving during a Zoho outage
-    fails fast instead of each repeating the whole paged walk in turn.
+    can legitimately run for minutes. A failure is also remembered for
+    _FAIL_COOLDOWN, cold or warm, so a burst — or a steady trickle — of
+    callers arriving during a Zoho outage is answered fast instead of each
+    repeating the whole paged walk in turn: cold, the memoized failure is
+    re-raised; warm, the cached copy is served back without ever taking the
+    lock (T-035). A warm short-circuit still counts as a stale serve for
+    T-034's purposes.
 
     T-095: if ``reset_cache()`` runs while this walk is in flight (e.g. a
     Zoho credential rotation mid-fetch), the walk RAISES once it finishes
@@ -394,6 +401,21 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     # by this call, not the long-finished walk that first observed it.
     if _cache is None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
         raise _fail_exc.with_traceback(None) from None
+
+    # T-035: the warm-cache twin of the fast-fail above. Once a refresh has
+    # already failed once, a warm cache within _FAIL_COOLDOWN is served
+    # straight back — WITHOUT taking _refresh_lock or walking a single page —
+    # instead of repeating a walk that just failed and is very likely to fail
+    # again the same way. Before this fix, only the cold branch above
+    # remembered a failure, so every sync during a Zoho outage that ever had
+    # a catalogue cached re-walked up to _MAX_PAGES pages (worst case ~400s)
+    # before serving the same stale list back. Still counts as a stale serve
+    # for T-034: the catalogue handed back here is exactly as old as it was
+    # the moment the failure was first observed.
+    if _cache is not None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
+        logger.warning("Zoho filament catalogue refresh failed recently; serving the cached copy without retrying yet")
+        _last_stale_serve_at = _cache_at
+        return _cache
 
     # Captured once, up front, rather than re-reading the global at release
     # time. reset_cache() no longer rebinds _refresh_lock (T-095), so this is
@@ -493,22 +515,24 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
                     f"None of the {len(active_items)} active Zoho filament items could be mapped"
                 )
         except Exception as exc:
+            # T-094/T-091/T-035: record the failure regardless of whether a
+            # cache exists to fall back to, so a repeat within
+            # _FAIL_COOLDOWN short-circuits instead of repeating this whole
+            # walk — cold, via the pre-lock re-raise above; warm, via the
+            # pre-lock short-circuit above. Stamped with NOW (when the
+            # failure was observed), not the `now` captured before the walk
+            # began — the walk itself can run for minutes (bounded by
+            # _MAX_PAGES x retries x the httpx timeout), so re-using the
+            # pre-walk timestamp could write a memo that is already past
+            # _FAIL_COOLDOWN the moment it lands.
+            _fail_at = datetime.now(timezone.utc)
+            _fail_exc = exc
             if _cache is not None:
                 logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
                 # T-034: this refresh failed with no upper bound on how long
                 # ago `_cache_at` was -- it is left un-advanced on purpose.
                 _last_stale_serve_at = _cache_at
                 return _cache
-            # T-094/T-091: cold-cache failure — record it so a burst of
-            # concurrent callers doesn't repeat this whole walk one at a time
-            # behind the lock; see the pre-lock check above. Stamped with NOW
-            # (when the failure was observed), not the `now` captured before
-            # the walk began — the walk itself can run for minutes (bounded
-            # by _MAX_PAGES x retries x the httpx timeout), so re-using the
-            # pre-walk timestamp could write a memo that is already past
-            # _FAIL_COOLDOWN the moment it lands.
-            _fail_at = datetime.now(timezone.utc)
-            _fail_exc = exc
             raise
 
         if generation != _generation:

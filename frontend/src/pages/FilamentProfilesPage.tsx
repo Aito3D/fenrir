@@ -146,6 +146,24 @@ export function FilamentProfilesPage() {
   const [sortField, setSortField] = useState<SortField>('name');
 
   const [editorState, setEditorState] = useState<EditorState>({ mode: 'closed' });
+  // T-032: the editor's remount key below tracks `updated_at` so a stale
+  // editor picks up a preset changed elsewhere while it's open (T-006) —
+  // but doing that unconditionally also remounts (and silently discards)
+  // one with in-progress, unsaved edits. `liveEditKeyRef` always mirrors
+  // the up-to-date key computed at render time; `frozenEditKey` — set only
+  // from the modal's `onDirtyChange` — freezes it from the moment the
+  // editor turns dirty and clears again once it's clean (a reload adopting
+  // the fresh copy, or the parent-driven close on save, see below).
+  const liveEditKeyRef = useRef('create');
+  const [frozenEditKey, setFrozenEditKey] = useState<string | null>(null);
+  const handleEditorDirtyChange = useCallback((dirty: boolean) => {
+    setFrozenEditKey(dirty ? liveEditKeyRef.current : null);
+  }, []);
+  // A fresh open (or close) must never inherit a freeze left over from a
+  // previous editor instance on a different preset.
+  useEffect(() => {
+    setFrozenEditKey(null);
+  }, [editorState]);
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
   const [importing, setImporting] = useState(false);
   const [zohoSyncing, setZohoSyncing] = useState(false);
@@ -371,11 +389,20 @@ export function FilamentProfilesPage() {
   };
 
   // ── Sync prices from Zoho ────────────────────────────────────────────────
+  // T-033: zoho_filaments' own comment documents a ~400s cold-cache worst case
+  // (20 pages x 2 attempts x 10s). 10 minutes gives comfortable headroom above
+  // that so a legitimate sync is never killed, while a connection dropped
+  // without a reset (proxy idle-kill, laptop sleep) still recovers the button
+  // instead of leaving it dead until reload.
+  const ZOHO_SYNC_DEADLINE_MS = 600_000;
+
   const handleZohoSync = async () => {
     setZohoSyncing(true);
     setZohoResult(null);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), ZOHO_SYNC_DEADLINE_MS);
     try {
-      const result = await api.syncFilamentPresetsFromZoho();
+      const result = await api.syncFilamentPresetsFromZoho(controller.signal);
       setZohoResult(result);
       // A run that priced nothing must not read as a success: report the
       // needs-attention count in the toast text itself (the detail panel with
@@ -400,8 +427,14 @@ export function FilamentProfilesPage() {
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
     } catch (error) {
       setZohoResult(null);
-      showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
+      // Aborting (deadline hit) surfaces as an `Error`/`DOMException` named
+      // "AbortError" depending on the runtime's fetch implementation — check
+      // `.name` rather than the class so both shapes land on the same,
+      // friendly copy instead of a raw "This operation was aborted." string.
+      const isAbort = error instanceof Error && error.name === 'AbortError';
+      showToast(!isAbort && error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
     } finally {
+      clearTimeout(deadline);
       setZohoSyncing(false);
     }
   };
@@ -521,8 +554,17 @@ export function FilamentProfilesPage() {
           )}
           {canSyncZohoPrices && (
             <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
-              <RefreshCw className="h-4 w-4" />
-              {t('filamentProfiles.syncZohoPrices')}
+              {zohoSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('filamentProfiles.syncingZoho')}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  {t('filamentProfiles.syncZohoPrices')}
+                </>
+              )}
             </Button>
           )}
           {canUpdatePreset && (
@@ -757,9 +799,12 @@ export function FilamentProfilesPage() {
           // under the open editor (see the effect above, which will close it
           // on the next render) — don't flash a stale/empty editor meanwhile.
           if (editorState.mode === 'edit' && !editingPreset) return null;
+          const liveKey =
+            editorState.mode === 'edit' ? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}` : 'create';
+          liveEditKeyRef.current = liveKey;
           return (
             <PresetEditorModal
-              key={editorState.mode === 'edit' ? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}` : 'create'}
+              key={frozenEditKey ?? liveKey}
               preset={editingPreset}
               presets={presets}
               basePresets={baseFilamentPresets}
@@ -768,6 +813,7 @@ export function FilamentProfilesPage() {
               onDelete={editingPreset && canDeletePreset ? () => setConfirmDelete(editingPreset) : null}
               onClose={() => setEditorState({ mode: 'closed' })}
               canSave={editorState.mode === 'create' ? canCreatePreset : canUpdatePreset}
+              onDirtyChange={handleEditorDirtyChange}
             />
           );
         })()}

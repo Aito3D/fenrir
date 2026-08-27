@@ -6992,8 +6992,8 @@ export const api = {
     request<{ stats: FilamentSyncStats }>('/filament-profiles/bambu-sync', {
       method: 'POST', body: JSON.stringify({ presets, dry_run: dryRun }),
     }),
-  syncFilamentPresetsFromZoho: () =>
-    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST' }),
+  syncFilamentPresetsFromZoho: (signal?: AbortSignal) =>
+    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST', signal }),
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.

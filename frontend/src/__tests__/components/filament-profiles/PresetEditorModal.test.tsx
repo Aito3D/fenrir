@@ -427,6 +427,56 @@ describe('PresetEditorModal — edit mode', () => {
   });
 });
 
+describe('PresetEditorModal — server conflict banner (T-032)', () => {
+  it('reports dirty via onDirtyChange, ignores a changed preset while clean, and holds+banners it while dirty until Reload is clicked', async () => {
+    const user = userEvent.setup();
+    const onDirtyChange = vi.fn();
+    const baseProps = {
+      presets: [],
+      basePresets: [],
+      extraMaterials: [],
+      onSave: vi.fn(),
+      onDelete: null,
+      onClose: vi.fn(),
+      onDirtyChange,
+    };
+
+    const { rerender } = render(
+      <PresetEditorModal {...baseProps} preset={editPreset({ updated_at: '2026-08-01T00:00:00Z' })} />,
+    );
+
+    // Mount reports the initial (clean) dirty state.
+    expect(onDirtyChange).toHaveBeenCalledWith(false);
+
+    // Clean editor: a changed incoming preset must not raise a banner here
+    // — the page remounts the whole modal for that case (T-006), it never
+    // stays mounted long enough to see this prop change while clean.
+    rerender(<PresetEditorModal {...baseProps} preset={editPreset({ updated_at: '2026-08-10T00:00:00Z' })} />);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // Now make an in-progress, unsaved edit.
+    const colorInput = screen.getByRole('textbox', { name: /color label/i });
+    await user.clear(colorInput);
+    await user.type(colorInput, 'Sunrise');
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
+
+    // The preset changes on the server underneath the dirty editor.
+    rerender(<PresetEditorModal {...baseProps} preset={editPreset({ updated_at: '2026-08-25T00:00:00Z' })} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed on the server/i);
+    // The typed value is held, not silently replaced.
+    expect(screen.getByRole('textbox', { name: /color label/i })).toHaveValue('Sunrise');
+
+    await user.click(screen.getByRole('button', { name: /reload from server/i }));
+
+    // Reload adopts the server copy (color reverts to the fixture's own
+    // "Magenta") and dismisses the banner + dirty flag.
+    expect(screen.getByRole('textbox', { name: /color label/i })).toHaveValue('Magenta');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+});
+
 describe('TagInput', () => {
   function Wrapper({ initial = '' }: { initial?: string }) {
     const [value, setValue] = useState(initial);

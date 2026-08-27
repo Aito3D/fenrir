@@ -192,6 +192,7 @@ filamentProfiles.subtitle
 filamentProfiles.syncBase
 filamentProfiles.syncFailed
 filamentProfiles.syncingBase
+filamentProfiles.syncingZoho
 filamentProfiles.syncPreviewFailed
 filamentProfiles.syncToPc
 filamentProfiles.syncZohoAttention

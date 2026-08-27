@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RotateCw, X } from 'lucide-react';
+import { AlertTriangle, RotateCw, X } from 'lucide-react';
 
 import { api } from '../../api/client';
 import type { BaseFilamentPreset, FilamentPreset, FilamentPresetPayload } from '../../api/client';
@@ -49,6 +49,11 @@ export interface PresetEditorModalProps {
    *  editing) — defaults to true so any caller that doesn't pass it keeps
    *  today's behavior. */
   canSave?: boolean;
+  /** Fired whenever the modal's own dirty flag changes (T-032). The page
+   *  uses this to freeze the modal's remount key for as long as there are
+   *  unsaved edits, so a background refetch that bumps `updated_at` (e.g.
+   *  another operator's sync) can't silently discard them by remounting. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 type Tab = 'general' | 'temps' | 'cooling' | 'extrusion' | 'retract' | 'json';
@@ -74,6 +79,27 @@ function parseBaseData(content: string | undefined): Record<string, unknown> {
   }
 }
 
+/** Derives the editor's `baseData`/`form` from a preset (or `null` for
+ *  create mode). Used both for the initial mount and — for T-032's "reload"
+ *  action — to re-derive them from a fresher server copy without remounting
+ *  the whole modal, so it stays in exact lockstep with the mount-time logic. */
+function buildFormFromPreset(preset: FilamentPreset | null): { baseData: Record<string, unknown>; form: PresetForm } {
+  const baseData = parseBaseData(preset?.content);
+  // Not the raw stored `color`: presets imported before the label was
+  // derived have it empty, and their label lives in the name ("eSUN PETG -
+  // Green"). displayColorLabel prefers the stored value when set, so a
+  // hand-edited label is never overridden — and saving writes the derived
+  // one back, healing the row.
+  let form = parseContentToForm(baseData, preset ? displayColorLabel(preset.name, preset.color) : undefined);
+  if (preset) {
+    const nozzle = parseNozzleFromName(preset.name);
+    if (nozzle !== null) form = { ...form, nozzle_size: nozzle };
+  } else {
+    form = { ...form, compatible_printers: DEFAULT_COMPATIBLE_PRINTERS };
+  }
+  return { baseData, form };
+}
+
 const BRAND_ID = 'fp-editor-brand';
 
 /**
@@ -92,27 +118,14 @@ export function PresetEditorModal({
   onDelete,
   onClose,
   canSave = true,
+  onDirtyChange,
 }: PresetEditorModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const isCreate = preset === null;
 
-  const [baseData, setBaseData] = useState<Record<string, unknown>>(() => parseBaseData(preset?.content));
-  const [form, setForm] = useState<PresetForm>(() => {
-    // Not the raw stored `color`: presets imported before the label was
-    // derived have it empty, and their label lives in the name ("eSUN PETG
-    // - Green"). displayColorLabel prefers the stored value when set, so a
-    // hand-edited label is never overridden — and saving writes the derived
-    // one back, healing the row.
-    let initial = parseContentToForm(baseData, preset ? displayColorLabel(preset.name, preset.color) : undefined);
-    if (preset) {
-      const nozzle = parseNozzleFromName(preset.name);
-      if (nozzle !== null) initial = { ...initial, nozzle_size: nozzle };
-    } else {
-      initial = { ...initial, compatible_printers: DEFAULT_COMPATIBLE_PRINTERS };
-    }
-    return initial;
-  });
+  const [baseData, setBaseData] = useState<Record<string, unknown>>(() => buildFormFromPreset(preset).baseData);
+  const [form, setForm] = useState<PresetForm>(() => buildFormFromPreset(preset).form);
 
   const [resolvedParent, setResolvedParent] = useState<PresetForm | null>(null);
   const [parentStatus, setParentStatus] = useState<ParentStatus>('idle');
@@ -137,6 +150,33 @@ export function PresetEditorModal({
     setDirty(true);
     setForm(updater);
   };
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // T-032: a background refetch (another operator's sync, or React Query's
+  // refetchOnWindowFocus) can bump `preset.updated_at` while this instance
+  // is still mounted — the page freezes our remount key while `dirty` so
+  // that no longer blows away in-progress edits (T-006's fix, kept for the
+  // non-dirty case only). Instead, track the `updated_at` our fields were
+  // last derived from; if it moves while the user has unsaved edits, show a
+  // banner instead of silently keeping (or silently adopting) either copy.
+  const syncedUpdatedAtRef = useRef<string | undefined>(preset?.updated_at);
+  const [serverConflict, setServerConflict] = useState(false);
+  useEffect(() => {
+    if (!preset) return;
+    if (!dirty) {
+      // Clean editor: the page's live remount key already guarantees a
+      // fresh `preset` here means a brand-new instance (T-006), so this
+      // just keeps the ref in step for if/when the user starts typing.
+      syncedUpdatedAtRef.current = preset.updated_at;
+      return;
+    }
+    if (preset.updated_at !== syncedUpdatedAtRef.current) {
+      setServerConflict(true);
+    }
+  }, [preset, dirty]);
+
   // Ink bar under the active tab: measured from the real button, so it fits
   // each label in every locale. Direction of the pane slide comes from
   // whether the user moved left or right in the tab row.
@@ -195,6 +235,27 @@ export function PresetEditorModal({
   const handleReload = () => {
     if (!form.inherits) return;
     void resolveInherits(form.inherits, (parent) => setForm((f) => mergeWithParent(f, parent)));
+  };
+
+  // T-032's banner action: discard the in-progress edit and adopt the fresh
+  // server copy `preset` already holds (the page always passes the latest
+  // query data, independent of the frozen remount key). Reuses the exact
+  // derivation the initial mount uses so the two never drift apart.
+  const handleReloadFromServer = () => {
+    if (!preset) return;
+    const next = buildFormFromPreset(preset);
+    setBaseData(next.baseData);
+    setForm(next.form);
+    setRawJson('');
+    setJsonError(false);
+    setResolvedParent(null);
+    setParentStatus('idle');
+    syncedUpdatedAtRef.current = preset.updated_at;
+    setServerConflict(false);
+    setDirty(false);
+    if (next.form.inherits) {
+      void resolveInherits(next.form.inherits, (parent) => setForm((f) => mergeWithParent(f, parent)));
+    }
   };
 
   const basePresetOptions = useMemo<SearchableSelectOption[]>(() => {
@@ -529,6 +590,28 @@ export function PresetEditorModal({
             />
           )}
         </div>
+
+        {/* T-032: dirty edits are never silently discarded, but a change
+            landing on the server underneath them can't be silently ignored
+            either — surface it and let the user choose. */}
+        {serverConflict && (
+          <div
+            role="alert"
+            className="flex flex-none items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-xs text-amber-200"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{t('filamentProfiles.serverChangedBanner')}</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleReloadFromServer}
+              className="shrink-0 rounded px-2 py-1 font-semibold text-amber-100 underline decoration-amber-300/60 underline-offset-2 hover:text-white"
+            >
+              {t('filamentProfiles.serverChangedReload')}
+            </button>
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">

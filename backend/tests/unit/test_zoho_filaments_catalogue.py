@@ -626,6 +626,108 @@ async def test_cold_cache_failure_memo_survives_a_walk_slower_than_the_cooldown(
 
 
 @pytest.mark.asyncio
+async def test_warm_cache_failure_cooldown_skips_the_walk_and_marks_stale(monkeypatch):
+    """T-035: the warm-cache twin of
+    test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk. Before
+    this fix, only a COLD cache remembered a failure — a warm one re-walked
+    up to _MAX_PAGES pages on every single sync during an outage. A second
+    call within _FAIL_COOLDOWN must be served the cached copy without ever
+    touching the upstream pager, and must still be flagged stale (T-034) even
+    though it never took the lock or attempted a walk."""
+    calls = []
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], calls))
+    warm = await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+    zoho_filaments._cache_at = None  # force the next call to attempt a refresh
+
+    async def boom(db, **kwargs):
+        calls.append("boom")
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+    assert catalogue is warm
+    assert calls.count("boom") == 1
+
+    # Second call, within the cooldown: must short-circuit straight to the
+    # cached copy WITHOUT taking the lock or walking a single page.
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+    assert catalogue is warm
+    assert calls.count("boom") == 1  # the pager was NOT called again
+
+    # T-034: a cooldown-served stale catalogue is still stale and must be
+    # disclosed by the sync response, exactly like the existing
+    # warm-refresh-failure branch.
+    assert zoho_filaments._last_stale_serve_at == zoho_filaments._cache_at
+
+
+@pytest.mark.asyncio
+async def test_warm_cache_failure_cooldown_expires_and_retries(monkeypatch):
+    """After _FAIL_COOLDOWN elapses, the next call must attempt a real
+    refresh again (recovery) instead of continuing to short-circuit
+    forever."""
+    monkeypatch.setattr(zoho_filaments, "_FAIL_COOLDOWN", timedelta(seconds=5))
+
+    t_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t_fail = t_start + timedelta(seconds=1)
+    t_within_cooldown = t_fail + timedelta(seconds=1)  # well within the 5s cooldown
+    t_after_cooldown = t_fail + timedelta(seconds=10)  # past the 5s cooldown
+    # fetch_catalogue reads the clock 3 times per call that reaches the walk
+    # (pre-lock check, post-lock recheck, and the post-walk stamp) but only
+    # once for a call that short-circuits before ever taking the lock. This
+    # scripts: [call 1-3] the initial successful warm-up, [call 4-6] the
+    # warm failure that records _fail_at (= t_fail), [call 7] the
+    # within-cooldown short-circuit, [call 8] the past-cooldown check that
+    # lets the recovery attempt through, then repeats its last value for
+    # whatever the recovery walk itself reads.
+    monkeypatch.setattr(
+        zoho_filaments,
+        "datetime",
+        _ScriptedClock(
+            [
+                t_start,
+                t_start,
+                t_start,
+                t_start,
+                t_start,
+                t_fail,
+                t_within_cooldown,
+                t_after_cooldown,
+                t_after_cooldown,
+            ]
+        ),
+    )
+
+    calls = []
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], calls))
+    warm = await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+    zoho_filaments._cache_at = None  # force every further call to attempt a refresh
+
+    async def boom(db, **kwargs):
+        calls.append("boom")
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+    assert catalogue is warm
+    assert calls.count("boom") == 1
+
+    # Within the cooldown: short-circuits, no new call to the pager.
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+    assert catalogue is warm
+    assert calls.count("boom") == 1
+
+    # Cooldown has elapsed: a real refresh is attempted again. Zoho has
+    # recovered by now, so this one succeeds.
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_2], calls))
+    recovered = await zoho_filaments.fetch_catalogue(None)
+    assert [p.item_id for p in recovered] == ["5"]  # PAGE_2's one active item
+    assert zoho_filaments._last_stale_serve_at is None  # a genuine fresh refresh landed
+
+
+@pytest.mark.asyncio
 async def test_negative_cache_preserves_the_mapping_failure_exception_type(monkeypatch):
     """The fast-fail path reconstructs the SAME exception class the original
     walk raised. If it collapsed everything to a plain RuntimeError instead,

@@ -3,7 +3,7 @@
  * import/export/sync flows and the two sync modals.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
@@ -613,6 +613,71 @@ describe('FilamentProfilesPage', () => {
     expect(screen.queryByText(/could not sync prices from zoho/i)).not.toBeInTheDocument();
   });
 
+  // T-033: the button had no busy indicator at all, unlike the sibling
+  // Sync-Base button's Loader2 icon-swap — a slow Zoho sync looked identical
+  // to a dead button.
+  it('shows a busy spinner and disables the button while a Zoho sync is in flight', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', async () => {
+        // Never resolves within this test — stands in for a request still
+        // in flight, so the assertions below only see the "syncing" state.
+        await delay('infinite');
+        return HttpResponse.json({ priced: 0, unchanged: 0, attention: [] });
+      }),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    const button = screen.getByRole('button', { name: /sync prices from zoho/i });
+    await userEvent.click(button);
+
+    expect(await screen.findByRole('button', { name: /syncing prices from zoho/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^sync prices from zoho$/i })).not.toBeInTheDocument();
+  });
+
+  // T-033: a dropped-without-reset connection left the sync promise
+  // unsettled, so `finally { setZohoSyncing(false) }` never ran and the
+  // button stayed dead until reload. An AbortController with an explicit
+  // deadline now ends the sync with an error toast and re-enables the
+  // button instead. Driven entirely with vitest fake timers — never a
+  // wall-clock sleep, never msw's `delay()` alone.
+  it('aborts a Zoho sync that runs past the deadline, shows an error toast, and re-enables the button (T-033)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      stubBase();
+      server.use(
+        http.post('*/filament-profiles/zoho-sync', async () => {
+          // Never resolves on its own — only the client-side abort ends it.
+          await delay('infinite');
+          return HttpResponse.json({ priced: 0, unchanged: 0, attention: [] });
+        }),
+      );
+
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<FilamentProfilesPage />);
+      await screen.findByText('White');
+
+      await user.click(screen.getByRole('button', { name: /sync prices from zoho/i }));
+      expect(await screen.findByRole('button', { name: /syncing prices from zoho/i })).toBeDisabled();
+
+      // Comfortably inside the 10-minute deadline: still syncing, no toast yet.
+      await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
+      expect(screen.queryByText(/could not sync prices from zoho/i)).not.toBeInTheDocument();
+
+      // Cross the deadline by the smallest margin — the error toast
+      // auto-dismisses after a few seconds, so overshooting here would let
+      // it fire and fade before the assertions below ever see it.
+      await vi.advanceTimersByTimeAsync(60 * 1000 + 1);
+
+      expect(await screen.findByText(/could not sync prices from zoho/i)).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /^sync prices from zoho$/i })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clears the previous run summary panel when a later sync fails', async () => {
     stubBase();
     server.use(
@@ -739,5 +804,61 @@ describe('FilamentProfilesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps unsaved edits and shows a conflict banner when a background refetch changes the preset, then adopts the server copy on reload (T-032)', async () => {
+    // Same before/after GET shape as the T-006 test above, but this time
+    // the editor has an in-progress, unsaved edit when the sync (and its
+    // invalidateQueries) lands — the fix must hold the typed value and
+    // surface the change instead of silently overwriting it.
+    let getCalls = 0;
+    server.use(
+      http.get('*/filament-profiles', () => {
+        getCalls += 1;
+        const primed = preset({
+          content: getCalls === 1 ? '{"filament_cost":["10"]}' : '{"filament_cost":["25"]}',
+          updated_at: getCalls === 1 ? '2026-08-01T00:00:00Z' : '2026-08-25T00:00:00Z',
+        });
+        return HttpResponse.json([primed, PRESETS[1]]);
+      }),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({ priced: 1, unchanged: 1, attention: [] }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('Black');
+
+    await userEvent.click(screen.getByText('Black'));
+    expect(
+      await screen.findByRole('spinbutton', { name: /cost/i }, { timeout: 5000 }),
+    ).toHaveValue(10);
+
+    // An in-progress, unsaved edit — typed before the sync lands.
+    const colorInput = screen.getByRole('textbox', { name: /color label/i });
+    await userEvent.clear(colorInput);
+    await userEvent.type(colorInput, 'Midnight');
+    expect(colorInput).toHaveValue('Midnight');
+
+    // Runs the same invalidateQueries(['filamentPresets']) as the T-006
+    // test, but this time the editor is dirty.
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+    await screen.findByText(/priced 1/i, {}, { timeout: 5000 });
+
+    // The typed value survives — no silent remount/reset — and a banner
+    // explains why the preset now differs from the server.
+    const banner = await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(banner).toHaveTextContent(/changed on the server/i);
+    expect(colorInput).toHaveValue('Midnight');
+    expect(screen.getByRole('spinbutton', { name: /cost/i })).toHaveValue(10);
+
+    await userEvent.click(screen.getByRole('button', { name: /reload from server/i }));
+
+    // Choosing to reload adopts the fresh server copy and dismisses the
+    // banner.
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: /cost/i })).toHaveValue(25));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
