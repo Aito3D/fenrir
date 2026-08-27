@@ -165,21 +165,27 @@ export function useEntityCrudMutations<TEntity extends { id: number }, TCreate>(
 }
 
 /**
- * Shared dirty/refetch/save mechanics for the two calculator-defaults-shaped
- * settings forms (CalculatorDefaultsPanel, CalculatorMarginCurvePanel) — a
- * flat form of string field values PATCHed back as `CalculatorDefaultsUpdate`.
+ * Shared dirty/refetch/save mechanics for the calculator-defaults-shaped
+ * settings form (CalculatorPricingPanel) — a flat form of string field
+ * values PATCHed back as `CalculatorDefaultsUpdate`.
  *
- * `dirty` tracks whether the operator has touched a field since the form was
- * last seeded (either on mount or after their own save). While untouched,
- * the form keeps following the server row — e.g. a save made from another
- * session. Once dirty, a background refetch (including the invalidation
- * this same hook's own save triggers) must not blow away in-progress typing.
+ * `dirty` is derived, not tracked: a field is dirty when its string differs
+ * from the last row this form was seeded with (mount, or the operator's own
+ * successful save). While nothing is dirty, the form keeps following the
+ * server row — e.g. a save made from another session. Once anything is
+ * dirty, a background refetch (including the invalidation this same hook's
+ * own save triggers) must not blow away in-progress typing.
+ *
+ * `save` PATCHes only the dirty keys, so an untouched field can never
+ * overwrite a concurrent change to it, and the request body reads as the
+ * operator's actual edit. `discard` drops every edit and re-follows the
+ * server row.
  *
  * `toForm` is read through a ref rather than listed as an effect dependency:
  * callers typically pass a fresh closure each render (it closes over the
  * panel's own field table), and putting it in the dependency array would
  * re-run the seeding effect — and therefore call `setForm` — on every
- * render, not just when `defaults`/`dirty` actually change.
+ * render, not just when `defaults` / the dirty state actually change.
  */
 export function useDefaultsForm<K extends string>(
   {
@@ -195,24 +201,40 @@ export function useDefaultsForm<K extends string>(
     savedMsgKey: string;
   },
   defaults: CalculatorDefaults,
-): { form: Record<K, string>; setField: (key: K, v: string) => void; save: () => void; isPending: boolean } {
+): {
+  form: Record<K, string>;
+  setField: (key: K, v: string) => void;
+  /** Keys whose value differs from the seeded row, in field order. */
+  dirtyKeys: K[];
+  save: () => void;
+  discard: () => void;
+  isPending: boolean;
+} {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<Record<K, string>>(() => toForm(defaults));
-  const [dirty, setDirty] = useState(false);
-
   const toFormRef = useRef(toForm);
   toFormRef.current = toForm;
 
+  // The row the form was last seeded from — the baseline dirtiness is
+  // measured against. Held in state (not derived from `defaults`) so a
+  // background refetch while editing does not silently move the baseline.
+  const [seed, setSeed] = useState<Record<K, string>>(() => toForm(defaults));
+  const [form, setForm] = useState<Record<K, string>>(seed);
+  const dirtyKeys = fields.filter((key) => form[key] !== seed[key]);
+  const dirty = dirtyKeys.length > 0;
+
   useEffect(() => {
-    if (!dirty) setForm(toFormRef.current(defaults));
+    if (dirty) return;
+    const next = toFormRef.current(defaults);
+    setSeed(next);
+    setForm(next);
   }, [defaults, dirty]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload: Record<string, number> = {};
-      for (const key of fields) {
+      for (const key of dirtyKeys) {
         const n = parseNum(form[key]);
         if (n !== null) payload[key] = n;
       }
@@ -221,19 +243,18 @@ export function useDefaultsForm<K extends string>(
     onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
       showToast(t(savedMsgKey));
-      // Adopt the operator's own successful save and clear dirty —
+      // Adopt the operator's own successful save as the new baseline —
       // otherwise the form would look perpetually dirty and ignore the very
       // refetch its own save just triggered.
-      setForm(toFormRef.current(saved));
-      setDirty(false);
+      const next = toFormRef.current(saved);
+      setSeed(next);
+      setForm(next);
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  const setField = (key: K, v: string) => {
-    setDirty(true);
-    setForm((f) => ({ ...f, [key]: v }));
-  };
+  const setField = (key: K, v: string) => setForm((f) => ({ ...f, [key]: v }));
+  const discard = () => setForm(seed);
 
-  return { form, setField, save: () => saveMutation.mutate(), isPending: saveMutation.isPending };
+  return { form, setField, dirtyKeys, save: () => saveMutation.mutate(), discard, isPending: saveMutation.isPending };
 }

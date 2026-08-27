@@ -10,9 +10,8 @@ import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
 import {
-  CalculatorDefaultsPanel,
   CalculatorFilamentsPanel,
-  CalculatorMarginCurvePanel,
+  CalculatorPricingPanel,
   CalculatorPrintersPanel,
 } from '../components/CalculatorSettingsPanels';
 import { CalculatorInputsCard } from '../components/calculator/CalculatorInputsCard';
@@ -49,8 +48,7 @@ const TAB_LABEL_KEYS: Record<PageTab, string> = {
   calculator: 'calculator.title',
   filaments: 'calculator.tabFilaments',
   printers: 'calculator.tabPrinters',
-  defaults: 'calculator.tabDefaults',
-  margin: 'calculator.tabMarginCurve',
+  pricing: 'calculator.tabPricing',
 };
 
 export function CalculatorPage() {
@@ -390,14 +388,9 @@ export function CalculatorPage() {
           <CalculatorPrintersPanel selectedPrinterId={printer?.id ?? null} canUpdate={canUpdateCalculator} />
         </div>
       )}
-      {tab === 'defaults' && (
-        <div key="defaults" role="tabpanel" aria-labelledby="calc-tab-defaults" className="animate-calc-tab-in">
-          <CalculatorDefaultsPanel canUpdate={canUpdateCalculator} />
-        </div>
-      )}
-      {tab === 'margin' && (
-        <div key="margin" role="tabpanel" aria-labelledby="calc-tab-margin" className="animate-calc-tab-in">
-          <CalculatorMarginCurvePanel canUpdate={canUpdateCalculator} />
+      {tab === 'pricing' && (
+        <div key="pricing" role="tabpanel" aria-labelledby="calc-tab-pricing" className="animate-calc-tab-in">
+          <CalculatorPricingPanel canUpdate={canUpdateCalculator} />
         </div>
       )}
 

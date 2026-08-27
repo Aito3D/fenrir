@@ -180,7 +180,7 @@ const measuredFailureTotal = collapseSpaces(
 );
 
 // Global-defaults-edit scenario: saving a new electricity tariff (5000) on
-// the Defaults tab must recompute the Calculator tab's total using that new
+// the Pricing tab must recompute the Calculator tab's total using that new
 // tariff — not merely make the old total disappear (a blank or "NaN FCFP"
 // render would also satisfy that).
 const tariffUpdateTotal = collapseSpaces(
@@ -1263,12 +1263,12 @@ describe('CalculatorPage', () => {
     // Positive evidence of the pre-save reference total before asserting a change.
     await screen.findAllByText('1 608 FCFP');
 
-    await user.click(screen.getByRole('tab', { name: 'Defaults' }));
+    await user.click(screen.getByRole('tab', { name: 'Pricing' }));
     const tariff = await screen.findByLabelText(/Electricity tariff/);
     await user.clear(tariff);
     await user.type(tariff, '5000');
-    await user.click(screen.getByRole('button', { name: 'Save defaults' }));
-    await screen.findByText('Defaults saved');
+    await user.click(screen.getByRole('button', { name: 'Save pricing' }));
+    await screen.findByText('Pricing saved');
 
     await user.click(screen.getByRole('tab', { name: 'Calculator' }));
     // Positive proof: the recomputed total matches computePricing() with the

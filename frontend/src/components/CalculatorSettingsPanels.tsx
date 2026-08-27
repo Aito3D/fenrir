@@ -8,5 +8,4 @@
 // campaign-6 coverage gate's explicit file list stays valid.
 export { CalculatorFilamentsPanel, MARGIN_STEPS } from './calculator/CalculatorFilamentsPanel';
 export { CalculatorPrintersPanel } from './calculator/CalculatorPrintersPanel';
-export { CalculatorDefaultsPanel } from './calculator/CalculatorDefaultsPanel';
-export { CalculatorMarginCurvePanel } from './calculator/CalculatorMarginCurvePanel';
+export { CalculatorPricingPanel } from './calculator/CalculatorPricingPanel';

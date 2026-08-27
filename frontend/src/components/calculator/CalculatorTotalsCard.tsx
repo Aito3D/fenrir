@@ -117,7 +117,7 @@ export function CalculatorTotalsCard({
         </div>
         {easy && (
           <Link
-            to="/calculator?tab=defaults"
+            to="/calculator?tab=pricing"
             className={`block w-fit text-xs text-bambu-gray underline decoration-bambu-gray/40 underline-offset-2 hover:text-white transition-colors rounded ${focusRingCls}`}
           >
             {t('calculator.easyAssumptions')}

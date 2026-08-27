@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import type { PricingInputs } from '../utils/pricing';
 import { correctedTimeH } from '../utils/calculatorInsights';
 
-export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'defaults', 'margin'] as const;
+export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'pricing'] as const;
 export type PageTab = (typeof PAGE_TABS)[number];
 
 const STORAGE_KEY = 'calculator-state';
@@ -136,7 +136,10 @@ export function useCalculatorState() {
 
   // The active tab lives in the URL so refresh, back button and deep links
   // all keep it; the plain calculator tab is the clean URL.
-  const tabParam = searchParams.get('tab');
+  const rawTab = searchParams.get('tab');
+  // The former Defaults and Margin curve tabs merged into Pricing; their
+  // deep links keep resolving.
+  const tabParam = rawTab === 'defaults' || rawTab === 'margin' ? 'pricing' : rawTab;
   const tab: PageTab = PAGE_TABS.includes(tabParam as PageTab) ? (tabParam as PageTab) : 'calculator';
   const setTab = (next: PageTab) => {
     setSearchParams(
