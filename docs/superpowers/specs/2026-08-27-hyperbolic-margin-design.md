@@ -85,8 +85,11 @@ formula changes.
 Rounding: the engine stays full precision (project convention: round at
 display via `formatMoney`). The quote page rounds the task figure
 (`total_ht_qty` / `total_ttc_qty`) to the currency's decimals and derives the
-displayed unit price as `rounded task ÷ quantity`, so the quote's unit × qty
-reproduces its task total.
+displayed unit price as `rounded task ÷ quantity`. The task figure is the
+authority; because the unit price is itself rounded for display, printed
+unit × qty may differ from the printed task total by at most one display
+unit × quantity (e.g. 4 718 FCFP ÷ 3 → 1 573 FCFP each) — this residual is
+inherent to printing a per-unit price and is accepted.
 
 `bulkPricing()` and `BULK_QUANTITIES/BULK_DISCOUNTS` are removed together
 with the bulk table (section 4). A new pure helper replaces them:
