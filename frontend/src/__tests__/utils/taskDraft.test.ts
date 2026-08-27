@@ -105,16 +105,40 @@ describe('computeImpressionCost', () => {
     expect(r.stuff_cost).toBe(0);
   });
 
-  it('multiplies the line total by quantity', () => {
+  it('multiplies the per-unit price by quantity, discounted by the quantity curve', () => {
+    // Under the old flat global markup, doubling quantity exactly doubled the
+    // task total. The quantity-discount curve (utils/pricing.ts) now shaves
+    // the margin above cost as quantity rises, so two units cost less than
+    // 2x one unit.
     const one = computeImpressionCost(impression, filament, printer, defaults)!;
     const two = computeImpressionCost({ ...impression, quantity: 2 }, filament, printer, defaults)!;
-    expect(two.total_ttc_qty).toBeCloseTo(one.total_ttc_qty * 2, 6);
+    // No per-quantity fixed cost in an impression line (base_fee_flat and
+    // consumables_packaging_flat are zeroed), so the per-unit cost basis is
+    // identical at both quantities — only the margin curve moves.
+    expect(two.total_cost).toBeCloseTo(one.total_cost, 10);
+    expect(two.qty_factor).toBeLessThan(one.qty_factor);
+    // total_ht = total_cost + marge = total_cost*margin_multiplier +
+    // margin_filament + margin_stuff (identity, since the floor doesn't bite
+    // at this fixture's price); the task total is that per-unit price × qty.
+    const expectedTwoHtQty = (two.total_cost * two.margin_multiplier + two.margin_filament + two.margin_stuff) * 2;
+    expect(two.total_ht_qty).toBeCloseTo(expectedTwoHtQty, 6);
+    expect(two.total_ttc_qty).toBeLessThan(one.total_ttc_qty * 2);
   });
 
   it('treats a missing or zero quantity as 1', () => {
     const one = computeImpressionCost(impression, filament, printer, defaults)!;
     const zero = computeImpressionCost({ ...impression, quantity: 0 }, filament, printer, defaults)!;
     expect(zero.total_ttc_qty).toBeCloseTo(one.total_ttc_qty, 6);
+  });
+
+  it('impression cost: size margin on the unit, quantity discount on the task quantity', () => {
+    const one = computeImpressionCost({ ...impression, quantity: 1 }, filament, printer, defaults)!;
+    const ten = computeImpressionCost({ ...impression, quantity: 10 }, filament, printer, defaults)!;
+    expect(ten.size_margin).toBeCloseTo(one.size_margin, 10);
+    expect(ten.qty_factor).toBeLessThan(1);
+    expect(one.qty_factor).toBe(1);
+    expect(ten.total_ht).toBeLessThan(one.total_ht);
+    expect(ten.total_ht).toBeGreaterThanOrEqual(ten.total_cost);
   });
 });
 

@@ -249,6 +249,14 @@ describe('realityCheckImpact', () => {
     tax_pct: 20,
     default_difficulty_pct: 100,
     stuff_markup_pct: 0,
+    // This fixture's total cost (~$4-10) sits well under the engine's
+    // default $12 per-task floor (utils/pricing.ts CURVE_DEFAULTS), so a
+    // small reality-check delta (e.g. watts 200 -> 100) can land BOTH the
+    // baseline and the variant on the floor — total_ht pinned to 12 either
+    // way, hiding the underlying cost swing this describe block exists to
+    // pin. Disabling the floor here isolates the size-margin/quantity-curve
+    // sensitivity under test from that unrelated floor behavior.
+    min_task_price: 0,
   };
   const impact = (check: Partial<RealityCheck> & Pick<RealityCheck, 'kind' | 'assumed' | 'measured'>) =>
     realityCheckImpact(

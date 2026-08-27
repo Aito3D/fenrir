@@ -209,6 +209,10 @@ export function joinMinutes(parts: { days: number; hours: number; minutes: numbe
  *  - Modelling, prep, post-processing and extras are zero. Modelisation3D is
  *    its own service line, so including modelling here would double-count it;
  *    the rest are not captured by this form at all.
+ *  - The margin curves (utils/pricing.ts) apply per TASK: size margin on the
+ *    unit cost, quantity discount on this task's quantity, and the task floor
+ *    once per task — a three-task project meets the floor three times, by
+ *    design (see docs/superpowers/specs/2026-08-27-hyperbolic-margin-design.md).
  *
  *  Returns null when the service is disabled — any of printer, filament,
  *  weight or time missing. */

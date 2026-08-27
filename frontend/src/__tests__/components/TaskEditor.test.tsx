@@ -847,7 +847,11 @@ describe('TaskRow', () => {
     // other test that reaches impressionCost uses quantity 1, where
     // total_ttc and total_ttc_qty are equal, so this is the only test that
     // would go red if that line were changed to report the per-unit figure
-    // instead.
+    // instead. The quantity-discount curve (utils/pricing.ts) shaves the
+    // margin above cost as quantity rises, so quantity 2's total sits
+    // strictly between the quantity-1 total (what the buggy per-unit report
+    // would still show, since it barely moves with quantity) and its naive
+    // double (what the old flat markup would have produced exactly).
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
@@ -878,7 +882,8 @@ describe('TaskRow', () => {
     await waitFor(() => {
       const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
       expect(lastTasks?.[0].impressionCost).not.toBeNull();
-      expect(lastTasks?.[0].impressionCost).toBeCloseTo(quantityOneCost * 2, 6);
+      expect(lastTasks?.[0].impressionCost).toBeGreaterThan(quantityOneCost);
+      expect(lastTasks?.[0].impressionCost).toBeLessThan(quantityOneCost * 2);
     });
   });
 

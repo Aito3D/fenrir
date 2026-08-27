@@ -188,6 +188,34 @@ describe('estimateArchiveSalePrice', () => {
     expect(estimate!.timeH).toBeCloseTo(2, 6);
   });
 
+  it('archive estimate uses the curve at quantity 1 (whole job as one unit)', () => {
+    // An archive estimate always prices the whole job as one unit (quantity
+    // 1), so it must sit at the top of the quantity-discount curve — no
+    // discount applied — while still picking up the size-margin curve.
+    const zeroInputsForArchive = {
+      modeling_hours: 0,
+      modeling_base_price: 0,
+      prep_model_min: 0,
+      prep_slicing_min: 0,
+      prep_transfer_min: 0,
+      post_removal_min: 0,
+      post_support_min: 0,
+      post_additional_min: 0,
+      post_fulfillment_min: 0,
+      stuff_amount: 0,
+      stuff_markup_pct: 0,
+    };
+    const est = estimateArchiveSalePrice(archive, filaments, printers, defaults)!; // reuse this file's fixtures
+    const matchedFilament = matchCalculatorFilament(archive.filament_type, filaments)!.filament;
+    const matchedPrinter = matchCalculatorPrinter([], printers)!.printer;
+    const r = computePricing(
+      { ...zeroInputsForArchive, weight_g: est.weightG, printing_time_h: est.timeH, quantity: 1 },
+      matchedFilament, matchedPrinter, { ...defaults, base_fee_flat: 0 },
+    );
+    expect(est.totalTtc).toBeCloseTo(r.total_ttc, 6);
+    expect(r.qty_factor).toBe(1);
+  });
+
   it('uses measured energy instead of the watts × hours estimate when present', () => {
     const withEnergy = estimateArchiveSalePrice({ ...archive, energy_kwh: 0.5 }, filaments, printers, defaults)!;
     const estimated = estimateArchiveSalePrice(archive, filaments, printers, defaults)!;
