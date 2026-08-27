@@ -20,7 +20,11 @@ export function CalculatorBreakdownCard({
   const { t } = useTranslation();
   const waterfall = useMemo(() => buildWaterfall(result), [result]);
 
-  const groups: Array<{ labelKey: string; color: string; lines: Array<[string, number]> }> = [
+  const groups: Array<{
+    labelKey: string;
+    color: string;
+    lines: Array<[string, number, string?, string?]>;
+  }> = [
     {
       labelKey: 'calculator.groupMachine',
       color: 'var(--viz-1)',
@@ -62,7 +66,12 @@ export function CalculatorBreakdownCard({
       labelKey: 'calculator.marge',
       color: 'var(--color-bambu-green)',
       lines: [
-        ['calculator.marginGlobal', result.margin_global],
+        [
+          'calculator.marginGlobal',
+          result.margin_global,
+          t('calculator.multiplier', { value: result.margin_multiplier.toFixed(2) }),
+          t('calculator.multiplierDetail', { size: result.size_margin.toFixed(2), qty: result.qty_factor.toFixed(2) }),
+        ],
         ['calculator.marginFilament', result.margin_filament],
         ['calculator.marginStuff', result.margin_stuff],
       ],
@@ -93,16 +102,24 @@ export function CalculatorBreakdownCard({
                 {t(group.labelKey)}
               </div>
               <div className="space-y-1">
-                {group.lines.map(([labelKey, value]) => (
+                {group.lines.map(([labelKey, value, badge, badgeTitle]) => (
                   <div key={labelKey} className="flex justify-between gap-2 text-sm">
                     <span className="text-bambu-gray-light">{t(labelKey)}</span>
-                    <Money currency={currency} value={value} className="text-white" />
+                    <div className="flex items-center gap-1.5">
+                      {badge && (
+                        <span className="text-xs text-bambu-gray tabular-nums" title={badgeTitle}>
+                          {badge}
+                        </span>
+                      )}
+                      <Money currency={currency} value={value} className="text-white" />
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           ))}
         </div>
+        {result.floor_applied && <p className="text-xs text-bambu-gray">{t('calculator.floorApplied')}</p>}
       </CardContent>
     </Card>
   );

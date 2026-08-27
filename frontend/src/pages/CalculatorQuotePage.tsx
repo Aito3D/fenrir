@@ -35,6 +35,12 @@ export function CalculatorQuotePage() {
   }, [state, filament, printer, defaults]);
 
   const waterfall = useMemo(() => (result ? buildWaterfall(result) : []), [result]);
+  // The quote rounds the TASK figure and derives the unit price from it, so
+  // unit × quantity reproduces the printed total to the cent.
+  const decimals = ['XPF', 'JPY', 'KRW'].includes(currency.toUpperCase()) ? 0 : 2;
+  const scale = 10 ** decimals;
+  const taskTtcRounded = result ? Math.round(result.total_ttc_qty * scale) / scale : 0;
+  const unitTtcDisplayed = result && result.quantity > 1 ? taskTtcRounded / result.quantity : taskTtcRounded;
   const timeLabel = [
     num(state.timeD) > 0 ? `${Math.max(0, num(state.timeD))}${t('calculator.durationDaysShort')}` : '',
     `${Math.max(0, num(state.timeH))}h`,
@@ -107,14 +113,16 @@ export function CalculatorQuotePage() {
                   {t('calculator.totalTTC')}
                   {result.quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
                 </div>
-                <div className="text-4xl font-bold tracking-tight tabular-nums">
-                  {formatMoney(result.total_ttc, currency)}
+                <div className="text-4xl font-bold tracking-tight tabular-nums" data-testid="quote-unit-ttc">
+                  {formatMoney(unitTtcDisplayed, currency)}
                 </div>
               </div>
               {result.quantity > 1 && (
                 <div className="text-right">
                   <div className="text-sm text-gray-500">{t('calculator.forQuantity', { count: result.quantity })}</div>
-                  <div className="text-xl font-semibold tabular-nums">{formatMoney(result.total_ttc_qty, currency)}</div>
+                  <div className="text-xl font-semibold tabular-nums" data-testid="quote-task-ttc">
+                    {formatMoney(taskTtcRounded, currency)}
+                  </div>
                 </div>
               )}
             </section>

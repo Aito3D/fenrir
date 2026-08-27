@@ -262,13 +262,15 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
 
-    // Costs at true value, margins at the end (global + filament):
-    // TTC = 2 031, HT = 1 798, machine = 644
-    await screen.findByText('2 031 FCFP');
-    expect(screen.getByText('1 798 FCFP')).toBeInTheDocument();
+    // Costs at true value, margins at the end (two-curve model, size ×1.16
+    // at this unit cost, qty factor 1 at qty 1):
+    // TTC = 1 608, HT = 1 423, machine = 644
+    await screen.findAllByText('1 608 FCFP');
+    expect(screen.getByText('1 423 FCFP')).toBeInTheDocument();
     expect(screen.getByText('644 FCFP')).toBeInTheDocument();
-    // Margin fraction over the pre-tax price: 685.09 / 1797.77
-    expect(screen.getByText('38.11%')).toBeInTheDocument();
+    // Margin fraction over the pre-tax price: marge 310.04 / total_ht 1422.72
+    // (computePricing(referencePricingInputs, ...).margin_pct)
+    expect(screen.getByText('21.79%')).toBeInTheDocument();
     // Difficulty comes from the filament profile and is shown read-only
     expect(screen.getByText('150%')).toBeInTheDocument();
     expect(screen.queryByLabelText('Difficulty factor (%)')).not.toBeInTheDocument();
@@ -294,7 +296,7 @@ describe('CalculatorPage', () => {
     });
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
 
     // The selected printer (H2S) is hidden — only the alternative shows,
     // with its price and a signed % delta vs the current selection.
@@ -341,7 +343,7 @@ describe('CalculatorPage', () => {
     );
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
 
     // Measured 8% vs assumed 30% → the reality-check row appears.
     await screen.findByText('Reality check');
@@ -350,8 +352,8 @@ describe('CalculatorPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
     // Provisions shrink (30% → 8% failure provision), so the total drops to
     // the exact recomputed figure (not just "no longer the old total").
-    await screen.findByText(measuredFailureTotal);
-    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+    await screen.findAllByText(measuredFailureTotal);
+    await waitFor(() => expect(screen.queryAllByText('1 608 FCFP')).toHaveLength(0));
     expect(screen.getByText('Applied')).toBeInTheDocument();
   });
 
@@ -372,12 +374,12 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     await user.click(screen.getByRole('button', { name: 'Apply' }));
     // Positive proof the override is live before we ever touch "save".
-    await screen.findByText(measuredFailureTotal);
+    await screen.findAllByText(measuredFailureTotal);
     expect(screen.getByText('Applied')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Save as default' }));
@@ -386,7 +388,7 @@ describe('CalculatorPage', () => {
     // The session override is cleared only now that the PATCH resolved —
     // the price stays pinned to the measured value throughout (the new
     // server-side default equals it, so nothing flickers).
-    expect(screen.getByText(measuredFailureTotal)).toBeInTheDocument();
+    expect(screen.getAllByText(measuredFailureTotal).length).toBeGreaterThan(0);
     expect(defaults.failure_rate_pct).toBe(8);
   });
 
@@ -403,12 +405,12 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     await user.click(screen.getByRole('button', { name: 'Apply' }));
     // Positive proof the override is live before the failed save.
-    await screen.findByText(measuredFailureTotal);
+    await screen.findAllByText(measuredFailureTotal);
     expect(screen.getByText('Applied')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Save as default' }));
@@ -418,8 +420,8 @@ describe('CalculatorPage', () => {
     // off the measured figure instead of silently reverting to the old
     // assumption-based total.
     expect(screen.getByText('Applied')).toBeInTheDocument();
-    expect(screen.getByText(measuredFailureTotal)).toBeInTheDocument();
-    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+    expect(screen.getAllByText(measuredFailureTotal).length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.queryAllByText('1 608 FCFP')).toHaveLength(0));
   });
 
   it('reality check: reverting an applied override restores the original total', async () => {
@@ -430,19 +432,19 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     await user.click(screen.getByRole('button', { name: 'Apply' }));
-    await screen.findByText(measuredFailureTotal);
+    await screen.findAllByText(measuredFailureTotal);
     expect(screen.getByText('Applied')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Revert' }));
 
     // Positive proof: the ORIGINAL total is back, not merely that the
     // overridden one left.
-    await screen.findByText('2 031 FCFP');
-    expect(screen.queryByText(measuredFailureTotal)).not.toBeInTheDocument();
+    await screen.findAllByText('1 608 FCFP');
+    await waitFor(() => expect(screen.queryAllByText(measuredFailureTotal)).toHaveLength(0));
     expect(screen.queryByText('Applied')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument();
   });
@@ -467,7 +469,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     // Row-scoped: this label text only exists inside the spool-cost row.
@@ -500,7 +502,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     // Both rows are present at once — scope every click/query to its own row
@@ -533,7 +535,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     let row = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
@@ -552,7 +554,7 @@ describe('CalculatorPage', () => {
         'XPF',
       ),
     );
-    await screen.findByText(overriddenTotal);
+    await screen.findAllByText(overriddenTotal);
     row = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
     expect(within(row).getByText('Applied')).toBeInTheDocument();
 
@@ -563,8 +565,8 @@ describe('CalculatorPage', () => {
     // applied, still priced off the measured figure, not silently reverted.
     row = screen.getByText('Power draw (H2S)').closest('.animate-calc-tab-in') as HTMLElement;
     expect(within(row).getByText('Applied')).toBeInTheDocument();
-    expect(screen.getByText(overriddenTotal)).toBeInTheDocument();
-    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+    expect(screen.getAllByText(overriddenTotal).length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.queryAllByText('1 608 FCFP')).toHaveLength(0));
   });
 
   it('reality check: a failed filament-cost profile update leaves the check in place and shows an error toast', async () => {
@@ -585,7 +587,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await screen.findByText('Reality check');
 
     const row = screen.getByText('Filament cost (PA6-CF)').closest('.animate-calc-tab-in') as HTMLElement;
@@ -622,7 +624,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
 
     // Baseline fields before any correction — the reference case's 2 h.
     expect(screen.getByLabelText('Hours')).toHaveValue(2);
@@ -643,9 +645,8 @@ describe('CalculatorPage', () => {
 
     // Total recomputes to the exact value computePricing predicts for the
     // corrected time.
-    await screen.findByText(timeCorrectionTotal);
-    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
-
+    await screen.findAllByText(timeCorrectionTotal);
+    await waitFor(() => expect(screen.queryAllByText('1 608 FCFP')).toHaveLength(0));
     // Applying clears timeFromEstimate, so the chip is gone even though the
     // drift condition alone would still be satisfied.
     expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
@@ -668,7 +669,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     // Positive evidence the chip rendered before we dismiss it.
     await screen.findByText('Your printers average 120% of slicer estimates');
 
@@ -686,7 +687,7 @@ describe('CalculatorPage', () => {
     expect(screen.getByLabelText('Minutes')).toHaveValue(null);
     expect(screen.getByLabelText('Days')).toHaveValue(null);
     // The total is still the untouched reference-case total.
-    expect(screen.getByText('2 031 FCFP')).toBeInTheDocument();
+    expect(screen.getAllByText('1 608 FCFP').length).toBeGreaterThan(0);
   });
 
   it('easy mode: the time-correction chip stays hidden when the measured drift is below the 2% threshold', async () => {
@@ -706,7 +707,7 @@ describe('CalculatorPage', () => {
     );
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     // Positive evidence the inputs card (and its time fields) rendered
     // before asserting the chip's absence.
     expect(screen.getByLabelText('Hours')).toHaveValue(2);
@@ -720,7 +721,7 @@ describe('CalculatorPage', () => {
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
     );
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     expect(screen.queryByText('Reality check')).not.toBeInTheDocument();
   });
 
@@ -730,7 +731,7 @@ describe('CalculatorPage', () => {
     );
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
 
     expect(screen.queryByRole('group', { name: 'Price by printer' })).not.toBeInTheDocument();
   });
@@ -754,8 +755,9 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
 
-    // Same reference case as above, rendered as USD: prefixed symbol, two decimals
-    await screen.findByText('$2 031.44');
+    // Same reference case as above, rendered as USD: prefixed symbol, two
+    // decimals (total_ttc at qty 1 = 1607.6759... → formatMoney(…, 'USD'))
+    await screen.findAllByText('$1 607.68');
     expect(screen.queryByText(/FCFP/)).not.toBeInTheDocument();
   });
 
@@ -770,8 +772,9 @@ describe('CalculatorPage', () => {
     expect(screen.getByText('Price by quantity')).toBeInTheDocument();
     expect(screen.getByText('Cost breakdown')).toBeInTheDocument();
     expect(screen.getByText('Potential profit')).toBeInTheDocument();
-    // Break-even on the pre-tax price = the margin fraction (all margins at the end)
-    expect(screen.getByText(/Break-even discount: 38\.1%/)).toBeInTheDocument();
+    // Break-even on the pre-tax price = the margin fraction (all margins at
+    // the end): breakEvenDiscount(computePricing(referencePricingInputs, ...)) → 21.8%
+    expect(screen.getByText(/Break-even discount: 21\.8%/)).toBeInTheDocument();
 
     // Both tables render their price cells with shared.tsx's tdCls (T-097),
     // not calculatorSettingsShared.ts's — pin the wiring at the DOM level.
@@ -789,6 +792,23 @@ describe('CalculatorPage', () => {
     expect(firstCurvePriceCell.className).toBe(tdCls);
   });
 
+  it('breakdown names the margin multiplier and the floor when it applies', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+
+    render(<CalculatorPage />);
+    await screen.findByText('Global margin');
+    // ×N.NN follows the global-margin label; the exact value depends on the
+    // fixture, so pin the shape and the tooltip, not the number.
+    const row = screen.getByText('Global margin').closest('div')!;
+    expect(within(row).getByText(/^×\d+\.\d{2}$/)).toBeInTheDocument();
+    expect(within(row).getByText(/^×\d+\.\d{2}$/)).toHaveAttribute(
+      'title',
+      expect.stringMatching(/^size ×\d+\.\d{2} · qty \d\.\d{2}$/),
+    );
+  });
+
   it('easy mode hides breakdown, bulk table and profit rows but keeps discounted prices', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state'
@@ -798,7 +818,7 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
 
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     expect(screen.queryByText('Cost breakdown')).not.toBeInTheDocument();
     expect(screen.queryByText('Price by quantity')).not.toBeInTheDocument();
     expect(screen.queryByText('Potential profit')).not.toBeInTheDocument();
@@ -820,7 +840,7 @@ describe('CalculatorPage', () => {
     // outlast the default 1s (same allowance as the localStorage test below).
     await waitFor(
       () => {
-        expect(screen.getByText('2 031 FCFP')).toBeInTheDocument();
+        expect(screen.getAllByText('1 608 FCFP').length).toBeGreaterThan(0);
       },
       { timeout: 2000 },
     );
@@ -853,7 +873,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
     render(<CalculatorPage />);
 
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     await user.click(screen.getByText('Target price'));
     // 2260 TTC → net 2000 → profit 887.32 over costs 1112.68 (margin 44.4%)
     await user.type(screen.getByLabelText('Target price (incl. tax)'), '2260');
@@ -872,7 +892,7 @@ describe('CalculatorPage', () => {
     );
     const user = userEvent.setup();
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
 
     // "Modeling" etc. also label a line in the Cost breakdown card, so all
     // clicks/queries for the Labor card's own controls are scoped to it.
@@ -894,9 +914,8 @@ describe('CalculatorPage', () => {
     await user.type(labor.getByLabelText('Base price'), '500');
     const stage1Inputs = { ...referencePricingInputs, modeling_hours: 1, modeling_base_price: 500 };
     const stage1Total = priceFor(stage1Inputs);
-    await screen.findByText(stage1Total);
-    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
-
+    await screen.findAllByText(stage1Total);
+    await waitFor(() => expect(screen.queryAllByText('1 608 FCFP')).toHaveLength(0));
     // ── Preparation ───────────────────────────────────────────────────
     await user.click(labor.getByText('Preparation'));
     await user.type(labor.getByLabelText('Model preparation'), '10');
@@ -904,9 +923,8 @@ describe('CalculatorPage', () => {
     await user.type(labor.getByLabelText('Transfer & start'), '2');
     const stage2Inputs = { ...stage1Inputs, prep_model_min: 10, prep_slicing_min: 5, prep_transfer_min: 2 };
     const stage2Total = priceFor(stage2Inputs);
-    await screen.findByText(stage2Total);
-    expect(screen.queryByText(stage1Total)).not.toBeInTheDocument();
-
+    await screen.findAllByText(stage2Total);
+    await waitFor(() => expect(screen.queryAllByText(stage1Total)).toHaveLength(0));
     // ── Post-processing ───────────────────────────────────────────────
     await user.click(labor.getByText('Post-processing'));
     await user.type(labor.getByLabelText('Job removal'), '3');
@@ -921,17 +939,16 @@ describe('CalculatorPage', () => {
       post_fulfillment_min: 2,
     };
     const stage3Total = priceFor(stage3Inputs);
-    await screen.findByText(stage3Total);
-    expect(screen.queryByText(stage2Total)).not.toBeInTheDocument();
-
+    await screen.findAllByText(stage3Total);
+    await waitFor(() => expect(screen.queryAllByText(stage2Total)).toHaveLength(0));
     // ── Stuff (extras & supplies) ────────────────────────────────────
     await user.click(labor.getByText('Extras & supplies'));
     await user.type(labor.getByLabelText('Amount'), '100');
     await user.type(labor.getByLabelText('Markup'), '25');
     const stage4Inputs = { ...stage3Inputs, stuff_amount: 100, stuff_markup_pct: 25 };
     const stage4Total = priceFor(stage4Inputs);
-    await screen.findByText(stage4Total);
-    expect(screen.queryByText(stage3Total)).not.toBeInTheDocument();
+    await screen.findAllByText(stage4Total);
+    await waitFor(() => expect(screen.queryAllByText(stage3Total)).toHaveLength(0));
   });
 
   it('shows the labor amortization hint once modeling costs are split across multiple units', async () => {
@@ -940,7 +957,7 @@ describe('CalculatorPage', () => {
     );
     const user = userEvent.setup();
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
     // Quantity 1, no modeling/prep cost yet — hint absent.
     expect(screen.queryByText(/one-time costs, split across/)).not.toBeInTheDocument();
 
@@ -1028,7 +1045,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 031 FCFP'); // Sunlu PA6-CF selected by default
+    await screen.findAllByText('1 608 FCFP'); // Sunlu PA6-CF selected by default
 
     const combo = screen.getByLabelText('Filament');
     await user.click(combo);
@@ -1043,7 +1060,9 @@ describe('CalculatorPage', () => {
     await user.click(screen.getByRole('option', { name: 'Generic PLA' }));
     await waitFor(
       () => {
-        expect(screen.getByText('1 310 FCFP')).toBeInTheDocument(); // PLA at 100% difficulty
+        // PLA at 100% difficulty: total_ttc at qty 1 with cost_per_kg 2000,
+        // sale_price_per_kg 3000, difficulty_pct 100 (computePricing(...))
+        expect(screen.getAllByText('1 033 FCFP').length).toBeGreaterThan(0);
       },
       { timeout: 2000 },
     );
@@ -1221,7 +1240,7 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
     // Positive evidence of the pre-save reference total before asserting a change.
-    await screen.findByText('2 031 FCFP');
+    await screen.findAllByText('1 608 FCFP');
 
     await user.click(screen.getByRole('tab', { name: 'Defaults' }));
     const tariff = await screen.findByLabelText(/Electricity tariff/);
@@ -1233,9 +1252,9 @@ describe('CalculatorPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Calculator' }));
     // Positive proof: the recomputed total matches computePricing() with the
     // new electricity_tariff applied, not merely "the old total is gone".
-    await screen.findByText(tariffUpdateTotal);
+    await screen.findAllByText(tariffUpdateTotal);
     // Secondary sanity check: the stale total must also be gone.
-    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryAllByText('1 608 FCFP')).toHaveLength(0));
   });
 
   it('persists inputs to localStorage (debounced)', async () => {
@@ -1288,7 +1307,7 @@ describe('CalculatorPage', () => {
       });
 
       render(<CalculatorPage />);
-      await screen.findByText('2 031 FCFP');
+      await screen.findAllByText('1 608 FCFP');
 
       await user.click(screen.getByRole('button', { name: 'Copy summary' }));
 
@@ -1307,7 +1326,7 @@ describe('CalculatorPage', () => {
       });
 
       render(<CalculatorPage />);
-      await screen.findByText('2 031 FCFP');
+      await screen.findAllByText('1 608 FCFP');
 
       await user.click(screen.getByRole('button', { name: 'Copy summary' }));
 

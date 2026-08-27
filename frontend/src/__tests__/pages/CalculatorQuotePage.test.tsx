@@ -103,9 +103,9 @@ describe('CalculatorQuotePage', () => {
     render(<CalculatorQuotePage />);
 
     expect(await screen.findByText('Quote')).toBeInTheDocument();
-    // Same reference case as the calculator page tests: 2 031 FCFP TTC —
+    // Same reference case as the calculator page tests: 1 608 FCFP TTC —
     // shown twice: the headline total and the breakdown's total row.
-    expect(await screen.findAllByText('2 031 FCFP')).toHaveLength(2);
+    expect(await screen.findAllByText('1 608 FCFP')).toHaveLength(2);
     expect(screen.getByText('Generic PLA')).toBeInTheDocument();
     // Selected printer appears in the job details.
     expect(screen.getByText('H2S')).toBeInTheDocument();
@@ -120,6 +120,26 @@ describe('CalculatorQuotePage', () => {
     // hardcoded, since a formatted string is machine/ICU-dependent — only
     // the underlying date is pinned by this test.
     expect(screen.getByText(pinned.toLocaleDateString(i18n.language))).toBeInTheDocument();
+  });
+
+  it('derives the displayed unit price from the rounded task total', async () => {
+    // Quantity 3 with a per-unit TTC that does not divide evenly at 2 dp —
+    // a 2-decimal currency (not this file's default XPF, which has none)
+    // exercises the rounding path the derivation exists for.
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ currency: 'USD' })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', timeH: '2', timeM: '', quantity: '3' }) : null,
+    );
+
+    render(<CalculatorQuotePage />);
+
+    const task = await screen.findByText(/Total for 3 units/);
+    expect(task).toBeInTheDocument();
+    // unit × 3 must equal the task figure shown, to the cent.
+    const money = (s: string) => Number(s.replace(/[^\d.-]/g, ''));
+    const unit = money(screen.getByTestId('quote-unit-ttc').textContent!);
+    const total = money(screen.getByTestId('quote-task-ttc').textContent!);
+    expect(Math.round(unit * 3 * 100) / 100).toBeCloseTo(total, 2);
   });
 
   it('shows the empty hint when no job is stored', async () => {
