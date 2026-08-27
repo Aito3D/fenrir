@@ -44,6 +44,14 @@ _PAGE_SIZE = 200
 _MAX_PAGES = 20  # 256 items today; a runaway-loop backstop, not a real limit
 _CACHE_TTL = timedelta(minutes=10)
 
+# T-010: an "ambiguous" ProfileMatch reports at most this many colliding item
+# names. Without a cap, a hand-typed profile whose colour never appears in
+# Zoho reports every same-brand-and-material item in the catalogue — up to
+# _MAX_PAGES x _PAGE_SIZE of them — as one unwrapped wall of names. The true
+# collision size still travels in ProfileMatch.candidates_total so nothing is
+# silently hidden, just not all rendered.
+_MAX_REPORTED_CANDIDATES = 5
+
 # T-094: how long a caller waits to acquire _refresh_lock before giving up on
 # an in-flight walk and answering with the stale cache (or a 502) instead.
 # The walk this lock guards is bounded only by _MAX_PAGES x a per-page retry
@@ -171,11 +179,20 @@ class ProfileMatch:
     with a different fix: the item exists upstream and simply has no price.
     Roughly a fifth of the catalogue is in that state and writing any of them
     would silently zero out a profile's cost.
+
+    ``candidates_total`` is the TRUE number of catalogue items behind
+    ``candidates``. For ``ambiguous`` that can exceed ``len(candidates)``:
+    the name list is capped at ``_MAX_REPORTED_CANDIDATES`` so a large
+    collision does not turn into an unbounded wall of text, while this field
+    still carries the real count for a "+N more" style report. For every
+    other outcome the list is never capped, so this simply equals
+    ``len(candidates)`` (0 for ``no_match``, 1 for ``matched``/``no_price``).
     """
 
     outcome: str
     product: FilamentProduct | None
     candidates: list[str]
+    candidates_total: int
 
 
 def _normalise(value: str) -> str:
@@ -213,7 +230,7 @@ def match_profile(
     want_brand = _normalise(brand)
     want_material = _normalise(material)
     if not want_brand or not want_material:
-        return ProfileMatch("no_match", None, [])
+        return ProfileMatch("no_match", None, [], 0)
 
     candidates = [
         item
@@ -221,7 +238,7 @@ def match_profile(
         if _normalise(item.brand) == want_brand and _normalise(item.material) == want_material
     ]
     if not candidates:
-        return ProfileMatch("no_match", None, [])
+        return ProfileMatch("no_match", None, [], 0)
 
     if len(candidates) > 1:
         want_colour = _normalise(colour)
@@ -230,13 +247,14 @@ def match_profile(
             # Either the colour matched nothing (report the whole collision) or
             # it matched several (report those). Both are the operator's call.
             collision = narrowed or candidates
-            return ProfileMatch("ambiguous", None, [item.name for item in collision])
+            names = [item.name for item in collision]
+            return ProfileMatch("ambiguous", None, names[:_MAX_REPORTED_CANDIDATES], len(names))
         candidates = narrowed
 
     product = candidates[0]
     if not product.has_price:
-        return ProfileMatch("no_price", product, [product.name])
-    return ProfileMatch("matched", product, [product.name])
+        return ProfileMatch("no_price", product, [product.name], 1)
+    return ProfileMatch("matched", product, [product.name], 1)
 
 
 def reset_cache() -> None:

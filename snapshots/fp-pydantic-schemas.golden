@@ -422,6 +422,11 @@
     "title": "Candidates",
     "type": "array"
    },
+   "candidates_total": {
+    "default": 0,
+    "title": "Candidates Total",
+    "type": "integer"
+   },
    "id": {
     "title": "Id",
     "type": "integer"
@@ -431,6 +436,13 @@
     "type": "string"
    },
    "reason": {
+    "enum": [
+     "no_match",
+     "ambiguous",
+     "no_price",
+     "unwritable_content",
+     "bad_price"
+    ],
     "title": "Reason",
     "type": "string"
    }
@@ -456,6 +468,11 @@
       "title": "Candidates",
       "type": "array"
      },
+     "candidates_total": {
+      "default": 0,
+      "title": "Candidates Total",
+      "type": "integer"
+     },
      "id": {
       "title": "Id",
       "type": "integer"
@@ -465,6 +482,13 @@
       "type": "string"
      },
      "reason": {
+      "enum": [
+       "no_match",
+       "ambiguous",
+       "no_price",
+       "unwritable_content",
+       "bad_price"
+      ],
       "title": "Reason",
       "type": "string"
      }

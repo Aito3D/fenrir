@@ -57,7 +57,7 @@ outcome=ambiguous product=None candidates=['Dup - PLA - Same Colour - 1.75mm - 1
 outcome=matched product=Prusament|PLA|Galaxy Black cost_per_kg=59.8 candidates=['Prusament - PLA - Galaxy Black - 1.75mm - 0.5kg']
 
 === match_profile on an empty catalogue ===
-ProfileMatch(outcome='no_match', product=None, candidates=[])
+ProfileMatch(outcome='no_match', product=None, candidates=[], candidates_total=0)
 
 ### stderr:
 

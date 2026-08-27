@@ -73,6 +73,7 @@ _CACHE_TTL
 _FAIL_COOLDOWN
 _LOCK_ACQUIRE_TIMEOUT
 _MAX_PAGES
+_MAX_REPORTED_CANDIDATES
 _MONEY_CEILING
 _PAGE_SIZE
 _SEGMENT_SEPARATOR
@@ -101,7 +102,7 @@ BaseFilamentPresetResponse {"properties": {"brand": {"title": "Brand", "type": "
 FilamentPresetCreate {"properties": {"brand": {"default": "", "title": "Brand", "type": "string"}, "color": {"default": "", "title": "Color", "type": "string"}, "color_hex": {"default": "", "title": "Color Hex", "type": "string"}, "content": {"default": "", "title": "Content", "type": "string"}, "filename": {"default": "", "title": "Filename", "type": "string"}, "material": {"default": "", "title": "Material", "type": "string"}, "name": {"default": "", "title": "Name", "type": "string"}}, "title": "FilamentPresetCreate", "type": "object"}
 FilamentPresetResponse {"properties": {"brand": {"title": "Brand", "type": "string"}, "color": {"title": "Color", "type": "string"}, "color_hex": {"title": "Color Hex", "type": "string"}, "content": {"title": "Content", "type": "string"}, "created_at": {"anyOf": [{"format": "date-time", "type": "string"}, {"type": "null"}], "title": "Created At"}, "filename": {"title": "Filename", "type": "string"}, "id": {"title": "Id", "type": "integer"}, "material": {"title": "Material", "type": "string"}, "name": {"title": "Name", "type": "string"}, "updated_at": {"anyOf": [{"format": "date-time", "type": "string"}, {"type": "null"}], "title": "Updated At"}}, "required": ["id", "name", "brand", "material", "color", "color_hex", "filename", "content", "created_at", "updated_at"], "title": "FilamentPresetResponse", "type": "object"}
 FilamentPresetUpdate {"properties": {"brand": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Brand"}, "color": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Color"}, "color_hex": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Color Hex"}, "content": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Content"}, "filename": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Filename"}, "material": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Material"}, "name": {"anyOf": [{"type": "string"}, {"type": "null"}], "title": "Name"}}, "title": "FilamentPresetUpdate", "type": "object"}
-FilamentPresetZohoSyncAttention {"description": "One profile the sync would not price, and why.", "properties": {"candidates": {"default": [], "items": {"type": "string"}, "title": "Candidates", "type": "array"}, "id": {"title": "Id", "type": "integer"}, "name": {"title": "Name", "type": "string"}, "reason": {"title": "Reason", "type": "string"}}, "required": ["id", "name", "reason"], "title": "FilamentPresetZohoSyncAttention", "type": "object"}
+FilamentPresetZohoSyncAttention {"description": "One profile the sync would not price, and why.", "properties": {"candidates": {"default": [], "items": {"type": "string"}, "title": "Candidates", "type": "array"}, "candidates_total": {"default": 0, "title": "Candidates Total", "type": "integer"}, "id": {"title": "Id", "type": "integer"}, "name": {"title": "Name", "type": "string"}, "reason": {"enum": ["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price"], "title": "Reason", "type": "string"}}, "required": ["id", "name", "reason"], "title": "FilamentPresetZohoSyncAttention", "type": "object"}
 FilamentPresetZohoSyncResponse {"description": "Counts are disjoint and sum to the profile count.\n\n``priced`` and ``unchanged`` are both confident matches, split by whether\nthe value actually moved; ``attention`` is everything else.", "properties": {"attention": {"default": [], "items": {"$ref": "#/components/schemas/FilamentPresetZohoSyncAttention"}, "title": "Attention", "type": "array"}, "priced": {"title": "Priced", "type": "integer"}, "unchanged": {"title": "Unchanged", "type": "integer"}}, "required": ["priced", "unchanged"], "title": "FilamentPresetZohoSyncResponse", "type": "object"}
 ```
 
@@ -159,6 +160,7 @@ export type FilamentPresetPayload
 ```regen: bash tools/fp_i18n_keys.sh```
 ```
 a
+common.plusNMore
 common.retry
 filamentProfiles.allBrands
 filamentProfiles.allImported

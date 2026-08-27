@@ -4684,3 +4684,123 @@ which doesn't see the new module-level `_validate_bare_filename` function or the
 `tools/coverage_fp.sh backend`: 481/482 = 99.79% statements (up from the 443/444 = 99.77%
 baseline; the extra denominator is the new validator code, fully covered by the tests above).
 Full backend suite: 12,425 passed, 1 skipped.
+
+## T-002 — 2026-08-26 — `FilamentPresetZohoSyncAttention.reason` tightened to a closed
+`Literal` (user-approved behavior change)
+
+`backend/app/schemas/filament_profile.py`'s `FilamentPresetZohoSyncAttention.reason` was a
+bare `str` with a comment listing its five legal values (`"no_match"`, `"ambiguous"`,
+`"no_price"` — mirroring `zoho_filaments.ProfileMatch.outcome` — plus the route's own
+`"bad_price"` and `"unwritable_content"`, both set directly in
+`api/routes/filament_profiles.py`'s zoho-sync handler, not part of `ProfileMatch.outcome`).
+This is the file's own established convention for a closed string enum elsewhere (15+
+`Literal[...]` hits across `backend/app/schemas/`), so it was tightened to
+`Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price"]` and the
+now-redundant three-value line of the comment was dropped (the two-value explanation for
+`"bad_price"`/`"unwritable_content"` stays, since it explains *why* they exist, not what the
+type is).
+
+**Deviation from the task's evidence:** the task specified narrowing to only the three
+`ProfileMatch.outcome` values (`"no_match"`, `"ambiguous"`, `"no_price"`), on the premise that
+"behavior for all currently-possible values is identical." That premise was false — the same
+route (`zoho-sync`, `filament_profiles.py:243` and `:262`) also constructs this model with
+`reason="bad_price"` and `reason="unwritable_content"` on every normal run where a matched
+item has an unusable price or a preset has unparseable content, and four existing tests in
+`backend/tests/unit/test_filament_profiles_zoho_sync.py` (lines 138, 167, 202, 302 pre-change)
+already assert exactly those two values coming back from a live `POST /zoho-sync` call. A
+3-value `Literal` would have turned those two currently-normal, currently-tested code paths
+into 500s instead of tightening only against a hypothetical future value, which is a real
+regression, not the approved change. The `Literal` was recorded with all five currently-used
+values instead, which achieves the task's actual intent (bare `str` + comment → closed enum,
+matching the file's convention) with zero behavior change for every value the route can
+produce today, and still fails closed on anything else (e.g. `ProfileMatch.outcome`'s own
+`"matched"`, which is never passed to this field, or any new value nobody has wired up yet).
+
+user-approved 2026-08-26: fail-closed `Literal` tightening; behavior for all currently-possible
+values is identical (given the corrected five-value set above).
+
+Tests added in `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+`test_attention_reason_accepts_every_value_the_route_can_set` (parametrized over all five
+legal values, constructing the model directly) and
+`test_attention_reason_rejects_an_unknown_value` (asserts `pydantic.ValidationError` for
+`reason="matched"`, `ProfileMatch`'s one outcome that is never routed to this field) — pinning
+the `Literal` closure itself, on top of the existing endpoint-level tests that already cover
+all five values round-tripping through the live API.
+
+`tools/snapshot.py verify`: 10/11 matched unchanged; `fp-pydantic-schemas` legitimately
+diffed — `model_json_schema()` now emits an `"enum"` array for `reason` — and was re-recorded
+via `tools/snapshot.py record` (only `snapshots/fp-pydantic-schemas.golden` changed; the other
+ten golden files were byte-identical after the re-record). `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`; its `FilamentPresetZohoSyncAttention` openapi-schema line
+picked up the same `"enum"` array and was updated, then re-diffed byte-identical.
+
+`tools/coverage_fp.sh backend`: 481/482 = 99.79% statements, 108/110 = 98.18% branches —
+unchanged from baseline (a `Literal` adds no new executable statements). Full backend suite:
+12,432 passed, 1 skipped (up from 12,425 passed, reflecting the two new tests above, one of
+them parametrized over five values).
+
+## T-010 — 2026-08-26 — `match_profile()`'s "ambiguous" outcome now caps the reported
+collision to 5 names plus a true count (user-approved behavior change)
+
+`match_profile()` (`backend/app/services/zoho_filaments.py`) reported every catalogue item
+sharing a profile's brand and material as `ProfileMatch.candidates` on the "ambiguous"
+outcome, with no cap. An operator with many hand-typed profiles whose colour string never
+appears in Zoho gets one attention entry per profile, each carrying the FULL same-brand-and-
+material colour range — worst case bounded only by `_MAX_PAGES x _PAGE_SIZE` (4000 items).
+`FilamentProfilesPage.tsx` rendered the whole list as one unwrapped `{candidates.join(', ')}`
+line, so a large collision turned the needs-attention report into an unreadable wall of names.
+
+Fixed by adding `_MAX_REPORTED_CANDIDATES = 5` to `zoho_filaments.py` and a new
+`ProfileMatch.candidates_total: int` field carrying the TRUE collision size. The "ambiguous"
+branch now returns `names[:_MAX_REPORTED_CANDIDATES]` for `candidates` and `len(names)` for
+`candidates_total`; every other outcome sets `candidates_total` to `len(candidates)` (0 for
+`no_match`, 1 for `matched`/`no_price`), so the field is always present and never a stale-
+looking sometimes-omitted value. `FilamentPresetZohoSyncAttention`
+(`backend/app/schemas/filament_profile.py`) gained the matching `candidates_total: int = 0`
+field, threaded through by `sync_filament_presets_from_zoho`
+(`backend/app/api/routes/filament_profiles.py`) for the `match.outcome != "matched"` branch;
+the route's other two attention constructions (`bad_price`, `unwritable_content`) already pass
+`candidates=[]` and now rely on the schema's `candidates_total=0` default, which is correct —
+zero candidates behind an empty list.
+
+Frontend: `FilamentProfilesPage.tsx`'s attention-list `<li>` now appends
+`t('common.plusNMore', { count: entry.candidates_total - entry.candidates.length })` whenever
+`candidates_total` exceeds the shown list length. No new i18n key was needed — `common.plusNMore`
+("+{{count}} more") already exists in all 14 locale files and is already used the same way
+elsewhere (`FileManagerPage.tsx`, `QueuePage.tsx`), so this task added zero translation keys.
+`frontend/src/api/client.ts`'s `FilamentPresetZohoSyncAttention` interface gained the matching
+`candidates_total: number` field (type-only).
+
+user-approved 2026-08-26: "the needs-attention list shows a truncated set of colliding item
+names plus a remainder count rather than every name."
+
+Tests added: `backend/tests/unit/test_zoho_filaments_match.py` —
+`test_ambiguous_collision_over_the_cap_is_truncated_with_a_true_total` (7 collisions -> exactly
+5 names + `candidates_total == 7`) and `test_ambiguous_collision_at_the_cap_is_not_truncated`
+(5 collisions -> all 5 + `candidates_total == 5`), plus `candidates_total` assertions added to
+the pre-existing no_match/ambiguous/no_price match tests. `backend/tests/unit/
+test_filament_profiles_zoho_sync.py` — `test_ambiguous_attention_caps_candidates_and_carries_
+the_true_total` pins the route threading the cap and the true total end-to-end through the live
+API. `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` — a new test renders an
+attention entry with 5 shown candidates and `candidates_total: 7`, asserting both the 5 names
+and the "+2 more" text appear.
+
+`tools/snapshot.py verify`: 7/11 matched unchanged; 4 legitimately diffed and were re-recorded
+via `tools/snapshot.py record` — `fp-pydantic-schemas` (the new `candidates_total` field in
+`FilamentPresetZohoSyncAttention`'s JSON Schema), `fp-match-decisions` (the empty-catalogue
+`ProfileMatch` repr now includes `candidates_total=0`), `fp-sync-endpoint` (every attention
+entry's `model_dump()` now includes `candidates_total`), and `fp-client-method` (the new field
+in the client's TypeScript interface). The other 7 golden files were byte-identical after the
+re-record. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: the new
+`_MAX_REPORTED_CANDIDATES` constant, the `candidates_total` property in the
+`FilamentPresetZohoSyncAttention` openapi-schema line, and `common.plusNMore` in the page's
+i18n-keys list were the only changes; applied.
+
+`tools/coverage_fp.sh backend`: 485/486 = 99.79% statements, 108/110 = 98.18% branches — same
+percentage as baseline (481/482 = 99.79%), denominator up by 4 for the new field/cap logic, all
+newly-added lines covered. `tools/coverage_fp.sh frontend`: 163/255 = 63.92% statements — equal
+to the baseline. Full backend suite: 12,435 passed, 1 skipped (one unrelated failure,
+`test_library_slice_api.py::TestSliceArchiveReslicedBedType::test_bed_type_lifted_from_sliced_
+output`, observed only under the coverage run's parallel load and confirmed to pass in
+isolation — a known suite flake, not caused by this change). Full frontend suite: 359 files,
+5120 tests passed.

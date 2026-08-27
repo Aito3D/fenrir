@@ -213,6 +213,7 @@ async def sync_filament_presets_from_zoho(
                     name=preset.name,
                     reason=match.outcome,
                     candidates=match.candidates,
+                    candidates_total=match.candidates_total,
                 )
             )
             continue

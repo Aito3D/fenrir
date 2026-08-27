@@ -3515,6 +3515,7 @@ export interface FilamentPresetZohoSyncAttention {
   name: string;
   reason: 'no_match' | 'ambiguous' | 'no_price' | 'unwritable_content' | 'bad_price';
   candidates: string[];
+  candidates_total: number;
 }
 export interface FilamentPresetZohoSyncResponse {
   priced: number;

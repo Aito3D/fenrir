@@ -3,8 +3,10 @@
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from backend.app.models.filament_profile import FilamentPreset
+from backend.app.schemas.filament_profile import FilamentPresetZohoSyncAttention
 from backend.app.services import zoho_filaments
 from backend.app.services.zoho_filaments import FilamentProduct
 
@@ -118,6 +120,25 @@ async def test_unresolved_profiles_are_reported_and_left_untouched(
 
 
 @pytest.mark.asyncio
+async def test_ambiguous_attention_caps_candidates_and_carries_the_true_total(async_client, db_session, monkeypatch):
+    # T-010: the route must thread match_profile's cap-and-total through the
+    # response, not just the (already-capped) name list.
+    catalogue = [product(colour=f"Colour {i}") for i in range(7)]
+    original = json.dumps({"name": "P"}, indent=4)
+    await make_preset(db_session, content=original)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue(catalogue))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert len(body["attention"]) == 1
+    entry = body["attention"][0]
+    assert entry["reason"] == "ambiguous"
+    assert len(entry["candidates"]) == 5
+    assert entry["candidates_total"] == 7
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("content", ["", "{not json", "[1, 2]"])
 async def test_a_confident_match_with_unwritable_content_is_flagged_for_attention(
     async_client, db_session, monkeypatch, content
@@ -203,6 +224,79 @@ async def test_a_bad_priced_profile_does_not_stop_healthy_profiles_from_being_pr
 
     await db_session.refresh(healthy)
     assert json.loads(healthy.content)["filament_cost"] == ["19.90"]
+
+
+@pytest.mark.asyncio
+async def test_a_mixed_batch_produces_disjoint_per_preset_outcomes(async_client, db_session, monkeypatch):
+    # One call, four presets in four different match states against the same
+    # catalogue: a fresh confident match (priced), an already-priced confident
+    # match (unchanged), an ambiguous match (attention), and a no-match
+    # (attention). Guards against a bug that double-counts one preset's
+    # outcome, or attributes it to the wrong id — every test above exercises
+    # exactly one preset per call, so a leak or double-count across `presets`
+    # in the loop would not be caught.
+    fresh = await make_preset(db_session, name="Fresh", brand="Polymaker", material="PETG", colour="Electric Blue")
+    already_priced_content = json.dumps({"filament_cost": ["19.90"]}, indent=4)
+    already_priced = await make_preset(
+        db_session,
+        name="AlreadyPriced",
+        brand="Polymaker",
+        material="PLA",
+        colour="Black",
+        content=already_priced_content,
+    )
+    ambiguous_original = json.dumps({"name": "Ambiguous"}, indent=4)
+    ambiguous = await make_preset(
+        db_session, name="Ambiguous", brand="eSUN", material="PLA", colour="Red", content=ambiguous_original
+    )
+    no_match_original = json.dumps({"name": "NoMatch"}, indent=4)
+    no_match = await make_preset(
+        db_session, name="NoMatch", brand="Prusament", material="ABS", colour="Orange", content=no_match_original
+    )
+
+    monkeypatch.setattr(
+        zoho_filaments,
+        "fetch_catalogue",
+        _catalogue(
+            [
+                product(brand="Polymaker", material="PETG", colour="Electric Blue", price=19.9),
+                product(brand="Polymaker", material="PLA", colour="Black", price=19.9),
+                product(brand="eSUN", material="PLA", colour="Red", price=10.0),
+                product(brand="eSUN", material="PLA", colour="Red", price=12.0),
+            ]
+        ),
+    )
+    _configured(monkeypatch, True)
+
+    response = await async_client.post(ENDPOINT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["priced"] == 1
+    assert body["unchanged"] == 1
+    assert len(body["attention"]) == 2
+    # Total accounted-for presets equals the batch size — no double-count and
+    # no dropped preset.
+    assert body["priced"] + body["unchanged"] + len(body["attention"]) == 4
+
+    attention_by_id = {entry["id"]: entry for entry in body["attention"]}
+    assert set(attention_by_id) == {ambiguous.id, no_match.id}
+    assert attention_by_id[ambiguous.id]["reason"] == "ambiguous"
+    assert attention_by_id[ambiguous.id]["name"] == "Ambiguous"
+    assert attention_by_id[no_match.id]["reason"] == "no_match"
+    assert attention_by_id[no_match.id]["name"] == "NoMatch"
+
+    await db_session.refresh(fresh)
+    assert json.loads(fresh.content)["filament_cost"] == ["19.90"]
+
+    await db_session.refresh(already_priced)
+    assert already_priced.content == already_priced_content  # unchanged: byte-identical
+
+    await db_session.refresh(ambiguous)
+    assert ambiguous.content == ambiguous_original  # never touched
+
+    await db_session.refresh(no_match)
+    assert no_match.content == no_match_original  # never touched
 
 
 @pytest.mark.asyncio
@@ -323,3 +417,18 @@ async def test_502_for_a_non_runtime_error_fallback(async_client, db_session, mo
     response = await async_client.post(ENDPOINT)
     assert response.status_code == 502
     assert response.json()["detail"] == "Could not reach Zoho"
+
+
+@pytest.mark.parametrize("reason", ["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price"])
+def test_attention_reason_accepts_every_value_the_route_can_set(reason):
+    # Pins FilamentPresetZohoSyncAttention.reason as a closed Literal, not a bare str:
+    # every value the route actually assigns (match_profile's three outcomes plus the
+    # route's own "bad_price"/"unwritable_content") must still construct cleanly.
+    FilamentPresetZohoSyncAttention(id=1, name="P", reason=reason)
+
+
+def test_attention_reason_rejects_an_unknown_value():
+    # A reason outside the five above is a bug, not a new legitimate value — the closed
+    # Literal must fail closed (ValidationError) instead of silently accepting any string.
+    with pytest.raises(ValidationError):
+        FilamentPresetZohoSyncAttention(id=1, name="P", reason="matched")

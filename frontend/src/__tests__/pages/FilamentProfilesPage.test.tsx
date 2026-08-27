@@ -248,6 +248,38 @@ describe('FilamentProfilesPage', () => {
     expect(await screen.findByText(/several items matched/i, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
+  it('caps a large ambiguous collision to 5 names plus a "+N more" remainder (T-010)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [
+            {
+              id: 7,
+              name: 'eSUN PETG',
+              reason: 'ambiguous',
+              candidates: ['A', 'B', 'C', 'D', 'E'],
+              candidates_total: 7,
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    // Only the 5 shipped names are shown, plus a "+2 more" remainder for the
+    // two collisions that did not fit — never the full unbounded list.
+    expect(await screen.findByText(/A, B, C, D, E/, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText(/\+2 more/i, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+
   it('reports a matched preset with unwritable content as needing attention, not as unchanged', async () => {
     stubBase();
     server.use(

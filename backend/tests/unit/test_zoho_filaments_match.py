@@ -39,6 +39,7 @@ def test_brand_mismatch_is_no_match():
     assert result.outcome == "no_match"
     assert result.product is None
     assert result.candidates == []
+    assert result.candidates_total == 0
 
 
 def test_material_mismatch_is_no_match():
@@ -63,6 +64,8 @@ def test_two_items_surviving_colour_narrowing_is_ambiguous():
     assert result.outcome == "ambiguous"
     assert result.product is None
     assert result.candidates == ["A - PETG - Electric Blue", "B - PETG - Electric Blue"]
+    # Two collisions, no cap needed: the reported count equals the true one.
+    assert result.candidates_total == 2
 
 
 def test_colour_that_matches_nothing_leaves_the_collision_ambiguous():
@@ -75,6 +78,27 @@ def test_colour_that_matches_nothing_leaves_the_collision_ambiguous():
     result = match_profile(catalogue, "Polymaker", "PETG", "Electric Blue")
     assert result.outcome == "ambiguous"
     assert result.candidates == ["A - PETG - Red", "B - PETG - Green"]
+    assert result.candidates_total == 2
+
+
+def test_ambiguous_collision_over_the_cap_is_truncated_with_a_true_total():
+    # T-010: an operator with many hand-typed colours that never appear in
+    # Zoho must not get every colliding item name back — just the first 5
+    # plus the true collision size so nothing is silently hidden.
+    catalogue = [product(colour=f"Colour {i}", name=f"Item {i} - PETG - Colour {i}") for i in range(7)]
+    result = match_profile(catalogue, "Polymaker", "PETG", "Electric Blue")
+    assert result.outcome == "ambiguous"
+    assert result.candidates == [f"Item {i} - PETG - Colour {i}" for i in range(5)]
+    assert len(result.candidates) == 5
+    assert result.candidates_total == 7
+
+
+def test_ambiguous_collision_at_the_cap_is_not_truncated():
+    catalogue = [product(colour=f"Colour {i}", name=f"Item {i} - PETG - Colour {i}") for i in range(5)]
+    result = match_profile(catalogue, "Polymaker", "PETG", "Electric Blue")
+    assert result.outcome == "ambiguous"
+    assert len(result.candidates) == 5
+    assert result.candidates_total == 5
 
 
 def test_sole_candidate_matches_even_when_the_colour_differs():
@@ -93,6 +117,7 @@ def test_unpriced_item_is_its_own_outcome():
     assert result.outcome == "no_price"
     assert result.product is not None  # the caller can name it in the report
     assert result.candidates == [catalogue[0].name]
+    assert result.candidates_total == 1
 
 
 def test_missing_brand_or_material_never_matches():

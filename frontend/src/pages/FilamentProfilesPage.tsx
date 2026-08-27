@@ -631,7 +631,14 @@ export function FilamentProfilesPage() {
                               ? 'filamentProfiles.syncZohoBadPrice'
                               : 'filamentProfiles.syncZohoNoPrice',
                     )}
-                    {entry.candidates.length > 0 && `: ${entry.candidates.join(', ')}`}
+                    {entry.candidates.length > 0 && (
+                      <>
+                        {': '}
+                        {entry.candidates.join(', ')}
+                        {entry.candidates_total > entry.candidates.length &&
+                          ` ${t('common.plusNMore', { count: entry.candidates_total - entry.candidates.length })}`}
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>
