@@ -4,7 +4,8 @@ import {
   buildWaterfall,
   computePricing,
   discountMatrix,
-  bulkPricing,
+  unitPriceCurve,
+  CURVE_QUANTITIES,
   formatMoney,
   formatPct,
   targetPriceProfit,
@@ -497,30 +498,39 @@ describe('discountMatrix', () => {
   });
 });
 
-describe('bulkPricing', () => {
-  const r = computePricing(referenceInputs, filament, printer, defaults);
-  const rows = bulkPricing(referenceInputs, filament, printer, defaults);
-
-  it('uses the standard quantities and discounts', () => {
-    expect(rows.map((row) => row.quantity)).toEqual([10, 20, 30, 50, 100, 300]);
-    expect(rows[0].prices).toHaveLength(6);
+describe('unitPriceCurve', () => {
+  it('walks the ladder, includes and flags the current quantity, sorted and deduped', () => {
+    const pts = unitPriceCurve({ ...referenceInputs, quantity: 7 }, filament, printer, defaults);
+    expect(pts.map((p) => p.quantity)).toEqual([1, 2, 5, 7, 10, 20, 50, 100, 200, 500]);
+    expect(pts.filter((p) => p.current).map((p) => p.quantity)).toEqual([7]);
+    const onLadder = unitPriceCurve({ ...referenceInputs, quantity: 10 }, filament, printer, defaults);
+    expect(onLadder.map((p) => p.quantity)).toEqual(CURVE_QUANTITIES);
+    expect(onLadder.find((p) => p.quantity === 10)?.current).toBe(true);
   });
 
-  it('cell = qty × TTC × (1 − discount) when there are no one-time costs', () => {
-    expect(rows[0].prices[0]).toBeCloseTo(10 * r.total_ttc * 0.95, 4);
-    expect(rows[5].prices[5]).toBeCloseTo(300 * r.total_ttc * 0.5, 4);
+  it('each point is a full recompute at that quantity', () => {
+    const pts = unitPriceCurve(referenceInputs, filament, printer, defaults);
+    for (const p of pts) {
+      const r = computePricing({ ...referenceInputs, quantity: p.quantity }, filament, printer, defaults);
+      expect(p.unit_ht).toBeCloseTo(r.total_ht, 8);
+      expect(p.unit_ttc).toBeCloseTo(r.total_ttc, 8);
+      expect(p.task_ttc).toBeCloseTo(r.total_ttc_qty, 8);
+      expect(p.multiplier).toBeCloseTo(r.margin_multiplier, 10);
+      expect(p.qty_factor).toBeCloseTo(r.qty_factor, 10);
+      expect(p.floor_applied).toBe(r.floor_applied);
+    }
   });
 
-  it('recomputes per quantity so one-time costs are amortized, not multiplied', () => {
+  it('unit price is non-increasing in quantity when there are no one-time costs', () => {
+    const pts = unitPriceCurve(referenceInputs, filament, printer, defaults);
+    for (let i = 1; i < pts.length; i++) expect(pts[i].unit_ht).toBeLessThanOrEqual(pts[i - 1].unit_ht + 1e-9);
+  });
+
+  it('amortizes one-time costs: 10 units pay modeling once, not 10×', () => {
     const inputs = { ...referenceInputs, modeling_hours: 1 };
-    const withModeling = bulkPricing(inputs, filament, printer, defaults);
-    const perUnit = computePricing(inputs, filament, printer, defaults); // qty 1
-    // A 10-unit job pays modeling once (× ads overhead, margin, tax), not 10×
-    expect(withModeling[0].prices[0]).toBeCloseTo(
-      (rows[0].prices[0] / 0.95 + 3000 * 1.05 * 1.5 * 1.13) * 0.95,
-      2,
-    );
-    expect(withModeling[0].prices[0]).toBeLessThan(10 * perUnit.total_ttc * 0.95);
+    const perUnit = computePricing({ ...inputs, quantity: 1 }, filament, printer, defaults);
+    const ten = unitPriceCurve(inputs, filament, printer, defaults).find((p) => p.quantity === 10)!;
+    expect(ten.task_ttc).toBeLessThan(10 * perUnit.total_ttc);
   });
 });
 

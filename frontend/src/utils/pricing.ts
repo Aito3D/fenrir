@@ -340,8 +340,6 @@ export function computePricing(
 }
 
 export const DISCOUNT_COLUMNS = [0, 0.05, 0.1, 0.2, 0.3, 0.5];
-const BULK_QUANTITIES = [10, 20, 30, 50, 100, 300];
-export const BULK_DISCOUNTS = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5];
 
 export interface DiscountColumn {
   discount: number; // fraction
@@ -390,27 +388,44 @@ export function discountMatrix(result: PricingResult, discounts: number[] = DISC
   });
 }
 
-export interface BulkRow {
+/** Quantity ladder drawn by the unit-price curve panel. */
+export const CURVE_QUANTITIES = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+
+export interface CurvePoint {
   quantity: number;
-  prices: number[]; // one per discount, job TTC at that quantity × (1 − discount)
+  unit_ht: number;
+  unit_ttc: number;
+  task_ttc: number;
+  multiplier: number;
+  qty_factor: number;
+  floor_applied: boolean;
+  /** True for the quantity currently entered in the calculator. */
+  current: boolean;
 }
 
-/** Bulk price table. Each row is a full recompute at that quantity so that
- *  one-time costs (modeling, preparation) are amortized rather than
- *  multiplied — the whole point of bulk pricing. */
-export function bulkPricing(
+/** Unit price at each quantity of the ladder (plus the current quantity).
+ *  Each point is a full recompute so one-time costs amortize, the quantity
+ *  discount slides down its curve, and the floor bites at low quantities. */
+export function unitPriceCurve(
   inputs: PricingInputs,
   filament: PricingFilament,
   printer: PricingPrinter,
   defaults: PricingDefaults,
-  quantities: number[] = BULK_QUANTITIES,
-  discounts: number[] = BULK_DISCOUNTS,
-): BulkRow[] {
-  return quantities.map((quantity) => {
+  quantities: number[] = CURVE_QUANTITIES,
+): CurvePoint[] {
+  const current = Math.max(1, Math.floor(inputs.quantity || 1));
+  const ladder = Array.from(new Set([...quantities, current])).sort((a, b) => a - b);
+  return ladder.map((quantity) => {
     const r = computePricing({ ...inputs, quantity }, filament, printer, defaults);
     return {
       quantity,
-      prices: discounts.map((discount) => r.total_ttc_qty * (1 - discount)),
+      unit_ht: r.total_ht,
+      unit_ttc: r.total_ttc,
+      task_ttc: r.total_ttc_qty,
+      multiplier: r.margin_multiplier,
+      qty_factor: r.qty_factor,
+      floor_applied: r.floor_applied,
+      current: quantity === current,
     };
   });
 }
