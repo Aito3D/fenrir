@@ -5125,3 +5125,131 @@ parallel load and passed cleanly both in isolation and on a clean re-run of the 
 change (Aito quote sync, not touched). `ruff check` / `ruff format --check` clean on every
 touched backend file. `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` clean on every
 touched frontend file.
+
+## T-021 — 2026-08-26 — calculator.py's Zoho routes migrated onto the shared
+`_fetch_catalogue_or_502` helper (user-approved, incl. scope extension to calculator.py)
+
+`backend/app/services/zoho_filaments._fetch_catalogue_or_502` (503 not-configured / 409
+lock-busy / 500 mapping-failure / 502 generic-unreachable) was introduced for
+`filament_profiles.py`'s Zoho sync route but `backend/app/api/routes/calculator.py`'s two
+older hand-rolled copies — `search_zoho_filaments` (`GET /calculator/zoho-filaments`) and
+`sync_calculator_filaments_from_zoho` (`POST /calculator/filaments/zoho-sync`) — were never
+migrated onto it. Both only caught `ZohoFilamentMappingError` (500) and a bare `except
+Exception` (502), so the lock-busy `RuntimeError` and the check-then-act `ZohoNotConfiguredError`
+race that the shared helper reports as 409 and 503 respectively both fell through to the
+generic 502 in the calculator, even though the same `fetch_catalogue` call underlies both
+modules and can raise either from the same failure.
+
+Fixed by replacing each route's `is_configured()` check + `try/except` block with a single
+call to `zoho_filaments._fetch_catalogue_or_502(db, context=...)`, unpacking the returned
+`(catalogue, stale_since)` tuple and discarding `stale_since` — a stale-catalogue disclosure
+feature for the calculator was not part of this task and is not added; the calculator's
+success-path response shape and data are unchanged. The now-unused `zoho_service` import was
+removed from `calculator.py`.
+
+user-approved 2026-08-26 (incl. one-file scope extension permitting this edit to
+`calculator.py`): "A client hitting GET /calculator/zoho-filaments or POST
+/calculator/filaments/zoho-sync while another Zoho catalogue refresh is in flight would now
+get 409 instead of 502, and would get 503 instead of 502 if Zoho credentials are cleared in
+the check-then-act window."
+
+A side effect of delegating to the shared helper: the failure-path log lines for both routes
+are now emitted from `backend.app.services.zoho_filaments` (the helper's own logger) rather
+than from `backend.app.api.routes.calculator` — the same place `filament_profiles.py`'s
+identical failures already log from. Response status codes and bodies are unaffected; two
+existing tests that asserted on the old logger name were updated to the new one.
+
+Tests added, mirroring `test_filament_profiles_zoho_sync.py`'s equivalent branches:
+`backend/tests/unit/test_calculator_zoho_routes.py`:
+`test_search_returns_503_when_credentials_are_cleared_mid_request` and
+`test_search_returns_409_when_a_sync_is_already_in_progress`.
+`backend/tests/unit/test_calculator_zoho_sync.py`:
+`test_sync_returns_503_when_credentials_are_cleared_mid_request` and
+`test_sync_returns_409_when_a_sync_is_already_in_progress`.
+Updated (logger name only, not the asserted status code): `test_upstream_failure_logs_a_stack_trace`
+and `test_mapping_failure_is_reported_as_internal_server_error` in `test_calculator_zoho_routes.py`;
+`test_sync_upstream_failure_returns_502_and_logs_a_stack_trace` and
+`test_sync_mapping_failure_returns_500_not_bad_gateway` in `test_calculator_zoho_sync.py`. All
+pre-existing 502/500/503 assertions for genuine unreachability, mapping failure, and
+not-configured-up-front kept passing unchanged.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match, including `calc-zoho-pure` (pure
+calculator logic, unaffected). `SURFACE.md` regenerated via `bash tools/gen_surface.sh`: no
+diff (route set unchanged).
+
+`bash tools/coverage_fp.sh backend`: 497/498 = 99.80% scoped statements (unchanged from
+baseline; `calculator.py` is not in the scoped list). Full backend suite (`pytest
+backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,446 passed, 1 skipped. One
+incidental failure on the first run
+(`test_library_slice_api.py::TestSliceArchiveReslicedThumbnail::test_falls_back_to_auxiliaries_when_source_lacks_plate_png`)
+reproduced only under `-n 30` parallel load and passed in isolation — the documented
+suite-load flake, unrelated to this change (library slice API, not touched). `ruff check` /
+`ruff format --check` clean on every touched backend file.
+
+## T-025 — 2026-08-26 — a sole colour-mismatched Zoho catalogue candidate no longer auto-prices
+a filament profile (user-approved behavior change)
+
+`match_profile()` (`backend/app/services/zoho_filaments.py`) accepted a SOLE brand+material
+candidate as a confident match regardless of its colour — the colour comparison lived entirely
+inside the `if len(candidates) > 1:` branch, so a single surviving candidate skipped it
+altogether. That rested on the premise, stated in the function's own docstring, that "price per
+kg does not vary by colour within a brand and material." The calculator's own docstring
+(`backend/app/api/routes/calculator.py:164-166`) directly contradicts that: dealer prices differ
+between colours of the same material (Bambu ABS-GF is 1866 in Blue and 3208 in Black). A
+catalogue holding a single Bambu ABS-GF (Blue, 1866) therefore silently wrote 1866 into a Bambu
+ABS-GF *Black* profile — breaking the route's own promise that "an auto-match can never silently
+write a wrong price" (`routes/filament_profiles.py:186-187`).
+
+Fixed per the finding: after narrowing to a sole candidate (whether it started as the only
+brand+material match, or survived a `> 1` colour narrowing), a NON-EMPTY profile colour must now
+equal the candidate's colour (same `_normalise()` used everywhere else in this function) or the
+outcome is `"ambiguous"` rather than `"matched"` — reusing the existing reason rather than adding
+a new one: the UI already renders candidates for `"ambiguous"`, and there genuinely is no single
+safe price for this profile in the catalogue. `candidates=[product.name]`, `candidates_total=1`
+for this new branch, consistent with how `"no_price"`/`"weight_unknown"` report a single item. A
+profile with an EMPTY/absent colour keeps today's behavior unchanged (the approval covers only
+the actively-disagreeing case, not the unknown one); a sole candidate whose colour matches keeps
+pricing exactly as before. Multi-candidate narrowing, no-match, and no-price logic are otherwise
+byte-identical.
+
+user-approved 2026-08-26: "profiles that today get an auto-priced filament_cost from a
+differently-coloured sole catalogue item will stop being priced and will instead appear in the
+sync's needs-attention list, so the run's `priced` count drops and the toast turns from success
+to warning on installs that relied on that loose match."
+
+Tests added/updated in `backend/tests/unit/test_zoho_filaments_match.py`:
+`test_sole_candidate_with_a_different_colour_is_ambiguous` (new: sole candidate, mismatched
+colour → `"ambiguous"`, `candidates=[item.name]`, `candidates_total=1`);
+`test_sole_candidate_with_the_same_colour_matches` (new: sole candidate, matching colour →
+`"matched"`, pinning that path stays unaffected);
+`test_sole_candidate_matches_when_the_profile_has_no_colour` (new: sole candidate, profile colour
+empty → `"matched"`, pinning today's behavior for the case the approval does not cover). The
+pre-existing `test_sole_candidate_matches_even_when_the_colour_differs` — which pinned the OLD,
+now-disallowed behavior — was replaced by the first new test above (renamed and its assertions
+flipped to the approved outcome) rather than left in place asserting the old contract.
+`backend/tests/unit/test_filament_profiles_zoho_sync.py` gained
+`test_sole_candidate_with_a_different_colour_is_left_unpriced` (route-level: the mismatch lands
+in the attention list with `reason="ambiguous"` and the preset's content is byte-identical
+afterward). No other existing test in either file relied on the old loose-acceptance behavior —
+every other case's catalogue product colour already matched its preset's colour by construction.
+
+`python3 tools/snapshot.py verify`: 9/11 matched unchanged; 2 legitimately diffed and were
+re-recorded via `tools/snapshot.py record` — `fp-match-decisions` (its fixture catalogue includes
+a sole Bambu Lab / PLA Basic candidate deliberately queried with a non-matching colour, and a
+sole no-price eSUN / PETG candidate likewise queried with a non-matching colour; both now report
+`"ambiguous"` instead of `"matched"`/`"no_price"`) and `fp-sync-endpoint` (its fixture catalogue's
+sole `Polymaker - PLA - Grey` item is matched by three presets whose stored colour is `"Any"`;
+all three now land in `attention` with `reason="ambiguous"` instead of being priced/reaching the
+content-write step, so `priced` drops from 2 to 1 in every scenario that preset appears in). Both
+diffs verified to be exactly this change and nothing else. `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`: byte-identical, no diff (reusing the existing `"ambiguous"`
+Literal value changed no schema, route, or frontend surface).
+
+`bash tools/coverage_fp.sh backend`: 500/501 = 99.80% scoped statements, 112/114 = 98.25% branches
+— same percentage as the baseline (497/498 = 99.80%; the denominator grew by the new branch,
+which is fully covered by the tests above). Full backend suite (`pytest backend/tests/ -n 30`,
+excluding `test_bambu_ftp.py`): 12,448 passed, 1 skipped. One incidental failure on this run
+(`test_scheduler_concurrent_dispatch.py::test_uploads_to_different_printers_overlap`) reproduced
+only under `-n 30` parallel load and passed cleanly in isolation — the documented suite-load
+flake, unrelated to this change (printer job scheduler, not touched). `ruff check` / `ruff format
+--check` clean on every touched backend file.

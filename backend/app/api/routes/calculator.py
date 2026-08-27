@@ -32,7 +32,6 @@ from backend.app.schemas.calculator import (
 )
 from backend.app.services import zoho_filaments
 from backend.app.services.calculator_insights import calculator_insights_service
-from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -165,19 +164,7 @@ async def search_zoho_filaments(
     between colours of the same material (Bambu ABS-GF is 1866 in Blue and 3208
     in Black), so which colour the user picks decides the price.
     """
-    if not await zoho_service.is_configured(db):
-        raise HTTPException(status_code=503, detail="Zoho is not configured")
-    try:
-        catalogue = await zoho_filaments.fetch_catalogue(db)
-    except zoho_filaments.ZohoFilamentMappingError as exc:
-        # A mapping/programming bug in the catalogue service, not an
-        # unreachable Zoho — surfaced distinctly (500) so it is never mistaken
-        # for the network failure below (T-074).
-        logger.error("Zoho filament catalogue mapping failure: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
-    except Exception as exc:
-        logger.warning("Zoho filament catalogue unavailable: %s", exc, exc_info=True)
-        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+    catalogue, _stale_since = await zoho_filaments._fetch_catalogue_or_502(db, context="during filament search")
     return zoho_filaments.search_catalogue(catalogue, q, limit)
 
 
@@ -200,17 +187,7 @@ async def sync_calculator_filaments_from_zoho(
     Prices only. Brand, material, margin and difficulty are never rewritten from
     Zoho, so a rename upstream cannot clobber a hand-corrected filament.
     """
-    if not await zoho_service.is_configured(db):
-        raise HTTPException(status_code=503, detail="Zoho is not configured")
-    try:
-        catalogue = await zoho_filaments.fetch_catalogue(db)
-    except zoho_filaments.ZohoFilamentMappingError as exc:
-        # See the identical branch in search_zoho_filaments above (T-074).
-        logger.error("Zoho filament catalogue mapping failure during sync: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
-    except Exception as exc:
-        logger.warning("Zoho filament catalogue unavailable during sync: %s", exc, exc_info=True)
-        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+    catalogue, _stale_since = await zoho_filaments._fetch_catalogue_or_502(db, context="during calculator sync")
 
     total_result = await db.execute(
         select(func.count()).select_from(CalculatorFilament).where(CalculatorFilament.zoho_item_id.is_not(None))

@@ -131,6 +131,34 @@ async def test_unresolved_profiles_are_reported_and_left_untouched(
 
 
 @pytest.mark.asyncio
+async def test_sole_candidate_with_a_different_colour_is_left_unpriced(async_client, db_session, monkeypatch):
+    # T-025 (user-approved 2026-08-26): a lone catalogue candidate whose
+    # colour disagrees with the profile's must not be auto-priced — dealer
+    # price varies by colour within a brand and material. It must instead
+    # land in the attention list (reusing the "ambiguous" reason) and the
+    # preset's content must stay byte-identical, exactly like any other
+    # unresolved profile.
+    original = json.dumps({"name": "P"}, indent=4)
+    preset = await make_preset(db_session, colour="Electric Blue", content=original)
+    mismatched = product(colour="Red")
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([mismatched]))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert body["priced"] == 0
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["id"] == preset.id
+    assert body["attention"][0]["reason"] == "ambiguous"
+    assert body["attention"][0]["candidates"] == [mismatched.name]
+    assert body["attention"][0]["candidates_total"] == 1
+
+    await db_session.refresh(preset)
+    assert preset.content == original  # byte-identical: never written
+
+
+@pytest.mark.asyncio
 async def test_ambiguous_attention_caps_candidates_and_carries_the_true_total(async_client, db_session, monkeypatch):
     # T-010: the route must thread match_profile's cap-and-total through the
     # response, not just the (already-capped) name list.

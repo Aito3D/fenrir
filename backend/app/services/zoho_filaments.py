@@ -233,9 +233,14 @@ def match_profile(
     """Find the one catalogue item that prices this profile, or say why not.
 
     Brand AND material must both agree — brand alone matches every filament
-    that vendor sells. Colour only narrows a collision; a sole candidate is
-    accepted whatever its colour, because price per kg does not vary by colour
-    within a brand and material.
+    that vendor sells. Colour only narrows a collision. A SOLE candidate is
+    only accepted when the profile's own colour agrees with it (or the
+    profile carries no colour at all): dealer price DOES vary by colour
+    within a brand and material (e.g. Bambu ABS-GF is 1866 in Blue and 3208
+    in Black — see the calculator's own docstring), so a colour-blind sole
+    match could silently write the wrong price. A colour-mismatched sole
+    candidate is reported as "ambiguous" rather than accepted — same as any
+    other case where colour cannot pick a single safe answer.
 
     Deliberately not built on ``_score``: that is a relevance ranker for the
     search box and always yields a best row, so it can order candidates but can
@@ -266,6 +271,14 @@ def match_profile(
         candidates = narrowed
 
     product = candidates[0]
+    want_colour = _normalise(colour)
+    if want_colour and _normalise(product.colour) != want_colour:
+        # T-025: a lone candidate whose colour disagrees with the profile's
+        # must not be auto-priced — price per kg DOES vary by colour within a
+        # brand and material. Reported as "ambiguous" (not a new reason): the
+        # UI already renders candidates for it, and there genuinely is no
+        # single safe answer for this profile in the catalogue.
+        return ProfileMatch("ambiguous", None, [product.name], 1)
     if not product.has_price:
         return ProfileMatch("no_price", product, [product.name], 1)
     return ProfileMatch("matched", product, [product.name], 1)

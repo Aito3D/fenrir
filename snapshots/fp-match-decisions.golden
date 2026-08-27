@@ -34,11 +34,11 @@ outcome=matched product=Polymaker|PLA|Electric Blue cost_per_kg=15.0 candidates=
 --- space-insensitive brand | brand='BambuLab' material='PLA Basic' colour='Jade White'
 outcome=matched product=Bambu Lab|PLA Basic|Jade White cost_per_kg=24.99 candidates=['Bambu Lab - PLA Basic - Jade White - 1.75mm - 1.0kg']
 --- sole candidate, wrong colour, still accepted | brand='Bambu Lab' material='PLA Basic' colour='Not A Colour'
-outcome=matched product=Bambu Lab|PLA Basic|Jade White cost_per_kg=24.99 candidates=['Bambu Lab - PLA Basic - Jade White - 1.75mm - 1.0kg']
+outcome=ambiguous product=None candidates=['Bambu Lab - PLA Basic - Jade White - 1.75mm - 1.0kg']
 --- sole candidate without a price | brand='eSUN' material='PETG' colour='Grey'
 outcome=no_price product=eSUN|PETG|Grey cost_per_kg=0.0 candidates=['eSUN - PETG - Grey - 1.75mm - 1.0kg']
 --- sole candidate without a price, wrong colour | brand='eSUN' material='PETG' colour='Anything'
-outcome=no_price product=eSUN|PETG|Grey cost_per_kg=0.0 candidates=['eSUN - PETG - Grey - 1.75mm - 1.0kg']
+outcome=ambiguous product=None candidates=['eSUN - PETG - Grey - 1.75mm - 1.0kg']
 --- unknown brand | brand='Nobody' material='PLA' colour='Red'
 outcome=no_match product=None candidates=[]
 --- known brand, unknown material | brand='Polymaker' material='TPU' colour='Red'

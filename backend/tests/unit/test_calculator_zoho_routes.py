@@ -107,7 +107,12 @@ async def test_upstream_failure_is_reported_as_bad_gateway(async_client, monkeyp
 @pytest.mark.asyncio
 async def test_upstream_failure_logs_a_stack_trace(async_client, monkeypatch, caplog):
     """The 502 path must log with exc_info=True — a one-line warning with no
-    stack is the only trace an operator gets otherwise."""
+    stack is the only trace an operator gets otherwise.
+
+    T-021: the route now delegates to the shared
+    ``zoho_filaments._fetch_catalogue_or_502`` helper, so the log line is
+    emitted from that module rather than from this route module — the same
+    place filament_profiles.py's identical failure is logged from."""
 
     async def configured(db):
         return True
@@ -118,13 +123,13 @@ async def test_upstream_failure_logs_a_stack_trace(async_client, monkeypatch, ca
     monkeypatch.setattr(zoho_service, "is_configured", configured)
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
 
-    with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.calculator"):
+    with caplog.at_level(logging.WARNING, logger="backend.app.services.zoho_filaments"):
         resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
 
     assert resp.status_code == 502
     assert resp.json()["detail"] == "Could not reach Zoho"
-    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
-    assert records, "expected the route to log the failure"
+    records = [r for r in caplog.records if r.name == "backend.app.services.zoho_filaments"]
+    assert records, "expected the shared helper to log the failure"
     assert records[-1].exc_info is not None
 
 
@@ -133,7 +138,9 @@ async def test_mapping_failure_is_reported_as_internal_server_error(async_client
     """A ZohoFilamentMappingError (a programming/mapping bug, not an
     unreachable Zoho) must surface as a 500 with a detail distinct from the
     "Could not reach Zoho" 502 — folding it into the latter tells the
-    operator the network is down when Zoho is actually fine."""
+    operator the network is down when Zoho is actually fine.
+
+    T-021: logged from the shared helper module (see the docstring above)."""
 
     async def configured(db):
         return True
@@ -144,13 +151,13 @@ async def test_mapping_failure_is_reported_as_internal_server_error(async_client
     monkeypatch.setattr(zoho_service, "is_configured", configured)
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
 
-    with caplog.at_level(logging.ERROR, logger="backend.app.api.routes.calculator"):
+    with caplog.at_level(logging.ERROR, logger="backend.app.services.zoho_filaments"):
         resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
 
     assert resp.status_code == 500
     assert resp.json()["detail"] != "Could not reach Zoho"
-    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
-    assert records, "expected the route to log the failure"
+    records = [r for r in caplog.records if r.name == "backend.app.services.zoho_filaments"]
+    assert records, "expected the shared helper to log the failure"
     assert records[-1].exc_info is not None
 
 
@@ -269,6 +276,46 @@ async def test_reset_cache_mid_request_is_reported_as_bad_gateway_not_internal_e
         assert resp.json()["detail"] == "Could not reach Zoho"
     finally:
         zoho_filaments.reset_cache()
+
+
+@pytest.mark.asyncio
+async def test_search_returns_503_when_credentials_are_cleared_mid_request(async_client, monkeypatch):
+    """T-021: the search route now shares filament-profiles' error contract —
+    a ZohoNotConfiguredError raised inside fetch_catalogue (the check-then-act
+    race where credentials are cleared between the up-front is_configured()
+    check and the token refresh) must surface as 503, not a generic 502."""
+
+    async def configured(db):
+        return True
+
+    from backend.app.services.zoho import ZohoNotConfiguredError
+
+    async def boom(db, *, refresh=True):
+        raise ZohoNotConfiguredError("Zoho credentials are not configured")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+    resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Zoho is not configured"
+
+
+@pytest.mark.asyncio
+async def test_search_returns_409_when_a_sync_is_already_in_progress(async_client, monkeypatch):
+    """T-021: a lock-busy refresh with no cache to fall back to must surface
+    as 409, not the generic 502 the search route used to fold it into."""
+
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise RuntimeError(zoho_filaments._SYNC_IN_PROGRESS_DETAIL)
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+    resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == zoho_filaments._SYNC_IN_PROGRESS_DETAIL
 
 
 class TestZohoFilamentSearchRequiresCalculatorUpdate:

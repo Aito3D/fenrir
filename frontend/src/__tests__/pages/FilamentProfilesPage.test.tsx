@@ -543,7 +543,12 @@ describe('FilamentProfilesPage', () => {
     const toastViewport = container.querySelector('[data-testid="toast-viewport"]') as HTMLElement;
     const toastText = await within(toastViewport).findByText(/priced 2, unchanged 1/i, {}, { timeout: 5000 });
     const toastShell = toastText.closest('.toast-slide') as HTMLElement;
+    // Pin both sides of isFullSuccess's true branch: the green success class
+    // must be present, and the yellow warning class it would carry on any
+    // false-positive-`isFullSuccess` regression (e.g. `||` typo'd for `&&`,
+    // or a broken attentionCount check) must be absent.
     expect(toastShell.className).toMatch(/border-green-500/);
+    expect(toastShell.className).not.toMatch(/border-yellow-500/);
   });
 
   it('shows the backend error message when the Zoho sync fails', async () => {

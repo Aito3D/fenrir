@@ -101,12 +101,32 @@ def test_ambiguous_collision_at_the_cap_is_not_truncated():
     assert result.candidates_total == 5
 
 
-def test_sole_candidate_matches_even_when_the_colour_differs():
-    # DELIBERATE: price per kg does not vary by colour within a brand+material,
-    # so a lone candidate is priced even if that exact colour is not stocked.
-    # Pinned so it stays a decision rather than becoming an accident.
-    catalogue = [product(colour="Red", price=17.0)]
+def test_sole_candidate_with_a_different_colour_is_ambiguous():
+    # T-025 (user-approved 2026-08-26): price per kg DOES vary by colour
+    # within a brand+material (Bambu ABS-GF is 1866 in Blue, 3208 in Black —
+    # see the calculator's own docstring), so a lone candidate whose colour
+    # disagrees with the profile's must not be silently auto-priced.
+    catalogue = [product(colour="Red", price=17.0, name="Polymaker - PETG - Red")]
     result = match_profile(catalogue, "Polymaker", "PETG", "Electric Blue")
+    assert result.outcome == "ambiguous"
+    assert result.product is None
+    assert result.candidates == ["Polymaker - PETG - Red"]
+    assert result.candidates_total == 1
+
+
+def test_sole_candidate_with_the_same_colour_matches():
+    catalogue = [product(colour="Electric Blue", price=17.0)]
+    result = match_profile(catalogue, "Polymaker", "PETG", "Electric Blue")
+    assert result.outcome == "matched"
+    assert result.product.cost_per_kg == 17.0
+
+
+def test_sole_candidate_matches_when_the_profile_has_no_colour():
+    # A profile with no colour at all keeps today's behaviour: the approval
+    # covers only the case where the profile's colour actively disagrees with
+    # the sole candidate's, not the case where it is simply unknown.
+    catalogue = [product(colour="Red", price=17.0)]
+    result = match_profile(catalogue, "Polymaker", "PETG", "")
     assert result.outcome == "matched"
     assert result.product.cost_per_kg == 17.0
 
