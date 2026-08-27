@@ -5253,3 +5253,256 @@ excluding `test_bambu_ftp.py`): 12,448 passed, 1 skipped. One incidental failure
 only under `-n 30` parallel load and passed cleanly in isolation — the documented suite-load
 flake, unrelated to this change (printer job scheduler, not touched). `ruff check` / `ruff format
 --check` clean on every touched backend file.
+
+## T-026 — 2026-08-26 — `POST /filament-profiles/bambu-sync` non-dry-run now also requires
+filaments:delete, and rejects an empty preset list (user-approved behavior change)
+
+`bambu_sync()` (`backend/app/api/routes/filament_profiles.py`) gated the whole route on
+`Permission.FILAMENTS_UPDATE` only, but its non-dry-run branch calls `apply_sync()`
+(`backend/app/services/bambu_studio.py`), documented as "Mirror *presets* into every user
+preset folder, removing anything not incoming" — it unlinks any on-disk `.json` not in the
+incoming list. A caller holding only `filaments:update` could therefore delete files
+`filaments:update` never authorised removing. Because `_validate_bambu_sync_presets` accepts
+an empty list without complaint, `POST /filament-profiles/bambu-sync {"presets": [],
+"dry_run": false}` wiped every preset in every configured Bambu Studio filament directory —
+the whole folder gone via a well-formed, permission-checked request.
+
+Fixed per the finding, inside the handler rather than as a second `RequirePermissionIfAuthEnabled`
+dependency (dry-run must stay `filaments:update`-only; only the non-dry-run branch needs the
+extra check). Follows the precedent in `routes/github_backup.py::restore_backup`, which gates
+one dependency-level permission (`github:restore`) and then does a manual
+`current_user.has_all_permissions(...)` check per-category inside the handler body, raising a
+403 with the same `f"Missing required permissions: {...}"` detail shape the shared
+`require_permission_if_auth_enabled` dependency itself uses. The route now captures the
+dependency's `User | None` as `current_user` (was discarded as `_`) and, only on the non-dry-run
+branch, requires `Permission.FILAMENTS_DELETE.value` when `current_user is not None`.
+`current_user is None` covers both "auth disabled" (nothing to check, matching the dependency's
+own behavior) and "authenticated via API key" — `filaments:update`/`filaments:delete` are both
+unmapped in `_APIKEY_SCOPE_BY_PERMISSION` (`backend/app/core/auth.py`), so `authorize_api_key()`
+inside the dependency already 403s any API key before the handler runs; the extra check only
+ever fires for a JWT user. Separately, the non-dry-run branch now rejects an empty `presets` list
+outright with `400`, before calling `apply_sync` — dry-run with an empty list stays allowed
+unchanged (it only computes `stats.removed`, touching no files, so there is nothing destructive
+to gate).
+
+user-approved 2026-08-26: "a user or integration holding filaments:update but not
+filaments:delete will start getting a 403 from Sync-to-PC instead of having their Bambu Studio
+preset folder mirrored, and a non-dry-run call with an empty preset list will be rejected rather
+than clearing the folder."
+
+Frontend: `FilamentProfilesPage.tsx` already gated the Sync-to-PC button on `filaments:update`
+(T-016) and already computes `canDeletePreset` (used by the per-preset delete action). The
+Sync-to-PC button itself is unchanged — dry-run preview stays reachable for an update-only user
+— but `SyncModal` (`frontend/src/components/filament-profiles/SyncModal.tsx`) gained an optional
+`canConfirm` prop (defaults to `true`, so no other caller's behavior changes — it has none) that
+disables the Confirm button and shows a new `filamentProfiles.syncConfirmNeedsDelete` message
+when `false`, so an update-only user sees why Confirm is disabled instead of clicking it and
+hitting the new 403 blind. `FilamentProfilesPage.tsx` passes `canConfirm={canDeletePreset}`.
+
+Tests added: `backend/tests/integration/test_filament_profiles_api.py` —
+`test_bambu_sync_non_dry_run_requires_delete_permission` (JWT user with only `filaments:update`
+→ 403, folder untouched), `test_bambu_sync_non_dry_run_with_delete_permission_still_works`
+(both permissions → 200, unchanged behavior), `test_bambu_sync_non_dry_run_empty_presets_rejected`
+(empty list + `dry_run: false` → 400, folder untouched),
+`test_bambu_sync_dry_run_empty_presets_still_allowed` (empty list + `dry_run: true`, update-only
+permission → 200, pinning today's dry-run behavior). Helpers `_setup_admin` /
+`_create_user_with_perms` mirror `_create_operator_with_perms` in
+`test_users_groups_privilege_escalation.py` — a custom group carrying exactly the permission
+strings under test, nothing implied by a built-in group. Frontend:
+`frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` gained a test (mirroring the
+`mockAuthUser` pattern in `FileManagerFolderDelete.test.tsx`) asserting an authenticated user with
+only `filaments:update` still sees the dry-run preview but gets a disabled Confirm button and the
+new permission message; the mock `bambu-sync` handler additionally asserts every request it
+receives has `dry_run: true`, so the test also fails if the execute call fired.
+
+`python3 tools/snapshot.py verify`: 10/11 matched unchanged; `fp-i18n-sync-strings` legitimately
+diffed (the new `syncConfirmNeedsDelete` key across all 13 locales) and was re-recorded via
+`tools/snapshot.py record`. `fp-sync-endpoint` and `fp-page-sync-ui` are both Zoho-price-sync
+probes (`sync_filament_presets_from_zoho` / the page's `syncZoho*` wiring) — unrelated to
+`bambu_sync` — and matched unchanged, as expected. `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`: byte-identical, no diff (`fp_i18n_keys.sh` only scans
+`FilamentProfilesPage.tsx`, and the new key is read from `SyncModal.tsx`; the
+`RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE)` grep count on `bambu_sync` is
+unchanged because the new delete check is a manual in-handler call, not a second dependency).
+
+`bash tools/coverage_fp.sh backend`: 504/505 = 99.80% scoped statements (same percentage as the
+500/501 baseline; `filament_profiles.py` itself is 100% covered), 116/118 = 98.31% branches. Full
+backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,453 passed, 1
+skipped. `bash tools/coverage_fp.sh frontend`: 174/261 = 66.66% statements — identical to
+baseline (the new `canConfirm={canDeletePreset}` JSX attribute reuses an existing variable and
+adds no new statement/branch to the scoped file; `SyncModal.tsx` is outside this campaign's
+frontend scope, per `coverage_fp.sh`'s own documented scope decision to exclude
+`frontend/src/components/filament-profiles/**`). One incidental failure
+(`ArchivesPage.test.tsx > ... > shows a toast when printer video ZIP preparation fails`)
+reproduced only under parallel load and passed cleanly alone — the documented suite-load flake,
+unrelated to this change (archives page, not touched). `ruff check` / `ruff format --check` /
+`npx tsc --noEmit` / `npm run lint` clean on every touched file.
+
+## T-027 — 2026-08-27 — `POST /filament-profiles/zoho-sync` now also requires
+calculator:update, and the sync button is gated on both (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`backend/app/api/routes/filament_profiles.py`) gated on
+`Permission.FILAMENTS_UPDATE` alone, yet it reaches the same Zoho catalogue that every other
+Zoho-catalogue route protects with `Permission.CALCULATOR_UPDATE` (`search_zoho_filaments` and
+`sync_calculator_filaments_from_zoho` in `backend/app/api/routes/calculator.py`). A custom role
+holding only `filaments:update` therefore gained read access to upstream Zoho item names
+(`candidates` in the response) and the ability to drive the outbound paged Zoho walk (up to
+`_MAX_PAGES` x `_PAGE_SIZE`, `zoho_filaments.py`) — access no other part of the permission model
+granted it.
+
+Fixed per the finding's first option: the route's dependency now requires BOTH permissions —
+`RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE, Permission.CALCULATOR_UPDATE)`.
+Verified `require_permission_if_auth_enabled`'s varargs are all-must-pass by reading
+`backend/app/core/auth.py`: the JWT branch calls `user.has_all_permissions(*perm_strings)`, and
+the API-key branch calls `authorize_api_key(db, api_key, perm_strings)` with `require_any`
+defaulted to `False` (contrast `require_any_permission_if_auth_enabled`, which explicitly passes
+`require_any=True`) — so adding a second permission narrows access, it does not create an
+any-of. A dedicated `zoho:read` permission (the finding's second option) was rejected as
+explicitly not approved — a new permission is a much bigger surface (API-key classification,
+migrations, role editors) for the same outcome.
+
+API-key posture check: both `Permission.FILAMENTS_UPDATE` and `Permission.CALCULATOR_UPDATE` are
+already in `_APIKEY_DENIED_PERMISSIONS` (`backend/app/core/auth.py`) and neither appears in the
+`_APIKEY_SCOPE_BY_PERMISSION` allowlist. The route was already unreachable via API key (denied on
+`FILAMENTS_UPDATE` alone); adding `CALCULATOR_UPDATE` does not widen or narrow that posture.
+
+user-approved 2026-08-26: "members of a custom role that holds filaments:update but not
+calculator:update will see the Zoho price-sync request start returning 403, and their sync
+button (already gated on filaments:update in FilamentProfilesPage) would need the same second
+check or it will 403 on click."
+
+Frontend: `FilamentProfilesPage.tsx` already gated the "Sync prices from Zoho" button on
+`canUpdatePreset` (`filaments:update`, T-016). Added `canSyncZohoPrices = canUpdatePreset &&
+hasPermission('calculator:update')` and switched the button's gate to it, matching the backend
+exactly. Auth-disabled installs are unaffected (`hasPermission` always returns `true`).
+
+Tests added: `backend/tests/integration/test_filament_profiles_api.py` —
+`TestFilamentProfilesZohoSyncPermissions` with `test_zoho_sync_requires_calculator_update_on_top_of_filaments_update`
+(JWT user with only `filaments:update` → 403 naming `calculator:update` in the detail) and
+`test_zoho_sync_works_with_both_permissions` (both permissions → 200), mirroring the
+`_setup_admin` / `_create_user_with_perms` helper pattern already used by the T-026 bambu-sync
+permission tests in the same file (a Zoho catalogue fetch is stubbed via `monkeypatch` so the
+test never calls out to the network). `backend/tests/unit/test_route_auth_coverage.py` needed no
+change — it only asserts every route has *some* auth dependency, not which permissions. Frontend:
+`frontend/src/__tests__/pages/FilamentProfilesPagePermissions.test.tsx` gained a
+`describe('zoho price sync button (T-027 ...)')` block asserting the button is hidden with only
+`filaments:update` and shown with both permissions; the pre-existing "shows every mutating
+control when the user holds every filaments permission" test was updated to assert the zoho-sync
+button is now absent for a filaments-only role (it previously asserted the button visible under
+that grant, which the approved behavior change makes incorrect).
+
+`python3 tools/snapshot.py verify`: 10/11 matched unchanged; `fp-route-perms` legitimately diffed
+(the `RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE)` count on filament_profiles.py
+dropped from 4 to 3, and a new `RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE,
+Permission.CALCULATOR_UPDATE)` line appeared) and was re-recorded via `tools/snapshot.py record`.
+`fp-sync-endpoint` matched unchanged — the probe calls `sync_filament_presets_from_zoho()`
+directly as a coroutine rather than over HTTP (by design, documented in the probe's own
+docstring: "the permission gate ... [is] frozen separately"), so it never exercises the
+dependency and is blind to this change. `fp-page-sync-ui` matched unchanged — its grep only
+matches lines containing `syncZoho`/`zohoSync`/`zohoSyncing`, none of which the new
+`canSyncZohoPrices` guard line touches. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`:
+one legitimate line changed, mirroring the `fp-route-perms` count (`RequirePermissionIfAuthEnabled
+(Permission.FILAMENTS_UPDATE)` 4 → 3); the two-permission call is invisible to that grep's regex
+(`Permission\.[A-Z_]+\)` requires an immediate close-paren, so a comma-separated multi-permission
+call doesn't match at all) — a pre-existing blind spot in the frozen generator script, not
+something this change could paper over without touching `tools/`.
+
+`bash tools/coverage_fp.sh backend`: 504/505 = 99.80% scoped statements (identical to baseline),
+116/118 = 98.31% branches; full backend suite: 12,455 passed, 1 skipped. `bash tools/coverage_fp.sh
+frontend`: 175/262 = 66.79% statements (baseline 174/261 = 66.66% — the new `canSyncZohoPrices`
+statement is exercised by both new T-027 tests, so coverage did not drop); full frontend suite:
+360 files, 5,133 tests, all passed. `ruff check` / `ruff format --check` / `npx tsc --noEmit` /
+`npx eslint` clean on every touched file.
+
+## T-028 — 2026-08-27 — `FilamentPresetCreate`/`FilamentPresetUpdate` now cap `content` and every
+short text field instead of accepting unbounded input (user-approved behavior change)
+
+`FilamentPresetCreate`/`FilamentPresetUpdate` (`backend/app/schemas/filament_profile.py`) put no
+`max_length` on `content` or on `name`/`brand`/`material`/`color`/`color_hex`/`filename`, and the
+app registers no body-size middleware (`backend/app/main.py` has no `add_middleware` for a size
+limit). `sync_filament_presets_from_zoho()` (`routes/filament_profiles.py`) then materialises
+every stored row at once (`presets = result.scalars().all()`) and hands each `preset.content` to
+`json.loads` plus a re-`json.dumps(..., indent=4)` (`filament_profile_pricing.py`), so a caller
+holding only `filaments:create` could store a handful of very large blobs and make every later
+`/zoho-sync` request hold several multiples of that in memory. Distinct from the already-fixed
+nesting/RecursionError finding: that one bounds depth, this one bounds size, and the
+RecursionError guard does not bound allocation.
+
+**Ceiling measured from evidence, not guessed.** A locally installed Bambu Studio.app ships 2,054
+`*.json` files under `.../profiles/BBL/filament`; every individual per-filament preset (the shape
+`content` actually stores — e.g. `"Bambu ABS @BBL A1 0.2 nozzle.json"`) tops out at **5,164 bytes**
+(`"Bambu TPU 90A @BBL H2D 0.6 nozzle.json"`), average 1,604 bytes across all 2,054 files. The
+handful of larger files in that same directory (`filaments_color_codes.json` 228,827 bytes,
+`filament_name_map.json` 16,181 bytes, `support_recommended_params.json`,
+`fdm_filament_common.json`, `filament_id_map.json`) are shared lookup/template tables the slicer
+reads internally — confirmed by inspecting one (`filaments_color_codes.json` parses to
+`{"data": ..., "total": ...}`, no `name`/`inherits`/`filament_vendor` keys at all) — never a single
+selectable preset's `content`, and `scan_user_presets()` only reads the separate per-user preset
+folder, not this bundle directory, so they are not representative of what actually flows through
+the create/update body. Picked **262,144 bytes (256 KiB)** for `content`: ~50x the measured
+real-world maximum (5,164 B), clearing the "generous margin" bar (design note asked for ≥20x) by
+a wide margin so no real preset — imported from disk or hand-authored — can ever 422.
+
+**Short text fields.** The backing columns (`backend/app/models/filament_profile.py`) are
+unbounded SQLAlchemy `String` (TEXT in SQLite; no existing DB-layer length to match). Picked
+**200** for `name`/`brand`/`material`/`color` — every real preset's corresponding value measured
+above is well under 60 characters, so 200 is generous headroom, not a tight fit. `color_hex` is
+always a normalized CSS hex colour (`"#RRGGBB"`/`"#RRGGBBAA"`, <= 9 characters — see
+`normalizeColorHex` in `frontend/src/components/filament-profiles/presetJson.ts`); picked **32** to
+leave room for a hand-edited value while staying far below the unbounded column. `filename`'s real
+maximum measured above is 52 characters (`"Bambu Support For PLA-PETG @BBL H2DP 0.6
+nozzle.json"`); picked **255**, the common filesystem max-filename-length convention, comfortably
+above that measured maximum.
+
+Applied to both `FilamentPresetCreate` and `FilamentPresetUpdate` (the latter's fields are
+`X | None` — `Field(None, max_length=...)` caps the non-null branch without changing the
+already-optional default). Response models (`FilamentPresetResponse`, `BaseContentResponse`,
+`BambuScanFile`, ...) were left untouched on purpose: a row already stored above a cap (from
+before this change shipped) must still read back in full; only *writing* a new value above the
+cap is rejected. Checked `BambuSyncRequest`/`BambuScanFile` (the "Sync to PC" disk-mirroring
+path) too: `presets: list[Any]` is validated manually in `_validate_bambu_sync_presets`
+(isinstance + bare-filename checks only), not through a Pydantic field type, and that endpoint
+writes straight to the user's own local Bambu Studio directory — it never accumulates rows in one
+Python process the way `/zoho-sync`'s `result.scalars().all()` does, so leaving it uncapped does
+not reintroduce the memory-multiplication risk this task targets. Left it out of scope rather than
+inventing a new manual-validation cap beyond the schema fix the finding actually asked for.
+
+user-approved 2026-08-26 (verbatim): "a create or patch whose content exceeds the new cap will
+return 422 instead of 200, so any client that was storing oversized blobs (including the page's
+disk-import loop, which would count those files as failed imports) stops being able to save them."
+
+Frontend `handleImport`'s per-file disk-import loop (`frontend/src/pages/FilamentProfilesPage.tsx`)
+was verified, not modified: each file's `api.createFilamentPreset(payload)` call is already inside
+its own `try { ok += 1 } catch { failed += 1 }`, so a 422 from an over-cap file is silently
+absorbed into the existing `failed` counter and surfaced via the existing `importPartial` toast
+(`{ok, failed}`) — exactly the approved description's expectation. No frontend change needed or
+made.
+
+Tests added in `backend/tests/integration/test_filament_profiles_api.py`
+(`TestFilamentProfilesCrud`): `test_create_accepts_content_at_cap` /
+`test_create_rejects_content_over_cap` / `test_patch_rejects_content_over_cap` (262,144 chars ->
+200, 262,145 -> 422 on both create and patch, plus a check that a rejected patch left the stored
+row untouched) and `test_create_accepts_name_at_cap` / `test_create_rejects_name_over_cap` /
+`test_patch_rejects_name_over_cap` (200 chars -> 200, 201 -> 422) as the representative short-field
+boundary case.
+
+Snapshot fallout: `fp-pydantic-schemas` mismatched as expected (`model_json_schema()` emits
+`maxLength` in JSON Schema) — diffed golden vs. current before re-recording and confirmed the only
+change was 14 new `"maxLength": N` entries (7 fields x `FilamentPresetCreate`/
+`FilamentPresetUpdate`), nothing else; re-recorded via `tools/snapshot.py record`, all 11 fp-scope
+probes now match. `fp-openapi` was unaffected (matched both before and after) — that probe only
+captures `spec["paths"]`, where request bodies are a `$ref` to the components schema, not the
+inlined body. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`; diffed old vs. new
+before committing and confirmed the only two changed lines are the `FilamentPresetCreate`/
+`FilamentPresetUpdate` OpenAPI-schema-body lines in section 6, each gaining the same 7
+`"maxLength"` entries — no class added/removed, no other section moved.
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/integration/test_filament_profiles_api.py
+backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 66 passed. `bash
+tools/coverage_fp.sh backend`: 508/509 = 99.80% scoped statements (baseline 504/505 = 99.80%,
+percentage held, 4 new schema-file statements all covered), 116/118 = 98.31% branches; full
+backend suite: 1 failed (`test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`,
+unrelated to this change — passed in isolation on a re-run, a known suite-load flake), 12,460
+passed, 1 skipped. `ruff check` / `ruff format --check` clean on every touched Python file.
+Frontend untouched, per the briefing.

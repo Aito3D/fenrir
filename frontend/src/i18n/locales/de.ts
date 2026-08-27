@@ -4317,6 +4317,7 @@ export default {
     statRemoved: 'Entfernt',
     upToDate: 'Alles ist bereits aktuell.',
     syncConfirm: 'Synchronisieren',
+    syncConfirmNeedsDelete: 'Sie haben keine Berechtigung, vorhandene Profile zu löschen',
     syncDoneTitle: 'Synchronisierung abgeschlossen',
     statAdded: 'Hinzugefügt',
     syncPreviewFailed: 'Sync-Vorschau fehlgeschlagen: {{error}}',

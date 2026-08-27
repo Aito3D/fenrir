@@ -3,7 +3,8 @@
 2 RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE)
 1 RequirePermissionIfAuthEnabled(Permission.FILAMENTS_DELETE)
 4 RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ)
-4 RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE)
+1 RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE, Permission.CALCULATOR_UPDATE)
+3 RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE)
 
 ### stderr:
 

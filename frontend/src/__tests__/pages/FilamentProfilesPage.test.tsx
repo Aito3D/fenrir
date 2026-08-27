@@ -12,6 +12,7 @@ import { server } from '../mocks/server';
 import { FilamentProfilesPage } from '../../pages/FilamentProfilesPage';
 import { readMaterialFilter, writeMaterialFilter, readGridSize } from '../../utils/filamentProfilePrefs';
 import type { FilamentPreset } from '../../api/client';
+import { setAuthToken } from '../../api/client';
 
 function preset(overrides: Partial<FilamentPreset> = {}): FilamentPreset {
   return {
@@ -52,6 +53,7 @@ function stubBase() {
 afterEach(() => {
   server.resetHandlers();
   localStorage.clear();
+  setAuthToken(null);
 });
 
 describe('FilamentProfilesPage', () => {
@@ -200,6 +202,42 @@ describe('FilamentProfilesPage', () => {
 
     await waitFor(() => expect(executeCalls).toBe(1));
     expect(await screen.findByRole('heading', { name: /Sync complete/i })).toBeInTheDocument();
+  });
+
+  it('T-026: still shows the dry-run preview but disables Sync for a user without filaments:delete', async () => {
+    // The confirm step runs the destructive non-dry-run sync, which the
+    // backend now also gates on filaments:delete on top of filaments:update.
+    // A user holding only filaments:update must see the preview (dry-run
+    // stays allowed) but must not be able to hit the confirm button and get
+    // a blind 403.
+    stubBase();
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 9,
+          username: 'update-only',
+          is_admin: false,
+          permissions: ['filaments:read', 'filaments:update'],
+        }),
+      ),
+      http.post('*/filament-profiles/bambu-sync', async ({ request }) => {
+        const body = (await request.json()) as { dry_run: boolean };
+        expect(body.dry_run).toBe(true); // the execute call must never fire
+        return HttpResponse.json({ stats: { added: 0, updated: 0, removed: 1, unchanged: 0 } });
+      }),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(screen.getByRole('button', { name: /Sync to PC/i }));
+    await screen.findByRole('heading', { name: /Sync to PC/i });
+
+    const syncButton = screen.getByRole('button', { name: /^Sync$/ });
+    expect(syncButton).toBeDisabled();
+    expect(screen.getByText(/do not have permission to delete existing presets/i)).toBeInTheDocument();
   });
 
   it('disables Export ZIP when no preset has both filename and content, and grid-size buttons persist', async () => {

@@ -4305,6 +4305,7 @@ export default {
     statRemoved: '已移除',
     upToDate: '一切都已是最新狀態。',
     syncConfirm: '同步',
+    syncConfirmNeedsDelete: '您沒有刪除現有預設的權限',
     syncDoneTitle: '同步完成',
     statAdded: '已新增',
     syncPreviewFailed: '同步預覽失敗：{{error}}',

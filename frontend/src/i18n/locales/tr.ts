@@ -4312,6 +4312,7 @@ export default {
     statRemoved: 'Kaldırıldı',
     upToDate: 'Her şey zaten güncel.',
     syncConfirm: 'Senkronize et',
+    syncConfirmNeedsDelete: 'Mevcut profilleri silme izniniz yok',
     syncDoneTitle: 'Senkronizasyon tamamlandı',
     statAdded: 'Eklendi',
     syncPreviewFailed: 'Senkronizasyon önizlemesi başarısız: {{error}}',

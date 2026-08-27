@@ -4,6 +4,56 @@ import pytest
 from httpx import AsyncClient
 
 
+async def _setup_admin(async_client: AsyncClient, username: str = "fpadmin") -> str:
+    """Enable auth + return an admin bearer token. Same pattern used across the suite."""
+    await async_client.post(
+        "/api/v1/auth/setup",
+        json={"auth_enabled": True, "admin_username": username, "admin_password": "AdminPass1!"},
+    )
+    login = await async_client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": "AdminPass1!"},
+    )
+    return login.json()["access_token"]
+
+
+async def _create_user_with_perms(
+    async_client: AsyncClient,
+    admin_token: str,
+    *,
+    username: str,
+    permissions: list[str],
+) -> str:
+    """Create a non-admin user in a custom group carrying exactly *permissions*.
+
+    Mirrors ``_create_operator_with_perms`` in
+    ``test_users_groups_privilege_escalation.py`` — a user gets ONLY the
+    listed permission strings, nothing implied by a built-in group.
+    """
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    grp_resp = await async_client.post(
+        "/api/v1/groups/",
+        headers=headers,
+        json={"name": f"fp_test_{username}", "permissions": permissions},
+    )
+    assert grp_resp.status_code == 201, grp_resp.text
+    gid = grp_resp.json()["id"]
+
+    user_resp = await async_client.post(
+        "/api/v1/users/",
+        headers=headers,
+        json={"username": username, "password": "UserPass1!", "role": "user", "group_ids": [gid]},
+    )
+    assert user_resp.status_code == 201, user_resp.text
+
+    login = await async_client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": "UserPass1!"},
+    )
+    assert login.status_code == 200
+    return login.json()["access_token"]
+
+
 def preset_payload(**kw):
     base = {
         "name": "SUNLU PETG - Magenta",
@@ -93,6 +143,50 @@ class TestFilamentProfilesCrud:
         again = await async_client.get("/api/v1/filament-profiles")
         row = next(p for p in again.json() if p["id"] == created["id"])
         assert row["filename"] == created["filename"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_accepts_content_at_cap(self, async_client: AsyncClient):
+        r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(content="x" * 262_144))
+        assert r.status_code == 200
+        assert len(r.json()["content"]) == 262_144
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_content_over_cap(self, async_client: AsyncClient):
+        r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(content="x" * 262_145))
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_content_over_cap(self, async_client: AsyncClient):
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"content": "x" * 262_145})
+        assert r.status_code == 422
+        # Rejected patch must not have touched the stored row.
+        again = await async_client.get("/api/v1/filament-profiles")
+        row = next(p for p in again.json() if p["id"] == created["id"])
+        assert row["content"] == created["content"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_accepts_name_at_cap(self, async_client: AsyncClient):
+        r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(name="n" * 200))
+        assert r.status_code == 200
+        assert len(r.json()["name"]) == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_name_over_cap(self, async_client: AsyncClient):
+        r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(name="n" * 201))
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_name_over_cap(self, async_client: AsyncClient):
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"name": "n" * 201})
+        assert r.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -228,3 +322,130 @@ class TestFilamentProfilesFilesystem:
         r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json={"presets": [], "dryRun": True})
         assert r.status_code == 422
         assert (a / "precious.json").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_non_dry_run_requires_delete_permission(self, async_client, bambu_dirs):
+        # T-026: the non-dry-run branch unlinks on-disk presets not in the
+        # incoming list, so it needs filaments:delete on top of the route's
+        # filaments:update gate. A caller holding only filaments:update must
+        # be refused with a 403 instead of having their preset folder mirrored.
+        a, _, _ = bambu_dirs
+        (a / "precious.json").write_text("P")
+        admin_token = await _setup_admin(async_client)
+        update_only_token = await _create_user_with_perms(
+            async_client, admin_token, username="fp_update_only", permissions=["filaments:update"]
+        )
+        headers = {"Authorization": f"Bearer {update_only_token}"}
+        payload = {"presets": [{"filename": "new.json", "content": "N"}], "dry_run": False}
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", headers=headers, json=payload)
+        assert r.status_code == 403
+        assert "filaments:delete" in r.json()["detail"]
+        # Refused, not partially applied: nothing on disk was touched.
+        assert (a / "precious.json").exists()
+        assert not (a / "new.json").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_non_dry_run_with_delete_permission_still_works(self, async_client, bambu_dirs):
+        a, _, _ = bambu_dirs
+        (a / "precious.json").write_text("P")
+        admin_token = await _setup_admin(async_client, username="fpadmin2")
+        full_token = await _create_user_with_perms(
+            async_client,
+            admin_token,
+            username="fp_update_delete",
+            permissions=["filaments:update", "filaments:delete"],
+        )
+        headers = {"Authorization": f"Bearer {full_token}"}
+        payload = {"presets": [{"filename": "new.json", "content": "N"}], "dry_run": False}
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", headers=headers, json=payload)
+        assert r.status_code == 200
+        assert r.json()["stats"]["removed"] == 1
+        assert not (a / "precious.json").exists()
+        assert (a / "new.json").read_text() == "N"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_non_dry_run_empty_presets_rejected(self, async_client, bambu_dirs):
+        # An empty presets list with dry_run=false would otherwise wipe every
+        # on-disk preset in every configured directory (apply_sync removes
+        # anything not incoming). It must be rejected outright, not treated
+        # as "sync to nothing."
+        a, _, _ = bambu_dirs
+        (a / "precious.json").write_text("P")
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json={"presets": [], "dry_run": False})
+        assert r.status_code == 400
+        assert (a / "precious.json").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_dry_run_empty_presets_still_allowed(self, async_client, bambu_dirs):
+        # Dry-run with an empty list touches no files — it only reports what
+        # a real sync *would* remove — so it stays allowed even for a caller
+        # holding only filaments:update, and even though the equivalent
+        # non-dry-run call above is rejected.
+        a, _, _ = bambu_dirs
+        (a / "precious.json").write_text("P")
+        admin_token = await _setup_admin(async_client, username="fpadmin3")
+        update_only_token = await _create_user_with_perms(
+            async_client, admin_token, username="fp_update_only_dry", permissions=["filaments:update"]
+        )
+        headers = {"Authorization": f"Bearer {update_only_token}"}
+        r = await async_client.post(
+            "/api/v1/filament-profiles/bambu-sync",
+            headers=headers,
+            json={"presets": [], "dry_run": True},
+        )
+        assert r.status_code == 200
+        assert r.json()["stats"]["removed"] == 1
+        assert (a / "precious.json").exists()  # dry run wrote nothing
+
+
+class TestFilamentProfilesZohoSyncPermissions:
+    """T-027: /zoho-sync reaches the same Zoho catalogue the calculator's own
+    zoho routes gate on calculator:update, so this route requires BOTH
+    filaments:update and calculator:update — not filaments:update alone.
+    """
+
+    @staticmethod
+    def _stub_zoho(monkeypatch):
+        from backend.app.services import zoho_filaments
+        from backend.app.services.zoho import zoho_service
+
+        async def fetch_catalogue(_db):
+            return []
+
+        async def is_configured(_db):
+            return True
+
+        monkeypatch.setattr(zoho_filaments, "fetch_catalogue", fetch_catalogue)
+        monkeypatch.setattr(zoho_service, "is_configured", is_configured)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zoho_sync_requires_calculator_update_on_top_of_filaments_update(self, async_client, monkeypatch):
+        self._stub_zoho(monkeypatch)
+        admin_token = await _setup_admin(async_client, username="fpadmin_zoho1")
+        update_only_token = await _create_user_with_perms(
+            async_client, admin_token, username="fp_zoho_update_only", permissions=["filaments:update"]
+        )
+        headers = {"Authorization": f"Bearer {update_only_token}"}
+        r = await async_client.post("/api/v1/filament-profiles/zoho-sync", headers=headers)
+        assert r.status_code == 403
+        assert "calculator:update" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zoho_sync_works_with_both_permissions(self, async_client, monkeypatch):
+        self._stub_zoho(monkeypatch)
+        admin_token = await _setup_admin(async_client, username="fpadmin_zoho2")
+        both_token = await _create_user_with_perms(
+            async_client,
+            admin_token,
+            username="fp_zoho_both",
+            permissions=["filaments:update", "calculator:update"],
+        )
+        headers = {"Authorization": f"Bearer {both_token}"}
+        r = await async_client.post("/api/v1/filament-profiles/zoho-sync", headers=headers)
+        assert r.status_code == 200

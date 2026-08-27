@@ -4130,6 +4130,7 @@ export default {
     statRemoved: '제거됨',
     upToDate: '이미 모두 최신 상태입니다.',
     syncConfirm: '동기화',
+    syncConfirmNeedsDelete: '기존 프리셋을 삭제할 권한이 없습니다',
     syncDoneTitle: '동기화 완료',
     statAdded: '추가됨',
     syncPreviewFailed: '동기화 미리보기 실패: {{error}}',

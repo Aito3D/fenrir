@@ -135,7 +135,10 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
 
     expect(screen.getByRole('button', { name: /sync base/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^import$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sync prices from zoho/i })).toBeInTheDocument();
+    // T-027: the zoho-sync backend route also requires calculator:update,
+    // so a filaments-only role does NOT see this button — see the dedicated
+    // T-027 tests below for the calculator:update-gated behaviour.
+    expect(screen.queryByRole('button', { name: /sync prices from zoho/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sync to pc/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /new preset/i })).toBeInTheDocument();
 
@@ -143,6 +146,26 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^duplicate$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^delete$/i })).toBeInTheDocument();
+  });
+
+  describe('zoho price sync button (T-027 — requires filaments:update AND calculator:update)', () => {
+    it('hides the button when only filaments:update is granted', async () => {
+      permissions.granted = ['filaments:read', 'filaments:update'];
+      stubBase();
+      render(<FilamentProfilesPage />);
+      await screen.findByText('Black');
+
+      expect(screen.queryByRole('button', { name: /sync prices from zoho/i })).not.toBeInTheDocument();
+    });
+
+    it('shows the button when both filaments:update and calculator:update are granted', async () => {
+      permissions.granted = ['filaments:read', 'filaments:update', 'calculator:update'];
+      stubBase();
+      render(<FilamentProfilesPage />);
+      await screen.findByText('Black');
+
+      expect(screen.getByRole('button', { name: /sync prices from zoho/i })).toBeInTheDocument();
+    });
   });
 
   it('shows every mutating control on auth-disabled installs regardless of the (unused) permission set', async () => {

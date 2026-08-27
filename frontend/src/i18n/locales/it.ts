@@ -4305,6 +4305,7 @@ export default {
     statRemoved: 'Rimossi',
     upToDate: 'Tutto è già aggiornato.',
     syncConfirm: 'Sincronizza',
+    syncConfirmNeedsDelete: 'Non hai il permesso di eliminare i profili esistenti',
     syncDoneTitle: 'Sincronizzazione completata',
     statAdded: 'Aggiunti',
     syncPreviewFailed: 'Anteprima di sincronizzazione non riuscita: {{error}}',

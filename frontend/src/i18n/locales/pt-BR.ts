@@ -4305,6 +4305,7 @@ export default {
     statRemoved: 'Removidos',
     upToDate: 'Tudo já está atualizado.',
     syncConfirm: 'Sincronizar',
+    syncConfirmNeedsDelete: 'Você não tem permissão para excluir perfis existentes',
     syncDoneTitle: 'Sincronização concluída',
     statAdded: 'Adicionados',
     syncPreviewFailed: 'Falha na pré-visualização da sincronização: {{error}}',

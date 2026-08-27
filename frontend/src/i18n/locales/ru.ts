@@ -4123,6 +4123,7 @@ export default {
     statRemoved: "Удалённые",
     upToDate: "Всё уже актуально.",
     syncConfirm: "Синхронизировать",
+    syncConfirmNeedsDelete: "У вас нет прав на удаление существующих профилей",
     syncDoneTitle: "Синхронизация завершена",
     statAdded: "Добавленные",
     syncPreviewFailed: "Ошибка предпросмотра синхронизации: {{error}}",

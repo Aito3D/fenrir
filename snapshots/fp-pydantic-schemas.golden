@@ -210,36 +210,43 @@
   "properties": {
    "brand": {
     "default": "",
+    "maxLength": 200,
     "title": "Brand",
     "type": "string"
    },
    "color": {
     "default": "",
+    "maxLength": 200,
     "title": "Color",
     "type": "string"
    },
    "color_hex": {
     "default": "",
+    "maxLength": 32,
     "title": "Color Hex",
     "type": "string"
    },
    "content": {
     "default": "",
+    "maxLength": 262144,
     "title": "Content",
     "type": "string"
    },
    "filename": {
     "default": "",
+    "maxLength": 255,
     "title": "Filename",
     "type": "string"
    },
    "material": {
     "default": "",
+    "maxLength": 200,
     "title": "Material",
     "type": "string"
    },
    "name": {
     "default": "",
+    "maxLength": 200,
     "title": "Name",
     "type": "string"
    }
@@ -326,6 +333,7 @@
    "brand": {
     "anyOf": [
      {
+      "maxLength": 200,
       "type": "string"
      },
      {
@@ -338,6 +346,7 @@
    "color": {
     "anyOf": [
      {
+      "maxLength": 200,
       "type": "string"
      },
      {
@@ -350,6 +359,7 @@
    "color_hex": {
     "anyOf": [
      {
+      "maxLength": 32,
       "type": "string"
      },
      {
@@ -362,6 +372,7 @@
    "content": {
     "anyOf": [
      {
+      "maxLength": 262144,
       "type": "string"
      },
      {
@@ -374,6 +385,7 @@
    "filename": {
     "anyOf": [
      {
+      "maxLength": 255,
       "type": "string"
      },
      {
@@ -386,6 +398,7 @@
    "material": {
     "anyOf": [
      {
+      "maxLength": 200,
       "type": "string"
      },
      {
@@ -398,6 +411,7 @@
    "name": {
     "anyOf": [
      {
+      "maxLength": 200,
       "type": "string"
      },
      {

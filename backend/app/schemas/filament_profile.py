@@ -3,7 +3,41 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+# T-028: input-side size caps for the user-authored preset's short text
+# fields and its full slicer JSON blob. Response models (FilamentPresetResponse,
+# BaseContentResponse, ...) intentionally carry none of these -- a row already
+# stored above a cap (e.g. before this change shipped) must still be readable
+# in full; only *writing* a new value above the cap is rejected.
+#
+# _CONTENT_MAX_LENGTH: measured every bundled Bambu Studio filament preset
+# shipped with a local BambuStudio.app install (2054 files under
+# `.../profiles/BBL/filament`) -- individual per-filament presets (the shape
+# `content` actually stores; not the shared lookup tables also living in that
+# folder, like `filaments_color_codes.json`, which are never a single
+# preset's content) top out at 5164 bytes ("Bambu TPU 90A @BBL H2D 0.6
+# nozzle.json"). 256 KiB is ~50x that measured maximum, comfortably clearing
+# the "generous margin" bar without letting a stored blob multiply into the
+# many-megabyte range that made /zoho-sync's per-request memory use a
+# concern in the first place.
+_CONTENT_MAX_LENGTH = 262_144  # 256 KiB
+# _SHORT_TEXT_MAX_LENGTH: the model's `name`/`brand`/`material`/`color`
+# columns are unbounded SQLAlchemy `String` (TEXT in SQLite), so there is no
+# existing DB-layer length to match. 200 is a generous cap for a label field
+# that in every real preset scanned above is well under 60 characters.
+_SHORT_TEXT_MAX_LENGTH = 200
+# _COLOR_HEX_MAX_LENGTH: `color_hex` is always a normalized CSS hex colour
+# ("#RRGGBB" or "#RRGGBBAA", <= 9 characters -- see
+# frontend/src/components/filament-profiles/presetJson.ts normalizeColorHex).
+# 32 leaves headroom for a hand-edited value while still being far below the
+# unbounded column's ceiling.
+_COLOR_HEX_MAX_LENGTH = 32
+# _FILENAME_MAX_LENGTH: real bundled filenames top out at 52 characters
+# ("Bambu Support For PLA-PETG @BBL H2DP 0.6 nozzle.json"). 255 matches the
+# common filesystem max-filename-length convention and stays generous over
+# that measured maximum.
+_FILENAME_MAX_LENGTH = 255
 
 
 def _validate_bare_filename(value: str) -> str:
@@ -21,13 +55,13 @@ def _validate_bare_filename(value: str) -> str:
 
 
 class FilamentPresetCreate(BaseModel):
-    name: str = ""
-    brand: str = ""
-    material: str = ""
-    color: str = ""
-    color_hex: str = ""
-    filename: str = ""
-    content: str = ""
+    name: str = Field("", max_length=_SHORT_TEXT_MAX_LENGTH)
+    brand: str = Field("", max_length=_SHORT_TEXT_MAX_LENGTH)
+    material: str = Field("", max_length=_SHORT_TEXT_MAX_LENGTH)
+    color: str = Field("", max_length=_SHORT_TEXT_MAX_LENGTH)
+    color_hex: str = Field("", max_length=_COLOR_HEX_MAX_LENGTH)
+    filename: str = Field("", max_length=_FILENAME_MAX_LENGTH)
+    content: str = Field("", max_length=_CONTENT_MAX_LENGTH)
 
     @field_validator("filename")
     @classmethod
@@ -36,13 +70,13 @@ class FilamentPresetCreate(BaseModel):
 
 
 class FilamentPresetUpdate(BaseModel):
-    name: str | None = None
-    brand: str | None = None
-    material: str | None = None
-    color: str | None = None
-    color_hex: str | None = None
-    filename: str | None = None
-    content: str | None = None
+    name: str | None = Field(None, max_length=_SHORT_TEXT_MAX_LENGTH)
+    brand: str | None = Field(None, max_length=_SHORT_TEXT_MAX_LENGTH)
+    material: str | None = Field(None, max_length=_SHORT_TEXT_MAX_LENGTH)
+    color: str | None = Field(None, max_length=_SHORT_TEXT_MAX_LENGTH)
+    color_hex: str | None = Field(None, max_length=_COLOR_HEX_MAX_LENGTH)
+    filename: str | None = Field(None, max_length=_FILENAME_MAX_LENGTH)
+    content: str | None = Field(None, max_length=_CONTENT_MAX_LENGTH)
 
     @field_validator("filename")
     @classmethod

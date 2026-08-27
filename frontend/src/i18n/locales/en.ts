@@ -4351,6 +4351,7 @@ export default {
     statRemoved: 'Removed',
     upToDate: 'Everything is already up to date.',
     syncConfirm: 'Sync',
+    syncConfirmNeedsDelete: 'You do not have permission to delete existing presets',
     syncDoneTitle: 'Sync complete',
     statAdded: 'Added',
     syncPreviewFailed: 'Sync preview failed: {{error}}',

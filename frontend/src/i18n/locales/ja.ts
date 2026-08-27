@@ -4317,6 +4317,7 @@ export default {
     statRemoved: '削除',
     upToDate: 'すべて最新の状態です。',
     syncConfirm: '同期',
+    syncConfirmNeedsDelete: '既存のプリセットを削除する権限がありません',
     syncDoneTitle: '同期が完了しました',
     statAdded: '追加',
     syncPreviewFailed: '同期プレビューに失敗しました: {{error}}',

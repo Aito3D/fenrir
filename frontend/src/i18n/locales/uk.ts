@@ -4127,6 +4127,7 @@ export default {
     statRemoved: "Видалені",
     upToDate: "Усе вже актуально.",
     syncConfirm: "Синхронізувати",
+    syncConfirmNeedsDelete: "У вас немає дозволу на видалення наявних профілів",
     syncDoneTitle: "Синхронізацію завершено",
     statAdded: "Додані",
     syncPreviewFailed: "Помилка попереднього перегляду синхронізації: {{error}}",

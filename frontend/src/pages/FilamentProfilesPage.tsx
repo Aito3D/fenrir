@@ -98,6 +98,11 @@ export function FilamentProfilesPage() {
   const canCreatePreset = hasPermission('filaments:create');
   const canUpdatePreset = hasPermission('filaments:update');
   const canDeletePreset = hasPermission('filaments:delete');
+  // T-027: the backend route requires BOTH filaments:update and
+  // calculator:update (it reaches the same Zoho catalogue the calculator's
+  // own zoho routes gate on calculator:update) — mirror that here so a
+  // filaments:update-only role doesn't see a button that just 403s.
+  const canSyncZohoPrices = canUpdatePreset && hasPermission('calculator:update');
 
   const presetsQuery = useQuery({ queryKey: ['filamentPresets'], queryFn: () => api.getFilamentPresets() });
   const baseQuery = useQuery({ queryKey: ['filamentBasePresets'], queryFn: () => api.getBaseFilamentPresets() });
@@ -514,7 +519,7 @@ export function FilamentProfilesPage() {
               {t('filamentProfiles.import')}
             </Button>
           )}
-          {canUpdatePreset && (
+          {canSyncZohoPrices && (
             <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
               <RefreshCw className="h-4 w-4" />
               {t('filamentProfiles.syncZohoPrices')}
@@ -787,6 +792,7 @@ export function FilamentProfilesPage() {
           onCancel={() => setSyncModal(null)}
           onConfirm={handleSyncConfirm}
           onClose={() => setSyncModal(null)}
+          canConfirm={canDeletePreset}
         />
       )}
 

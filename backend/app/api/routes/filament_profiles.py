@@ -131,7 +131,7 @@ def _validate_bambu_sync_presets(presets: list) -> list[dict[str, str]]:
 @router.post("/bambu-sync", response_model=BambuSyncResponse)
 async def bambu_sync(
     payload: BambuSyncRequest,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     validated = _validate_bambu_sync_presets(payload.presets)
 
@@ -140,6 +140,29 @@ async def bambu_sync(
             lambda: compute_sync_stats(validated, read_disk_state(), get_user_filament_dirs())
         )
     else:
+        # apply_sync mirrors *validated* into every user preset folder,
+        # unlinking anything on disk that isn't in the incoming list — so the
+        # non-dry-run path is destructive in a way the dry-run stats-only
+        # path never is, and needs filaments:delete on top of the route's
+        # filaments:update gate. current_user is None either because auth is
+        # disabled (nothing to check) or because the caller authenticated
+        # with an API key: filaments:update/delete are unmapped in
+        # _APIKEY_SCOPE_BY_PERMISSION, so authorize_api_key() inside the
+        # dependency already 403s any API key before it reaches this line —
+        # the extra check below only ever fires for a JWT user. Same shape
+        # as github_backup.py's per-category restore check.
+        if current_user is not None and not current_user.has_all_permissions(Permission.FILAMENTS_DELETE.value):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Missing required permissions: {Permission.FILAMENTS_DELETE.value}",
+            )
+        # An empty list is a well-formed request that would otherwise wipe
+        # every on-disk preset in every configured Bambu Studio filament
+        # directory (apply_sync removes anything not incoming). Dry-run
+        # already reports that destructively via `stats.removed` without
+        # touching disk, so only the non-dry-run call is rejected here.
+        if not validated:
+            raise HTTPException(400, "presets must not be empty for a non-dry-run sync")
         stats = await asyncio.to_thread(apply_sync, validated)
 
     return {"stats": stats}
@@ -178,7 +201,13 @@ async def create_filament_profile(
 @router.post("/zoho-sync", response_model=FilamentPresetZohoSyncResponse)
 async def sync_filament_presets_from_zoho(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    # T-027: this reaches the same Zoho catalogue the calculator's
+    # zoho routes gate on CALCULATOR_UPDATE (calculator.py), so a custom
+    # role holding only filaments:update must not gain read access to it
+    # or be able to drive the outbound paged Zoho walk. Both permissions
+    # required — RequirePermissionIfAuthEnabled's varargs default to
+    # all-must-pass.
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE, Permission.CALCULATOR_UPDATE),
 ):
     """Price every profile from its matching Zoho item.
 

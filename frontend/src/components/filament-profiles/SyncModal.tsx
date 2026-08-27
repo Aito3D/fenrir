@@ -10,6 +10,11 @@ export interface SyncModalProps {
   onCancel: () => void;
   onConfirm: () => void;
   onClose: () => void;
+  /** T-026: the confirm step runs the destructive non-dry-run sync, which the
+   *  backend now also gates on filaments:delete (it removes on-disk presets
+   *  not in the incoming list). Defaults to true so callers that don't pass
+   *  it keep today's behaviour. */
+  canConfirm?: boolean;
 }
 
 function StatRow({ label, value, valueClassName }: { label: string; value: number; valueClassName: string }) {
@@ -27,7 +32,7 @@ function StatRow({ label, value, valueClassName }: { label: string; value: numbe
  * spinner-only state both before the dry-run preview and again during the
  * real, destructive execute call.
  */
-export function SyncModal({ state, stats, onCancel, onConfirm, onClose }: SyncModalProps) {
+export function SyncModal({ state, stats, onCancel, onConfirm, onClose, canConfirm = true }: SyncModalProps) {
   const { t } = useTranslation();
   const dismissible = state !== 'syncing';
   const dismiss = state === 'preview' ? onCancel : onClose;
@@ -76,11 +81,14 @@ export function SyncModal({ state, stats, onCancel, onConfirm, onClose }: SyncMo
                 </div>
               )
             )}
+            {!canConfirm && (
+              <p className="mt-3 text-sm text-amber-400">{t('filamentProfiles.syncConfirmNeedsDelete')}</p>
+            )}
             <div className="mt-6 flex gap-3">
               <Button variant="secondary" onClick={onCancel} className="flex-1">
                 {t('filamentProfiles.cancel')}
               </Button>
-              <Button onClick={onConfirm} disabled={!stats || zeroChanges} className="flex-1">
+              <Button onClick={onConfirm} disabled={!stats || zeroChanges || !canConfirm} className="flex-1">
                 {t('filamentProfiles.syncConfirm')}
               </Button>
             </div>

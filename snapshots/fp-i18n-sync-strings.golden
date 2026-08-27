@@ -1,8 +1,9 @@
 ### exit: 0
 ### stdout:
---- de (20 keys)
+--- de (21 keys)
 syncBase = "Basis synchronisieren"
 syncConfirm = "Synchronisieren"
+syncConfirmNeedsDelete = "Sie haben keine Berechtigung, vorhandene Profile zu löschen"
 syncDoneTitle = "Synchronisierung abgeschlossen"
 syncFailed = "Synchronisierung fehlgeschlagen: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Sync-Vorschau fehlgeschlagen: {{error}}"  placeholders={{error}}
@@ -21,9 +22,10 @@ syncZohoStale = "Zoho war nicht erreichbar — die Preise stammen aus einem am {
 syncZohoUnwritable = "Gefunden, aber die gespeicherten Daten des Presets sind leer oder unlesbar"
 syncZohoWeightUnknown = "Gefunden, aber das Spulengewicht des Artikels ist unbekannt — der Preis wurde nicht übernommen"
 syncingBase = "Basis wird synchronisiert…"
---- en (20 keys)
+--- en (21 keys)
 syncBase = "Sync base"
 syncConfirm = "Sync"
+syncConfirmNeedsDelete = "You do not have permission to delete existing presets"
 syncDoneTitle = "Sync complete"
 syncFailed = "Sync failed: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Sync preview failed: {{error}}"  placeholders={{error}}
@@ -42,9 +44,10 @@ syncZohoStale = "Zoho was unreachable — prices came from a catalogue cached at
 syncZohoUnwritable = "Matched, but the preset's saved data is empty or unreadable"
 syncZohoWeightUnknown = "Matched, but the item's spool weight is unknown — its price was not applied"
 syncingBase = "Syncing base…"
---- es (20 keys)
+--- es (21 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
+syncConfirmNeedsDelete = "No tienes permiso para eliminar perfiles existentes"
 syncDoneTitle = "Sincronización completa"
 syncFailed = "Error de sincronización: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Error en la vista previa de sincronización: {{error}}"  placeholders={{error}}
@@ -63,9 +66,10 @@ syncZohoStale = "Zoho no estaba disponible — los precios provienen de un catá
 syncZohoUnwritable = "Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer"
 syncZohoWeightUnknown = "Coincide, pero se desconoce el peso del carrete del artículo — el precio no se aplicó"
 syncingBase = "Sincronizando base…"
---- fr (20 keys)
+--- fr (21 keys)
 syncBase = "Synchroniser la base"
 syncConfirm = "Synchroniser"
+syncConfirmNeedsDelete = "Vous n'avez pas la permission de supprimer les profils existants"
 syncDoneTitle = "Synchronisation terminée"
 syncFailed = "Échec de la synchronisation : {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Échec de l'aperçu de synchronisation : {{error}}"  placeholders={{error}}
@@ -84,9 +88,10 @@ syncZohoStale = "Zoho était injoignable — les prix proviennent d'un catalogue
 syncZohoUnwritable = "Correspondance trouvée, mais les données enregistrées du préréglage sont vides ou illisibles"
 syncZohoWeightUnknown = "Correspondance trouvée, mais le poids de la bobine de l'article est inconnu — le prix n'a pas été appliqué"
 syncingBase = "Synchronisation de la base…"
---- it (20 keys)
+--- it (21 keys)
 syncBase = "Sincronizza base"
 syncConfirm = "Sincronizza"
+syncConfirmNeedsDelete = "Non hai il permesso di eliminare i profili esistenti"
 syncDoneTitle = "Sincronizzazione completata"
 syncFailed = "Sincronizzazione non riuscita: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Anteprima di sincronizzazione non riuscita: {{error}}"  placeholders={{error}}
@@ -105,9 +110,10 @@ syncZohoStale = "Zoho non era raggiungibile — i prezzi provengono da un catalo
 syncZohoUnwritable = "Trovata corrispondenza, ma i dati salvati del preset sono vuoti o illeggibili"
 syncZohoWeightUnknown = "Trovata corrispondenza, ma il peso della bobina dell'articolo è sconosciuto — il prezzo non è stato applicato"
 syncingBase = "Sincronizzazione base…"
---- ja (20 keys)
+--- ja (21 keys)
 syncBase = "ベースを同期"
 syncConfirm = "同期"
+syncConfirmNeedsDelete = "既存のプリセットを削除する権限がありません"
 syncDoneTitle = "同期が完了しました"
 syncFailed = "同期に失敗しました: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "同期プレビューに失敗しました: {{error}}"  placeholders={{error}}
@@ -126,9 +132,10 @@ syncZohoStale = "Zohoに接続できなかったため、{{timestamp}}にキャ�
 syncZohoUnwritable = "一致しましたが、プリセットの保存データが空か読み取れません"
 syncZohoWeightUnknown = "一致しましたが、アイテムのスプール重量が不明なため価格は適用されませんでした"
 syncingBase = "ベースを同期中…"
---- ko (20 keys)
+--- ko (21 keys)
 syncBase = "베이스 동기화"
 syncConfirm = "동기화"
+syncConfirmNeedsDelete = "기존 프리셋을 삭제할 권한이 없습니다"
 syncDoneTitle = "동기화 완료"
 syncFailed = "동기화 실패: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "동기화 미리보기 실패: {{error}}"  placeholders={{error}}
@@ -147,9 +154,10 @@ syncZohoStale = "Zoho에 연결할 수 없어 {{timestamp}}에 캐시된 카탈�
 syncZohoUnwritable = "일치했지만 프리셋의 저장된 데이터가 비어 있거나 읽을 수 없습니다"
 syncZohoWeightUnknown = "일치했지만 항목의 스풀 무게를 알 수 없어 가격이 적용되지 않았습니다"
 syncingBase = "베이스 동기화 중…"
---- ptBR (20 keys)
+--- ptBR (21 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
+syncConfirmNeedsDelete = "Você não tem permissão para excluir perfis existentes"
 syncDoneTitle = "Sincronização concluída"
 syncFailed = "Falha na sincronização: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Falha na pré-visualização da sincronização: {{error}}"  placeholders={{error}}
@@ -168,9 +176,10 @@ syncZohoStale = "O Zoho estava inacessível — os preços vêm de um catálogo 
 syncZohoUnwritable = "Encontrado, mas os dados salvos do perfil estão vazios ou não podem ser lidos"
 syncZohoWeightUnknown = "Encontrado, mas o peso do carretel do item é desconhecido — o preço não foi aplicado"
 syncingBase = "Sincronizando base…"
---- ru (20 keys)
+--- ru (21 keys)
 syncBase = "Синхронизировать базу"
 syncConfirm = "Синхронизировать"
+syncConfirmNeedsDelete = "У вас нет прав на удаление существующих профилей"
 syncDoneTitle = "Синхронизация завершена"
 syncFailed = "Ошибка синхронизации: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Ошибка предпросмотра синхронизации: {{error}}"  placeholders={{error}}
@@ -189,9 +198,10 @@ syncZohoStale = "Zoho был недоступен — цены взяты из �
 syncZohoUnwritable = "Найдено совпадение, но сохранённые данные пресета пусты или не читаются"
 syncZohoWeightUnknown = "Найдено совпадение, но вес катушки товара неизвестен — цена не была применена"
 syncingBase = "Синхронизация базы…"
---- tr (20 keys)
+--- tr (21 keys)
 syncBase = "Temeli senkronize et"
 syncConfirm = "Senkronize et"
+syncConfirmNeedsDelete = "Mevcut profilleri silme izniniz yok"
 syncDoneTitle = "Senkronizasyon tamamlandı"
 syncFailed = "Senkronizasyon başarısız: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Senkronizasyon önizlemesi başarısız: {{error}}"  placeholders={{error}}
@@ -210,9 +220,10 @@ syncZohoStale = "Zoho'ya ulaşılamadı — fiyatlar {{timestamp}} tarihinde ön
 syncZohoUnwritable = "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor"
 syncZohoWeightUnknown = "Eşleşti, ancak öğenin makara ağırlığı bilinmiyor — fiyat uygulanmadı"
 syncingBase = "Temel senkronize ediliyor…"
---- uk (20 keys)
+--- uk (21 keys)
 syncBase = "Синхронізувати базу"
 syncConfirm = "Синхронізувати"
+syncConfirmNeedsDelete = "У вас немає дозволу на видалення наявних профілів"
 syncDoneTitle = "Синхронізацію завершено"
 syncFailed = "Помилка синхронізації: {{error}}"  placeholders={{error}}
 syncPreviewFailed = "Помилка попереднього перегляду синхронізації: {{error}}"  placeholders={{error}}
@@ -231,9 +242,10 @@ syncZohoStale = "Zoho був недоступний — ціни взято з �
 syncZohoUnwritable = "Знайдено збіг, але збережені дані пресету порожні або нечитабельні"
 syncZohoWeightUnknown = "Знайдено збіг, але вага котушки товару невідома — ціну не застосовано"
 syncingBase = "Синхронізація бази…"
---- zhCN (20 keys)
+--- zhCN (21 keys)
 syncBase = "同步基础库"
 syncConfirm = "同步"
+syncConfirmNeedsDelete = "您没有删除现有预设的权限"
 syncDoneTitle = "同步完成"
 syncFailed = "同步失败：{{error}}"  placeholders={{error}}
 syncPreviewFailed = "同步预览失败：{{error}}"  placeholders={{error}}
@@ -252,9 +264,10 @@ syncZohoStale = "Zoho 无法访问——价格来自 {{timestamp}} 缓存的目�
 syncZohoUnwritable = "已匹配，但该预设的保存数据为空或无法解析"
 syncZohoWeightUnknown = "已匹配，但该项目的线轴重量未知——未应用其价格"
 syncingBase = "正在同步基础库…"
---- zhTW (20 keys)
+--- zhTW (21 keys)
 syncBase = "同步基礎庫"
 syncConfirm = "同步"
+syncConfirmNeedsDelete = "您沒有刪除現有預設的權限"
 syncDoneTitle = "同步完成"
 syncFailed = "同步失敗：{{error}}"  placeholders={{error}}
 syncPreviewFailed = "同步預覽失敗：{{error}}"  placeholders={{error}}
