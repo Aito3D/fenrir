@@ -66,6 +66,11 @@ const referenceInputs: PricingInputs = {
   ...zeroLabor,
 };
 
+// Independent inline closed-form size margin (quantity 1 → qty factor 1),
+// literal constants only, not the exported sizeMargin/unitMultiplier —
+// so a regression in Phase C itself would be caught by these tests.
+const closedFormMult = (c: number): number => 1.15 + (0.45 * 33) / (c + 33);
+
 // A configuration where total_cost is exactly the filament cost: 1 kg at
 // 5/kg = 5 per unit, no printer, energy, provisions, ads, consumables or tax,
 // and sale price = cost so margin_filament is 0. The spec's sanity table.
@@ -239,13 +244,11 @@ describe('computePricing — reference case (40 g, 2 h, qty 1, 150% difficulty, 
     expect(r.total_cost).toBeCloseTo(1112.68, 0);
     // Margins, all at the end: the size/quantity curve on total cost (closed
     // form at quantity 1, so qty factor is 1): mult = 1.15 + 0.45×33/(u+33),
-    // u ≈ 1112.68 ⇒ mult ≈ 1.16296. Plus the filament sale-price uplift
-    // (0.04 × (5597 × 1.05 − 3731) × 1.5) ≈ 128.75. An independent inline
-    // computation (not the exported sizeMargin/unitMultiplier) catches a
-    // regression in Phase C itself, then the rest is pinned to a concrete
-    // end-to-end scenario (±0.005), same as the old flat-markup pin was.
-    const mult = 1 + (1.15 + (0.45 * 33) / (r.total_cost + 33) - 1) * 1;
-    expect(r.margin_global).toBeCloseTo(r.total_cost * (mult - 1), 6);
+    // u ≈ 1112.68 ⇒ mult ≈ 1.16296 ⇒ margin_global ≈ 1112.68 × 0.16296 ≈
+    // 181.32. Plus the filament sale-price uplift
+    // (0.04 × (5597 × 1.05 − 3731) × 1.5) ≈ 128.75. Pinned to a concrete
+    // end-to-end scenario, same as the old flat-markup pin was.
+    expect(r.margin_global).toBeCloseTo(181.32, 1);
     expect(r.margin_filament).toBeCloseTo(128.75, 1);
     expect(r.margin_stuff).toBe(0);
     expect(r.marge).toBeCloseTo(310.08, 2);
@@ -424,8 +427,7 @@ describe('computePricing — behaviors', () => {
     // the exported sizeMargin/unitMultiplier helpers, so a regression in
     // Phase C itself would be caught. margin_filament doesn't depend on
     // stuff, so cross-check it against a separately computed base case.
-    const mult = 1 + (1.15 + (0.45 * 33) / (r.total_cost + 33) - 1) * 1;
-    expect(r.margin_global).toBeCloseTo(r.total_cost * (mult - 1), 6);
+    expect(r.margin_global).toBeCloseTo(r.total_cost * (closedFormMult(r.total_cost) - 1), 6);
     expect(r.marge).toBeCloseTo(r.margin_global + base.margin_filament + 200, 6);
   });
 
@@ -457,9 +459,8 @@ describe('computePricing — behaviors', () => {
     // Independent inline closed-form check (quantity 1 → qty factor 1), not
     // the exported sizeMargin/unitMultiplier helpers, so a regression in
     // Phase C itself would be caught.
-    const mult = 1 + (1.15 + (0.45 * 33) / (withLabor.total_cost + 33) - 1) * 1;
     expect(withLabor.total_ht).toBeCloseTo(
-      withLabor.total_cost * mult + withLabor.margin_filament + withLabor.margin_stuff,
+      withLabor.total_cost * closedFormMult(withLabor.total_cost) + withLabor.margin_filament + withLabor.margin_stuff,
       6,
     );
   });
