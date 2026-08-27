@@ -42,7 +42,6 @@ const DEFAULTS_FIELDS_GENERAL: DefaultsField[] = [
   { key: 'prototype_rate_pct', labelKey: 'calculator.prototypeRate', min: 0, max: 1000 },
   { key: 'ads_rate_pct', labelKey: 'calculator.adsRate', min: 0, max: 1000 },
   { key: 'filament_markup_pct', labelKey: 'calculator.filamentMarkup', min: 0, max: 1000 },
-  { key: 'global_markup_pct', labelKey: 'calculator.globalMarkup', min: 0, max: 1000 },
   { key: 'tax_pct', labelKey: 'calculator.taxPct', min: 0, max: 100 },
   { key: 'stuff_markup_pct', labelKey: 'calculator.stuffMarkup', min: 0, max: 1000 },
 ];

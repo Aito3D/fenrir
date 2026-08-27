@@ -181,6 +181,7 @@ const DE_COGNATES = [
   'Score',  // #1546 AI detection modal — established DE loanword (Duden)
   // Task 14 — filament profile editor: German technical terms borrowed as-is.
   'Import', 'Extrusion', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // French cognates — many UI labels overlap with English exactly.
@@ -188,6 +189,7 @@ const FR_COGNATES = [
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
   'Urgent',  // aito.urgent — same word in French (adjectif : « urgent »)
+  'Minimum',  // calculator.floorGroup — same spelling/meaning in French
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
@@ -238,6 +240,7 @@ const FR_COGNATES = [
   // Task 14 — filament profile editor: French loanwords / model codes.
   'Import', '{{n}} preset', '{{n}} presets', 'Menu', 'Extrusion',
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal', 'Options',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Italian cognates.
@@ -278,6 +281,7 @@ const IT_COGNATES = [
   'Skirt / brim',  // Italian slicer UIs keep the English terms
   // Task 14 — filament profile editor: Italian loanwords / model codes.
   '{{n}} preset', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Japanese: very few cognates because of script difference. Almost
@@ -295,6 +299,7 @@ const JA_COGNATES = [
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Japanese loanwords / model codes.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Portuguese (BR) cognates.
@@ -332,6 +337,7 @@ const PT_BR_COGNATES = [
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "dia" in Portuguese (BR)
   // Task 14 — filament profile editor: PT-BR loanwords / model codes.
   '{{n}} preset', '{{n}} presets', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Chinese (Simplified): very few cognates beyond brand names.
@@ -347,6 +353,7 @@ const ZH_CN_COGNATES = [
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Chinese (Simplified) model codes / brand names.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 const ZH_TW_COGNATES = [
@@ -361,6 +368,7 @@ const ZH_TW_COGNATES = [
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Chinese (Traditional) model codes / brand names.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Korean: script difference means almost nothing is identical.
@@ -384,6 +392,7 @@ const KO_COGNATES = [
   'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Korean model codes / brand names.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
@@ -412,6 +421,7 @@ const ES_COGNATES = [
   'Simple',  // slicer settings visibility tier — identical word in Spanish
   // Task 14 — filament profile editor: Spanish loanwords / model codes.
   '{{n}} preset', '{{n}} presets', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
@@ -432,6 +442,7 @@ const TR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   // Task 14 — filament profile editor: Turkish technical terms / model codes.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'Z-hop',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 const RU_COGNATES = [
@@ -449,6 +460,7 @@ const RU_COGNATES = [
   '+ H2S / H2D / H2C / X2D',
   'SuperTack',
   'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 // Ukrainian keeps only Latin brand names and placeholder/punctuation-only
@@ -467,6 +479,7 @@ const UK_COGNATES = [
   '+ H2S / H2D / H2C / X2D',
   'SuperTack',
   'nil',
+  '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

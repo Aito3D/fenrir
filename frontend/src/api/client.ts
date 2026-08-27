@@ -3907,6 +3907,12 @@ export interface CalculatorDefaults {
   default_margin_over_cost_pct: number;
   stuff_markup_pct: number;
   base_fee_flat: number;
+  margin_min_mult: number;
+  margin_max_mult: number;
+  margin_k: number;
+  qty_min_factor: number;
+  qty_k: number;
+  min_task_price: number;
   updated_at: string;
 }
 
