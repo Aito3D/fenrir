@@ -841,17 +841,15 @@ describe('TaskRow', () => {
     expect(onChangeSpy).not.toHaveBeenCalled();
   });
 
-  it('reports the quantity-multiplied total (total_ttc_qty), not the per-unit total_ttc', async () => {
-    // Pins the decision at ImpressionFields.tsx: which PricingResult field
-    // gets reported as `computedCost` through its `onChange` prop. Every
-    // other test that reaches impressionCost uses quantity 1, where
-    // total_ttc and total_ttc_qty are equal, so this is the only test that
-    // would go red if that line were changed to report the per-unit figure
-    // instead. The quantity-discount curve (utils/pricing.ts) shaves the
-    // margin above cost as quantity rises, so quantity 2's total sits
-    // strictly between the quantity-1 total (what the buggy per-unit report
-    // would still show, since it barely moves with quantity) and its naive
-    // double (what the old flat markup would have produced exactly).
+  it('reports the quantity-multiplied total, not the per-unit total_ttc', async () => {
+    // Pins the decision at ImpressionFields.tsx `handleChange`: the reported
+    // `impressionCost` is `roundUpTo50(priced.total_ttc) * quantity` — the
+    // rounded-to-the-shop's-50-tier UNIT price times quantity, not the raw
+    // per-unit `total_ttc` and not `computePricing`'s own `total_ttc_qty`
+    // (`total_ttc * quantity`, no rounding) either; those two diverge once
+    // rounding is involved. Every other test that reaches impressionCost
+    // uses quantity 1, where all three coincide, so this is the only test
+    // that would go red if that line reported a different figure.
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
@@ -879,12 +877,26 @@ describe('TaskRow', () => {
     const quantityInput = screen.getByLabelText('Printing Quantity');
     fireEvent.change(quantityInput, { target: { value: '2' } });
 
+    // Exact fields the form above drives: H2S / Sunlu PA6-CF / 40g / 1 day
+    // (1440 min) / quantity 2 — matches `handleChange`'s identity directly.
+    const pricedAtTwo = computeImpressionCost(
+      { printerId: 1, filamentId: 1, weightG: 40, timeMin: 1440, quantity: 2, color: '' },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const expectedAtTwo = roundUpTo50(pricedAtTwo!.total_ttc) * 2;
+
     await waitFor(() => {
       const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
       expect(lastTasks?.[0].impressionCost).not.toBeNull();
-      expect(lastTasks?.[0].impressionCost).toBeGreaterThan(quantityOneCost);
-      expect(lastTasks?.[0].impressionCost).toBeLessThan(quantityOneCost * 2);
+      expect(lastTasks?.[0].impressionCost).toBe(expectedAtTwo);
     });
+    // Still true and worth keeping: the quantity-discount curve means the
+    // doubled-quantity total is more than one unit but less than a naive
+    // double of it (the old flat-markup identity).
+    expect(expectedAtTwo).toBeGreaterThan(quantityOneCost);
+    expect(expectedAtTwo).toBeLessThan(quantityOneCost * 2);
   });
 
   it('printing: clamps a negative typed weight to zero, and reprices the clamped value rather than the negative one', async () => {
