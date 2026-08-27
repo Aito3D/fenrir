@@ -441,7 +441,8 @@
      "ambiguous",
      "no_price",
      "unwritable_content",
-     "bad_price"
+     "bad_price",
+     "weight_unknown"
     ],
     "title": "Reason",
     "type": "string"
@@ -487,7 +488,8 @@
        "ambiguous",
        "no_price",
        "unwritable_content",
-       "bad_price"
+       "bad_price",
+       "weight_unknown"
       ],
       "title": "Reason",
       "type": "string"

@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de (18 keys)
+--- de (19 keys)
 syncBase = "Basis synchronisieren"
 syncConfirm = "Synchronisieren"
 syncDoneTitle = "Synchronisierung abgeschlossen"
@@ -18,8 +18,9 @@ syncZohoNoMatch = "Kein passender Artikel in Zoho gefunden"
 syncZohoNoPrice = "Gefunden, aber der Artikel hat keinen Preis"
 syncZohoPrices = "Preise von Zoho synchronisieren"
 syncZohoUnwritable = "Gefunden, aber die gespeicherten Daten des Presets sind leer oder unlesbar"
+syncZohoWeightUnknown = "Gefunden, aber das Spulengewicht des Artikels ist unbekannt — der Preis wurde nicht übernommen"
 syncingBase = "Basis wird synchronisiert…"
---- en (18 keys)
+--- en (19 keys)
 syncBase = "Sync base"
 syncConfirm = "Sync"
 syncDoneTitle = "Sync complete"
@@ -37,8 +38,9 @@ syncZohoNoMatch = "No matching item in Zoho"
 syncZohoNoPrice = "Matched, but the item has no price"
 syncZohoPrices = "Sync prices from Zoho"
 syncZohoUnwritable = "Matched, but the preset's saved data is empty or unreadable"
+syncZohoWeightUnknown = "Matched, but the item's spool weight is unknown — its price was not applied"
 syncingBase = "Syncing base…"
---- es (18 keys)
+--- es (19 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
 syncDoneTitle = "Sincronización completa"
@@ -56,8 +58,9 @@ syncZohoNoMatch = "No hay artículo coincidente en Zoho"
 syncZohoNoPrice = "Coincide, pero el artículo no tiene precio"
 syncZohoPrices = "Sincronizar precios desde Zoho"
 syncZohoUnwritable = "Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer"
+syncZohoWeightUnknown = "Coincide, pero se desconoce el peso del carrete del artículo — el precio no se aplicó"
 syncingBase = "Sincronizando base…"
---- fr (18 keys)
+--- fr (19 keys)
 syncBase = "Synchroniser la base"
 syncConfirm = "Synchroniser"
 syncDoneTitle = "Synchronisation terminée"
@@ -75,8 +78,9 @@ syncZohoNoMatch = "Aucun article correspondant dans Zoho"
 syncZohoNoPrice = "Correspondance trouvée, mais l'article n'a pas de prix"
 syncZohoPrices = "Synchroniser les prix depuis Zoho"
 syncZohoUnwritable = "Correspondance trouvée, mais les données enregistrées du préréglage sont vides ou illisibles"
+syncZohoWeightUnknown = "Correspondance trouvée, mais le poids de la bobine de l'article est inconnu — le prix n'a pas été appliqué"
 syncingBase = "Synchronisation de la base…"
---- it (18 keys)
+--- it (19 keys)
 syncBase = "Sincronizza base"
 syncConfirm = "Sincronizza"
 syncDoneTitle = "Sincronizzazione completata"
@@ -94,8 +98,9 @@ syncZohoNoMatch = "Nessun articolo corrispondente in Zoho"
 syncZohoNoPrice = "Trovata corrispondenza, ma l'articolo non ha un prezzo"
 syncZohoPrices = "Sincronizza prezzi da Zoho"
 syncZohoUnwritable = "Trovata corrispondenza, ma i dati salvati del preset sono vuoti o illeggibili"
+syncZohoWeightUnknown = "Trovata corrispondenza, ma il peso della bobina dell'articolo è sconosciuto — il prezzo non è stato applicato"
 syncingBase = "Sincronizzazione base…"
---- ja (18 keys)
+--- ja (19 keys)
 syncBase = "ベースを同期"
 syncConfirm = "同期"
 syncDoneTitle = "同期が完了しました"
@@ -113,8 +118,9 @@ syncZohoNoMatch = "Zohoに一致する商品がありません"
 syncZohoNoPrice = "一致しましたが、価格が設定されていません"
 syncZohoPrices = "Zohoから価格を同期"
 syncZohoUnwritable = "一致しましたが、プリセットの保存データが空か読み取れません"
+syncZohoWeightUnknown = "一致しましたが、アイテムのスプール重量が不明なため価格は適用されませんでした"
 syncingBase = "ベースを同期中…"
---- ko (18 keys)
+--- ko (19 keys)
 syncBase = "베이스 동기화"
 syncConfirm = "동기화"
 syncDoneTitle = "동기화 완료"
@@ -132,8 +138,9 @@ syncZohoNoMatch = "Zoho에 일치하는 항목이 없습니다"
 syncZohoNoPrice = "일치했지만 항목에 가격이 없습니다"
 syncZohoPrices = "Zoho에서 가격 동기화"
 syncZohoUnwritable = "일치했지만 프리셋의 저장된 데이터가 비어 있거나 읽을 수 없습니다"
+syncZohoWeightUnknown = "일치했지만 항목의 스풀 무게를 알 수 없어 가격이 적용되지 않았습니다"
 syncingBase = "베이스 동기화 중…"
---- ptBR (18 keys)
+--- ptBR (19 keys)
 syncBase = "Sincronizar base"
 syncConfirm = "Sincronizar"
 syncDoneTitle = "Sincronização concluída"
@@ -151,8 +158,9 @@ syncZohoNoMatch = "Nenhum item correspondente no Zoho"
 syncZohoNoPrice = "Encontrado, mas o item não tem preço"
 syncZohoPrices = "Sincronizar preços do Zoho"
 syncZohoUnwritable = "Encontrado, mas os dados salvos do perfil estão vazios ou não podem ser lidos"
+syncZohoWeightUnknown = "Encontrado, mas o peso do carretel do item é desconhecido — o preço não foi aplicado"
 syncingBase = "Sincronizando base…"
---- ru (18 keys)
+--- ru (19 keys)
 syncBase = "Синхронизировать базу"
 syncConfirm = "Синхронизировать"
 syncDoneTitle = "Синхронизация завершена"
@@ -170,8 +178,9 @@ syncZohoNoMatch = "В Zoho нет подходящего товара"
 syncZohoNoPrice = "Найдено совпадение, но у товара нет цены"
 syncZohoPrices = "Синхронизировать цены из Zoho"
 syncZohoUnwritable = "Найдено совпадение, но сохранённые данные пресета пусты или не читаются"
+syncZohoWeightUnknown = "Найдено совпадение, но вес катушки товара неизвестен — цена не была применена"
 syncingBase = "Синхронизация базы…"
---- tr (18 keys)
+--- tr (19 keys)
 syncBase = "Temeli senkronize et"
 syncConfirm = "Senkronize et"
 syncDoneTitle = "Senkronizasyon tamamlandı"
@@ -189,8 +198,9 @@ syncZohoNoMatch = "Zoho'da eşleşen öğe yok"
 syncZohoNoPrice = "Eşleşti, ancak öğenin fiyatı yok"
 syncZohoPrices = "Zoho'dan fiyatları senkronize et"
 syncZohoUnwritable = "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor"
+syncZohoWeightUnknown = "Eşleşti, ancak öğenin makara ağırlığı bilinmiyor — fiyat uygulanmadı"
 syncingBase = "Temel senkronize ediliyor…"
---- uk (18 keys)
+--- uk (19 keys)
 syncBase = "Синхронізувати базу"
 syncConfirm = "Синхронізувати"
 syncDoneTitle = "Синхронізацію завершено"
@@ -208,8 +218,9 @@ syncZohoNoMatch = "У Zoho немає відповідного товару"
 syncZohoNoPrice = "Знайдено збіг, але товар без ціни"
 syncZohoPrices = "Синхронізувати ціни з Zoho"
 syncZohoUnwritable = "Знайдено збіг, але збережені дані пресету порожні або нечитабельні"
+syncZohoWeightUnknown = "Знайдено збіг, але вага котушки товару невідома — ціну не застосовано"
 syncingBase = "Синхронізація бази…"
---- zhCN (18 keys)
+--- zhCN (19 keys)
 syncBase = "同步基础库"
 syncConfirm = "同步"
 syncDoneTitle = "同步完成"
@@ -227,8 +238,9 @@ syncZohoNoMatch = "Zoho 中没有匹配项"
 syncZohoNoPrice = "已匹配，但该项目没有价格"
 syncZohoPrices = "从 Zoho 同步价格"
 syncZohoUnwritable = "已匹配，但该预设的保存数据为空或无法解析"
+syncZohoWeightUnknown = "已匹配，但该项目的线轴重量未知——未应用其价格"
 syncingBase = "正在同步基础库…"
---- zhTW (18 keys)
+--- zhTW (19 keys)
 syncBase = "同步基礎庫"
 syncConfirm = "同步"
 syncDoneTitle = "同步完成"
@@ -246,6 +258,7 @@ syncZohoNoMatch = "Zoho 中沒有相符項目"
 syncZohoNoPrice = "已符合，但該項目沒有價格"
 syncZohoPrices = "從 Zoho 同步價格"
 syncZohoUnwritable = "已符合，但該預設的儲存資料為空或無法解析"
+syncZohoWeightUnknown = "已符合，但該項目的線軸重量未知——未套用其價格"
 syncingBase = "正在同步基礎庫…"
 
 --- parity against en

@@ -29,16 +29,23 @@ def _configured(monkeypatch, value):
     monkeypatch.setattr(zoho_service, "is_configured", is_configured)
 
 
-def product(brand="Polymaker", material="PETG", colour="Electric Blue", price=19.9, has_price=True):
+def product(
+    brand="Polymaker", material="PETG", colour="Electric Blue", price=19.9, has_price=True, weight_inferred=False
+):
+    name = f"{brand} - {material} - {colour} - 1.75mm - 1kg"
+    if weight_inferred:
+        # No weight segment at all, mirroring parse_filament_name's own trigger
+        # for weight_inferred=True: the name simply carries no weight token.
+        name = f"{brand} - {material} - {colour} - 1.75mm"
     return FilamentProduct(
         item_id=f"{brand}-{material}-{colour}",
-        name=f"{brand} - {material} - {colour} - 1.75mm - 1kg",
+        name=name,
         sku="SKU",
         brand=brand,
         material=material,
         colour=colour,
         spool_weight_kg=1.0,
-        weight_inferred=False,
+        weight_inferred=weight_inferred,
         dealer_price=price,
         cost_per_kg=price,
         has_price=has_price,
@@ -192,6 +199,70 @@ async def test_a_confident_match_with_a_bad_price_is_flagged_for_attention(async
 
     await db_session.refresh(preset)
     assert preset.content == original  # byte-identical: never written
+
+
+@pytest.mark.asyncio
+async def test_a_confident_match_with_an_inferred_weight_is_flagged_for_attention(
+    async_client, db_session, monkeypatch
+):
+    # The item matches uniquely and has a usable price, but that price was
+    # derived from a 1 kg default because the Zoho item name carried no
+    # weight at all (FilamentProduct.weight_inferred). Writing it would let a
+    # later rename of that same item (e.g. adding a real "- 500g" suffix)
+    # silently re-scale the preset's stored price — the calculator's own sync
+    # refuses to do this for the same reason. Must be reported for review,
+    # not auto-priced, and the preset must be left byte-identical.
+    original = json.dumps({"name": "P"}, indent=4)
+    preset = await make_preset(db_session, content=original)
+    inferred = product(weight_inferred=True)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([inferred]))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert body["priced"] == 0
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["reason"] == "weight_unknown"
+    assert body["attention"][0]["id"] == preset.id
+    assert body["attention"][0]["name"] == "P"
+    assert body["attention"][0]["candidates"] == [inferred.name]
+    assert body["attention"][0]["candidates_total"] == 1
+
+    await db_session.refresh(preset)
+    assert preset.content == original  # byte-identical: never written
+
+
+@pytest.mark.asyncio
+async def test_a_weight_inferred_profile_does_not_stop_healthy_profiles_from_being_priced(
+    async_client, db_session, monkeypatch
+):
+    healthy = await make_preset(db_session, name="Healthy", brand="Polymaker", material="PETG", colour="Red")
+    unknown_weight = await make_preset(db_session, name="UnknownWeight", brand="eSUN", material="PLA", colour="Black")
+    monkeypatch.setattr(
+        zoho_filaments,
+        "fetch_catalogue",
+        _catalogue(
+            [
+                product(brand="Polymaker", material="PETG", colour="Red", price=19.9),
+                product(brand="eSUN", material="PLA", colour="Black", price=15.0, weight_inferred=True),
+            ]
+        ),
+    )
+    _configured(monkeypatch, True)
+
+    response = await async_client.post(ENDPOINT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["priced"] == 1
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["id"] == unknown_weight.id
+    assert body["attention"][0]["reason"] == "weight_unknown"
+
+    await db_session.refresh(healthy)
+    assert json.loads(healthy.content)["filament_cost"] == ["19.90"]
 
 
 @pytest.mark.asyncio
@@ -419,11 +490,14 @@ async def test_502_for_a_non_runtime_error_fallback(async_client, db_session, mo
     assert response.json()["detail"] == "Could not reach Zoho"
 
 
-@pytest.mark.parametrize("reason", ["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price"])
+@pytest.mark.parametrize(
+    "reason", ["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price", "weight_unknown"]
+)
 def test_attention_reason_accepts_every_value_the_route_can_set(reason):
     # Pins FilamentPresetZohoSyncAttention.reason as a closed Literal, not a bare str:
     # every value the route actually assigns (match_profile's three outcomes plus the
-    # route's own "bad_price"/"unwritable_content") must still construct cleanly.
+    # route's own "bad_price"/"unwritable_content"/"weight_unknown") must still
+    # construct cleanly.
     FilamentPresetZohoSyncAttention(id=1, name="P", reason=reason)
 
 

@@ -218,6 +218,25 @@ async def sync_filament_presets_from_zoho(
             )
             continue
 
+        if match.product.weight_inferred:
+            # Matched, and the price itself would be usable — but it was
+            # derived from a 1 kg default because the Zoho item name carried
+            # no weight at all (FilamentProduct.weight_inferred). Writing it
+            # would let an upstream rename of that item silently re-scale the
+            # preset's stored price, exactly what the calculator's own sync
+            # refuses to do (see its "weight wins" comment). So this is
+            # reported for operator review instead of auto-priced.
+            attention.append(
+                FilamentPresetZohoSyncAttention(
+                    id=preset.id,
+                    name=preset.name,
+                    reason="weight_unknown",
+                    candidates=[match.product.name],
+                    candidates_total=1,
+                )
+            )
+            continue
+
         content, outcome = apply_filament_cost(preset.content, match.product.cost_per_kg)
         if outcome == "written":
             preset.content = content

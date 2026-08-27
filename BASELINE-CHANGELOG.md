@@ -4804,3 +4804,172 @@ to the baseline. Full backend suite: 12,435 passed, 1 skipped (one unrelated fai
 output`, observed only under the coverage run's parallel load and confirmed to pass in
 isolation — a known suite flake, not caused by this change). Full frontend suite: 359 files,
 5120 tests passed.
+
+## T-015 — 2026-08-26 — a Zoho match with a name-inferred spool weight no longer auto-prices
+(user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`backend/app/api/routes/filament_profiles.py`) priced every
+confidently-matched preset from `match.product.cost_per_kg` without checking
+`FilamentProduct.weight_inferred`. That field is `True` when `zoho_filaments.parse_filament_name`
+found no weight token at all in the Zoho item's name and silently assumed 1 kg
+(`services/zoho_filaments.py:113-114`), so `cost_per_kg` for such an item is `dealer_price / 1.0`
+— a value with no real basis. If the vendor later renamed the item to add or change its weight
+suffix, the *next* sync would re-derive a different `cost_per_kg` from the same dealer price and
+silently rewrite every matching preset's stored cost. The pricing calculator's own Zoho sync
+(`api/routes/calculator.py:245`) already refuses exactly this: "The filament's own stored weight
+wins: re-deriving it from the Zoho name on every sync would let an upstream rename re-scale the
+price." This route had no equivalent guard.
+
+A match whose `product.weight_inferred` is `True` is now diverted to the attention list under a
+new reason, `"weight_unknown"`, before `apply_filament_cost` is ever called — the preset's price
+is left untouched (exactly as for `"no_match"`/`"ambiguous"`/`"no_price"`/`"bad_price"`/
+`"unwritable_content"`), and the operator can correct the situation upstream (give the Zoho item
+a real weight in its name) instead of the sync silently trusting an assumed one.
+
+Candidates/candidates_total convention for the new reason, chosen to be consistent with the
+existing `"no_price"` reason (also a single confidently-matched item, reported rather than
+auto-applied): `candidates=[match.product.name]`, `candidates_total=1` — the one matched item
+whose weight the operator needs to go verify, not an empty list (`"no_match"`/`"bad_price"`/
+`"unwritable_content"` use `[]` because there is no single item to point at).
+
+user-approved 2026-08-26: a profile matched to a Zoho item whose name carries no weight is
+reported for review instead of auto-priced; the sync UI gained a new attention reason to render.
+
+Obligations completed in this same change: `FilamentPresetZohoSyncAttention.reason` (`backend/
+app/schemas/filament_profile.py`) extended to
+`Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price",
+"weight_unknown"]`; the route's attention branch; the page's reason-to-i18n-key ternary in
+`frontend/src/pages/FilamentProfilesPage.tsx` gained an explicit `'weight_unknown'` branch (never
+falls through to the `"no_price"` default); a new i18n leaf, `filamentProfiles.
+syncZohoWeightUnknown`, added with real (non-placeholder) translations to all 13 locale files
+under `frontend/src/i18n/locales/`, verified by `node scripts/check-i18n-parity.mjs` and `npx
+vitest run src/__tests__/i18n`. `frontend/src/api/client.ts`'s `FilamentPresetZohoSyncAttention.
+reason` union type also gained `'weight_unknown'` (type-only; needed so the page's new ternary
+branch compiles) — the file is not itself in the campaign's coverage scope (a 265KB file shared
+by the whole app), but its type must track the API contract this task changed.
+
+Tests added: `backend/tests/unit/test_filament_profiles_zoho_sync.py` —
+`test_attention_reason_accepts_every_value_the_route_can_set` extended to the six-value set;
+`test_a_confident_match_with_an_inferred_weight_is_flagged_for_attention` (a lone
+`weight_inferred=True` match reports `"weight_unknown"` with `candidates=[item.name]`,
+`candidates_total=1`, and leaves the preset byte-identical); and
+`test_a_weight_inferred_profile_does_not_stop_healthy_profiles_from_being_priced` (a
+weight-inferred match and a normal match in the same batch: the healthy one still prices, the
+inferred one is reported exactly once, mirroring the existing bad-price sibling test). The
+shared `product()` test helper gained a `weight_inferred` parameter (default `False`, so every
+pre-existing call site — and `test_prices_a_confident_match` in particular — is unchanged and
+still prices normally). `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` — a new
+test (mirroring the T-018-era `bad_price`/`unwritable_content` tests) asserts a `weight_unknown`
+entry renders its own copy, never falls through to the `"no price"` text, and shows its single
+candidate name.
+
+`tools/snapshot.py verify`: 7/11 matched unchanged; 4 legitimately diffed and were re-recorded
+via `tools/snapshot.py record` — `fp-pydantic-schemas` (the widened `reason` enum in
+`FilamentPresetZohoSyncAttention`'s JSON Schema), `fp-i18n-sync-strings` (the new
+`syncZohoWeightUnknown` leaf in every locale), `fp-client-method` (the widened union in the
+client's TypeScript interface), and `fp-page-sync-ui` (the new ternary branch in the page's
+reason grep). `fp-match-decisions` and `fp-sync-endpoint` — the two probes that actually exercise
+`match_profile`/the live route — stayed MATCH unchanged, because neither probe's fixture
+catalogue contains a `weight_inferred=True` product; this is expected, not a gap, since those
+probes are frozen behavioral baselines for scenarios that predate this task. The other 5 golden
+files were byte-identical after the re-record. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: only the `FilamentPresetZohoSyncAttention` openapi-schema line's
+`reason` enum picked up `"weight_unknown"`; applied.
+
+`tools/coverage_fp.sh backend`: 488/489 = 99.80% statements, 110/112 = 98.21% branches — same
+percentage as baseline (485/486 = 99.79%; small denominator increase from the new branch, fully
+covered). Full backend suite: 12,438 passed, 1 skipped. `tools/coverage_fp.sh frontend`:
+163/255 = 63.92% statements — equal to the baseline (the new ternary branch nests inside an
+already-instrumented expression, so it added branch coverage but no new top-level statement; both
+its arms are exercised by the existing and new tests). Full frontend suite (via targeted +
+`src/__tests__/i18n` runs) all green; one unrelated pre-existing flake in
+`src/__tests__/pages/ArchivesPage.test.tsx` was observed once under parallel load and confirmed
+to pass in isolation — not touched by this change.
+
+## T-016 — 2026-08-26 — FilamentProfilesPage's mutating actions are now gated on the
+permission their own backend endpoint enforces (user-approved behavior change)
+
+`frontend/src/pages/FilamentProfilesPage.tsx` never imported `useAuth` or called
+`hasPermission`: every mutating control (Sync base, Import, Sync Zoho prices, Sync to PC, New
+preset, plus each preset's row menu and the editor's Save/Delete buttons) rendered for any
+authenticated user regardless of permissions. Backend enforcement was already correct
+(`RequirePermissionIfAuthEnabled` on every mutating route in `backend/app/api/routes/
+filament_profiles.py`), so a read-only user could click any of these and get a 403 toast — this
+was a defence-in-depth/UX gap, not a bypass, mirroring the pattern `CalculatorPage.tsx` already
+uses (`const canUpdateCalculator = hasPermission('calculator:update')`).
+
+Each control is now gated on the permission its own endpoint actually checks (grepped from
+`RequirePermissionIfAuthEnabled` in the route file):
+- Sync base (`POST /sync-base`, `FILAMENTS_UPDATE`) → `filaments:update`
+- Import (`POST /` per new file after the read-only `bambu-scan`, `FILAMENTS_CREATE`) →
+  `filaments:create`
+- Sync Zoho prices (`POST /zoho-sync`, `FILAMENTS_UPDATE`) → `filaments:update`
+- Sync to PC (`POST /bambu-sync`, dry-run and confirm both `FILAMENTS_UPDATE`) →
+  `filaments:update`
+- New preset (`POST /`, `FILAMENTS_CREATE`) → `filaments:create`
+- Export ZIP left ungated: it calls no backend endpoint (a client-side zip of already-loaded
+  preset data), so there is no permission to check.
+- Row menu (`PresetCard`): Edit → `filaments:update` (`PATCH /{id}`), Duplicate →
+  `filaments:create` (`POST /{id}/duplicate`, which creates a row), Delete → `filaments:delete`
+  (`DELETE /{id}`). The kebab menu button itself is hidden when none of the three are granted
+  (an empty menu is worse than no menu), and the divider before Delete only renders when an item
+  above it is also visible.
+- Editor modal (`PresetEditorModal`): a new `canSave` prop (default `true`, so the two existing
+  component tests that don't pass it are unaffected) hides the Save/Create button when the
+  relevant permission (`filaments:create` in create mode, `filaments:update` in edit mode) is
+  missing — Cancel stays reachable so a read-only user can still back out of a view-only editor.
+  The Delete button was already conditionally rendered via a nullable `onDelete` prop; the page
+  now passes `null` when `filaments:delete` is missing, same mechanism, no modal change needed.
+  Note: clicking a card still opens the editor (view mode) regardless of permission — only
+  Save/Delete inside it are gated — since viewing a preset's content is not itself a mutating
+  action and the list is already gated on `filaments:read` to be visible at all.
+
+`hasPermission` returns `true` unconditionally when auth is disabled (`AuthContext.tsx:229`), so
+auth-disabled installs see every control exactly as before — verified by a dedicated test.
+
+user-approved 2026-08-26: users holding only `filaments:read` no longer see the Sync base /
+Import / Sync Zoho prices / Sync to PC / New preset buttons or the row/editor mutating controls
+that were visible (and clickable, failing with a 403 toast) before; auth-disabled installs and
+users with the corresponding permissions are unaffected.
+
+Files touched: `frontend/src/pages/FilamentProfilesPage.tsx` (permission reads + gating),
+`frontend/src/components/filament-profiles/PresetCard.tsx` (new optional `canEdit`/
+`canDuplicate`/`canDelete` props, each defaulting to `true`), `frontend/src/components/
+filament-profiles/PresetEditorModal.tsx` (new optional `canSave` prop, defaulting to `true`).
+The route-level gap noted in the finding (`<Route path="filament-profiles"
+element={<FilamentProfilesPage />} />` in `App.tsx` has no `PermissionRoute`, unlike
+`calculator`) was left as-is: `App.tsx` was out of scope for this task, and the page itself
+already requires `filaments:read` to render anything from the list/scan endpoints — adding a
+route guard is a separate, larger change (it would need its own approved finding).
+
+Tests added: `frontend/src/__tests__/pages/FilamentProfilesPagePermissions.test.tsx` — a new
+file (mirroring `PrintersPageDropPermission.test.tsx`'s `vi.mock('../../contexts/AuthContext')`
+pattern) rather than editing the existing `FilamentProfilesPage.test.tsx`, because mocking
+`useAuth` applies to every test in the file and would otherwise change that file's
+auth-disabled baseline. Six tests: all five mutating header buttons hidden with only
+`filaments:read`; Export ZIP stays visible; the row kebab menu is absent entirely with no
+create/update/delete permission; the editor's Save button is absent (Cancel stays) for a
+read-only user opening an existing preset; only the row action matching a single granted
+permission (`filaments:update` → Edit only) renders; every control renders with all four
+`filaments:*` permissions granted; every control also renders on an auth-disabled install
+regardless of the (irrelevant) permission set. The existing `FilamentProfilesPage.test.tsx`
+(18 tests) was left unmodified and still passes unchanged — it runs with the real
+`AuthProvider` against the shared mock's `auth_enabled: false`, so `hasPermission` returns
+`true` for everything, same as before this change.
+
+`python3 tools/snapshot.py verify`: 11/11 MATCH, no re-record needed — `fp-page-sync-ui` (the
+only probe that greps `FilamentProfilesPage.tsx`) matches on lines containing `syncZoho`/
+`zohoSync`/`zohoSyncing`, and this change only wrapped existing JSX in a permission conditional
+without touching those identifiers or lines. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: byte-identical, no diff to apply (no exported symbol/interface in the
+page changed; `PresetCard`/`PresetEditorModal` are not in the surface's `R8`-`R11` grep set).
+
+`bash tools/coverage_fp.sh frontend` (scope: `frontend/src/pages/FilamentProfilesPage.tsx`
+only, per that script's FE_FILES list — `components/filament-profiles/**` is explicitly out of
+this scope): 167/259 = 64.47% statements, up from the 163/255 = 63.92% baseline (no drop; the
+new `hasPermission` calls and conditional branches added covered statements). Full frontend
+suite: 5,126/5,127 passed in the scoped coverage run, the one failure
+(`StatsPageUserFilter1894.test.tsx`) a documented load-flake confirmed to pass alone and
+unrelated to this change; a second full run (outside the coverage harness) surfaced the same
+class of flake in `PrintModal.test.tsx`/`ArchivesPage.test.tsx`/`ModelViewerModal.test.tsx`, all
+confirmed passing in isolation and none touching filament-profiles code.

@@ -44,6 +44,11 @@ export interface PresetEditorModalProps {
   onSave: (payload: FilamentPresetPayload) => Promise<void>;
   onDelete: (() => void) | null;
   onClose: () => void;
+  /** Gates the Save/Create button on the permission its own endpoint
+   *  enforces (`filaments:create` when creating, `filaments:update` when
+   *  editing) — defaults to true so any caller that doesn't pass it keeps
+   *  today's behavior. */
+  canSave?: boolean;
 }
 
 type Tab = 'general' | 'temps' | 'cooling' | 'extrusion' | 'retract' | 'json';
@@ -86,6 +91,7 @@ export function PresetEditorModal({
   onSave,
   onDelete,
   onClose,
+  canSave = true,
 }: PresetEditorModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -695,14 +701,16 @@ export function PresetEditorModal({
             <Button variant="secondary" size="sm" onClick={handleDismiss} disabled={saving}>
               {t('filamentProfiles.cancel')}
             </Button>
-            <Button
-              size="sm"
-              onClick={() => void handleSave()}
-              disabled={saving || !computedName || jsonError}
-              className={dirty ? 'shadow-[0_4px_18px_rgba(0,174,66,0.35)]' : ''}
-            >
-              {saving ? t('filamentProfiles.saving') : t(isCreate ? 'filamentProfiles.create' : 'filamentProfiles.save')}
-            </Button>
+            {canSave && (
+              <Button
+                size="sm"
+                onClick={() => void handleSave()}
+                disabled={saving || !computedName || jsonError}
+                className={dirty ? 'shadow-[0_4px_18px_rgba(0,174,66,0.35)]' : ''}
+              >
+                {saving ? t('filamentProfiles.saving') : t(isCreate ? 'filamentProfiles.create' : 'filamentProfiles.save')}
+              </Button>
+            )}
           </div>
         </div>
         </div>

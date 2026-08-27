@@ -4338,6 +4338,7 @@ export default {
     syncZohoNoPrice: 'Coincide, pero el artículo no tiene precio',
     syncZohoUnwritable: 'Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer',
     syncZohoBadPrice: 'Coincide, pero el precio del artículo no es válido o es excesivamente alto',
+    syncZohoWeightUnknown: 'Coincide, pero se desconoce el peso del carrete del artículo — el precio no se aplicó',
     syncZohoFailed: 'No se pudieron sincronizar los precios desde Zoho',
     // Toasts
     createdToast: '"{{name}}" creado',

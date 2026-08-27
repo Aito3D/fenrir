@@ -388,6 +388,43 @@ describe('FilamentProfilesPage', () => {
     expect(screen.queryByText(/several items matched/i)).not.toBeInTheDocument();
   });
 
+  it('reports a matched preset with an unknown spool weight as needing attention, not as priced', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [
+            {
+              id: 13,
+              name: 'Mystery PETG',
+              reason: 'weight_unknown',
+              candidates: ['Generic - PETG - Black - 1.75mm'],
+              candidates_total: 1,
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Must render its own reason, never fall through to the "no price" copy
+    // (a matched item whose price was derived from an assumed weight is a
+    // different problem, and a name-inferred weight could silently re-scale
+    // the price on a later rename).
+    expect(await screen.findByText(/Mystery PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/spool weight is unknown/i, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/matched, but the item has no price/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Generic - PETG - Black - 1\.75mm/)).toBeInTheDocument();
+  });
+
   it('reports the needs-attention count in the toast and downgrades it off success when some profiles need attention (T-008)', async () => {
     stubBase();
     server.use(

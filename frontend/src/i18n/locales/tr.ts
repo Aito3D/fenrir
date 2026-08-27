@@ -4331,6 +4331,7 @@ export default {
     syncZohoNoPrice: 'Eşleşti, ancak öğenin fiyatı yok',
     syncZohoUnwritable: "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor",
     syncZohoBadPrice: 'Eşleşti, ancak öğenin fiyatı geçersiz veya aşırı yüksek',
+    syncZohoWeightUnknown: 'Eşleşti, ancak öğenin makara ağırlığı bilinmiyor — fiyat uygulanmadı',
     syncZohoFailed: "Zoho'dan fiyatlar senkronize edilemedi",
     // Toasts
     createdToast: '"{{name}}" oluşturuldu',

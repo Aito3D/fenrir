@@ -133,18 +133,26 @@ class FilamentPresetZohoSyncAttention(BaseModel):
     # "bad_price" is also not a match outcome: the item matched and the
     # preset's content is fine, but the item's own cost_per_kg is non-finite,
     # <= 0, or above the ceiling. See apply_filament_cost's "bad_price".
-    reason: Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price"]
+    # "weight_unknown" is also not a match outcome: the item matched and its
+    # price is usable, but its cost_per_kg was derived from a 1 kg default
+    # because the Zoho item name carried no weight at all
+    # (FilamentProduct.weight_inferred). Writing that price would let an
+    # upstream rename silently re-scale it, exactly what the calculator's own
+    # sync refuses to do — so it is reported instead of written.
+    reason: Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price", "weight_unknown"]
     # Colliding item names for "ambiguous", the single unpriced item for
-    # "no_price", empty for "no_match", "unwritable_content" and "bad_price".
-    # A list, not one name: naming only one of an ambiguous pair would hide
-    # the actual problem. Capped at 5 entries for "ambiguous" — see
-    # candidates_total for the true count.
+    # "no_price", the single matched item for "weight_unknown", empty for
+    # "no_match", "unwritable_content" and "bad_price". A list, not one name:
+    # naming only one of an ambiguous pair would hide the actual problem.
+    # Capped at 5 entries for "ambiguous" — see candidates_total for the true
+    # count.
     candidates: list[str] = []
     # The TRUE number of items behind `candidates`. For "ambiguous" this can
     # exceed len(candidates) once the cap above truncates the list, so the UI
     # can still render a "+N more" instead of silently dropping items with no
     # trace. For every other reason it equals len(candidates) (0 for
-    # "no_match", "unwritable_content" and "bad_price"; 1 for "no_price").
+    # "no_match", "unwritable_content" and "bad_price"; 1 for "no_price" and
+    # "weight_unknown").
     # Always present rather than sometimes-omitted, so the response shape is
     # predictable regardless of reason.
     candidates_total: int = 0

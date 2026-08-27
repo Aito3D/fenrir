@@ -4324,6 +4324,7 @@ export default {
     syncZohoNoPrice: '已匹配，但该项目没有价格',
     syncZohoUnwritable: '已匹配，但该预设的保存数据为空或无法解析',
     syncZohoBadPrice: '已匹配，但该项目的价格无效或过高',
+    syncZohoWeightUnknown: '已匹配，但该项目的线轴重量未知——未应用其价格',
     syncZohoFailed: '无法从 Zoho 同步价格',
     // Toasts
     createdToast: '“{{name}}” 已创建',

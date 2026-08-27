@@ -4336,6 +4336,7 @@ export default {
     syncZohoNoPrice: '一致しましたが、価格が設定されていません',
     syncZohoUnwritable: '一致しましたが、プリセットの保存データが空か読み取れません',
     syncZohoBadPrice: '一致しましたが、価格が無効か大きすぎます',
+    syncZohoWeightUnknown: '一致しましたが、アイテムのスプール重量が不明なため価格は適用されませんでした',
     syncZohoFailed: 'Zohoから価格を同期できませんでした',
     // Toasts
     createdToast: '「{{name}}」を作成しました',

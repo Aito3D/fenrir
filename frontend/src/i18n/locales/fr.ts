@@ -4325,6 +4325,7 @@ export default {
     syncZohoNoPrice: "Correspondance trouvée, mais l'article n'a pas de prix",
     syncZohoUnwritable: "Correspondance trouvée, mais les données enregistrées du préréglage sont vides ou illisibles",
     syncZohoBadPrice: "Correspondance trouvée, mais le prix de l'article est invalide ou excessivement élevé",
+    syncZohoWeightUnknown: "Correspondance trouvée, mais le poids de la bobine de l'article est inconnu — le prix n'a pas été appliqué",
     syncZohoFailed: 'Impossible de synchroniser les prix depuis Zoho',
     // Toasts
     createdToast: '"{{name}}" créé',

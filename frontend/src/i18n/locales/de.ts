@@ -4336,6 +4336,7 @@ export default {
     syncZohoNoPrice: 'Gefunden, aber der Artikel hat keinen Preis',
     syncZohoUnwritable: 'Gefunden, aber die gespeicherten Daten des Presets sind leer oder unlesbar',
     syncZohoBadPrice: 'Gefunden, aber der Preis des Artikels ist ungültig oder unbrauchbar hoch',
+    syncZohoWeightUnknown: 'Gefunden, aber das Spulengewicht des Artikels ist unbekannt — der Preis wurde nicht übernommen',
     syncZohoFailed: 'Preise konnten nicht von Zoho synchronisiert werden',
     // Toasts
     createdToast: '"{{name}}" erstellt',

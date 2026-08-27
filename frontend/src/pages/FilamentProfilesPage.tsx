@@ -39,6 +39,7 @@ import {
   displayColorLabel,
 } from '../components/filament-profiles/presetJson';
 import type { GridSize, SortField } from '../components/filament-profiles/types';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
   readBrandFilter,
@@ -87,6 +88,16 @@ export function FilamentProfilesPage() {
   const { t } = useTranslation();
   const { showToast, showPersistentToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
+
+  // Each button/menu item below is gated on the permission its own backend
+  // endpoint enforces (RequirePermissionIfAuthEnabled in
+  // routes/filament_profiles.py) — a read-only user no longer sees a control
+  // that would just 403. `hasPermission` returns true unconditionally on
+  // auth-disabled installs, so those keep seeing everything.
+  const { hasPermission } = useAuth();
+  const canCreatePreset = hasPermission('filaments:create');
+  const canUpdatePreset = hasPermission('filaments:update');
+  const canDeletePreset = hasPermission('filaments:delete');
 
   const presetsQuery = useQuery({ queryKey: ['filamentPresets'], queryFn: () => api.getFilamentPresets() });
   const baseQuery = useQuery({ queryKey: ['filamentBasePresets'], queryFn: () => api.getBaseFilamentPresets() });
@@ -464,44 +475,54 @@ export function FilamentProfilesPage() {
           <p className="text-bambu-gray mt-1">{t('filamentProfiles.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
-            {syncBaseBusy ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t('filamentProfiles.syncingBase')}
-              </>
-            ) : (
-              <>
-                <Database className="h-4 w-4" />
-                {t('filamentProfiles.syncBase')}
-              </>
-            )}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={handleImport} disabled={importing}>
-            <Upload className="h-4 w-4" />
-            {t('filamentProfiles.import')}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
-            <RefreshCw className="h-4 w-4" />
-            {t('filamentProfiles.syncZohoPrices')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleSyncToPc}
-            disabled={presetsQuery.isLoading || presetsQuery.isError}
-          >
-            <RefreshCw className="h-4 w-4" />
-            {t('filamentProfiles.syncToPc')}
-          </Button>
+          {canUpdatePreset && (
+            <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
+              {syncBaseBusy ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('filamentProfiles.syncingBase')}
+                </>
+              ) : (
+                <>
+                  <Database className="h-4 w-4" />
+                  {t('filamentProfiles.syncBase')}
+                </>
+              )}
+            </Button>
+          )}
+          {canCreatePreset && (
+            <Button variant="secondary" size="sm" onClick={handleImport} disabled={importing}>
+              <Upload className="h-4 w-4" />
+              {t('filamentProfiles.import')}
+            </Button>
+          )}
+          {canUpdatePreset && (
+            <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
+              <RefreshCw className="h-4 w-4" />
+              {t('filamentProfiles.syncZohoPrices')}
+            </Button>
+          )}
+          {canUpdatePreset && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncToPc}
+              disabled={presetsQuery.isLoading || presetsQuery.isError}
+            >
+              <RefreshCw className="h-4 w-4" />
+              {t('filamentProfiles.syncToPc')}
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={handleExport} disabled={!canExport}>
             <Download className="h-4 w-4" />
             {t('filamentProfiles.exportZip')}
           </Button>
-          <Button size="sm" onClick={() => setEditorState({ mode: 'create' })}>
-            <Plus className="h-4 w-4" />
-            {t('filamentProfiles.newPreset')}
-          </Button>
+          {canCreatePreset && (
+            <Button size="sm" onClick={() => setEditorState({ mode: 'create' })}>
+              <Plus className="h-4 w-4" />
+              {t('filamentProfiles.newPreset')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -629,7 +650,9 @@ export function FilamentProfilesPage() {
                             ? 'filamentProfiles.syncZohoUnwritable'
                             : entry.reason === 'bad_price'
                               ? 'filamentProfiles.syncZohoBadPrice'
-                              : 'filamentProfiles.syncZohoNoPrice',
+                              : entry.reason === 'weight_unknown'
+                                ? 'filamentProfiles.syncZohoWeightUnknown'
+                                : 'filamentProfiles.syncZohoNoPrice',
                     )}
                     {entry.candidates.length > 0 && (
                       <>
@@ -688,6 +711,9 @@ export function FilamentProfilesPage() {
               onEdit={() => setEditorState({ mode: 'edit', presetId: preset.id })}
               onDuplicate={() => handleDuplicate(preset)}
               onDelete={() => setConfirmDelete(preset)}
+              canEdit={canUpdatePreset}
+              canDuplicate={canCreatePreset}
+              canDelete={canDeletePreset}
             />
           ))}
         </div>
@@ -709,8 +735,9 @@ export function FilamentProfilesPage() {
               basePresets={baseFilamentPresets}
               extraMaterials={extraMaterials}
               onSave={(payload) => handleSavePreset(payload, editingPreset)}
-              onDelete={editingPreset ? () => setConfirmDelete(editingPreset) : null}
+              onDelete={editingPreset && canDeletePreset ? () => setConfirmDelete(editingPreset) : null}
               onClose={() => setEditorState({ mode: 'closed' })}
+              canSave={editorState.mode === 'create' ? canCreatePreset : canUpdatePreset}
             />
           );
         })()}
