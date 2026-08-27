@@ -273,7 +273,7 @@ export function computePricing(
   // margin above cost only — so price ≥ cost at any quantity.
   const size_margin = sizeMargin(total_cost, defaults);
   const qty_factor = qtyFactor(quantity, defaults);
-  const margin_multiplier = 1 + (size_margin - 1) * qty_factor;
+  const margin_multiplier = unitMultiplier(total_cost, quantity, defaults);
   let margin_global = total_cost * (margin_multiplier - 1);
   // margin_filament: kg·sale·d·(1+fm) ≡ filament_cost + this line, so the
   // filament contribution to the pre-margin price is exactly the old quote

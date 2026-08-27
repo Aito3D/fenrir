@@ -45,6 +45,27 @@ const defaults: PricingDefaults = {
   stuff_markup_pct: 20,
 };
 
+const zeroLabor = {
+  modeling_hours: 0,
+  modeling_base_price: 0,
+  prep_model_min: 0,
+  prep_slicing_min: 0,
+  prep_transfer_min: 0,
+  post_removal_min: 0,
+  post_support_min: 0,
+  post_additional_min: 0,
+  post_fulfillment_min: 0,
+  stuff_amount: 0,
+  stuff_markup_pct: 20,
+};
+
+const referenceInputs: PricingInputs = {
+  weight_g: 40,
+  printing_time_h: 2,
+  quantity: 1,
+  ...zeroLabor,
+};
+
 // A configuration where total_cost is exactly the filament cost: 1 kg at
 // 5/kg = 5 per unit, no printer, energy, provisions, ads, consumables or tax,
 // and sale price = cost so margin_filament is 0. The spec's sanity table.
@@ -186,27 +207,6 @@ describe('computePricing with the margin curves', () => {
   });
 });
 
-const zeroLabor = {
-  modeling_hours: 0,
-  modeling_base_price: 0,
-  prep_model_min: 0,
-  prep_slicing_min: 0,
-  prep_transfer_min: 0,
-  post_removal_min: 0,
-  post_support_min: 0,
-  post_additional_min: 0,
-  post_fulfillment_min: 0,
-  stuff_amount: 0,
-  stuff_markup_pct: 20,
-};
-
-const referenceInputs: PricingInputs = {
-  weight_g: 40,
-  printing_time_h: 2,
-  quantity: 1,
-  ...zeroLabor,
-};
-
 describe('printer derived values', () => {
   it('computes lifetime hours, depreciation and repairs per hour for H2S', () => {
     expect(printerLifetimeHours(printer)).toBe(3650);
@@ -237,16 +237,22 @@ describe('computePricing — reference case (40 g, 2 h, qty 1, 150% difficulty, 
     expect(r.machine_cost_safety).toBeCloseTo(1029.69, 0);
     expect(r.ads_cost).toBeCloseTo(52.98, 0); // 5% of (safety + consumables)
     expect(r.total_cost).toBeCloseTo(1112.68, 0);
-    // Margins, all at the end: the size/quantity curve on total cost + the
-    // filament sale-price uplift (0.04 × (5597 × 1.05 − 3731) × 1.5).
-    expect(r.margin_global).toBeCloseTo(r.total_cost * (r.margin_multiplier - 1), 6);
+    // Margins, all at the end: the size/quantity curve on total cost (closed
+    // form at quantity 1, so qty factor is 1): mult = 1.15 + 0.45×33/(u+33),
+    // u ≈ 1112.68 ⇒ mult ≈ 1.16296. Plus the filament sale-price uplift
+    // (0.04 × (5597 × 1.05 − 3731) × 1.5) ≈ 128.75. An independent inline
+    // computation (not the exported sizeMargin/unitMultiplier) catches a
+    // regression in Phase C itself, then the rest is pinned to a concrete
+    // end-to-end scenario (±0.005), same as the old flat-markup pin was.
+    const mult = 1 + (1.15 + (0.45 * 33) / (r.total_cost + 33) - 1) * 1;
+    expect(r.margin_global).toBeCloseTo(r.total_cost * (mult - 1), 6);
     expect(r.margin_filament).toBeCloseTo(128.75, 1);
     expect(r.margin_stuff).toBe(0);
-    expect(r.marge).toBeCloseTo(r.margin_global + r.margin_filament + r.margin_stuff, 6);
-    expect(r.total_ht).toBeCloseTo(r.total_cost + r.marge, 6);
-    expect(r.total_ttc).toBeCloseTo(r.total_ht * 1.13, 6);
+    expect(r.marge).toBeCloseTo(310.08, 2);
+    expect(r.total_ht).toBeCloseTo(1422.75, 2);
+    expect(r.total_ttc).toBeCloseTo(1607.71, 2);
     // Margin fraction is over the pre-tax price (collected tax is not revenue)
-    expect(r.margin_pct).toBeCloseTo(r.marge / r.total_ht, 10);
+    expect(r.margin_pct).toBeCloseTo(0.22, 2);
   });
 
   it('pre-tax price is exactly total cost + the three margin lines', () => {
@@ -404,6 +410,7 @@ describe('computePricing — behaviors', () => {
   });
 
   it('stuff is costed at its amount; the markup lands as an end-stage margin', () => {
+    const base = computePricing(referenceInputs, filament, printer, defaults);
     const r = computePricing(
       { ...referenceInputs, stuff_amount: 1000, stuff_markup_pct: 20 },
       filament,
@@ -413,7 +420,13 @@ describe('computePricing — behaviors', () => {
     expect(r.stuff_cost).toBeCloseTo(1000, 6);
     expect(r.labor_total).toBeCloseTo(1000, 6); // stuff at cost, no other labor
     expect(r.margin_stuff).toBeCloseTo(200, 6);
-    expect(r.marge).toBeCloseTo(r.margin_global + r.margin_filament + r.margin_stuff, 6);
+    // Independent inline closed-form check (quantity 1 → qty factor 1), not
+    // the exported sizeMargin/unitMultiplier helpers, so a regression in
+    // Phase C itself would be caught. margin_filament doesn't depend on
+    // stuff, so cross-check it against a separately computed base case.
+    const mult = 1 + (1.15 + (0.45 * 33) / (r.total_cost + 33) - 1) * 1;
+    expect(r.margin_global).toBeCloseTo(r.total_cost * (mult - 1), 6);
+    expect(r.marge).toBeCloseTo(r.margin_global + base.margin_filament + 200, 6);
   });
 
   it('measured energy replaces the watts × hours estimate (surcharge kept)', () => {
@@ -439,11 +452,16 @@ describe('computePricing — behaviors', () => {
       printer,
       defaults,
     );
-    // Modeling is not in the risk base; it carries ads overhead and margin
-    // (the margin curve is non-linear in unit cost, so the increase is more
-    // than the raw cost delta, not a fixed multiple of it).
+    // Modeling is not in the risk base; it carries ads overhead and margin.
     expect(withLabor.total_cost).toBeCloseTo(base.total_cost + 3000 * 1.05, 6);
-    expect(withLabor.total_ht).toBeGreaterThan(base.total_ht + 3000 * 1.05);
+    // Independent inline closed-form check (quantity 1 → qty factor 1), not
+    // the exported sizeMargin/unitMultiplier helpers, so a regression in
+    // Phase C itself would be caught.
+    const mult = 1 + (1.15 + (0.45 * 33) / (withLabor.total_cost + 33) - 1) * 1;
+    expect(withLabor.total_ht).toBeCloseTo(
+      withLabor.total_cost * mult + withLabor.margin_filament + withLabor.margin_stuff,
+      6,
+    );
   });
 });
 
