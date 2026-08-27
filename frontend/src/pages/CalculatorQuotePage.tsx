@@ -6,7 +6,7 @@ import { ArrowLeft, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from '../components/Button';
 import { buildPricingInputs, foldSessionOverrides, loadCalculatorState, num } from '../hooks/useCalculatorState';
-import { buildWaterfall, computePricing, formatMoney, STEP_LABEL_KEY } from '../utils/pricing';
+import { buildWaterfall, computePricing, formatMoney, moneyDecimals, STEP_LABEL_KEY } from '../utils/pricing';
 
 /**
  * Client-facing printable quote. Deliberately light-on-white and free of the
@@ -37,7 +37,7 @@ export function CalculatorQuotePage() {
   const waterfall = useMemo(() => (result ? buildWaterfall(result) : []), [result]);
   // The quote rounds the TASK figure and derives the unit price from it, so
   // unit × quantity reproduces the printed total to the cent.
-  const decimals = ['XPF', 'JPY', 'KRW'].includes(currency.toUpperCase()) ? 0 : 2;
+  const decimals = moneyDecimals(currency);
   const scale = 10 ** decimals;
   const taskTtcRounded = result ? Math.round(result.total_ttc_qty * scale) / scale : 0;
   const unitTtcDisplayed = result && result.quantity > 1 ? taskTtcRounded / result.quantity : taskTtcRounded;
@@ -133,8 +133,12 @@ export function CalculatorQuotePage() {
                   {t('calculator.breakdown')}
                   {result.quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
                 </h2>
-                {/* Same steps as the calculator's waterfall — per-unit amounts
-                    whose sum is exactly the headline total above. */}
+                {/* Same steps as the calculator's waterfall — exact per-unit
+                    amounts whose sum may differ from the displayed total by
+                    at most one display unit (rounding residual, see the
+                    bounded-drift check in CalculatorQuotePage.test.tsx). The
+                    Total row below prints the same rounded value as the
+                    headline, not the raw sum of these steps. */}
                 <table className="w-full text-sm">
                   <tbody>
                     {waterfall.map((step) => (
@@ -146,7 +150,7 @@ export function CalculatorQuotePage() {
                     <tr>
                       <td className="py-2 font-semibold">{t('calculator.totalTTC')}</td>
                       <td className="py-2 text-right font-semibold tabular-nums">
-                        {formatMoney(result.total_ttc, currency)}
+                        {formatMoney(unitTtcDisplayed, currency)}
                       </td>
                     </tr>
                   </tbody>

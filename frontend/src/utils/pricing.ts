@@ -439,6 +439,13 @@ const ZERO_DECIMAL_CURRENCIES = new Set(['XPF', 'JPY', 'KRW']);
 // everything else is prefixed ("$22.70").
 const SUFFIX_SYMBOLS = new Set(['FCFP', 'kr', 'zł', 'Kč', 'Ft']);
 
+/** Display decimals for a currency code (case-insensitive): 0 for the
+ *  zero-decimal set, 2 otherwise. Single source of truth for formatMoney and
+ *  any caller that needs to round to the same precision it displays at. */
+export function moneyDecimals(currency: string): number {
+  return ZERO_DECIMAL_CURRENCIES.has(currency.toUpperCase()) ? 0 : 2;
+}
+
 /** Format a monetary amount for display in the given ISO currency code:
  * thin-space thousands separators, whole units for zero-decimal currencies
  * (e.g. "22 699 FCFP"), two decimals otherwise (e.g. "$2 295.15"). */
@@ -451,7 +458,7 @@ export function formatMoney(value: number, currency: string, withUnit = true): s
     return suffix ? `${sign}${amount}${NBSP}${symbol}` : `${sign}${symbol}${amount}`;
   };
   if (!Number.isFinite(value)) return compose('', '—');
-  const decimals = ZERO_DECIMAL_CURRENCIES.has(code) ? 0 : 2;
+  const decimals = moneyDecimals(code);
   const fixed = Math.abs(value).toFixed(decimals);
   const [intPart, fracPart] = fixed.split('.');
   const digits = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, THIN_SPACE);

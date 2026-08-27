@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { render } from '../utils';
 import { CalculatorQuotePage } from '../../pages/CalculatorQuotePage';
 import { http, HttpResponse } from 'msw';
@@ -183,6 +183,14 @@ describe('CalculatorQuotePage', () => {
     const unit = money(screen.getByTestId('quote-unit-ttc').textContent!);
     const total = money(screen.getByTestId('quote-task-ttc').textContent!);
     expect(Math.abs(unit * 6 - total)).toBeLessThanOrEqual(0.01 * 6);
+
+    // The breakdown table's Total row must print the SAME figure as the
+    // headline — one unit price per quote, not two that can disagree by a
+    // cent (the bug this fixture was built to catch).
+    const table = screen.getByRole('table');
+    const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
+    const totalCell = within(totalRow).getAllByRole('cell')[1];
+    expect(totalCell.textContent).toBe(screen.getByTestId('quote-unit-ttc').textContent);
   });
 
   it('derives the unit price from the rounded task total for a zero-decimal currency', async () => {
@@ -207,6 +215,13 @@ describe('CalculatorQuotePage', () => {
     const unit = money(screen.getByTestId('quote-unit-ttc').textContent!);
     const total = money(screen.getByTestId('quote-task-ttc').textContent!);
     expect(Math.abs(unit * 3 - total)).toBeLessThanOrEqual(1 * 3);
+
+    // Same one-price invariant as the USD test above, for a zero-decimal
+    // currency's breakdown table.
+    const table = screen.getByRole('table');
+    const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
+    const totalCell = within(totalRow).getAllByRole('cell')[1];
+    expect(totalCell.textContent).toBe(screen.getByTestId('quote-unit-ttc').textContent);
   });
 
   it('shows the empty hint when no job is stored', async () => {

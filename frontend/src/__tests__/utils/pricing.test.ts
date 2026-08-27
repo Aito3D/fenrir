@@ -8,6 +8,7 @@ import {
   CURVE_QUANTITIES,
   formatMoney,
   formatPct,
+  moneyDecimals,
   targetPriceProfit,
   printerLifetimeHours,
   printerDepreciationPerHour,
@@ -609,6 +610,16 @@ describe('formatMoney', () => {
   it('is safe on non-finite input', () => {
     expect(formatMoney(Number.NaN, 'XPF')).toBe('—\u00A0FCFP');
     expect(formatMoney(Number.NaN, 'USD')).toBe('$—');
+  });
+});
+
+describe('moneyDecimals', () => {
+  it('is the single source of truth formatMoney rounds to', () => {
+    expect(moneyDecimals('xpf')).toBe(0);
+    expect(moneyDecimals('USD')).toBe(2);
+    // formatMoney must still format JPY with no decimals -- proof the two
+    // stayed in sync after formatMoney was rewritten to call this function.
+    expect(formatMoney(1.005, 'JPY')).toBe('\u00A51');
   });
 });
 
