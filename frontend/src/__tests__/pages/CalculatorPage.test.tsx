@@ -9,11 +9,11 @@ import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
-import { computePricing, formatMoney } from '../../utils/pricing';
+import { computePricing, CURVE_QUANTITIES, formatMoney } from '../../utils/pricing';
 import { buildQuoteSummary } from '../../utils/quoteSummary';
 import { DEFAULT_STATE, num, splitDecimalHours } from '../../hooks/useCalculatorState';
 import { correctedTimeH } from '../../utils/calculatorInsights';
-// Pinned by name (not re-derived) so a wiring mistake in CalculatorBulkTable
+// Pinned by name (not re-derived) so a wiring mistake in CalculatorQuantityCurve
 // or CalculatorDiscountTable — pointing at calculatorSettingsShared's
 // differently-styled tdCls instead of this one — shows up as a real
 // assertion failure below (T-097).
@@ -759,7 +759,7 @@ describe('CalculatorPage', () => {
     expect(screen.queryByText(/FCFP/)).not.toBeInTheDocument();
   });
 
-  it('shows the discount and bulk tables in full mode', async () => {
+  it('shows the discount table and the quantity curve in full mode', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
     );
@@ -767,7 +767,7 @@ describe('CalculatorPage', () => {
     render(<CalculatorPage />);
 
     await screen.findByText('Discount calculation');
-    expect(screen.getByText('Bulk pricing')).toBeInTheDocument();
+    expect(screen.getByText('Price by quantity')).toBeInTheDocument();
     expect(screen.getByText('Cost breakdown')).toBeInTheDocument();
     expect(screen.getByText('Potential profit')).toBeInTheDocument();
     // Break-even on the pre-tax price = the margin fraction (all margins at the end)
@@ -775,15 +775,18 @@ describe('CalculatorPage', () => {
 
     // Both tables render their price cells with shared.tsx's tdCls (T-097),
     // not calculatorSettingsShared.ts's — pin the wiring at the DOM level.
-    // Discount table is the first <table>, bulk the second (JSX order).
-    const [discountTable, bulkTable] = screen.getAllByRole('table');
+    // Discount table is the first <table>, the curve panel's table the second (JSX order).
+    const [discountTable, curveTable] = screen.getAllByRole('table');
     const machineCostRow = within(discountTable).getByText('Machine cost w/ discount').closest('tr')!;
     const machineCostDataCell = within(machineCostRow).getAllByRole('cell')[1]; // 0% column: colCls is empty
     expect(machineCostDataCell.className).toBe(tdCls);
 
-    const bulkDataRows = within(bulkTable).getAllByRole('row').slice(1); // drop header row
-    const firstBulkPriceCell = within(bulkDataRows[0]).getAllByRole('cell')[1]; // [0] is the sticky qty cell
-    expect(firstBulkPriceCell.className).toBe(tdCls);
+    // Fixture leaves quantity at DEFAULT_STATE's '1', which is already on
+    // the ladder, so the curve has exactly CURVE_QUANTITIES.length rows.
+    const curveDataRows = within(curveTable).getAllByRole('row').slice(1); // drop header row
+    expect(curveDataRows).toHaveLength(CURVE_QUANTITIES.length);
+    const firstCurvePriceCell = within(curveDataRows[0]).getAllByRole('cell')[1]; // [0] is the sticky qty cell
+    expect(firstCurvePriceCell.className).toBe(tdCls);
   });
 
   it('easy mode hides breakdown, bulk table and profit rows but keeps discounted prices', async () => {
@@ -797,7 +800,7 @@ describe('CalculatorPage', () => {
 
     await screen.findByText('2 031 FCFP');
     expect(screen.queryByText('Cost breakdown')).not.toBeInTheDocument();
-    expect(screen.queryByText('Bulk pricing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Price by quantity')).not.toBeInTheDocument();
     expect(screen.queryByText('Potential profit')).not.toBeInTheDocument();
     expect(screen.getByText('Price w/ discount')).toBeInTheDocument();
   });

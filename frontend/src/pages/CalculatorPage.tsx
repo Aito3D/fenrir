@@ -21,12 +21,12 @@ import { CalculatorRealityCheckCard } from '../components/calculator/CalculatorR
 import { CalculatorTotalsCard } from '../components/calculator/CalculatorTotalsCard';
 import { CalculatorBreakdownCard } from '../components/calculator/CalculatorBreakdownCard';
 import { CalculatorDiscountTable } from '../components/calculator/CalculatorDiscountTable';
-import { CalculatorBulkTable } from '../components/calculator/CalculatorBulkTable';
+import { CalculatorQuantityCurve } from '../components/calculator/CalculatorQuantityCurve';
 import { CalculatorMobileSummary } from '../components/calculator/CalculatorMobileSummary';
 import type { Segment } from '../components/calculator/shared';
 import { buildPricingInputs, foldSessionOverrides, PAGE_TABS, persistCalculatorStateNow, useCalculatorState, type PageTab } from '../hooks/useCalculatorState';
 import {
-  bulkPricing,
+  unitPriceCurve,
   computePricing,
   type PricingInputs,
   type PricingResult,
@@ -163,9 +163,9 @@ export function CalculatorPage() {
     ].filter((s) => s.value > 0.005);
   }, [result, t]);
 
-  const bulk = useMemo(() => {
+  const curve = useMemo(() => {
     if (!effective || !filament) return [];
-    return bulkPricing(effective.inputs, filament, effective.printer, effective.defaults);
+    return unitPriceCurve(effective.inputs, filament, effective.printer, effective.defaults);
   }, [effective, filament]);
 
   // All disagreement rows, before dismissal filtering — needed to tell
@@ -542,7 +542,7 @@ export function CalculatorPage() {
                       />
                       {!easy && <CalculatorBreakdownCard result={result} currency={currency} />}
                       <CalculatorDiscountTable result={result} currency={currency} easy={easy} />
-                      {!easy && <CalculatorBulkTable rows={bulk} currency={currency} />}
+                      {!easy && <CalculatorQuantityCurve points={curve} currency={currency} />}
                     </div>
                   )}
                 </div>
