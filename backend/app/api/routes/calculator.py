@@ -410,6 +410,12 @@ async def update_calculator_defaults(
     for key, value in update_data.model_dump(exclude_unset=True, exclude_none=True).items():
         setattr(defaults, key, value)
 
+    # A partial PATCH can invert the pair against the stored row; the schema
+    # validator only sees the fields that were sent.
+    if defaults.margin_max_mult < defaults.margin_min_mult:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail="margin_max_mult must be >= margin_min_mult")
+
     await db.commit()
     await db.refresh(defaults)
     logger.info("Updated calculator defaults")

@@ -291,3 +291,38 @@ async def test_a_sale_price_far_above_cost_backfills_a_margin_past_1000(raw_conn
 
     margin = (await raw_conn.execute(text("SELECT margin_pct FROM calculator_filaments"))).scalar_one()
     assert margin == pytest.approx(2100.0)
+
+
+@pytest.mark.asyncio
+async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
+    """Pre-migration table (no curve columns) gets them added back with the
+    documented defaults, and re-running the migration is a no-op."""
+    for column in ("margin_min_mult", "margin_max_mult", "margin_k", "qty_min_factor", "qty_k", "min_task_price"):
+        await raw_conn.execute(text(f"ALTER TABLE calculator_defaults DROP COLUMN {column}"))
+    # Every other column on this table is NOT NULL with no DB-level default, so
+    # a bare "(id) VALUES (1)" insert violates those constraints; INSERT OR
+    # IGNORE then silently drops the row instead of raising. Supply the full
+    # pre-migration row.
+    await raw_conn.execute(
+        text(
+            "INSERT OR IGNORE INTO calculator_defaults ("
+            "id, electricity_tariff, labor_rate_per_hour, consumables_packaging_flat, failure_rate_pct, "
+            "prototype_rate_pct, ads_rate_pct, filament_markup_pct, global_markup_pct, tax_pct, "
+            "default_difficulty_pct, default_margin_over_cost_pct, stuff_markup_pct, base_fee_flat"
+            ") VALUES (1, 120.0, 3000.0, 30.0, 30.0, 30.0, 5.0, 5.0, 50.0, 13.0, 100.0, 50.0, 20.0, 0.0)"
+        )
+    )
+
+    await run_migrations(raw_conn)
+
+    row = (
+        await raw_conn.execute(
+            text(
+                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price "
+                "FROM calculator_defaults WHERE id = 1"
+            )
+        )
+    ).one()
+    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0)
+
+    await run_migrations(raw_conn)  # idempotent

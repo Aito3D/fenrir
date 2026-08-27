@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import IntEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Applied to every schema that accepts a user-supplied money/rate float: without
 # it, ``float("inf")`` satisfies every ``gt``/``ge`` bound (inf > 0 is True) and
@@ -177,6 +177,22 @@ class CalculatorDefaultsUpdate(BaseModel):
     default_margin_over_cost_pct: float | None = Field(default=None, ge=0, le=1000)
     stuff_markup_pct: float | None = Field(default=None, ge=0, le=1000)
     base_fee_flat: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    margin_min_mult: float | None = Field(default=None, ge=1, le=100)
+    margin_max_mult: float | None = Field(default=None, ge=1, le=100)
+    margin_k: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
+    qty_min_factor: float | None = Field(default=None, gt=0, le=1)
+    qty_k: float | None = Field(default=None, gt=0, le=1_000_000)
+    min_task_price: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+
+    @model_validator(mode="after")
+    def _margin_pair_ordered(self) -> "CalculatorDefaultsUpdate":
+        if (
+            self.margin_min_mult is not None
+            and self.margin_max_mult is not None
+            and self.margin_max_mult < self.margin_min_mult
+        ):
+            raise ValueError("margin_max_mult must be >= margin_min_mult")
+        return self
 
 
 class CalculatorDefaultsResponse(BaseModel):
@@ -196,6 +212,12 @@ class CalculatorDefaultsResponse(BaseModel):
     default_margin_over_cost_pct: float
     stuff_markup_pct: float
     base_fee_flat: float
+    margin_min_mult: float
+    margin_max_mult: float
+    margin_k: float
+    qty_min_factor: float
+    qty_k: float
+    min_task_price: float
     updated_at: datetime
 
     model_config = {"from_attributes": True}

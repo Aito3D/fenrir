@@ -618,6 +618,73 @@ class TestCalculatorDefaults:
         assert defaults["default_difficulty_pct"] == 100.0
         assert defaults["default_margin_over_cost_pct"] == 50.0
         assert defaults["stuff_markup_pct"] == 20.0
+        assert defaults["margin_min_mult"] == 1.15
+        assert defaults["margin_max_mult"] == 1.6
+        assert defaults["margin_k"] == 33.0
+        assert defaults["qty_min_factor"] == 0.4
+        assert defaults["qty_k"] == 5.0
+        assert defaults["min_task_price"] == 12.0
+
+    @pytest.mark.asyncio
+    async def test_patch_curve_fields_round_trip(self, async_client):
+        payload = {
+            "margin_min_mult": 1.2,
+            "margin_max_mult": 1.8,
+            "margin_k": 4000.0,
+            "qty_min_factor": 0.5,
+            "qty_k": 8.0,
+            "min_task_price": 1400.0,
+        }
+        resp = await async_client.patch("/api/v1/calculator/defaults", json=payload)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        for key, value in payload.items():
+            assert body[key] == value
+        resp = await async_client.get("/api/v1/calculator/defaults")
+        assert resp.json()["margin_k"] == 4000.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("margin_min_mult", 0.99),
+            ("margin_max_mult", 0.99),
+            ("margin_min_mult", 101),
+            ("margin_k", 0),
+            ("margin_k", -1),
+            ("qty_min_factor", 0),
+            ("qty_min_factor", 1.01),
+            ("qty_k", 0),
+            ("min_task_price", -1),
+        ],
+    )
+    async def test_patch_rejects_out_of_range_curve_values(self, async_client, field, value):
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={field: value})
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_inverted_pair_sent_together(self, async_client):
+        resp = await async_client.patch(
+            "/api/v1/calculator/defaults", json={"margin_min_mult": 1.5, "margin_max_mult": 1.2}
+        )
+        assert resp.status_code == 422
+        assert "margin_max_mult" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_inverted_pair_against_stored_row(self, async_client):
+        # Stored: min 1.15 / max 1.6. Raising min above the stored max alone must fail.
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"margin_min_mult": 1.7})
+        assert resp.status_code == 422
+        # And lowering max below the stored min alone must fail.
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"margin_max_mult": 1.1})
+        assert resp.status_code == 422
+        # Equal is allowed (a flat margin).
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"margin_max_mult": 1.15})
+        assert resp.status_code == 200, resp.text
+        # Nothing was persisted by the rejected calls.
+        body = (await async_client.get("/api/v1/calculator/defaults")).json()
+        assert body["margin_min_mult"] == 1.15
+        assert body["margin_max_mult"] == 1.15
 
     @pytest.mark.asyncio
     async def test_patch_roundtrip(self, async_client):

@@ -4713,6 +4713,19 @@ async def run_migrations(conn):
     # Migration: one-time per-job base fee (quotation time, order handling).
     await _safe_execute(conn, "ALTER TABLE calculator_defaults ADD COLUMN base_fee_flat FLOAT DEFAULT 0.0")
 
+    # Migration: hyperbolic margin curves (size margin × quantity discount)
+    # and the per-task price floor. Replaces the flat global_markup_pct,
+    # which stays in place (additive migrations only) but is no longer read.
+    for column, default in (
+        ("margin_min_mult", 1.15),
+        ("margin_max_mult", 1.6),
+        ("margin_k", 33.0),
+        ("qty_min_factor", 0.4),
+        ("qty_k", 5.0),
+        ("min_task_price", 12.0),
+    ):
+        await _safe_execute(conn, f"ALTER TABLE calculator_defaults ADD COLUMN {column} FLOAT DEFAULT {default}")
+
     # Migration: calculator filament profiles split the single free-text name
     # into brand + material (searchable dropdowns in the UI); name stays as the
     # derived display label. Backfill copies the legacy name into material so

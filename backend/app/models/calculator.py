@@ -73,5 +73,15 @@ class CalculatorDefaults(Base):
     # One-time per-job base fee (quotation time, order handling) — a flat
     # amount added to every job's costs, amortized across the quantity.
     base_fee_flat: Mapped[float] = mapped_column(Float, default=0.0)
+    # Margin curves (frontend utils/pricing.ts is the single source of the
+    # math). Size margin: M_MIN + (M_MAX - M_MIN) * K / (unit_cost + K).
+    # Quantity discount on the margin above cost: Q_MIN + (1 - Q_MIN) * KQ /
+    # (qty - 1 + KQ). min_task_price is a pre-tax floor per task.
+    margin_min_mult: Mapped[float] = mapped_column(Float, default=1.15)
+    margin_max_mult: Mapped[float] = mapped_column(Float, default=1.6)
+    margin_k: Mapped[float] = mapped_column(Float, default=33.0)  # app currency
+    qty_min_factor: Mapped[float] = mapped_column(Float, default=0.4)
+    qty_k: Mapped[float] = mapped_column(Float, default=5.0)
+    min_task_price: Mapped[float] = mapped_column(Float, default=12.0)  # app currency
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
