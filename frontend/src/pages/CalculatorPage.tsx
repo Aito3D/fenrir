@@ -11,7 +11,7 @@ import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
 import {
   CalculatorFilamentsPanel,
-  CalculatorPricingPanel,
+  CalculatorSettingsPanel,
   CalculatorPrintersPanel,
 } from '../components/CalculatorSettingsPanels';
 import { CalculatorInputsCard } from '../components/calculator/CalculatorInputsCard';
@@ -48,7 +48,7 @@ const TAB_LABEL_KEYS: Record<PageTab, string> = {
   calculator: 'calculator.title',
   filaments: 'calculator.tabFilaments',
   printers: 'calculator.tabPrinters',
-  pricing: 'calculator.tabPricing',
+  settings: 'calculator.tabSettings',
 };
 
 export function CalculatorPage() {
@@ -388,9 +388,9 @@ export function CalculatorPage() {
           <CalculatorPrintersPanel selectedPrinterId={printer?.id ?? null} canUpdate={canUpdateCalculator} />
         </div>
       )}
-      {tab === 'pricing' && (
-        <div key="pricing" role="tabpanel" aria-labelledby="calc-tab-pricing" className="animate-calc-tab-in">
-          <CalculatorPricingPanel canUpdate={canUpdateCalculator} />
+      {tab === 'settings' && (
+        <div key="settings" role="tabpanel" aria-labelledby="calc-tab-settings" className="animate-calc-tab-in">
+          <CalculatorSettingsPanel canUpdate={canUpdateCalculator} />
         </div>
       )}
 

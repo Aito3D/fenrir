@@ -8460,5 +8460,9 @@ export default {
     discardChanges: '破棄',
     savePricing: '価格設定を保存',
     pricingSaved: '価格設定を保存しました',
+    tabSettings: '設定',
+    marginCurvesTitle: '利益率カーブ',
+    saveSettings: '設定を保存',
+    settingsSaved: '設定を保存しました',
   },
 };

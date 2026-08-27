@@ -1,15 +1,15 @@
-// Pricing tab of the calculator settings: every global pricing default on
-// one page — rates, provisions & overhead, the margin curves (with a live
-// preview beside their fields) and the prefill values for new filament
-// profiles — behind a single Save. Replaces the former Defaults and Margin
-// curve tabs.
+// Settings tab of the calculator: every global pricing default, one card per
+// group — rates, provisions & overhead, the margin curves (fields beside the
+// live curves they shape) and the prefill values for new filament profiles —
+// behind a single Save bar that appears only while something is dirty.
 
 import { useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Percent, Receipt, Spool, TrendingDown, type LucideIcon } from 'lucide-react';
 import { api, type CalculatorDefaults } from '../../api/client';
 import { Button } from '../Button';
+import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
 import type { PricingDefaults } from '../../utils/pricing';
@@ -23,7 +23,7 @@ type Field = {
   labelKey: string;
   /** Mirrors the field's `ge`/`le` (or `gt`) bound in `CalculatorDefaultsUpdate`
    *  (backend/app/schemas/calculator.py) — kept in sync by hand; pinned by
-   *  ../../__tests__/components/CalculatorPricingPanel.test.tsx, which drives
+   *  ../../__tests__/components/CalculatorSettingsPanel.test.tsx, which drives
    *  each rendered input to its bound. `exclusiveMin` marks a `gt` bound. */
   min: number;
   max: number;
@@ -105,31 +105,36 @@ function previewDefaults(form: Record<FieldKey, string>, saved: CalculatorDefaul
   return { ...saved, ...overrides };
 }
 
-/** One settings section: title + hint in the leading column, controls in
- *  the trailing one; stacked on narrow screens. */
-function Section({ title, hint, delay, children }: { title: string; hint: string; delay: number; children: ReactNode }) {
+/** One settings card. The card rises with its `.stagger-parents` slot; its
+ *  header lands with it and the fields inside cascade after (level 2 of the
+ *  app's entrance hierarchy — see index.css). */
+function SettingsCard({ icon: Icon, title, hint, children }: { icon: LucideIcon; title: string; hint: string; children: ReactNode }) {
   return (
-    <section
-      className="animate-calc-rise grid gap-x-10 gap-y-4 py-8 border-t border-bambu-dark-tertiary first:border-t-0 first:pt-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.6fr)]"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className="lg:pr-4">
-        <h3 className="text-base font-semibold text-white">{title}</h3>
-        <p className="mt-1 text-sm leading-relaxed text-bambu-gray">{hint}</p>
-      </div>
-      <div className="min-w-0">{children}</div>
-    </section>
+    <Card className="animate-rise-lg">
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bambu-dark text-bambu-green" aria-hidden="true">
+            <Icon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-white">{title}</h3>
+            <p className="mt-0.5 text-sm leading-relaxed text-bambu-gray">{hint}</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
-function PricingForm({
+function SettingsForm({
   defaults,
   currency,
   canUpdate,
 }: {
   defaults: CalculatorDefaults;
   currency: string;
-  /** Gates the Save control — this form's only write. The fields stay
+  /** Gates the Save bar — this form's only write. The fields stay
    *  visible/readable regardless (mirrors the backend read/write split —
    *  Permission.CALCULATOR_UPDATE only guards the PATCH). */
   canUpdate: boolean;
@@ -137,7 +142,7 @@ function PricingForm({
   const { t } = useTranslation();
   const currencySymbol = getCurrencySymbol(currency);
   const { form, setField, dirtyKeys, save, discard, isPending } = useDefaultsForm(
-    { fields: FIELD_KEYS, toForm: formValues, savedMsgKey: 'calculator.pricingSaved' },
+    { fields: FIELD_KEYS, toForm: formValues, savedMsgKey: 'calculator.settingsSaved' },
     defaults,
   );
 
@@ -162,6 +167,7 @@ function PricingForm({
 
   const preview = useMemo(() => previewDefaults(form, defaults), [form, defaults]);
   const dirty = dirtyKeys.length > 0;
+  const barOpen = canUpdate && dirty;
 
   const field = ({ key, labelKey }: Field) => (
     <NumberField
@@ -174,34 +180,32 @@ function PricingForm({
       required
     />
   );
-  const grid = (fields: Field[]) => <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{fields.map(field)}</div>;
+  const grid = (fields: Field[]) => (
+    <div className="stagger-nested grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{fields.map(field)}</div>
+  );
 
   return (
     <form
       autoComplete="off"
+      className="stagger-parents space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
         if (dirty && allValid && canUpdate) save();
       }}
     >
-      <header className="animate-calc-rise mb-2">
-        <h2 className="text-lg font-semibold text-white">{t('calculator.tabPricing')}</h2>
-        <p className="mt-1 max-w-2xl text-sm text-bambu-gray">{t('calculator.pricingHint')}</p>
-      </header>
-
-      <Section title={t('calculator.ratesTitle')} hint={t('calculator.ratesHint')} delay={50}>
+      <SettingsCard icon={Receipt} title={t('calculator.ratesTitle')} hint={t('calculator.ratesHint')}>
         {grid(RATES)}
-      </Section>
+      </SettingsCard>
 
-      <Section title={t('calculator.provisionsTitle')} hint={t('calculator.provisionsHint')} delay={100}>
+      <SettingsCard icon={Percent} title={t('calculator.provisionsTitle')} hint={t('calculator.provisionsHint')}>
         {grid(PROVISIONS)}
-      </Section>
+      </SettingsCard>
 
-      <Section title={t('calculator.marginTitle')} hint={t('calculator.marginCurveHint')} delay={150}>
-        {/* The signature of the page: the curve fields and the curves they
-            shape sit side by side, and the curves redraw as you type. */}
-        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-          <div className="space-y-6">
+      <SettingsCard icon={TrendingDown} title={t('calculator.marginCurvesTitle')} hint={t('calculator.marginCurveHint')}>
+        {/* Two panels: the curve fields and the curves they shape. The
+            divider is a hairline on wide screens; the panels stack below. */}
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_1px_minmax(0,1.1fr)]">
+          <div className="stagger-nested space-y-6">
             {MARGIN_GROUPS.map((group) => (
               <fieldset key={group.labelKey} className="min-w-0">
                 <legend className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-bambu-gray">{t(group.labelKey)}</legend>
@@ -209,33 +213,36 @@ function PricingForm({
               </fieldset>
             ))}
           </div>
+          <div className="hidden xl:block w-px bg-bambu-dark-tertiary" aria-hidden="true" />
           <MarginCurvePreview d={preview} currency={currency} />
         </div>
-      </Section>
+      </SettingsCard>
 
-      <Section title={t('calculator.filamentSettings')} hint={t('calculator.filamentSettingsHint')} delay={200}>
+      <SettingsCard icon={Spool} title={t('calculator.filamentSettings')} hint={t('calculator.filamentSettingsHint')}>
         {grid(PREFILL)}
-      </Section>
+      </SettingsCard>
 
-      {/* Save bar: present only while something is dirty and the operator
-          may write. Sticky so it stays reachable from any section. */}
-      {canUpdate && dirty && (
-        <div className="sticky bottom-4 z-10 mt-4 animate-calc-rise">
+      {/* Save bar: mounted permanently so it leaves the way it arrived (slides
+          back down), inert while closed; sticky so it stays reachable from
+          any card. Never rendered for read-only viewers. */}
+      {canUpdate && (
+        <div className="sticky bottom-4 z-10 pointer-events-none" aria-live="polite">
           <div
-            role="status"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary/95 px-4 py-3 shadow-xl backdrop-blur"
+            className="settings-save-bar flex flex-wrap items-center justify-between gap-3 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary/95 px-4 py-3 shadow-xl backdrop-blur"
+            data-open={barOpen ? 'true' : 'false'}
+            aria-hidden={!barOpen}
           >
             <p className="text-sm text-bambu-gray-light">
-              <span className="font-medium text-white">{t('calculator.unsavedChanges', { count: dirtyKeys.length })}</span>
+              <span className="font-medium text-white tabular-nums">{t('calculator.unsavedChanges', { count: dirtyKeys.length })}</span>
               {!allValid && <span className="ml-2 text-status-error">{t('calculator.fixFields')}</span>}
             </p>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={discard} disabled={isPending}>
+              <Button type="button" variant="ghost" size="sm" onClick={discard} disabled={isPending} tabIndex={barOpen ? 0 : -1}>
                 {t('calculator.discardChanges')}
               </Button>
-              <Button type="submit" size="sm" disabled={!allValid || isPending}>
+              <Button type="submit" size="sm" disabled={!allValid || isPending} tabIndex={barOpen ? 0 : -1}>
                 {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                {t('calculator.savePricing')}
+                {t('calculator.saveSettings')}
               </Button>
             </div>
           </div>
@@ -245,14 +252,14 @@ function PricingForm({
   );
 }
 
-export function CalculatorPricingPanel({ canUpdate }: { canUpdate: boolean }) {
+export function CalculatorSettingsPanel({ canUpdate }: { canUpdate: boolean }) {
   const { data: defaults } = useQuery({ queryKey: ['calculatorDefaults'], queryFn: api.getCalculatorDefaults, staleTime: 60_000 });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settings?.currency || 'USD';
   return (
     <div className="max-w-5xl">
       {defaults ? (
-        <PricingForm defaults={defaults} currency={currency} canUpdate={canUpdate} />
+        <SettingsForm defaults={defaults} currency={currency} canUpdate={canUpdate} />
       ) : (
         <div className="flex justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />

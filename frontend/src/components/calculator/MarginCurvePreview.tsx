@@ -99,7 +99,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
               labelFormatter={(u: ReactNode) => formatMoney(Number(u ?? 0), currency)}
             />
             <ReferenceLine x={k} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="m" stroke="var(--viz-1)" dot={false} strokeWidth={2} isAnimationActive={false} />
+            <Line type="monotone" dataKey="m" stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </Curve>
@@ -135,7 +135,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
             />
             <Tooltip formatter={(v: number | undefined) => Number(v ?? 0).toFixed(3)} />
             <ReferenceLine x={midQty} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="f" stroke="var(--viz-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
+            <Line type="monotone" dataKey="f" stroke="var(--viz-2)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </Curve>

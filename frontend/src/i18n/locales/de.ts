@@ -8461,5 +8461,9 @@ export default {
     discardChanges: 'Verwerfen',
     savePricing: 'Preisgestaltung speichern',
     pricingSaved: 'Preisgestaltung gespeichert',
+    tabSettings: 'Einstellungen',
+    marginCurvesTitle: 'Margenkurven',
+    saveSettings: 'Einstellungen speichern',
+    settingsSaved: 'Einstellungen gespeichert',
   },
 };

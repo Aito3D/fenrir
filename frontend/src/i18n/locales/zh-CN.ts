@@ -8447,5 +8447,9 @@ export default {
     discardChanges: '放弃',
     savePricing: '保存定价',
     pricingSaved: '定价已保存',
+    tabSettings: '设置',
+    marginCurvesTitle: '利润率曲线',
+    saveSettings: '保存设置',
+    settingsSaved: '设置已保存',
   },
 };

@@ -755,6 +755,35 @@ body {
   }
 }
 
+/* Calculator settings Save bar. Mounted permanently and toggled with
+   data-open so it leaves along the path it arrived (spatial consistency):
+   up on the signature entrance curve, back down on the accelerating exit.
+   Closed it is fully inert (pointer-events off via the sticky wrapper,
+   tab stops removed in the component). */
+.settings-save-bar {
+  pointer-events: auto;
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform 0.28s var(--ease-signature),
+    opacity 0.2s ease-out;
+}
+.settings-save-bar[data-open='false'] {
+  pointer-events: none;
+  transform: translateY(calc(100% + 1.25rem));
+  opacity: 0;
+  transition:
+    transform 0.16s var(--ease-exit),
+    opacity 0.12s ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-save-bar,
+  .settings-save-bar[data-open='false'] {
+    transform: none;
+    transition: opacity 0.15s ease;
+  }
+}
+
 /* Tab panel entrance — plays when switching between the settings tabs. */
 @keyframes calc-tab-in {
   from { opacity: 0; transform: translateY(6px); }

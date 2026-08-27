@@ -8388,5 +8388,9 @@ export default {
     discardChanges: 'Vazgeç',
     savePricing: 'Fiyatlandırmayı kaydet',
     pricingSaved: 'Fiyatlandırma kaydedildi',
+    tabSettings: 'Ayarlar',
+    marginCurvesTitle: 'Kâr marjı eğrileri',
+    saveSettings: 'Ayarları kaydet',
+    settingsSaved: 'Ayarlar kaydedildi',
   },
 };

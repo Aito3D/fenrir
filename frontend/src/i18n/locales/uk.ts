@@ -8074,5 +8074,9 @@ export default {
     discardChanges: 'Скасувати',
     savePricing: 'Зберегти ціноутворення',
     pricingSaved: 'Ціноутворення збережено',
+    tabSettings: 'Налаштування',
+    marginCurvesTitle: 'Криві націнки',
+    saveSettings: 'Зберегти налаштування',
+    settingsSaved: 'Налаштування збережено',
   },
 };

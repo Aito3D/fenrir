@@ -1,5 +1,5 @@
 /**
- * Tests for CalculatorPricingPanel: the single Pricing tab that replaced the
+ * Tests for CalculatorSettingsPanel: the single Settings tab that replaced the
  * Defaults and Margin curve tabs — 18 fields across four sections behind one
  * Save bar that appears only while something is dirty. Carries forward the
  * former panels' pins (server-bound mirroring T-122, non-finite guard T-103,
@@ -14,7 +14,7 @@ import { http, HttpResponse } from 'msw';
 import { useQueryClient } from '@tanstack/react-query';
 import { render } from '../utils';
 import { server } from '../mocks/server';
-import { CalculatorPricingPanel } from '../../components/calculator/CalculatorPricingPanel';
+import { CalculatorSettingsPanel } from '../../components/calculator/CalculatorSettingsPanel';
 import type { CalculatorDefaults } from '../../api/client';
 
 const baseDefaults: CalculatorDefaults = {
@@ -44,12 +44,12 @@ const baseDefaults: CalculatorDefaults = {
 const serveDefaults = (d: CalculatorDefaults = baseDefaults) =>
   server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(d)));
 
-const saveButton = () => screen.getByRole('button', { name: 'Save pricing' });
+const saveButton = () => screen.getByRole('button', { name: 'Save settings' });
 
-describe('CalculatorPricingPanel', () => {
+describe('CalculatorSettingsPanel', () => {
   it('renders all four sections seeded from the server, with a live curve preview', async () => {
     serveDefaults();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     expect(await screen.findByLabelText(/Electricity tariff/)).toHaveValue(120);
     expect(screen.getByLabelText(/Failure rate/)).toHaveValue(30);
     expect(screen.getByLabelText(/M_MIN/)).toHaveValue(1.15);
@@ -61,20 +61,20 @@ describe('CalculatorPricingPanel', () => {
     expect(screen.getByLabelText(/Default difficulty/)).toHaveValue(100);
     expect(screen.getByRole('heading', { name: 'Rates' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Provisions & overhead' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Margin' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Margin curves' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Filament settings' })).toBeInTheDocument();
     // Preview strips: size margin at u = K is the midpoint 1.375; the
     // quantity factor at q = KQ + 1 = 6 is 0.70.
     expect(screen.getByText('×1.375')).toBeInTheDocument();
     expect(screen.getByText('0.70')).toBeInTheDocument();
     // Nothing is dirty yet, so there is no Save bar.
-    expect(screen.queryByRole('button', { name: 'Save pricing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument();
   });
 
   it('preview follows unsaved edits', async () => {
     serveDefaults();
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     const mMax = await screen.findByLabelText(/M_MAX/);
     await user.clear(mMax);
     await user.type(mMax, '2');
@@ -85,7 +85,7 @@ describe('CalculatorPricingPanel', () => {
   it('shows the Save bar with a change count once a field is dirty, and Discard clears it', async () => {
     serveDefaults();
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     const tariff = await screen.findByLabelText(/Electricity tariff/);
     await user.clear(tariff);
     await user.type(tariff, '150');
@@ -100,7 +100,9 @@ describe('CalculatorPricingPanel', () => {
     expect(await screen.findByText('1 unsaved change')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Discard' }));
-    await waitFor(() => expect(screen.queryByText(/unsaved change/)).not.toBeInTheDocument());
+    // The bar stays mounted so it can slide back out; closed, it is
+    // aria-hidden and its controls leave the accessibility tree.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument());
     expect(tariff).toHaveValue(120);
   });
 
@@ -118,7 +120,7 @@ describe('CalculatorPricingPanel', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     const k = await screen.findByLabelText(/K,/);
     await user.clear(k);
     await user.type(k, '4000');
@@ -128,8 +130,8 @@ describe('CalculatorPricingPanel', () => {
     await user.click(saveButton());
     await waitFor(() => expect(sent).not.toBeNull());
     expect(sent).toEqual({ electricity_tariff: 150, margin_k: 4000 });
-    expect(await screen.findByText('Pricing saved')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save pricing' })).not.toBeInTheDocument());
+    expect(await screen.findByText('Settings saved')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument());
     // The saved values are the new baseline.
     expect(k).toHaveValue(4000);
   });
@@ -137,7 +139,7 @@ describe('CalculatorPricingPanel', () => {
   it('blocks save when M_MAX < M_MIN and names the problem in the bar', async () => {
     serveDefaults();
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     const mMax = await screen.findByLabelText(/M_MAX/);
     await user.clear(mMax);
     await user.type(mMax, '1.1');
@@ -149,7 +151,7 @@ describe('CalculatorPricingPanel', () => {
   it('marks an out-of-range field inline and disables Save without discarding another edit (T-122)', async () => {
     serveDefaults();
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     const tariff = await screen.findByLabelText(/Electricity tariff/, {}, { timeout: 5000 });
     await user.clear(tariff);
     await user.type(tariff, '150');
@@ -169,7 +171,7 @@ describe('CalculatorPricingPanel', () => {
   it('rejects default_difficulty_pct below its 100 floor, naming the real bound (T-122)', async () => {
     serveDefaults();
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     const difficulty = await screen.findByLabelText(/Default difficulty/, {}, { timeout: 5000 });
     await user.clear(difficulty);
     await user.type(difficulty, '50');
@@ -207,7 +209,7 @@ describe('CalculatorPricingPanel', () => {
   it.each(bounds)('$id rejects $max + 1 and accepts $max', async ({ id, min, max }) => {
     serveDefaults();
     const user = userEvent.setup();
-    const { container } = render(<CalculatorPricingPanel canUpdate />);
+    const { container } = render(<CalculatorSettingsPanel canUpdate />);
     await screen.findByLabelText(/Electricity tariff/, {}, { timeout: 5000 });
     const input = container.querySelector<HTMLInputElement>(`#${id}`);
     expect(input, `no rendered input for ${id}`).not.toBeNull();
@@ -241,13 +243,13 @@ describe('CalculatorPricingPanel', () => {
       http.get('/api/v1/calculator/defaults', () => new HttpResponse(rawBody, { headers: { 'Content-Type': 'application/json' } })),
     );
     const user = userEvent.setup();
-    render(<CalculatorPricingPanel canUpdate />);
+    render(<CalculatorSettingsPanel canUpdate />);
     expect(await screen.findByLabelText(/Labor rate/)).toHaveValue(3000);
     // Dirty another field so the bar (and its Save) exists to be judged.
     const labor = screen.getByLabelText(/Labor rate/);
     await user.clear(labor);
     await user.type(labor, '3100');
-    expect(await screen.findByRole('button', { name: 'Save pricing' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Save settings' })).toBeDisabled();
   });
 
   it('never shows the Save bar without calculator:update, and a raw submit does not PATCH (T-020)', async () => {
@@ -260,12 +262,12 @@ describe('CalculatorPricingPanel', () => {
       }),
     );
     const user = userEvent.setup();
-    const { container } = render(<CalculatorPricingPanel canUpdate={false} />);
+    const { container } = render(<CalculatorSettingsPanel canUpdate={false} />);
     const tariff = await screen.findByLabelText(/Electricity tariff/);
     expect(tariff).toHaveValue(120);
     await user.clear(tariff);
     await user.type(tariff, '150');
-    expect(screen.queryByRole('button', { name: 'Save pricing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument();
 
     const form = container.querySelector('form');
     expect(form).not.toBeNull();
@@ -280,7 +282,7 @@ describe('CalculatorPricingPanel', () => {
     const user = userEvent.setup();
     render(
       <>
-        <CalculatorPricingPanel canUpdate />
+        <CalculatorSettingsPanel canUpdate />
         <InvalidateDefaultsButton />
       </>,
     );

@@ -8448,5 +8448,9 @@ export default {
     discardChanges: 'Annulla modifiche',
     savePricing: 'Salva prezzi',
     pricingSaved: 'Prezzi salvati',
+    tabSettings: 'Impostazioni',
+    marginCurvesTitle: 'Curve di margine',
+    saveSettings: 'Salva impostazioni',
+    settingsSaved: 'Impostazioni salvate',
   },
 };

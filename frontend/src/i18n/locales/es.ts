@@ -8469,5 +8469,9 @@ export default {
     discardChanges: 'Descartar',
     savePricing: 'Guardar precios',
     pricingSaved: 'Precios guardados',
+    tabSettings: 'Ajustes',
+    marginCurvesTitle: 'Curvas de margen',
+    saveSettings: 'Guardar ajustes',
+    settingsSaved: 'Ajustes guardados',
   },
 };

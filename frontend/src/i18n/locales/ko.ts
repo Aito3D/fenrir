@@ -8081,5 +8081,9 @@ export default {
     discardChanges: '취소',
     savePricing: '가격 설정 저장',
     pricingSaved: '가격 설정을 저장했습니다',
+    tabSettings: '설정',
+    marginCurvesTitle: '마진 곡선',
+    saveSettings: '설정 저장',
+    settingsSaved: '설정을 저장했습니다',
   },
 };

@@ -8448,5 +8448,9 @@ export default {
     discardChanges: 'Annuler les modifications',
     savePricing: 'Enregistrer la tarification',
     pricingSaved: 'Tarification enregistrée',
+    tabSettings: 'Réglages',
+    marginCurvesTitle: 'Courbes de marge',
+    saveSettings: 'Enregistrer les réglages',
+    settingsSaved: 'Réglages enregistrés',
   },
 };

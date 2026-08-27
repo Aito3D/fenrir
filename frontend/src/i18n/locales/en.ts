@@ -8514,5 +8514,9 @@ export default {
     discardChanges: 'Discard',
     savePricing: 'Save pricing',
     pricingSaved: 'Pricing saved',
+    tabSettings: 'Settings',
+    marginCurvesTitle: 'Margin curves',
+    saveSettings: 'Save settings',
+    settingsSaved: 'Settings saved',
   },
 };
