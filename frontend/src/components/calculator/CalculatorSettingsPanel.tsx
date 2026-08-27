@@ -3,7 +3,7 @@
 // live curves they shape) and the prefill values for new filament profiles —
 // behind a single Save bar that appears only while something is dirty.
 
-import { useMemo, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Percent, Receipt, Spool, TrendingDown, type LucideIcon } from 'lucide-react';
@@ -169,6 +169,30 @@ function SettingsForm({
   const dirty = dirtyKeys.length > 0;
   const barOpen = canUpdate && dirty;
 
+  // The Save bar is fixed to the viewport, aligned to the form's own left
+  // edge and width. `position: sticky` cannot do this here: the app's <main>
+  // is an overflow container that grows past the window (the document
+  // scrolls, not <main>), so a sticky bottom would measure against <main>'s
+  // off-screen bottom edge and never engage.
+  const formRef = useRef<HTMLFormElement>(null);
+  const [barBox, setBarBox] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = formRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setBarBox(r.width > 0 ? { left: r.left, width: r.width } : null);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
   const field = ({ key, labelKey }: Field) => (
     <NumberField
       key={key}
@@ -186,8 +210,9 @@ function SettingsForm({
 
   return (
     <form
+      ref={formRef}
       autoComplete="off"
-      className="stagger-parents space-y-4"
+      className="stagger-parents space-y-4 pb-20"
       onSubmit={(e) => {
         e.preventDefault();
         if (dirty && allValid && canUpdate) save();
@@ -223,10 +248,14 @@ function SettingsForm({
       </SettingsCard>
 
       {/* Save bar: mounted permanently so it leaves the way it arrived (slides
-          back down), inert while closed; sticky so it stays reachable from
-          any card. Never rendered for read-only viewers. */}
+          back down), inert while closed; fixed to the viewport so it stays
+          reachable from any card. Never rendered for read-only viewers. */}
       {canUpdate && (
-        <div className="sticky bottom-4 z-10 pointer-events-none" aria-live="polite">
+        <div
+          className="fixed bottom-4 z-10 pointer-events-none"
+          style={barBox ? { left: barBox.left, width: barBox.width } : { left: '1rem', right: '1rem' }}
+          aria-live="polite"
+        >
           <div
             className="settings-save-bar flex flex-wrap items-center justify-between gap-3 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary/95 px-4 py-3 shadow-xl backdrop-blur"
             data-open={barOpen ? 'true' : 'false'}
@@ -257,7 +286,7 @@ export function CalculatorSettingsPanel({ canUpdate }: { canUpdate: boolean }) {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settings?.currency || 'USD';
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl">
       {defaults ? (
         <SettingsForm defaults={defaults} currency={currency} canUpdate={canUpdate} />
       ) : (
