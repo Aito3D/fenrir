@@ -792,7 +792,7 @@ describe('CalculatorPage', () => {
     expect(firstCurvePriceCell.className).toBe(tdCls);
   });
 
-  it('breakdown names the margin multiplier and the floor when it applies', async () => {
+  it('breakdown names the margin multiplier', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
     );
@@ -807,6 +807,27 @@ describe('CalculatorPage', () => {
       'title',
       expect.stringMatching(/^size ×\d+\.\d{2} · qty \d\.\d{2}$/),
     );
+  });
+
+  it('shows the minimum-price note only when the floor lifts the price', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+
+    // Default fixture (min_task_price 12) never binds at this job's size —
+    // the note stays hidden.
+    const { unmount } = render(<CalculatorPage />);
+    await screen.findByText('Global margin');
+    expect(screen.queryByText('Minimum price applied')).not.toBeInTheDocument();
+    unmount();
+
+    // Force the floor: a min_task_price far above the computed price.
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json({ ...mockDefaults, min_task_price: 1e7 })),
+    );
+    render(<CalculatorPage />);
+    await screen.findByText('Global margin');
+    expect(screen.getByText('Minimum price applied')).toBeInTheDocument();
   });
 
   it('easy mode hides breakdown, bulk table and profit rows but keeps discounted prices', async () => {
