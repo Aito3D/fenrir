@@ -4326,6 +4326,7 @@ export default {
     syncZohoBadPrice: 'Encontrado, mas o preço do item é inválido ou excessivamente alto',
     syncZohoWeightUnknown: 'Encontrado, mas o peso do carretel do item é desconhecido — o preço não foi aplicado',
     syncZohoFailed: 'Não foi possível sincronizar os preços do Zoho',
+    syncZohoStale: 'O Zoho estava inacessível — os preços vêm de um catálogo armazenado em cache às {{timestamp}}, não de uma sincronização ao vivo',
     // Toasts
     createdToast: '"{{name}}" criado',
     updatedToast: '"{{name}}" atualizado',

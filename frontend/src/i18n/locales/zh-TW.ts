@@ -4326,6 +4326,7 @@ export default {
     syncZohoBadPrice: '已符合，但該項目的價格無效或過高',
     syncZohoWeightUnknown: '已符合，但該項目的線軸重量未知——未套用其價格',
     syncZohoFailed: '無法從 Zoho 同步價格',
+    syncZohoStale: 'Zoho 無法連線——價格來自 {{timestamp}} 快取的目錄，而非即時同步',
     // Toasts
     createdToast: '「{{name}}」已建立',
     updatedToast: '「{{name}}」已更新',

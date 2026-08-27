@@ -3521,6 +3521,11 @@ export interface FilamentPresetZohoSyncResponse {
   priced: number;
   unchanged: number;
   attention: FilamentPresetZohoSyncAttention[];
+  // T-034: set when this sync's catalogue came from a failed-refresh
+  // stale-cache fallback (Zoho was unreachable) rather than a fresh fetch;
+  // the value is when that catalogue was actually last captured. `null`
+  // means the catalogue was fresh.
+  catalogue_stale_since: string | null;
 }
 
 // ── CSV import/export (#1576) ──────────────────────────────────────────────

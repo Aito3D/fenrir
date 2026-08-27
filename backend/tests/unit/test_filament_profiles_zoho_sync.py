@@ -1,5 +1,6 @@
 """Tests for POST /api/v1/filament-profiles/zoho-sync."""
 
+import asyncio
 import json
 
 import pytest
@@ -81,6 +82,9 @@ async def test_prices_a_confident_match(async_client, db_session, monkeypatch):
     assert body["priced"] == 1
     assert body["unchanged"] == 0
     assert body["attention"] == []
+    # T-034: a genuinely fresh sync must report no staleness at all — this is
+    # the byte-identical-behaviour half of the fix.
+    assert body["catalogue_stale_since"] is None
 
     await db_session.refresh(preset)
     assert json.loads(preset.content)["filament_cost"] == ["19.90"]
@@ -465,12 +469,49 @@ async def test_409_when_a_sync_is_already_in_progress(async_client, db_session, 
     _configured(monkeypatch, True)
 
     async def boom(_db):
-        raise RuntimeError("Zoho filament catalogue refresh is still in progress; try again shortly")
+        raise RuntimeError(zoho_filaments._SYNC_IN_PROGRESS_DETAIL)
 
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
     response = await async_client.post(ENDPOINT)
     assert response.status_code == 409
-    assert response.json()["detail"] == "Zoho filament catalogue refresh is still in progress; try again shortly"
+    assert response.json()["detail"] == zoho_filaments._SYNC_IN_PROGRESS_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_409_end_to_end_when_the_real_lock_is_busy(async_client, db_session, monkeypatch):
+    """Unlike test_409_when_a_sync_is_already_in_progress above (which
+    monkeypatches fetch_catalogue to raise a copy of the message), this drives
+    the real lock-timeout throw site inside fetch_catalogue through the actual
+    /zoho-sync route. It is the one test exercising the throw site and the 409
+    classifier together, so the two copies of _SYNC_IN_PROGRESS_DETAIL cannot
+    silently drift apart with every other test still green."""
+    _configured(monkeypatch, True)
+    monkeypatch.setattr(zoho_filaments, "_LOCK_ACQUIRE_TIMEOUT", 0.02)
+    zoho_filaments.reset_cache()
+
+    from backend.app.services.zoho import zoho_service
+
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def stuck_page(_db, **_kwargs):
+        entered.set()
+        await gate.wait()  # the leader is parked here for the whole test
+        return [], False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", stuck_page)
+
+    leader = asyncio.create_task(zoho_filaments.fetch_catalogue(db_session))
+    await entered.wait()  # the leader now holds the module's refresh lock
+
+    try:
+        response = await async_client.post(ENDPOINT)
+        assert response.status_code == 409
+        assert response.json()["detail"] == zoho_filaments._SYNC_IN_PROGRESS_DETAIL
+    finally:
+        gate.set()
+        await leader  # let the leader finish so no task is left pending
+        zoho_filaments.reset_cache()
 
 
 @pytest.mark.asyncio
@@ -488,6 +529,49 @@ async def test_502_for_a_non_runtime_error_fallback(async_client, db_session, mo
     response = await async_client.post(ENDPOINT)
     assert response.status_code == 502
     assert response.json()["detail"] == "Could not reach Zoho"
+
+
+@pytest.mark.asyncio
+async def test_stale_catalogue_discloses_its_age_instead_of_a_plain_success(async_client, db_session, monkeypatch):
+    """T-034: fetch_catalogue's failure branch serves the previous cache with
+    no upper bound on its age, and used to leave the sync response
+    indistinguishable from a live one — an operator syncing during a Zoho
+    outage was told it succeeded with today's prices. The sync must still run
+    and write (refusing outright would make the feature unusable during an
+    outage), but the response must now carry when that catalogue actually
+    came from."""
+    from datetime import datetime, timedelta, timezone
+
+    from backend.app.services.zoho import zoho_service
+
+    preset = await make_preset(db_session)
+    _configured(monkeypatch, True)
+
+    # A real warm cache, deliberately past its TTL, so the route's call goes
+    # through fetch_catalogue's genuine refresh-then-fall-back-to-stale path
+    # rather than the plain `_catalogue([...])` fake other tests here use.
+    zoho_filaments.reset_cache()
+    zoho_filaments._cache = [product()]
+    expired_at = datetime.now(timezone.utc) - zoho_filaments._CACHE_TTL - timedelta(seconds=1)
+    zoho_filaments._cache_at = expired_at
+
+    async def boom(_db, **kwargs):
+        raise RuntimeError("zoho unreachable")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+    try:
+        response = await async_client.post(ENDPOINT)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["priced"] == 1  # the sync still ran and wrote, per the approved design
+        assert body["catalogue_stale_since"] is not None
+        assert body["catalogue_stale_since"].startswith(expired_at.isoformat()[:19])
+
+        await db_session.refresh(preset)
+        assert json.loads(preset.content)["filament_cost"] == ["19.90"]
+    finally:
+        zoho_filaments.reset_cache()
 
 
 @pytest.mark.parametrize(

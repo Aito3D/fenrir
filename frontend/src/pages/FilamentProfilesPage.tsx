@@ -231,6 +231,17 @@ export function FilamentProfilesPage() {
         await api.createFilamentPreset(payload);
         showToast(t('filamentProfiles.createdToast', { name: payload.name }));
       }
+      // Close now, driven by the parent, BEFORE invalidating — not after
+      // (T-031). The refetch below can bump the saved preset's `updated_at`,
+      // which feeds the editor's remount key just below (kept for T-006: a
+      // stale editor must pick up a preset changed elsewhere, e.g. a Zoho
+      // price sync, while it's open). Awaiting that refetch first races the
+      // modal's own 220ms exit animation (useDismissableDialog's deferred
+      // onClose) — the key can change and remount the modal instance whose
+      // close was already pending, silently dropping it and leaving the
+      // editor stuck open after a successful save. Setting `editorState`
+      // here instead closes it unconditionally, independent of that timer.
+      setEditorState({ mode: 'closed' });
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
     },
     [queryClient, showToast, t],
@@ -368,11 +379,18 @@ export function FilamentProfilesPage() {
       // profiles couldn't be priced or nothing was priced/unchanged at all.
       const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
       const attentionCount = result.attention.length;
-      const toastMessage =
-        attentionCount > 0
-          ? `${doneMessage} — ${t('filamentProfiles.syncZohoAttention', { count: attentionCount })}`
-          : doneMessage;
-      const isFullSuccess = attentionCount === 0 && result.priced + result.unchanged > 0;
+      // T-034: Zoho was unreachable and this catalogue came from fetch_catalogue's
+      // failure-branch stale-cache fallback, with no upper bound on its age — the
+      // sync still ran and wrote (see the route), but the toast must disclose
+      // that instead of reading exactly like a live, fully successful sync.
+      const staleMessage = result.catalogue_stale_since
+        ? t('filamentProfiles.syncZohoStale', { timestamp: new Date(result.catalogue_stale_since).toLocaleString() })
+        : null;
+      const toastMessage = [doneMessage]
+        .concat(attentionCount > 0 ? [t('filamentProfiles.syncZohoAttention', { count: attentionCount })] : [])
+        .concat(staleMessage ? [staleMessage] : [])
+        .join(' — ');
+      const isFullSuccess = attentionCount === 0 && result.priced + result.unchanged > 0 && !staleMessage;
       showToast(toastMessage, isFullSuccess ? 'success' : 'warning');
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
     } catch (error) {
@@ -631,6 +649,13 @@ export function FilamentProfilesPage() {
           <div className="text-white">
             {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
           </div>
+          {zohoResult.catalogue_stale_since && (
+            <div className="mt-2 text-amber-400">
+              {t('filamentProfiles.syncZohoStale', {
+                timestamp: new Date(zohoResult.catalogue_stale_since).toLocaleString(),
+              })}
+            </div>
+          )}
           {zohoResult.attention.length > 0 && (
             <>
               <div className="mt-2 text-bambu-gray-light">

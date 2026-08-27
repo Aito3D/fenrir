@@ -4326,6 +4326,7 @@ export default {
     syncZohoBadPrice: '已匹配，但该项目的价格无效或过高',
     syncZohoWeightUnknown: '已匹配，但该项目的线轴重量未知——未应用其价格',
     syncZohoFailed: '无法从 Zoho 同步价格',
+    syncZohoStale: 'Zoho 无法访问——价格来自 {{timestamp}} 缓存的目录，而非实时同步',
     // Toasts
     createdToast: '“{{name}}” 已创建',
     updatedToast: '“{{name}}” 已更新',

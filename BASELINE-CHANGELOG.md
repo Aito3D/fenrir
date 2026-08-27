@@ -4973,3 +4973,155 @@ suite: 5,126/5,127 passed in the scoped coverage run, the one failure
 unrelated to this change; a second full run (outside the coverage harness) surfaced the same
 class of flake in `PrintModal.test.tsx`/`ArchivesPage.test.tsx`/`ModelViewerModal.test.tsx`, all
 confirmed passing in isolation and none touching filament-profiles code.
+
+## T-031 — 2026-08-26 — the preset editor now closes reliably when Save succeeds (user-approved behavior change)
+
+`FilamentProfilesPage.tsx` renders `PresetEditorModal` with `key={editorState.mode === 'edit'
+? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}` : 'create'}` (added by loop-2
+for T-006, so a still-open editor picks up a preset changed elsewhere — e.g. a Zoho price sync
+completing — instead of showing the stale snapshot it was opened with). `PresetEditorModal`'s
+own `handleSave` does `await onSave(payload); requestClose();`, where `onSave` is the page's
+`handleSavePreset`, which awaits the API call and then `await
+queryClient.invalidateQueries({queryKey:['filamentPresets']})`. That invalidation's refetch
+returns the saved row with a new `updated_at` (the backend's PATCH bumps it), which changes the
+remount key computed above — React then unmounts the very modal instance whose
+`useDismissableDialog`-driven close (a `setClosing(true)` immediately, then a 220ms
+`setTimeout` before the actual `onClose`) was in flight. The unmount clears that pending
+timeout before it fires, so `onClose` (`() => setEditorState({ mode: 'closed' })`) never runs:
+the preset saves, the toast fires, and the editor stays open showing the just-saved values —
+only Cancel/Escape got out.
+
+Fixed in `frontend/src/pages/FilamentProfilesPage.tsx`'s `handleSavePreset`: it now calls
+`setEditorState({ mode: 'closed' })` itself, right after the create/update API call succeeds
+and before `invalidateQueries`, rather than only ever closing via the child's own
+`onClose` callback. This makes the close unconditional and independent of the child's
+220ms exit-animation timer and of whatever `updated_at` the subsequent refetch happens to
+return — the parent decides the editor is done, and stops rendering it, regardless of that
+race. The remount key itself is untouched, so T-006 (a still-open editor must refresh from a
+preset changed *elsewhere* while it's open) is unaffected: that scenario never sets
+`editorState` to `'closed'` at all, only `handleSavePreset`'s own save path does.
+
+user-approved 2026-08-26: "the preset editor will close again when Save succeeds, instead of
+staying open on the saved values as it does now." This restores the pre-T-006 close-on-save
+behavior; a separate task (T-032) will address dirty-editor conflict banners and was
+deliberately not touched here.
+
+Test added in `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: "closes the editor
+once Save succeeds, even though the refetch it triggers bumps updated_at (T-031)" — stubs a
+PATCH response and a GET refetch that both carry a bumped `updated_at` (the existing `preset()`
+fixture omits the field entirely, which is exactly why this bug shipped uncaught), opens the
+editor, clicks Save, and asserts the dialog is gone. Confirmed failing against the pre-fix code
+(`waitFor` times out with the dialog still present) and passing against the fix. The existing
+T-006 regression test ("re-syncs the open editor with fresh data when a Zoho sync updates the
+preset underneath it") was re-run unmodified and still passes, confirming the remount-key
+refresh path survives this change.
+
+`python3 tools/snapshot.py verify`: 11/11 MATCH, no re-record needed — no probe's captured
+output touches `handleSavePreset` or the editor's close path. `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`: byte-identical, no diff to apply.
+
+`bash tools/coverage_fp.sh frontend`: 173/260 = 66.53% statements, up from the 167/259 = 64.47%
+baseline (no drop). Full frontend suite (`./venv` n/a — `npx vitest run` / `test_frontend.sh`):
+5,125/5,128 passed; the 3 failures (`PrintModal.test.tsx` x2,
+`ArchivesPage.test.tsx` — "shows a toast when printer video ZIP preparation fails") are the
+documented load-flakes, confirmed passing in isolation (`npx vitest run
+src/__tests__/components/PrintModal.test.tsx src/__tests__/pages/ArchivesPage.test.tsx` — 116/116
+passed) and unrelated to this change.
+
+## T-034 — 2026-08-27 — a sync served from a stale Zoho catalogue now discloses that instead of reporting a plain success (user-approved behavior change)
+
+`fetch_catalogue()`'s two failure branches — the refresh-lock-busy timeout (line ~394-398) and
+the refresh-itself-raised path (line ~476-479) — both serve the previous `_cache` back to the
+caller with `_cache_at` left un-advanced, and with no upper bound on how old that cache is: a
+refresh token that has been dead for days, or a Zoho outage lasting hours, produces exactly the
+same return value as a live fetch. `POST /filament-profiles/zoho-sync` (the one caller in this
+codebase that WRITES what it gets, straight into stored preset content) called
+`_fetch_catalogue_or_502`, which forwarded that return value untouched and answered
+`FilamentPresetZohoSyncResponse(priced=..., unchanged=..., attention=[])` — a response
+indistinguishable from a fully live sync. The page turned that into a green "Priced N" toast
+(`FilamentProfilesPage.tsx`). An operator syncing during a Zoho outage was told it succeeded
+with today's prices when it had in fact just re-written every matched preset from however-old
+the last good catalogue happened to be.
+
+user-approved 2026-08-26 (DISCLOSE, not refuse): "a price sync run while Zoho is unreachable
+will report that its prices came from a stale catalogue (or refuse to write) instead of
+returning a plain success." The sync still runs and writes — refusing outright would make the
+feature unusable for the whole outage window — but the response and the UI now surface the
+staleness instead of hiding it.
+
+`fetch_catalogue()`'s public signature and return type are unchanged (`backend/app/api/routes/
+calculator.py` also calls it and is out of scope for this task): a new module-private global,
+`zoho_filaments._last_stale_serve_at`, is set to the stale copy's `_cache_at` at both
+failure-branch return points and cleared (`None`) at every genuine-fresh-cache and successful-
+refresh return point. `_fetch_catalogue_or_502` — the one in-scope caller, private, and with no
+direct test coverage of its own return shape prior to this — now reads that global immediately
+after `await fetch_catalogue(db)` returns (no `await` in between, so nothing else can run and
+overwrite it first) and returns `(catalogue, stale_since)` instead of a bare list.
+`sync_filament_presets_from_zoho` in `backend/app/api/routes/filament_profiles.py` unpacks that
+tuple and passes `stale_since` through as `FilamentPresetZohoSyncResponse.catalogue_stale_since:
+datetime | None = None` — additive and defaulted, so the OpenAPI change is backward compatible
+and old clients ignore it. `calculator.py` was not touched and calls only the untouched
+`fetch_catalogue`; its two call sites (search and calculator sync) are byte-identical.
+
+Frontend: `FilamentPresetZohoSyncResponse.catalogue_stale_since: string | null` added to
+`frontend/src/api/client.ts`. In `FilamentProfilesPage.tsx`'s `handleZohoSync`, `isFullSuccess`
+now also requires `!result.catalogue_stale_since`, so a stale sync never shows the green toast
+even when otherwise fully successful (nothing needing attention, something priced) — it shows
+the warning-yellow toast instead, with a new `filamentProfiles.syncZohoStale` string appended
+alongside the existing attention count. The below-the-fold summary panel gained its own
+amber stale notice with the same string and timestamp. The toast-message assembly was
+refactored from a ternary into an array-join to accommodate the extra optional segment; for
+every case with no staleness (all pre-existing tests) it produces the exact same joined string
+as before.
+
+i18n: `filamentProfiles.syncZohoStale` (one key, `{{timestamp}}` placeholder) added with real
+translations to all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`,
+`it`, `ja`, `ko`, `pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`) — `node scripts/check-i18n-parity.mjs`
+passes (13 locales, 7,076 leaves each, no parity/placeholder/identical-to-en failures) and
+`npx vitest run src/__tests__/i18n` passes (26/26).
+
+Tests added:
+- `backend/tests/unit/test_zoho_filaments_catalogue.py`:
+  `test_fetch_catalogue_or_502_reports_stale_since_when_serving_a_failed_refresh` (drives a real
+  refresh failure against an expired-but-present cache and asserts `_fetch_catalogue_or_502`
+  returns the pre-refresh `_cache_at` as `stale_since`),
+  `test_fetch_catalogue_or_502_reports_no_staleness_for_a_fresh_sync` (a genuine fresh fetch,
+  then a within-TTL cache hit, both report `None`), and an added assertion on the existing
+  `test_lock_acquire_timeout_serves_the_stale_cache_when_warm` confirming the lock-busy branch
+  also sets `_last_stale_serve_at`.
+- `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+  `test_stale_catalogue_discloses_its_age_instead_of_a_plain_success` (end-to-end through the
+  real HTTP route with a real expired warm cache and a failing `list_items_page`, asserting both
+  that the sync still wrote the price AND that `catalogue_stale_since` carries the expected
+  timestamp), plus an added assertion on the existing `test_prices_a_confident_match` that a
+  fresh sync's `catalogue_stale_since` is `null`.
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`:
+  "discloses a stale catalogue instead of reporting a plain success (T-034)" (mocked stale
+  response renders the warning-yellow toast with the timestamp and the summary-panel notice) and
+  "keeps the green success toast for a fresh sync with nothing left to disclose (T-034)" (mocked
+  fresh response, `catalogue_stale_since: null`, still renders the green toast — confirming the
+  pre-existing green path is not broken by this change; T-024's own dedicated green-toast test is
+  a separate task and was not implemented here).
+
+`python3 tools/snapshot.py verify` / `record`: 5 of 11 probes legitimately diffed
+(`fp-pydantic-schemas` and `fp-sync-endpoint` picked up the new additive field;
+`fp-i18n-sync-strings` and `fp-client-method` picked up the new key/field; `fp-page-sync-ui`
+picked up the toast/panel wiring) and were re-recorded; the other 6 (`fp-openapi`, `fp-ddl`,
+`fp-route-perms`, `fp-pricing-write`, `fp-match-decisions`, `calc-zoho-pure`) matched unchanged.
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: one new line,
+`filamentProfiles.syncZohoStale`, under "i18n keys read by FilamentProfilesPage.tsx"; applied.
+
+`bash tools/coverage_fp.sh backend`: 497/498 = 99.80% scoped statements (up from the 488/489
+baseline, same ratio, no drop; the one uncovered line, `zoho_filaments.py`'s `_score()` SKU-term
+branch, is pre-existing and untouched). `bash tools/coverage_fp.sh frontend`: 174/261 = 66.66%
+statements (up from the 173/260 baseline, no drop).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,442
+passed, 1 skipped. One incidental failure on a prior run
+(`test_aito_quote_sync.py::test_wake_drains_a_pending_project_without_waiting_for_the_interval`,
+`sqlalchemy.exc.InvalidRequestError: Could not refresh instance`) reproduced only under `-n 30`
+parallel load and passed cleanly both in isolation and on a clean re-run of the full suite
+(104/104 and 12,442/12,442 respectively) — the documented suite-load flake, unrelated to this
+change (Aito quote sync, not touched). `ruff check` / `ruff format --check` clean on every
+touched backend file. `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` clean on every
+touched frontend file.

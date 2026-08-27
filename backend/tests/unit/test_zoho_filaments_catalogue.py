@@ -129,6 +129,55 @@ async def test_failed_refresh_returns_stale_cache(monkeypatch):
     assert len(catalogue) == 4  # previous contents, not an empty list
 
 
+def _configured(monkeypatch, value=True):
+    async def is_configured(_db):
+        return value
+
+    monkeypatch.setattr(zoho_service, "is_configured", is_configured)
+
+
+@pytest.mark.asyncio
+async def test_fetch_catalogue_or_502_reports_stale_since_when_serving_a_failed_refresh(monkeypatch):
+    """T-034: fetch_catalogue's own signature can't disclose that a refresh
+    failed and it fell back to an arbitrarily old cache (calculator.py also
+    calls it and is out of scope) — its one other caller,
+    `_fetch_catalogue_or_502`, must still learn this so the profile-sync route
+    can disclose it instead of reporting a plain, indistinguishable success."""
+    _configured(monkeypatch)
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
+    await zoho_filaments.fetch_catalogue(None)
+    # Simulate the cache having genuinely expired (rather than nulling
+    # `_cache_at`, which would also erase the very timestamp this test is
+    # asserting against) so the next call attempts — and fails — a refresh.
+    expired_at = datetime.now(timezone.utc) - zoho_filaments._CACHE_TTL - timedelta(seconds=1)
+    zoho_filaments._cache_at = expired_at
+
+    async def boom(db, **kwargs):
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+    catalogue, stale_since = await zoho_filaments._fetch_catalogue_or_502(None, context="test")
+    assert len(catalogue) == 4  # previous contents, not an empty list
+    assert stale_since == expired_at
+
+
+@pytest.mark.asyncio
+async def test_fetch_catalogue_or_502_reports_no_staleness_for_a_fresh_sync(monkeypatch):
+    """The counterpart to the stale case above: a catalogue that came from a
+    genuine fresh fetch (or an unexpired cache hit) must report ``None`` —
+    fresh syncs must behave byte-identically to before T-034."""
+    _configured(monkeypatch)
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
+    catalogue, stale_since = await zoho_filaments._fetch_catalogue_or_502(None, context="test")
+    assert len(catalogue) == 4
+    assert stale_since is None
+
+    # And a second call served from the still-unexpired cache is also not
+    # "stale" in the T-034 sense — that is ordinary caching, not an outage.
+    catalogue, stale_since = await zoho_filaments._fetch_catalogue_or_502(None, context="test")
+    assert stale_since is None
+
+
 @pytest.mark.asyncio
 async def test_failed_refresh_with_cold_cache_raises(monkeypatch):
     async def boom(db, **kwargs):
@@ -454,11 +503,16 @@ async def test_lock_acquire_timeout_raises_promptly_with_cold_cache(monkeypatch)
     leader = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
     await entered.wait()  # the leader now holds _refresh_lock
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as exc_info:
         # Must return on its own — nothing here waits on `gate`, so if this
         # ever blocked on the leader instead of timing out on the lock
         # acquisition, the test would hang rather than merely fail.
         await zoho_filaments.fetch_catalogue(None)
+
+    # Pin the raised message to the shared constant the route's 409
+    # classifier compares against — a drift here would silently degrade
+    # the API response from 409 to 502 with the type check alone still green.
+    assert str(exc_info.value) == zoho_filaments._SYNC_IN_PROGRESS_DETAIL
 
     gate.set()
     await leader  # let the leader finish so no task is left pending
@@ -490,6 +544,10 @@ async def test_lock_acquire_timeout_serves_the_stale_cache_when_warm(monkeypatch
 
     result = await zoho_filaments.fetch_catalogue(None)
     assert [p.item_id for p in result] == [p.item_id for p in warm]
+    # T-034: the lock-busy fallback is the other stale-serve branch inside
+    # fetch_catalogue (alongside the refresh-failure branch tested above) —
+    # it must also be recorded as stale for `_fetch_catalogue_or_502` to see.
+    assert zoho_filaments._last_stale_serve_at == zoho_filaments._cache_at
 
     gate.set()
     await leader

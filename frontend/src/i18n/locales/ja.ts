@@ -4338,6 +4338,7 @@ export default {
     syncZohoBadPrice: '一致しましたが、価格が無効か大きすぎます',
     syncZohoWeightUnknown: '一致しましたが、アイテムのスプール重量が不明なため価格は適用されませんでした',
     syncZohoFailed: 'Zohoから価格を同期できませんでした',
+    syncZohoStale: 'Zohoに接続できなかったため、{{timestamp}}にキャッシュされたカタログの価格が使用されました（最新の同期ではありません）',
     // Toasts
     createdToast: '「{{name}}」を作成しました',
     updatedToast: '「{{name}}」を更新しました',

@@ -4148,6 +4148,7 @@ export default {
     syncZohoBadPrice: "Знайдено збіг, але ціна товару недійсна або надто велика",
     syncZohoWeightUnknown: 'Знайдено збіг, але вага котушки товару невідома — ціну не застосовано',
     syncZohoFailed: "Не вдалося синхронізувати ціни з Zoho",
+    syncZohoStale: "Zoho був недоступний — ціни взято з каталогу, кешованого о {{timestamp}}, а не з живої синхронізації",
     // Toasts
     createdToast: "«{{name}}» створено",
     updatedToast: "«{{name}}» оновлено",

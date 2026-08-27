@@ -4333,6 +4333,7 @@ export default {
     syncZohoBadPrice: 'Eşleşti, ancak öğenin fiyatı geçersiz veya aşırı yüksek',
     syncZohoWeightUnknown: 'Eşleşti, ancak öğenin makara ağırlığı bilinmiyor — fiyat uygulanmadı',
     syncZohoFailed: "Zoho'dan fiyatlar senkronize edilemedi",
+    syncZohoStale: "Zoho'ya ulaşılamadı — fiyatlar {{timestamp}} tarihinde önbelleğe alınan bir katalogdan geldi, canlı bir senkronizasyondan değil",
     // Toasts
     createdToast: '"{{name}}" oluşturuldu',
     updatedToast: '"{{name}}" güncellendi',

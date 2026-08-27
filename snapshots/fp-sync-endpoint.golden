@@ -53,6 +53,7 @@ status=200
    "reason": "no_match"
   }
  ],
+ "catalogue_stale_since": null,
  "priced": 2,
  "unchanged": 1
 }
@@ -120,6 +121,7 @@ status=200
    "reason": "no_match"
   }
  ],
+ "catalogue_stale_since": null,
  "priced": 2,
  "unchanged": 1
 }
@@ -175,6 +177,7 @@ status=200
    "reason": "no_match"
   }
  ],
+ "catalogue_stale_since": null,
  "priced": 0,
  "unchanged": 3
 }
@@ -257,6 +260,7 @@ status=200
    "reason": "no_match"
   }
  ],
+ "catalogue_stale_since": null,
  "priced": 0,
  "unchanged": 0
 }

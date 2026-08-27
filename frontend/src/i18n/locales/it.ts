@@ -4326,6 +4326,7 @@ export default {
     syncZohoBadPrice: "Trovata corrispondenza, ma il prezzo dell'articolo non è valido o è eccessivamente alto",
     syncZohoWeightUnknown: "Trovata corrispondenza, ma il peso della bobina dell'articolo è sconosciuto — il prezzo non è stato applicato",
     syncZohoFailed: 'Impossibile sincronizzare i prezzi da Zoho',
+    syncZohoStale: "Zoho non era raggiungibile — i prezzi provengono da un catalogo memorizzato nella cache alle {{timestamp}}, non da una sincronizzazione in tempo reale",
     // Toasts
     createdToast: '"{{name}}" creato',
     updatedToast: '"{{name}}" aggiornato',

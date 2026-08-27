@@ -3,11 +3,13 @@
 zohoSync first referenced at char True
 const [zohoSyncing, setZohoSyncing] = useState(false);
 const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
-? `${doneMessage} — ${t('filamentProfiles.syncZohoAttention', { count: attentionCount })}`
+? t('filamentProfiles.syncZohoStale', { timestamp: new Date(result.catalogue_stale_since).toLocaleString() })
+.concat(attentionCount > 0 ? [t('filamentProfiles.syncZohoAttention', { count: attentionCount })] : [])
 showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
 <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
 {t('filamentProfiles.syncZohoPrices')}
 {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
+{t('filamentProfiles.syncZohoStale', {
 {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
 ? 'filamentProfiles.syncZohoNoMatch'
 ? 'filamentProfiles.syncZohoAmbiguous'

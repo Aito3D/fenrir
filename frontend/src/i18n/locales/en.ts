@@ -4372,6 +4372,7 @@ export default {
     syncZohoBadPrice: "Matched, but the item's price is invalid or unusably large",
     syncZohoWeightUnknown: "Matched, but the item's spool weight is unknown — its price was not applied",
     syncZohoFailed: 'Could not sync prices from Zoho',
+    syncZohoStale: 'Zoho was unreachable — prices came from a catalogue cached at {{timestamp}}, not a live sync',
     // Toasts
     createdToast: '"{{name}}" created',
     updatedToast: '"{{name}}" updated',

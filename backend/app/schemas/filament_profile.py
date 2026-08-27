@@ -168,3 +168,10 @@ class FilamentPresetZohoSyncResponse(BaseModel):
     priced: int
     unchanged: int
     attention: list[FilamentPresetZohoSyncAttention] = []
+    # T-034: set only when the catalogue this sync priced from came from
+    # fetch_catalogue's failure-branch stale-cache fallback (Zoho was
+    # unreachable and the cache's age has no upper bound) rather than a fresh
+    # fetch or an unexpired cache hit. The value is the timestamp that
+    # catalogue was actually last captured at. None means the catalogue was
+    # fresh. Additive and defaulted so old clients are unaffected.
+    catalogue_stale_since: datetime | None = None

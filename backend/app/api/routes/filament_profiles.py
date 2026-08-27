@@ -196,7 +196,13 @@ async def sync_filament_presets_from_zoho(
     # 500, not 502, on a mapping failure: a catalogue we failed to parse is a
     # bug on this side, and calling it an upstream outage sends the operator
     # to the wrong system. Same split as the calculator's routes (T-074).
-    catalogue = await zoho_filaments._fetch_catalogue_or_502(db, context="during profile sync")
+    # T-034: `stale_since` is set when Zoho was unreachable and this catalogue
+    # came from fetch_catalogue's failure-branch stale-cache fallback, which
+    # carries no upper bound on its age — the sync below still runs and
+    # writes with it (refusing outright would make the feature unusable
+    # during an outage), but the response must disclose that instead of
+    # reporting a plain, indistinguishable-from-live success.
+    catalogue, stale_since = await zoho_filaments._fetch_catalogue_or_502(db, context="during profile sync")
 
     result = await db.execute(select(FilamentPreset).order_by(FilamentPreset.id))
     presets = result.scalars().all()
@@ -285,7 +291,9 @@ async def sync_filament_presets_from_zoho(
             )
 
     await db.commit()
-    return FilamentPresetZohoSyncResponse(priced=priced, unchanged=unchanged, attention=attention)
+    return FilamentPresetZohoSyncResponse(
+        priced=priced, unchanged=unchanged, attention=attention, catalogue_stale_since=stale_since
+    )
 
 
 @router.patch("/{preset_id}", response_model=FilamentPresetResponse)

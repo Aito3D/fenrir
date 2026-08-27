@@ -78,6 +78,20 @@ _FAIL_COOLDOWN = timedelta(seconds=30)
 _cache: list["FilamentProduct"] | None = None
 _cache_at: datetime | None = None
 
+# T-034: the ``_cache_at`` of whatever catalogue the MOST RECENT
+# fetch_catalogue() call returned, but only when that call reached one of the
+# two "refresh failed/timed out, serve the stale copy anyway" branches below
+# rather than a genuine fresh fetch or an unexpired cache hit. None means the
+# most recent call did NOT take a stale-serve branch. fetch_catalogue's own
+# signature and return type are frozen (backend/app/api/routes/calculator.py
+# also calls it and is out of scope for T-034), so this module global is the
+# side channel `_fetch_catalogue_or_502` reads immediately after `await
+# fetch_catalogue(...)` returns -- with no `await` in between, so nothing
+# else can run and overwrite it first -- to learn whether the profile-sync
+# route just wrote prices from an arbitrarily old catalogue. Set/cleared at
+# every return point inside fetch_catalogue below.
+_last_stale_serve_at: datetime | None = None
+
 # T-094: set alongside a cold-cache failure (see the except branch in
 # fetch_catalogue) so the next caller can answer from this instead of
 # re-walking Zoho. Cleared on a successful refresh and by reset_cache().
@@ -265,10 +279,13 @@ def reset_cache() -> None:
     organization does not keep serving the previous org's filaments for the
     rest of the TTL window. Tests call it to isolate each case.
     """
-    global _cache, _cache_at, _generation, _fail_at, _fail_exc
+    global _cache, _cache_at, _generation, _fail_at, _fail_exc, _last_stale_serve_at
     _cache = None
     _cache_at = None
     _generation += 1
+    # T-034: a stale-serve memo from before the reset must not be attributed
+    # to whatever the next fetch_catalogue() call does.
+    _last_stale_serve_at = None
     # T-095: _refresh_lock is intentionally NOT rebuilt here — see its
     # module-level docstring for why rebinding it let a reset manufacture a
     # second concurrent walk.
@@ -333,12 +350,19 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     started it — that caller gets the same stale-cache-or-502 answer as any
     other refresh failure instead of a freshly-labelled answer from the
     pre-rotation organisation.
+
+    T-034: this signature and return type are relied on by
+    ``backend/app/api/routes/calculator.py`` and must not change. Whether a
+    given call served the previous cache because a refresh FAILED (as opposed
+    to it merely being unexpired) is recorded in the module-private
+    ``_last_stale_serve_at`` instead, for ``_fetch_catalogue_or_502`` to read.
     """
-    global _cache, _cache_at, _fail_at, _fail_exc
+    global _cache, _cache_at, _fail_at, _fail_exc, _last_stale_serve_at
 
     now = datetime.now(timezone.utc)
     fresh = _cache_at is not None and now - _cache_at < _CACHE_TTL
     if _cache is not None and (fresh or not refresh):
+        _last_stale_serve_at = None  # T-034: genuine cache hit, not a failure fallback
         return _cache
 
     # T-094/T-091: a cold cache with a recent failure is served immediately —
@@ -378,6 +402,10 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             logger.warning(
                 "Zoho filament catalogue refresh lock busy past %.0fs; serving the cached copy", _LOCK_ACQUIRE_TIMEOUT
             )
+            # T-034: the lock-busy fallback answers with whatever `_cache_at`
+            # already was -- unbounded age, since the walk that would have
+            # advanced it never got to.
+            _last_stale_serve_at = _cache_at
             return _cache
         raise RuntimeError("Zoho filament catalogue refresh is still in progress; try again shortly") from None
 
@@ -389,6 +417,7 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         now = datetime.now(timezone.utc)
         fresh = _cache_at is not None and now - _cache_at < _CACHE_TTL
         if _cache is not None and (fresh or not refresh):
+            _last_stale_serve_at = None  # T-034: genuine cache hit, not a failure fallback
             return _cache
 
         # T-072: captured only now — after the lock is held and the
@@ -453,6 +482,9 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         except Exception as exc:
             if _cache is not None:
                 logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
+                # T-034: this refresh failed with no upper bound on how long
+                # ago `_cache_at` was -- it is left un-advanced on purpose.
+                _last_stale_serve_at = _cache_at
                 return _cache
             # T-094/T-091: cold-cache failure — record it so a burst of
             # concurrent callers doesn't repeat this whole walk one at a time
@@ -490,6 +522,7 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         _cache_at = datetime.now(timezone.utc)
         _fail_at = None
         _fail_exc = None
+        _last_stale_serve_at = None  # T-034: a genuine fresh refresh just landed
         return mapped
     finally:
         lock.release()
@@ -507,7 +540,7 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
 _SYNC_IN_PROGRESS_DETAIL = "Zoho filament catalogue refresh is still in progress; try again shortly"
 
 
-async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> list[FilamentProduct]:
+async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> tuple[list[FilamentProduct], datetime | None]:
     """``fetch_catalogue`` wrapped in the is-configured check and error
     contract every HTTP caller needs: 503 when Zoho isn't configured (either
     up front, or discovered mid-refresh if credentials were cleared in the
@@ -521,11 +554,23 @@ async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> list[Fil
     block per route. Private (leading underscore): every current caller lives
     in this codebase, so there is no reason to widen it into the module's
     public surface.
+
+    T-034: returns ``(catalogue, stale_since)``. ``fetch_catalogue`` itself
+    must keep returning a bare list (its signature is frozen — see
+    ``_last_stale_serve_at``'s docstring), so this wrapper reads that module
+    global immediately after the call to learn whether THIS call happened to
+    land on a failed-refresh stale-cache fallback rather than a genuine fetch.
+    ``stale_since`` is ``None`` for a fresh catalogue, or the timestamp the
+    served catalogue was last actually captured at otherwise.
     """
     if not await zoho_service.is_configured(db):
         raise HTTPException(status_code=503, detail="Zoho is not configured")
     try:
-        return await fetch_catalogue(db)
+        catalogue = await fetch_catalogue(db)
+        # No `await` between the call above and this read — see
+        # `_last_stale_serve_at`'s module-level docstring for why that makes
+        # this safe against interleaving from other concurrent callers.
+        return catalogue, _last_stale_serve_at
     except ZohoFilamentMappingError as exc:
         logger.error("Zoho filament catalogue mapping failure %s: %s", context, exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc

@@ -514,6 +514,19 @@
     "title": "Attention",
     "type": "array"
    },
+   "catalogue_stale_since": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Catalogue Stale Since"
+   },
    "priced": {
     "title": "Priced",
     "type": "integer"

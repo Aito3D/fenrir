@@ -484,6 +484,68 @@ describe('FilamentProfilesPage', () => {
     expect(toastShell.className).toMatch(/border-yellow-500/);
   });
 
+  it('discloses a stale catalogue instead of reporting a plain success (T-034)', async () => {
+    stubBase();
+    const staleSince = '2026-08-20T12:00:00Z';
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 2,
+          unchanged: 1,
+          attention: [],
+          catalogue_stale_since: staleSince,
+        }),
+      ),
+    );
+
+    const { container } = render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Even though the sync itself was otherwise a "full success" (no
+    // attention, something priced), a stale catalogue must still not render
+    // as the green success toast — the operator must be told the prices came
+    // from a cached catalogue, not a live sync.
+    const expectedTimestamp = new Date(staleSince).toLocaleString();
+    const toastViewport = container.querySelector('[data-testid="toast-viewport"]') as HTMLElement;
+    const toastText = await within(toastViewport).findByText(/priced 2, unchanged 1/i, {}, { timeout: 5000 });
+    expect(toastText.textContent).toContain(expectedTimestamp);
+    const toastShell = toastText.closest('.toast-slide') as HTMLElement;
+    expect(toastShell.className).not.toMatch(/border-green-500/);
+    expect(toastShell.className).toMatch(/border-yellow-500/);
+
+    // ... and the below-the-fold summary panel carries its own stale notice.
+    const panelNotices = await screen.findAllByText((_, el) => (el?.textContent ?? '').includes(expectedTimestamp), {
+      timeout: 5000,
+    });
+    expect(panelNotices.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the green success toast for a fresh sync with nothing left to disclose (T-034)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 2,
+          unchanged: 1,
+          attention: [],
+          catalogue_stale_since: null,
+        }),
+      ),
+    );
+
+    const { container } = render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    const toastViewport = container.querySelector('[data-testid="toast-viewport"]') as HTMLElement;
+    const toastText = await within(toastViewport).findByText(/priced 2, unchanged 1/i, {}, { timeout: 5000 });
+    const toastShell = toastText.closest('.toast-slide') as HTMLElement;
+    expect(toastShell.className).toMatch(/border-green-500/);
+  });
+
   it('shows the backend error message when the Zoho sync fails', async () => {
     stubBase();
     server.use(
@@ -595,5 +657,44 @@ describe('FilamentProfilesPage', () => {
       () => expect(screen.getByRole('spinbutton', { name: /cost/i })).toHaveValue(25),
       { timeout: 5000 },
     );
+  });
+
+  it('closes the editor once Save succeeds, even though the refetch it triggers bumps updated_at (T-031)', async () => {
+    // Mirrors what the real PATCH endpoint does: the saved row comes back
+    // (and the subsequent GET refetch answers) with a new `updated_at`. That
+    // bump feeds the editor's remount key (`${presetId}-${updated_at}`, kept
+    // for T-006 below) — on the old code this raced the modal's own 220ms
+    // close animation and remounted the modal instance whose deferred
+    // onClose was about to fire, so the editor never closed. The previous
+    // fixture never set `updated_at` at all, which is exactly why nothing
+    // caught it.
+    let getCalls = 0;
+    server.use(
+      http.get('*/filament-profiles', () => {
+        getCalls += 1;
+        const primed = preset({
+          updated_at: getCalls === 1 ? '2026-08-01T00:00:00Z' : '2026-08-25T00:00:00Z',
+        });
+        return HttpResponse.json([primed, PRESETS[1]]);
+      }),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
+      http.patch('*/filament-profiles/1', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          preset({ ...body, updated_at: '2026-08-25T00:00:00Z' } as Partial<FilamentPreset>),
+        );
+      }),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('Black');
+
+    await userEvent.click(screen.getByText('Black'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 });
