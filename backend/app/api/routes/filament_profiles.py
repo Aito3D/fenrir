@@ -25,6 +25,7 @@ from backend.app.schemas.filament_profile import (
     FilamentPresetUpdate,
     FilamentPresetZohoSyncAttention,
     FilamentPresetZohoSyncResponse,
+    _derive_bare_filename,
 )
 from backend.app.services import zoho_filaments
 from backend.app.services.bambu_studio import (
@@ -43,6 +44,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/filament-profiles", tags=["filament-profiles"])
 
 DUPLICATE_FIELDS = ("name", "brand", "material", "color", "color_hex", "filename", "content")
+
+# T-038: caps the number of attention entries a zoho-sync response reports,
+# mirroring zoho_filaments._MAX_REPORTED_CANDIDATES's spirit at a list scale.
+# A user who imports a full preset library with no Zoho match otherwise gets
+# one attention entry per preset with no bound, pushing the response (and the
+# page's un-virtualized attention panel) to hundreds of rows. 50 is generous
+# enough for an operator to act on in one sitting; attention_total on the
+# response carries the true count so the UI can render "and N more".
+_MAX_REPORTED_ATTENTION = 50
 
 # --- static routes (bambu-scan, base-content, base-presets, sync-base, bambu-sync, zoho-sync) must stay above the /{preset_id} routes, or FastAPI matches "base-presets" etc. as a preset_id path param ---
 
@@ -321,7 +331,11 @@ async def sync_filament_presets_from_zoho(
 
     await db.commit()
     return FilamentPresetZohoSyncResponse(
-        priced=priced, unchanged=unchanged, attention=attention, catalogue_stale_since=stale_since
+        priced=priced,
+        unchanged=unchanged,
+        attention=attention[:_MAX_REPORTED_ATTENTION],
+        attention_total=len(attention),
+        catalogue_stale_since=stale_since,
     )
 
 
@@ -374,6 +388,13 @@ async def duplicate_filament_profile(
 
     row = FilamentPreset(**{field: getattr(source, field) for field in DUPLICATE_FIELDS})
     row.name = f"{source.name} (copie)"
+    # T-030: `source.filename` bypassed `_validate_bare_filename` if it was
+    # stored before that check existed (create/update run it; this direct
+    # model construction above does not). Normalising here instead of
+    # rejecting means a legacy path-shaped row can still be duplicated — it
+    # just stops multiplying the bad name. Already-bare filenames pass
+    # through unchanged.
+    row.filename = _derive_bare_filename(row.filename, source.id)
     db.add(row)
     await db.commit()
     await db.refresh(row)

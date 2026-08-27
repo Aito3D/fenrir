@@ -11,7 +11,7 @@ showToast(!isAbort && error instanceof Error ? error.message : t('filamentProfil
 {t('filamentProfiles.syncZohoPrices')}
 {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
 {t('filamentProfiles.syncZohoStale', {
-{t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
+{t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention_total })}
 ? 'filamentProfiles.syncZohoNoMatch'
 ? 'filamentProfiles.syncZohoAmbiguous'
 ? 'filamentProfiles.syncZohoUnwritable'

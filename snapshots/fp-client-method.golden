@@ -30,6 +30,11 @@ export interface FilamentPresetZohoSyncResponse {
   priced: number;
   unchanged: number;
   attention: FilamentPresetZohoSyncAttention[];
+  // T-038: the true number of presets flagged for attention, before the
+  // backend truncates `attention` to its cap. Equals attention.length on any
+  // run at or under the cap; only very large runs diverge, letting the UI
+  // render an "and N more" suffix instead of a wall of hundreds of rows.
+  attention_total: number;
   // T-034: set when this sync's catalogue came from a failed-refresh
   // stale-cache fallback (Zoho was unreachable) rather than a fresh fetch;
   // the value is when that catalogue was actually last captured. `null`

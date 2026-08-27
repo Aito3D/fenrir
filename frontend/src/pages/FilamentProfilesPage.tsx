@@ -73,6 +73,49 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Derives a safe, flat ZIP entry name for a preset's stored `filename`
+ * (spec §5.9 / T-029). Legacy rows created before the create/update
+ * validator existed can still carry path-shaped or traversal-shaped
+ * filenames (e.g. `../../x.json`); writing those straight into the archive
+ * would produce entries that escape the extraction directory in extractors
+ * that don't sanitise themselves. This takes the last non-empty path
+ * segment (splitting on both `/` and `\`, and dropping `.`/`..` segments);
+ * if nothing valid remains, it falls back to a name derived from the
+ * preset's id. Already-bare filenames pass through unchanged.
+ */
+function deriveZipEntryName(filename: string, presetId: number): string {
+  const segments = filename
+    .split(/[/\\]+/)
+    .filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
+  const last = segments[segments.length - 1];
+  return last || `preset-${presetId}.json`;
+}
+
+/**
+ * Returns a version of `name` guaranteed not to already be in `usedNames`,
+ * suffixing deterministically (`-2`, `-3`, ...) before the extension when
+ * flattening two legacy filenames collides. Mutates `usedNames` to record
+ * the name it returns.
+ */
+function uniqueZipEntryName(name: string, usedNames: Set<string>): string {
+  if (!usedNames.has(name)) {
+    usedNames.add(name);
+    return name;
+  }
+  const dotIndex = name.lastIndexOf('.');
+  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const ext = dotIndex > 0 ? name.slice(dotIndex) : '';
+  let suffix = 2;
+  let candidate = `${base}-${suffix}${ext}`;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}-${suffix}${ext}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
 function SkeletonCard() {
   return (
     <div className="min-h-24 animate-pulse rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary" />
@@ -410,7 +453,10 @@ export function FilamentProfilesPage() {
       // normal viewport) and downgrade the toast color whenever some
       // profiles couldn't be priced or nothing was priced/unchanged at all.
       const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
-      const attentionCount = result.attention.length;
+      // T-038: the true count, not the (possibly truncated) attention array's
+      // length — a capped run must not read as "fewer profiles needed
+      // review" than it actually did.
+      const attentionCount = result.attention_total;
       // T-034: Zoho was unreachable and this catalogue came from fetch_catalogue's
       // failure-branch stale-cache fallback, with no upper bound on its age — the
       // sync still ran and wrote (see the route), but the toast must disclose
@@ -451,7 +497,11 @@ export function FilamentProfilesPage() {
     try {
       const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
-      candidates.forEach((p) => zip.file(p.filename, p.content));
+      const usedNames = new Set<string>();
+      candidates.forEach((p) => {
+        const entryName = uniqueZipEntryName(deriveZipEntryName(p.filename, p.id), usedNames);
+        zip.file(entryName, p.content);
+      });
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -706,7 +756,7 @@ export function FilamentProfilesPage() {
           {zohoResult.attention.length > 0 && (
             <>
               <div className="mt-2 text-bambu-gray-light">
-                {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
+                {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention_total })}
               </div>
               <ul className="mt-1 space-y-0.5 text-bambu-gray-light">
                 {zohoResult.attention.map((entry) => (
@@ -737,6 +787,11 @@ export function FilamentProfilesPage() {
                   </li>
                 ))}
               </ul>
+              {zohoResult.attention_total > zohoResult.attention.length && (
+                <div className="mt-1 text-bambu-gray-light">
+                  {t('common.plusNMore', { count: zohoResult.attention_total - zohoResult.attention.length })}
+                </div>
+              )}
             </>
           )}
         </div>

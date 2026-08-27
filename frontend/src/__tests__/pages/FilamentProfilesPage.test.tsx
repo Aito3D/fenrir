@@ -267,6 +267,7 @@ describe('FilamentProfilesPage', () => {
           priced: 2,
           unchanged: 1,
           attention: [{ id: 7, name: 'eSUN PETG', reason: 'ambiguous', candidates: ['A', 'B'] }],
+          attention_total: 1,
         }),
       ),
     );
@@ -302,6 +303,7 @@ describe('FilamentProfilesPage', () => {
               candidates_total: 7,
             },
           ],
+          attention_total: 1,
         }),
       ),
     );
@@ -318,6 +320,56 @@ describe('FilamentProfilesPage', () => {
     expect(await screen.findByText(/\+2 more/i, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
+  it('shows an "and N more" remainder below the attention list when attention_total exceeds the shipped entries (T-038)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 7, name: 'eSUN PETG', reason: 'no_match', candidates: [] }],
+          attention_total: 52,
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // The headline count reflects the true total, not just the shipped list.
+    // Anchored so this only matches the below-the-fold summary panel's own
+    // text and not the toast, which appends the same count to its own
+    // "Priced N, unchanged N" prefix.
+    expect(await screen.findByText(/^52 need attention$/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText(/\+51 more/i, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+
+  it('renders no "and N more" remainder when attention_total equals the shipped entries (T-038)', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 7, name: 'eSUN PETG', reason: 'no_match', candidates: [] }],
+          attention_total: 1,
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    expect(await screen.findByText(/^1 need attention$/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText(/eSUN PETG/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText(/more$/i)).not.toBeInTheDocument();
+  });
+
   it('reports a matched preset with unwritable content as needing attention, not as unchanged', async () => {
     stubBase();
     server.use(
@@ -326,6 +378,7 @@ describe('FilamentProfilesPage', () => {
           priced: 0,
           unchanged: 0,
           attention: [{ id: 9, name: 'Broken PLA', reason: 'unwritable_content', candidates: [] }],
+          attention_total: 1,
         }),
       ),
     );
@@ -352,6 +405,7 @@ describe('FilamentProfilesPage', () => {
           priced: 0,
           unchanged: 0,
           attention: [{ id: 11, name: 'Infinite PLA', reason: 'bad_price', candidates: [] }],
+          attention_total: 1,
         }),
       ),
     );
@@ -380,6 +434,7 @@ describe('FilamentProfilesPage', () => {
           priced: 0,
           unchanged: 0,
           attention: [{ id: 8, name: 'Generic ABS', reason: 'no_match', candidates: [] }],
+          attention_total: 1,
         }),
       ),
     );
@@ -406,6 +461,7 @@ describe('FilamentProfilesPage', () => {
           priced: 0,
           unchanged: 0,
           attention: [{ id: 12, name: 'Unpriced PLA', reason: 'no_price', candidates: [] }],
+          attention_total: 1,
         }),
       ),
     );
@@ -442,6 +498,7 @@ describe('FilamentProfilesPage', () => {
               candidates_total: 1,
             },
           ],
+          attention_total: 1,
         }),
       ),
     );
@@ -474,6 +531,7 @@ describe('FilamentProfilesPage', () => {
             { id: 7, name: 'eSUN PETG', reason: 'ambiguous', candidates: ['A', 'B'] },
             { id: 8, name: 'Generic ABS', reason: 'no_match', candidates: [] },
           ],
+          attention_total: 2,
         }),
       ),
     );
@@ -504,6 +562,7 @@ describe('FilamentProfilesPage', () => {
           priced: 0,
           unchanged: 0,
           attention: [],
+          attention_total: 0,
         }),
       ),
     );
@@ -531,6 +590,7 @@ describe('FilamentProfilesPage', () => {
           priced: 2,
           unchanged: 1,
           attention: [],
+          attention_total: 0,
           catalogue_stale_since: staleSince,
         }),
       ),
@@ -568,6 +628,7 @@ describe('FilamentProfilesPage', () => {
           priced: 2,
           unchanged: 1,
           attention: [],
+          attention_total: 0,
           catalogue_stale_since: null,
         }),
       ),
@@ -623,7 +684,7 @@ describe('FilamentProfilesPage', () => {
         // Never resolves within this test — stands in for a request still
         // in flight, so the assertions below only see the "syncing" state.
         await delay('infinite');
-        return HttpResponse.json({ priced: 0, unchanged: 0, attention: [] });
+        return HttpResponse.json({ priced: 0, unchanged: 0, attention: [], attention_total: 0 });
       }),
     );
 
@@ -651,7 +712,7 @@ describe('FilamentProfilesPage', () => {
         http.post('*/filament-profiles/zoho-sync', async () => {
           // Never resolves on its own — only the client-side abort ends it.
           await delay('infinite');
-          return HttpResponse.json({ priced: 0, unchanged: 0, attention: [] });
+          return HttpResponse.json({ priced: 0, unchanged: 0, attention: [], attention_total: 0 });
         }),
       );
 
@@ -686,6 +747,7 @@ describe('FilamentProfilesPage', () => {
           priced: 12,
           unchanged: 3,
           attention: [{ id: 7, name: 'eSUN PETG', reason: 'ambiguous', candidates: ['A', 'B'] }],
+          attention_total: 1,
         }),
       ),
     );
@@ -741,7 +803,7 @@ describe('FilamentProfilesPage', () => {
       http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
       http.get('*/filament-catalog/', () => HttpResponse.json([])),
       http.post('*/filament-profiles/zoho-sync', () =>
-        HttpResponse.json({ priced: 1, unchanged: 1, attention: [] }),
+        HttpResponse.json({ priced: 1, unchanged: 1, attention: [], attention_total: 0 }),
       ),
     );
 
@@ -824,7 +886,7 @@ describe('FilamentProfilesPage', () => {
       http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
       http.get('*/filament-catalog/', () => HttpResponse.json([])),
       http.post('*/filament-profiles/zoho-sync', () =>
-        HttpResponse.json({ priced: 1, unchanged: 1, attention: [] }),
+        HttpResponse.json({ priced: 1, unchanged: 1, attention: [], attention_total: 0 }),
       ),
     );
 
@@ -860,5 +922,134 @@ describe('FilamentProfilesPage', () => {
     // banner.
     await waitFor(() => expect(screen.getByRole('spinbutton', { name: /cost/i })).toHaveValue(25));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// T-029: legacy rows created before the create/update validator can still
+// carry path-shaped or traversal-shaped `filename` values. handleExport must
+// flatten those defensively instead of writing them straight into the ZIP.
+// These exercise the sanitisation through the real export flow (real JSZip,
+// real click handler) rather than reimplementing the sink's internals.
+describe('FilamentProfilesPage export ZIP sanitisation', () => {
+  async function exportAndReadEntryNames(presetsForTest: FilamentPreset[]): Promise<string[]> {
+    server.use(
+      http.get('*/filament-profiles', () => HttpResponse.json(presetsForTest)),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
+    );
+
+    let capturedBlob: Blob | null = null;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn((obj: Blob) => {
+      capturedBlob = obj;
+      return 'blob:mock-url';
+    });
+    URL.revokeObjectURL = vi.fn();
+
+    try {
+      render(<FilamentProfilesPage />);
+      await screen.findByText(presetsForTest[0].color);
+
+      await userEvent.click(screen.getByRole('button', { name: /Export ZIP/i }));
+      await waitFor(() => expect(capturedBlob).not.toBeNull());
+
+      const { default: JSZip } = await import('jszip');
+      const zip = await JSZip.loadAsync(capturedBlob as unknown as Blob);
+      return Object.keys(zip.files).sort();
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  }
+
+  it('flattens legacy traversal/mixed-separator filenames and de-duplicates the resulting collision', async () => {
+    const names = await exportAndReadEntryNames([
+      preset({ id: 1, name: 'Legacy A', color: 'Red', filename: '../../x.json', content: '{"a":1}' }),
+      preset({ id: 2, name: 'Legacy B', color: 'Green', filename: 'a/b\\x.json', content: '{"a":2}' }),
+      preset({ id: 3, name: 'Legacy C', color: 'Black', filename: 'bambu_pla_basic_black.json', content: '{"a":3}' }),
+    ]);
+
+    // The two legacy traversal/path-shaped filenames both flatten to
+    // `x.json`; the second is suffixed instead of clobbering the first,
+    // and the already-bare filename is exported byte-identically.
+    expect(names).toEqual(['bambu_pla_basic_black.json', 'x-2.json', 'x.json']);
+    expect(names.some((n) => n.includes('/') || n.includes('\\') || n.includes('..'))).toBe(false);
+  });
+
+  it('falls back to a preset-id name when nothing valid survives stripping', async () => {
+    const names = await exportAndReadEntryNames([
+      preset({ id: 42, name: 'All Dots', color: 'Purple', filename: '../..', content: '{"a":1}' }),
+    ]);
+
+    expect(names).toEqual(['preset-42.json']);
+  });
+
+  it('skips a suffix that is already taken by an unrelated bare filename', async () => {
+    const names = await exportAndReadEntryNames([
+      preset({ id: 1, name: 'Bare', color: 'Orange', filename: 'x-2.json', content: '{"a":1}' }),
+      preset({ id: 2, name: 'Legacy A', color: 'Cyan', filename: '../x.json', content: '{"a":2}' }),
+      preset({ id: 3, name: 'Legacy B', color: 'Magenta', filename: 'nested/x.json', content: '{"a":3}' }),
+    ]);
+
+    // `x-2.json` is already claimed by a bare filename, so the two legacy
+    // rows that both flatten to `x.json` land on `x.json` and `x-3.json`
+    // instead of clobbering it.
+    expect(names).toEqual(['x-2.json', 'x-3.json', 'x.json']);
+  });
+
+  it('exports an already-bare filename unchanged', async () => {
+    const names = await exportAndReadEntryNames([
+      preset({ id: 1, name: 'Bare', color: 'Yellow', filename: 'bambu_pla_basic_black.json', content: '{}' }),
+    ]);
+
+    expect(names).toEqual(['bambu_pla_basic_black.json']);
+  });
+
+  // User-approved 2026-08-27 widening: the dedup applies to already-bare
+  // filenames colliding with each other too (e.g. two rows created via
+  // Duplicate), not just to path-shaped filenames that flatten into a
+  // collision. Previously jszip's repeated `zip.file()` call silently
+  // overwrote the first preset's content; now the second is suffixed and
+  // both presets' content survive the export.
+  it('de-duplicates two presets sharing the same already-bare filename, preserving both contents', async () => {
+    const presetsForTest = [
+      preset({ id: 1, name: 'Dup A', color: 'Amber', filename: 'x.json', content: '{"a":1}' }),
+      preset({ id: 2, name: 'Dup B', color: 'Beige', filename: 'x.json', content: '{"a":2}' }),
+    ];
+
+    server.use(
+      http.get('*/filament-profiles', () => HttpResponse.json(presetsForTest)),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
+    );
+
+    let capturedBlob: Blob | null = null;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn((obj: Blob) => {
+      capturedBlob = obj;
+      return 'blob:mock-url';
+    });
+    URL.revokeObjectURL = vi.fn();
+
+    try {
+      render(<FilamentProfilesPage />);
+      await screen.findByText(presetsForTest[0].color);
+
+      await userEvent.click(screen.getByRole('button', { name: /Export ZIP/i }));
+      await waitFor(() => expect(capturedBlob).not.toBeNull());
+
+      const { default: JSZip } = await import('jszip');
+      const zip = await JSZip.loadAsync(capturedBlob as unknown as Blob);
+      const names = Object.keys(zip.files).sort();
+
+      expect(names).toEqual(['x-2.json', 'x.json']);
+      await expect(zip.files['x.json'].async('string')).resolves.toBe('{"a":1}');
+      await expect(zip.files['x-2.json'].async('string')).resolves.toBe('{"a":2}');
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
   });
 });

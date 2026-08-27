@@ -1,5 +1,6 @@
 """Pydantic schemas for the filament preset manager and Bambu Studio sync."""
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -52,6 +53,25 @@ def _validate_bare_filename(value: str) -> str:
     if not value or ".." in value or "/" in value or "\\" in value:
         raise ValueError("filename must be a bare file name")
     return value
+
+
+def _derive_bare_filename(filename: str, preset_id: int) -> str:
+    """Flatten a possibly path-shaped filename to a bare last segment.
+
+    T-030: `duplicate_filament_profile` (filament_profiles.py) copies a
+    source row's `filename` straight across, so a legacy row stored before
+    `_validate_bare_filename` existed can still carry a path-shaped or
+    traversal-shaped value ("../../x.json"), and duplicating it would
+    multiply that bad name rather than invent one. Mirrors the frontend
+    export sanitiser (`deriveZipEntryName`, T-029) so the same stored value
+    normalises the same way wherever it gets copied: split on both `/` and
+    `\\`, drop empty/"."/".." segments, and take the last surviving segment;
+    if nothing survives, fall back to a name derived from the preset's id.
+    An already-bare filename passes through unchanged, so duplicating a
+    normal preset is byte-identical to today.
+    """
+    segments = [segment for segment in re.split(r"[/\\]+", filename) if segment not in ("", ".", "..")]
+    return segments[-1] if segments else f"preset-{preset_id}.json"
 
 
 class FilamentPresetCreate(BaseModel):
@@ -202,6 +222,12 @@ class FilamentPresetZohoSyncResponse(BaseModel):
     priced: int
     unchanged: int
     attention: list[FilamentPresetZohoSyncAttention] = []
+    # T-038: the TRUE number of presets flagged for attention, before the
+    # route truncates `attention` to _MAX_REPORTED_ATTENTION entries. Equals
+    # len(attention) on any run at or under the cap, so old clients (and the
+    # common case) see no difference; only very large runs diverge, letting
+    # the UI render "and N more" instead of a wall of hundreds of rows.
+    attention_total: int = 0
     # T-034: set only when the catalogue this sync priced from came from
     # fetch_catalogue's failure-branch stale-cache fallback (Zoho was
     # unreachable and the cache's age has no upper bound) rather than a fresh

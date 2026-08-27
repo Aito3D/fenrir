@@ -528,6 +528,11 @@
     "title": "Attention",
     "type": "array"
    },
+   "attention_total": {
+    "default": 0,
+    "title": "Attention Total",
+    "type": "integer"
+   },
    "catalogue_stale_since": {
     "anyOf": [
      {

@@ -5746,3 +5746,249 @@ environment-dependent `shutil.which` mock/caching interaction under parallel loa
 cleanly in isolation (1/1) — the documented suite-load flake, unrelated to this change
 (external camera ffmpeg discovery, not touched). `ruff check` / `ruff format --check` clean on
 `backend/app/services/zoho_filaments.py` and `backend/tests/unit/test_zoho_filaments_catalogue.py`.
+
+## T-029 — 2026-08-27 — handleExport() now sanitises legacy path-shaped filenames instead of writing them straight into the ZIP (user-approved behavior change)
+
+`handleExport()` (`frontend/src/pages/FilamentProfilesPage.tsx`) built the export archive with
+`candidates.forEach((p) => zip.file(p.filename, p.content))` — `p.filename` came straight from the
+API with no bare-name check on this side. `FilamentPresetCreate`/`FilamentPresetUpdate`
+(`backend/app/schemas/filament_profile.py`) validate new writes reject a filename that isn't a
+bare name, but that guard only covers rows written after it shipped; nothing normalises rows that
+predate it (a data migration is explicitly out of scope — see T-030), and
+`duplicate_filament_profile()` still copies a stored filename verbatim. A legacy row carrying
+`../../x.json` therefore still produced a `filament-presets.zip` entry that escapes the extraction
+directory in any extractor that doesn't sanitise itself.
+
+**Design (sanitize, don't omit):** an omitted preset would silently lose data from a backup
+export, so every candidate preset still gets an entry. `deriveZipEntryName(filename, presetId)`
+splits the stored filename on both `/` and `\`, drops empty/`.`/`..` segments, and takes the last
+surviving segment as the flat entry name; if nothing survives (e.g. `../..`, `///`), it falls back
+to `preset-<id>.json`. `uniqueZipEntryName(name, usedNames)` then guards against two rows
+flattening to the same entry name (e.g. `../x.json` and `nested/x.json` both flatten to `x.json`):
+the first occurrence keeps the flat name, later collisions get a deterministic `-2`, `-3`, ...
+suffix before the extension, skipping any suffix already claimed by an unrelated bare filename.
+A bare filename that doesn't collide with anything else in the batch passes through
+`deriveZipEntryName` unchanged and keeps its name from `uniqueZipEntryName` too, so those exports
+remain byte-identical to today — see the correction below for the case where two candidates share
+the same already-bare filename. Both helpers are private to the page module (not exported — `PresetCard`
+et al. already share nothing from this file, and exporting them would have tripped the
+`react-refresh/only-export-components` rule); they're exercised through the real export flow in
+tests instead of being imported directly.
+
+user-approved 2026-08-26 (verbatim): "on installs holding legacy path-shaped filenames, the
+exported filament-presets.zip will contain those entries under sanitised flat names (or omit them)
+instead of the nested/traversal paths it produces today." This implementation chose the
+sanitise-not-omit branch of that approval.
+
+Tests added to `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`
+(`describe('FilamentProfilesPage export ZIP sanitisation')`), each driving the real `handleExport`
+click handler with real `jszip` (capturing the generated `Blob` via a mocked
+`URL.createObjectURL` and re-reading it with `JSZip.loadAsync`, rather than reimplementing the
+sink's internals):
+- `flattens legacy traversal/mixed-separator filenames and de-duplicates the resulting collision`
+  — `../../x.json` and `a/b\x.json` both flatten to `x.json`; the second becomes `x-2.json`, and a
+  third already-bare filename is exported unchanged.
+- `falls back to a preset-id name when nothing valid survives stripping` — `../..` -> `preset-42.json`.
+- `skips a suffix that is already taken by an unrelated bare filename` — a bare `x-2.json` plus two
+  legacy rows that both flatten to `x.json` land on `x.json` and `x-3.json`, not `x-2.json`.
+- `exports an already-bare filename unchanged` — confirms the no-op path for normal filenames.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match — no golden diff, as expected; none of the
+fp-scope probes exercise the export flow. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: no diff (`FilamentProfilesPage`'s only exported symbol is the component
+itself, unchanged; the two new helpers are module-private).
+
+`cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx`: 29 passed (was
+26; 3 net new tests replacing none). `npx eslint .` and `npx tsc` clean. `bash
+tools/coverage_fp.sh frontend`: 225/295 = 76.27% scoped statements (baseline 189/276 = 68.47%, no
+drop — improved by the new export-path coverage). Full frontend suite
+(`npm run test:run`): 5,077-5,084 passed depending on run: 5 unrelated files
+(`HASensorModal.test.tsx`, `useCardFlight.test.tsx`, `useFilamentLabels.test.tsx`,
+`SpoolBuddyWriteTagPage.test.tsx`) intermittently failed with `[vitest-pool-runner]: Timeout
+waiting for worker to respond` under parallel load — none touch filament profiles or export code;
+all 4 files re-ran clean in isolation (57/57 passed), the documented suite-load flake.
+
+**Correction (2026-08-27), caught by the blind verifier — the "byte-identical" claim above was
+false for one case, and this task's approval didn't cover the divergence.** `uniqueZipEntryName`'s
+dedup is not limited to the legacy path-flattening collisions it was written for: it runs
+unconditionally on every candidate's `deriveZipEntryName(...)` output, so two presets that already
+carried the *same bare* `filename` — most plausibly two rows created via the page's own Duplicate
+action before either was renamed — also collide. At BASE (before this task), that collision hit
+`candidates.forEach((p) => zip.file(p.filename, p.content))` and jszip's repeated `zip.file()` call
+for the same entry name silently kept only the *last* write, so the first preset's content was
+dropped from the export with no error and no indication in the archive. After this task, the same
+two presets export as `x.json` (first) and `x-2.json` (second) — both survive. The sentence above
+originally claimed exports of already-bare filenames are unconditionally byte-identical to BASE;
+that's only true when the bare filename doesn't collide with another candidate in the same export,
+and it is now worded that way in place rather than left to describe behavior that no longer holds.
+The bare-vs-bare case was outside the original approval, which was scoped to path-shaped/traversal
+filenames; the user separately approved keeping the wider dedup on 2026-08-27 ("backups must stop
+silently losing presets") rather than restricting it back to only the legacy-flattening case.
+
+A pinning test was added to the same `describe` block:
+`de-duplicates two presets sharing the same already-bare filename, preserving both contents` —
+two presets both stored with `filename: 'x.json'` export as `x.json` and `x-2.json`, and the
+re-read `JSZip` entry content is asserted for both (`'{"a":1}'` / `'{"a":2}'`) so the fix is pinned
+against the specific failure mode (content loss), not just the entry-name list. `cd frontend &&
+npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx`: 32 passed (was 31 immediately
+before this fix-up — T-038 landed 2 more tests in this file after the count above was written; +1
+net new here). `npx eslint src/__tests__/pages/FilamentProfilesPage.test.tsx` clean. `python3
+tools/snapshot.py verify`: still 11/11 (no production code touched by this fix-up). `bash
+tools/coverage_fp.sh frontend`: 225/295 = 76.27% scoped statements, unchanged from above (the new
+test exercises an already-covered branch of the existing dedup loop, not a new line).
+
+## T-030 — 2026-08-27 — duplicate_filament_profile() now normalises a legacy path-shaped stored filename instead of copying it verbatim (user-approved behavior change)
+
+`duplicate_filament_profile()` (`backend/app/api/routes/filament_profiles.py`) built the new row
+directly from `DUPLICATE_FIELDS` (`FilamentPreset(**{field: getattr(source, field) for field in
+DUPLICATE_FIELDS})`), bypassing `_validate_bare_filename` (`backend/app/schemas/filament_profile.py`)
+entirely — that check only runs through `FilamentPresetCreate`/`FilamentPresetUpdate`, which this
+route never touches. A legacy row stored before that validator existed (T-028) can still carry a
+path-shaped or traversal-shaped `filename` (e.g. `../../x.json`); duplicating it multiplied the bad
+name into a second row instead of inventing a new one, and each copy still made the whole
+Sync-to-PC payload 400 (`_validate_bambu_sync_presets` validates every entry in the request at
+once) and produced a traversal-shaped ZIP export entry name pre-T-029.
+
+**Design (normalise, don't reject):** rejecting would punish the caller for a legacy row they did
+not create, and T-029 already established the sanitise-not-omit precedent for the export path.
+Added `_derive_bare_filename(filename, preset_id)` next to `_validate_bare_filename` in
+`backend/app/schemas/filament_profile.py`, mirroring the frontend's `deriveZipEntryName` (T-029)
+exactly: split the stored filename on both `/` and `\`, drop empty/`.`/`..` segments, and take the
+last surviving segment; if nothing survives (e.g. `../..`), fall back to `preset-<id>.json` keyed
+on the *source* row's id (the new row has none yet at that point). `duplicate_filament_profile()`
+now runs every copied filename through it before adding the row. An already-bare filename passes
+through unchanged, so duplicating a normal preset is byte-identical to today — verified by a
+dedicated test. No de-duplication step was needed here (unlike the export ZIP's
+`uniqueZipEntryName`): `filename` carries no uniqueness constraint on `FilamentPreset`
+(`backend/app/models/filament_profile.py`), and each duplicate call only ever produces one new row
+from one source, so there is no same-request collision to guard against. The existing `name`
+disambiguation (`f"{source.name} (copie)"`) is untouched.
+
+**Declined: the run_migrations() one-time normalisation the finding also suggested.**
+`backend/app/core/database.py` is out of this campaign's scope (explicit do-not-touch), and a data
+migration that rewrites existing stored rows is a materially heavier, riskier change than a
+one-line, user-approved sentence about *this one route*. The user-approved text names only the
+duplicate path ("duplicating a preset whose stored filename is path-shaped will return an error
+(or store a normalised bare filename)"); it says nothing about rewriting rows nobody duplicated.
+Existing legacy rows that are never duplicated, exported, or Sync-to-PC'd are left exactly as they
+are today. Left as a leftover for a human to scope separately.
+
+user-approved 2026-08-26 (verbatim): "duplicating a preset whose stored filename is path-shaped
+will return an error (or store a normalised bare filename) instead of silently producing a second
+row with the same bad name." This implementation chose the normalise branch.
+
+Tests added to `backend/tests/integration/test_filament_profiles_api.py`
+(`TestFilamentProfilesCrud`), each inserting the source row directly via the `db_session` fixture
+(bypassing the create/update validator, like a legacy row) rather than through the API:
+- `test_duplicate_normalises_legacy_path_shaped_filename` — a row stored with
+  `../../evil.json` duplicates to `evil.json`; the source row itself is confirmed untouched.
+- `test_duplicate_falls_back_to_preset_id_name_when_nothing_survives` — `../..` duplicates to
+  `preset-<id>.json`.
+- `test_duplicate_bare_filename_copied_unchanged` — an ordinary API-created preset (already-bare
+  filename) duplicates with the filename copied verbatim, confirming no regression on the common
+  path.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match — no golden diff, as expected (no route
+signature or Pydantic field changed; `_derive_bare_filename` is a private free function, not a
+schema field). `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: no diff (the schemas
+file's surface entry only greps `^class `, and the new helper is a private function, not a class).
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/integration/test_filament_profiles_api.py
+backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 69 passed (was 66; 3 net new tests).
+`ruff check` / `ruff format --check` clean on `backend/app/api/routes/filament_profiles.py`,
+`backend/app/schemas/filament_profile.py`, and the test file. `bash tools/coverage_fp.sh backend`:
+517/518 = 99.81% scoped statements (baseline 512/513 = 99.81%, same ratio, no drop; the one
+uncovered line remains `zoho_filaments.py`'s pre-existing `_score()` SKU-term branch, untouched by
+this task).
+
+## T-038 — 2026-08-27 — the Zoho sync's attention list is now capped at 50 entries, with a new `attention_total` field carrying the true count (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` appended one `FilamentPresetZohoSyncAttention` per unmatched
+preset to `attention` with no bound, and the response carried them all. `FilamentProfilesPage.tsx`
+rendered the whole list into a single un-virtualized `<ul>`. A user who imported a full preset
+library (`handleImport` creates one preset per scanned file) whose brands do not exist in the
+Zoho catalogue got every one of those presets back as `"no_match"` — a response of hundreds of
+entries, and a summary panel that pushed the entire preset grid off-screen with no way to
+collapse it.
+
+user-approved 2026-08-26 (verbatim): "API clients will see a truncated attention array plus a
+total count on very large runs instead of every entry." The API-cap option was the one named in
+the approval (not the collapsible-panel alternative also offered by the finding).
+
+**Backend:** added a new module constant, `_MAX_REPORTED_ATTENTION = 50`, next to
+`DUPLICATE_FIELDS` in `backend/app/api/routes/filament_profiles.py` — mirroring
+`zoho_filaments._MAX_REPORTED_CANDIDATES`'s spirit at a list scale; 50 is generous enough for an
+operator to act on in one sitting. The route still builds the full, untruncated `attention` list
+during the match loop exactly as before — `priced`/`unchanged` counts and which presets get
+WRITTEN are completely unaffected by the cap — and only truncates at the response boundary:
+`attention=attention[:_MAX_REPORTED_ATTENTION]`. A new field,
+`FilamentPresetZohoSyncResponse.attention_total: int = 0`, is always populated as
+`len(attention)` (the untruncated list), so it equals `len(response.attention)` on any run at or
+under the cap and only diverges on a genuinely large run. Additive and defaulted, so old clients
+are unaffected.
+
+**Frontend:** `FilamentPresetZohoSyncResponse.attention_total: number` added to
+`frontend/src/api/client.ts`. In `FilamentProfilesPage.tsx`, the summary panel's headline
+(`filamentProfiles.syncZohoAttention`, "{{count}} need attention") now reads `attention_total`
+instead of `attention.length`, so a capped run's headline still reports the true count rather
+than reading as fewer profiles needing review than it actually did; the same swap was applied to
+the post-sync toast's needs-attention count (`handleZohoSync`'s `attentionCount`) for the same
+reason. A new line renders below the attention `<ul>` when `attention_total > attention.length`,
+reusing the existing `common.plusNMore` key ("+{{count}} more") — the same key the per-entry
+candidates list already uses for its own cap, and it reads correctly as a list-suffix in every
+locale's existing usage, so no new i18n key was needed.
+
+Tests added:
+- `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+  `test_attention_list_is_capped_but_attention_total_carries_the_true_count` (a batch of
+  `_MAX_REPORTED_ATTENTION + 2` presets that all land in `"no_match"`, built in a loop rather than
+  pasted literals, asserts the response's `attention` list is exactly `_MAX_REPORTED_ATTENTION`
+  entries long while `attention_total` carries the true `overflow` count, and that `priced`/
+  `unchanged` are unaffected); an added assertion on the existing
+  `test_a_mixed_batch_produces_disjoint_per_preset_outcomes` that a small (under-cap) run's
+  `attention_total` equals `len(attention)`.
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: `attention_total` added to every
+  existing mocked `/zoho-sync` response fixture in the file (equal to that fixture's own
+  `attention.length`, matching real backend behavior) so the pre-existing toast/panel assertions
+  are unaffected; two new tests — `shows an "and N more" remainder below the attention list when
+  attention_total exceeds the shipped entries (T-038)` (response with `attention_total: 52` and a
+  single shipped entry renders both the true `"52 need attention"` headline and a `"+51 more"`
+  suffix) and `renders no "and N more" remainder when attention_total equals the shipped entries
+  (T-038)` (response with `attention_total` equal to `attention.length` renders no `"more"` text
+  at all).
+
+`python3 tools/snapshot.py verify` / `record`: 4 of 11 probes legitimately diffed
+(`fp-pydantic-schemas` picked up the new additive `attention_total` field in the OpenAPI schema;
+`fp-sync-endpoint` picked up the new `attention_total` values in its fixture responses;
+`fp-client-method` picked up the new field and comment in `client.ts`; `fp-page-sync-ui` picked up
+the `zohoResult.attention.length` → `zohoResult.attention_total` swap in the summary panel's
+headline) and were re-recorded; the other 7 (`fp-openapi`, `fp-ddl`, `fp-route-perms`,
+`fp-pricing-write`, `fp-match-decisions`, `fp-i18n-sync-strings`, `calc-zoho-pure`) matched
+unchanged — no new i18n key, so `fp-i18n-sync-strings` (which enumerates i18n keys the page
+reads) is untouched. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: two lines
+changed — `_MAX_REPORTED_ATTENTION` added under "Backend module constants", and
+`attention_total` added to `FilamentPresetZohoSyncResponse`'s OpenAPI schema body; both applied.
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/unit/test_filament_profiles_zoho_sync.py
+backend/tests/integration/test_filament_profiles_api.py -q`: 70 passed (was 68; 2 net new tests).
+`cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx
+src/__tests__/i18n`: 57 passed (was 55; 2 net new tests). `ruff check` / `ruff format --check`
+clean on every touched backend file; `npx tsc -b` and `npx eslint` clean on every touched
+frontend file. `node scripts/check-i18n-parity.mjs`: 13 locales, 7,080 leaves each, in parity (no
+new key was added by this task).
+
+`bash tools/coverage_fp.sh backend`: 519/520 = 99.81% scoped statements (baseline 517/518 =
+99.81%, same ratio, no drop). `bash tools/coverage_fp.sh frontend`: 225/295 = 76.27% statements
+(baseline 225/295 = 76.27%, unchanged, no drop).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,466 passed,
+1 skipped, 1 incidental failure
+(`test_aito_quote_sync.py::test_wake_drains_a_pending_project_without_waiting_for_the_interval`)
+that reproduced only under `-n 30` parallel load and passed cleanly in isolation — the documented
+suite-load flake, unrelated to this change (Aito quote sync, not touched). The full frontend
+suite showed the same pattern across two coverage runs: a different unrelated test file
+(`StatsPageUserFilter1894.test.tsx` on one run, another on the retry) failed only under load and
+was absent on isolated re-runs; `FilamentProfilesPage.test.tsx` and `src/__tests__/i18n` passed
+cleanly in both full runs.

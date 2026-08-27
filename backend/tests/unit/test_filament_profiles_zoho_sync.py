@@ -6,6 +6,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from backend.app.api.routes.filament_profiles import _MAX_REPORTED_ATTENTION
 from backend.app.models.filament_profile import FilamentPreset
 from backend.app.schemas.filament_profile import FilamentPresetZohoSyncAttention
 from backend.app.services import zoho_filaments
@@ -381,6 +382,9 @@ async def test_a_mixed_batch_produces_disjoint_per_preset_outcomes(async_client,
     # Total accounted-for presets equals the batch size — no double-count and
     # no dropped preset.
     assert body["priced"] + body["unchanged"] + len(body["attention"]) == 4
+    # T-038: a run at or under the cap reports the true total, equal to the
+    # (untruncated) attention list's own length.
+    assert body["attention_total"] == len(body["attention"]) == 2
 
     attention_by_id = {entry["id"]: entry for entry in body["attention"]}
     assert set(attention_by_id) == {ambiguous.id, no_match.id}
@@ -400,6 +404,33 @@ async def test_a_mixed_batch_produces_disjoint_per_preset_outcomes(async_client,
 
     await db_session.refresh(no_match)
     assert no_match.content == no_match_original  # never touched
+
+
+@pytest.mark.asyncio
+async def test_attention_list_is_capped_but_attention_total_carries_the_true_count(
+    async_client, db_session, monkeypatch
+):
+    # T-038: a batch large enough to overflow _MAX_REPORTED_ATTENTION must
+    # still report every one of those presets as "no_match" internally (the
+    # counts and writes are unaffected), but the response's `attention` list
+    # is truncated to the cap while `attention_total` discloses the true
+    # count, so the UI can render "and N more" instead of a wall of rows.
+    overflow = _MAX_REPORTED_ATTENTION + 2
+    for i in range(overflow):
+        await make_preset(db_session, name=f"NoMatch{i}", brand="Prusament", material="ABS", colour=f"Colour{i}")
+    # Catalogue matches nothing above, so every preset lands in "no_match".
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product()]))
+    _configured(monkeypatch, True)
+
+    response = await async_client.post(ENDPOINT)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["priced"] == 0
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == _MAX_REPORTED_ATTENTION
+    assert body["attention_total"] == overflow
+    assert all(entry["reason"] == "no_match" for entry in body["attention"])
 
 
 @pytest.mark.asyncio

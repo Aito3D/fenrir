@@ -2,6 +2,7 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _setup_admin(async_client: AsyncClient, username: str = "fpadmin") -> str:
@@ -124,6 +125,55 @@ class TestFilamentProfilesCrud:
     @pytest.mark.integration
     async def test_duplicate_missing_404(self, async_client: AsyncClient):
         assert (await async_client.post("/api/v1/filament-profiles/99999/duplicate")).status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_duplicate_normalises_legacy_path_shaped_filename(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        # T-030: insert a legacy row directly (bypassing the create/update
+        # validator, like a row stored before it shipped) with a path-shaped
+        # filename, then duplicate it through the API.
+        from backend.app.models.filament_profile import FilamentPreset
+
+        legacy = FilamentPreset(**preset_payload(filename="../../evil.json"))
+        db_session.add(legacy)
+        await db_session.commit()
+        await db_session.refresh(legacy)
+
+        r = await async_client.post(f"/api/v1/filament-profiles/{legacy.id}/duplicate")
+        assert r.status_code == 200
+        dup = r.json()
+        assert dup["filename"] == "evil.json"
+        assert dup["name"] == legacy.name + " (copie)"
+        # The source row itself is untouched.
+        again = await async_client.get("/api/v1/filament-profiles")
+        source_row = next(p for p in again.json() if p["id"] == legacy.id)
+        assert source_row["filename"] == "../../evil.json"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_duplicate_falls_back_to_preset_id_name_when_nothing_survives(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        from backend.app.models.filament_profile import FilamentPreset
+
+        legacy = FilamentPreset(**preset_payload(filename="../.."))
+        db_session.add(legacy)
+        await db_session.commit()
+        await db_session.refresh(legacy)
+
+        r = await async_client.post(f"/api/v1/filament-profiles/{legacy.id}/duplicate")
+        assert r.status_code == 200
+        assert r.json()["filename"] == f"preset-{legacy.id}.json"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_duplicate_bare_filename_copied_unchanged(self, async_client: AsyncClient):
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.post(f"/api/v1/filament-profiles/{created['id']}/duplicate")
+        assert r.status_code == 200
+        assert r.json()["filename"] == created["filename"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
