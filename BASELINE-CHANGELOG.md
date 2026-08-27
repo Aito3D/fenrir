@@ -4625,3 +4625,62 @@ partial job.
   discarded sibling prices, at BASE, versus `200` with `attention` reporting
   and sibling prices committed, at HEAD) and is evidenced by the two new
   tests above, not by a probe. Exact commit: `728c039f4`.
+
+## T-014 — 2026-08-26 — user-approved behavior change
+
+`create_filament_profile()`/`update_filament_profile()` (`backend/app/api/routes/
+filament_profiles.py`) stored `filename` on `FilamentPresetCreate`/`FilamentPresetUpdate`
+verbatim, with no check that it was a bare file name. `bambu_sync`'s own
+`_validate_bambu_sync_presets` requires exactly that — `if not filename or ".." in filename
+or "/" in filename or "\\" in filename: raise HTTPException(400, ...)` — and validates the
+entire `presets` list from a single request, so one stored preset with a path-shaped
+`filename` made `POST /filament-profiles/bambu-sync` (Sync-to-PC) 400 for every preset, not
+just the offending one, until the bad row was found and edited. The same unvalidated field is
+also used verbatim as the export ZIP entry name in `FilamentProfilesPage.tsx`
+(`zip.file(p.filename, p.content)`), so a traversal-shaped filename would end up as a
+traversal-shaped entry name in the downloaded archive.
+
+Fixed by adding a `field_validator("filename")` to both `FilamentPresetCreate` and
+`FilamentPresetUpdate` in `backend/app/schemas/filament_profile.py`, sharing one
+`_validate_bare_filename` helper with the exact same predicate as
+`_validate_bambu_sync_presets` (empty, `".."`, `"/"`, or `"\\"` all rejected) so the storage
+boundary and the sync boundary can never disagree about what counts as bare. No route code
+changed; the validator raises before `create_filament_profile`/`update_filament_profile` ever
+run.
+
+Pydantic v2 does not run a field's validator against its own default when the field is
+omitted from the request body (confirmed empirically), so `FilamentPresetCreate.filename`'s
+`= ""` default and `FilamentPresetUpdate.filename`'s `= None` default both still pass through
+untouched when the client sends no `filename` at all — the existing "create/update without a
+filename" behavior (`test_create_defaults_absent_fields_to_empty`) is preserved unchanged. An
+*explicit* `filename: ""` (or `null` on update) does trigger the new check on create, and an
+explicit path-shaped string is rejected on update too; an explicit `filename: null` on update
+is deliberately let through the validator (returns early), because `null` is not a path-shaped
+value to reject — it flows into the existing, unrelated `value if value is not None else ""`
+write path the same as any other explicitly-nulled field on that endpoint, unchanged by this
+fix.
+
+user-approved 2026-08-26: "POST /filament-profiles and PATCH /filament-profiles/{id} would
+start returning 422 for filenames containing a slash, backslash or '..' that are accepted
+today, and any preset already stored with such a filename would fail its next save until
+renamed."
+
+Tests added in `backend/tests/integration/test_filament_profiles_api.py`:
+`test_create_rejects_non_bare_filename` and `test_patch_rejects_non_bare_filename`
+(parametrized over `"a/b.json"`, `"a\\b.json"`, `"../b.json"`, `""`, asserting `422` and, for
+the patch case, that the stored row is untouched by the rejected request), and
+`test_patch_explicit_null_filename_bypasses_bare_check` pinning the `null`-is-not-path-shaped
+carve-out above. No existing test posted a path-shaped `filename` on create/update, so nothing
+needed to change to adopt the new behavior.
+
+All 11 golden probes re-verified (`tools/snapshot.py verify`): all 11 match, including
+`fp-pydantic-schemas` — `field_validator` has no effect on `model_json_schema()` output (no
+`Field(...)` constraint was added), so the probe's captured JSON Schema is unchanged.
+`SURFACE.md` regenerated (`bash tools/gen_surface_fp.sh`) and diffed byte-for-byte identical:
+the schemas file's only `SURFACE.md` entry is a bare `grep -hoE "^class ..."` over class names,
+which doesn't see the new module-level `_validate_bare_filename` function or the new
+`field_validator` methods either way.
+
+`tools/coverage_fp.sh backend`: 481/482 = 99.79% statements (up from the 443/444 = 99.77%
+baseline; the extra denominator is the new validator code, fully covered by the tests above).
+Full backend suite: 12,425 passed, 1 skipped.

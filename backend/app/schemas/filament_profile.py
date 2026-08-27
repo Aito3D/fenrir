@@ -3,7 +3,21 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def _validate_bare_filename(value: str) -> str:
+    """Mirror the bambu-sync bare-filename check at the storage boundary.
+
+    A preset stored with a path-shaped filename ("..", "/" or "\\") makes the
+    whole Sync-to-PC request 400 (bambu_sync validates every preset in the
+    payload at once) and lands as a traversal-shaped entry name in the
+    export ZIP. Rejecting it here, at create/update time, keeps every stored
+    filename bare so those downstream consumers never see a bad one.
+    """
+    if not value or ".." in value or "/" in value or "\\" in value:
+        raise ValueError("filename must be a bare file name")
+    return value
 
 
 class FilamentPresetCreate(BaseModel):
@@ -15,6 +29,11 @@ class FilamentPresetCreate(BaseModel):
     filename: str = ""
     content: str = ""
 
+    @field_validator("filename")
+    @classmethod
+    def _filename_is_bare(cls, v: str) -> str:
+        return _validate_bare_filename(v)
+
 
 class FilamentPresetUpdate(BaseModel):
     name: str | None = None
@@ -24,6 +43,13 @@ class FilamentPresetUpdate(BaseModel):
     color_hex: str | None = None
     filename: str | None = None
     content: str | None = None
+
+    @field_validator("filename")
+    @classmethod
+    def _filename_is_bare(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_bare_filename(v)
 
 
 class FilamentPresetResponse(BaseModel):

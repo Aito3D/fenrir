@@ -75,6 +75,36 @@ class TestFilamentProfilesCrud:
     async def test_duplicate_missing_404(self, async_client: AsyncClient):
         assert (await async_client.post("/api/v1/filament-profiles/99999/duplicate")).status_code == 404
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("bad_filename", ["a/b.json", "a\\b.json", "../b.json", ""])
+    async def test_create_rejects_non_bare_filename(self, async_client: AsyncClient, bad_filename):
+        r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(filename=bad_filename))
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("bad_filename", ["a/b.json", "a\\b.json", "../b.json", ""])
+    async def test_patch_rejects_non_bare_filename(self, async_client: AsyncClient, bad_filename):
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"filename": bad_filename})
+        assert r.status_code == 422
+        # Rejected patch must not have touched the stored row.
+        again = await async_client.get("/api/v1/filament-profiles")
+        row = next(p for p in again.json() if p["id"] == created["id"])
+        assert row["filename"] == created["filename"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_explicit_null_filename_bypasses_bare_check(self, async_client: AsyncClient):
+        # An explicit null is not a path-shaped filename to reject up front — the
+        # existing "value if value is not None else \"\"" write path already turns
+        # it into "", same as any other explicitly-nulled field.
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"filename": None})
+        assert r.status_code == 200
+        assert r.json()["filename"] == ""
+
 
 class TestFilamentProfilesFilesystem:
     @pytest.fixture

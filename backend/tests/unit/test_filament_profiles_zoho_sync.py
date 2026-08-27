@@ -239,7 +239,9 @@ async def test_a_pathologically_deep_preset_does_not_abort_the_whole_sync(async_
 async def test_503_when_zoho_is_not_configured(async_client, db_session, monkeypatch):
     await make_preset(db_session)
     _configured(monkeypatch, False)
-    assert (await async_client.post(ENDPOINT)).status_code == 503
+    response = await async_client.post(ENDPOINT)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Zoho is not configured"
 
 
 @pytest.mark.asyncio
@@ -251,7 +253,9 @@ async def test_500_when_the_catalogue_cannot_be_mapped(async_client, db_session,
         raise zoho_filaments.ZohoFilamentMappingError("bad shape")
 
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
-    assert (await async_client.post(ENDPOINT)).status_code == 500
+    response = await async_client.post(ENDPOINT)
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Zoho filament catalogue could not be mapped"
 
 
 @pytest.mark.asyncio

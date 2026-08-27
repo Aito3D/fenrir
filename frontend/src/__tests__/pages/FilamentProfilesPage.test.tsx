@@ -302,6 +302,60 @@ describe('FilamentProfilesPage', () => {
     expect(screen.queryByText(/preset's saved data is empty or unreadable/i)).not.toBeInTheDocument();
   });
 
+  it('reports a preset with no matching Zoho item as needing attention', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 8, name: 'Generic ABS', reason: 'no_match', candidates: [] }],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Must render the "no matching item" copy and never fall through to a
+    // different reason's copy (this is the ternary's true-branch, which is
+    // otherwise never exercised).
+    expect(await screen.findByText(/Generic ABS/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText(/no matching item in zoho/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText(/the item has no price/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/several items matched/i)).not.toBeInTheDocument();
+  });
+
+  it('reports a matched preset with no price as needing attention', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 12, name: 'Unpriced PLA', reason: 'no_price', candidates: [] }],
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Must render the "no price" copy — the ternary's final fallback branch,
+    // which is otherwise never exercised and could silently swallow any
+    // unhandled or wrong reason string.
+    expect(await screen.findByText(/Unpriced PLA/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/matched, but the item has no price/i, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no matching item in zoho/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/several items matched/i)).not.toBeInTheDocument();
+  });
+
   it('reports the needs-attention count in the toast and downgrades it off success when some profiles need attention (T-008)', async () => {
     stubBase();
     server.use(
