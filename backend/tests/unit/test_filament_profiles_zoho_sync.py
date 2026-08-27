@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -629,6 +630,52 @@ async def test_stale_catalogue_discloses_its_age_instead_of_a_plain_success(asyn
 
         await db_session.refresh(preset)
         assert json.loads(preset.content)["filament_cost"] == ["19.90"]
+    finally:
+        zoho_filaments.reset_cache()
+
+
+@pytest.mark.asyncio
+async def test_502_when_the_catalogue_is_empty(async_client, db_session, monkeypatch):
+    # T-048 (user-approved behaviour change): an empty catalogue used to make
+    # match_profile report "no_match" for every profile — a wall of
+    # needs-attention entries pointing the operator at a spelling mismatch
+    # when the real fault is upstream (e.g. Books' custom-field filter
+    # stopped matching anything). This must now surface as one definite
+    # error instead, before any preset is even looked at.
+    await make_preset(db_session)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([]))
+    _configured(monkeypatch, True)
+
+    response = await async_client.post(ENDPOINT)
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Zoho returned no filament items"
+
+
+@pytest.mark.asyncio
+async def test_502_when_a_stale_empty_catalogue_is_served(async_client, db_session, monkeypatch):
+    # Same check as test_502_when_the_catalogue_is_empty above, but through
+    # fetch_catalogue's genuine failure-branch stale-cache fallback (like
+    # test_stale_catalogue_discloses_its_age_instead_of_a_plain_success), to
+    # pin that an empty *stale* cache is refused exactly the same way rather
+    # than slipping through because stale_since happened to be set.
+    from backend.app.services.zoho import zoho_service
+
+    await make_preset(db_session)
+    _configured(monkeypatch, True)
+
+    zoho_filaments.reset_cache()
+    zoho_filaments._cache = []
+    zoho_filaments._cache_at = datetime.now(timezone.utc) - zoho_filaments._CACHE_TTL - timedelta(seconds=1)
+
+    async def boom(_db, **_kwargs):
+        raise RuntimeError("zoho unreachable")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+    try:
+        response = await async_client.post(ENDPOINT)
+        assert response.status_code == 502
+        assert response.json()["detail"] == "Zoho returned no filament items"
     finally:
         zoho_filaments.reset_cache()
 

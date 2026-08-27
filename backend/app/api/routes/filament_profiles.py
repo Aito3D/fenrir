@@ -248,6 +248,21 @@ async def sync_filament_presets_from_zoho(
     # reporting a plain, indistinguishable-from-live success.
     catalogue, stale_since = await zoho_filaments._fetch_catalogue_or_502(db, context="during profile sync")
 
+    # T-048: an empty catalogue (Books' cf_nature_du_produit filter stopped
+    # matching anything, items got re-categorised, etc.) makes match_profile
+    # report "no_match" for every single profile below — a wall of
+    # needs-attention entries that sends the operator to re-check spellings
+    # on profiles that are fine, while the real fault is upstream. That's
+    # also what fetch_catalogue then caches for the full TTL, so it would
+    # repeat on every retry for ten minutes. This is checked here rather than
+    # in fetch_catalogue itself: the calculator's search hits the same cache
+    # and legitimately returns [] for an empty catalogue, so the refusal
+    # belongs at this route's boundary, not the shared fetch. 502 to match
+    # the "upstream gave us something unusable" family the other branches of
+    # _fetch_catalogue_or_502 already use.
+    if not catalogue:
+        raise HTTPException(status_code=502, detail="Zoho returned no filament items")
+
     result = await db.execute(select(FilamentPreset).order_by(FilamentPreset.id))
     presets = result.scalars().all()
 

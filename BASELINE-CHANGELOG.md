@@ -6089,3 +6089,95 @@ Users'))`, is unrelated to this change (a different page's user filter) and pass
 unrelated failure, `PrintModal.test.tsx`'s per-plate filament mapping test
 (`AssertionError: expected 5 to be 2`), matching the previously-documented PrintModal flake;
 `FilamentProfilesPage.test.tsx` had zero failures in that run.
+
+## T-048 — 2026-08-27 — an empty Zoho catalogue now fails the sync outright instead of reporting every profile as unmatched (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`POST /filament-profiles/zoho-sync`) called
+`_fetch_catalogue_or_502` and went straight into the per-preset matching loop with no check that
+the returned catalogue held anything. If Books' `cf_nature_du_produit` custom-field filter ever
+stopped matching (a respelling, items re-categorised — the exact hazard
+`zoho.py::get_shipping_catalogue`'s own docstring warns about), `list_items_page` would return
+`items: []`, `fetch_catalogue` would cache that empty list for the full 10-minute `_CACHE_TTL`
+(its `if active_items and not mapped` mapping-failure guard only fires when items WERE present
+but unmappable, so an upstream-empty response sails past it untouched), and `match_profile`
+would then report `"no_match"` for every single profile in the same run. The response looked
+like an ordinary sync that simply failed to match anything — `priced=0, unchanged=0`, one
+attention entry per preset — sending the operator to re-check brand/material/colour spelling on
+profiles that were completely fine, while the actual fault was upstream, and the false wall
+repeated on every retry for the whole cache TTL.
+
+user-approved 2026-08-27, quoting the approved description verbatim: "a sync run while Zoho
+returns zero filament items would show one 'Zoho returned no filament items' error instead of a
+needs-attention list naming every profile."
+
+Of the two options the finding offered — treat an empty catalogue as a refusal returning the
+502 contract, or carry a `catalogue_size` field so the UI can render a dedicated message — the
+502-refusal option was implemented, per the approved wording above (a single error, not a new
+response field). `backend/app/api/routes/filament_profiles.py`: immediately after
+`_fetch_catalogue_or_502` returns, `if not catalogue:` now raises
+`HTTPException(status_code=502, detail="Zoho returned no filament items")` before the preset
+loop (and before `db.execute(select(FilamentPreset)...)`) ever runs. 502 was chosen over 500 to
+match the status family every other "upstream gave us something unusable" branch of
+`_fetch_catalogue_or_502` already uses (`"Could not reach Zoho"`, also 502) — an empty catalogue
+here is exactly that: Zoho answered, but with nothing usable, not a bug in this codebase's own
+mapping logic (which is what earns the existing 500 for `ZohoFilamentMappingError`).
+
+`fetch_catalogue` itself was deliberately left untouched — its empty-cache behavior is shared
+with the pricing calculator's own search, where an empty catalogue legitimately returning `[]`
+from a search is correct behavior, not a bug to refuse. Making the refusal route-local (checked
+in `filament_profiles.py`, not inside `zoho_filaments.fetch_catalogue`) keeps that calculator
+path exactly as it was.
+
+Frontend: no changes needed. `FilamentProfilesPage.tsx`'s `handleZohoSync` catch block (T-047)
+already shows `error.message` verbatim for any `ApiError` — a definite HTTP-error response —
+and every existing server-side detail string surfaced this route already uses plain English
+(`"Zoho is not configured"`, `"Could not reach Zoho"`, `"Zoho filament catalogue could not be
+mapped"`, the sync-in-progress message) with no i18n key of its own; `"Zoho returned no filament
+items"` is the same kind of string through the same path, confirmed by reading
+`handleZohoSync`'s catch block directly rather than assumed.
+
+Tests added to `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+`test_502_when_the_catalogue_is_empty` (a plain `fetch_catalogue` stub returning `[]` with one
+seeded preset never even reaches the matching loop) and
+`test_502_when_a_stale_empty_catalogue_is_served` (mirrors
+`test_stale_catalogue_discloses_its_age_instead_of_a_plain_success`'s pattern of driving a real
+expired cache through `fetch_catalogue`'s genuine failure-branch stale-cache fallback, but with
+an empty cached list, to pin that a *stale* empty catalogue is refused exactly the same way
+rather than slipping through because `stale_since` happened to be set). Both assert the exact
+502 status and detail string. All pre-existing 503/500/502/409 detail-pinning tests in that file
+were left unchanged and still pass, confirming the non-empty-catalogue error paths are
+untouched.
+
+One pre-existing integration test needed updating, not because it asserted the old
+per-preset-attention behavior directly, but because it relied on an empty catalogue as a cheap
+stub for an unrelated concern:
+`TestFilamentProfilesZohoSyncPermissions::_stub_zoho` (`backend/tests/integration/test_filament_profiles_api.py`)
+stubbed `fetch_catalogue` to return `[]`, which the class's two 403 tests never reach (the
+permission gate rejects before the catalogue is ever fetched) but which its one 200 test
+(`test_zoho_sync_works_with_both_permissions`) did — that test has no seeded presets and exists
+solely to prove the permission gate passes for a user holding both `filaments:update` and
+`calculator:update`, and started failing 502 once the empty catalogue it happened to stub became
+a real refusal. Fixed by changing the shared stub to return one arbitrary `FilamentProduct`
+instead of `[]`; since the class seeds no `FilamentPreset` rows, nothing is ever matched against
+it either way, and the 403 tests are unaffected since they never reach `fetch_catalogue` at all.
+
+`python3 tools/snapshot.py verify`: 10/11 matched unchanged; `fp-sync-endpoint` legitimately
+diffed and was re-recorded — its `"empty catalogue"` case (a real scenario the probe already
+exercised, `run_case("empty catalogue", _Stub(catalogue=[]))`) went from `status=200` with nine
+`"no_match"` attention entries (ids 1-9, one per seeded preset) to `status=502
+detail='Zoho returned no filament items'`, and nothing else in the 240+-line golden moved —
+confirmed by reading the full diff, not just the match count. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: no diff (no route, schema, permission, DDL, or i18n-key surface
+changed; the fix is a conditional inside an existing route body).
+
+`ruff check` / `ruff format --check` on the three touched Python files: clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 34
+passed (32 before this task's two new tests). Full backend suite
+(`./test_backend.sh`, ruff + pytest -n 30, `test_bambu_ftp.py` skipped as usual): 12,473 passed,
+1 skipped, 0 failed — no regressions, including the fixed permission-stub test.
+
+`bash tools/coverage_fp.sh backend`: SCOPED statements 525/526 = 99.81% (baseline 523/524 =
+99.81%, unchanged ratio, two new statements both covered — the route's own file
+(`filament_profiles.py`) is 100.00% with zero missing lines; the suite's one remaining uncovered
+scoped statement is line 642 of `zoho_filaments.py`, pre-existing and untouched by this task).
+SCOPED branches 117/118 = 99.15%.

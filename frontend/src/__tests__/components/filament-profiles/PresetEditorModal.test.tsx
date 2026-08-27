@@ -475,6 +475,68 @@ describe('PresetEditorModal — server conflict banner (T-032)', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
+
+  it('re-resolves an inherited parent after Reload from server when the reloaded copy itself has `inherits`', async () => {
+    // The reloaded copy's own content never sets filament_cost — it only
+    // comes from the parent's merge, so seeing it after Reload proves the
+    // parent was actually re-resolved rather than just carried over.
+    getBaseContent.mockResolvedValue({ content: JSON.stringify({ filament_cost: ['24.99'] }) });
+    const basePresets: BaseFilamentPreset[] = [
+      {
+        id: 1,
+        name: 'Bambu PETG Base',
+        inherits: '',
+        brand: 'Bambu Lab',
+        material: 'PETG',
+        color: '',
+        color_hex: '',
+        filename: 'bambu_petg_base.json',
+      },
+    ];
+    const user = userEvent.setup();
+    const baseProps = {
+      presets: [],
+      basePresets,
+      extraMaterials: [],
+      onSave: vi.fn(),
+      onDelete: null,
+      onClose: vi.fn(),
+    };
+    const withInherits = (overrides: Partial<FilamentPreset>) =>
+      editPreset({
+        content: JSON.stringify({
+          filament_vendor: ['SUNLU'],
+          filament_type: ['PETG'],
+          default_filament_colour: ['#ff00ff'],
+          inherits: 'Bambu PETG Base',
+        }),
+        ...overrides,
+      });
+
+    const { rerender } = render(
+      <PresetEditorModal {...baseProps} preset={withInherits({ updated_at: '2026-08-01T00:00:00Z' })} />,
+    );
+
+    // Mount resolves the initial `inherits` — the cost field only appears via the parent merge.
+    expect(await screen.findByText('↳ Bambu PETG Base')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: /Cost/ })).toHaveValue(24.99));
+
+    // Unsaved edit, then the server copy changes underneath it (still inheriting the same parent).
+    const colorInput = screen.getByRole('textbox', { name: /color label/i });
+    await user.clear(colorInput);
+    await user.type(colorInput, 'Sunrise');
+
+    rerender(<PresetEditorModal {...baseProps} preset={withInherits({ updated_at: '2026-08-25T00:00:00Z' })} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed on the server/i);
+
+    await user.click(screen.getByRole('button', { name: /reload from server/i }));
+
+    // Reload rebuilds the form fresh from the server copy (whose own content
+    // has no filament_cost) and then re-resolves `inherits`, re-merging the
+    // parent's cost back in.
+    expect(await screen.findByText('↳ Bambu PETG Base')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: /Cost/ })).toHaveValue(24.99));
+  });
 });
 
 describe('TagInput', () => {

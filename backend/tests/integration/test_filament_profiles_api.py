@@ -462,9 +462,30 @@ class TestFilamentProfilesZohoSyncPermissions:
     def _stub_zoho(monkeypatch):
         from backend.app.services import zoho_filaments
         from backend.app.services.zoho import zoho_service
+        from backend.app.services.zoho_filaments import FilamentProduct
 
+        # T-048: the route now refuses (502) on an empty catalogue, so a stub
+        # for these permission-gate tests must return a non-empty one — there
+        # are no seeded presets in this class, so nothing here is ever
+        # matched against it; it only needs to be non-empty to clear the
+        # route's new guard and let the 200 test observe the permission gate
+        # passing rather than the unrelated empty-catalogue refusal.
         async def fetch_catalogue(_db):
-            return []
+            return [
+                FilamentProduct(
+                    item_id="stub",
+                    name="Stub - PLA - White - 1.75mm - 1kg",
+                    sku="STUB",
+                    brand="Stub",
+                    material="PLA",
+                    colour="White",
+                    spool_weight_kg=1.0,
+                    weight_inferred=False,
+                    dealer_price=10.0,
+                    cost_per_kg=10.0,
+                    has_price=True,
+                )
+            ]
 
         async def is_configured(_db):
             return True
@@ -484,6 +505,19 @@ class TestFilamentProfilesZohoSyncPermissions:
         r = await async_client.post("/api/v1/filament-profiles/zoho-sync", headers=headers)
         assert r.status_code == 403
         assert "calculator:update" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zoho_sync_requires_filaments_update_on_top_of_calculator_update(self, async_client, monkeypatch):
+        self._stub_zoho(monkeypatch)
+        admin_token = await _setup_admin(async_client, username="fpadmin_zoho3")
+        update_only_token = await _create_user_with_perms(
+            async_client, admin_token, username="fp_zoho_calc_only", permissions=["calculator:update"]
+        )
+        headers = {"Authorization": f"Bearer {update_only_token}"}
+        r = await async_client.post("/api/v1/filament-profiles/zoho-sync", headers=headers)
+        assert r.status_code == 403
+        assert "filaments:update" in r.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration

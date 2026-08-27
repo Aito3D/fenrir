@@ -166,6 +166,15 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
 
       expect(screen.getByRole('button', { name: /sync prices from zoho/i })).toBeInTheDocument();
     });
+
+    it('hides the button when only calculator:update is granted', async () => {
+      permissions.granted = ['filaments:read', 'calculator:update'];
+      stubBase();
+      render(<FilamentProfilesPage />);
+      await screen.findByText('Black');
+
+      expect(screen.queryByRole('button', { name: /sync prices from zoho/i })).not.toBeInTheDocument();
+    });
   });
 
   it('shows every mutating control on auth-disabled installs regardless of the (unused) permission set', async () => {
