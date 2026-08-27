@@ -650,9 +650,21 @@ describe('FilamentProfilesPage', () => {
     expect(toastShell.className).not.toMatch(/border-yellow-500/);
   });
 
-  it('shows the backend error message when the Zoho sync fails', async () => {
-    stubBase();
+  it('shows the backend error message when the Zoho sync fails, and still refetches the presets cache (T-047)', async () => {
+    // T-047: an HTTP error *response* (an ApiError, e.g. this 502) is a
+    // definite "the server did not apply it" signal, so the toast keeps its
+    // specific "failed" wording — but /zoho-sync's write is committed
+    // server-side before it can even respond with an error for something
+    // unrelated (e.g. a post-write notification failure), so the presets
+    // cache must still be invalidated and refetched on this path too.
+    let getCalls = 0;
     server.use(
+      http.get('*/filament-profiles', () => {
+        getCalls += 1;
+        return HttpResponse.json(PRESETS);
+      }),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
       http.post('*/filament-profiles/zoho-sync', () =>
         HttpResponse.json({ detail: 'Zoho API rate limit exceeded' }, { status: 502 }),
       ),
@@ -660,11 +672,12 @@ describe('FilamentProfilesPage', () => {
 
     render(<FilamentProfilesPage />);
     await screen.findByText('White');
+    expect(getCalls).toBe(1);
 
     await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
 
     // Real safety property: the toast must surface the backend's own detail
-    // message (the `error instanceof Error` branch), not the generic
+    // message (the `error instanceof ApiError` branch), not the generic
     // fallback string — if the ternary's branches were swapped, this
     // specific text would never appear and the generic fallback would show
     // in its place instead.
@@ -672,6 +685,11 @@ describe('FilamentProfilesPage', () => {
       await screen.findByText(/zoho api rate limit exceeded/i, {}, { timeout: 5000 }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/could not sync prices from zoho/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sync result unknown/i)).not.toBeInTheDocument();
+
+    // The `finally` block's invalidateQueries(['filamentPresets']) refetches
+    // even on this definite-failure path.
+    await waitFor(() => expect(getCalls).toBe(2));
   });
 
   // T-033: the button had no busy indicator at all, unlike the sibling
@@ -704,11 +722,23 @@ describe('FilamentProfilesPage', () => {
   // deadline now ends the sync with an error toast and re-enables the
   // button instead. Driven entirely with vitest fake timers — never a
   // wall-clock sleep, never msw's `delay()` alone.
-  it('aborts a Zoho sync that runs past the deadline, shows an error toast, and re-enables the button (T-033)', async () => {
+  //
+  // T-047: /zoho-sync commits its write server-side before it responds, so
+  // an aborted request (lost response, not a definite failure) must no
+  // longer read as "sync failed" — the toast now reads as an unknown
+  // outcome, and the presets cache is invalidated/refetched here too so the
+  // grid and any open editor stop serving the pre-sync snapshot.
+  it('aborts a Zoho sync that runs past the deadline, shows an unknown-outcome toast, refetches presets, and re-enables the button (T-033, T-047)', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      stubBase();
+      let getCalls = 0;
       server.use(
+        http.get('*/filament-profiles', () => {
+          getCalls += 1;
+          return HttpResponse.json(PRESETS);
+        }),
+        http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+        http.get('*/filament-catalog/', () => HttpResponse.json([])),
         http.post('*/filament-profiles/zoho-sync', async () => {
           // Never resolves on its own — only the client-side abort ends it.
           await delay('infinite');
@@ -719,12 +749,14 @@ describe('FilamentProfilesPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<FilamentProfilesPage />);
       await screen.findByText('White');
+      expect(getCalls).toBe(1);
 
       await user.click(screen.getByRole('button', { name: /sync prices from zoho/i }));
       expect(await screen.findByRole('button', { name: /syncing prices from zoho/i })).toBeDisabled();
 
       // Comfortably inside the 10-minute deadline: still syncing, no toast yet.
       await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
+      expect(screen.queryByText(/sync result unknown/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/could not sync prices from zoho/i)).not.toBeInTheDocument();
 
       // Cross the deadline by the smallest margin — the error toast
@@ -732,8 +764,15 @@ describe('FilamentProfilesPage', () => {
       // it fire and fade before the assertions below ever see it.
       await vi.advanceTimersByTimeAsync(60 * 1000 + 1);
 
-      expect(await screen.findByText(/could not sync prices from zoho/i)).toBeInTheDocument();
+      // Unknown-outcome wording, not the definite "failed" copy — the
+      // response was lost, but /zoho-sync may have already committed.
+      expect(await screen.findByText(/sync result unknown/i)).toBeInTheDocument();
+      expect(screen.queryByText(/^could not sync prices from zoho$/i)).not.toBeInTheDocument();
       expect(await screen.findByRole('button', { name: /^sync prices from zoho$/i })).toBeEnabled();
+
+      // The `finally` block's invalidateQueries(['filamentPresets']) still
+      // refetches on this aborted path.
+      await waitFor(() => expect(getCalls).toBe(2));
     } finally {
       vi.useRealTimers();
     }

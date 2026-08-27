@@ -198,9 +198,9 @@ filamentProfiles.syncPreviewFailed
 filamentProfiles.syncToPc
 filamentProfiles.syncZohoAttention
 filamentProfiles.syncZohoDone
-filamentProfiles.syncZohoFailed
 filamentProfiles.syncZohoPrices
 filamentProfiles.syncZohoStale
+filamentProfiles.syncZohoUnknown
 filamentProfiles.title
 filamentProfiles.updatedToast
 jszip

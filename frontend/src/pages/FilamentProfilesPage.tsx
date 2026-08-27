@@ -16,7 +16,7 @@ import {
   Upload,
 } from 'lucide-react';
 
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type {
   BambuScanFile,
   BaseFilamentPreset,
@@ -470,16 +470,26 @@ export function FilamentProfilesPage() {
         .join(' — ');
       const isFullSuccess = attentionCount === 0 && result.priced + result.unchanged > 0 && !staleMessage;
       showToast(toastMessage, isFullSuccess ? 'success' : 'warning');
-      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
     } catch (error) {
       setZohoResult(null);
-      // Aborting (deadline hit) surfaces as an `Error`/`DOMException` named
-      // "AbortError" depending on the runtime's fetch implementation — check
-      // `.name` rather than the class so both shapes land on the same,
-      // friendly copy instead of a raw "This operation was aborted." string.
-      const isAbort = error instanceof Error && error.name === 'AbortError';
-      showToast(!isAbort && error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
+      // T-047: /zoho-sync commits its write server-side before it responds,
+      // so only a definite HTTP error *response* (an `ApiError` — the server
+      // told us it did NOT apply, e.g. 409/502/503) means the sync really
+      // failed. Every other failure mode here — the client-side deadline's
+      // AbortError, or a network failure (fetch throwing a plain `TypeError`
+      // before any response arrives) — means the response was lost, not
+      // that the write never landed. Those get an "unknown outcome" toast
+      // instead of a definite "failed" one; either way the `finally` below
+      // refetches so the grid/editor stop serving the stale pre-sync cache.
+      const isApiError = error instanceof ApiError;
+      showToast(isApiError ? error.message : t('filamentProfiles.syncZohoUnknown'), 'error');
     } finally {
+      // T-047: invalidate on every path, not just success — a lost response
+      // doesn't mean the server didn't commit the sync, so the failure/abort
+      // paths must refetch too instead of leaving the grid and any open
+      // editor on the pre-sync snapshot (which a subsequent Save would then
+      // PATCH straight back over the committed price).
+      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
       clearTimeout(deadline);
       setZohoSyncing(false);
     }

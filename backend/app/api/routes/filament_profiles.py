@@ -26,6 +26,7 @@ from backend.app.schemas.filament_profile import (
     FilamentPresetZohoSyncAttention,
     FilamentPresetZohoSyncResponse,
     _derive_bare_filename,
+    _validate_bare_filename,
 )
 from backend.app.services import zoho_filaments
 from backend.app.services.bambu_studio import (
@@ -71,8 +72,10 @@ async def get_base_content(
     filename: str,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
-    if not filename or ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(400, "Invalid filename")
+    try:
+        _validate_bare_filename(filename)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid filename") from exc
     content = await asyncio.to_thread(read_bundle_preset, filename)
     if content is None:
         raise HTTPException(404, "File not found")
@@ -132,8 +135,10 @@ def _validate_bambu_sync_presets(presets: list) -> list[dict[str, str]]:
         content = entry.get("content")
         if not isinstance(content, str):
             raise HTTPException(400, f"presets[{i}]: content must be a string")
-        if not filename or ".." in filename or "/" in filename or "\\" in filename:
-            raise HTTPException(400, f"presets[{i}]: filename must be a bare file name")
+        try:
+            _validate_bare_filename(filename)
+        except ValueError as exc:
+            raise HTTPException(400, f"presets[{i}]: filename must be a bare file name") from exc
         validated.append({"filename": filename, "content": content})
     return validated
 

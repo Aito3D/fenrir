@@ -4329,6 +4329,7 @@ export default {
     syncZohoBadPrice: "Correspondance trouvée, mais le prix de l'article est invalide ou excessivement élevé",
     syncZohoWeightUnknown: "Correspondance trouvée, mais le poids de la bobine de l'article est inconnu — le prix n'a pas été appliqué",
     syncZohoFailed: 'Impossible de synchroniser les prix depuis Zoho',
+    syncZohoUnknown: "Résultat de la synchronisation inconnu — la connexion a été perdue avant qu'une réponse n'arrive. Actualisez la page pour voir ce qui a été appliqué.",
     syncZohoStale: "Zoho était injoignable — les prix proviennent d'un catalogue mis en cache le {{timestamp}}, pas d'une synchronisation en direct",
     // Toasts
     createdToast: '"{{name}}" créé',

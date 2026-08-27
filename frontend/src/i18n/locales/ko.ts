@@ -4153,6 +4153,7 @@ export default {
     syncZohoBadPrice: '일치했지만 항목의 가격이 유효하지 않거나 너무 큽니다',
     syncZohoWeightUnknown: '일치했지만 항목의 스풀 무게를 알 수 없어 가격이 적용되지 않았습니다',
     syncZohoFailed: 'Zoho에서 가격을 동기화할 수 없습니다',
+    syncZohoUnknown: '동기화 결과를 알 수 없습니다 — 응답이 도착하기 전에 연결이 끊어졌습니다. 새로고침하여 적용된 내용을 확인하세요.',
     syncZohoStale: 'Zoho에 연결할 수 없어 {{timestamp}}에 캐시된 카탈로그의 가격이 사용되었습니다 — 실시간 동기화가 아닙니다',
     // Toasts
     createdToast: '"{{name}}" 생성됨',

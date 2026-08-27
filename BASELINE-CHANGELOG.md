@@ -5992,3 +5992,100 @@ suite showed the same pattern across two coverage runs: a different unrelated te
 (`StatsPageUserFilter1894.test.tsx` on one run, another on the retry) failed only under load and
 was absent on isolated re-runs; `FilamentProfilesPage.test.tsx` and `src/__tests__/i18n` passed
 cleanly in both full runs.
+
+## T-047 — 2026-08-27 — a failed or aborted Zoho price sync now refetches the presets cache too, and an unconfirmed outcome no longer reads as a definite failure (user-approved behavior change)
+
+`handleZohoSync()`'s `queryClient.invalidateQueries({ queryKey: ['filamentPresets'] })` call
+ran only on the success path. `POST /filament-profiles/zoho-sync` commits `preset.content`
+server-side before it responds, so it is not idempotent from the client's point of view:
+whenever the response was lost but the write had already landed — the 600s (T-033)
+`AbortController` deadline firing on a cold-catalogue walk, an intervening proxy's
+`proxy_read_timeout`, a laptop sleep — the client told the operator the sync had failed and kept
+serving the pre-sync `['filamentPresets']` cache. The grid showed no new price; opening the
+preset seeded `PresetEditorModal`'s `form.filament_cost` from the stale cached content (the
+cached `preset.updated_at` was unchanged, so neither the remount key nor the T-032 conflict
+banner fired); and pressing Save then PATCHed the old `filament_cost` straight back over the
+price the sync had already committed. The generic-failure catch branch also could not
+distinguish an HTTP error response (a definite "the server did not apply it" signal) from an
+`AbortError` or a network `TypeError` (no response ever arrived, so the write's outcome is
+unknown, not definitely failed) — both read identically as `filamentProfiles.syncZohoFailed`.
+
+user-approved 2026-08-27: "after a failed or aborted price sync the grid and any open editor
+will refetch and can visibly change, and the abort toast will read as 'result unknown' instead
+of 'sync failed'."
+
+`frontend/src/pages/FilamentProfilesPage.tsx`'s `handleZohoSync`: the `invalidateQueries`
+call was moved out of the `try` block's success path into a single `finally`, so it now runs on
+every outcome — success, a definite HTTP-error failure, or an abort/network failure — without
+changing the success path's existing `setZohoResult`/toast ordering (it was already the last
+statement on that path; it is still the next thing to run once the `try` block finishes). The
+`catch` block now imports and checks `error instanceof ApiError` (from `api/client.ts`, whose
+`request()` throws `ApiError` only after actually receiving and parsing a non-ok HTTP response)
+to decide the toast: an `ApiError` keeps the existing definite-failure wording using the
+server's own message (e.g. a 502's `detail`); every other `Error` — `AbortError` from the T-033
+deadline, or a plain `TypeError` from a network failure below the HTTP layer — gets a new
+`filamentProfiles.syncZohoUnknown` toast instead of the old generic
+`filamentProfiles.syncZohoFailed` string (which is no longer referenced anywhere in the page;
+left defined but unused in the locale files rather than removed, out of scope for this task).
+
+i18n: `filamentProfiles.syncZohoUnknown` (one key, no placeholders) added with real translations
+to all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`, `it`, `ja`,
+`ko`, `pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`) — `node scripts/check-i18n-parity.mjs` passes
+(13 locales, 7,081 leaves each, no parity/placeholder/identical-to-en failures) and
+`npx vitest run src/__tests__/i18n` passes (26/26).
+
+Tests updated in `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`:
+- "aborts a Zoho sync that runs past the deadline, shows an unknown-outcome toast, refetches
+  presets, and re-enables the button (T-033, T-047)" (renamed/extended from the T-033 abort
+  test): asserts the new `syncZohoUnknown` wording (not the old `syncZohoFailed` text) appears
+  after the deadline fires, and — via a `getCalls` counter on the `GET /filament-profiles`
+  handler — that the presets query refetches (2 GETs: initial load + the `finally` block's
+  invalidation) even though the request was aborted.
+- "shows the backend error message when the Zoho sync fails, and still refetches the presets
+  cache (T-047)" (renamed/extended from the pre-existing 502 test): keeps the original
+  assertion that a `502` with a `detail` message still shows that definite-failure text (not
+  the new unknown-outcome copy), and adds the same `getCalls` counter proving the `finally`
+  block also refetches on this definite-failure path.
+
+All other pre-existing Zoho-sync tests (success, stale-catalogue, attention list, busy-spinner,
+re-syncs-open-editor T-006, conflict-banner T-032, Save-closes-editor T-031) were left unchanged
+and still pass — none of them assert a specific `GET` call count that this change's extra
+`finally`-path invalidation would break, since `stubBase()`'s handlers are persistent (not
+one-time) across every other test.
+
+`python3 tools/snapshot.py verify` / `record`: 2 of 11 probes legitimately diffed —
+`fp-page-sync-ui` (the catch block's `showToast` line changed from
+`!isAbort && error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed')` to
+`isApiError ? error.message : t('filamentProfiles.syncZohoUnknown')`) and `fp-i18n-sync-strings`
+(the new key added, 22→23 leaves per locale in that section) — and were re-recorded; the other 9
+(`fp-openapi`, `fp-pydantic-schemas`, `fp-ddl`, `fp-route-perms`, `fp-pricing-write`,
+`fp-match-decisions`, `fp-sync-endpoint`, `fp-client-method`, `calc-zoho-pure`) matched
+unchanged. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: one section changed —
+"i18n keys read by FilamentProfilesPage.tsx" lost `filamentProfiles.syncZohoFailed` (no longer
+referenced in the page's source, which is exactly what that section's `grep` over
+`FilamentProfilesPage.tsx` is meant to catch) and gained `filamentProfiles.syncZohoUnknown`;
+applied.
+
+`cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx
+src/__tests__/i18n`: 58 passed (58 before this task's edits too — both changed tests were
+extended in place, not duplicated, so the count is unchanged; the T-038 entry's "57" reflects an
+earlier point in the file's history, not the count immediately before this task). `npx eslint` and
+`npx tsc --noEmit -p tsconfig.app.json` clean on every touched frontend file.
+`node scripts/check-i18n-parity.mjs`: 13 locales, 7,081 leaves each, in parity.
+
+`bash tools/coverage_fp.sh frontend`: 225/295 = 76.27% statements (baseline 225/295 = 76.27%,
+unchanged, no drop). An earlier version of this change removed a statement (`const isAbort =
+...`) without replacing it, which dropped the ratio to 224/294 = 76.19% on an otherwise-correct
+diff; the catch block was reshaped to keep an equivalent `const isApiError = ...` statement
+(more readable at the call site than an inline `error instanceof ApiError` ternary, and
+consistent with the removed variable's role) so the scoped statement count returned to parity
+with the baseline instead of merely avoiding a regression.
+
+Full frontend suite (`npx vitest run --retry=3`): 5,144 tests, 5,143 passed in the run recorded
+here — the one failure, `StatsPageUserFilter1894.test.tsx`'s `waitFor(() => screen.getByText('All
+Users'))`, is unrelated to this change (a different page's user filter) and passed cleanly
+(2/2) re-run alone immediately after — the documented suite-load flake. The
+`bash tools/coverage_fp.sh frontend` run whose 225/295 number is reported above also showed one
+unrelated failure, `PrintModal.test.tsx`'s per-plate filament mapping test
+(`AssertionError: expected 5 to be 2`), matching the previously-documented PrintModal flake;
+`FilamentProfilesPage.test.tsx` had zero failures in that run.

@@ -4340,6 +4340,7 @@ export default {
     syncZohoBadPrice: 'Gefunden, aber der Preis des Artikels ist ungültig oder unbrauchbar hoch',
     syncZohoWeightUnknown: 'Gefunden, aber das Spulengewicht des Artikels ist unbekannt — der Preis wurde nicht übernommen',
     syncZohoFailed: 'Preise konnten nicht von Zoho synchronisiert werden',
+    syncZohoUnknown: 'Synchronisierungsergebnis unbekannt — die Verbindung wurde unterbrochen, bevor eine Antwort eintraf. Aktualisieren Sie die Seite, um zu sehen, was übernommen wurde.',
     syncZohoStale: 'Zoho war nicht erreichbar — die Preise stammen aus einem am {{timestamp}} zwischengespeicherten Katalog, nicht aus einer Live-Synchronisierung',
     // Toasts
     createdToast: '"{{name}}" erstellt',
