@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import type { PricingInputs } from '../utils/pricing';
 import { correctedTimeH } from '../utils/calculatorInsights';
 
-export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'defaults'] as const;
+export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'defaults', 'margin'] as const;
 export type PageTab = (typeof PAGE_TABS)[number];
 
 const STORAGE_KEY = 'calculator-state';

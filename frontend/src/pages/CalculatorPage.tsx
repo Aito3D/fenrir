@@ -12,6 +12,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import {
   CalculatorDefaultsPanel,
   CalculatorFilamentsPanel,
+  CalculatorMarginCurvePanel,
   CalculatorPrintersPanel,
 } from '../components/CalculatorSettingsPanels';
 import { CalculatorInputsCard } from '../components/calculator/CalculatorInputsCard';
@@ -49,6 +50,7 @@ const TAB_LABEL_KEYS: Record<PageTab, string> = {
   filaments: 'calculator.tabFilaments',
   printers: 'calculator.tabPrinters',
   defaults: 'calculator.tabDefaults',
+  margin: 'calculator.tabMarginCurve',
 };
 
 export function CalculatorPage() {
@@ -391,6 +393,11 @@ export function CalculatorPage() {
       {tab === 'defaults' && (
         <div key="defaults" role="tabpanel" aria-labelledby="calc-tab-defaults" className="animate-calc-tab-in">
           <CalculatorDefaultsPanel canUpdate={canUpdateCalculator} />
+        </div>
+      )}
+      {tab === 'margin' && (
+        <div key="margin" role="tabpanel" aria-labelledby="calc-tab-margin" className="animate-calc-tab-in">
+          <CalculatorMarginCurvePanel canUpdate={canUpdateCalculator} />
         </div>
       )}
 
