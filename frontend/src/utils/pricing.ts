@@ -27,6 +27,8 @@ export interface PricingDefaults {
   prototype_rate_pct: number;
   ads_rate_pct: number;
   filament_markup_pct: number;
+  /** Legacy flat global markup — no longer read by the engine (replaced by
+   *  the margin curves); kept because the API still returns it. */
   global_markup_pct: number;
   tax_pct: number;
   default_difficulty_pct: number;
@@ -34,6 +36,20 @@ export interface PricingDefaults {
   /** One-time per-job base fee (quotation time, order handling). Optional so
    *  pre-migration configs keep working; treated as 0 when absent. */
   base_fee_flat?: number;
+  /** Size-margin curve: multiplier on very large parts (M_MIN). */
+  margin_min_mult?: number;
+  /** Size-margin curve: multiplier on very small parts (M_MAX). */
+  margin_max_mult?: number;
+  /** Unit cost (app currency) at which the size margin is halfway between
+   *  M_MIN and M_MAX (K). */
+  margin_k?: number;
+  /** Quantity-discount curve: fraction of the margin kept at very high
+   *  quantity (Q_MIN). */
+  qty_min_factor?: number;
+  /** Quantity at which the discount is halfway to Q_MIN (KQ). */
+  qty_k?: number;
+  /** Pre-tax floor per task (app currency). */
+  min_task_price?: number;
 }
 
 export interface PricingInputs {
@@ -88,6 +104,14 @@ export interface PricingResult {
   /** Full per-unit cost basis (all costs, provisions and overhead — no margin). */
   total_cost: number;
   margin_global: number;
+  /** Size-margin multiplier for this unit's cost (before the floor). */
+  size_margin: number;
+  /** Quantity factor applied to the margin above cost (1 at quantity 1). */
+  qty_factor: number;
+  /** Combined multiplier on total_cost (before the floor). */
+  margin_multiplier: number;
+  /** True when min_task_price lifted the task price (the lift is booked in margin_global). */
+  floor_applied: boolean;
   margin_filament: number;
   margin_stuff: number;
   marge: number;
@@ -111,6 +135,54 @@ export const printerRepairsPerHour = (p: PricingPrinter): number => {
   const hours = printerLifetimeHours(p);
   return hours > 0 ? (p.purchase_price * (p.repair_rate_pct / 100)) / hours : 0;
 };
+
+/** Defaults for the margin curves, applied when a (pre-migration) config
+ *  lacks the fields. Mirrors the column defaults in
+ *  backend/app/models/calculator.py. */
+export const CURVE_DEFAULTS = {
+  margin_min_mult: 1.15,
+  margin_max_mult: 1.6,
+  margin_k: 33,
+  qty_min_factor: 0.4,
+  qty_k: 5,
+  min_task_price: 12,
+} as const;
+
+const curveParam = (d: PricingDefaults, key: keyof typeof CURVE_DEFAULTS): number => {
+  const v = d[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : CURVE_DEFAULTS[key];
+};
+
+/** Size margin: M_MIN + (M_MAX − M_MIN) × K / (u + K). Decreasing in the
+ *  UNIT cost u (small parts carry more management overhead). Guards: an
+ *  unusable K or an inverted M pair collapse to M_MIN; a negative u is
+ *  treated as 0. Never NaN. */
+export function sizeMargin(unitCost: number, d: PricingDefaults): number {
+  const mMin = curveParam(d, 'margin_min_mult');
+  const mMax = curveParam(d, 'margin_max_mult');
+  const k = curveParam(d, 'margin_k');
+  if (k <= 0 || mMax < mMin) return mMin;
+  const u = Number.isFinite(unitCost) && unitCost > 0 ? unitCost : 0;
+  return mMin + (mMax - mMin) * (k / (u + k));
+}
+
+/** Quantity factor on the margin above cost: Q_MIN + (1 − Q_MIN) × KQ /
+ *  (q − 1 + KQ). Exactly 1 at q = 1, decreasing towards Q_MIN. Guards: an
+ *  unusable KQ or a Q_MIN outside (0, 1] disable the discount (factor 1);
+ *  q < 1 is treated as 1. */
+export function qtyFactor(quantity: number, d: PricingDefaults): number {
+  const qMin = curveParam(d, 'qty_min_factor');
+  const kq = curveParam(d, 'qty_k');
+  if (kq <= 0 || qMin <= 0 || qMin > 1) return 1;
+  const q = Number.isFinite(quantity) && quantity > 1 ? quantity : 1;
+  return qMin + (1 - qMin) * (kq / (q - 1 + kq));
+}
+
+/** 1 + (sizeMargin − 1) × qtyFactor — the discount only touches the margin
+ *  above cost, so the multiplier is never below 1. */
+export function unitMultiplier(unitCost: number, quantity: number, d: PricingDefaults): number {
+  return 1 + (sizeMargin(unitCost, d) - 1) * qtyFactor(quantity, d);
+}
 
 /** Quote-style filament line (sale price × difficulty × filament markup) —
  *  used by the Statistics tile via archivePricing. computePricing prices
@@ -196,16 +268,30 @@ export function computePricing(
   const total_cost = cost_subtotal + ads_cost;
 
   // ── Phase C: margins, all applied at the end on the full cost basis.
+  // The global margin is the two-curve multiplier: size margin on the UNIT
+  // cost (never the task total), discounted by the quantity factor on the
+  // margin above cost only — so price ≥ cost at any quantity.
+  const size_margin = sizeMargin(total_cost, defaults);
+  const qty_factor = qtyFactor(quantity, defaults);
+  const margin_multiplier = 1 + (size_margin - 1) * qty_factor;
+  let margin_global = total_cost * (margin_multiplier - 1);
   // margin_filament: kg·sale·d·(1+fm) ≡ filament_cost + this line, so the
   // filament contribution to the pre-margin price is exactly the old quote
   // line, just split honestly between cost and margin. No clamp — a sale
   // price below cost shows a negative margin rather than hiding the loss.
-  const margin_global = total_cost * (defaults.global_markup_pct / 100);
   const margin_filament =
     (inputs.weight_g / 1000) *
     (filament.sale_price_per_kg * (1 + defaults.filament_markup_pct / 100) - filament.cost_per_kg) *
     d;
   const margin_stuff = inputs.stuff_amount * (inputs.stuff_markup_pct / 100);
+
+  // Per-task floor (pre-tax). The shortfall is booked as global margin so
+  // every downstream identity (marge, waterfall, break-even) still holds.
+  const min_task_price = curveParam(defaults, 'min_task_price');
+  const pre_floor_ht = total_cost + margin_global + margin_filament + margin_stuff;
+  const floor_shortfall = Math.max(0, min_task_price - pre_floor_ht * quantity);
+  const floor_applied = floor_shortfall > 0;
+  if (floor_applied) margin_global += floor_shortfall / quantity;
   const marge = margin_global + margin_filament + margin_stuff;
 
   // Totals. Collected tax is not revenue, so the margin fraction is
@@ -237,6 +323,10 @@ export function computePricing(
     risk_base,
     total_cost,
     margin_global,
+    size_margin,
+    qty_factor,
+    margin_multiplier,
+    floor_applied,
     margin_filament,
     margin_stuff,
     marge,

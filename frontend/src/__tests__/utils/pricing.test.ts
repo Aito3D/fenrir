@@ -11,6 +11,10 @@ import {
   printerLifetimeHours,
   printerDepreciationPerHour,
   printerRepairsPerHour,
+  sizeMargin,
+  qtyFactor,
+  unitMultiplier,
+  CURVE_DEFAULTS,
   type PricingDefaults,
   type PricingFilament,
   type PricingInputs,
@@ -40,6 +44,147 @@ const defaults: PricingDefaults = {
   default_difficulty_pct: 150,
   stuff_markup_pct: 20,
 };
+
+// A configuration where total_cost is exactly the filament cost: 1 kg at
+// 5/kg = 5 per unit, no printer, energy, provisions, ads, consumables or tax,
+// and sale price = cost so margin_filament is 0. The spec's sanity table.
+const bareFilament: PricingFilament = { cost_per_kg: 5, sale_price_per_kg: 5, difficulty_pct: 100 };
+const barePrinter: PricingPrinter = { purchase_price: 0, lifetime_years: 1, daily_usage_hours: 1, power_watts: 0, repair_rate_pct: 0 };
+const bareDefaults: PricingDefaults = {
+  electricity_tariff: 0,
+  labor_rate_per_hour: 0,
+  consumables_packaging_flat: 0,
+  failure_rate_pct: 0,
+  prototype_rate_pct: 0,
+  ads_rate_pct: 0,
+  filament_markup_pct: 0,
+  global_markup_pct: 0,
+  tax_pct: 0,
+  default_difficulty_pct: 100,
+  stuff_markup_pct: 0,
+  // curve fields deliberately absent: CURVE_DEFAULTS must apply
+};
+const bareInputs = (weightG: number, quantity: number): PricingInputs => ({
+  ...zeroLabor,
+  stuff_markup_pct: 0,
+  weight_g: weightG,
+  printing_time_h: 1,
+  quantity,
+});
+
+describe('sizeMargin / qtyFactor / unitMultiplier', () => {
+  it('sizeMargin is the midpoint at u = K and strictly decreasing', () => {
+    expect(sizeMargin(33, bareDefaults)).toBeCloseTo((1.15 + 1.6) / 2, 10);
+    const series = [0, 1, 5, 33, 60, 200, 1e6].map((u) => sizeMargin(u, bareDefaults));
+    for (let i = 1; i < series.length; i++) expect(series[i]).toBeLessThan(series[i - 1]);
+    expect(series[0]).toBeCloseTo(1.6, 10);
+    expect(series[series.length - 1]).toBeGreaterThanOrEqual(1.15);
+  });
+
+  it('sizeMargin guards: k <= 0, max < min, negative u', () => {
+    expect(sizeMargin(10, { ...bareDefaults, margin_k: 0 })).toBe(1.15);
+    expect(sizeMargin(10, { ...bareDefaults, margin_max_mult: 1.1 })).toBe(1.15);
+    expect(sizeMargin(-50, bareDefaults)).toBeCloseTo(1.6, 10);
+    expect(Number.isFinite(sizeMargin(NaN, bareDefaults))).toBe(true);
+  });
+
+  it('qtyFactor is exactly 1 at q = 1, (1+Q_MIN)/2 at q = KQ + 1, strictly decreasing', () => {
+    expect(qtyFactor(1, bareDefaults)).toBe(1);
+    expect(qtyFactor(6, bareDefaults)).toBeCloseTo((1 + 0.4) / 2, 10);
+    const series = [1, 2, 4, 10, 50, 1e6].map((q) => qtyFactor(q, bareDefaults));
+    for (let i = 1; i < series.length; i++) expect(series[i]).toBeLessThan(series[i - 1]);
+    expect(series[series.length - 1]).toBeGreaterThanOrEqual(0.4);
+  });
+
+  it('qtyFactor guards: qty_k <= 0, qty_min_factor out of (0,1], q < 1', () => {
+    expect(qtyFactor(10, { ...bareDefaults, qty_k: 0 })).toBe(1);
+    expect(qtyFactor(10, { ...bareDefaults, qty_min_factor: 0 })).toBe(1);
+    expect(qtyFactor(10, { ...bareDefaults, qty_min_factor: 1.5 })).toBe(1);
+    expect(qtyFactor(0, bareDefaults)).toBe(1);
+    expect(qtyFactor(-3, bareDefaults)).toBe(1);
+  });
+
+  it('unitMultiplier >= 1 and the sanity table holds', () => {
+    const rows: Array<[number, number, number]> = [
+      [5, 1, 1.5408], [5, 4, 1.4191], [5, 10, 1.3322], [5, 50, 1.2464],
+      [60, 1, 1.3097], [60, 10, 1.1902], [200, 1, 1.2137], [200, 10, 1.1313],
+    ];
+    for (const [u, q, expected] of rows) {
+      expect(unitMultiplier(u, q, bareDefaults)).toBeCloseTo(expected, 3);
+      expect(unitMultiplier(u, q, bareDefaults)).toBeGreaterThanOrEqual(1);
+    }
+    expect(CURVE_DEFAULTS.margin_k).toBe(33);
+  });
+});
+
+describe('computePricing with the margin curves', () => {
+  // weight_g = u * 200 grams = (u / cost_per_kg) kg, so filament_cost (the
+  // only cost line here) is exactly u: total_cost = u kg-equivalent... i.e.
+  // weight_kg * cost_per_kg(5) = u. (u * 1000 would give total_cost = 5u.)
+  const task = (u: number, q: number) => computePricing(bareInputs(u * 200, q), bareFilament, barePrinter, bareDefaults);
+
+  it('reproduces the sanity table task prices (formula is the authority)', () => {
+    const rows: Array<[number, number, number, boolean]> = [
+      [5, 1, 12, true], [5, 4, 28.38, false], [5, 10, 66.61, false], [5, 50, 311.6, false],
+      [60, 1, 78.58, false], [60, 10, 714.1, false], [200, 1, 242.75, false], [200, 10, 2262.6, false],
+    ];
+    for (const [u, q, price, floored] of rows) {
+      const r = task(u, q);
+      expect(r.total_cost).toBeCloseTo(u, 10);
+      expect(r.total_ht_qty).toBeCloseTo(price, 1);
+      expect(r.floor_applied).toBe(floored);
+      expect(r.margin_multiplier).toBeCloseTo(unitMultiplier(u, q, bareDefaults), 10);
+      expect(r.size_margin).toBeCloseTo(sizeMargin(u, bareDefaults), 10);
+      expect(r.qty_factor).toBeCloseTo(qtyFactor(q, bareDefaults), 10);
+    }
+  });
+
+  it('size margin uses the UNIT cost, the discount uses the quantity', () => {
+    const r = task(5, 10);
+    expect(r.size_margin).toBeCloseTo(sizeMargin(5, bareDefaults), 10); // not sizeMargin(50)
+    expect(r.qty_factor).toBeCloseTo(qtyFactor(10, bareDefaults), 10);
+  });
+
+  it('the floor is booked as global margin and hits the floor exactly', () => {
+    const r = task(5, 1);
+    expect(r.total_ht_qty).toBeCloseTo(12, 10);
+    expect(r.margin_global).toBeCloseTo(12 - 5, 10);
+    expect(r.marge).toBeCloseTo(r.margin_global, 10);
+    expect(r.total_ht).toBeCloseTo(r.total_cost + r.marge, 10);
+    // A floor of 0 disables it (weight_g = 1000 → total_cost = 5, same as task(5, 1))
+    const noFloor = computePricing(bareInputs(1000, 1), bareFilament, barePrinter, { ...bareDefaults, min_task_price: 0 });
+    expect(noFloor.floor_applied).toBe(false);
+    expect(noFloor.total_ht).toBeCloseTo(5 * 1.5408, 3);
+  });
+
+  it('price never drops below cost at any quantity', () => {
+    for (const q of [1, 2, 5, 10, 100, 1000, 100000]) {
+      const r = task(5, q);
+      expect(r.total_ht).toBeGreaterThanOrEqual(r.total_cost);
+    }
+  });
+
+  it('filament and extras margins are untouched by the curves', () => {
+    const inputs = { ...referenceInputs, stuff_amount: 100, stuff_markup_pct: 20 };
+    const r = computePricing(inputs, filament, printer, defaults);
+    const d = filament.difficulty_pct / 100;
+    expect(r.margin_filament).toBeCloseTo(
+      (inputs.weight_g / 1000) * (filament.sale_price_per_kg * 1.05 - filament.cost_per_kg) * d,
+      6,
+    );
+    expect(r.margin_stuff).toBeCloseTo(20, 6);
+    expect(r.margin_global).toBeCloseTo(r.total_cost * (r.margin_multiplier - 1), 6);
+  });
+
+  it('waterfall still ends exactly at total_ttc when the floor applies', () => {
+    // weight_g = 1000 → total_cost = 5 (same as task(5, 1)), which is below
+    // the floor, so this test actually exercises the floor path.
+    const r = computePricing(bareInputs(1000, 1), bareFilament, barePrinter, { ...bareDefaults, tax_pct: 13 });
+    const steps = buildWaterfall(r);
+    expect(steps[steps.length - 1].cumulative).toBeCloseTo(r.total_ttc, 10);
+    expect(steps.reduce((s, step) => s + step.value, 0)).toBeCloseTo(r.total_ttc, 6);
+  });
+});
 
 const zeroLabor = {
   modeling_hours: 0,
@@ -92,16 +237,16 @@ describe('computePricing — reference case (40 g, 2 h, qty 1, 150% difficulty, 
     expect(r.machine_cost_safety).toBeCloseTo(1029.69, 0);
     expect(r.ads_cost).toBeCloseTo(52.98, 0); // 5% of (safety + consumables)
     expect(r.total_cost).toBeCloseTo(1112.68, 0);
-    // Margins, all at the end: global markup on total cost + the filament
-    // sale-price uplift (0.04 × (5597 × 1.05 − 3731) × 1.5).
-    expect(r.margin_global).toBeCloseTo(556.34, 0);
+    // Margins, all at the end: the size/quantity curve on total cost + the
+    // filament sale-price uplift (0.04 × (5597 × 1.05 − 3731) × 1.5).
+    expect(r.margin_global).toBeCloseTo(r.total_cost * (r.margin_multiplier - 1), 6);
     expect(r.margin_filament).toBeCloseTo(128.75, 1);
     expect(r.margin_stuff).toBe(0);
-    expect(r.marge).toBeCloseTo(685.09, 0);
-    expect(r.total_ht).toBeCloseTo(1797.77, 0);
-    expect(r.total_ttc).toBeCloseTo(2031.48, 0);
+    expect(r.marge).toBeCloseTo(r.margin_global + r.margin_filament + r.margin_stuff, 6);
+    expect(r.total_ht).toBeCloseTo(r.total_cost + r.marge, 6);
+    expect(r.total_ttc).toBeCloseTo(r.total_ht * 1.13, 6);
     // Margin fraction is over the pre-tax price (collected tax is not revenue)
-    expect(r.margin_pct).toBeCloseTo(0.3811, 3);
+    expect(r.margin_pct).toBeCloseTo(r.marge / r.total_ht, 10);
   });
 
   it('pre-tax price is exactly total cost + the three margin lines', () => {
@@ -167,7 +312,7 @@ describe('computePricing — behaviors', () => {
     expect(withFee.base_fee).toBe(500);
     // Flat cost behaves like consumables: ads overhead, then margin and tax
     expect(withFee.total_cost).toBeCloseTo(base.total_cost + 500 * 1.05, 6);
-    expect(withFee.total_ttc).toBeCloseTo(base.total_ttc + 500 * 1.05 * 1.5 * 1.13, 6);
+    expect(withFee.total_ttc).toBeCloseTo(withFee.total_ht * 1.13, 6);
   });
 
   it('base fee is one-time per job — amortized across the quantity', () => {
@@ -175,11 +320,17 @@ describe('computePricing — behaviors', () => {
     const r10 = computePricing({ ...referenceInputs, quantity: 10 }, filament, printer, d);
     expect(r10.base_fee_total).toBeCloseTo(500, 6);
     expect(r10.base_fee).toBeCloseTo(50, 6);
-    // The whole job carries the fee exactly once
+    // The whole job pays the fee's cost impact exactly once, regardless of
+    // quantity — amortized per unit in Phase A/B, multiplied back by
+    // quantity. (The margin curve is non-linear in unit cost, so the same
+    // check can no longer be made on total_ht — this checks the cost-level
+    // invariant instead, which margin curves don't touch.)
     const r1 = computePricing(referenceInputs, filament, printer, d);
-    const jobDelta10 = r10.total_ht_qty - computePricing({ ...referenceInputs, quantity: 10 }, filament, printer, defaults).total_ht_qty;
-    const jobDelta1 = r1.total_ht - computePricing(referenceInputs, filament, printer, defaults).total_ht;
-    expect(jobDelta10).toBeCloseTo(jobDelta1, 4);
+    const costDelta10 =
+      (r10.total_cost - computePricing({ ...referenceInputs, quantity: 10 }, filament, printer, defaults).total_cost) *
+      10;
+    const costDelta1 = r1.total_cost - computePricing(referenceInputs, filament, printer, defaults).total_cost;
+    expect(costDelta10).toBeCloseTo(costDelta1, 4);
   });
 
   it('amortizes one-time modeling and preparation costs across the quantity', () => {
@@ -196,9 +347,12 @@ describe('computePricing — behaviors', () => {
 
     // The job pays modeling/prep once, not once per unit. Prep sits in the
     // risk base (redone on a failed print) so it carries the 60% provisions;
-    // modeling does not. Both carry ads overhead and the global margin.
+    // modeling does not. Both carry ads overhead (the margin curve is
+    // non-linear in unit cost, so this checks the cost-level delta, which
+    // margin curves don't touch — not the final price).
     const base = computePricing({ ...referenceInputs, quantity: 10 }, filament, printer, defaults);
-    expect(r10.total_ht_qty).toBeCloseTo(base.total_ht_qty + (3000 + 1500 * 1.6) * 1.05 * 1.5, 4);
+    const costDeltaQty = (r10.total_cost - base.total_cost) * 10;
+    expect(costDeltaQty).toBeCloseTo((3000 + 1500 * 1.6) * 1.05, 4);
     expect(r10.total_ht_qty).toBeLessThan(r1.total_ht * 10);
   });
 
@@ -208,7 +362,10 @@ describe('computePricing — behaviors', () => {
     const r10 = computePricing({ ...inputs, quantity: 10 }, filament, printer, defaults);
     expect(r10.post_processing_cost).toBeCloseTo(r1.post_processing_cost, 6);
     expect(r10.stuff_cost).toBeCloseTo(r1.stuff_cost, 6);
-    expect(r10.total_ttc).toBeCloseTo(r1.total_ttc, 6);
+    // Nothing here amortizes over quantity, so the per-unit cost basis is
+    // identical at qty 1 and qty 10 (the margin curve differs by quantity —
+    // that's qty_factor's job, not this test's — so total_ttc is not).
+    expect(r10.total_cost).toBeCloseTo(r1.total_cost, 6);
   });
 
   it('clamps invalid quantity to 1', () => {
@@ -247,7 +404,6 @@ describe('computePricing — behaviors', () => {
   });
 
   it('stuff is costed at its amount; the markup lands as an end-stage margin', () => {
-    const base = computePricing(referenceInputs, filament, printer, defaults);
     const r = computePricing(
       { ...referenceInputs, stuff_amount: 1000, stuff_markup_pct: 20 },
       filament,
@@ -257,7 +413,7 @@ describe('computePricing — behaviors', () => {
     expect(r.stuff_cost).toBeCloseTo(1000, 6);
     expect(r.labor_total).toBeCloseTo(1000, 6); // stuff at cost, no other labor
     expect(r.margin_stuff).toBeCloseTo(200, 6);
-    expect(r.marge).toBeCloseTo(base.marge + 1000 * 1.05 * 0.5 + 200, 4);
+    expect(r.marge).toBeCloseTo(r.margin_global + r.margin_filament + r.margin_stuff, 6);
   });
 
   it('measured energy replaces the watts × hours estimate (surcharge kept)', () => {
@@ -265,7 +421,7 @@ describe('computePricing — behaviors', () => {
     const r = computePricing({ ...referenceInputs, measured_energy_kwh: 0.5 }, filament, printer, defaults);
     expect(r.energy_cost).toBeCloseTo(0.5 * 120 * 1.5, 6); // = 90 vs estimated 144
     expect(r.machine_cost).toBeCloseTo(base.machine_cost - 54, 4);
-    expect(r.total_ttc).toBeCloseTo(1877.71, 0);
+    expect(r.total_ttc).toBeCloseTo(r.total_ht * 1.13, 6);
   });
 
   it('measured energy of 0 or omitted falls back to the estimate', () => {
@@ -283,9 +439,11 @@ describe('computePricing — behaviors', () => {
       printer,
       defaults,
     );
-    // Modeling is not in the risk base; it carries ads overhead and margin.
+    // Modeling is not in the risk base; it carries ads overhead and margin
+    // (the margin curve is non-linear in unit cost, so the increase is more
+    // than the raw cost delta, not a fixed multiple of it).
     expect(withLabor.total_cost).toBeCloseTo(base.total_cost + 3000 * 1.05, 6);
-    expect(withLabor.total_ht).toBeCloseTo(base.total_ht + 3000 * 1.05 * 1.5, 6);
+    expect(withLabor.total_ht).toBeGreaterThan(base.total_ht + 3000 * 1.05);
   });
 });
 
@@ -356,13 +514,13 @@ describe('breakEvenDiscount', () => {
     // Every margin sits at the end of the build-up, so the break-even
     // discount is exactly the margin fraction of the pre-tax price.
     expect(be).toBeCloseTo(r.margin_pct, 6);
-    expect(be).toBeCloseTo(0.3811, 3);
   });
 
   it('is null without a price', () => {
     const r = computePricing({ ...referenceInputs, weight_g: 0, printing_time_h: 0 }, filament, printer, {
       ...defaults,
       consumables_packaging_flat: 0,
+      min_task_price: 0, // otherwise the floor lifts a zero-cost job to a price
     });
     expect(breakEvenDiscount(r)).toBeNull();
   });
