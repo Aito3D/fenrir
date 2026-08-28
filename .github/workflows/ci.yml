@@ -2,14 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Every commit on every branch gets tested. `deploy` is excluded: it is a
+    # pointer moved by deploy.yml to a commit main already tested.
+    branches-ignore: [deploy]
   pull_request:
     branches: [main]
   workflow_dispatch:
-    # Run on PRs targeting main, but skip for repo owner (runs local tests)
 
-# Skip CI for PRs authored by repo owner (they run tests locally)
-# Uses PR author instead of triggering actor so rebasing by owner doesn't skip CI
+# PRs authored by the repo owner skip CI: their branch already ran the full
+# suite on push. Uses PR author instead of triggering actor so rebasing by
+# owner doesn't skip CI.
 
 env:
   PYTHON_VERSION: '3.11'
@@ -124,20 +126,29 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests (shard ${{ matrix.shard }}/4)
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           cd backend
           # -v dropped: 5300+ "PASSED foo::bar" lines per worker eat 30-60s
           # of stdout I/O time on 2-vCPU runners. --tb=short is enough.
           # --splits 4 --group N uses pytest-split to slice the collected
-          # test set roughly evenly across the 4 matrix shards; first run
-          # is name-hash-based, subsequent runs improve via .test_durations
-          # if you ever commit one (we don't — even the naive hash split
-          # gets us ≈25% per shard given the test mix here).
+          # test set across the 4 matrix shards, balanced by the recorded
+          # per-test timings in backend/.test_durations. Without that file
+          # the name-hash fallback put ~10 min of integration tests in
+          # shard 1 and 2-4 min in the others, so shard 1 sat on the step
+          # timeout. Refresh it occasionally (or after adding a slow test
+          # module) with:
+          #   cd backend && python -m pytest tests/ -n auto \
+          #     --store-durations --durations-path=.test_durations
+          # Keep the `=` form: pytest scans bare argv tokens for existing
+          # paths when choosing rootdir, and a bare `.test_durations` would
+          # move rootdir (and the config file) from backend/tests to the
+          # repo root, changing every node id.
           python -m pytest tests/ \
             --tb=short \
             --timeout=60 --timeout-method=thread \
             -n auto \
+            --durations-path=.test_durations \
             --splits 4 --group ${{ matrix.shard }}
 
   # ============================================================================
@@ -365,6 +376,7 @@ jobs:
               --timeout=60 --timeout-method=thread \
               -p no:cacheprovider \
               -n auto \
+              --durations-path=backend/.test_durations \
               --splits 4 --group ${{ matrix.shard }}
 
   docker-test:
@@ -394,7 +406,7 @@ jobs:
         run: |
           docker compose -f docker-compose.test.yml up -d integration
           echo "Waiting for container to be healthy..."
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if docker compose -f docker-compose.test.yml ps integration | grep -q "healthy"; then
               echo "Container is healthy"
               break
@@ -432,3 +444,42 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  # ============================================================================
+  # Gate
+  # ============================================================================
+
+  # Single status that deploy.yml (and branch protection, if you enable it)
+  # can key on. Runs even when upstream jobs are skipped/cancelled so the
+  # workflow always ends with an explicit verdict. backend-security and
+  # frontend-security are advisory (continue-on-error) and stay out of the
+  # gate on purpose.
+  #
+  # "skipped" counts as OK: jobs only skip via the owner-PR `if` above (the
+  # branch push already ran them) or because a dependency failed — and that
+  # dependency then reports "failure" here itself.
+  ci-ok:
+    name: CI OK
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - backend-lint
+      - backend-tests
+      - frontend-lint
+      - frontend-typecheck
+      - frontend-tests
+      - frontend-build
+      - docker-backend-tests
+      - docker-test
+    steps:
+      - name: Verify every gated job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e '[.[] | .result] | all(. == "success" or . == "skipped")' >/dev/null; then
+            echo "No gated job failed or was cancelled."
+          else
+            echo "::error::At least one gated job did not succeed."
+            exit 1
+          fi

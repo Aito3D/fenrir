@@ -23,6 +23,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY backend/ ./backend/
 COPY pyproject.toml ./
 
+# Cross-stack contract fixtures: backend tests assert the frontend's
+# generated fixtures match the current backend rules
+# (tests/unit/test_aito_board_rules_contract.py).
+COPY frontend/src/__tests__/fixtures/ ./frontend/src/__tests__/fixtures/
+
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs /app/archive

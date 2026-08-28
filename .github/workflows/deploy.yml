@@ -1,0 +1,100 @@
+name: Deploy
+
+# Continuous deployment: when CI finishes green for a commit on main, move the
+# `deploy` branch to that commit. The production host polls `origin/deploy`
+# and picks it up from there — nothing else runs here.
+#
+# Manual use (re-deploy or roll back): Run workflow with `ref` set to any
+# commit/branch/tag. It must have a successful "CI" run recorded for it;
+# the move is refused otherwise, so a red commit can never ship by hand.
+#
+# The move is fast-forward only. If `deploy` has diverged from main (someone
+# pushed to it directly), the job fails loudly instead of force-pushing.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA, branch or tag to deploy (must have a green CI run)
+        required: false
+        default: main
+
+# Serialise deploys; never cancel one that is in flight.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  move-deploy-branch:
+    name: Move deploy branch
+    runs-on: ubuntu-latest
+    # For workflow_run, only a green CI counts. workflow_dispatch verifies below.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve target commit
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_REF: ${{ github.event.inputs.ref }}
+        run: |
+          if [ "$EVENT" = "workflow_run" ]; then
+            sha="$RUN_SHA"
+          else
+            sha="$(git rev-parse --verify "${INPUT_REF}^{commit}")"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Target: $sha ($(git log -1 --format=%s "$sha"))"
+
+      - name: Require a green CI run for the target (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          conclusion="$(gh run list --workflow CI --commit "$SHA" --status success --limit 1 --json conclusion --jq '.[0].conclusion // empty')"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::No successful CI run found for $SHA — refusing to deploy."
+            exit 1
+          fi
+          echo "CI is green for $SHA."
+
+      - name: Fast-forward deploy to the target
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          current="$(git rev-parse --verify origin/deploy 2>/dev/null || true)"
+          if [ -n "$current" ] && [ "$current" = "$SHA" ]; then
+            echo "deploy already at $SHA — nothing to do."
+            exit 0
+          fi
+          if [ -n "$current" ] && ! git merge-base --is-ancestor "$current" "$SHA"; then
+            echo "::error::deploy ($current) is not an ancestor of $SHA — refusing non-fast-forward move. Reset deploy by hand if this is intended."
+            exit 1
+          fi
+          git push origin "$SHA:refs/heads/deploy"
+          echo "deploy: ${current:-<none>} -> $SHA"
+
+      - name: Summary
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          {
+            echo "### Deployed"
+            echo
+            echo "\`deploy\` → \`$SHA\`"
+            echo
+            git log -1 --format='%s%n%n%an, %ad' "$SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

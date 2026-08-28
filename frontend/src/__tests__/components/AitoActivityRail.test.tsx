@@ -135,7 +135,10 @@ describe('ActivityRail', () => {
     expect(screen.queryByText(/impression_quantity|quantity/i)).not.toBeInTheDocument();
 
     await user.click(toggle);
-    await waitFor(() => expect(screen.getByText(/12/)).toBeInTheDocument());
+    // Match the expanded change row itself ("1 → 12"), not a bare /12/: on a
+    // UTC runner the fixture's noon timestamp renders as "12:00:00 PM" too,
+    // and getByText throws on multiple matches (CI-only failure).
+    await waitFor(() => expect(screen.getByText(/1\s*→\s*12/)).toBeInTheDocument());
   });
 
   it('submits a note and clears the box', async () => {
