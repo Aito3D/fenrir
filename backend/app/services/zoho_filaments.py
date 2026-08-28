@@ -642,18 +642,31 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             # _MAX_PAGES x retries x the httpx timeout), so re-using the
             # pre-walk timestamp could write a memo that is already past
             # _FAIL_COOLDOWN the moment it lands.
-            _fail_at = datetime.now(timezone.utc)
-            # T-037: memoize a CLONE of `exc` (see `_clone_exc`) with its
-            # traceback/cause/context stripped, not `exc` itself. The bare
-            # `raise` a few lines below (the real, first-observed failure
-            # propagating to whatever logs it) still uses `exc` with its
-            # traceback intact — this only affects what gets stashed for
-            # later fast-fail reads. Storing the live `exc` would keep the
-            # whole walk's frames (DB session, httpx objects it closed over)
-            # reachable for the entire _FAIL_COOLDOWN window purely because a
-            # traceback pins them; clearing it here, at the moment the memo
-            # is written, is what actually releases them.
-            _fail_exc = _clone_exc(exc)
+            #
+            # T-043: but only for THIS generation. reset_cache() may have
+            # bumped _generation (and cleared the memo) while this walk was
+            # failing against credentials that were just rotated away — the
+            # same supersession the success path below already guards
+            # against with `if generation != _generation`. Without this
+            # guard, a superseded walk's failure would re-poison the
+            # fast-fail path with a pre-rotation error for the rest of
+            # _FAIL_COOLDOWN, right after the new credentials were put in
+            # place. The failure itself still propagates to its own caller
+            # via `raise` below regardless of generation — only the memo
+            # write is skipped.
+            if generation == _generation:
+                _fail_at = datetime.now(timezone.utc)
+                # T-037: memoize a CLONE of `exc` (see `_clone_exc`) with its
+                # traceback/cause/context stripped, not `exc` itself. The bare
+                # `raise` a few lines below (the real, first-observed failure
+                # propagating to whatever logs it) still uses `exc` with its
+                # traceback intact — this only affects what gets stashed for
+                # later fast-fail reads. Storing the live `exc` would keep the
+                # whole walk's frames (DB session, httpx objects it closed over)
+                # reachable for the entire _FAIL_COOLDOWN window purely because a
+                # traceback pins them; clearing it here, at the moment the memo
+                # is written, is what actually releases them.
+                _fail_exc = _clone_exc(exc)
             if _cache is not None:
                 logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
                 # T-034: this refresh failed with no upper bound on how long

@@ -6574,3 +6574,13 @@ match WITHOUT re-recording, including `fp-sync-endpoint` (pins the 409 lock-busy
 same ratio, no drop). One pre-existing test (`test_library_slice_api.py::TestCrossClassSliceAllLoop
 ::test_embedded_settings_slice_all_with_arrange_still_loops`) failed under the parallel full-suite
 run and passed in isolation (1 passed) — a documented suite-load flake, unrelated to this change.
+
+## T-043 — 2026-08-27 — failure memo no longer stamped by a superseded walk (internal-correctness fix, not a behavior change)
+
+The failure-memo write in `fetch_catalogue` now carries the same generation guard as the success
+path, so a walk that started before a `reset_cache()` credential rotation can no longer re-poison
+the fast-fail window with the pre-rotation error. This restores the invariant `reset_cache()`'s own
+comment already promises (`zoho_filaments.py` ~415-419): a failure recorded under the OLD
+credentials must not keep answering "Zoho is down" once they have just been rotated to
+(presumably working) new ones. The superseded failure still propagates to its own caller, and
+T-095's approved user-visible effect is preserved.

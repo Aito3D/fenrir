@@ -426,6 +426,74 @@ async def test_reset_cache_mid_walk_does_not_permit_a_second_concurrent_walk(mon
     assert [p.item_id for p in second_result] == ["1", "2", "3", "4"]
 
 
+@pytest.mark.asyncio
+async def test_reset_cache_mid_walk_failure_does_not_stamp_the_memo(monkeypatch):
+    """T-043: a walk that FAILS (not just succeeds) after reset_cache() has
+    bumped the generation must not memoize that failure. Before this fix, a
+    superseded walk's `except` branch stamped `_fail_at`/`_fail_exc`
+    unconditionally -- so a walk started under the OLD Zoho credentials that
+    failed after a rotation would re-poison the fast-fail path with the
+    pre-rotation error for the whole _FAIL_COOLDOWN window, right after the
+    new credentials had been put in place. The failure must still propagate
+    to its own caller -- only the memo write is skipped."""
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def gated_page(db, **kwargs):
+        entered.set()
+        await gate.wait()
+        raise RuntimeError("old credentials rejected")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", gated_page)
+
+    task = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await entered.wait()  # the fetch is now parked inside list_items_page
+
+    zoho_filaments.reset_cache()  # the rotation lands mid-fetch
+    gate.set()
+
+    with pytest.raises(RuntimeError, match="old credentials rejected"):
+        await task
+
+    # The superseded walk's own failure propagated (above) but must NOT have
+    # been memoized -- a subsequent call should attempt a real refresh
+    # rather than fast-failing on the pre-rotation error.
+    assert zoho_filaments._fail_at is None
+    assert zoho_filaments._fail_exc is None
+
+    calls = []
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_2], calls))
+    fresh = await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1  # went back to Zoho instead of fast-failing
+    assert [p.item_id for p in fresh] == ["5"]
+
+
+@pytest.mark.asyncio
+async def test_same_generation_failure_still_stamps_the_memo(monkeypatch):
+    """T-043 control: a failure that is NOT superseded by a reset must still
+    be memoized exactly as before -- the generation guard added for T-043
+    must not suppress the ordinary cold-cache fast-fail behaviour."""
+    calls = []
+
+    async def boom(db, **kwargs):
+        calls.append(1)
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+
+    with pytest.raises(RuntimeError, match="zoho down"):
+        await zoho_filaments.fetch_catalogue(None)
+
+    assert zoho_filaments._fail_at is not None
+    assert zoho_filaments._fail_exc is not None
+
+    # Memoized -- a retry within the cooldown must fast-fail without going
+    # back to Zoho.
+    with pytest.raises(RuntimeError, match="zoho down"):
+        await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+
+
 # --- T-073: a paged fetch that hits _MAX_PAGES must not cache a partial list -
 
 
