@@ -59,6 +59,12 @@ export interface ArchivePriceEstimate {
   printerMatched: boolean;
   weightG: number;
   timeH: number;
+  /** Full unit cost the size margin was evaluated at (computePricing total_cost). */
+  unitCost: number;
+  /** Size-margin multiplier applied (sizeMargin(unitCost)); the quantity factor is 1 for archives. */
+  sizeMargin: number;
+  /** True when min_task_price lifted the price above the curve. */
+  floorApplied: boolean;
 }
 
 export const containsEitherWay = (a: string, b: string): boolean => a.includes(b) || b.includes(a);
@@ -196,6 +202,9 @@ export function estimateArchiveSalePrice(
     machineCost: result.machine_cost,
     filamentCost: result.filament_cost,
     energyCost: result.energy_cost,
+    unitCost: result.total_cost,
+    sizeMargin: result.size_margin,
+    floorApplied: result.floor_applied,
     filamentId: matched.filament.id,
     filamentName: matched.filament.name,
     filamentMatched: matched.matched,

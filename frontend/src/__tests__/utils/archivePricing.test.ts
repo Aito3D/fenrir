@@ -274,6 +274,31 @@ describe('estimateArchiveSalePrice', () => {
     expect(estimateArchiveSalePrice(archive, filaments, [], defaults)).toBeNull();
     expect(estimateArchiveSalePrice(archive, filaments, printers, undefined)).toBeNull();
   });
+
+  it('surfaces the unit cost, size margin and floor flag the price was built from', () => {
+    const est = estimateArchiveSalePrice(archive, filaments, printers, defaults)!;
+    const matchedFilament = matchCalculatorFilament(archive.filament_type, filaments)!.filament;
+    const matchedPrinter = matchCalculatorPrinter([], printers)!.printer;
+    const r = computePricing(
+      {
+        weight_g: est.weightG, printing_time_h: est.timeH, quantity: 1,
+        modeling_hours: 0, modeling_base_price: 0, prep_model_min: 0, prep_slicing_min: 0, prep_transfer_min: 0,
+        post_removal_min: 0, post_support_min: 0, post_additional_min: 0, post_fulfillment_min: 0,
+        stuff_amount: 0, stuff_markup_pct: 0,
+      },
+      matchedFilament, matchedPrinter, { ...defaults, base_fee_flat: 0 },
+    );
+    expect(est.unitCost).toBeCloseTo(r.total_cost, 6);
+    expect(est.sizeMargin).toBeCloseTo(r.size_margin, 6);
+    expect(est.floorApplied).toBe(r.floor_applied);
+    expect(est.sizeMargin).toBeGreaterThan(1);
+  });
+
+  it('reports floorApplied when min_task_price lifts a tiny print', () => {
+    const tiny = { ...archive, filament_used_grams: 0.5, print_time_seconds: 60 };
+    const est = estimateArchiveSalePrice(tiny, filaments, printers, { ...defaults, min_task_price: 1_000_000 })!;
+    expect(est.floorApplied).toBe(true);
+  });
 });
 
 describe('estimateFilamentCost', () => {
