@@ -238,6 +238,13 @@ async function holdDelete(index: number) {
     fireEvent.pointerDown(removeButtons[index]);
     await vi.advanceTimersByTimeAsync(1000);
   });
+  // The 200ms removal fold (see TaskRow) must elapse BEFORE the switch back
+  // to real timers below — useRealTimers() drops pending fake timers, and
+  // the fold's timeout (scheduled from an effect, hence only after the act
+  // above has flushed) would die with them, leaving the row in place.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  });
   // Back to real timers before polling: `waitFor`'s own interval needs wall
   // clock to advance, and everything else in this file (including
   // `renderTasks`'s settle-the-initial-fetch `act`) runs under real timers.

@@ -183,7 +183,9 @@ describe('TaskRow', () => {
       makeTask({ scanCost: 20, done: { scan: true, modelisation: false, impression: false, usinage: false } }),
       { canTick: true },
     );
-    const card = container.firstElementChild as HTMLElement;
+    // `.group`, not firstElementChild: the card sits inside the removal-fold
+    // wrapper now.
+    const card = container.querySelector('.group') as HTMLElement;
     expect(card.className).toContain(
       'color-mix(in_srgb,var(--color-bambu-green)_5%,var(--color-bambu-dark-secondary))',
     );
@@ -194,7 +196,9 @@ describe('TaskRow', () => {
     // Visual-parity fix: the card used to be rounded-lg (.5rem / 7.2px at this
     // app's 14.4px root); the approved reference measures .6rem (8.64px).
     const { container } = renderRow(makeTask({ scanCost: 20 }), { canTick: true });
-    const card = container.firstElementChild as HTMLElement;
+    // `.group`, not firstElementChild: the card sits inside the removal-fold
+    // wrapper now.
+    const card = container.querySelector('.group') as HTMLElement;
     expect(card.className).toContain('rounded-[.6rem]');
   });
 

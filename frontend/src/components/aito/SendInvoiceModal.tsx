@@ -6,8 +6,13 @@ import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
 import { api } from '../../api/client';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useSendInvoiceMutation } from '../../hooks/useSendInvoiceMutation';
 import { ZohoEmailPreview } from './ZohoEmailPreview';
+
+/** A beat past .animate-modal-out's 150ms, same margin the drawers give
+ *  drawer-out (200ms → 220). */
+const MODAL_OUT_MS = 170;
 
 /** Pick an address and email this project's invoice through Zoho Books.
  *
@@ -36,7 +41,19 @@ export function SendInvoiceModal({
 }) {
   const { t } = useTranslation();
   const [to, setTo] = useState('');
-  const mutation = useSendInvoiceMutation(projectId, invoiceId, onClose);
+  // The success close rides `requestClose`, not `onClose`: the modal leaves
+  // the way it entered (animate-modal-out) whether dismissed or done. The
+  // arrow defers the read past this line — `requestClose` is declared below,
+  // and only ever called after render.
+  const mutation = useSendInvoiceMutation(projectId, invoiceId, () => requestClose());
+  const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
+    animationMs: MODAL_OUT_MS,
+    // Same gate the backdrop has: while the send is in flight the modal is
+    // spoken for, and Escape must not tear it down mid-request.
+    onEscape: (close) => {
+      if (!mutation.isPending) close();
+    },
+  });
 
   const { data, isPending, isError } = useQuery({
     queryKey: ['aito-invoice-email', projectId, invoiceId],
@@ -55,31 +72,34 @@ export function SendInvoiceModal({
     if (data?.default_email && !to) setTo(data.default_email);
   }, [data, to]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !mutation.isPending) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, mutation.isPending]);
-
   const recipients = data?.recipients ?? [];
 
   return (
     // z-[110], not z-50: ProjectDetailPanel's own backdrop is z-50, so a lower
     // overlay renders behind the panel that opened this.
+    // pointer-events-none while closing: the modal is already spoken for, and
+    // a click landing here mid-exit would re-enter the close path.
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 animate-overlay-in z-[110]"
-      onClick={mutation.isPending ? undefined : onClose}
+      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[110] ${
+        closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
+      }`}
+      onClick={mutation.isPending ? undefined : requestClose}
     >
       <Card
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('aito.sendInvoiceTitle')}
+        tabIndex={-1}
         // max-w-2xl, not max-w-md: Books' templates are built on fixed-width
         // tables that re-wrap into nonsense in a narrower frame.
         // max-h-[90vh] + flex flex-col: the preview can be up to 26rem tall,
         // so on short viewports the card must cap its own height and let the
         // content scroll internally rather than pushing the Send/Cancel row
         // off-screen.
-        className="w-full max-w-2xl max-h-[90vh] flex flex-col animate-modal-in"
+        className={`w-full max-w-2xl max-h-[90vh] flex flex-col focus:outline-none ${
+          closing ? 'animate-modal-out' : 'animate-modal-in'
+        }`}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <CardContent className="p-6 flex flex-col min-h-0">
@@ -101,7 +121,10 @@ export function SendInvoiceModal({
             )}
 
             {data && (
-              <>
+              // animate-rise: this content replaces the loader (the query is
+              // never cached — staleTime/gcTime 0), so it always mounts fresh
+              // and needs the bridge — same as ImportQuoteDrawer's preview.
+              <div className="animate-rise">
                 <label className={labelCls} htmlFor="send-invoice-recipient">
                   {t('aito.sendInvoiceRecipient')}
                 </label>
@@ -134,14 +157,14 @@ export function SendInvoiceModal({
                   </span>
                   <ZohoEmailPreview html={data.body} labelledBy="send-invoice-message-label" />
                 </div>
-              </>
+              </div>
             )}
           </div>
 
           <div className="flex gap-3 mt-6">
             <Button
               variant="secondary"
-              onClick={onClose}
+              onClick={requestClose}
               className="flex-1"
               disabled={mutation.isPending}
             >

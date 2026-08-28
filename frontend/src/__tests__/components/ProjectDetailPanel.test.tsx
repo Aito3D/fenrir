@@ -1112,6 +1112,11 @@ describe('ProjectDetailPanel tasks', () => {
       fireEvent.pointerDown(removeButton);
       await vi.advanceTimersByTimeAsync(1000);
     });
+    // The 200ms removal fold (see TaskRow): its timeout is scheduled from an
+    // effect, so it needs the first act() flushed before it can be advanced.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
 
     expect(deletedId).toBe('101');
     vi.useRealTimers();

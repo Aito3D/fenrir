@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, Pencil } from 'lucide-react';
@@ -11,6 +12,10 @@ import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
+
+/** How long the removal fold plays before `onRemove` actually fires — matches
+ *  the fold's `duration-200` below. */
+const REMOVE_FOLD_MS = 200;
 
 export interface TaskRowProps {
   task: TaskDraft;
@@ -100,11 +105,44 @@ export function TaskRow({
   const { t } = useTranslation();
   const currency = useCurrency();
 
+  // The row's exit: a confirmed hold folds the whole card away (the same
+  // grid 1fr→0fr idiom as the body fold below) and only THEN reports the
+  // remove upward, so the rows underneath ride the fold instead of teleporting
+  // up when this one unmounts. `setTimeout`, not `transitionend` — that event
+  // never fires once reduced motion (or jsdom) drops the transition, and a
+  // task that cannot be deleted is worse than one that skips its exit. The
+  // callback rides a ref so the fold always fires the CURRENT index closure:
+  // a sibling removed during these 200ms shifts this row's index, and the
+  // mount-time closure would delete the wrong task.
+  const [removing, setRemoving] = useState(false);
+  const onRemoveRef = useRef(onRemove);
+  onRemoveRef.current = onRemove;
+  useEffect(() => {
+    if (!removing) return;
+    const id = window.setTimeout(() => onRemoveRef.current?.(), REMOVE_FOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [removing]);
+
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
   const finished = isTaskFinished(task);
   const steps = taskSteps(task);
 
   return (
+    // The removal fold wrapper — the same grid 1fr↔0fr idiom as the body
+    // fold, wrapped around the WHOLE card so header, progress and body leave
+    // as one. `grid-rows-[1fr]` at rest so the flip to `0fr` transitions from
+    // a defined track size; the inner `overflow-hidden` is removal-only so
+    // the card's shadow is never clipped at rest. `inert` + pointer-events
+    // keep a folding row from taking one last click or Tab stop.
+    <div
+      inert={removing}
+      className={
+        removing
+          ? 'grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-[var(--ease-exit)] motion-reduce:transition-none pointer-events-none'
+          : 'grid grid-rows-[1fr]'
+      }
+    >
+    <div className={removing ? 'min-h-0 overflow-hidden' : 'min-h-0'}>
     <div
       // Finishing the last step turns the whole row green. That is the largest
       // state change in the panel and it used to arrive on a single frame, so
@@ -215,7 +253,13 @@ export function TaskRow({
           </button>
         )}
         {onRemove && (
-          <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
+          // The confirmed hold starts the fold; the fold's timeout is what
+          // finally calls `onRemove` — see the `removing` doc above.
+          <DeleteHoldButton
+            onDelete={() => setRemoving(true)}
+            label={t('aito.removeTask')}
+            hint={t('aito.holdToDelete')}
+          />
         )}
       </div>
 
@@ -266,6 +310,8 @@ export function TaskRow({
           </div>
         </div>
       </div>
+    </div>
+    </div>
     </div>
   );
 }

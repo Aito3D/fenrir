@@ -481,6 +481,12 @@ describe('TaskEditor', () => {
       fireEvent.pointerDown(removeButtons[1]);
       await vi.advanceTimersByTimeAsync(1000);
     });
+    // The 200ms removal fold TaskRow plays before reporting the remove
+    // upward. Its timeout is scheduled from an effect, so it only exists
+    // once the first act() has flushed — a second act advances past it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
 
     expect(onRemove).toHaveBeenCalledWith(1);
     vi.useRealTimers();
@@ -504,6 +510,13 @@ describe('TaskEditor', () => {
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
+    });
+    // The hold is complete, but the removal fold is still playing: onRemove
+    // arrives only once the row has finished leaving.
+    expect(onRemove).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
     });
     expect(onRemove).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
@@ -548,6 +561,11 @@ describe('TaskEditor', () => {
       fireEvent.pointerDown(removeButtons[0]);
       await vi.advanceTimersByTimeAsync(1000);
     });
+    // The 200ms removal fold (see TaskRow): its timeout is scheduled from an
+    // effect, so it needs the first act() flushed before it can be advanced.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
     vi.useRealTimers();
 
     expect(screen.queryByRole('heading', { name: /^Un/ })).not.toBeInTheDocument();
@@ -575,6 +593,11 @@ describe('TaskEditor', () => {
     await act(async () => {
       fireEvent.pointerDown(removeButtons[0]);
       await vi.advanceTimersByTimeAsync(1000);
+    });
+    // The 200ms removal fold (see TaskRow): its timeout is scheduled from an
+    // effect, so it needs the first act() flushed before it can be advanced.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
     });
     vi.useRealTimers();
 
@@ -1435,6 +1458,11 @@ describe('TaskEditor accordion (create drawer)', () => {
     await act(async () => {
       fireEvent.pointerDown(removeButtons[0]);
       await vi.advanceTimersByTimeAsync(1000);
+    });
+    // The 200ms removal fold (see TaskRow): its timeout is scheduled from an
+    // effect, so it needs the first act() flushed before it can be advanced.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
     });
     vi.useRealTimers();
 
