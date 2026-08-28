@@ -304,6 +304,24 @@ describe('CalculatorSettingsPanel', () => {
     expect(tariff).toHaveValue(150);
     expect(await screen.findByText('1 unsaved change')).toBeInTheDocument();
   });
+
+  it('plots an example job on both curves and reads out the multipliers', async () => {
+    serveDefaults();
+    const user = userEvent.setup();
+    render(<CalculatorSettingsPanel canUpdate />);
+    // Defaults: K = 33 → example unit cost seeds to 33, quantity 1.
+    const cost = await screen.findByLabelText(/Example unit cost/);
+    expect(cost).toHaveValue(33);
+    expect(screen.getByLabelText(/Example quantity/)).toHaveValue(1);
+    // sizeMargin(33) with M 1.15/1.6, K 33 = 1.375; qty factor at 1 = 1.
+    expect(screen.getByText('×1.375 size margin · ×1.000 quantity factor → ×1.375 on cost')).toBeInTheDocument();
+    await user.clear(cost);
+    await user.type(cost, '330');
+    // sizeMargin(330) = 1.15 + 0.45 × 33/363 = 1.1909
+    expect(await screen.findByText(/×1\.191 size margin/)).toBeInTheDocument();
+    // Editing the example never dirties the form.
+    expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument();
+  });
 });
 
 // Stands in for a background refetch of ['calculatorDefaults'] triggered

@@ -3,7 +3,7 @@
 // live curves they shape) and the prefill values for new filament profiles —
 // behind a single Save bar that appears only while something is dirty.
 
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Percent, Receipt, Spool, TrendingDown, type LucideIcon } from 'lucide-react';
@@ -12,7 +12,8 @@ import { Button } from '../Button';
 import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
-import type { PricingDefaults } from '../../utils/pricing';
+import { buildPricingInputs, foldSessionOverrides, loadCalculatorState } from '../../hooks/useCalculatorState';
+import { computePricing, type PricingDefaults } from '../../utils/pricing';
 import { MarginCurvePreview } from './MarginCurvePreview';
 import { parseNum, useDefaultsForm } from './calculatorSettingsShared';
 
@@ -159,6 +160,33 @@ function SettingsForm({
     defaults,
   );
 
+  // Example-job overlay on the margin curves: seeded once (K / quantity 1)
+  // from the last persisted calculator job, once its filament and printer
+  // are both loaded. Lives outside useDefaultsForm — editing it never dirties
+  // the settings form.
+  const { data: filaments } = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments, staleTime: 60_000 });
+  const { data: printers } = useQuery({ queryKey: ['calculatorPrinters'], queryFn: api.getCalculatorPrinters, staleTime: 60_000 });
+  const [example, setExample] = useState<{ unitCost: string; quantity: string }>({
+    unitCost: String(defaults.margin_k),
+    quantity: '1',
+  });
+  const [seeded, setSeeded] = useState(false);
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || !filaments?.length || !printers?.length) return;
+    seededRef.current = true;
+    const s = loadCalculatorState();
+    const filament = filaments.find((f) => f.id === s.filamentId);
+    const printer = printers.find((p) => p.id === s.printerId);
+    if (!filament || !printer) return;
+    const inputs = buildPricingInputs(s, defaults);
+    if (inputs.weight_g <= 0 || inputs.printing_time_h <= 0) return;
+    const eff = foldSessionOverrides(s, defaults, printer, inputs);
+    const r = computePricing(eff.inputs, filament, eff.printer, eff.defaults);
+    setExample({ unitCost: String(Math.round(r.total_cost)), quantity: String(inputs.quantity) });
+    setSeeded(true);
+  }, [filaments, printers, defaults]);
+
   // Per-field range errors — only for a value that parses but falls outside
   // its server-side bound. An empty field is caught by `allValid` and by
   // NumberField's own `required`; flagging it "out of range" would
@@ -265,7 +293,13 @@ function SettingsForm({
             ))}
           </div>
           <div className="hidden xl:block w-px bg-bambu-dark-tertiary" aria-hidden="true" />
-          <MarginCurvePreview d={preview} currency={currency} />
+          <MarginCurvePreview
+            d={preview}
+            currency={currency}
+            example={example}
+            onExampleChange={(p) => setExample((e) => ({ ...e, ...p }))}
+            seededFromJob={seeded}
+          />
         </div>
       </SettingsCard>
 
