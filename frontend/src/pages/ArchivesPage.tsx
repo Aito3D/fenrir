@@ -1298,10 +1298,15 @@ function ArchiveCard({
           {priceEstimate && (
             <div
               className="flex items-center gap-1.5 text-bambu-gray"
-              title={t('archives.card.suggestedPriceTooltip', {
-                filament: priceEstimate.filamentName,
-                printer: priceEstimate.printerName,
-              })}
+              title={[
+                t('archives.card.suggestedPriceTooltip', {
+                  filament: priceEstimate.filamentName,
+                  printer: priceEstimate.printerName,
+                  unitCost: formatMoney(priceEstimate.unitCost, currencyCode),
+                  sizeMargin: priceEstimate.sizeMargin.toFixed(3),
+                }),
+                ...(priceEstimate.floorApplied ? [t('archives.card.suggestedPriceFloor')] : []),
+              ].join('\n')}
             >
               <Calculator className="w-3 h-3" />
               {formatMoney(priceEstimate.totalTtc, currencyCode)}

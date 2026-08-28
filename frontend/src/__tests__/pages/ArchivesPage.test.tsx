@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
@@ -853,6 +853,23 @@ describe('ArchivesPage', () => {
         calcDefaults,
       )!;
       expect(screen.queryByText(formatMoney(estimate.totalTtc, 'USD').replace(/\s/g, ' '))).not.toBeInTheDocument();
+    });
+
+    it('explains the suggested price with the unit cost and size margin', async () => {
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+        http.get('/api/v1/calculator/printers/', () => HttpResponse.json(calcPrinters)),
+        http.get('/api/v1/calculator/defaults', () => HttpResponse.json(calcDefaults)),
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const el = await within(card).findByTitle(/Suggested sale price from the calculator/, undefined, { timeout: 5000 });
+      expect(el.title).toMatch(/Unit cost .+ → ×\d\.\d{3} size margin/);
     });
   });
 });
