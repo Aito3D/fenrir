@@ -68,16 +68,20 @@ persisted job via a lazy initialiser). Keeping it above the preview lets
 §3 (drag) and §6 (warnings) read the same value.
 
 **Rendering.** A `<ReferenceDot>` on each chart, `r={5}`, green fill,
-white 1.5px stroke, `isFront`. The readout uses the same
+white 1.5px stroke (recharts 3.5 has no `isFront`; its default z-order
+already draws the dot in front). The readout uses the same
 `text-[11px] uppercase tracking` style as the strip labels, with the
-three multipliers in `tabular-nums`. The dot animates with the curve
-morph (recharts animates ReferenceDot position when `x`/`y` change).
+three multipliers in `tabular-nums`. The dot jumps to its new position
+when the curve morphs — recharts does not animate `ReferenceDot`.
 
 **Out of range.** If the example unit cost exceeds the size chart's
 domain (`10 K`), the chart's domain extends to `1.1 × unitCost` so the
 dot is always visible. Quantity above 100 likewise extends the quantity
 domain to `1.1 × q`. Both are clamped at the field bounds
 (`0 < unitCost ≤ 1e9`, `1 ≤ q ≤ 1e6`, matching the calculator's own inputs).
+The quantity curve is sampled at a fixed count (≤ 200 points spread over
+the domain), never one point per unit — otherwise a large example
+quantity would build a million-point chart.
 
 ## 3. Drag K and KQ on the charts
 
@@ -152,11 +156,11 @@ Unit cost {{unitCost}} → ×{{sizeMargin}} size margin
 ```
 
 plus a final line `Minimum task price applied` when `floorApplied`.
-Uses the new fields from *Shared plumbing*. Same tooltip in the list
-row view of the archives page (both call sites at
-`ArchivesPage.tsx:1301` and the row equivalent near line 2320 share
-the key). All 13 locales get the new lines; `ArchivesPage` tests that
-assert on the tooltip text are updated.
+Uses the new fields from *Shared plumbing*. The card view is the only
+place the suggested price renders (`ArchivesPage.tsx:1301`); the list
+row view has no price and therefore no tooltip. All 13 locales get the
+new lines; `ArchivesPage` tests that assert on the tooltip text are
+updated.
 
 ## 6. Inline sanity warnings
 
