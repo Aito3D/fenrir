@@ -140,3 +140,21 @@ def test_pathologically_deep_json_is_unwritable_not_a_crash():
     updated, outcome = apply_filament_cost(content, 19.9)
     assert outcome == "unwritable"
     assert updated == content
+
+
+def test_money_ceiling_stays_in_sync_with_the_calculator_schema():
+    """This module's ``_MONEY_CEILING`` (defined here, in
+    backend/app/services/filament_profile_pricing.py) is a hand-copy of
+    ``_MONEY_CEILING`` in backend/app/schemas/calculator.py, kept as a
+    separate private constant on purpose rather than importing the
+    calculator's, per the comment above this module's definition. Nothing
+    but that comment enforces the two literals staying equal — if one file's
+    ceiling were ever changed without the other, filament price syncs and
+    calculator entries would silently accept/reject different price ranges
+    for the same money field. This test makes that divergence a build
+    failure instead of a silent drift.
+    """
+    from backend.app.schemas.calculator import _MONEY_CEILING as calculator_money_ceiling
+    from backend.app.services.filament_profile_pricing import _MONEY_CEILING as pricing_money_ceiling
+
+    assert pricing_money_ceiling == calculator_money_ceiling

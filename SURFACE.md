@@ -40,6 +40,7 @@ class FilamentProduct:
 class ParsedName:
 class ProfileMatch:
 class ZohoFilamentMappingError(RuntimeError):
+class ZohoFilamentRefreshBusyError(RuntimeError):
 def apply_filament_cost(content: str, cost_per_kg: float) -> tuple[str, ApplyFilamentCostOutcome]:
 def build_match_index(catalogue: list[FilamentProduct]) -> CatalogueIndex:
 def match_profile_indexed(

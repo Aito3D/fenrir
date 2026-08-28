@@ -309,7 +309,9 @@ async def test_search_returns_409_when_a_sync_is_already_in_progress(async_clien
         return True
 
     async def boom(db, *, refresh=True):
-        raise RuntimeError(zoho_filaments._SYNC_IN_PROGRESS_DETAIL)
+        # T-036: a dedicated exception type, not a bare RuntimeError carrying
+        # a copy of the string — the classifier now dispatches on type.
+        raise zoho_filaments.ZohoFilamentRefreshBusyError(zoho_filaments._SYNC_IN_PROGRESS_DETAIL)
 
     monkeypatch.setattr(zoho_service, "is_configured", configured)
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)

@@ -6531,3 +6531,46 @@ entries in the "Backend callables" section, alphabetically sorted in with the re
 schema, DDL, permission gate, or i18n key changed. Applied as shown; no other section differs.
 `bash tools/coverage_fp.sh backend`: 539/540 = 99.81% scoped statements, unchanged from baseline
 (the one uncovered line remains `zoho_filaments.py`'s pre-existing branch, untouched by this task).
+
+## T-036 — 2026-08-27 — MECHANICAL SURFACE DIFF, not a behavior change
+
+Audit `audit-robustness` found that `_fetch_catalogue_or_502`'s 409 classifier identified the
+lock-busy error by comparing `str(exc)` against `_SYNC_IN_PROGRESS_DETAIL` — string equality
+against a second, hand-typed copy of the same literal `fetch_catalogue`'s lock-acquire-timeout
+branch raised as a bare `RuntimeError`. Nothing linked the two copies: a reword (or a stray
+trailing space) at the throw site would leave every test that monkeypatches the error green while
+the real lock-busy path silently degraded from "409 refresh already in progress" to "502 Could not
+reach Zoho".
+
+Fixed by adding `ZohoFilamentRefreshBusyError(RuntimeError)` and raising it (instead of a bare
+`RuntimeError`) at the lock-acquire-timeout throw site inside `fetch_catalogue`. `_fetch_
+catalogue_or_502` now has a dedicated `except ZohoFilamentRefreshBusyError` clause ahead of the
+generic `except RuntimeError`, dispatching by type instead of comparing `str(exc)`.
+`_SYNC_IN_PROGRESS_DETAIL` is unchanged as a module-level constant and keeps supplying the 409
+response's `detail` text — it is no longer compared against `str(exc)` anywhere.
+
+**This is not a behavior change.** The exception is still a `RuntimeError` subclass, so any external
+`except RuntimeError` still catches it, and the message text raised is byte-identical to before. The
+HTTP contract is unchanged: 409 with `detail == _SYNC_IN_PROGRESS_DETAIL` on lock-busy, 502
+otherwise. Confirmed the busy-timeout raise still happens *before* the `try` block that stamps
+`_fail_at`/`_fail_exc` (T-035's cooldown memo) — a busy error still cannot poison the cooldown path,
+unchanged from before this task.
+
+Test fakes in `test_filament_profiles_zoho_sync.py`, `test_calculator_zoho_routes.py`, and
+`test_calculator_zoho_sync.py` that previously raised a bare `RuntimeError(_SYNC_IN_PROGRESS_
+DETAIL)` from a monkeypatched `fetch_catalogue` now raise `ZohoFilamentRefreshBusyError` instead —
+strengthening them to exercise the classifier's actual type-based dispatch rather than a string
+match, while keeping the same 409-status and detail-text assertions. `test_zoho_filaments_
+catalogue.py`'s end-to-end lock-timeout test needed no behavioral change (it drives the real throw
+site), but gained an added `isinstance(exc_info.value, ZohoFilamentRefreshBusyError)` assertion
+alongside its existing message check. All 103 tests across the four targeted files pass.
+
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: diffs by exactly one line — the new
+`class ZohoFilamentRefreshBusyError(RuntimeError):` entry in the "Backend callables" section,
+alphabetically sorted in with the rest. No route, schema, DDL, permission gate, or i18n key changed.
+Applied as shown; no other section differs. `python3 tools/snapshot.py verify`: 11/11 golden probes
+match WITHOUT re-recording, including `fp-sync-endpoint` (pins the 409 lock-busy response).
+`bash tools/coverage_fp.sh backend`: 554/555 = 99.82% scoped statements (baseline 553/554 = 99.82%,
+same ratio, no drop). One pre-existing test (`test_library_slice_api.py::TestCrossClassSliceAllLoop
+::test_embedded_settings_slice_all_with_arrange_still_loops`) failed under the parallel full-suite
+run and passed in isolation (1 passed) — a documented suite-load flake, unrelated to this change.

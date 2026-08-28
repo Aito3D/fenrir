@@ -509,9 +509,11 @@ async def test_lock_acquire_timeout_raises_promptly_with_cold_cache(monkeypatch)
         # acquisition, the test would hang rather than merely fail.
         await zoho_filaments.fetch_catalogue(None)
 
-    # Pin the raised message to the shared constant the route's 409
-    # classifier compares against — a drift here would silently degrade
-    # the API response from 409 to 502 with the type check alone still green.
+    # T-036: the route's 409 classifier now dispatches on this exception's
+    # type rather than comparing str(exc) against the shared constant — pin
+    # both, so a drift in either the type or the message would fail here
+    # instead of silently degrading the API response from 409 to 502.
+    assert isinstance(exc_info.value, zoho_filaments.ZohoFilamentRefreshBusyError)
     assert str(exc_info.value) == zoho_filaments._SYNC_IN_PROGRESS_DETAIL
 
     gate.set()
@@ -782,6 +784,40 @@ async def test_negative_cache_replay_reraises_a_multi_arg_exception_instance(mon
     # TypeError from failing to reconstruct a two-arg exception.
     with pytest.raises(_TwoArgError, match="database is locked"):
         await zoho_filaments.fetch_catalogue(None)
+
+
+@pytest.mark.asyncio
+async def test_negative_cache_replay_does_not_share_a_traceback_across_raises(monkeypatch):
+    """T-037: two fast-fail replays served from the same memo must be
+    DISTINCT exception objects. Before this fix, the cold-cache branch
+    re-raised the one stored ``_fail_exc`` instance itself
+    (``_fail_exc.with_traceback(None)``) -- concurrent callers within the
+    same cooldown window mutated that single object's ``__traceback__`` as
+    each unwound, so one request's logged traceback could carry another
+    request's frames. Also pins the memo-write half of the fix: the stored
+    instance must never accumulate a traceback/cause/context of its own,
+    since that pins the failed walk's frames in memory for the cooldown."""
+
+    async def boom(db, **kwargs):
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+
+    with pytest.raises(RuntimeError) as first:
+        await zoho_filaments.fetch_catalogue(None)
+
+    with pytest.raises(RuntimeError) as second:
+        await zoho_filaments.fetch_catalogue(None)
+
+    # Served from the negative cache, not a repeat of the real walk.
+    assert first.value is not second.value
+    assert second.value is not zoho_filaments._fail_exc
+    # The memoized instance itself must stay pristine -- no traceback
+    # accumulates on it from being raised, because it is never raised
+    # directly.
+    assert zoho_filaments._fail_exc.__traceback__ is None
+    assert zoho_filaments._fail_exc.__cause__ is None
+    assert zoho_filaments._fail_exc.__context__ is None
 
 
 @pytest.mark.asyncio

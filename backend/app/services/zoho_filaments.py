@@ -39,6 +39,20 @@ class ZohoFilamentMappingError(RuntimeError):
     """
 
 
+class ZohoFilamentRefreshBusyError(RuntimeError):
+    """Raised by ``fetch_catalogue`` when another refresh already holds
+    ``_refresh_lock`` and there is no stale cache to answer from instead
+    (T-094's bounded lock-acquire timeout).
+
+    A ``RuntimeError`` subclass — not an unrelated type — so any caller that
+    still does a broad ``except RuntimeError`` keeps catching this. But
+    ``_fetch_catalogue_or_502`` (T-036) matches it with ``isinstance`` rather
+    than comparing ``str(exc)`` against a second, hand-duplicated copy of
+    ``_SYNC_IN_PROGRESS_DETAIL``: a reword of the message here can no longer
+    silently detach the 409 contract from the text actually raised.
+    """
+
+
 FILAMENT_CATEGORY = "Filaments"
 _PAGE_SIZE = 200
 _MAX_PAGES = 20  # 256 items today; a runaway-loop backstop, not a real limit
@@ -100,6 +114,40 @@ _last_stale_serve_at: datetime | None = None
 # reset_cache().
 _fail_at: datetime | None = None
 _fail_exc: BaseException | None = None
+
+
+def _clone_exc(exc: BaseException) -> BaseException:
+    """Build a fresh, traceback/cause/context-free instance of ``exc``'s
+    exact class and message/attributes, WITHOUT calling its ``__init__``.
+
+    T-037: used both to memoize ``_fail_exc`` (so the stored instance never
+    accumulates a traceback of its own, which would pin the failed walk's
+    frames -- DB session, httpx objects -- in memory for the whole
+    _FAIL_COOLDOWN) and to hand each fast-fail caller its OWN object rather
+    than the shared stored one (so concurrent callers within the same
+    cooldown window each unwind a private exception instead of racing to
+    mutate one shared object's ``__traceback__``).
+
+    Deliberately does NOT go through ``copy.copy()``: that relies on
+    ``BaseException.__reduce_ex__``, which reconstructs by calling
+    ``type(exc)(*exc.args)`` -- and a subclass whose ``__init__`` folds
+    multiple constructor arguments into one combined message (exactly what
+    ``exc.args`` then holds) breaks that call with a ``TypeError``, the same
+    fragility this fix is meant to avoid. Calling ``cls.__new__(cls,
+    *exc.args)`` directly sidesteps ``__init__`` entirely -- every
+    ``BaseException`` subclass's ``__new__`` accepts ``*args`` and only
+    stores them, regardless of what ``__init__`` later expects -- so the
+    class, message and any extra attributes on ``exc.__dict__`` (e.g.
+    DBAPIError's ``orig``) survive undisturbed.
+    """
+    cls = type(exc)
+    clone = cls.__new__(cls, *exc.args)
+    clone.__dict__.update(exc.__dict__)
+    clone.__traceback__ = None
+    clone.__cause__ = None
+    clone.__context__ = None
+    return clone
+
 
 # T-072: bumped every time reset_cache() runs. A refresh started before a
 # reset (e.g. one parked on a slow Zoho page fetch while the operator rotates
@@ -447,19 +495,27 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     # T-094/T-091: a cold cache with a recent failure is served immediately —
     # re-raising the memoized failure — rather than taking the lock and
     # repeating a walk that is very likely to fail again the same way.
-    # T-107: this re-raises the STORED INSTANCE (not a same-class
-    # reconstruction from `str(_fail_exc)`) because `_fail_exc` is whatever
+    # T-107/T-037: this raises `_clone_exc(_fail_exc)`, not a same-class
+    # reconstruction from `str(_fail_exc)`, because `_fail_exc` is whatever
     # `except Exception` caught around the whole walk, and that walk reaches
     # SQLAlchemy/httpx — e.g. a DBAPIError subclass whose __init__ takes
     # (statement, params, orig), not a single string. Rebuilding from one
-    # string argument crashes with a TypeError for those. Re-raising the
-    # instance still preserves the class (and therefore whether the route
-    # answers 500 or 502) without that fragility; `with_traceback(None)`
-    # drops the stale traceback from the original failure — the same goal
-    # the reconstruction was after — so what propagates from here is framed
-    # by this call, not the long-finished walk that first observed it.
+    # string argument crashes with a TypeError for those; `_clone_exc`
+    # preserves the class, message and any other attributes regardless of
+    # constructor shape without ever calling `__init__` (see its docstring).
+    # It is ALSO not a re-raise of the stored instance itself
+    # (`_fail_exc.with_traceback(None)`, the previous approach): during a
+    # cold-cache outage several concurrent requests take this branch inside
+    # the same _FAIL_COOLDOWN window, and mutating one shared object's
+    # __traceback__ from each of them raced — a traceback logged for one
+    # request could carry another request's frames, or none at all. Cloning
+    # first gives every caller its own exception object to unwind, so its
+    # __traceback__ is exclusively that call's. `_fail_exc` itself already
+    # has no traceback/cause/context to inherit (cleared at the memo-write
+    # site below), so the clone starts clean and is framed entirely by this
+    # call, not the long-finished walk that first observed the failure.
     if _cache is None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
-        raise _fail_exc.with_traceback(None) from None
+        raise _clone_exc(_fail_exc) from None
 
     # T-035: the warm-cache twin of the fast-fail above. Once a refresh has
     # already failed once, a warm cache within _FAIL_COOLDOWN is served
@@ -501,7 +557,9 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             # advanced it never got to.
             _last_stale_serve_at = _cache_at
             return _cache
-        raise RuntimeError("Zoho filament catalogue refresh is still in progress; try again shortly") from None
+        raise ZohoFilamentRefreshBusyError(
+            "Zoho filament catalogue refresh is still in progress; try again shortly"
+        ) from None
 
     try:
         # Re-check inside the lock: another coroutine may have already done
@@ -585,7 +643,17 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             # pre-walk timestamp could write a memo that is already past
             # _FAIL_COOLDOWN the moment it lands.
             _fail_at = datetime.now(timezone.utc)
-            _fail_exc = exc
+            # T-037: memoize a CLONE of `exc` (see `_clone_exc`) with its
+            # traceback/cause/context stripped, not `exc` itself. The bare
+            # `raise` a few lines below (the real, first-observed failure
+            # propagating to whatever logs it) still uses `exc` with its
+            # traceback intact — this only affects what gets stashed for
+            # later fast-fail reads. Storing the live `exc` would keep the
+            # whole walk's frames (DB session, httpx objects it closed over)
+            # reachable for the entire _FAIL_COOLDOWN window purely because a
+            # traceback pins them; clearing it here, at the moment the memo
+            # is written, is what actually releases them.
+            _fail_exc = _clone_exc(exc)
             if _cache is not None:
                 logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
                 # T-034: this refresh failed with no upper bound on how long
@@ -624,15 +692,14 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         lock.release()
 
 
-# T-009: the exact message fetch_catalogue's lock-acquire timeout raises when
-# another refresh is already in flight and there is no cache to fall back to
-# (see the asyncio.TimeoutError branch above). fetch_catalogue is out of
-# scope for this change, so this is matched by string equality against a
-# bare RuntimeError rather than a dedicated exception type — fragile if that
-# message is ever reworded, but the two other RuntimeErrors fetch_catalogue
-# can raise (the _MAX_PAGES-exceeded truncation and the superseded-generation
-# retry) have different text and must keep falling through to the generic
-# 502 below rather than being mistaken for a busy sync.
+# T-009/T-036: the exact message fetch_catalogue's lock-acquire timeout
+# raises when another refresh is already in flight and there is no cache to
+# fall back to (see the asyncio.TimeoutError branch above, and
+# ZohoFilamentRefreshBusyError). This constant is the HTTP detail text for
+# the 409 response below — the classifier no longer compares against it by
+# string equality (that matched on ``str(exc)``, so a reword here would have
+# silently degraded the 409 to a 502); it now checks the exception's type via
+# ``isinstance``, and this constant only supplies the response body.
 _SYNC_IN_PROGRESS_DETAIL = "Zoho filament catalogue refresh is still in progress; try again shortly"
 
 
@@ -676,10 +743,12 @@ async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> tuple[li
         # check-then-act race, not an unreachable Zoho.
         logger.warning("Zoho credentials were cleared %s: %s", context, exc)
         raise HTTPException(status_code=503, detail="Zoho is not configured") from exc
+    except ZohoFilamentRefreshBusyError as exc:
+        # Caught by type, not by comparing str(exc) against _SYNC_IN_PROGRESS_
+        # DETAIL (T-036) — that constant now only supplies the 409 body text.
+        logger.warning("Zoho filament catalogue refresh already in progress %s", context)
+        raise HTTPException(status_code=409, detail=_SYNC_IN_PROGRESS_DETAIL) from exc
     except RuntimeError as exc:
-        if str(exc) == _SYNC_IN_PROGRESS_DETAIL:
-            logger.warning("Zoho filament catalogue refresh already in progress %s", context)
-            raise HTTPException(status_code=409, detail=_SYNC_IN_PROGRESS_DETAIL) from exc
         logger.warning("Zoho filament catalogue unavailable %s: %s", context, exc, exc_info=True)
         raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
     except Exception as exc:
