@@ -73,7 +73,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
           </dl>
         }
       >
-        <ResponsiveContainer width="100%" height={150}>
+        <ResponsiveContainer width="100%" height={130}>
           <LineChart data={sizeData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
             <XAxis
@@ -120,7 +120,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
           </dl>
         }
       >
-        <ResponsiveContainer width="100%" height={150}>
+        <ResponsiveContainer width="100%" height={130}>
           <LineChart data={qtyData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="q" type="number" domain={[1, 100]} tick={AXIS} stroke={INK} tickLine={false} />

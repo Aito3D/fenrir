@@ -108,9 +108,22 @@ function previewDefaults(form: Record<FieldKey, string>, saved: CalculatorDefaul
 /** One settings card. The card rises with its `.stagger-parents` slot; its
  *  header lands with it and the fields inside cascade after (level 2 of the
  *  app's entrance hierarchy — see index.css). */
-function SettingsCard({ icon: Icon, title, hint, children }: { icon: LucideIcon; title: string; hint: string; children: ReactNode }) {
+function SettingsCard({
+  icon: Icon,
+  title,
+  hint,
+  className = '',
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  hint: string;
+  /** Grid placement on wide screens (see the form's 12-column grid). */
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <Card className="animate-rise-lg">
+    <Card className={`animate-rise-lg ${className}`}>
       <CardHeader>
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bambu-dark text-bambu-green" aria-hidden="true">
@@ -204,29 +217,36 @@ function SettingsForm({
       required
     />
   );
-  const grid = (fields: Field[]) => (
-    <div className="stagger-nested grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{fields.map(field)}</div>
+  const grid = (fields: Field[], cols = 'sm:grid-cols-2') => (
+    <div className={`stagger-nested grid grid-cols-1 gap-4 ${cols}`}>{fields.map(field)}</div>
   );
 
   return (
     <form
       ref={formRef}
       autoComplete="off"
-      className="stagger-parents space-y-4 pb-20"
+      // Wide screens: a 12-column grid so the whole page fits without
+      // scrolling — rates beside provisions, the curves beside the prefill.
+      className="stagger-parents grid grid-cols-1 gap-4 pb-20 xl:grid-cols-12"
       onSubmit={(e) => {
         e.preventDefault();
         if (dirty && allValid && canUpdate) save();
       }}
     >
-      <SettingsCard icon={Receipt} title={t('calculator.ratesTitle')} hint={t('calculator.ratesHint')}>
-        {grid(RATES)}
+      <SettingsCard icon={Receipt} title={t('calculator.ratesTitle')} hint={t('calculator.ratesHint')} className="xl:col-span-6">
+        {grid(RATES, 'sm:grid-cols-2 2xl:grid-cols-3')}
       </SettingsCard>
 
-      <SettingsCard icon={Percent} title={t('calculator.provisionsTitle')} hint={t('calculator.provisionsHint')}>
-        {grid(PROVISIONS)}
+      <SettingsCard icon={Percent} title={t('calculator.provisionsTitle')} hint={t('calculator.provisionsHint')} className="xl:col-span-6">
+        {grid(PROVISIONS, 'sm:grid-cols-2 2xl:grid-cols-3')}
       </SettingsCard>
 
-      <SettingsCard icon={TrendingDown} title={t('calculator.marginCurvesTitle')} hint={t('calculator.marginCurveHint')}>
+      <SettingsCard
+        icon={TrendingDown}
+        title={t('calculator.marginCurvesTitle')}
+        hint={t('calculator.marginCurveHint')}
+        className="xl:col-span-8"
+      >
         {/* Two panels: the curve fields and the curves they shape. The
             divider is a hairline on wide screens; the panels stack below. */}
         <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_1px_minmax(0,1.1fr)]">
@@ -243,8 +263,8 @@ function SettingsForm({
         </div>
       </SettingsCard>
 
-      <SettingsCard icon={Spool} title={t('calculator.filamentSettings')} hint={t('calculator.filamentSettingsHint')}>
-        {grid(PREFILL)}
+      <SettingsCard icon={Spool} title={t('calculator.filamentSettings')} hint={t('calculator.filamentSettingsHint')} className="xl:col-span-4">
+        {grid(PREFILL, 'sm:grid-cols-2 xl:grid-cols-1')}
       </SettingsCard>
 
       {/* Save bar: mounted permanently so it leaves the way it arrived (slides
@@ -252,7 +272,7 @@ function SettingsForm({
           reachable from any card. Never rendered for read-only viewers. */}
       {canUpdate && (
         <div
-          className="fixed bottom-4 z-10 pointer-events-none"
+          className="fixed bottom-4 z-10 pointer-events-none xl:col-span-12"
           style={barBox ? { left: barBox.left, width: barBox.width } : { left: '1rem', right: '1rem' }}
           aria-live="polite"
         >
@@ -286,7 +306,7 @@ export function CalculatorSettingsPanel({ canUpdate }: { canUpdate: boolean }) {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settings?.currency || 'USD';
   return (
-    <div className="max-w-6xl">
+    <div>
       {defaults ? (
         <SettingsForm defaults={defaults} currency={currency} canUpdate={canUpdate} />
       ) : (
