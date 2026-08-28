@@ -6,6 +6,15 @@ import { Card, CardContent, CardHeader } from '../Card';
 import { rowCls, stickyTdCls, tdCls, thCls } from './shared';
 import { formatMoney, type CurvePoint } from '../../utils/pricing';
 
+// Dark tooltip matching the app's other charts (recharts defaults to white).
+const TOOLTIP = {
+  contentStyle: { background: 'var(--color-bambu-dark-secondary)', border: '1px solid var(--color-bambu-dark-tertiary)', borderRadius: 8, fontSize: 12, padding: '6px 10px' },
+  labelStyle: { color: 'var(--color-bambu-gray)', marginBottom: 2 },
+  itemStyle: { color: '#fff', padding: 0 },
+  cursor: { stroke: 'var(--color-bambu-gray)', strokeWidth: 1 },
+} as const;
+
+
 /** Unit price versus quantity — the curve the margin model draws for this
  *  job. Points come from unitPriceCurve() in the page (full recompute per
  *  quantity). Replaces the former bulk-discount table. */
@@ -30,10 +39,11 @@ export function CalculatorQuantityCurve({ points, currency }: { points: CurvePoi
               <XAxis dataKey="quantity" type="number" scale="log" domain={['dataMin', 'dataMax']} ticks={points.map((p) => p.quantity)} tick={{ fontSize: 11 }} stroke="var(--color-bambu-gray)" />
               <YAxis tickFormatter={(v: number) => formatMoney(v, currency, false)} tick={{ fontSize: 11 }} width={64} stroke="var(--color-bambu-gray)" />
               <Tooltip
+                {...TOOLTIP}
                 formatter={(v: number | undefined) => formatMoney(Number(v ?? 0), currency)}
                 labelFormatter={(q: ReactNode) => `${t('calculator.bulkQuantity')} ${Number(q ?? 0)}`}
               />
-              <Line type="monotone" dataKey="unit_ttc" stroke="var(--viz-1)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+              <Line type="monotone" dataKey="unit_ttc" name={t('calculator.curveUnitPrice')} stroke="var(--viz-1)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
               {current && <ReferenceDot x={current.quantity} y={current.unit_ttc} r={6} fill="var(--color-bambu-green)" stroke="none" />}
             </LineChart>
           </ResponsiveContainer>

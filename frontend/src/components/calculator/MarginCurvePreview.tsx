@@ -15,6 +15,14 @@ const AXIS = { fontSize: 11 } as const;
 const GRID = 'var(--color-bambu-dark-tertiary)';
 const INK = 'var(--color-bambu-gray)';
 
+// Dark tooltip matching the app's other charts (recharts defaults to white).
+const TOOLTIP = {
+  contentStyle: { background: 'var(--color-bambu-dark-secondary)', border: '1px solid var(--color-bambu-dark-tertiary)', borderRadius: 8, fontSize: 12, padding: '6px 10px' },
+  labelStyle: { color: 'var(--color-bambu-gray)', marginBottom: 2 },
+  itemStyle: { color: '#fff', padding: 0 },
+  cursor: { stroke: 'var(--color-bambu-gray)', strokeWidth: 1 },
+} as const;
+
 function Curve({
   title,
   children,
@@ -95,11 +103,12 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
               axisLine={false}
             />
             <Tooltip
+              {...TOOLTIP}
               formatter={(v: number | undefined) => `×${Number(v ?? 0).toFixed(3)}`}
               labelFormatter={(u: ReactNode) => formatMoney(Number(u ?? 0), currency)}
             />
             <ReferenceLine x={k} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="m" stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
+            <Line type="monotone" dataKey="m" name={t('calculator.sizeMarginGroup')} stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </Curve>
@@ -133,9 +142,13 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
               tickLine={false}
               axisLine={false}
             />
-            <Tooltip formatter={(v: number | undefined) => Number(v ?? 0).toFixed(3)} />
+            <Tooltip
+              {...TOOLTIP}
+              formatter={(v: number | undefined) => Number(v ?? 0).toFixed(3)}
+              labelFormatter={(q: ReactNode) => `${t('calculator.bulkQuantity')} ${q}`}
+            />
             <ReferenceLine x={midQty} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="f" stroke="var(--viz-2)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
+            <Line type="monotone" dataKey="f" name={t('calculator.curveQtyFactor')} stroke="var(--viz-2)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </Curve>
