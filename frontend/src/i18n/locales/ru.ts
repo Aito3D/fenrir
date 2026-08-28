@@ -8031,6 +8031,8 @@ export default {
     exampleUnitCost: 'Себестоимость единицы, пример ({{currency}})',
     exampleQuantity: 'Количество, пример',
     exampleReadout: '×{{size}} наценка за размер · ×{{qty}} коэффициент количества → ×{{total}} к себестоимости',
+    dragK: 'Перетащите, чтобы задать K',
+    dragKQ: 'Перетащите, чтобы задать KQ',
     exampleFromCalculator: 'Заполнено из последнего заказа калькулятора',
     saveMarginCurve: 'Сохранить кривую маржи',
     marginCurveSaved: 'Кривая маржи сохранена',

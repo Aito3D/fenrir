@@ -299,6 +299,9 @@ function SettingsForm({
             example={example}
             onExampleChange={(p) => setExample((e) => ({ ...e, ...p }))}
             seededFromJob={seeded}
+            onDragK={(v) => setField('margin_k', String(v))}
+            onDragKQ={(v) => setField('qty_k', String(v))}
+            readOnly={!canUpdate}
           />
         </div>
       </SettingsCard>

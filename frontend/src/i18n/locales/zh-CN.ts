@@ -8414,6 +8414,8 @@ export default {
     exampleUnitCost: '示例单件成本 ({{currency}})',
     exampleQuantity: '示例数量',
     exampleReadout: '×{{size}} 尺寸利润率 · ×{{qty}} 数量系数 → 成本的 ×{{total}}',
+    dragK: '拖动以设置 K',
+    dragKQ: '拖动以设置 KQ',
     exampleFromCalculator: '已根据上一次计算器任务预填',
     saveMarginCurve: '保存利润率曲线',
     marginCurveSaved: '利润率曲线已保存',

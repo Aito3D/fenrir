@@ -8427,6 +8427,8 @@ export default {
     exampleUnitCost: 'サンプル単価 ({{currency}})',
     exampleQuantity: 'サンプル数量',
     exampleReadout: '×{{size}} サイズマージン · ×{{qty}} 数量係数 → コストに対して ×{{total}}',
+    dragK: 'ドラッグしてKを設定',
+    dragKQ: 'ドラッグしてKQを設定',
     exampleFromCalculator: '直近の計算機の案件から自動入力',
     saveMarginCurve: 'マージン曲線を保存',
     marginCurveSaved: 'マージン曲線を保存しました',

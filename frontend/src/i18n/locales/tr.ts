@@ -8355,6 +8355,8 @@ export default {
     exampleUnitCost: 'Örnek birim maliyet ({{currency}})',
     exampleQuantity: 'Örnek miktar',
     exampleReadout: '×{{size}} boyut marjı · ×{{qty}} miktar faktörü → maliyet üzerinde ×{{total}}',
+    dragK: 'K değerini ayarlamak için sürükleyin',
+    dragKQ: 'KQ değerini ayarlamak için sürükleyin',
     exampleFromCalculator: 'Son hesap makinesi işinden önceden dolduruldu',
     saveMarginCurve: 'Marj eğrisini kaydet',
     marginCurveSaved: 'Marj eğrisi kaydedildi',

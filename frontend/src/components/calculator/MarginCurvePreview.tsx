@@ -8,7 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CURVE_DEFAULTS, formatMoney, qtyFactor, sizeMargin, unitMultiplier, type PricingDefaults } from '../../utils/pricing';
 import { prefersReducedMotion } from '../../utils/motion';
-import { qtyDomainMax, sizeDomainMax } from './curveGeometry';
+import { qtyDomainMax, roundK, roundKQ, sizeDomainMax } from './curveGeometry';
+import { DragHandle } from './DragHandle';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
 
@@ -61,12 +62,18 @@ export function MarginCurvePreview({
   example,
   onExampleChange,
   seededFromJob,
+  onDragK,
+  onDragKQ,
+  readOnly,
 }: {
   d: PricingDefaults;
   currency: string;
   example: { unitCost: string; quantity: string };
   onExampleChange: (patch: Partial<{ unitCost: string; quantity: string }>) => void;
   seededFromJob?: boolean;
+  onDragK?: (k: number) => void;
+  onDragKQ?: (kq: number) => void;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const animMs = prefersReducedMotion() ? 0 : 350;
@@ -172,6 +179,17 @@ export function MarginCurvePreview({
               labelFormatter={(u: ReactNode) => formatMoney(Number(u ?? 0), currency)}
             />
             <ReferenceLine x={k} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
+            {onDragK && (
+              <DragHandle
+                value={k}
+                min={0}
+                max={sizeDomainMax(k, ex?.unitCost)}
+                onChange={onDragK}
+                round={roundK}
+                label={t('calculator.dragK')}
+                readOnly={readOnly}
+              />
+            )}
             <Line type="monotone" dataKey="m" name={t('calculator.sizeMarginGroup')} stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={animMs} animationEasing="ease-out" />
             {ex && <ReferenceDot x={ex.unitCost} y={sizeMargin(ex.unitCost, d)} r={5} fill="var(--color-bambu-green)" stroke="#fff" strokeWidth={1.5} />}
           </LineChart>
@@ -213,6 +231,17 @@ export function MarginCurvePreview({
               labelFormatter={(q: ReactNode) => `${t('calculator.bulkQuantity')} ${q}`}
             />
             <ReferenceLine x={midQty} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
+            {onDragKQ && (
+              <DragHandle
+                value={midQty}
+                min={1}
+                max={qtyDomainMax(ex?.quantity)}
+                onChange={(v) => onDragKQ(Math.max(1, v - 1))}
+                round={roundKQ}
+                label={t('calculator.dragKQ')}
+                readOnly={readOnly}
+              />
+            )}
             <Line type="monotone" dataKey="f" name={t('calculator.curveQtyFactor')} stroke="var(--viz-2)" dot={false} strokeWidth={2} animationDuration={animMs} animationEasing="ease-out" />
             {ex && <ReferenceDot x={ex.quantity} y={qtyFactor(ex.quantity, d)} r={5} fill="var(--color-bambu-green)" stroke="#fff" strokeWidth={1.5} />}
           </LineChart>

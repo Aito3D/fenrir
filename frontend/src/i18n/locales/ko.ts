@@ -8048,6 +8048,8 @@ export default {
     exampleUnitCost: '예시 단가 ({{currency}})',
     exampleQuantity: '예시 수량',
     exampleReadout: '×{{size}} 크기 마진 · ×{{qty}} 수량 계수 → 원가 대비 ×{{total}}',
+    dragK: '드래그하여 K 설정',
+    dragKQ: '드래그하여 KQ 설정',
     exampleFromCalculator: '마지막 계산기 작업에서 자동 입력됨',
     saveMarginCurve: '마진 곡선 저장',
     marginCurveSaved: '마진 곡선이 저장되었습니다',

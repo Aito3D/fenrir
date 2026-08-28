@@ -8428,6 +8428,8 @@ export default {
     exampleUnitCost: 'Beispiel-Stückkosten ({{currency}})',
     exampleQuantity: 'Beispielmenge',
     exampleReadout: '×{{size}} Größenmarge · ×{{qty}} Mengenfaktor → ×{{total}} auf die Kosten',
+    dragK: 'Ziehen, um K festzulegen',
+    dragKQ: 'Ziehen, um KQ festzulegen',
     exampleFromCalculator: 'Vorausgefüllt aus dem letzten Rechnerauftrag',
     saveMarginCurve: 'Margenkurve speichern',
     marginCurveSaved: 'Margenkurve gespeichert',

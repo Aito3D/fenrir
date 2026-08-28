@@ -8414,6 +8414,8 @@ export default {
     exampleUnitCost: '範例單件成本 ({{currency}})',
     exampleQuantity: '範例數量',
     exampleReadout: '×{{size}} 尺寸利潤率 · ×{{qty}} 數量係數 → 成本的 ×{{total}}',
+    dragK: '拖曳以設定 K',
+    dragKQ: '拖曳以設定 KQ',
     exampleFromCalculator: '已根據上次計算機作業預先帶入',
     saveMarginCurve: '儲存利潤率曲線',
     marginCurveSaved: '利潤率曲線已儲存',

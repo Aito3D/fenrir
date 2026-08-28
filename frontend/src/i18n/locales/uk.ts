@@ -8041,6 +8041,8 @@ export default {
     exampleUnitCost: "Собівартість одиниці, приклад ({{currency}})",
     exampleQuantity: "Кількість, приклад",
     exampleReadout: "×{{size}} маржа за розміром · ×{{qty}} коефіцієнт кількості → ×{{total}} до собівартості",
+    dragK: "Перетягніть, щоб встановити K",
+    dragKQ: "Перетягніть, щоб встановити KQ",
     exampleFromCalculator: "Заповнено з останнього завдання калькулятора",
     saveMarginCurve: "Зберегти криву маржі",
     marginCurveSaved: "Криву маржі збережено",

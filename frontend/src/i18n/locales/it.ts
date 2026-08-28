@@ -8415,6 +8415,8 @@ export default {
     exampleUnitCost: 'Costo unitario di esempio ({{currency}})',
     exampleQuantity: 'Quantità di esempio',
     exampleReadout: '×{{size}} margine dimensione · ×{{qty}} fattore quantità → ×{{total}} sul costo',
+    dragK: 'Trascina per impostare K',
+    dragKQ: 'Trascina per impostare KQ',
     exampleFromCalculator: 'Precompilato dall\'ultimo lavoro del calcolatore',
     saveMarginCurve: 'Salva curva del margine',
     marginCurveSaved: 'Curva del margine salvata',

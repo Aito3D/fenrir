@@ -8481,6 +8481,8 @@ export default {
     exampleUnitCost: 'Example unit cost ({{currency}})',
     exampleQuantity: 'Example quantity',
     exampleReadout: '×{{size}} size margin · ×{{qty}} quantity factor → ×{{total}} on cost',
+    dragK: 'Drag to set K',
+    dragKQ: 'Drag to set KQ',
     exampleFromCalculator: 'Prefilled from the last calculator job',
     saveMarginCurve: 'Save margin curve',
     marginCurveSaved: 'Margin curve saved',
