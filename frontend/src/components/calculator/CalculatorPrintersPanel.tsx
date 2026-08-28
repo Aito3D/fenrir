@@ -222,16 +222,20 @@ export function CalculatorPrintersPanel({
         )}
       </CardHeader>
       <CardContent>
+        {/* Keyed by mode so the read<->edit swap re-enters with the small rise
+            (same bridge TaskRow uses) instead of teleporting. */}
         {editing && canUpdate ? (
-          <PrinterForm
-            initial={editing === 'new' ? undefined : editing}
-            currencySymbol={currencySymbol}
-            isSaving={saveMutation.isPending}
-            onSubmit={(data) => saveMutation.mutate(data)}
-            onCancel={() => setEditing(null)}
-          />
+          <div key="form" className="animate-rise-sm">
+            <PrinterForm
+              initial={editing === 'new' ? undefined : editing}
+              currencySymbol={currencySymbol}
+              isSaving={saveMutation.isPending}
+              onSubmit={(data) => saveMutation.mutate(data)}
+              onCancel={() => setEditing(null)}
+            />
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div key="list" className="space-y-3 animate-rise-sm">
             <SearchBox value={search} onChange={setSearch} className="sm:max-w-xs" />
             {visible.length === 0 ? (
               <NoMatches />

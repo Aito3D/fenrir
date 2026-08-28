@@ -675,21 +675,25 @@ export function CalculatorFilamentsPanel({
             {syncTimedOut ? t('calculator.syncTimedOut') : t('calculator.syncFailed', { error: syncError })}
           </p>
         )}
+        {/* Keyed by mode so the read<->edit swap re-enters with the small rise
+            (same bridge TaskRow uses) instead of teleporting. */}
         {editing && canUpdate ? (
-          <FilamentForm
-            initial={editing === 'new' ? undefined : editing}
-            defaultDifficulty={defaults?.default_difficulty_pct ?? 100}
-            defaultMargin={defaults?.default_margin_over_cost_pct ?? 50}
-            currency={currency}
-            currencySymbol={currencySymbol}
-            zohoConfigured={zohoConfigured}
-            existingFilaments={filaments}
-            isSaving={saveMutation.isPending}
-            onSubmit={(data) => saveMutation.mutate(data)}
-            onCancel={() => setEditing(null)}
-          />
+          <div key="form" className="animate-rise-sm">
+            <FilamentForm
+              initial={editing === 'new' ? undefined : editing}
+              defaultDifficulty={defaults?.default_difficulty_pct ?? 100}
+              defaultMargin={defaults?.default_margin_over_cost_pct ?? 50}
+              currency={currency}
+              currencySymbol={currencySymbol}
+              zohoConfigured={zohoConfigured}
+              existingFilaments={filaments}
+              isSaving={saveMutation.isPending}
+              onSubmit={(data) => saveMutation.mutate(data)}
+              onCancel={() => setEditing(null)}
+            />
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div key="list" className="space-y-3 animate-rise-sm">
             <div className="flex flex-col sm:flex-row gap-2">
               <SearchBox value={search} onChange={setSearch} className="flex-1 min-w-[10rem]" />
               <select

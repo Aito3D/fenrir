@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Info } from 'lucide-react';
 import { focusRingCls } from '../formStyles';
 
@@ -31,7 +31,8 @@ export function FormulaPopover({ label, lines }: { label: string; lines: string[
       </button>
       {open && (
         <div role="dialog" aria-label={label}
-          className="absolute left-0 top-full z-20 mt-1 w-max max-w-[min(90vw,28rem)] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 shadow-xl">
+          style={{ '--dropdown-origin': 'top left' } as CSSProperties}
+          className="animate-dropdown-in absolute left-0 top-full z-20 mt-1 w-max max-w-[min(90vw,28rem)] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 shadow-xl">
           {lines.map((l, i) => (
             <p key={i} className="whitespace-pre font-mono text-xs tabular-nums text-white">{l}</p>
           ))}

@@ -193,7 +193,7 @@ export function CalculatorInputsCard({
           />
         </div>
         {showTimeCorrection && timeAccuracy && (
-          <div className="flex items-center gap-2 text-xs rounded-full bg-blue-500/10 text-blue-400 px-3 py-1.5 w-fit">
+          <div className="animate-calc-badge-pop flex items-center gap-2 text-xs rounded-full bg-blue-500/10 text-blue-400 px-3 py-1.5 w-fit">
             <Timer className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
             {timeAccuracy.scope
               ? t('calculator.timeCorrection.hintScoped', {
@@ -215,7 +215,7 @@ export function CalculatorInputsCard({
           </div>
         )}
         {num(state.energyKwh) > 0 && (
-          <div className="flex items-center gap-2 text-xs rounded-full bg-bambu-green/10 text-bambu-green px-3 py-1.5 w-fit">
+          <div className="animate-calc-badge-pop flex items-center gap-2 text-xs rounded-full bg-bambu-green/10 text-bambu-green px-3 py-1.5 w-fit">
             <Zap className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
             {t('calculator.measuredEnergy', { kwh: state.energyKwh })}
             <button

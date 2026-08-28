@@ -74,7 +74,7 @@ export function ZohoFilamentSearch({
       {enabled && (
         <ul
           id="calc-fil-zoho-results"
-          className="mt-1 max-h-64 overflow-y-auto rounded-lg border border-bambu-dark-tertiary bg-bambu-dark divide-y divide-bambu-dark-tertiary"
+          className="animate-dropdown-in mt-1 max-h-64 overflow-y-auto rounded-lg border border-bambu-dark-tertiary bg-bambu-dark divide-y divide-bambu-dark-tertiary"
         >
           {isError && <li className="px-3 py-2 text-sm text-status-error">{t('calculator.zohoSearchError')}</li>}
           {!isError && !isFetching && results.length === 0 && (

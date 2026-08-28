@@ -16,8 +16,8 @@
  * auditor also offered).
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CalculatorRealityCheckCard } from '../../components/calculator/CalculatorRealityCheckCard';
@@ -33,7 +33,11 @@ const baseCheck: RealityCheck = {
   printerId: 1,
 };
 
-function renderCard(check: RealityCheck, onUpdatePrinterProfile: (id: number, patch: object) => void = vi.fn()) {
+function renderCard(
+  check: RealityCheck,
+  onUpdatePrinterProfile: (id: number, patch: object) => void = vi.fn(),
+  onDismiss: (key: string) => void = () => {},
+) {
   render(
     <CalculatorRealityCheckCard
       checks={[check]}
@@ -46,7 +50,7 @@ function renderCard(check: RealityCheck, onUpdatePrinterProfile: (id: number, pa
       onSaveDefault={() => {}}
       onUpdateFilamentCost={() => {}}
       onUpdatePrinterProfile={onUpdatePrinterProfile}
-      onDismiss={() => {}}
+      onDismiss={onDismiss}
       dismissedCount={0}
       onRestoreDismissed={() => {}}
       canUpdate
@@ -96,5 +100,37 @@ describe('CalculatorRealityCheckCard: dailyHours Update profile gating (T-121)',
     expect(await screen.findByText('Daily usage', {}, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getByText('24.1 h')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Update profile' })).not.toBeInTheDocument();
+  });
+});
+
+describe('CalculatorRealityCheckCard: dismiss exit transition', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('marks the row as leaving and only reports the dismiss once the 150ms exit has played', () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    renderCard(baseCheck, vi.fn(), onDismiss);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    const row = document.querySelector('.calc-check-row');
+    expect(row).toHaveAttribute('data-leaving', 'true');
+    expect(onDismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(150);
+    expect(onDismiss).toHaveBeenCalledWith('dailyHours:all');
+  });
+
+  it('dismisses immediately under prefers-reduced-motion', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      matches: q.includes('prefers-reduced-motion'),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    const onDismiss = vi.fn();
+    renderCard(baseCheck, vi.fn(), onDismiss);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).toHaveBeenCalledWith('dailyHours:all');
+    expect(document.querySelector('.calc-check-row')).not.toHaveAttribute('data-leaving');
   });
 });

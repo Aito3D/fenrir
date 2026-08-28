@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, CheckCircle2, Gauge, Info, RotateCcw, Save, X } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../Card';
@@ -6,6 +7,10 @@ import { Tooltip } from '../Tooltip';
 import { focusRingCls } from '../formStyles';
 import { formatMoney } from '../../utils/pricing';
 import { checkKey, type RealityCheck, type RealityCheckKind } from '../../utils/calculatorInsights';
+import { prefersReducedMotion } from '../../utils/motion';
+
+/** Matches .calc-check-row[data-leaving] in index.css. */
+const LEAVE_MS = 150;
 
 /**
  * Measured values vs the calculator's assumptions, with one-click apply.
@@ -52,6 +57,29 @@ export function CalculatorRealityCheckCard({
   allClear: boolean;
 }) {
   const { t } = useTranslation();
+  // Rows enter with calc-tab-in; on dismiss they leave the same way (back down
+  // and out) before the parent drops them, instead of vanishing and letting the
+  // rows below jump. Under reduced motion the dismiss is immediate.
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
+  const timers = useRef<number[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const dismiss = (key: string) => {
+    if (prefersReducedMotion() || leaving.has(key)) {
+      onDismiss(key);
+      return;
+    }
+    setLeaving((prev) => new Set(prev).add(key));
+    timers.current.push(
+      window.setTimeout(() => {
+        setLeaving((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        onDismiss(key);
+      }, LEAVE_MS),
+    );
+  };
 
   if (checks.length === 0) {
     if (!allClear && dismissedCount === 0) return null;
@@ -211,7 +239,8 @@ export function CalculatorRealityCheckCard({
               // fade-in when a later check appears (material switch, fresh print
               // data) instead of teleporting into the settled card. Capped delay
               // keeps a long list from trickling in.
-              className={`animate-calc-tab-in rounded-lg bg-bambu-dark/50 border-l-2 px-3 py-2 text-sm ${
+              data-leaving={leaving.has(key) || undefined}
+              className={`calc-check-row animate-calc-tab-in rounded-lg bg-bambu-dark/50 border-l-2 px-3 py-2 text-sm ${
                 check.severity === 'significant' ? 'border-status-error/70' : 'border-status-warning/60'
               }`}
               style={{ animationDelay: `${Math.min(idx * 30, 180)}ms` }}
@@ -241,7 +270,7 @@ export function CalculatorRealityCheckCard({
                     type="button"
                     aria-label={t('calculator.realityCheck.dismiss')}
                     title={t('calculator.realityCheck.dismiss')}
-                    onClick={() => onDismiss(key)}
+                    onClick={() => dismiss(key)}
                     className={`p-2 -m-2 rounded-full text-bambu-gray hover:text-white transition-colors ${focusRingCls}`}
                   >
                     <X className="w-3.5 h-3.5" />

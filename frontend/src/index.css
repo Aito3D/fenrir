@@ -793,6 +793,19 @@ body {
   animation: calc-tab-in 0.25s var(--ease-signature) backwards;
 }
 
+/* Reality-check row on its way out (dismiss). Leaves the way it arrived —
+   back down 6px on the accelerating exit curve. Duration matches LEAVE_MS in
+   CalculatorRealityCheckCard, which unmounts the row when it ends. Only
+   transform/opacity move; the siblings reflow once the row is gone. */
+.calc-check-row[data-leaving] {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition:
+    transform 0.15s var(--ease-exit),
+    opacity 0.12s ease-in;
+}
+
 /* ==========================================================================
    App-wide motion system
    Motion budget: 400ms parent entrance · 280ms child entrance · 150ms exit ·
@@ -1262,6 +1275,27 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 .animate-modal-in {
   animation: modal-in 0.25s var(--ease-signature);
   transform-origin: center;
+}
+
+/* Modal card exit — the mirror of modal-in: the same gentle scale, back down
+   on the exit curve at the budget's 150ms exit beat, while the overlay fades
+   (.animate-overlay-out). Unmount is deferred past this by
+   useDismissableDialog's `animationMs` — setTimeout, not `animationend`, for
+   the reason drawer-out documents below. */
+@keyframes modal-out {
+  to { opacity: 0; transform: scale(0.97); }
+}
+.animate-modal-out {
+  animation: modal-out 0.15s var(--ease-exit) forwards;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Fade only, same rule as drawer-out. Still an animation, not `none`: the
+     fill-forwards opacity is what keeps the card hidden through the unmount
+     delay. */
+  .animate-modal-out {
+    animation: fadeOut 0.15s ease-out forwards;
+  }
 }
 
 /* Backdrop / overlay fade — 150ms so it never lags the card it dims. */
