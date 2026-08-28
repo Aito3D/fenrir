@@ -520,6 +520,35 @@ describe('FilamentProfilesPage', () => {
     expect(screen.getByText(/Generic - PETG - Black - 1\.75mm/)).toBeInTheDocument();
   });
 
+  it('reports a matched preset whose re-formatted content would exceed the size cap as needing attention, not as priced', async () => {
+    stubBase();
+    server.use(
+      http.post('*/filament-profiles/zoho-sync', () =>
+        HttpResponse.json({
+          priced: 0,
+          unchanged: 0,
+          attention: [{ id: 14, name: 'Huge PLA', reason: 'content_too_large', candidates: [] }],
+          attention_total: 1,
+        }),
+      ),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('White');
+
+    await userEvent.click(await screen.findByRole('button', { name: /sync prices from zoho/i }));
+
+    // Must render its own reason, never fall through to the "no price" copy
+    // (T-044, user-approved 2026-08-27): a preset whose re-indented content
+    // would cross the size cap is left unpriced and reported here instead.
+    expect(await screen.findByText(/Huge PLA/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/re-formatted content would exceed the size limit/i, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/matched, but the item has no price/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/preset's saved data is empty or unreadable/i)).not.toBeInTheDocument();
+  });
+
   it('reports the needs-attention count in the toast and downgrades it off success when some profiles need attention (T-008)', async () => {
     stubBase();
     server.use(
@@ -905,6 +934,57 @@ describe('FilamentProfilesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('sends the loaded updated_at, and on a 409 keeps the editor open, toasts, and surfaces the T-032 conflict banner (T-045)', async () => {
+    // The PATCH the editor issues carries `expected_updated_at`; the server
+    // 409s here (as if a concurrent Zoho sync had already bumped the row).
+    // The page must not close the editor on this failure (T-031's
+    // close-on-save is success-only) but must still invalidate the presets
+    // query so the still-open editor's `preset` prop picks up the new
+    // `updated_at` and T-032's own banner machinery takes it from there.
+    let getCalls = 0;
+    let patchBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('*/filament-profiles', () => {
+        getCalls += 1;
+        const primed = preset({
+          updated_at: getCalls === 1 ? '2026-08-01T00:00:00Z' : '2026-08-25T00:00:00Z',
+        });
+        return HttpResponse.json([primed, PRESETS[1]]);
+      }),
+      http.get('*/filament-profiles/base-presets', () => HttpResponse.json([])),
+      http.get('*/filament-catalog/', () => HttpResponse.json([])),
+      http.patch('*/filament-profiles/1', async ({ request }) => {
+        patchBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ detail: 'This preset changed on the server since it was loaded' }, { status: 409 });
+      }),
+    );
+
+    render(<FilamentProfilesPage />);
+    await screen.findByText('Black');
+
+    await userEvent.click(screen.getByText('Black'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    const colorInput = screen.getByRole('textbox', { name: /color label/i });
+    await userEvent.clear(colorInput);
+    await userEvent.type(colorInput, 'Sunrise');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    await waitFor(() => expect(patchBody).toMatchObject({ expected_updated_at: '2026-08-01T00:00:00Z' }));
+
+    // The invalidate-on-409 refetch lands, and T-032's own conflict banner
+    // picks it up — same "changed on the server" copy the toast also uses,
+    // so both a toast and the in-dialog alert carry that text; the alert
+    // role scopes this assertion to the banner specifically.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed on the server/i);
+    // Also toasted (at least one match outside the dialog's own alert).
+    expect((await screen.findAllByText(/changed on the server/i)).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // The unsaved edit is still held, not discarded by the refetch.
+    expect(screen.getByRole('textbox', { name: /color label/i })).toHaveValue('Sunrise');
   });
 
   it('keeps unsaved edits and shows a conflict banner when a background refetch changes the preset, then adopts the server copy on reload (T-032)', async () => {

@@ -4373,6 +4373,7 @@ export default {
     syncZohoUnwritable: "Matched, but the preset's saved data is empty or unreadable",
     syncZohoBadPrice: "Matched, but the item's price is invalid or unusably large",
     syncZohoWeightUnknown: "Matched, but the item's spool weight is unknown — its price was not applied",
+    syncZohoContentTooLarge: "Matched, but the preset's re-formatted content would exceed the size limit — its price was not applied",
     syncZohoFailed: 'Could not sync prices from Zoho',
     syncZohoUnknown: 'Sync result unknown — the connection was lost before a response arrived. Refresh to see what was applied.',
     syncZohoStale: 'Zoho was unreachable — prices came from a catalogue cached at {{timestamp}}, not a live sync',

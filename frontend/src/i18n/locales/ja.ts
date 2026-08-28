@@ -4339,6 +4339,7 @@ export default {
     syncZohoUnwritable: '一致しましたが、プリセットの保存データが空か読み取れません',
     syncZohoBadPrice: '一致しましたが、価格が無効か大きすぎます',
     syncZohoWeightUnknown: '一致しましたが、アイテムのスプール重量が不明なため価格は適用されませんでした',
+    syncZohoContentTooLarge: '一致しましたが、プリセットの再フォーマット後のデータがサイズ上限を超えるため価格は適用されませんでした',
     syncZohoFailed: 'Zohoから価格を同期できませんでした',
     syncZohoUnknown: '同期結果は不明です — 応答が届く前に接続が失われました。ページを更新して適用内容を確認してください。',
     syncZohoStale: 'Zohoに接続できなかったため、{{timestamp}}にキャッシュされたカタログの価格が使用されました（最新の同期ではありません）',

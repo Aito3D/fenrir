@@ -4341,6 +4341,7 @@ export default {
     syncZohoUnwritable: 'Coincide, pero los datos guardados del perfil están vacíos o no se pueden leer',
     syncZohoBadPrice: 'Coincide, pero el precio del artículo no es válido o es excesivamente alto',
     syncZohoWeightUnknown: 'Coincide, pero se desconoce el peso del carrete del artículo — el precio no se aplicó',
+    syncZohoContentTooLarge: 'Coincide, pero el contenido reformateado del perfil superaría el límite de tamaño — el precio no se aplicó',
     syncZohoFailed: 'No se pudieron sincronizar los precios desde Zoho',
     syncZohoUnknown: 'Resultado de la sincronización desconocido — se perdió la conexión antes de recibir una respuesta. Actualiza la página para ver qué se aplicó.',
     syncZohoStale: 'Zoho no estaba disponible — los precios provienen de un catálogo almacenado en caché el {{timestamp}}, no de una sincronización en vivo',

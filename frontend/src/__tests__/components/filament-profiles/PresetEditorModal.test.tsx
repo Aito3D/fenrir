@@ -22,10 +22,29 @@ import { TagInput } from '../../../components/filament-profiles/TagInput';
 import { api } from '../../../api/client';
 import type { BaseFilamentPreset, FilamentPreset } from '../../../api/client';
 
+// T-045: PresetEditorModal's save-error handling checks `err instanceof
+// ApiError`, so the mock must export a real (if minimal) class rather than
+// just the `api` object — mirrors the shape of the real ApiError in
+// api/client.ts closely enough for `instanceof` and `.status` to work.
+// `vi.mock` factories are hoisted above the module, so the class has to be
+// declared via `vi.hoisted` to avoid a temporal-dead-zone ReferenceError.
+const { MockApiError } = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  }
+  return { MockApiError };
+});
+
 vi.mock('../../../api/client', () => ({
   api: {
     getBaseFilamentPresetContent: vi.fn(),
   },
+  ApiError: MockApiError,
 }));
 
 const mockShowToast = vi.fn();
@@ -365,6 +384,82 @@ describe('PresetEditorModal — edit mode', () => {
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Network exploded'), 'error'),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('sends the updated_at its form was derived from as expected_updated_at (T-045)', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset({ updated_at: '2026-08-20T12:34:56.789012' })}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.expected_updated_at).toBe('2026-08-20T12:34:56.789012');
+  });
+
+  it('never sends expected_updated_at when creating (T-045)', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={null}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Brand' }));
+    await user.click(screen.getByRole('option', { name: 'SUNLU' }));
+    await user.click(screen.getByRole('combobox', { name: 'Material' }));
+    await user.click(screen.getByRole('option', { name: 'PETG' }));
+    await user.type(screen.getByRole('textbox', { name: 'Color label' }), 'Magenta');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const payload = onSave.mock.calls[0][0];
+    expect('expected_updated_at' in payload).toBe(false);
+  });
+
+  it('409 (stale expected_updated_at) toasts the server-changed message and stays open (T-045)', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValue(new MockApiError('Conflict', 409));
+    const onClose = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringMatching(/changed on the server/i), 'error'),
     );
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeInTheDocument();

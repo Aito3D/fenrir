@@ -106,6 +106,59 @@ class TestFilamentProfilesCrud:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_patch_omitted_expected_updated_at_is_unconditional(self, async_client: AsyncClient):
+        """T-045: no `expected_updated_at` at all pins the pre-T-045 (legacy) behavior."""
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"brand": "eSUN"})
+        assert r.status_code == 200
+        assert r.json()["brand"] == "eSUN"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_current_expected_updated_at_succeeds(self, async_client: AsyncClient):
+        """A real round trip: the `updated_at` the client actually received back is accepted as-is."""
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(
+            f"/api/v1/filament-profiles/{created['id']}",
+            json={"brand": "eSUN", "expected_updated_at": created["updated_at"]},
+        )
+        assert r.status_code == 200
+        assert r.json()["brand"] == "eSUN"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_stale_expected_updated_at_409_leaves_row_untouched(self, async_client: AsyncClient):
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        # Land a concurrent write (e.g. a Zoho price sync) that bumps updated_at.
+        mid = (
+            await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"brand": "PolyLite"})
+        ).json()
+        assert mid["updated_at"] >= created["updated_at"]
+
+        r = await async_client.patch(
+            f"/api/v1/filament-profiles/{created['id']}",
+            json={"brand": "eSUN", "expected_updated_at": created["updated_at"]},
+        )
+        assert r.status_code == 409
+
+        current = (await async_client.get("/api/v1/filament-profiles")).json()
+        row = next(p for p in current if p["id"] == created["id"])
+        assert row["brand"] == "PolyLite"
+        assert row["updated_at"] == mid["updated_at"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_expected_updated_at_never_stored(self, async_client: AsyncClient):
+        created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
+        r = await async_client.patch(
+            f"/api/v1/filament-profiles/{created['id']}",
+            json={"brand": "eSUN", "expected_updated_at": created["updated_at"]},
+        )
+        assert r.status_code == 200
+        assert "expected_updated_at" not in r.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_idempotent(self, async_client: AsyncClient):
         created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
         assert (await async_client.delete(f"/api/v1/filament-profiles/{created['id']}")).json() == {"success": True}
@@ -177,14 +230,23 @@ class TestFilamentProfilesCrud:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize("bad_filename", ["a/b.json", "a\\b.json", "../b.json", ""])
+    @pytest.mark.parametrize(
+        "bad_filename",
+        # T-046: "foo.sh", ".env" and ".DS_Store" are non-.json filenames that
+        # apply_sync would write to disk and never see again (read_disk_state
+        # only globs "*.json"); ".json" itself is a bare suffix with no stem.
+        ["a/b.json", "a\\b.json", "../b.json", "", "foo.sh", ".env", ".DS_Store", ".json", ".JSON"],
+    )
     async def test_create_rejects_non_bare_filename(self, async_client: AsyncClient, bad_filename):
         r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(filename=bad_filename))
         assert r.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize("bad_filename", ["a/b.json", "a\\b.json", "../b.json", ""])
+    @pytest.mark.parametrize(
+        "bad_filename",
+        ["a/b.json", "a\\b.json", "../b.json", "", "foo.sh", ".env", ".DS_Store", ".json", ".JSON"],
+    )
     async def test_patch_rejects_non_bare_filename(self, async_client: AsyncClient, bad_filename):
         created = (await async_client.post("/api/v1/filament-profiles", json=preset_payload())).json()
         r = await async_client.patch(f"/api/v1/filament-profiles/{created['id']}", json={"filename": bad_filename})
@@ -193,6 +255,40 @@ class TestFilamentProfilesCrud:
         again = await async_client.get("/api/v1/filament-profiles")
         row = next(p for p in again.json() if p["id"] == created["id"])
         assert row["filename"] == created["filename"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_accepts_json_suffix_case_insensitively(self, async_client: AsyncClient):
+        # T-046: the suffix check mirrors read_disk_state's own glob, which is
+        # case-insensitive on the filesystems Bambu Studio runs on -- an
+        # upper-cased suffix must still be accepted, not just lower-case.
+        r = await async_client.post("/api/v1/filament-profiles", json=preset_payload(filename="X.JSON"))
+        assert r.status_code == 200
+        assert r.json()["filename"] == "X.JSON"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_duplicate_normalises_legacy_non_json_filename(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        # T-046: a legacy row stored before the .json suffix was required
+        # (e.g. "foo.sh") must come out of duplication with a name that
+        # complies -- otherwise the very next save of the duplicate would
+        # 422 against the validator this same helper feeds.
+        from backend.app.models.filament_profile import FilamentPreset
+
+        legacy = FilamentPreset(**preset_payload(filename="foo.sh"))
+        db_session.add(legacy)
+        await db_session.commit()
+        await db_session.refresh(legacy)
+
+        r = await async_client.post(f"/api/v1/filament-profiles/{legacy.id}/duplicate")
+        assert r.status_code == 200
+        assert r.json()["filename"] == "foo.json"
+        # The source row itself is untouched.
+        again = await async_client.get("/api/v1/filament-profiles")
+        source_row = next(p for p in again.json() if p["id"] == legacy.id)
+        assert source_row["filename"] == "foo.sh"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -353,6 +449,9 @@ class TestFilamentProfilesFilesystem:
             ),
             ([{"filename": "", "content": "x"}], "presets[0]: filename must be a bare file name"),
             ([{"filename": "a/b.json", "content": "x"}], "presets[0]: filename must be a bare file name"),
+            # T-046: a non-.json filename is invisible to read_disk_state's
+            # glob("*.json") and would be orphaned on disk forever.
+            ([{"filename": "foo.sh", "content": "x"}], "presets[0]: filename must be a bare file name"),
         ]
         for presets, msg in cases:
             r = await async_client.post(

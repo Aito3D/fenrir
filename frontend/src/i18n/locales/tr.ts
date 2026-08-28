@@ -4334,6 +4334,7 @@ export default {
     syncZohoUnwritable: "Eşleşti, ancak ön ayarın kayıtlı verisi boş veya okunamıyor",
     syncZohoBadPrice: 'Eşleşti, ancak öğenin fiyatı geçersiz veya aşırı yüksek',
     syncZohoWeightUnknown: 'Eşleşti, ancak öğenin makara ağırlığı bilinmiyor — fiyat uygulanmadı',
+    syncZohoContentTooLarge: 'Eşleşti, ancak ön ayarın yeniden biçimlendirilmiş verisi boyut sınırını aşacağından fiyat uygulanmadı',
     syncZohoFailed: "Zoho'dan fiyatlar senkronize edilemedi",
     syncZohoUnknown: "Senkronizasyon sonucu bilinmiyor — yanıt gelmeden önce bağlantı kesildi. Neyin uygulandığını görmek için sayfayı yenileyin.",
     syncZohoStale: "Zoho'ya ulaşılamadı — fiyatlar {{timestamp}} tarihinde önbelleğe alınan bir katalogdan geldi, canlı bir senkronizasyondan değil",

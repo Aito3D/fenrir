@@ -14,6 +14,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
 from backend.app.models.user import User
 from backend.app.schemas.filament_profile import (
+    _CONTENT_MAX_LENGTH,
     BambuScanResponse,
     BambuSyncRequest,
     BambuSyncResponse,
@@ -304,8 +305,31 @@ async def sync_filament_presets_from_zoho(
 
         content, outcome = apply_filament_cost(preset.content, match.product.cost_per_kg)
         if outcome == "written":
-            preset.content = content
-            priced += 1
+            # apply_filament_cost re-serialises with indent=4 (to match the
+            # frontend's own writer), which can inflate compact JSON by
+            # roughly 3x — a preset saved right under the input-side
+            # _CONTENT_MAX_LENGTH cap could round-trip past it here. Checked
+            # against the same constant the CRUD routes enforce on writes, so
+            # a sync can never store a blob larger than a direct edit could.
+            if len(content) > _CONTENT_MAX_LENGTH:
+                logger.warning(
+                    "Zoho sync: preset %s (%r) priced content would exceed the %d-byte cap "
+                    "after re-indenting; skipping price write and flagging for attention",
+                    preset.id,
+                    preset.name,
+                    _CONTENT_MAX_LENGTH,
+                )
+                attention.append(
+                    FilamentPresetZohoSyncAttention(
+                        id=preset.id,
+                        name=preset.name,
+                        reason="content_too_large",
+                        candidates=[],
+                    )
+                )
+            else:
+                preset.content = content
+                priced += 1
         elif outcome == "unchanged":
             unchanged += 1
         elif outcome == "bad_price":
@@ -371,7 +395,20 @@ async def update_filament_profile(
     if not row:
         raise HTTPException(404, "Preset not found")
 
-    data = payload.model_dump(exclude_unset=True)
+    # T-045: `expected_updated_at` is the `updated_at` the caller's fields
+    # were derived from -- omitted (None) by any pre-T-045 caller, which
+    # keeps this whole-content PATCH unconditional exactly as before. When
+    # present, it must still match the stored row, otherwise a save started
+    # before a concurrent write (e.g. /zoho-sync) landed would silently
+    # clobber that write. `row.updated_at` round-trips through
+    # `FilamentPresetResponse` (a plain FastAPI/pydantic datetime -> ISO
+    # string encode with no timezone normalisation, since the column is
+    # naive UTC), and a compliant caller sends back exactly that string, so
+    # comparing the parsed datetimes directly is safe here.
+    if payload.expected_updated_at is not None and payload.expected_updated_at != row.updated_at:
+        raise HTTPException(409, "This preset changed on the server since it was loaded — reload and try again")
+
+    data = payload.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
     for key, value in data.items():
         setattr(row, key, value if value is not None else "")
 

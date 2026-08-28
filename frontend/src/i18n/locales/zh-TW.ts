@@ -4327,6 +4327,7 @@ export default {
     syncZohoUnwritable: '已符合，但該預設的儲存資料為空或無法解析',
     syncZohoBadPrice: '已符合，但該項目的價格無效或過高',
     syncZohoWeightUnknown: '已符合，但該項目的線軸重量未知——未套用其價格',
+    syncZohoContentTooLarge: '已符合，但該預設重新格式化後的資料將超出大小限制——未套用其價格',
     syncZohoFailed: '無法從 Zoho 同步價格',
     syncZohoUnknown: '同步結果未知——在收到回應之前連線已中斷。請重新整理頁面以查看已套用的內容。',
     syncZohoStale: 'Zoho 無法連線——價格來自 {{timestamp}} 快取的目錄，而非即時同步',

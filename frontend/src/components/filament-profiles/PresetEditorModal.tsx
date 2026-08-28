@@ -3,8 +3,8 @@ import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, RotateCw, X } from 'lucide-react';
 
-import { api } from '../../api/client';
-import type { BaseFilamentPreset, FilamentPreset, FilamentPresetPayload } from '../../api/client';
+import { api, ApiError } from '../../api/client';
+import type { BaseFilamentPreset, FilamentPreset, FilamentPresetEditorPayload } from '../../api/client';
 import { Button } from '../Button';
 import { SearchableSelect } from '../SearchableSelect';
 import type { SearchableSelectOption } from '../SearchableSelect';
@@ -41,7 +41,7 @@ export interface PresetEditorModalProps {
   presets: FilamentPreset[];
   basePresets: BaseFilamentPreset[];
   extraMaterials: string[];
-  onSave: (payload: FilamentPresetPayload) => Promise<void>;
+  onSave: (payload: FilamentPresetEditorPayload) => Promise<void>;
   onDelete: (() => void) | null;
   onClose: () => void;
   /** Gates the Save/Create button on the permission its own endpoint
@@ -392,7 +392,7 @@ export function PresetEditorModal({
         // unresolvable Raw JSON edit; jsonError already gates Save there.
       }
     }
-    const payload: FilamentPresetPayload = {
+    const payload: FilamentPresetEditorPayload = {
       name: computedName,
       brand: form.filament_vendor.trim(),
       material,
@@ -400,6 +400,13 @@ export function PresetEditorModal({
       color_hex: form.default_filament_colour,
       filename: `${computedName}.json`,
       content,
+      // T-045: send the `updated_at` our fields were derived from (not
+      // `preset?.updated_at`, which a background refetch may already have
+      // moved past — that's exactly the case this precondition exists to
+      // catch). Create has no prior row to be conditional on, so this stays
+      // undefined and the payload matches today's create request byte for
+      // byte.
+      ...(isCreate ? {} : { expected_updated_at: syncedUpdatedAtRef.current }),
     };
     setSaving(true);
     try {
@@ -409,8 +416,19 @@ export function PresetEditorModal({
       // Surface the failure ourselves — the page's onSave only performs the
       // API call and query invalidation, it doesn't toast — and stay open
       // so nothing is lost.
-      const message = err instanceof Error ? err.message : String(err);
-      showToast(t('filamentProfiles.saveFailed', { error: message }), 'error');
+      if (err instanceof ApiError && err.status === 409) {
+        // T-045: the same "changed on the server" situation T-032's banner
+        // (`serverConflict`) covers, caught at save time instead of only by
+        // a background refetch — reuse that copy instead of a generic
+        // "save failed" message. The page's `handleSavePreset` invalidates
+        // the presets query on a 409 before rethrowing here, so `preset`
+        // picks up the new `updated_at` and `serverConflict` fires on its
+        // own (the effect above) without this handler needing to touch it.
+        showToast(t('filamentProfiles.serverChangedBanner'), 'error');
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        showToast(t('filamentProfiles.saveFailed', { error: message }), 'error');
+      }
     } finally {
       setSaving(false);
     }

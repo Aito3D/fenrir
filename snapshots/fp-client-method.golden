@@ -22,7 +22,14 @@ syncFilamentPresetsFromZoho: (signal?: AbortSignal) =>
 export interface FilamentPresetZohoSyncAttention {
   id: number;
   name: string;
-  reason: 'no_match' | 'ambiguous' | 'no_price' | 'unwritable_content' | 'bad_price' | 'weight_unknown';
+  reason:
+    | 'no_match'
+    | 'ambiguous'
+    | 'no_price'
+    | 'unwritable_content'
+    | 'bad_price'
+    | 'weight_unknown'
+    | 'content_too_large';
   candidates: string[];
   candidates_total: number;
 }

@@ -49,9 +49,22 @@ def _validate_bare_filename(value: str) -> str:
     payload at once) and lands as a traversal-shaped entry name in the
     export ZIP. Rejecting it here, at create/update time, keeps every stored
     filename bare so those downstream consumers never see a bad one.
+
+    T-046 (user-approved behavior change, 2026-08-27): also require a
+    (case-insensitive) ".json" suffix with a non-empty stem. apply_sync
+    writes whatever filename is stored here into every configured Bambu
+    Studio user filament folder, but read_disk_state only enumerates
+    `folder.glob("*.json")` -- a stored "foo.sh", ".env" or ".DS_Store" is
+    written once, is then invisible to compute_sync_stats and every later
+    sync's removal pass, and is orphaned on disk permanently. Rejecting a
+    non-.json name at create/update/bambu-sync time (all three call this
+    same helper) keeps every stored filename inside the set the sync's own
+    removal pass can see and clean up.
     """
     if not value or ".." in value or "/" in value or "\\" in value:
         raise ValueError("filename must be a bare file name")
+    if not value.lower().endswith(".json") or len(value) == len(".json"):
+        raise ValueError("filename must be a bare file name ending in .json")
     return value
 
 
@@ -69,9 +82,23 @@ def _derive_bare_filename(filename: str, preset_id: int) -> str:
     if nothing survives, fall back to a name derived from the preset's id.
     An already-bare filename passes through unchanged, so duplicating a
     normal preset is byte-identical to today.
+
+    T-046: the surviving last segment can itself be a legacy bare, but
+    non-.json, name (e.g. "foo.sh") stored before _validate_bare_filename
+    required a ".json" suffix. This helper's whole purpose is producing a
+    name fit to store, and a non-.json result would now fail that same
+    validator on the row's very next save -- so a missing/wrong suffix is
+    replaced with ".json" here too (an empty-stem result, e.g. from a lone
+    ".json" segment, falls back to the id-derived name for the same reason).
     """
     segments = [segment for segment in re.split(r"[/\\]+", filename) if segment not in ("", ".", "..")]
-    return segments[-1] if segments else f"preset-{preset_id}.json"
+    candidate = segments[-1] if segments else ""
+    if not candidate:
+        return f"preset-{preset_id}.json"
+    if candidate.lower().endswith(".json"):
+        return f"preset-{preset_id}.json" if len(candidate) == len(".json") else candidate
+    stem = candidate.rsplit(".", 1)[0] if "." in candidate else candidate
+    return f"{stem}.json" if stem else f"preset-{preset_id}.json"
 
 
 class FilamentPresetCreate(BaseModel):
@@ -97,6 +124,16 @@ class FilamentPresetUpdate(BaseModel):
     color_hex: str | None = Field(None, max_length=_COLOR_HEX_MAX_LENGTH)
     filename: str | None = Field(None, max_length=_FILENAME_MAX_LENGTH)
     content: str | None = Field(None, max_length=_CONTENT_MAX_LENGTH)
+    # T-045: optional concurrency precondition -- the `updated_at` the
+    # caller's fields were derived from (the editor threads through the
+    # value it last synced, `PresetEditorModal`'s `syncedUpdatedAtRef`).
+    # `None` (the default, and every pre-existing caller) keeps today's
+    # unconditional PATCH. When present, the route 409s if it no longer
+    # matches the stored row instead of silently overwriting a write that
+    # landed in between (e.g. a Zoho price sync) -- see
+    # `update_filament_profile`. It is a precondition, not a stored field,
+    # so it is excluded from the route's setattr loop.
+    expected_updated_at: datetime | None = None
 
     @field_validator("filename")
     @classmethod
@@ -193,20 +230,33 @@ class FilamentPresetZohoSyncAttention(BaseModel):
     # (FilamentProduct.weight_inferred). Writing that price would let an
     # upstream rename silently re-scale it, exactly what the calculator's own
     # sync refuses to do — so it is reported instead of written.
-    reason: Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price", "weight_unknown"]
+    # "content_too_large" is also not a match outcome, and distinct from
+    # "unwritable_content": the preset's content parsed and priced fine, but
+    # apply_filament_cost's re-indented (indent=4) output would exceed
+    # _CONTENT_MAX_LENGTH (backend/app/schemas/filament_profile.py) — the same
+    # cap enforced on writes through the CRUD routes. Compact JSON near that
+    # cap can nearly triple in size once re-indented, so this is checked
+    # against the *output* here rather than trusting the input-side check
+    # already passed when the preset was first saved. Routed to attention
+    # instead of raising: one oversized preset must not fail the whole sync,
+    # and its filament_cost is left stale rather than storing a blob past the
+    # cap that guards /zoho-sync's own per-request memory use.
+    reason: Literal[
+        "no_match", "ambiguous", "no_price", "unwritable_content", "bad_price", "weight_unknown", "content_too_large"
+    ]
     # Colliding item names for "ambiguous", the single unpriced item for
     # "no_price", the single matched item for "weight_unknown", empty for
-    # "no_match", "unwritable_content" and "bad_price". A list, not one name:
-    # naming only one of an ambiguous pair would hide the actual problem.
-    # Capped at 5 entries for "ambiguous" — see candidates_total for the true
-    # count.
+    # "no_match", "unwritable_content", "bad_price" and "content_too_large". A
+    # list, not one name: naming only one of an ambiguous pair would hide the
+    # actual problem. Capped at 5 entries for "ambiguous" — see
+    # candidates_total for the true count.
     candidates: list[str] = []
     # The TRUE number of items behind `candidates`. For "ambiguous" this can
     # exceed len(candidates) once the cap above truncates the list, so the UI
     # can still render a "+N more" instead of silently dropping items with no
     # trace. For every other reason it equals len(candidates) (0 for
-    # "no_match", "unwritable_content" and "bad_price"; 1 for "no_price" and
-    # "weight_unknown").
+    # "no_match", "unwritable_content", "bad_price" and "content_too_large"; 1
+    # for "no_price" and "weight_unknown").
     # Always present rather than sometimes-omitted, so the response shape is
     # predictable regardless of reason.
     candidates_total: int = 0

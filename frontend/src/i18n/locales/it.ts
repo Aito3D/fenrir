@@ -4327,6 +4327,7 @@ export default {
     syncZohoUnwritable: "Trovata corrispondenza, ma i dati salvati del preset sono vuoti o illeggibili",
     syncZohoBadPrice: "Trovata corrispondenza, ma il prezzo dell'articolo non è valido o è eccessivamente alto",
     syncZohoWeightUnknown: "Trovata corrispondenza, ma il peso della bobina dell'articolo è sconosciuto — il prezzo non è stato applicato",
+    syncZohoContentTooLarge: "Trovata corrispondenza, ma il contenuto riformattato del preset supererebbe il limite di dimensione — il prezzo non è stato applicato",
     syncZohoFailed: 'Impossibile sincronizzare i prezzi da Zoho',
     syncZohoUnknown: 'Esito della sincronizzazione sconosciuto — la connessione è stata persa prima che arrivasse una risposta. Aggiorna la pagina per vedere cosa è stato applicato.',
     syncZohoStale: "Zoho non era raggiungibile — i prezzi provengono da un catalogo memorizzato nella cache alle {{timestamp}}, non da una sincronizzazione in tempo reale",

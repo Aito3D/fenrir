@@ -4327,6 +4327,7 @@ export default {
     syncZohoUnwritable: '已匹配，但该预设的保存数据为空或无法解析',
     syncZohoBadPrice: '已匹配，但该项目的价格无效或过高',
     syncZohoWeightUnknown: '已匹配，但该项目的线轴重量未知——未应用其价格',
+    syncZohoContentTooLarge: '已匹配，但该预设重新格式化后的数据将超出大小限制——未应用其价格',
     syncZohoFailed: '无法从 Zoho 同步价格',
     syncZohoUnknown: '同步结果未知——在收到响应之前连接已中断。请刷新页面查看已应用的内容。',
     syncZohoStale: 'Zoho 无法访问——价格来自 {{timestamp}} 缓存的目录，而非实时同步',

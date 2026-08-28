@@ -6181,3 +6181,279 @@ passed (32 before this task's two new tests). Full backend suite
 (`filament_profiles.py`) is 100.00% with zero missing lines; the suite's one remaining uncovered
 scoped statement is line 642 of `zoho_filaments.py`, pre-existing and untouched by this task).
 SCOPED branches 117/118 = 99.15%.
+
+## T-044 — 2026-08-27 — `/zoho-sync` now checks its own re-indented output against `_CONTENT_MAX_LENGTH` before storing it (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`backend/app/api/routes/filament_profiles.py`) wrote
+`apply_filament_cost()`'s return value straight into `preset.content` on a `"written"` outcome,
+with no length check of its own. `apply_filament_cost` (`backend/app/services/
+filament_profile_pricing.py`) re-serialises with `json.dumps(data, ensure_ascii=False,
+indent=4)` to match the frontend's own writer, and `indent=4` inflates compact JSON
+substantially — a preset saved right under the input-side `_CONTENT_MAX_LENGTH` cap
+(`backend/app/schemas/filament_profile.py`, 262,144 bytes, enforced on `FilamentPresetCreate`/
+`FilamentPresetUpdate.content` at create/update time) could round-trip past that same cap the
+first time this route priced it, since the cap was never re-checked on the *output* side. The
+256 KiB ceiling's own comment names this endpoint's per-request memory use as its reason for
+existing, so a preset that quietly grew past it defeated the cap it was meant to enforce.
+
+user-approved 2026-08-27: "a preset whose re-indented content would exceed 256 KiB stops
+receiving its Zoho price and instead appears in the sync's needs-attention list, so its stored
+`filament_cost` no longer updates."
+
+Reason chosen: a **new** reason, `"content_too_large"`, not a reuse of the existing
+`unwritable_content`. `unwritable_content`'s semantics are documented in three places —
+`FilamentPresetZohoSyncAttention.reason`'s own docstring ("the preset's own content was empty or
+unparseable JSON, so there was nowhere to write the price"), `apply_filament_cost`'s `"unwritable"`
+outcome comment ("content is empty, not valid JSON, or not a JSON object"), and the parametrized
+test named for it (`test_a_confident_match_with_unwritable_content_is_flagged_for_attention`,
+`content` parametrized over `""`, `"{not json"`, `"[1, 2]"`) — as strictly a parse-failure: the
+preset's *input* JSON could not be read at all. Here the input parses and prices cleanly; the
+problem is the *output* of a successful price write being too large. Reusing the reason would
+have told an operator "your preset's data is empty or unreadable," which is false and would send
+them to fix the wrong thing. Added the new value following the established pattern: `Literal`
+entry + a documented rationale, one i18n key with real translations in all 13 locale files, one
+ternary branch in the page, and the standalone Literal-acceptance test's parametrize list.
+
+Backend: `_CONTENT_MAX_LENGTH` imported from `backend.app.schemas.filament_profile` into the
+route (alongside the module's existing private imports, `_derive_bare_filename`/
+`_validate_bare_filename` — not copied as a bare number, so the two enforcement points can never
+drift apart). On a `"written"` outcome, the route now checks `len(content) > _CONTENT_MAX_LENGTH`
+before assigning: at or under the cap, `preset.content = content` and `priced += 1` exactly as
+before (byte-identical for every preset this cap does not affect — the entire existing test
+suite for this route, including every profile in every pre-existing fixture, is comfortably under
+262,144 bytes); over the cap, the preset is left untouched and an attention entry with
+`reason="content_too_large"`, `candidates=[]`, `candidates_total=0` is appended instead (same
+shape as `bad_price`/`unwritable_content`), with a `logger.warning` mirroring the route's existing
+per-reason warnings.
+
+Frontend: `frontend/src/api/client.ts`'s `FilamentPresetZohoSyncAttention.reason` union gained
+`'content_too_large'`. `FilamentProfilesPage.tsx`'s reason-to-i18n-key ternary gained a branch
+mapping `'content_too_large'` to `filamentProfiles.syncZohoContentTooLarge`, inserted before the
+final `weight_unknown`/`no_price` fallback so it cannot be shadowed. i18n: `filamentProfiles.
+syncZohoContentTooLarge` (one key, no placeholders) added with real, non-placeholder translations
+to all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`, `it`, `ja`,
+`ko`, `pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`); `npx vitest run src/__tests__/i18n` passes
+(26/26, including the parity/placeholder-detection tests).
+
+Tests added, `backend/tests/unit/test_filament_profiles_zoho_sync.py`: a compact-JSON fixture is
+grown by a binary search (not a pasted byte count, and not a linear scan — a linear scan
+re-serialises the whole growing dict on every step, an O(n^2) walk that takes tens of seconds at
+the ~13,000 filler keys this cap requires) over `apply_filament_cost`'s own real output length,
+so the fixture tracks `_CONTENT_MAX_LENGTH` itself rather than a number that could drift out of
+sync with it. `test_a_confident_match_whose_reindented_content_would_exceed_the_cap_is_flagged_
+for_attention` uses the first content whose written form exceeds the cap: asserts `priced == 0`,
+`unchanged == 0`, one attention entry with `reason == "content_too_large"`, and the preset's
+stored content is byte-identical to what was submitted (never written). `test_a_confident_match_
+whose_reindented_content_is_at_the_cap_still_prices` uses the content one key short of that
+(written length `<= _CONTENT_MAX_LENGTH`): asserts a normal `priced == 1`, no attention, and the
+stored content equals `apply_filament_cost`'s own output exactly. The standalone Literal-
+acceptance test (`test_attention_reason_accepts_every_value_the_route_can_set`) and its docstring
+were extended to include `"content_too_large"` in the parametrize list.
+
+`python3 tools/snapshot.py verify`: 7 of 11 probes matched unchanged (`fp-openapi`, `fp-ddl`,
+`fp-route-perms`, `fp-pricing-write`, `fp-match-decisions`, `fp-sync-endpoint` — its own fixtures
+stay well under the cap, confirming the fix does not touch any already-passing profile —
+`calc-zoho-pure`); `fp-pydantic-schemas`, `fp-i18n-sync-strings`, `fp-client-method`, and
+`fp-page-sync-ui` legitimately diffed (the new enum value, i18n key, client type, and UI ternary
+branch, respectively) and were re-recorded via `python3 tools/snapshot.py record` — `git diff
+--stat snapshots/` confirms only those 4 files changed. `bash tools/gen_surface_fp.sh >
+SURFACE.md`: one line changed (`FilamentPresetZohoSyncAttention`'s `reason` enum gained
+`"content_too_large"`); applied.
+
+`bash tools/coverage_fp.sh backend`: 528/529 = 99.81% scoped statements (up from the 525/526
+baseline, same ratio, no drop; `filament_profiles.py`, `filament_profile_pricing.py`,
+`schemas/filament_profile.py`, and `models/filament_profile.py` are all 100.00%, the one
+remaining uncovered scoped statement is `zoho_filaments.py`, pre-existing and untouched).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,476 passed,
+1 skipped (`test_firmware_versions.py`'s pre-existing `curl_cffi not installed` environment
+skip, unrelated). `ruff check` / `ruff format --check` clean on every touched backend file. Full
+frontend suite (`./test_frontend.sh`): `npx tsc` and `npx eslint .` clean; two separate full runs
+each showed a handful of unrelated failures only under load (`StatsPageUserFilter1894.test.tsx`,
+`ArchivesPage.test.tsx`, `PrintModal.test.tsx` — different files/counts each run, the documented
+suite-load flake) with none in `FilamentProfilesPage.test.tsx` (33/33, including the new
+`content_too_large` case) or `src/__tests__/i18n`. `npm run build` succeeds.
+
+## T-045 — 2026-08-27 — `PATCH /filament-profiles/{id}` now accepts an optional concurrency precondition and 409s on a stale one (user-approved behavior change)
+
+`update_filament_profile()` blind-wrote the whole content blob it was given: `data =
+payload.model_dump(exclude_unset=True)` / a `setattr` loop / `row.updated_at =
+datetime.utcnow()`, with no expected-`updated_at` (or version) check anywhere. T-032 already
+gives the editor a client-side banner for "the row changed while you were editing" — but that
+banner is advisory only; it never blocks the save. A save started before a concurrent
+`/zoho-sync` run (or a second tab, or any direct API caller) landed its price write still
+overwrote that write in full, silently, with no server-side signal at all.
+
+user-approved 2026-08-27: "a PATCH whose expected updated_at no longer matches starts failing
+with 409 instead of succeeding, so any client that saves a preset it loaded a while ago must
+reload and re-apply its edits."
+
+Backend: `FilamentPresetUpdate` gained one new field, `expected_updated_at: datetime | None =
+None`. Omitted (the default, and every pre-T-045 caller) keeps today's unconditional PATCH
+byte-for-byte. When present, `update_filament_profile()` compares it against the fetched row's
+`updated_at` *before* touching anything — a mismatch raises `HTTPException(409, ...)` with no
+`setattr` and no `db.commit()`, so the row is provably untouched on that path (pinned by a test
+that PATCHes with a deliberately stale value and then re-reads the row from a separate `GET`).
+`expected_updated_at` is excluded from the `model_dump()` that feeds the `setattr` loop (`exclude=
+{"expected_updated_at"}`) — it is a precondition, not a stored field, and it is never present on
+the returned `FilamentPresetResponse`. The datetime comparison is a real round trip, not a
+same-process assumption: the value under test is read back from the actual HTTP response's
+`updated_at` (a FastAPI/pydantic ISO-8601 string, no timezone suffix since the column is naive
+UTC) and sent back as-is in the next PATCH's `expected_updated_at`, then compared as parsed
+datetimes against the DB row re-fetched by SQLAlchemy — both ends of that round trip proved
+equal by the passing "matches → 200" test, not asserted in the abstract. The create path and
+`duplicate_filament_profile()` are untouched (neither one runs through this precondition).
+
+Frontend: `PresetEditorModal` already tracks `syncedUpdatedAtRef` (T-032) — the `updated_at` its
+form's fields were actually derived from, which can trail the live `preset` prop while dirty.
+`handleSave` now includes `expected_updated_at: syncedUpdatedAtRef.current` in the payload it
+hands `onSave`, but only in edit mode (`isCreate` branch adds nothing, so a create request is
+byte-identical to before — no `expected_updated_at` key at all, not even `undefined`). A new
+`FilamentPresetEditorPayload` type (`frontend/src/api/client.ts`) carries the optional field
+through `onSave`'s signature; `updateFilamentPreset`'s parameter type became
+`FilamentPresetUpdatePayload` (`Partial<FilamentPresetPayload> & { expected_updated_at?: string
+}`) so the PATCH body actually includes it. `createFilamentPreset`'s signature is untouched.
+
+On a 409, `PresetEditorModal.handleSave`'s existing catch block (T-031's stay-open-on-failure
+path, already in place before this task) now special-cases `err instanceof ApiError && err.status
+=== 409`: it toasts the existing T-032 string, `filamentProfiles.serverChangedBanner` ("This
+preset changed on the server while you were editing it."), instead of the generic `saveFailed:
+{{error}}` — no new i18n key needed, so no locale/i18n-gate changes were required. The editor does
+NOT close on this path: T-031's `setEditorState('closed')` (in the page's `handleSavePreset`)
+sits after the try/catch and is only reached on a successful `await api.updateFilamentPreset(...)`
+— a thrown `ApiError` skips it entirely, same as any other save failure. `handleSavePreset`'s new
+catch also invalidates `['filamentPresets']` specifically on a 409 (not on other failures) before
+rethrowing, so the still-open editor's `preset` prop actually picks up the new `updated_at` on its
+own refetch and T-032's own conflict-banner effect (`serverConflict`) fires without this task
+needing to touch that machinery at all — verified end-to-end (real MSW-mocked PATCH 409 + GET
+refetch, not a mocked `onSave`): editor stays open, both a toast and the in-dialog `role="alert"`
+banner carry the "changed on the server" text, and the user's unsaved edit is still visibly held
+in the input, not discarded by the refetch.
+
+Tests added:
+- `backend/tests/integration/test_filament_profiles_api.py`:
+  `test_patch_omitted_expected_updated_at_is_unconditional` (no field at all → 200, pins legacy
+  behavior), `test_patch_current_expected_updated_at_succeeds` (a real round-tripped `updated_at`
+  → 200), `test_patch_stale_expected_updated_at_409_leaves_row_untouched` (a concurrent PATCH
+  bumps the row, the stale-value PATCH → 409, then a separate `GET` proves the row still carries
+  the concurrent write's data, not a partial mix), `test_patch_expected_updated_at_never_stored`
+  (the field is absent from the response body after a successful conditional PATCH).
+- `frontend/src/__tests__/components/filament-profiles/PresetEditorModal.test.tsx`: the module
+  mock for `api/client` now also exports a minimal `ApiError` class (via `vi.hoisted`, required
+  because `vi.mock` factories are hoisted above normal module-scope declarations) so `instanceof`
+  checks work under test. `sends the updated_at its form was derived from as expected_updated_at
+  (T-045)`, `never sends expected_updated_at when creating (T-045)`, and `409 (stale
+  expected_updated_at) toasts the server-changed message and stays open (T-045)`.
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: `sends the loaded updated_at, and
+  on a 409 keeps the editor open, toasts, and surfaces the T-032 conflict banner (T-045)` — a real
+  MSW `http.patch` handler asserting the actual PATCH body's `expected_updated_at`, a 409
+  response, the dialog staying open, the toast, and the T-032 banner all firing together.
+
+`python3 tools/snapshot.py verify` / `record`: 1 of 11 probes legitimately diffed
+(`fp-pydantic-schemas`, the new additive `expected_updated_at` field on `FilamentPresetUpdate`'s
+schema) and was re-recorded; `git diff --stat snapshots/` confirms only that file changed. The
+other 10 (`fp-openapi`, `fp-ddl`, `fp-route-perms`, `fp-pricing-write`, `fp-match-decisions`,
+`fp-sync-endpoint`, `fp-i18n-sync-strings`, `fp-client-method`, `fp-page-sync-ui`,
+`calc-zoho-pure`) matched unchanged — this task added no new i18n key and no new HTTP route.
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: `FilamentPresetUpdate`'s OpenAPI
+schema gained the new field, and the frontend-exported-symbols section gained the two new
+`api/client.ts` types (`FilamentPresetEditorPayload`, `FilamentPresetUpdatePayload`); applied,
+then re-verified byte-stable by re-running the generator a second time.
+
+`bash tools/coverage_fp.sh backend`: 531/532 = 99.81% scoped statements (up from the 528/529
+baseline, same ratio, no drop; every scoped file is 100.00% except the pre-existing, untouched
+`zoho_filaments.py` line). `bash tools/coverage_fp.sh frontend`: 229/299 = 76.58% statements (up
+from the 225/295 baseline, no drop).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,480 passed,
+1 skipped, both as a plain run and as the coverage-instrumented run. `ruff check` / `ruff format
+--check` clean on every touched backend file. `npx tsc --noEmit -p tsconfig.app.json` and `npx
+eslint .` clean across the whole frontend tree. The coverage-scoped frontend run showed 3
+unrelated failures only under `--retry=3` load (`StatsPageUserFilter1894.test.tsx` among them —
+the documented suite-load flake); the targeted files this task touches
+(`FilamentProfilesPage.test.tsx`, `PresetEditorModal.test.tsx`, `src/__tests__/i18n`) passed
+cleanly in isolation: 91/91.
+
+## T-046 — 2026-08-27 — `_validate_bare_filename` now requires a (case-insensitive) `.json` suffix, so a non-`.json` preset name is rejected instead of being written to disk and orphaned forever (user-approved behavior change)
+
+`_validate_bare_filename` (`backend/app/schemas/filament_profile.py`) only checked path shape
+(non-empty, no `..`, `/` or `\`) — it never required a `.json` suffix. `apply_sync`
+(`backend/app/services/bambu_studio.py`) writes whatever filename a preset carries into every
+configured Bambu Studio user filament directory, but `read_disk_state` only enumerates
+`folder.glob("*.json")`. A preset stored as `foo.sh`, `.env` or `.DS_Store` therefore passed
+create/update validation, got written to disk on the next Sync-to-PC, and then became invisible
+to `compute_sync_stats` and every later sync's removal pass: dropped once and left behind
+permanently, surviving even a full-wipe sync. Containment at the write boundary (`safe_join_under`)
+was never broken — this is a pure storage-visibility bug, not a traversal one.
+
+**Fix:** `_validate_bare_filename` now also rejects a `value` that does not end in `.json`
+(case-insensitively, via `value.lower().endswith(".json")`) or whose stem is empty (the bare name
+`.json`/`.JSON` itself, `len(value) == len(".json")`). Because T-039 had already deduplicated the
+bare-filename check down to one helper, this single change is inherited by all three call sites
+that validate a stored filename: `FilamentPresetCreate`/`FilamentPresetUpdate`'s
+`_filename_is_bare` field validators (`POST`/`PATCH /filament-profiles`) and
+`_validate_bambu_sync_presets` (`POST /filament-profiles/bambu-sync`) — verified by reading each
+call site, not just the shared helper. The two call sites that already wrap the raised
+`ValueError` in their own literal message (`get_base_content`'s `"Invalid filename"`,
+`_validate_bambu_sync_presets`'s `"presets[{i}]: filename must be a bare file name"`) keep those
+exact strings unchanged, per T-039's decision to preserve call-site wording; only the validator's
+own `ValueError` text — which surfaces verbatim in a create/update 422 — was reworded, from
+`"filename must be a bare file name"` to `"filename must be a bare file name ending in .json"`.
+
+**`_derive_bare_filename` (T-030) — normalise, don't leave non-compliant:** this helper's entire
+purpose is producing a filename fit to store (for `duplicate_filament_profile`'s legacy-row path),
+and a result that still failed the new suffix check would just 422 on the very next save of that
+duplicate — a worse outcome than today's byte-identical copy. So `_derive_bare_filename` now also
+ensures its returned name ends in `.json`: if the surviving last path segment already ends in
+`.json` (any case, non-empty stem) it is returned unchanged; otherwise its existing extension (if
+any) is replaced, or `.json` is appended if it had none (`foo.sh` → `foo.json`, `foo` → `foo.json`,
+`archive.tar.gz` → `archive.tar.json`); a segment that reduces to an empty stem (e.g. `.sh`) falls
+back to the existing `preset-<id>.json` id-derived name, same as the empty-segments case. This is
+the "append/replace suffix" branch of the two options considered — normalising is consistent with
+T-030's own precedent (a legacy path-shaped name is flattened, not rejected, at duplicate time) and
+does not multiply a second orphan-shaped row into existence.
+
+**Frontend:** confirmed no change needed. `PresetEditorModal.handleSave` posts
+`` `${computedName}.json` `` unconditionally (both the create and JSON-tab content paths on lines
+401/437) — every filename the editor can produce already carries the suffix. The upload-fallback
+file picker added by the previous commit (`FilamentProfilesPage.handleFilesSelected`) restricts its
+`<input accept=".json,.zip">` and, for a `.zip`, filters entries to `entryLower.endsWith('.json')`
+before ever building a `BambuScanFile`; the server-side `bambu-scan` route reads
+`scan_user_presets()`, which itself only globs `*.json`. No UI path can hand the backend a
+non-`.json` filename today, so this was purely a backend-side gap.
+
+user-approved 2026-08-27 (verbatim): "creating, updating, or syncing a preset whose filename does
+not end in .json starts returning a validation error instead of being accepted and written to
+disk."
+
+Tests added to `backend/tests/integration/test_filament_profiles_api.py`:
+- `test_create_rejects_non_bare_filename` / `test_patch_rejects_non_bare_filename` parametrize
+  lists extended with `"foo.sh"`, `".env"`, `".DS_Store"`, `".json"` and `".JSON"` (the last two
+  pinning the empty-stem rejection case-insensitively) alongside the existing path-shaped cases.
+- `test_create_accepts_json_suffix_case_insensitively` — `"X.JSON"` is accepted and stored
+  verbatim, pinning the case-insensitive acceptance side of the same check.
+- `test_bambu_sync_element_validation` gained a `"foo.sh"` case asserting the existing
+  `presets[0]: filename must be a bare file name` 400.
+- `test_duplicate_normalises_legacy_non_json_filename` — a legacy row inserted directly with
+  `filename="foo.sh"` (bypassing the create/update validator, same technique as T-030's own
+  legacy-row tests) duplicates to `"foo.json"`; the source row itself is confirmed untouched.
+
+`python3 tools/snapshot.py verify`: 10/10 `fp-*` probes match — no golden diff. This is expected:
+`_validate_bare_filename`/`_derive_bare_filename` are private free functions with no `Field(...)`
+annotation change, so `fp-pydantic-schemas`'s `model_json_schema()` output (which the finding
+flagged as a possible-diff risk) is byte-identical — confirmed by running the probe's exact `cmd`
+from `PROBES.json` directly and diffing against the golden. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: no diff (no route, class, constant, permission gate, DDL, or i18n key
+changed).
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/integration/test_filament_profiles_api.py
+backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 92 passed (was 84; 8 net new tests).
+`ruff check` / `ruff format --check` clean on `backend/app/schemas/filament_profile.py` and the
+test file. Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`):
+12,491 passed, 1 skipped; one unrelated failure seen once under parallel load
+(`test_slicer_stall_timeout.py::TestSliceIsNotCutOffWhileProgressing::test_a_slow_slice_that_reports_progress_completes`,
+a documented suite-load flake) — re-ran alone and it passed 18/18, confirming it is not caused by
+this change. `bash tools/coverage_fp.sh backend`: 539/540 = 99.81% scoped statements (baseline
+531/532 = 99.81%, same ratio, no drop; the one uncovered line remains `zoho_filaments.py`'s
+pre-existing branch, untouched by this task).

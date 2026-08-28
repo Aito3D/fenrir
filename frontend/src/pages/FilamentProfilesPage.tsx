@@ -22,6 +22,7 @@ import type {
   BaseFilamentPreset,
   FilamentBaseSyncResult,
   FilamentPreset,
+  FilamentPresetEditorPayload,
   FilamentPresetPayload,
   FilamentPresetZohoSyncResponse,
   FilamentSyncStats,
@@ -289,13 +290,28 @@ export function FilamentProfilesPage() {
 
   // ── Save (used by the editor modal) ─────────────────────────────────────
   const handleSavePreset = useCallback(
-    async (payload: FilamentPresetPayload, editing: FilamentPreset | null) => {
-      if (editing) {
-        await api.updateFilamentPreset(editing.id, payload);
-        showToast(t('filamentProfiles.updatedToast', { name: payload.name }));
-      } else {
-        await api.createFilamentPreset(payload);
-        showToast(t('filamentProfiles.createdToast', { name: payload.name }));
+    async (payload: FilamentPresetEditorPayload, editing: FilamentPreset | null) => {
+      try {
+        if (editing) {
+          await api.updateFilamentPreset(editing.id, payload);
+          showToast(t('filamentProfiles.updatedToast', { name: payload.name }));
+        } else {
+          await api.createFilamentPreset(payload);
+          showToast(t('filamentProfiles.createdToast', { name: payload.name }));
+        }
+      } catch (err) {
+        // T-045: a 409 means `payload.expected_updated_at` no longer
+        // matches the row — a write landed in between. Refetch now so the
+        // still-open editor's `preset` prop picks up the new `updated_at`
+        // and the T-032 conflict banner (`serverConflict`, driven off that
+        // prop) fires on its own; the editor itself stays open and toasts
+        // (see `PresetEditorModal.handleSave`'s catch) because this rethrows
+        // instead of reaching the close-on-success code below (T-031's
+        // close-on-save is for successful saves only).
+        if (err instanceof ApiError && err.status === 409) {
+          await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+        }
+        throw err;
       }
       // Close now, driven by the parent, BEFORE invalidating — not after
       // (T-031). The refetch below can bump the saved preset's `updated_at`,
@@ -784,7 +800,9 @@ export function FilamentProfilesPage() {
                               ? 'filamentProfiles.syncZohoBadPrice'
                               : entry.reason === 'weight_unknown'
                                 ? 'filamentProfiles.syncZohoWeightUnknown'
-                                : 'filamentProfiles.syncZohoNoPrice',
+                                : entry.reason === 'content_too_large'
+                                  ? 'filamentProfiles.syncZohoContentTooLarge'
+                                  : 'filamentProfiles.syncZohoNoPrice',
                     )}
                     {entry.candidates.length > 0 && (
                       <>

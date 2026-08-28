@@ -3510,10 +3510,26 @@ export interface FilamentSyncStats { added: number; updated: number; removed: nu
 export interface FilamentBaseSyncResult { added: number; updated: number; unchanged: number; total: number; }
 export interface BambuScanFile { filename: string; content: string; }
 export type FilamentPresetPayload = Omit<FilamentPreset, 'id' | 'created_at' | 'updated_at'>;
+/** T-045: an update payload may carry the `updated_at` its fields were
+ *  derived from, so the server can 409 instead of silently clobbering a
+ *  write (e.g. a Zoho price sync) that landed after that value was read.
+ *  Omitted entirely (the default) keeps the pre-T-045 unconditional PATCH. */
+export type FilamentPresetUpdatePayload = Partial<FilamentPresetPayload> & { expected_updated_at?: string };
+/** What `PresetEditorModal` hands its `onSave` callback: the full editor
+ *  payload, plus (edit mode only) the `updated_at` its form was derived
+ *  from -- see `FilamentPresetUpdatePayload`. */
+export type FilamentPresetEditorPayload = FilamentPresetPayload & { expected_updated_at?: string };
 export interface FilamentPresetZohoSyncAttention {
   id: number;
   name: string;
-  reason: 'no_match' | 'ambiguous' | 'no_price' | 'unwritable_content' | 'bad_price' | 'weight_unknown';
+  reason:
+    | 'no_match'
+    | 'ambiguous'
+    | 'no_price'
+    | 'unwritable_content'
+    | 'bad_price'
+    | 'weight_unknown'
+    | 'content_too_large';
   candidates: string[];
   candidates_total: number;
 }
@@ -6981,7 +6997,7 @@ export const api = {
   getFilamentPresets: () => request<FilamentPreset[]>('/filament-profiles'),
   createFilamentPreset: (data: FilamentPresetPayload) =>
     request<FilamentPreset>('/filament-profiles', { method: 'POST', body: JSON.stringify(data) }),
-  updateFilamentPreset: (id: number, data: Partial<FilamentPresetPayload>) =>
+  updateFilamentPreset: (id: number, data: FilamentPresetUpdatePayload) =>
     request<FilamentPreset>(`/filament-profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFilamentPreset: (id: number) =>
     request<{ success: boolean }>(`/filament-profiles/${id}`, { method: 'DELETE' }),

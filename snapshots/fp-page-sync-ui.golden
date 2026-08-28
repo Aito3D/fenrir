@@ -17,6 +17,7 @@ showToast(isApiError ? error.message : t('filamentProfiles.syncZohoUnknown'), 'e
 ? 'filamentProfiles.syncZohoUnwritable'
 ? 'filamentProfiles.syncZohoBadPrice'
 ? 'filamentProfiles.syncZohoWeightUnknown'
+? 'filamentProfiles.syncZohoContentTooLarge'
 : 'filamentProfiles.syncZohoNoPrice',
 
 ### stderr:

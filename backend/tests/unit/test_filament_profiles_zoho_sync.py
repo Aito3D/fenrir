@@ -9,11 +9,59 @@ from pydantic import ValidationError
 
 from backend.app.api.routes.filament_profiles import _MAX_REPORTED_ATTENTION
 from backend.app.models.filament_profile import FilamentPreset
-from backend.app.schemas.filament_profile import FilamentPresetZohoSyncAttention
+from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH, FilamentPresetZohoSyncAttention
 from backend.app.services import zoho_filaments
+from backend.app.services.filament_profile_pricing import apply_filament_cost
 from backend.app.services.zoho_filaments import FilamentProduct
 
 ENDPOINT = "/api/v1/filament-profiles/zoho-sync"
+
+_CONTENT_TOO_LARGE_PRICE = 9.90
+
+
+def _content_with_key_count(n, width=6):
+    """A compact preset content with `name` plus `n` filler keys.
+
+    Filler keys are zero-padded to a fixed width so every key contributes the
+    same number of bytes regardless of `n` — that keeps the re-indented
+    length below a strictly monotonic function of `n`, which is what the
+    binary search in `_contents_straddling_the_cap` relies on.
+    """
+    data = {"name": "Big"}
+    for i in range(n):
+        data[f"k{i:0{width}d}"] = "v"
+    return json.dumps(data, ensure_ascii=False)
+
+
+def _contents_straddling_the_cap():
+    """Find the exact key count where apply_filament_cost's re-indented
+    (indent=4) output crosses _CONTENT_MAX_LENGTH, and return the compact
+    (pre-sync) content just below and just above that line.
+
+    Generated rather than pasted, so the fixture tracks _CONTENT_MAX_LENGTH
+    itself instead of a hand-picked byte count that could silently drift out
+    of sync with the real constant. Binary search (not a linear scan) because
+    a linear scan re-serialises the whole growing dict on every step — an
+    O(n^2) walk that takes tens of seconds at the ~13,000 keys this cap
+    requires; the search does ~O(log n) full serialisations instead.
+    """
+
+    def written_len(n):
+        candidate = _content_with_key_count(n)
+        written, outcome = apply_filament_cost(candidate, _CONTENT_TOO_LARGE_PRICE)
+        assert outcome == "written"
+        return len(written)
+
+    lo, hi = 0, 1
+    while written_len(hi) <= _CONTENT_MAX_LENGTH:
+        hi *= 2
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if written_len(mid) <= _CONTENT_MAX_LENGTH:
+            lo = mid
+        else:
+            hi = mid
+    return _content_with_key_count(lo), _content_with_key_count(hi)
 
 
 def _catalogue(items):
@@ -233,6 +281,61 @@ async def test_a_confident_match_with_a_bad_price_is_flagged_for_attention(async
 
     await db_session.refresh(preset)
     assert preset.content == original  # byte-identical: never written
+
+
+@pytest.mark.asyncio
+async def test_a_confident_match_whose_reindented_content_would_exceed_the_cap_is_flagged_for_attention(
+    async_client, db_session, monkeypatch
+):
+    # The item matches uniquely and the preset's content parses and prices
+    # fine — but apply_filament_cost's indent=4 re-serialisation of the
+    # result would exceed _CONTENT_MAX_LENGTH, the same cap the CRUD routes
+    # enforce on writes. User-approved behaviour change (T-044, 2026-08-27):
+    # this must not be written — the preset is left byte-identical and
+    # reported for attention instead of storing a blob past the cap that
+    # guards this endpoint's own per-request memory use.
+    _, over_cap = _contents_straddling_the_cap()
+    preset = await make_preset(db_session, content=over_cap)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product(price=_CONTENT_TOO_LARGE_PRICE)]))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert body["priced"] == 0
+    assert body["unchanged"] == 0
+    assert len(body["attention"]) == 1
+    assert body["attention"][0]["reason"] == "content_too_large"
+    assert body["attention"][0]["id"] == preset.id
+    assert body["attention"][0]["name"] == "P"
+    assert body["attention"][0]["candidates"] == []
+
+    await db_session.refresh(preset)
+    assert preset.content == over_cap  # byte-identical: never written
+
+
+@pytest.mark.asyncio
+async def test_a_confident_match_whose_reindented_content_is_at_the_cap_still_prices(
+    async_client, db_session, monkeypatch
+):
+    # One key fewer than the profile above: apply_filament_cost's re-indented
+    # output lands exactly at (not over) _CONTENT_MAX_LENGTH, so the price is
+    # written normally, same as any other confident match.
+    at_cap, _ = _contents_straddling_the_cap()
+    preset = await make_preset(db_session, content=at_cap)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product(price=_CONTENT_TOO_LARGE_PRICE)]))
+    _configured(monkeypatch, True)
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert body["priced"] == 1
+    assert body["unchanged"] == 0
+    assert body["attention"] == []
+
+    await db_session.refresh(preset)
+    written, outcome = apply_filament_cost(at_cap, _CONTENT_TOO_LARGE_PRICE)
+    assert outcome == "written"
+    assert len(written) <= _CONTENT_MAX_LENGTH
+    assert preset.content == written
 
 
 @pytest.mark.asyncio
@@ -681,13 +784,14 @@ async def test_502_when_a_stale_empty_catalogue_is_served(async_client, db_sessi
 
 
 @pytest.mark.parametrize(
-    "reason", ["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price", "weight_unknown"]
+    "reason",
+    ["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price", "weight_unknown", "content_too_large"],
 )
 def test_attention_reason_accepts_every_value_the_route_can_set(reason):
     # Pins FilamentPresetZohoSyncAttention.reason as a closed Literal, not a bare str:
     # every value the route actually assigns (match_profile's three outcomes plus the
-    # route's own "bad_price"/"unwritable_content"/"weight_unknown") must still
-    # construct cleanly.
+    # route's own "bad_price"/"unwritable_content"/"weight_unknown"/"content_too_large")
+    # must still construct cleanly.
     FilamentPresetZohoSyncAttention(id=1, name="P", reason=reason)
 
 
