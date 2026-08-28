@@ -8,6 +8,8 @@ interface NumberFieldProps {
   value: string;
   onChange: (v: string) => void;
   error?: string;
+  /** Soft advisory under the field; shown only when there is no error. */
+  warning?: string;
   tooltip?: string;
   placeholder?: string;
   step?: string;
@@ -31,6 +33,7 @@ export function NumberField({
   value,
   onChange,
   error,
+  warning,
   tooltip,
   placeholder,
   step = 'any',
@@ -88,6 +91,11 @@ export function NumberField({
         />
       )}
       {error && <p className="text-xs text-status-error mt-1">{error}</p>}
+      {!error && warning && (
+        <p role="note" className="mt-1 text-xs text-amber-400">
+          {warning}
+        </p>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CURVE_DEFAULTS, formatMoney, qtyFactor, sizeMargin, type PricingDefaults } from '../../utils/pricing';
+import { prefersReducedMotion } from '../../utils/motion';
 
 const SIZE_STRIP = [0.25, 0.5, 1, 2, 4, 10]; // × K
 const QTY_STRIP = [1, 2, 5, 10, 20, 50, 100];
@@ -43,6 +44,7 @@ function Curve({
 
 export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; currency: string }) {
   const { t } = useTranslation();
+  const animMs = prefersReducedMotion() ? 0 : 350;
   const k = d.margin_k ?? CURVE_DEFAULTS.margin_k;
   const kq = d.qty_k ?? CURVE_DEFAULTS.qty_k;
 
@@ -108,7 +110,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
               labelFormatter={(u: ReactNode) => formatMoney(Number(u ?? 0), currency)}
             />
             <ReferenceLine x={k} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="m" name={t('calculator.sizeMarginGroup')} stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
+            <Line type="monotone" dataKey="m" name={t('calculator.sizeMarginGroup')} stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={animMs} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </Curve>
@@ -148,7 +150,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
               labelFormatter={(q: ReactNode) => `${t('calculator.bulkQuantity')} ${q}`}
             />
             <ReferenceLine x={midQty} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
-            <Line type="monotone" dataKey="f" name={t('calculator.curveQtyFactor')} stroke="var(--viz-2)" dot={false} strokeWidth={2} animationDuration={350} animationEasing="ease-out" />
+            <Line type="monotone" dataKey="f" name={t('calculator.curveQtyFactor')} stroke="var(--viz-2)" dot={false} strokeWidth={2} animationDuration={animMs} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </Curve>
