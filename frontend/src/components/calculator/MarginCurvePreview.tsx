@@ -189,7 +189,7 @@ export function MarginCurvePreview({
               formatter={(v: number | undefined) => `×${Number(v ?? 0).toFixed(3)}`}
               labelFormatter={(u: ReactNode) => formatMoney(Number(u ?? 0), currency)}
             />
-            <ReferenceLine x={k} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
+            <ReferenceLine x={k} stroke="var(--color-bambu-green)" strokeDasharray="2 3" style={{ pointerEvents: 'none' }} />
             {onDragK && (
               <DragHandle
                 value={k}
@@ -242,7 +242,7 @@ export function MarginCurvePreview({
               formatter={(v: number | undefined) => Number(v ?? 0).toFixed(3)}
               labelFormatter={(q: ReactNode) => `${t('calculator.bulkQuantity')} ${q}`}
             />
-            <ReferenceLine x={midQty} stroke="var(--color-bambu-green)" strokeDasharray="2 3" />
+            <ReferenceLine x={midQty} stroke="var(--color-bambu-green)" strokeDasharray="2 3" style={{ pointerEvents: 'none' }} />
             {onDragKQ && (
               <DragHandle
                 value={midQty}

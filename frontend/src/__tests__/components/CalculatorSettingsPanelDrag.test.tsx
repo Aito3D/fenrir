@@ -113,4 +113,19 @@ describe('CalculatorSettingsPanel — drag handles', () => {
     await screen.findByLabelText(/K,/);
     expect(screen.queryByRole('slider', { name: /Drag to set/ })).not.toBeInTheDocument();
   });
+
+  // Recharts paints ReferenceLine in a later layer than the custom
+  // DragHandle children, so in a real browser the line is the topmost
+  // element at the grip's centre and swallows the pointer-down that should
+  // reach the handle underneath. The line must be pointer-transparent so
+  // drags (and the focus a pointer-down would otherwise steal) land on the
+  // grip instead.
+  it('the reference line does not intercept pointer events meant for the drag handle', async () => {
+    serveDefaults();
+    const { container } = render(<CalculatorSettingsPanel canUpdate />);
+    await screen.findByRole('slider', { name: 'Drag to set K' });
+    const line = container.querySelector('.recharts-reference-line line');
+    expect(line).not.toBeNull();
+    expect(getComputedStyle(line as Element).pointerEvents).toBe('none');
+  });
 });
