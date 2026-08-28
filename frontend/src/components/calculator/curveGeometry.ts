@@ -31,3 +31,13 @@ export function roundK(value: number): number {
 export function roundKQ(value: number): number {
   return Number.isFinite(value) ? Math.max(1, Math.round(value)) : 1;
 }
+
+/** Parse the raw example-job field strings into numbers usable by the
+ *  pricing engine. Null when the unit cost is unusable (≤ 0 or non-finite);
+ *  the quantity floors to at least 1. */
+export function parsedExample(e: { unitCost: string; quantity: string }): { unitCost: number; quantity: number } | null {
+  const u = Number(e.unitCost);
+  const q = Math.floor(Number(e.quantity));
+  if (!Number.isFinite(u) || u <= 0) return null;
+  return { unitCost: u, quantity: Number.isFinite(q) && q >= 1 ? q : 1 };
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QTY_DOMAIN, qtyDomainMax, roundK, roundKQ, sizeDomainMax, xToValue } from '../../../components/calculator/curveGeometry';
+import { parsedExample, QTY_DOMAIN, qtyDomainMax, roundK, roundKQ, sizeDomainMax, xToValue } from '../../../components/calculator/curveGeometry';
 
 describe('curveGeometry', () => {
   it('size domain is 10K unless the example sits beyond it', () => {
@@ -27,5 +27,13 @@ describe('curveGeometry', () => {
     expect(roundK(0)).toBe(1);
     expect(roundKQ(19.6)).toBe(20);
     expect(roundKQ(0.2)).toBe(1);
+  });
+  it('parses the example job, nulling an unusable unit cost and flooring the quantity to at least 1', () => {
+    expect(parsedExample({ unitCost: '', quantity: '5' })).toBeNull();
+    expect(parsedExample({ unitCost: '0', quantity: '5' })).toBeNull();
+    expect(parsedExample({ unitCost: '-5', quantity: '5' })).toBeNull();
+    expect(parsedExample({ unitCost: 'abc', quantity: '5' })).toBeNull();
+    expect(parsedExample({ unitCost: '10', quantity: '2.9' })).toEqual({ unitCost: 10, quantity: 2 });
+    expect(parsedExample({ unitCost: '10', quantity: '0' })).toEqual({ unitCost: 10, quantity: 1 });
   });
 });

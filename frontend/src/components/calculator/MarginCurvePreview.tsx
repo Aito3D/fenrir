@@ -8,7 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CURVE_DEFAULTS, formatMoney, qtyFactor, sizeMargin, unitMultiplier, type PricingDefaults } from '../../utils/pricing';
 import { prefersReducedMotion } from '../../utils/motion';
-import { qtyDomainMax, roundK, roundKQ, sizeDomainMax } from './curveGeometry';
+import { parsedExample, qtyDomainMax, roundK, roundKQ, sizeDomainMax } from './curveGeometry';
+import { FormulaPopover } from './FormulaPopover';
 import { DragHandle } from './DragHandle';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
@@ -32,28 +33,23 @@ function Curve({
   title,
   children,
   strip,
+  formula,
 }: {
   title: string;
   children: ReactNode;
   strip: ReactNode;
+  formula?: { label: string; lines: string[] };
 }) {
   return (
-    <div>
-      <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-bambu-gray mb-2">{title}</div>
+    <div className="relative">
+      <div className="mb-2 flex items-center gap-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-bambu-gray">{title}</span>
+        {formula && <FormulaPopover label={formula.label} lines={formula.lines} />}
+      </div>
       <div className="rounded-lg bg-bambu-dark/60 pt-3 pr-2">{children}</div>
       {strip}
     </div>
   );
-}
-
-/** Parse the raw example-job field strings into numbers usable by the
- *  pricing engine. Null when the unit cost is unusable (≤ 0 or non-finite);
- *  the quantity floors to at least 1. */
-export function parsedExample(e: { unitCost: string; quantity: string }): { unitCost: number; quantity: number } | null {
-  const u = Number(e.unitCost);
-  const q = Math.floor(Number(e.quantity));
-  if (!Number.isFinite(u) || u <= 0) return null;
-  return { unitCost: u, quantity: Number.isFinite(q) && q >= 1 ? q : 1 };
 }
 
 export function MarginCurvePreview({
@@ -101,6 +97,20 @@ export function MarginCurvePreview({
   const midQty = kq + 1;
   const qtyStrip = useMemo(() => Array.from(new Set([...QTY_STRIP, midQty])).sort((a, b) => a - b), [midQty]);
 
+  const mMin = d.margin_min_mult ?? CURVE_DEFAULTS.margin_min_mult;
+  const mMax = d.margin_max_mult ?? CURVE_DEFAULTS.margin_max_mult;
+  const qMin = d.qty_min_factor ?? CURVE_DEFAULTS.qty_min_factor;
+  const sizeLines = [
+    t('calculator.formulaSizeGeneric'),
+    t('calculator.formulaSizeSubst', { mMin: mMin.toFixed(2), delta: (mMax - mMin).toFixed(2), k: formatMoney(k, currency, false) }),
+    ...(ex ? [t('calculator.formulaAt', { x: formatMoney(ex.unitCost, currency), y: `×${sizeMargin(ex.unitCost, d).toFixed(3)}` })] : []),
+  ];
+  const qtyLines = [
+    t('calculator.formulaQtyGeneric'),
+    t('calculator.formulaQtySubst', { qMin: qMin.toFixed(2), delta: (1 - qMin).toFixed(2), kq, kqMinus1: kq - 1 }),
+    ...(ex ? [t('calculator.formulaAt', { x: `q = ${ex.quantity}`, y: qtyFactor(ex.quantity, d).toFixed(3) })] : []),
+  ];
+
   return (
     <div className="space-y-6">
       <div>
@@ -136,6 +146,7 @@ export function MarginCurvePreview({
 
       <Curve
         title={t('calculator.marginCurvePreviewSize')}
+        formula={{ label: t('calculator.formulaShow'), lines: sizeLines }}
         strip={
           <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
             {SIZE_STRIP.map((f) => {
@@ -198,6 +209,7 @@ export function MarginCurvePreview({
 
       <Curve
         title={t('calculator.marginCurvePreviewQty')}
+        formula={{ label: t('calculator.formulaShow'), lines: qtyLines }}
         strip={
           <dl className="mt-2 grid gap-1 text-center" style={{ gridTemplateColumns: `repeat(${qtyStrip.length}, minmax(0, 1fr))` }}>
             {qtyStrip.map((q) => {
