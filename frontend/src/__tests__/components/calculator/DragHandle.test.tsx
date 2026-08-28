@@ -34,7 +34,7 @@ describe('DragHandle', () => {
   it('maps a pointer drag across the plot to a value and rounds it', () => {
     const onChange = vi.fn();
     render(<svg><DragHandle value={500} min={0} max={1000} onChange={onChange} round={(v) => Math.round(v)} label="Drag to set K" /></svg>);
-    const grip = screen.getByRole('button', { name: 'Drag to set K' });
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
     const strip = grip.parentElement!.querySelector('[data-testid="drag-strip"]')!;
     fireEvent.pointerDown(strip, { clientX: 150, pointerId: 1 });
     // `buttons: 1` — jsdom's pointer events have no real capture state, so
@@ -48,7 +48,7 @@ describe('DragHandle', () => {
   it('steps with the keyboard: 1 % per arrow, 10 % with shift', () => {
     const onChange = vi.fn();
     render(<svg><DragHandle value={500} min={0} max={1000} onChange={onChange} round={(v) => v} label="Drag to set K" /></svg>);
-    const grip = screen.getByRole('button', { name: 'Drag to set K' });
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
     fireEvent.keyDown(grip, { key: 'ArrowRight' });
     expect(onChange).toHaveBeenLastCalledWith(510);
     fireEvent.keyDown(grip, { key: 'ArrowLeft', shiftKey: true });
@@ -56,6 +56,6 @@ describe('DragHandle', () => {
   });
   it('renders nothing interactive when read-only', () => {
     render(<svg><DragHandle value={500} min={0} max={1000} onChange={() => {}} round={(v) => v} label="Drag to set K" readOnly /></svg>);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
   });
 });

@@ -1,11 +1,11 @@
 /**
- * Drag-to-set K coverage for CalculatorSettingsPanel, split out of
+ * Drag-to-set K / KQ coverage for CalculatorSettingsPanel, split out of
  * CalculatorSettingsPanel.test.tsx: recharts' `ResponsiveContainer` reports
- * zero width in jsdom, so `useOffset()` inside `DragHandle` returns
- * `width: 0` and the handle renders null there — the main suite's 29 tests
- * never touch chart geometry, so they pass either way, but a real drag grip
- * needs `useOffset` mocked to a non-zero plot rect. Isolated here so that
- * mock doesn't leak into the rest of the settings-panel suite.
+ * zero width in jsdom, so the real layout/measurement machinery inside
+ * `DragHandle` never runs there — the main suite's 29 tests never touch
+ * chart geometry, so they pass either way, but a real drag grip needs a
+ * non-zero plot rect. Isolated here so that mock doesn't leak into the rest
+ * of the settings-panel suite.
  */
 
 import type { ComponentProps } from 'react';
@@ -21,15 +21,15 @@ import type { CalculatorDefaults } from '../../api/client';
 // `getBoundingClientRect`/`ResizeObserver`, both of which report 0 in jsdom
 // (the global `ResizeObserverMock` in setup.ts never fires a callback). With
 // a 0×0 measured size recharts renders nothing at all inside the chart's
-// `<svg>` — not even `CartesianGrid`/`XAxis` — so mocking `useOffset` alone
-// (as the isolated `DragHandle.test.tsx` does, where `DragHandle` is
-// rendered directly with no `ResponsiveContainer` in the tree) does not
-// make the grip mount here: confirmed experimentally, the `<svg>` stayed
-// empty. Overriding just `ResponsiveContainer` to substitute a fixed pixel
-// width for the `width="100%"` MarginCurvePreview passes it lets recharts'
-// real layout/measurement machinery run end to end, so `useOffset` (left
-// unmocked here) returns genuine numbers and the grip renders where the
-// real geometry puts it.
+// `<svg>` — not even `CartesianGrid`/`XAxis` — so mocking `useOffset`/
+// `usePlotArea` alone (as the isolated `DragHandle.test.tsx` does, where
+// `DragHandle` is rendered directly with no `ResponsiveContainer` in the
+// tree) does not make the grip mount here: confirmed experimentally, the
+// `<svg>` stayed empty. Overriding just `ResponsiveContainer` to substitute
+// a fixed pixel width for the `width="100%"` MarginCurvePreview passes it
+// lets recharts' real layout/measurement machinery run end to end, so the
+// hooks DragHandle uses (left unmocked here) return genuine numbers and the
+// grip renders where the real geometry puts it.
 vi.mock('recharts', async (orig) => {
   const actual = await orig<typeof import('recharts')>();
   return {
@@ -71,16 +71,46 @@ describe('CalculatorSettingsPanel — drag handles', () => {
   it('dragging K writes the field and opens the Save bar', async () => {
     serveDefaults();
     render(<CalculatorSettingsPanel canUpdate />);
-    const grip = await screen.findByRole('button', { name: 'Drag to set K' });
+    const grip = await screen.findByRole('slider', { name: 'Drag to set K' });
     fireEvent.keyDown(grip, { key: 'ArrowRight', shiftKey: true }); // +10 % of 0..330 = 33
     expect(screen.getByLabelText(/K,/)).toHaveValue(66);
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
+  });
+
+  // Defaults: qty_k = 5 → the ReferenceLine/handle sits at KQ + 1 = 6, over
+  // a 1..100 quantity domain (span 99, since the seeded example quantity is
+  // 1, below the 100 floor `qtyDomainMax` would otherwise stretch for).
+  // Shift+→ = +10 % of 99 ≈ 9.9 → handle value roundKQ(6 + 9.9) = 16, which
+  // the quantity chart's inline `onChange` maps back to the KQ field as
+  // 16 − 1 = 15 (see `onDragKQ={(v) => setField('qty_k', String(v))}` fed
+  // by `onChange={(v) => onDragKQ(Math.max(1, v - 1))}` in
+  // MarginCurvePreview.tsx).
+  it('dragging KQ writes the field and opens the Save bar', async () => {
+    serveDefaults();
+    render(<CalculatorSettingsPanel canUpdate />);
+    const grip = await screen.findByRole('slider', { name: 'Drag to set KQ' });
+    fireEvent.keyDown(grip, { key: 'ArrowRight', shiftKey: true });
+    expect(screen.getByLabelText(/Half-way quantity/)).toHaveValue(15);
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
+  });
+
+  // qty_k seeded at its floor (1) so the handle starts at KQ + 1 = 2.
+  // ArrowLeft steps it down by 1 % of the span, past 1: roundKQ rounds the
+  // result to 1, and the quantity chart's `onChange` wrapper then computes
+  // `Math.max(1, 1 - 1)` = `Math.max(1, 0)` — the floor clamp this test
+  // exists to exercise — so the field must stay at 1, not go to 0.
+  it('dragging KQ left at the floor never pushes the field below 1', async () => {
+    serveDefaults({ ...baseDefaults, qty_k: 1 });
+    render(<CalculatorSettingsPanel canUpdate />);
+    const grip = await screen.findByRole('slider', { name: 'Drag to set KQ' });
+    fireEvent.keyDown(grip, { key: 'ArrowLeft' });
+    expect(screen.getByLabelText(/Half-way quantity/)).toHaveValue(1);
   });
 
   it('read-only viewers get no drag grips', async () => {
     serveDefaults();
     render(<CalculatorSettingsPanel canUpdate={false} />);
     await screen.findByLabelText(/K,/);
-    expect(screen.queryByRole('button', { name: /Drag to set/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: /Drag to set/ })).not.toBeInTheDocument();
   });
 });

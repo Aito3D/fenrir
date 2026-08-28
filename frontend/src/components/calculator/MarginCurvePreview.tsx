@@ -183,7 +183,7 @@ export function MarginCurvePreview({
               <DragHandle
                 value={k}
                 min={0}
-                max={sizeDomainMax(k, ex?.unitCost)}
+                max={sizeMax}
                 onChange={onDragK}
                 round={roundK}
                 label={t('calculator.dragK')}
@@ -235,7 +235,7 @@ export function MarginCurvePreview({
               <DragHandle
                 value={midQty}
                 min={1}
-                max={qtyDomainMax(ex?.quantity)}
+                max={qtyMax}
                 onChange={(v) => onDragKQ(Math.max(1, v - 1))}
                 round={roundKQ}
                 label={t('calculator.dragKQ')}

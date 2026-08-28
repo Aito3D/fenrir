@@ -63,7 +63,7 @@ export function DragHandle({
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
       />
       <g
-        role="button" tabIndex={0} aria-label={label} aria-valuenow={value} aria-valuemin={min} aria-valuemax={max}
+        role="slider" aria-orientation="horizontal" tabIndex={0} aria-label={label} aria-valuenow={value} aria-valuemin={min} aria-valuemax={max}
         onKeyDown={onKeyDown} className="outline-none focus-visible:[&>rect]:stroke-white"
       >
         <rect x={x - GRIP / 2} y={top} width={GRIP} height={GRIP} rx={3} fill="var(--color-bambu-green)" stroke="transparent" strokeWidth={2} style={{ cursor: 'ew-resize' }} />
