@@ -5,6 +5,8 @@ import {
   calculatorPrefillUrl,
   matchCalculatorFilament,
   matchCalculatorPrinter,
+  medianUnitCost,
+  MEDIAN_MAX_SAMPLES,
   type ArchivePricingSource,
   type NamedCalculatorFilament,
   type NamedCalculatorPrinter,
@@ -593,5 +595,35 @@ describe('matchCalculatorFilament vendor edge cases', () => {
       ['H2S'],
     );
     expect(url).toContain('filamentId=1');
+  });
+});
+
+describe('medianUnitCost', () => {
+  const calcConfig = { filaments, printers, defaults };
+  const names = new Map<number, string>([[7, 'H2S']]);
+  const row = (grams: number, status = 'completed', completed_at = '2026-08-01T00:00:00Z') => ({
+    filament_used_grams: grams, print_time_seconds: 3600, actual_time_seconds: null,
+    filament_type: 'PLA', status, printer_id: 7, completed_at,
+  });
+
+  it('returns null below five usable completed prints', () => {
+    expect(medianUnitCost([row(10), row(20), row(30), row(40)], calcConfig, names)).toBeNull();
+    expect(medianUnitCost([row(10), row(20), row(30), row(40), row(50, 'failed')], calcConfig, names)).toBeNull();
+  });
+
+  it('takes the median unit cost over completed prints (odd and even counts)', () => {
+    const odd = [10, 20, 30, 40, 50].map((g) => row(g));
+    const mid = estimateArchiveSalePrice(row(30), filaments, printers, defaults, ['H2S'])!.unitCost;
+    expect(medianUnitCost(odd, calcConfig, names)).toEqual({ median: mid, count: 5 });
+    const even = [10, 20, 30, 40, 50, 60].map((g) => row(g));
+    const a = estimateArchiveSalePrice(row(30), filaments, printers, defaults, ['H2S'])!.unitCost;
+    const b = estimateArchiveSalePrice(row(40), filaments, printers, defaults, ['H2S'])!.unitCost;
+    expect(medianUnitCost(even, calcConfig, names)!.median).toBeCloseTo((a + b) / 2, 6);
+  });
+
+  it('keeps only the most recent MEDIAN_MAX_SAMPLES rows and skips rows without weight or time', () => {
+    const many = Array.from({ length: 120 }, (_, i) => row(10 + i, 'completed', `2026-0${1 + Math.floor(i / 30)}-${String(1 + (i % 28)).padStart(2, '0')}T00:00:00Z`));
+    expect(medianUnitCost(many, calcConfig, names)!.count).toBe(MEDIAN_MAX_SAMPLES);
+    expect(medianUnitCost([row(0), row(0), row(0), row(0), row(0), row(0)], calcConfig, names)).toBeNull();
   });
 });

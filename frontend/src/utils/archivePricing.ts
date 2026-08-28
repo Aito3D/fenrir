@@ -255,3 +255,40 @@ export function calculatorPrefillUrl(
   if (estimate?.printerMatched) params.set('printerId', String(estimate.printerId));
   return `/calculator?${params.toString()}`;
 }
+
+/** A print-log row with just what the median needs (ArchiveSlim satisfies it). */
+export interface UnitCostSample extends ArchivePricingSource {
+  status: string;
+  printer_id: number | null;
+  completed_at?: string | null;
+}
+
+export const MEDIAN_MIN_SAMPLES = 5;
+export const MEDIAN_MAX_SAMPLES = 100;
+
+/** Median unit cost (computePricing total_cost, quantity 1) of the most
+ *  recent completed prints, priced the way the archive card prices them.
+ *  Feeds the "K from your own prints" hint. Null when fewer than
+ *  MEDIAN_MIN_SAMPLES rows are usable. Pure so a backend endpoint can
+ *  replace it one day without touching the caller. */
+export function medianUnitCost(
+  rows: UnitCostSample[],
+  calcConfig: CalcConfig,
+  printerNameById: Map<number, string>,
+): { median: number; count: number } | null {
+  const costs = rows
+    .filter((r) => r.status === 'completed')
+    .sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))
+    .slice(0, MEDIAN_MAX_SAMPLES)
+    .map((r) =>
+      estimateArchiveSalePrice(r, calcConfig.filaments, calcConfig.printers, calcConfig.defaults, [
+        r.printer_id != null ? printerNameById.get(r.printer_id) : null,
+      ])?.unitCost,
+    )
+    .filter((c): c is number => typeof c === 'number' && Number.isFinite(c))
+    .sort((a, b) => a - b);
+  if (costs.length < MEDIAN_MIN_SAMPLES) return null;
+  const mid = Math.floor(costs.length / 2);
+  const median = costs.length % 2 ? costs[mid] : (costs[mid - 1] + costs[mid]) / 2;
+  return { median, count: costs.length };
+}
