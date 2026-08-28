@@ -8427,6 +8427,8 @@ export default {
     warnKNear: 'K 远低于您的示例成本；每个任务都接近 M_MIN。',
     warnNoQtyDiscount: '没有数量折扣：Q_MIN 为 1。',
     warnFloorDominates: '最低价格超过了您示例的价格；曲线永远不会在其以下生效。',
+    kHint: '您最近 {{count}} 次打印的单位成本中位数：{{median}}',
+    kHintUse: '应用',
     exampleFromCalculator: '已根据上一次计算器任务预填',
     saveMarginCurve: '保存利润率曲线',
     marginCurveSaved: '利润率曲线已保存',

@@ -8494,6 +8494,8 @@ export default {
     warnKNear: 'K is far below your example cost; every job sits near M_MIN.',
     warnNoQtyDiscount: 'No quantity discount: Q_MIN is 1.',
     warnFloorDominates: "The minimum price exceeds your example's price; the curves never apply below it.",
+    kHint: 'Median unit cost of your last {{count}} prints: {{median}}',
+    kHintUse: 'Use it',
     exampleFromCalculator: 'Prefilled from the last calculator job',
     saveMarginCurve: 'Save margin curve',
     marginCurveSaved: 'Margin curve saved',

@@ -8368,6 +8368,8 @@ export default {
     warnKNear: 'K, örnek maliyetinizin çok altında; her iş M_MIN değerine yakın oluyor.',
     warnNoQtyDiscount: 'Miktar indirimi yok: Q_MIN 1.',
     warnFloorDominates: 'Minimum fiyat, örneğinizin fiyatını aşıyor; eğriler bunun altında asla uygulanmaz.',
+    kHint: 'Son {{count}} baskınızın medyan birim maliyeti: {{median}}',
+    kHintUse: 'Uygula',
     exampleFromCalculator: 'Son hesap makinesi işinden önceden dolduruldu',
     saveMarginCurve: 'Marj eğrisini kaydet',
     marginCurveSaved: 'Marj eğrisi kaydedildi',

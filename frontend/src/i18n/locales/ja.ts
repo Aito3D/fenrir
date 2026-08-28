@@ -8440,6 +8440,8 @@ export default {
     warnKNear: 'K が例のコストよりはるかに小さいため、すべてのジョブが M_MIN 付近になります。',
     warnNoQtyDiscount: '数量割引なし: Q_MIN は 1 です。',
     warnFloorDominates: '最低価格が例の価格を超えているため、曲線はそれ以下では適用されません。',
+    kHint: '直近{{count}}件の印刷の中央値単価: {{median}}',
+    kHintUse: '適用する',
     exampleFromCalculator: '直近の計算機の案件から自動入力',
     saveMarginCurve: 'マージン曲線を保存',
     marginCurveSaved: 'マージン曲線を保存しました',

@@ -8061,6 +8061,8 @@ export default {
     warnKNear: 'K가 예시 비용보다 훨씬 낮아 모든 작업이 M_MIN 근처에 위치합니다.',
     warnNoQtyDiscount: '수량 할인 없음: Q_MIN이 1입니다.',
     warnFloorDominates: '최소 가격이 예시 가격을 초과하여 곡선이 그 아래에서는 적용되지 않습니다.',
+    kHint: '최근 {{count}}건의 출력물 중앙값 단가: {{median}}',
+    kHintUse: '적용하기',
     exampleFromCalculator: '마지막 계산기 작업에서 자동 입력됨',
     saveMarginCurve: '마진 곡선 저장',
     marginCurveSaved: '마진 곡선이 저장되었습니다',

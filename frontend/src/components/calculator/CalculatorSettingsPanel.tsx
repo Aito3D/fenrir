@@ -13,11 +13,14 @@ import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
 import { buildPricingInputs, foldSessionOverrides, loadCalculatorState } from '../../hooks/useCalculatorState';
-import { computePricing, type PricingDefaults } from '../../utils/pricing';
+import { computePricing, formatMoney, type PricingDefaults } from '../../utils/pricing';
+import { medianUnitCost } from '../../utils/archivePricing';
 import { MarginCurvePreview } from './MarginCurvePreview';
-import { parsedExample } from './curveGeometry';
+import { parsedExample, roundK } from './curveGeometry';
 import { curveWarnings, type CurveWarningKey } from './curveWarnings';
 import { parseNum, useDefaultsForm } from './calculatorSettingsShared';
+import { useAuth } from '../../contexts/AuthContext';
+import { focusRingCls } from '../formStyles';
 
 type FieldKey = keyof Omit<CalculatorDefaults, 'id' | 'updated_at' | 'global_markup_pct'>;
 
@@ -168,6 +171,32 @@ function SettingsForm({
   // the settings form.
   const { data: filaments } = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments, staleTime: 60_000 });
   const { data: printers } = useQuery({ queryKey: ['calculatorPrinters'], queryFn: api.getCalculatorPrinters, staleTime: 60_000 });
+
+  // "K from your own prints" (§7): median unit cost of the last 90 days of
+  // completed prints, priced the way the archive card prices them — offered
+  // as a one-click K suggestion under the margin_k field. Bambuddy printers
+  // (not calculator-printer profiles) name the printer-match hint, since
+  // ArchiveSlim.printer_id is a Bambuddy printer id.
+  const { hasPermission } = useAuth();
+  const canReadArchives = hasPermission('archives:read');
+  const { data: bambuddyPrinters } = useQuery({ queryKey: ['printers'], queryFn: api.getPrinters, staleTime: 60_000 });
+  const since = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const { data: slim } = useQuery({
+    queryKey: ['archivesSlim', 'k-hint', since],
+    queryFn: () => api.getArchivesSlim(since),
+    enabled: canReadArchives && !!filaments?.length && !!printers?.length,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const kHint = useMemo(() => {
+    if (!slim || !filaments?.length || !printers?.length) return null;
+    const names = new Map((bambuddyPrinters ?? []).map((p) => [p.id, p.name] as const));
+    return medianUnitCost(slim, { filaments, printers, defaults }, names);
+  }, [slim, filaments, printers, bambuddyPrinters, defaults]);
   const [example, setExample] = useState<{ unitCost: string; quantity: string }>({
     unitCost: String(defaults.margin_k),
     quantity: '1',
@@ -247,20 +276,38 @@ function SettingsForm({
     };
   }, []);
 
-  const field = ({ key, labelKey }: Field) => (
-    <NumberField
-      key={key}
-      id={inputId(key)}
-      label={t(labelKey, { currency: currencySymbol })}
-      value={form[key]}
-      onChange={(v) => setField(key, v)}
-      error={fieldErrors[key]}
-      warning={warningText[key]}
-      required
-    />
+  const field = ({ key, labelKey }: Field, after?: ReactNode) => (
+    <div key={key}>
+      <NumberField
+        id={inputId(key)}
+        label={t(labelKey, { currency: currencySymbol })}
+        value={form[key]}
+        onChange={(v) => setField(key, v)}
+        error={fieldErrors[key]}
+        warning={warningText[key]}
+        required
+      />
+      {key === 'margin_k' && kHint ? (
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-bambu-gray">
+          <span>{t('calculator.kHint', { count: kHint.count, median: formatMoney(kHint.median, currency) })}</span>
+          <button
+            type="button"
+            className={`text-bambu-green hover:underline ${focusRingCls}`}
+            onClick={() => setField('margin_k', String(roundK(kHint.median)))}
+          >
+            {t('calculator.kHintUse')}
+          </button>
+        </p>
+      ) : (
+        after
+      )}
+    </div>
   );
+  // Explicit lambdas, not `fields.map(field)` — Array#map passes the index
+  // as a second argument, which would land in `field`'s optional `after`
+  // param and leak stray index numbers under every field.
   const grid = (fields: Field[], cols = 'sm:grid-cols-2') => (
-    <div className={`stagger-nested grid grid-cols-1 gap-4 ${cols}`}>{fields.map(field)}</div>
+    <div className={`stagger-nested grid grid-cols-1 gap-4 ${cols}`}>{fields.map((f) => field(f))}</div>
   );
 
   return (
@@ -302,7 +349,7 @@ function SettingsForm({
             {MARGIN_GROUPS.map((group) => (
               <fieldset key={group.labelKey} className="min-w-0">
                 <legend className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-bambu-gray">{t(group.labelKey)}</legend>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">{group.fields.map(field)}</div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">{group.fields.map((f) => field(f))}</div>
               </fieldset>
             ))}
           </div>

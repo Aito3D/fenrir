@@ -323,6 +323,79 @@ describe('CalculatorSettingsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument();
   });
 
+  it('offers the median unit cost of recent prints as K and applies it on click', async () => {
+    serveDefaults();
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () =>
+        HttpResponse.json([
+          {
+            id: 1,
+            name: 'PLA',
+            material: 'PLA',
+            brand: 'Generic',
+            cost_per_kg: 3731,
+            sale_price_per_kg: 5597,
+            margin_pct: 50,
+            difficulty_pct: 150,
+            zoho_item_id: null,
+            zoho_item_name: null,
+            zoho_sku: null,
+            spool_weight_kg: null,
+            zoho_synced_at: null,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ]),
+      ),
+      http.get('/api/v1/calculator/printers/', () =>
+        HttpResponse.json([
+          {
+            id: 1,
+            name: 'H2S',
+            purchase_price: 347000,
+            lifetime_years: 2,
+            daily_usage_hours: 5,
+            power_watts: 400,
+            repair_rate_pct: 30,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ]),
+      ),
+      http.get('/api/v1/archives/slim', () =>
+        HttpResponse.json(
+          [10, 20, 30, 40, 50].map((g, i) => ({
+            printer_id: 1,
+            print_name: `p${i}`,
+            print_time_seconds: 3600,
+            actual_time_seconds: null,
+            filament_used_grams: g,
+            filament_type: 'PLA',
+            filament_color: null,
+            filament_vendor: null,
+            status: 'completed',
+            started_at: null,
+            completed_at: `2026-08-0${i + 1}T00:00:00Z`,
+            cost: null,
+            energy_kwh: null,
+            energy_cost: null,
+            quantity: 1,
+            created_at: `2026-08-0${i + 1}T00:00:00Z`,
+          })),
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CalculatorSettingsPanel canUpdate />);
+    const hint = await screen.findByText(/Median unit cost of your last 5 prints/);
+    expect(hint).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Use it' }));
+    const k = screen.getByLabelText(/K,/);
+    expect(Number((k as HTMLInputElement).value)).toBeGreaterThan(0);
+    expect(Number((k as HTMLInputElement).value)).not.toBe(33);
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
+  });
+
   it('shows amber warnings for degenerate curves without blocking Save', async () => {
     serveDefaults();
     const user = userEvent.setup();

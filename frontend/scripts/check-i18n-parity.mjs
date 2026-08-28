@@ -181,6 +181,11 @@ const DE_COGNATES = [
   'Score',  // #1546 AI detection modal — established DE loanword (Duden)
   // Task 14 — filament profile editor: German technical terms borrowed as-is.
   'Import', 'Extrusion', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -240,6 +245,11 @@ const FR_COGNATES = [
   // Task 14 — filament profile editor: French loanwords / model codes.
   'Import', '{{n}} preset', '{{n}} presets', 'Menu', 'Extrusion',
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal', 'Options',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -281,6 +291,11 @@ const IT_COGNATES = [
   'Skirt / brim',  // Italian slicer UIs keep the English terms
   // Task 14 — filament profile editor: Italian loanwords / model codes.
   '{{n}} preset', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -299,6 +314,11 @@ const JA_COGNATES = [
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Japanese loanwords / model codes.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -337,6 +357,11 @@ const PT_BR_COGNATES = [
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "dia" in Portuguese (BR)
   // Task 14 — filament profile editor: PT-BR loanwords / model codes.
   '{{n}} preset', '{{n}} presets', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -353,6 +378,11 @@ const ZH_CN_COGNATES = [
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Chinese (Simplified) model codes / brand names.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -368,6 +398,11 @@ const ZH_TW_COGNATES = [
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Chinese (Traditional) model codes / brand names.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -392,6 +427,11 @@ const KO_COGNATES = [
   'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
   // Task 14 — filament profile editor: Korean model codes / brand names.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -421,6 +461,11 @@ const ES_COGNATES = [
   'Simple',  // slicer settings visibility tier — identical word in Spanish
   // Task 14 — filament profile editor: Spanish loanwords / model codes.
   '{{n}} preset', '{{n}} presets', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -442,6 +487,11 @@ const TR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   // Task 14 — filament profile editor: Turkish technical terms / model codes.
   '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'Z-hop',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -460,6 +510,11 @@ const RU_COGNATES = [
   '+ H2S / H2D / H2C / X2D',
   'SuperTack',
   'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 
@@ -479,6 +534,11 @@ const UK_COGNATES = [
   '+ H2S / H2D / H2C / X2D',
   'SuperTack',
   'nil',
+  // calculator formula notation — not translatable
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
 ];
 

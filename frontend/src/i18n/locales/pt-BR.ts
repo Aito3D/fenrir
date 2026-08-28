@@ -8428,6 +8428,8 @@ export default {
     warnKNear: 'K está bem abaixo do custo do seu exemplo; todo trabalho fica perto de M_MIN.',
     warnNoQtyDiscount: 'Sem desconto por quantidade: Q_MIN é 1.',
     warnFloorDominates: 'O preço mínimo excede o preço do seu exemplo; as curvas nunca se aplicam abaixo dele.',
+    kHint: 'Custo unitário mediano das suas últimas {{count}} impressões: {{median}}',
+    kHintUse: 'Usar',
     exampleFromCalculator: 'Pré-preenchido a partir do último trabalho da calculadora',
     saveMarginCurve: 'Salvar curva de margem',
     marginCurveSaved: 'Curva de margem salva',

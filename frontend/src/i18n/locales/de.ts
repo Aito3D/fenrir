@@ -8441,6 +8441,8 @@ export default {
     warnKNear: 'K liegt weit unter Ihren Beispielkosten; jeder Auftrag liegt nahe M_MIN.',
     warnNoQtyDiscount: 'Kein Mengenrabatt: Q_MIN ist 1.',
     warnFloorDominates: 'Der Mindestpreis übersteigt den Preis Ihres Beispiels; die Kurven gelten darunter nie.',
+    kHint: 'Median-Stückkosten Ihrer letzten {{count}} Drucke: {{median}}',
+    kHintUse: 'Übernehmen',
     exampleFromCalculator: 'Vorausgefüllt aus dem letzten Rechnerauftrag',
     saveMarginCurve: 'Margenkurve speichern',
     marginCurveSaved: 'Margenkurve gespeichert',
