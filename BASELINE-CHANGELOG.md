@@ -6457,3 +6457,77 @@ a documented suite-load flake) — re-ran alone and it passed 18/18, confirming 
 this change. `bash tools/coverage_fp.sh backend`: 539/540 = 99.81% scoped statements (baseline
 531/532 = 99.81%, same ratio, no drop; the one uncovered line remains `zoho_filaments.py`'s
 pre-existing branch, untouched by this task).
+
+## T-003 — 2026-08-27 — MECHANICAL PROBE RE-RECORD, not a behavior change
+
+Audit `audit-cleanliness` found that `zohoResult.attention`'s reason-to-i18n-key mapping in
+`FilamentProfilesPage.tsx` was a nested ternary with a silent fallthrough: any `reason` value that
+didn't match one of the explicit `===` checks rendered the `syncZohoNoPrice` copy by default. Since
+the finding was filed the `FilamentPresetZohoSyncAttention['reason']` union grew from three values to
+seven (`no_match`, `ambiguous`, `no_price`, `unwritable_content`, `bad_price`, `weight_unknown`,
+`content_too_large`), making the ternary longer and the fallthrough hazard worse — an eighth reason
+added later would silently reuse the `no_price` copy instead of erroring at compile time.
+
+Fixed by replacing the ternary with a module-level `ZOHO_ATTENTION_REASON_KEYS: Record<
+FilamentPresetZohoSyncAttention['reason'], string>` lookup, transcribing all seven existing
+`reason → i18n key` pairs unchanged, and calling `t(ZOHO_ATTENTION_REASON_KEYS[entry.reason])` at
+the render site. Because the `Record` is keyed by the full `reason` union with no index signature,
+TypeScript now errors at compile time if the union ever grows an eighth value without a
+corresponding entry, instead of the old runtime silent-fallback behavior.
+
+**This is not a behavior change.** Every one of the seven reasons renders exactly the same i18n key
+it did before; the per-reason rendering tests in
+`frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` are unchanged and pin this (34/34
+passing).
+
+`fp-page-sync-ui` is a source-grep probe: it greps `FilamentProfilesPage.tsx` for lines containing
+`syncZoho`/`zohoSync`/`zohoSyncing` and records their literal text. Restructuring the ternary into
+the `Record` necessarily changes which lines match and how they're shaped — the seven `? 'filament
+Profiles.syncZoho...'` / `: 'filamentProfiles.syncZohoNoPrice'` ternary-branch lines are replaced by
+seven `reason: 'filamentProfiles.syncZoho...'` object-entry lines, one per reason, with the identical
+seven i18n key strings and no additions or removals. The golden was re-recorded
+(`python3 tools/snapshot.py record`); `git status --porcelain snapshots/` confirmed only
+`fp-page-sync-ui.golden` changed, and `python3 tools/snapshot.py verify --probe fp-page-sync-ui`
+now matches.
+
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: no diff (no route, class, exported
+constant, permission gate, DDL, or i18n key changed — `ZOHO_ATTENTION_REASON_KEYS` is an unexported
+module-level `const`). `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` on the touched file:
+both clean. `bash tools/coverage_fp.sh frontend`: 76.66% (230/300) scoped statements, above the
+76.58% (229/299) baseline — no drop.
+
+## T-011 — 2026-08-27 — MECHANICAL SURFACE DIFF, not a behavior change
+
+Audit `audit-robustness` found that `POST /filament-profiles/zoho-sync` called
+`zoho_filaments.match_profile(catalogue, ...)` once per preset, and `match_profile` re-normalised
+every catalogue item's brand and material (a `re.sub` each) on every single call — O(profiles x
+catalogue) regex work in one `for` loop with no `await` inside it, so the whole pass blocks the
+event loop for the duration (measured ~0.84s at the `_MAX_PAGES` ceiling of 4000 catalogue items).
+
+Fixed by splitting `match_profile` into `build_match_index(catalogue) -> CatalogueIndex` (groups
+the catalogue by `(normalised brand, normalised material)` once, preserving each bucket's
+catalogue-order) and `match_profile_indexed(index, brand, material, colour)` (does the O(1) bucket
+lookup plus the same small per-candidate colour-narrowing `match_profile` always did, via a shared
+`_match_candidates` helper extracted unchanged from the old function body). `match_profile` itself
+keeps its old signature and behavior as a thin wrapper — `build_match_index(catalogue)` then
+`match_profile_indexed(...)` — so every existing caller and test is untouched. The zoho-sync route
+now builds one `CatalogueIndex` before its preset loop and calls `match_profile_indexed` per
+preset, making the loop O(catalogue + profiles) instead of O(profiles x catalogue).
+
+**This is not a behavior change.** `_match_candidates` is a verbatim extraction of the second half
+of the old `match_profile` body (candidate-narrowing, colour disambiguation, outcome selection) —
+no branch, ordering, or constant changed. `build_match_index` groups catalogue items by iterating
+the catalogue in its own order and appending to each bucket, so a bucket's contents are in the same
+order the old list comprehension (`[item for item in catalogue if ...]`) would have produced,
+preserving `ProfileMatch.candidates` ordering exactly. All 94 tests in
+`test_zoho_filaments_match.py`, `test_filament_profiles_zoho_sync.py`, `test_zoho_filaments_
+catalogue.py`, and `test_zoho_filaments_parse.py` pass unchanged. `python3 tools/snapshot.py
+verify` matches 11/11 golden probes WITHOUT re-recording, including `fp-match-decisions` and
+`fp-sync-endpoint` — the hard pins on match outcomes and the sync endpoint's response shape.
+
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: diffs by exactly three lines — the
+new `class CatalogueIndex:`, `def build_match_index(...)`, and `def match_profile_indexed(...)`
+entries in the "Backend callables" section, alphabetically sorted in with the rest. No route,
+schema, DDL, permission gate, or i18n key changed. Applied as shown; no other section differs.
+`bash tools/coverage_fp.sh backend`: 539/540 = 99.81% scoped statements, unchanged from baseline
+(the one uncovered line remains `zoho_filaments.py`'s pre-existing branch, untouched by this task).

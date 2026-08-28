@@ -35,11 +35,14 @@ async def list_filament_profiles(
 async def sync_base_presets(
 async def sync_filament_presets_from_zoho(
 async def update_filament_profile(
+class CatalogueIndex:
 class FilamentProduct:
 class ParsedName:
 class ProfileMatch:
 class ZohoFilamentMappingError(RuntimeError):
 def apply_filament_cost(content: str, cost_per_kg: float) -> tuple[str, ApplyFilamentCostOutcome]:
+def build_match_index(catalogue: list[FilamentProduct]) -> CatalogueIndex:
+def match_profile_indexed(
 def match_profile(
 def parse_filament_name(name: str) -> ParsedName:
 def reset_cache() -> None:

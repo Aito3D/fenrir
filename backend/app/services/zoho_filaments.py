@@ -227,13 +227,42 @@ def _normalise(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
 
 
-def match_profile(
-    catalogue: list[FilamentProduct],
-    brand: str,
-    material: str,
-    colour: str,
-) -> ProfileMatch:
-    """Find the one catalogue item that prices this profile, or say why not.
+@dataclass(frozen=True)
+class CatalogueIndex:
+    """A catalogue pre-grouped by its own (normalised brand, normalised
+    material) pairs.
+
+    Built once per catalogue by :func:`build_match_index` so a caller matching
+    many profiles against the same catalogue (the zoho-sync route) does the
+    O(catalogue) normalisation work exactly once instead of once per profile
+    (T-011) — :func:`match_profile_indexed` then does only O(1) dict work plus
+    the small per-candidate colour narrowing ``match_profile`` always did.
+
+    Each bucket preserves the catalogue's own item order, since a matched
+    "ambiguous" outcome's ``candidates`` ordering is part of the contract
+    :func:`match_profile` has always honoured.
+    """
+
+    by_brand_material: dict[tuple[str, str], list[FilamentProduct]]
+
+
+def build_match_index(catalogue: list[FilamentProduct]) -> CatalogueIndex:
+    """Group ``catalogue`` by (normalised brand, normalised material) once.
+
+    Pass the result to :func:`match_profile_indexed` for every profile in a
+    batch instead of calling :func:`match_profile` (which rebuilds this same
+    grouping on every call) — see T-011.
+    """
+    by_brand_material: dict[tuple[str, str], list[FilamentProduct]] = {}
+    for item in catalogue:
+        key = (_normalise(item.brand), _normalise(item.material))
+        by_brand_material.setdefault(key, []).append(item)
+    return CatalogueIndex(by_brand_material)
+
+
+def _match_candidates(candidates: list[FilamentProduct], colour: str) -> ProfileMatch:
+    """The colour-narrowing half of matching, shared by ``candidates``
+    however they were gathered (a fresh scan or a prebuilt index bucket).
 
     Brand AND material must both agree — brand alone matches every filament
     that vendor sells. Colour only narrows a collision. A SOLE candidate is
@@ -249,16 +278,6 @@ def match_profile(
     search box and always yields a best row, so it can order candidates but can
     never answer "is this a match at all".
     """
-    want_brand = _normalise(brand)
-    want_material = _normalise(material)
-    if not want_brand or not want_material:
-        return ProfileMatch("no_match", None, [], 0)
-
-    candidates = [
-        item
-        for item in catalogue
-        if _normalise(item.brand) == want_brand and _normalise(item.material) == want_material
-    ]
     if not candidates:
         return ProfileMatch("no_match", None, [], 0)
 
@@ -285,6 +304,46 @@ def match_profile(
     if not product.has_price:
         return ProfileMatch("no_price", product, [product.name], 1)
     return ProfileMatch("matched", product, [product.name], 1)
+
+
+def match_profile_indexed(
+    index: CatalogueIndex,
+    brand: str,
+    material: str,
+    colour: str,
+) -> ProfileMatch:
+    """Like :func:`match_profile`, but against a prebuilt :func:`build_match_index`.
+
+    Use this (with one shared index) when matching many profiles against the
+    same catalogue — see T-011. Behaviour is byte-identical to calling
+    ``match_profile(catalogue, brand, material, colour)`` with the catalogue
+    the index was built from.
+    """
+    want_brand = _normalise(brand)
+    want_material = _normalise(material)
+    if not want_brand or not want_material:
+        return ProfileMatch("no_match", None, [], 0)
+
+    candidates = index.by_brand_material.get((want_brand, want_material), [])
+    return _match_candidates(candidates, colour)
+
+
+def match_profile(
+    catalogue: list[FilamentProduct],
+    brand: str,
+    material: str,
+    colour: str,
+) -> ProfileMatch:
+    """Find the one catalogue item that prices this profile, or say why not.
+
+    Matching a single profile against a catalogue that will only be used
+    once. A caller matching MANY profiles against the same catalogue (e.g. a
+    sync loop) should build one :class:`CatalogueIndex` with
+    :func:`build_match_index` and call :func:`match_profile_indexed` per
+    profile instead — this function rebuilds that same index on every call,
+    which is fine for one-off lookups but O(catalogue) work each time (T-011).
+    """
+    return match_profile_indexed(build_match_index(catalogue), brand, material, colour)
 
 
 def reset_cache() -> None:

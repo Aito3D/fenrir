@@ -270,8 +270,15 @@ async def sync_filament_presets_from_zoho(
     priced = unchanged = 0
     attention: list[FilamentPresetZohoSyncAttention] = []
 
+    # T-011: match_profile() re-normalises the whole catalogue on every call,
+    # which is O(profiles x catalogue) here with no await point in between —
+    # one uninterruptible event-loop block. Building the index once and
+    # matching against it per profile is O(catalogue + profiles) instead,
+    # with byte-identical match decisions.
+    catalogue_index = zoho_filaments.build_match_index(catalogue)
+
     for preset in presets:
-        match = zoho_filaments.match_profile(catalogue, preset.brand, preset.material, preset.color)
+        match = zoho_filaments.match_profile_indexed(catalogue_index, preset.brand, preset.material, preset.color)
         if match.outcome != "matched" or match.product is None:
             attention.append(
                 FilamentPresetZohoSyncAttention(

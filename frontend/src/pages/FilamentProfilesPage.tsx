@@ -24,6 +24,7 @@ import type {
   FilamentPreset,
   FilamentPresetEditorPayload,
   FilamentPresetPayload,
+  FilamentPresetZohoSyncAttention,
   FilamentPresetZohoSyncResponse,
   FilamentSyncStats,
 } from '../api/client';
@@ -59,6 +60,20 @@ const GRID_CLASSES: Record<GridSize, string> = {
 
 const SORT_FIELDS: SortField[] = ['name', 'brand', 'material', 'color'];
 
+// T-003: exhaustive lookup for zohoResult.attention reason -> i18n key. Keying
+// this on the `reason` union (rather than a ternary/switch fallthrough) means
+// TypeScript errors if the union ever grows another value instead of silently
+// reusing a fallback translation.
+const ZOHO_ATTENTION_REASON_KEYS: Record<FilamentPresetZohoSyncAttention['reason'], string> = {
+  no_match: 'filamentProfiles.syncZohoNoMatch',
+  ambiguous: 'filamentProfiles.syncZohoAmbiguous',
+  unwritable_content: 'filamentProfiles.syncZohoUnwritable',
+  bad_price: 'filamentProfiles.syncZohoBadPrice',
+  weight_unknown: 'filamentProfiles.syncZohoWeightUnknown',
+  content_too_large: 'filamentProfiles.syncZohoContentTooLarge',
+  no_price: 'filamentProfiles.syncZohoNoPrice',
+};
+
 /** Every editor open state the page can be in — drives the PresetEditorModal
  *  rendered below (nothing renders for 'closed'). 'edit' stores only the id:
  *  the preset itself is re-derived from the `presets` query on every render
@@ -72,6 +87,23 @@ type SyncModalState = { state: 'syncing' | 'preview' | 'done'; stats?: FilamentS
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Toasts `errorMessage(error)` at most once per mount when `isError` is
+ * true (spec §5.1: "failure -> error toast" on the initial load, not on
+ * every subsequent refetch attempt). A ref flag survives across the
+ * retry-driven re-renders that would otherwise re-fire the effect on every
+ * new error object identity.
+ */
+function useToastOnce(isError: boolean, error: unknown, showToast: (message: string, type?: 'error') => void) {
+  const toastedRef = useRef(false);
+  useEffect(() => {
+    if (isError && !toastedRef.current) {
+      toastedRef.current = true;
+      showToast(errorMessage(error), 'error');
+    }
+  }, [isError, error, showToast]);
 }
 
 /**
@@ -156,23 +188,9 @@ export function FilamentProfilesPage() {
 
   // Each of these toasts fires at most once per mount (spec §5.1: "failure
   // -> error toast" on the initial load, not on every subsequent refetch
-  // attempt) — a ref flag survives across the retry-driven re-renders that
-  // would otherwise re-fire the effect on every new error object identity.
-  const baseErrorToastedRef = useRef(false);
-  useEffect(() => {
-    if (baseQuery.isError && !baseErrorToastedRef.current) {
-      baseErrorToastedRef.current = true;
-      showToast(errorMessage(baseQuery.error), 'error');
-    }
-  }, [baseQuery.isError, baseQuery.error, showToast]);
-
-  const catalogErrorToastedRef = useRef(false);
-  useEffect(() => {
-    if (catalogQuery.isError && !catalogErrorToastedRef.current) {
-      catalogErrorToastedRef.current = true;
-      showToast(errorMessage(catalogQuery.error), 'error');
-    }
-  }, [catalogQuery.isError, catalogQuery.error, showToast]);
+  // attempt) — see useToastOnce above.
+  useToastOnce(baseQuery.isError, baseQuery.error, showToast);
+  useToastOnce(catalogQuery.isError, catalogQuery.error, showToast);
 
   const presets = useMemo<FilamentPreset[]>(() => presetsQuery.data ?? [], [presetsQuery.data]);
   const baseFilamentPresets = useMemo<BaseFilamentPreset[]>(() => baseQuery.data ?? [], [baseQuery.data]);
@@ -789,21 +807,7 @@ export function FilamentProfilesPage() {
                   <li key={entry.id}>
                     <span className="text-white">{entry.name}</span>
                     {' — '}
-                    {t(
-                      entry.reason === 'no_match'
-                        ? 'filamentProfiles.syncZohoNoMatch'
-                        : entry.reason === 'ambiguous'
-                          ? 'filamentProfiles.syncZohoAmbiguous'
-                          : entry.reason === 'unwritable_content'
-                            ? 'filamentProfiles.syncZohoUnwritable'
-                            : entry.reason === 'bad_price'
-                              ? 'filamentProfiles.syncZohoBadPrice'
-                              : entry.reason === 'weight_unknown'
-                                ? 'filamentProfiles.syncZohoWeightUnknown'
-                                : entry.reason === 'content_too_large'
-                                  ? 'filamentProfiles.syncZohoContentTooLarge'
-                                  : 'filamentProfiles.syncZohoNoPrice',
-                    )}
+                    {t(ZOHO_ATTENTION_REASON_KEYS[entry.reason])}
                     {entry.candidates.length > 0 && (
                       <>
                         {': '}
