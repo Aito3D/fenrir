@@ -45,6 +45,18 @@ describe('DragHandle', () => {
     // The svg's bounding rect is 0 in jsdom, so plot-left is 50 and x=200 → 75 % → 750.
     expect(onChange).toHaveBeenLastCalledWith(750);
   });
+  it('maps a pointer drag on the grip itself (not just the strip) to a value', () => {
+    const onChange = vi.fn();
+    render(<svg><DragHandle value={500} min={0} max={1000} onChange={onChange} round={(v) => Math.round(v)} label="Drag to set K" /></svg>);
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
+    const gripRect = grip.querySelector('rect')!;
+    fireEvent.pointerDown(gripRect, { clientX: 150, pointerId: 1 });
+    fireEvent.pointerMove(gripRect, { clientX: 200, pointerId: 1, buttons: 1 });
+    fireEvent.pointerUp(gripRect, { pointerId: 1 });
+    // Same mapping as the strip test: svg bounding rect is 0 in jsdom, plot-left
+    // is 50, x=200 → 75 % → 750.
+    expect(onChange).toHaveBeenLastCalledWith(750);
+  });
   it('steps with the keyboard: 1 % per arrow, 10 % with shift', () => {
     const onChange = vi.fn();
     render(<svg><DragHandle value={500} min={0} max={1000} onChange={onChange} round={(v) => v} label="Drag to set K" /></svg>);

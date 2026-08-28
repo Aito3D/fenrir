@@ -10,13 +10,17 @@ const STRIP_W = 24;
 const GRIP = 12;
 
 export function DragHandle({
-  value, min, max, onChange, round, label, readOnly,
+  value, min, max, onChange, round, label, readOnly, ariaValue,
 }: {
   value: number; min: number; max: number;
   onChange: (v: number) => void;
   round: (v: number) => number;
   label: string;
   readOnly?: boolean;
+  /** Overrides the `aria-valuenow` announced to assistive tech — for the KQ
+   *  handle, which visually sits at `kq + 1` (the ReferenceLine's x) but
+   *  whose underlying field value is `kq`. Defaults to `value`. */
+  ariaValue?: number;
 }) {
   // `useOffset()` only carries the top/left/right/bottom distances in this
   // recharts version, not width/height — `usePlotArea()` is the hook that
@@ -36,15 +40,15 @@ export function DragHandle({
     const svgLeft = svg?.getBoundingClientRect().left ?? 0;
     return round(xToValue(clientX - svgLeft, left, width, min, max));
   };
-  const onPointerDown = (e: PointerEvent<SVGRectElement>) => {
+  const onPointerDown = (e: PointerEvent<SVGGElement>) => {
     e.currentTarget.setPointerCapture?.(e.pointerId);
     onChange(valueAt(e.clientX));
   };
-  const onPointerMove = (e: PointerEvent<SVGRectElement>) => {
+  const onPointerMove = (e: PointerEvent<SVGGElement>) => {
     if (e.buttons === 0 && !e.currentTarget.hasPointerCapture?.(e.pointerId)) return;
     onChange(valueAt(e.clientX));
   };
-  const onPointerUp = (e: PointerEvent<SVGRectElement>) => e.currentTarget.releasePointerCapture?.(e.pointerId);
+  const onPointerUp = (e: PointerEvent<SVGGElement>) => e.currentTarget.releasePointerCapture?.(e.pointerId);
   const onKeyDown = (e: KeyboardEvent<SVGGElement>) => {
     const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
@@ -54,16 +58,18 @@ export function DragHandle({
   };
 
   return (
-    <g>
+    <g
+      style={{ touchAction: 'none' }}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+    >
       <rect
         ref={stripRef}
         data-testid="drag-strip"
         x={x - STRIP_W / 2} y={top} width={STRIP_W} height={height}
-        fill="transparent" style={{ cursor: 'ew-resize', touchAction: 'none' }}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+        fill="transparent" style={{ cursor: 'ew-resize' }}
       />
       <g
-        role="slider" aria-orientation="horizontal" tabIndex={0} aria-label={label} aria-valuenow={value} aria-valuemin={min} aria-valuemax={max}
+        role="slider" aria-orientation="horizontal" tabIndex={0} aria-label={label} aria-valuenow={ariaValue ?? value} aria-valuemin={min} aria-valuemax={max}
         onKeyDown={onKeyDown} className="outline-none focus-visible:[&>rect]:stroke-white"
       >
         <rect x={x - GRIP / 2} y={top} width={GRIP} height={GRIP} rx={3} fill="var(--color-bambu-green)" stroke="var(--color-bambu-dark-secondary)" strokeWidth={2} style={{ cursor: 'ew-resize' }} />

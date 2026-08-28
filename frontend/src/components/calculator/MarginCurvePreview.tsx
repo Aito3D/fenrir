@@ -1,6 +1,6 @@
 // Live preview of the two margin curves (utils/pricing.ts), drawn from the
 // UNSAVED pricing form so the operator sees the shape they are about to
-// save. Rendered beside the margin fields in CalculatorPricingPanel.
+// save. Rendered beside the margin fields in CalculatorSettingsPanel.
 
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -77,7 +77,8 @@ export function MarginCurvePreview({
   const kq = d.qty_k ?? CURVE_DEFAULTS.qty_k;
   const ex = parsedExample(example);
 
-  const sizeMax = sizeDomainMax(k, ex?.unitCost);
+  // Math.max(1, …) — K = 0 would otherwise collapse the size domain to 0.
+  const sizeMax = Math.max(1, sizeDomainMax(k, ex?.unitCost));
   const qtyMax = qtyDomainMax(ex?.quantity);
 
   const sizeData = useMemo(() => {
@@ -87,8 +88,14 @@ export function MarginCurvePreview({
     });
   }, [d, sizeMax]);
   const qtyData = useMemo(() => {
-    const points = Math.ceil(qtyMax);
-    return Array.from({ length: points }, (_, i) => ({ q: i + 1, f: qtyFactor(i + 1, d) }));
+    // Sample count is capped independently of the domain so an example
+    // quantity in the millions doesn't build a million-point chart.
+    const points = Math.min(200, Math.ceil(qtyMax));
+    const step = (qtyMax - 1) / (points - 1);
+    return Array.from({ length: points }, (_, i) => {
+      const q = 1 + i * step;
+      return { q, f: qtyFactor(q, d) };
+    });
   }, [d, qtyMax]);
 
   // The fixed ladder plus the model's own reference quantity (KQ + 1 — the
@@ -100,6 +107,8 @@ export function MarginCurvePreview({
   const mMin = d.margin_min_mult ?? CURVE_DEFAULTS.margin_min_mult;
   const mMax = d.margin_max_mult ?? CURVE_DEFAULTS.margin_max_mult;
   const qMin = d.qty_min_factor ?? CURVE_DEFAULTS.qty_min_factor;
+  const sizeTitle = t('calculator.marginCurvePreviewSize');
+  const qtyTitle = t('calculator.marginCurvePreviewQty');
   const sizeLines = [
     t('calculator.formulaSizeGeneric'),
     t('calculator.formulaSizeSubst', { mMin: mMin.toFixed(2), delta: (mMax - mMin).toFixed(2), k: formatMoney(k, currency, false) }),
@@ -122,6 +131,7 @@ export function MarginCurvePreview({
             value={example.unitCost}
             onChange={(v) => onExampleChange({ unitCost: v })}
             min="0"
+            max="1000000000"
           />
           <NumberField
             id="calc-curve-example-qty"
@@ -130,6 +140,7 @@ export function MarginCurvePreview({
             onChange={(v) => onExampleChange({ quantity: v })}
             min="1"
             step="1"
+            max="1000000"
           />
         </div>
         {ex && (
@@ -145,8 +156,8 @@ export function MarginCurvePreview({
       </div>
 
       <Curve
-        title={t('calculator.marginCurvePreviewSize')}
-        formula={{ label: t('calculator.formulaShow'), lines: sizeLines }}
+        title={sizeTitle}
+        formula={{ label: `${t('calculator.formulaShow')} — ${sizeTitle}`, lines: sizeLines }}
         strip={
           <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
             {SIZE_STRIP.map((f) => {
@@ -176,7 +187,7 @@ export function MarginCurvePreview({
               tickLine={false}
             />
             <YAxis
-              domain={['auto', 'auto']}
+              domain={[mMin - 0.1, mMax + 0.1]}
               tickFormatter={(v: number) => `×${v.toFixed(2)}`}
               tick={AXIS}
               width={52}
@@ -208,8 +219,8 @@ export function MarginCurvePreview({
       </Curve>
 
       <Curve
-        title={t('calculator.marginCurvePreviewQty')}
-        formula={{ label: t('calculator.formulaShow'), lines: qtyLines }}
+        title={qtyTitle}
+        formula={{ label: `${t('calculator.formulaShow')} — ${qtyTitle}`, lines: qtyLines }}
         strip={
           <dl className="mt-2 grid gap-1 text-center" style={{ gridTemplateColumns: `repeat(${qtyStrip.length}, minmax(0, 1fr))` }}>
             {qtyStrip.map((q) => {
@@ -246,6 +257,7 @@ export function MarginCurvePreview({
             {onDragKQ && (
               <DragHandle
                 value={midQty}
+                ariaValue={kq}
                 min={1}
                 max={qtyMax}
                 onChange={(v) => onDragKQ(Math.max(1, v - 1))}

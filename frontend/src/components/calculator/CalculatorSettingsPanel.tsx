@@ -177,9 +177,14 @@ function SettingsForm({
   // as a one-click K suggestion under the margin_k field. Bambuddy printers
   // (not calculator-printer profiles) name the printer-match hint, since
   // ArchiveSlim.printer_id is a Bambuddy printer id.
-  const { hasPermission } = useAuth();
-  const canReadArchives = hasPermission('archives:read');
-  const { data: bambuddyPrinters } = useQuery({ queryKey: ['printers'], queryFn: api.getPrinters, staleTime: 60_000 });
+  const { hasAnyPermission } = useAuth();
+  const canReadArchives = hasAnyPermission('archives:read_all', 'archives:read_own');
+  const { data: bambuddyPrinters } = useQuery({
+    queryKey: ['printers'],
+    queryFn: api.getPrinters,
+    staleTime: 60_000,
+    enabled: canReadArchives && !!filaments?.length && !!printers?.length,
+  });
   const since = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 90);
