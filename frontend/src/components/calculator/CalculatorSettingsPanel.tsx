@@ -226,45 +226,47 @@ function SettingsForm({
       ref={formRef}
       autoComplete="off"
       // Wide screens: a 12-column grid so the whole page fits without
-      // scrolling — rates beside provisions, the curves beside the prefill.
+      // scrolling — rates, provisions and the filament prefill share the top
+      // row; the margin curves get the full width below so the charts read.
       className="stagger-parents grid grid-cols-1 gap-4 pb-20 xl:grid-cols-12"
       onSubmit={(e) => {
         e.preventDefault();
         if (dirty && allValid && canUpdate) save();
       }}
     >
-      <SettingsCard icon={Receipt} title={t('calculator.ratesTitle')} hint={t('calculator.ratesHint')} className="xl:col-span-6">
-        {grid(RATES, 'sm:grid-cols-2 2xl:grid-cols-3')}
+      <SettingsCard icon={Receipt} title={t('calculator.ratesTitle')} hint={t('calculator.ratesHint')} className="xl:col-span-4">
+        {grid(RATES, 'sm:grid-cols-2')}
       </SettingsCard>
 
-      <SettingsCard icon={Percent} title={t('calculator.provisionsTitle')} hint={t('calculator.provisionsHint')} className="xl:col-span-6">
-        {grid(PROVISIONS, 'sm:grid-cols-2 2xl:grid-cols-3')}
+      <SettingsCard icon={Percent} title={t('calculator.provisionsTitle')} hint={t('calculator.provisionsHint')} className="xl:col-span-4">
+        {grid(PROVISIONS, 'sm:grid-cols-2')}
+      </SettingsCard>
+
+      <SettingsCard icon={Spool} title={t('calculator.filamentSettings')} hint={t('calculator.filamentSettingsHint')} className="xl:col-span-4">
+        {grid(PREFILL, 'sm:grid-cols-2 xl:grid-cols-1')}
       </SettingsCard>
 
       <SettingsCard
         icon={TrendingDown}
         title={t('calculator.marginCurvesTitle')}
         hint={t('calculator.marginCurveHint')}
-        className="xl:col-span-8"
+        className="xl:col-span-12"
       >
         {/* Two panels: the curve fields and the curves they shape. The
-            divider is a hairline on wide screens; the panels stack below. */}
-        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_1px_minmax(0,1.1fr)]">
+            divider is a hairline on wide screens; the panels stack below.
+            The charts take two thirds of the card. */}
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_1px_minmax(0,2fr)]">
           <div className="stagger-nested space-y-6">
             {MARGIN_GROUPS.map((group) => (
               <fieldset key={group.labelKey} className="min-w-0">
                 <legend className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-bambu-gray">{t(group.labelKey)}</legend>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">{group.fields.map(field)}</div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">{group.fields.map(field)}</div>
               </fieldset>
             ))}
           </div>
           <div className="hidden xl:block w-px bg-bambu-dark-tertiary" aria-hidden="true" />
           <MarginCurvePreview d={preview} currency={currency} />
         </div>
-      </SettingsCard>
-
-      <SettingsCard icon={Spool} title={t('calculator.filamentSettings')} hint={t('calculator.filamentSettingsHint')} className="xl:col-span-4">
-        {grid(PREFILL, 'sm:grid-cols-2 xl:grid-cols-1')}
       </SettingsCard>
 
       {/* Save bar: mounted permanently so it leaves the way it arrived (slides

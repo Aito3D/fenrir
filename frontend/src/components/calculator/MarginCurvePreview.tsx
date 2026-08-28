@@ -48,8 +48,8 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
 
   const sizeData = useMemo(() => {
     const maxU = k * 10;
-    return Array.from({ length: 41 }, (_, i) => {
-      const u = (maxU * i) / 40;
+    return Array.from({ length: 81 }, (_, i) => {
+      const u = (maxU * i) / 80;
       return { u, m: sizeMargin(u, d) };
     });
   }, [d, k]);
@@ -81,7 +81,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
           </dl>
         }
       >
-        <ResponsiveContainer width="100%" height={130}>
+        <ResponsiveContainer width="100%" height={220}>
           <LineChart data={sizeData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
             <XAxis
@@ -129,7 +129,7 @@ export function MarginCurvePreview({ d, currency }: { d: PricingDefaults; curren
           </dl>
         }
       >
-        <ResponsiveContainer width="100%" height={130}>
+        <ResponsiveContainer width="100%" height={220}>
           <LineChart data={qtyData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="q" type="number" domain={[1, 100]} tick={AXIS} stroke={INK} tickLine={false} />
