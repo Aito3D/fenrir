@@ -322,6 +322,21 @@ describe('CalculatorSettingsPanel', () => {
     // Editing the example never dirties the form.
     expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument();
   });
+
+  it('shows amber warnings for degenerate curves without blocking Save', async () => {
+    serveDefaults();
+    const user = userEvent.setup();
+    render(<CalculatorSettingsPanel canUpdate />);
+    const mMax = await screen.findByLabelText(/M_MAX/);
+    await user.clear(mMax);
+    await user.type(mMax, '1.15');
+    expect(await screen.findByRole('note')).toHaveTextContent('Size curve is flat: every part gets ×1.15.');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeEnabled();
+    const qMin = screen.getByLabelText(/Q_MIN/);
+    await user.clear(qMin);
+    await user.type(qMin, '1');
+    expect(screen.getAllByRole('note').map((n) => n.textContent)).toContain('No quantity discount: Q_MIN is 1.');
+  });
 });
 
 // Stands in for a background refetch of ['calculatorDefaults'] triggered

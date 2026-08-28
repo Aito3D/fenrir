@@ -15,6 +15,8 @@ import { getCurrencySymbol } from '../../utils/currency';
 import { buildPricingInputs, foldSessionOverrides, loadCalculatorState } from '../../hooks/useCalculatorState';
 import { computePricing, type PricingDefaults } from '../../utils/pricing';
 import { MarginCurvePreview } from './MarginCurvePreview';
+import { parsedExample } from './curveGeometry';
+import { curveWarnings, type CurveWarningKey } from './curveWarnings';
 import { parseNum, useDefaultsForm } from './calculatorSettingsShared';
 
 type FieldKey = keyof Omit<CalculatorDefaults, 'id' | 'updated_at' | 'global_markup_pct'>;
@@ -207,6 +209,17 @@ function SettingsForm({
     }) && !pairError;
 
   const preview = useMemo(() => previewDefaults(form, defaults), [form, defaults]);
+
+  // Soft, non-blocking advisories under the margin-curve fields — computed
+  // from the same preview the curves render, so they track unsaved edits.
+  const warningText = useMemo(() => {
+    const out: Partial<Record<FieldKey, string>> = {};
+    for (const [key, warning] of Object.entries(curveWarnings(preview, parsedExample(example)))) {
+      out[key as CurveWarningKey] = t(warning.key, warning.values);
+    }
+    return out;
+  }, [preview, example, t]);
+
   const dirty = dirtyKeys.length > 0;
   const barOpen = canUpdate && dirty;
 
@@ -242,6 +255,7 @@ function SettingsForm({
       value={form[key]}
       onChange={(v) => setField(key, v)}
       error={fieldErrors[key]}
+      warning={warningText[key]}
       required
     />
   );
