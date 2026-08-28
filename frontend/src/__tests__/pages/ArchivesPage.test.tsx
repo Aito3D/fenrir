@@ -867,9 +867,31 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
       });
 
+      // Both mock archives ("Benchy" and "Bracket v2") get a suggested-price
+      // tooltip with the same "Suggested sale price from the calculator..."
+      // prefix, so an unscoped title query would match multiple elements —
+      // scope to the Benchy card specifically.
       const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
       const el = await within(card).findByTitle(/Suggested sale price from the calculator/, undefined, { timeout: 5000 });
       expect(el.title).toMatch(/Unit cost .+ → ×\d\.\d{3} size margin/);
+      expect(el.title).not.toMatch(/Minimum task price applied/);
+    });
+
+    it('adds the minimum-task-price line to the tooltip when the floor lifts the price', async () => {
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+        http.get('/api/v1/calculator/printers/', () => HttpResponse.json(calcPrinters)),
+        http.get('/api/v1/calculator/defaults', () => HttpResponse.json({ ...calcDefaults, min_task_price: 999999 })),
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const el = await within(card).findByTitle(/Suggested sale price from the calculator/, undefined, { timeout: 5000 });
+      expect(el.title).toMatch(/Minimum task price applied$/);
     });
   });
 });
