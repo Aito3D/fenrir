@@ -140,8 +140,21 @@ class CalculatorInsightsService:
             if sample >= MIN_SAMPLE:
                 by_material.append({"material": material, "rate_pct": pct, "sample": sample})
 
+        # The published by_printer rows are a visible partition of the overall
+        # sample. If they leave a small residual population — the overall
+        # sample minus the sum of the published per-printer samples (runs with
+        # no printer_id, or attributed to printers that didn't individually
+        # clear MIN_SAMPLE) — that residual's completed/failed counts are
+        # recoverable by subtraction even though no single group discloses
+        # them directly (same rule as `_spool_costs`, see T-003). Suppress
+        # the overall rate rather than let that residual leak through it;
+        # `sample` itself is unaffected.
+        published_printer_sample = sum(row["sample"] for row in by_printer)
+        residual = overall_sample - published_printer_sample
+        overall_pct = overall_rate if overall_sample >= MIN_SAMPLE and not (0 < residual < MIN_SAMPLE) else None
+
         return {
-            "overall_pct": overall_rate if overall_sample >= MIN_SAMPLE else None,
+            "overall_pct": overall_pct,
             "sample": overall_sample,
             "by_printer": sorted(by_printer, key=lambda r: -r["sample"]),
             "by_material": sorted(by_material, key=lambda r: -r["sample"]),
@@ -217,8 +230,21 @@ class CalculatorInsightsService:
             for printer_id, values in per_printer.items()
             if len(values) >= MIN_SAMPLE
         ]
+
+        # Same residual rule as `_failure_rates`/`_spool_costs` (T-003): the
+        # published by_printer rows are a visible partition of `accuracies`.
+        # If they leave a small residual population — runs with no printer_id,
+        # or attributed to printers that didn't individually clear MIN_SAMPLE
+        # — that residual's mean accuracy is recoverable by subtraction.
+        # Suppress the overall figure rather than let that residual leak
+        # through it; `sample` itself is unaffected.
+        published_printer_sample = sum(row["sample"] for row in by_printer)
+        residual = len(accuracies) - published_printer_sample
+        overall_pct = (
+            round(sum(accuracies) / len(accuracies), 1) if accuracies and not (0 < residual < MIN_SAMPLE) else None
+        )
         return {
-            "overall_pct": round(sum(accuracies) / len(accuracies), 1) if accuracies else None,
+            "overall_pct": overall_pct,
             "sample": len(accuracies),
             "by_printer": sorted(by_printer, key=lambda r: -r["sample"]),
         }

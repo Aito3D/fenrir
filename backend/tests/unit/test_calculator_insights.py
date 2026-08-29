@@ -106,6 +106,67 @@ async def test_small_samples_are_suppressed(async_client: AsyncClient, printer_f
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_failure_overall_suppressed_when_residual_below_min_sample(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """T-003: runs with no `printer_id` never appear in `by_printer`
+    regardless of count — same shape as `_spool_costs`' unbranded residual.
+    A published printer (4 completed + 1 failed, sample 5, rate 20%) plus 3
+    unattributed runs (2 completed + 1 failed) leaves a residual of 3 (in
+    (0, MIN_SAMPLE)): the unattributed group's own failure count is
+    recoverable by subtracting the published printer's contribution from the
+    overall totals, so `overall_pct` must be suppressed even though `sample`
+    (8) alone would normally publish it.
+    """
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed"))
+    db_session.add(_run(printer.id, "failed"))
+    for _ in range(2):
+        db_session.add(_run(None, "completed"))
+    db_session.add(_run(None, "failed"))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    data = response.json()
+    assert data["failure"]["sample"] == 8
+    assert data["failure"]["overall_pct"] is None
+    by_printer = data["failure"]["by_printer"]
+    assert len(by_printer) == 1
+    assert by_printer[0]["rate_pct"] == 20.0
+    assert by_printer[0]["sample"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failure_overall_present_when_residual_at_min_sample(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """Boundary: a residual of exactly MIN_SAMPLE unattributed runs is itself
+    a large-enough group to publish safely — the strict '< MIN_SAMPLE' check
+    must not suppress `overall_pct`."""
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed"))
+    db_session.add(_run(printer.id, "failed"))
+    for _ in range(3):
+        db_session.add(_run(None, "completed"))
+    for _ in range(2):
+        db_session.add(_run(None, "failed"))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    data = response.json()
+    assert data["failure"]["sample"] == 10
+    assert data["failure"]["overall_pct"] == 30.0
+    by_printer = data["failure"]["by_printer"]
+    assert len(by_printer) == 1
+    assert by_printer[0]["rate_pct"] == 20.0
+    assert by_printer[0]["sample"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_window_filters_old_runs(async_client: AsyncClient, printer_factory, db_session):
     printer = await printer_factory()
     for _ in range(6):
@@ -167,9 +228,16 @@ async def test_time_accuracy_by_printer_suppressed_below_min_sample(
 ):
     """T-130: `_time_accuracy.by_printer` must gate on MIN_SAMPLE like every
     other grouping in this service — a printer with MIN_SAMPLE - 1 accuracy-
-    eligible runs must not appear in by_printer at all. The overall figure has
-    no MIN_SAMPLE gate of its own (only "if accuracies else None") and is
-    unaffected by this per-printer suppression."""
+    eligible runs must not appear in by_printer at all.
+
+    T-003 (2026-08-29, user-approved behavior change): the overall figure is
+    NOT unaffected by this per-printer suppression, as originally asserted
+    here. This dataset's entire population is one under-sampled printer, so
+    the residual (overall sample 4 - published per-printer samples 0 = 4) is
+    itself in (0, MIN_SAMPLE) — publishing `overall_pct` would just be that
+    printer's own suppressed rate, recoverable by nothing more than reading
+    it. `overall_pct` must now be suppressed too.
+    """
     printer = await printer_factory()
     archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
     for _ in range(MIN_SAMPLE - 1):
@@ -179,7 +247,7 @@ async def test_time_accuracy_by_printer_suppressed_below_min_sample(
     response = await async_client.get("/api/v1/calculator/insights")
     acc = response.json()["time_accuracy"]
     assert acc["sample"] == MIN_SAMPLE - 1
-    assert acc["overall_pct"] == 100.0
+    assert acc["overall_pct"] is None
     assert acc["by_printer"] == []
 
 
@@ -190,7 +258,9 @@ async def test_time_accuracy_by_printer_published_at_min_sample(
 ):
     """T-130: the boundary, one sample above the suppressed case — exactly
     MIN_SAMPLE accuracy-eligible runs for a printer must publish a by_printer
-    row."""
+    row. T-003: here the printer's own bucket fully accounts for the overall
+    sample (residual == 0), so `overall_pct`'s residual guard has nothing to
+    suppress and it publishes normally too."""
     printer = await printer_factory()
     archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
     for _ in range(MIN_SAMPLE):
@@ -200,6 +270,61 @@ async def test_time_accuracy_by_printer_published_at_min_sample(
     response = await async_client.get("/api/v1/calculator/insights")
     acc = response.json()["time_accuracy"]
     assert acc["sample"] == MIN_SAMPLE
+    assert acc["overall_pct"] == 100.0
+    assert len(acc["by_printer"]) == 1
+    assert acc["by_printer"][0]["sample"] == MIN_SAMPLE
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_overall_suppressed_when_residual_below_min_sample(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """T-003: runs with no `printer_id` (e.g. a printer later deleted, or a
+    log entry that was never attributed) never appear in `by_printer`
+    regardless of how many there are — same shape as `_spool_costs`'
+    unbranded residual. 5 accuracy-eligible runs on a published printer plus
+    3 unattributed ones leave a residual of 3 (in (0, MIN_SAMPLE)): the
+    unattributed group's mean accuracy would be recoverable by subtracting
+    the published printer's contribution from the overall sum, so
+    `overall_pct` must be suppressed even though `sample` (8) alone would
+    normally publish it."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    for _ in range(MIN_SAMPLE):
+        db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3600))
+    for _ in range(3):
+        db_session.add(_run(None, "completed", archive_id=archive.id, duration_seconds=3600))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    acc = response.json()["time_accuracy"]
+    assert acc["sample"] == MIN_SAMPLE + 3
+    assert acc["overall_pct"] is None
+    assert len(acc["by_printer"]) == 1
+    assert acc["by_printer"][0]["sample"] == MIN_SAMPLE
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_overall_present_when_residual_at_min_sample(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """Boundary: a residual of exactly MIN_SAMPLE unattributed runs is itself
+    a large-enough group to publish safely — the strict '< MIN_SAMPLE' check
+    must not suppress `overall_pct`."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    for _ in range(MIN_SAMPLE):
+        db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3600))
+    for _ in range(MIN_SAMPLE):
+        db_session.add(_run(None, "completed", archive_id=archive.id, duration_seconds=3600))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    acc = response.json()["time_accuracy"]
+    assert acc["sample"] == MIN_SAMPLE * 2
+    assert acc["overall_pct"] == 100.0
     assert len(acc["by_printer"]) == 1
     assert acc["by_printer"][0]["sample"] == MIN_SAMPLE
 
@@ -625,8 +750,16 @@ async def _reference_time_accuracy(db: AsyncSession, since: datetime) -> dict:
         for printer_id, values in per_printer.items()
         if len(values) >= MIN_SAMPLE  # T-130: raised from a bare `3` to the module's MIN_SAMPLE floor
     ]
+    # T-003: same residual guard as production `_time_accuracy` — this is a
+    # verbatim-minus-SQL-prefiltering reference, so it must apply the same
+    # business rule to stay a valid differential comparison.
+    published_printer_sample = sum(row["sample"] for row in by_printer)
+    residual = len(accuracies) - published_printer_sample
+    overall_pct = (
+        round(sum(accuracies) / len(accuracies), 1) if accuracies and not (0 < residual < MIN_SAMPLE) else None
+    )
     return {
-        "overall_pct": round(sum(accuracies) / len(accuracies), 1) if accuracies else None,
+        "overall_pct": overall_pct,
         "sample": len(accuracies),
         "by_printer": sorted(by_printer, key=lambda r: -r["sample"]),
     }
@@ -1156,8 +1289,12 @@ def test_band_threshold_constants_have_expected_values():
     assert _MIN_USAGE_DAYS == 14
 
 
-# _ACCURACY_BAND_LO / _ACCURACY_BAND_HI, via `_time_accuracy` (`overall_pct`
-# has no MIN_SAMPLE-style gate, so a single in-band row is enough to appear).
+# _ACCURACY_BAND_LO / _ACCURACY_BAND_HI, via `_time_accuracy`. `overall_pct`
+# has no MIN_SAMPLE-style gate of its own, but it does (T-003) have a residual
+# guard: a single in-band row on a lone printer would leave `overall_pct` a
+# bare readout of that under-sampled printer's own rate, so each test below
+# pads in MIN_SAMPLE - 1 mid-band baseline rows to clear the residual (0) and
+# isolate the band-edge check.
 
 
 @pytest.mark.asyncio
@@ -1165,13 +1302,17 @@ async def test_time_accuracy_lo_bound_is_inclusive(printer_factory, archive_fact
     since = NOW - timedelta(days=3650)
     printer = await printer_factory()
     archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    # Baseline mid-band rows (accuracy 100%) push this printer's own bucket to
+    # MIN_SAMPLE once the boundary row joins, keeping the T-003 residual at 0.
+    for _ in range(MIN_SAMPLE - 1):
+        db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3600))
     # 3600 / 7200 * 100 = 50.0 exactly -- the low edge.
     db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=7200))
     await db_session.commit()
 
     result = await calculator_insights_service._time_accuracy(db_session, since)
-    assert result["sample"] == 1
-    assert result["overall_pct"] == 50.0
+    assert result["sample"] == MIN_SAMPLE
+    assert result["overall_pct"] == 90.0  # (4*100 + 50) / 5
 
 
 @pytest.mark.asyncio
@@ -1193,13 +1334,17 @@ async def test_time_accuracy_hi_bound_is_inclusive(printer_factory, archive_fact
     since = NOW - timedelta(days=3650)
     printer = await printer_factory()
     archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    # Baseline mid-band rows (accuracy 100%) push this printer's own bucket to
+    # MIN_SAMPLE once the boundary row joins, keeping the T-003 residual at 0.
+    for _ in range(MIN_SAMPLE - 1):
+        db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3600))
     # 3600 / 1800 * 100 = 200.0 exactly -- the high edge.
     db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=1800))
     await db_session.commit()
 
     result = await calculator_insights_service._time_accuracy(db_session, since)
-    assert result["sample"] == 1
-    assert result["overall_pct"] == 200.0
+    assert result["sample"] == MIN_SAMPLE
+    assert result["overall_pct"] == 120.0  # (4*100 + 200) / 5
 
 
 @pytest.mark.asyncio

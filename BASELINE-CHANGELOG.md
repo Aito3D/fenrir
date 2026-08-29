@@ -6718,3 +6718,72 @@ before.
 probe (10/10 MATCH) drives only non-negative-margin scenarios. `SURFACE.md` regenerated via
 `bash tools/gen_surface_calc.sh`: no diff (`buildWaterfall`'s signature and exported step shape are
 unchanged; only its internal filter condition changed).
+
+## T-003 — 2026-08-29 — `overall_pct` in `_failure_rates` and `_time_accuracy` no longer leaks a MIN_SAMPLE-suppressed residual by subtraction (user-approved behavior change)
+
+Audit `audit-security` found that T-106/T-117/T-120's residual-suppression rule — already applied
+to `_spool_costs` — was never extended to `_failure_rates` or `_time_accuracy` in
+`calculator_insights.py`, even though both folds have the identical shape: an `overall_pct`
+computed over the whole population, published alongside per-printer rows that each carry an exact
+`sample` count. Within one window, `overall_pct * sample` minus the sum of the published
+`by_printer` rows' contributions recovers the completed/failed counts (for `_failure_rates`) or the
+summed accuracy (for `_time_accuracy`) of any under-sampled printer whenever exactly one printer
+group falls below `MIN_SAMPLE` — the exact scenario `schemas/calculator.py`'s
+`InsightsWindowDays` docstring says the fixed `days` allowlist (T-128) exists to prevent a caller
+from differencing across, but which was never closed *within* a single window here. Runs with no
+`printer_id` at all (a printer later deleted, or a log entry never attributed) are an equally live
+source of the same residual, since they are counted in `overall`/`accuracies` but can never appear
+in `by_printer` regardless of how many there are — the same shape as `_spool_costs`' unbranded-spool
+residual.
+
+The fix applies T-106's exact rule to both folds: suppress `overall_pct` (keep `sample` as-is) when
+`overall sample - sum(published by_printer samples)` leaves a residual strictly between 0 and
+`MIN_SAMPLE`. `_failure_rates` computes `published_printer_sample = sum(row["sample"] for row in
+by_printer)` and gates `overall_pct` on `overall_sample >= MIN_SAMPLE and not (0 < residual <
+MIN_SAMPLE)` (the original `overall_sample >= MIN_SAMPLE` check is unchanged, ANDed with the new
+guard). `_time_accuracy` mirrors this with `residual = len(accuracies) - published_printer_sample`,
+gating on `accuracies and not (0 < residual < MIN_SAMPLE)`. Neither `by_printer`, `by_material`,
+nor any other field changed.
+
+**User-visible effect (as approved):** on installs where exactly one printer sits below
+`MIN_SAMPLE`, the calculator's reality-check card would stop showing the overall failure-rate and
+time-accuracy rows it shows today. Every install where every printer is either fully above
+`MIN_SAMPLE` or contributes nothing measurable is unaffected — `overall_pct` publishes exactly as
+before.
+
+Tests added/updated in `test_calculator_insights.py`: `test_failure_overall_suppressed_when_residual_below_min_sample`
+and `test_time_accuracy_overall_suppressed_when_residual_below_min_sample` pin case (a) — a
+published printer plus a handful of unattributed runs leaving a residual of 3 (in `(0,
+MIN_SAMPLE)`) suppresses `overall_pct` while `by_printer` is untouched.
+`test_failure_overall_present_when_residual_at_min_sample` and
+`test_time_accuracy_overall_present_when_residual_at_min_sample` pin the boundary — a residual of
+exactly `MIN_SAMPLE` still publishes `overall_pct` normally. Three pre-existing tests whose
+fixtures happened to be exactly this leak's repro case were updated to the new (correct) behavior
+rather than left pinning the vulnerability: `test_time_accuracy_by_printer_suppressed_below_min_sample`
+(a lone under-sampled printer — residual 4 — now expects `overall_pct is None`, where it previously
+asserted `overall_pct` was "unaffected by per-printer suppression", which was the leak itself) and
+`test_time_accuracy_lo_bound_is_inclusive` / `test_time_accuracy_hi_bound_is_inclusive` (each was a
+single in-band row on a lone printer, residual 1; both now pad in `MIN_SAMPLE - 1` mid-band
+baseline rows so the band-edge check they exist to pin is isolated from the new residual guard, with
+`overall_pct` recomputed for the padded dataset: 90.0 and 120.0 respectively).
+`test_time_accuracy_by_printer_published_at_min_sample` (residual 0) gained an explicit
+`overall_pct == 100.0` assertion. The `_reference_time_accuracy` verbatim-copy used by the T-076
+SQL-prefiltering differential test was given the identical residual guard, so that test continues
+to prove only the SQL-prefiltering refactor is behavior-preserving, not this fold's business rule.
+Every other pre-existing `_failure_rates`/`_time_accuracy` test (single-printer, fully-published,
+or fully-suppressed-by-`MIN_SAMPLE` fixtures) passes unchanged — none of their fixtures produce a
+`0 < residual < MIN_SAMPLE` case.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean on both changed files.
+Full backend suite via `tools/coverage_calc.sh backend`: 12523 passed, 1 skipped, 1 failed
+(`test_slicer_stall_timeout.py::TestSliceIsNotCutOffWhileProgressing::test_a_slow_slice_that_reports_progress_completes`,
+a documented parallel-load flake — 18/18 passed alone) under `-n 30`; no new failure.
+`tools/coverage_calc.sh backend`: SCOPED statements 814/818 = 99.51% (branches 149/154 = 96.75%);
+`calculator_insights.py` itself at 96.92%, with all four uncovered lines pre-existing and untouched
+by this change (`_time_accuracy`'s `if printer_id is not None`, `_power_draw`'s per-row bucket
+accumulation, `_daily_usage`'s observed-days gate, `_spool_costs`'s `if not material: continue`
+dead-code guard) — every new residual-guard branch in both folds is exercised by the tests above.
+`tools/snapshot.py verify`: 10/10 probes match, none re-recorded — `calc-insights-pure` only
+exercises this module's constants, `_resolve_duration`, and `_split_materials`, none of which
+changed. `SURFACE.md` (`bash tools/gen_surface_calc.sh`): byte-identical — no export or route
+changed.
