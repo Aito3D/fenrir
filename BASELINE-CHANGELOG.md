@@ -6651,3 +6651,70 @@ TOOLTIP` and `export function useZohoFilamentSync` — both newly-exported symbo
 two refactors, alphabetically sorted in with the rest; no route, DDL, permission gate, or i18n key
 changed. User approved re-baselining `SURFACE.md` for these two mechanical additions on 2026-08-28.
 `python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged.
+
+## T-007 — 2026-08-29 — useDefaultsForm.save() no longer reverts edits typed while its PATCH is in flight (user-approved behavior change)
+
+`useDefaultsForm`'s save mutation used a base `useMutation({ onSuccess })` that read `toFormRef.
+current(saved)` and unconditionally called `setSeed`/`setForm` with the full server response —
+overwriting *every* field, including one the operator had typed into after clicking Save but before
+the PATCH resolved. `save()` now snapshots `dirtyKeys` at click-time into `submittedKeys` and passes
+`onSuccess` as `mutate()`'s own per-call option (immune to TanStack Query's onSuccess-rebinding,
+per the identical landmine already documented on `useEntityCrudMutations`) rather than as a
+`useMutation`-level option. That per-call `onSuccess` re-seeds only the keys captured in
+`submittedKeys`, merging them into `seed`/`form` field-by-field instead of replacing the whole
+object.
+
+Visible delta: a field edited after Save was clicked and before the response lands keeps the
+operator's typed value and stays dirty (the Save bar stays open for it) instead of being silently
+reverted to the pre-edit server row. The common case — no further edits while the PATCH is in
+flight — is unchanged: `submittedKeys` equals every key that was dirty at click-time, so the merge
+re-seeds all of them and is indistinguishable from the old full re-seed; every field matches the
+server row and the Save bar closes.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — no probe drives a second
+edit mid-flight. `SURFACE.md` regenerated via `bash tools/gen_surface_calc.sh`: no diff (no new
+export; `useDefaultsForm`'s returned `save` keeps the same signature).
+
+## T-008 — 2026-08-29 — spoolCost reality-check row no longer offers "Update profile" for a value the backend would reject (user-approved behavior change)
+
+`CalculatorRealityCheckCard`'s spoolCost row rendered its "Update profile" button whenever
+`canUpdate && check.filamentId !== undefined`, regardless of `check.measured`. The backend's
+`CalculatorFilamentUpdate.cost_per_kg` is bounded `gt=0, le=100_000_000`; a material whose spools
+were all logged at a cost of 0 (or, at the other extreme, above the ceiling) produces an
+`avg_cost_per_kg` the API rejects with a 422. A new `postableSpoolCost` helper — mirroring the
+existing `postableDailyUsageHours` guard already used by the row above it — computes the exact
+value `onUpdateFilamentCost` would post and returns `null` unless `0 < measured <= 100_000_000`; the
+button is now gated on `postableSpoolCost(check) !== null` and posts that computed value.
+
+Visible delta: when a material's measured spool average is 0 (or exceeds the ceiling), the
+"Update profile" button — which previously always rendered and always produced a 422 error toast on
+click — no longer appears. The rest of the row (label, figures, delta badge, dismiss control) is
+unchanged, and every spoolCost row with a measured value inside the valid range renders and behaves
+exactly as before.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — no probe drives a
+zero-cost spool. `SURFACE.md` regenerated via `bash tools/gen_surface_calc.sh`: no diff
+(`postableSpoolCost` is a local, unexported helper).
+
+## T-009 — 2026-08-29 — buildWaterfall no longer drops a genuinely negative marge step (user-approved behavior change)
+
+`buildWaterfall`'s per-step filter dropped any step with `value <= 0.005`, conflating two distinct
+cases: rounding-noise/zero steps (intentionally dropped so a blank grid row isn't rendered for a
+`0.00` cost) and a genuinely negative step, which can occur for the combined marge when a legacy
+filament row was backfilled with a negative `margin_pct` and prices below cost. Dropping a negative
+step silently removed one of the raw components that, by construction, exactly sum to `total_ttc`,
+so the visible steps' cumulative walk stopped reconciling with the printed total. The condition is
+now `value >= 0 && value <= 0.005`, so only true zero/near-zero steps are dropped and a negative
+step is kept and rendered as its own signed step.
+
+Visible delta: with a negative combined margin, the breakdown/waterfall/quote UI now shows a
+signed "marge" step and the cumulative walk (and the sum of all visible steps) matches `total_ttc`
+exactly, where before the step vanished and the chart/legend/line items disagreed with the printed
+total. The common case — every component non-negative, as in every existing pricing scenario except
+a backfilled negative-margin filament — is unchanged: zero/near-zero steps are dropped exactly as
+before.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — the `calc-pricing` golden
+probe (10/10 MATCH) drives only non-negative-margin scenarios. `SURFACE.md` regenerated via
+`bash tools/gen_surface_calc.sh`: no diff (`buildWaterfall`'s signature and exported step shape are
+unchanged; only its internal filter condition changed).

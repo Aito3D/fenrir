@@ -103,6 +103,56 @@ describe('CalculatorRealityCheckCard: dailyHours Update profile gating (T-121)',
   });
 });
 
+const spoolCostCheck: RealityCheck = {
+  kind: 'spoolCost',
+  assumed: 37.31,
+  measured: 0,
+  sample: 3,
+  scope: 'PLA',
+  severity: 'significant',
+  filamentId: 7,
+};
+
+describe('CalculatorRealityCheckCard: spoolCost Update profile gating (T-008)', () => {
+  it('withholds the action when every spool was entered at cost 0 (posts to 0, rejected by the API) but keeps the row visible', async () => {
+    renderCard({ ...spoolCostCheck, measured: 0 });
+
+    expect(await screen.findByText('$37.31', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByText('$0.00')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Update profile' })).not.toBeInTheDocument();
+  });
+
+  it('offers the action for a valid measured cost and posts exactly that value', async () => {
+    const onUpdateFilamentCost = vi.fn();
+    render(
+      <CalculatorRealityCheckCard
+        checks={[{ ...spoolCostCheck, measured: 24.5 }]}
+        impacts={{}}
+        currency="USD"
+        applied={{}}
+        onApply={() => {}}
+        onApplyAll={() => {}}
+        onRevert={() => {}}
+        onSaveDefault={() => {}}
+        onUpdateFilamentCost={onUpdateFilamentCost}
+        onUpdatePrinterProfile={() => {}}
+        onDismiss={() => {}}
+        dismissedCount={0}
+        onRestoreDismissed={() => {}}
+        canUpdate
+        allClear={false}
+      />,
+    );
+
+    expect(await screen.findByText('$24.50', {}, { timeout: 5000 })).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Update profile' });
+    expect(button).toBeInTheDocument();
+
+    await userEvent.click(button);
+    expect(onUpdateFilamentCost).toHaveBeenCalledWith(7, 24.5);
+  });
+});
+
 describe('CalculatorRealityCheckCard: dismiss exit transition', () => {
   afterEach(() => {
     vi.useRealTimers();

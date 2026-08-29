@@ -496,9 +496,13 @@ export const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
  * The price build-up as ordered waterfall steps: machine costs, provisions,
  * ads+consumables, labor, then margin and tax. The marge step is the combined
  * margin (global + filament + extras) — the split lives in the breakdown card.
- * Zero-value steps are dropped (a non-positive combined marge simply drops its
- * step; the drift-absorb below keeps the right edge at total_ttc). Invariant
- * (pinned by tests): the final cumulative equals total_ttc.
+ * Zero/near-zero steps (0 <= value <= 0.005, rounding noise) are dropped. A
+ * genuinely negative step — e.g. a negative combined marge from a legacy
+ * filament row backfilled below cost — is kept as its own signed step rather
+ * than dropped, so the surviving steps always sum to total_ttc (the raw
+ * components are an exact decomposition of total_ttc by construction; only
+ * dropping negatives would break that). Invariant (pinned by tests): the
+ * final cumulative equals total_ttc.
  */
 export function buildWaterfall(result: PricingResult): WaterfallStep[] {
   const raw: Array<{ key: WaterfallStep['key']; value: number }> = [
@@ -514,7 +518,7 @@ export function buildWaterfall(result: PricingResult): WaterfallStep[] {
   const steps: WaterfallStep[] = [];
   let cumulative = 0;
   for (const step of raw) {
-    if (step.value <= 0.005) continue;
+    if (step.value >= 0 && step.value <= 0.005) continue;
     cumulative += step.value;
     steps.push({ ...step, cumulative });
   }

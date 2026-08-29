@@ -192,6 +192,18 @@ export function CalculatorRealityCheckCard({
     return posted > 0 && posted <= 24 ? posted : null;
   };
 
+  // `cost_per_kg` is bounded `gt=0, le=100_000_000` (backend/app/schemas/
+  // calculator.py, CalculatorFilamentUpdate). `_spool_costs` averages every
+  // non-archived spool with a non-null cost, so a material whose spools were
+  // all entered at 0 yields an `avg_cost_per_kg` of exactly 0 — a value the
+  // API would reject with a 422. Compute the exact value `onUpdateFilamentCost`
+  // would post and only offer the button when it is actually postable.
+  const _SPOOL_COST_CEILING = 100_000_000;
+  const postableSpoolCost = (check: RealityCheck): number | null => {
+    if (check.kind !== 'spoolCost') return null;
+    return check.measured > 0 && check.measured <= _SPOOL_COST_CEILING ? check.measured : null;
+  };
+
   return (
     // Delay matches the house `stagger-children` 50ms cadence; kept inline
     // because this card and its siblings live in separate grid columns, not
@@ -320,16 +332,19 @@ export function CalculatorRealityCheckCard({
                     )}
                   </span>
                 )}
-                {check.kind === 'spoolCost' && canUpdate && check.filamentId !== undefined && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onUpdateFilamentCost(check.filamentId!, check.measured)}
-                    title={t('calculator.realityCheck.updateProfileHint')}
-                  >
-                    {t('calculator.realityCheck.updateProfile')}
-                  </Button>
-                )}
+                {check.kind === 'spoolCost' &&
+                  canUpdate &&
+                  check.filamentId !== undefined &&
+                  postableSpoolCost(check) !== null && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onUpdateFilamentCost(check.filamentId!, postableSpoolCost(check)!)}
+                      title={t('calculator.realityCheck.updateProfileHint')}
+                    >
+                      {t('calculator.realityCheck.updateProfile')}
+                    </Button>
+                  )}
                 {check.kind === 'power' &&
                   canUpdate &&
                   check.printerId !== undefined && (

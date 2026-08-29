@@ -21,6 +21,7 @@ import {
   type PricingFilament,
   type PricingInputs,
   type PricingPrinter,
+  type PricingResult,
 } from '../../utils/pricing';
 
 const filament: PricingFilament = { cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 };
@@ -650,5 +651,106 @@ describe('buildWaterfall', () => {
     const result = computePricing(referenceInputs, filament, printer, defaults);
     const steps = buildWaterfall(result);
     expect(steps.find((s) => s.key === 'labor')).toBeUndefined();
+  });
+
+  // Minimal fake PricingResult so the negative-marge case (a hand-typed
+  // sale_price_per_kg below cost_per_kg, backfilled to a negative margin_pct
+  // — see CalculatorFilamentBase) can be pinned directly, without depending
+  // on a specific computePricing input combination that happens to go
+  // negative. Only the fields buildWaterfall reads are non-zero.
+  const fakeResult = (overrides: Partial<PricingResult>): PricingResult => ({
+    filament_cost: 0,
+    depreciation_cost: 0,
+    energy_cost: 0,
+    repairs_cost: 0,
+    machine_cost: 0,
+    prototype_cost: 0,
+    failures_cost: 0,
+    machine_cost_safety: 0,
+    ads_cost: 0,
+    consumables_flat: 0,
+    base_fee_total: 0,
+    base_fee: 0,
+    modeling_cost_total: 0,
+    prep_cost_total: 0,
+    modeling_cost: 0,
+    prep_cost: 0,
+    post_processing_cost: 0,
+    stuff_cost: 0,
+    labor_total: 0,
+    risk_base: 0,
+    total_cost: 0,
+    margin_global: 0,
+    size_margin: 1,
+    qty_factor: 1,
+    margin_multiplier: 1,
+    floor_applied: false,
+    margin_filament: 0,
+    margin_stuff: 0,
+    marge: 0,
+    total_ht: 0,
+    total_ttc: 0,
+    margin_pct: 0,
+    quantity: 1,
+    total_ht_qty: 0,
+    total_ttc_qty: 0,
+    ...overrides,
+  });
+
+  it('keeps a negative marge as its own signed step, sum reconciling with total_ttc', () => {
+    // total_cost = 100 + 20 + 5 = 125; marge = -30 → total_ht = 95; tax = 5 → total_ttc = 100.
+    const result = fakeResult({
+      filament_cost: 100,
+      depreciation_cost: 20,
+      energy_cost: 5,
+      marge: -30,
+      total_cost: 125,
+      total_ht: 95,
+      total_ttc: 100,
+    });
+    const steps = buildWaterfall(result);
+
+    const margeStep = steps.find((s) => s.key === 'marge');
+    expect(margeStep).toBeDefined();
+    expect(margeStep!.value).toBe(-30);
+
+    // Consistent cumulative walk: each step's cumulative is the previous
+    // cumulative plus its own value (the whole point of the fix — no
+    // re-anchoring past a dropped negative step).
+    let running = 0;
+    for (const step of steps) {
+      expect(step.cumulative).toBeCloseTo(running + step.value, 6);
+      running = step.cumulative;
+    }
+    // Steps sum to total_ttc — the line items add up to the printed total.
+    const sum = steps.reduce((acc, s) => acc + s.value, 0);
+    expect(sum).toBeCloseTo(result.total_ttc, 6);
+    expect(steps[steps.length - 1].cumulative).toBe(result.total_ttc);
+  });
+
+  it('still drops a legitimately-zero/rounding-noise marge (0 <= value <= 0.005), unchanged from before', () => {
+    const result = fakeResult({
+      filament_cost: 100,
+      marge: 0.003,
+      total_cost: 100,
+      total_ht: 100.003,
+      total_ttc: 100.003,
+    });
+    const steps = buildWaterfall(result);
+    expect(steps.find((s) => s.key === 'marge')).toBeUndefined();
+  });
+
+  it('keeps a marge just below zero (not rounding noise) as a visible step', () => {
+    const result = fakeResult({
+      filament_cost: 100,
+      marge: -0.006,
+      total_cost: 100,
+      total_ht: 99.994,
+      total_ttc: 99.994,
+    });
+    const steps = buildWaterfall(result);
+    const margeStep = steps.find((s) => s.key === 'marge');
+    expect(margeStep).toBeDefined();
+    expect(margeStep!.value).toBeCloseTo(-0.006, 6);
   });
 });
