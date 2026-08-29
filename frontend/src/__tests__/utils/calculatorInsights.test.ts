@@ -282,6 +282,14 @@ describe('realityCheckImpact', () => {
   it('spool cost has no price effect — the quote prices from sale price', () => {
     expect(impact({ kind: 'spoolCost', assumed: 25, measured: 18 })).toBeNull();
   });
+
+  it('a higher measured electricity tariff raises the price', () => {
+    expect(impact({ kind: 'tariff', assumed: 0.15, measured: 0.25 })!).toBeGreaterThan(0);
+  });
+
+  it('a higher measured printing time raises the price', () => {
+    expect(impact({ kind: 'time', assumed: 6, measured: 10 })!).toBeGreaterThan(0);
+  });
 });
 
 describe('foldSessionOverrides', () => {

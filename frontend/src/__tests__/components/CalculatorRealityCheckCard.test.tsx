@@ -153,6 +153,100 @@ describe('CalculatorRealityCheckCard: spoolCost Update profile gating (T-008)', 
   });
 });
 
+const tariffCheck: RealityCheck = {
+  kind: 'tariff',
+  assumed: 0.15,
+  measured: 0.2,
+  sample: 1,
+  scope: null,
+  severity: 'significant',
+};
+
+describe('CalculatorRealityCheckCard: tariff kind (T-014)', () => {
+  it('renders the tariff label and source-setting tooltip text', async () => {
+    renderCard(tariffCheck);
+
+    expect(await screen.findByText('Electricity price', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByText('$0.15')).toBeInTheDocument();
+    expect(screen.getByText('$0.20')).toBeInTheDocument();
+    expect(screen.getByText("From the app's electricity price setting")).toBeInTheDocument();
+  });
+});
+
+const failureCheck: RealityCheck = {
+  kind: 'failure',
+  assumed: 5,
+  measured: 12,
+  sample: 20,
+  scope: null,
+  severity: 'significant',
+};
+
+const timeCheck: RealityCheck = {
+  kind: 'time',
+  assumed: 3,
+  measured: 4,
+  sample: 20,
+  scope: null,
+  severity: 'significant',
+};
+
+describe('CalculatorRealityCheckCard: Apply all (T-015)', () => {
+  it('calls onApplyAll with every overridable, un-applied check, excluding the non-overridable spoolCost check', async () => {
+    const onApplyAll = vi.fn();
+    render(
+      <CalculatorRealityCheckCard
+        checks={[failureCheck, timeCheck, spoolCostCheck]}
+        impacts={{}}
+        currency="USD"
+        applied={{}}
+        onApply={() => {}}
+        onApplyAll={onApplyAll}
+        onRevert={() => {}}
+        onSaveDefault={() => {}}
+        onUpdateFilamentCost={() => {}}
+        onUpdatePrinterProfile={() => {}}
+        onDismiss={() => {}}
+        dismissedCount={0}
+        onRestoreDismissed={() => {}}
+        canUpdate
+        allClear={false}
+      />,
+    );
+
+    const button = await screen.findByRole('button', { name: 'Apply all' }, { timeout: 5000 });
+    await userEvent.click(button);
+
+    expect(onApplyAll).toHaveBeenCalledTimes(1);
+    expect(onApplyAll).toHaveBeenCalledWith([failureCheck, timeCheck]);
+  });
+
+  it('does not render the Apply all button when fewer than two checks are overridable and un-applied', async () => {
+    render(
+      <CalculatorRealityCheckCard
+        checks={[failureCheck, spoolCostCheck]}
+        impacts={{}}
+        currency="USD"
+        applied={{}}
+        onApply={() => {}}
+        onApplyAll={() => {}}
+        onRevert={() => {}}
+        onSaveDefault={() => {}}
+        onUpdateFilamentCost={() => {}}
+        onUpdatePrinterProfile={() => {}}
+        onDismiss={() => {}}
+        dismissedCount={0}
+        onRestoreDismissed={() => {}}
+        canUpdate
+        allClear={false}
+      />,
+    );
+
+    await screen.findByText('Failure rate', {}, { timeout: 5000 });
+    expect(screen.queryByRole('button', { name: 'Apply all' })).not.toBeInTheDocument();
+  });
+});
+
 describe('CalculatorRealityCheckCard: dismiss exit transition', () => {
   afterEach(() => {
     vi.useRealTimers();
