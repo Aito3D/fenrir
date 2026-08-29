@@ -867,6 +867,41 @@ describe('CalculatorPage', () => {
     );
   });
 
+  it('normalizes an overflowing minutes value into hours when focus leaves the duration group', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    const minutes = screen.getByLabelText('Minutes');
+    await user.type(minutes, '90');
+    // Click a field outside the SegmentedDuration group so focus actually
+    // leaves it (tabbing from the last segment would do the same, but a
+    // click elsewhere is the most direct way to fire onGroupBlur).
+    await user.click(weight);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Hours')).toHaveValue(1);
+    });
+    expect(screen.getByLabelText('Minutes')).toHaveValue(30);
+    expect(screen.getByLabelText('Days')).toHaveValue(null);
+  });
+
+  it('normalizes an overflowing hours value by rolling into days when focus leaves the duration group', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    const hours = screen.getByLabelText('Hours');
+    await user.type(hours, '25');
+    await user.click(weight);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Days')).toHaveValue(1);
+    });
+    expect(screen.getByLabelText('Hours')).toHaveValue(1);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(null);
+  });
+
   it('validates quantity ≥ 1 and dims results behind an alert', async () => {
     const user = userEvent.setup();
     render(<CalculatorPage />);

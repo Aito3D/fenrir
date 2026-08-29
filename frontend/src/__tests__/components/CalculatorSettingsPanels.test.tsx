@@ -37,6 +37,9 @@ import type {
 // below rather than a test that trivially agrees with whatever the panel
 // happens to import (T-097).
 import { settingsTdCls } from '../../components/calculator/calculatorSettingsShared';
+// Used only to independently corroborate the fixture math in the T-011
+// sort test below (not to re-derive the component's own comparisons).
+import { printerLifetimeHours, printerDepreciationPerHour, printerRepairsPerHour } from '../../utils/pricing';
 
 const NOW = '2026-01-01T00:00:00Z';
 
@@ -1463,6 +1466,41 @@ describe('CalculatorPrintersPanel', () => {
     expect(await screen.findByText('Printer updated')).toBeInTheDocument();
   });
 
+  // T-012: distinct from "cancels the delete confirmation" below — this
+  // exercises the PrinterForm's own Cancel button (onCancel={() =>
+  // setEditing(null)}), never previously hit by a test.
+  it('discards an in-progress edit when the form\'s own Cancel button is clicked', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    const patchSpy = vi.fn();
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.patch('/api/v1/calculator/printers/:id', () => {
+        patchSpy();
+        return HttpResponse.json(basePrinter);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit printer' }));
+    const name = screen.getByLabelText('Name');
+    expect(name).toHaveValue('H2S');
+    await user.clear(name);
+    await user.type(name, 'H2S Pro');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // Edit form is closed, back to the listing.
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Edit printer' })).toBeInTheDocument();
+    // Nothing was saved: no PATCH fired, and the row still shows the
+    // original, untouched name.
+    expect(patchSpy).not.toHaveBeenCalled();
+    expect(screen.getByRole('cell', { name: /^H2S$/ })).toBeInTheDocument();
+    expect(screen.queryByText(/H2S Pro/)).not.toBeInTheDocument();
+  });
+
   it('deletes a printer through the confirm modal', async () => {
     let printers: CalculatorPrinter[] = [basePrinter];
     let deletedId: number | null = null;
@@ -1601,6 +1639,79 @@ describe('CalculatorPrintersPanel', () => {
     // right-aligned/tabular-nums tdCls — which this left-aligned name
     // column never legitimately carries — is caught.
     expect(nameCell.className).toBe(`${settingsTdCls} text-white`);
+  });
+
+  // T-011: the six numeric SortHeader columns (purchase/power/daily/
+  // lifetime/depreciation/repairs) each hit their own `switch (sortKey)`
+  // branch in the `visible` useMemo — none of the CRUD/permission tests
+  // above ever click them. Alpha/Bravo are built so every metric's
+  // ascending order is Bravo-then-Alpha, the *opposite* of the default
+  // name-ascending order (Alpha, Bravo) — a sort that silently fell back to
+  // comparing by name would fail every assertion here.
+  it('sorts by each numeric column (purchase/power/daily/lifetime/depreciation/repairs)', async () => {
+    const alpha: CalculatorPrinter = {
+      id: 1,
+      name: 'Alpha',
+      purchase_price: 6000,
+      lifetime_years: 1,
+      daily_usage_hours: 8,
+      power_watts: 300,
+      repair_rate_pct: 80,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+    const bravo: CalculatorPrinter = {
+      id: 2,
+      name: 'Bravo',
+      purchase_price: 2000,
+      lifetime_years: 3,
+      daily_usage_hours: 2,
+      power_watts: 50,
+      repair_rate_pct: 5,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+    // Sanity-check the fixture actually produces the "every metric reverses
+    // the name order" shape this test relies on, computed the same way the
+    // component does (utils/pricing.ts).
+    expect(printerLifetimeHours(alpha)).toBeCloseTo(2920);
+    expect(printerLifetimeHours(bravo)).toBeCloseTo(2190);
+    expect(printerDepreciationPerHour(alpha)).toBeGreaterThan(printerDepreciationPerHour(bravo));
+    expect(printerRepairsPerHour(alpha)).toBeGreaterThan(printerRepairsPerHour(bravo));
+
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([alpha, bravo])));
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: 'Alpha' });
+
+    const nameColumnInOrder = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1) // drop the header row
+        .map((row) => within(row).getAllByRole('cell')[0].textContent);
+
+    // Default sort is by name ascending.
+    expect(nameColumnInOrder()).toEqual(['Alpha', 'Bravo']);
+
+    const clickAndExpect = async (buttonName: string) => {
+      // First click on a not-yet-active column starts it ascending, which
+      // (by construction) puts Bravo before Alpha for every metric here.
+      await user.click(screen.getByRole('button', { name: buttonName }));
+      expect(nameColumnInOrder()).toEqual(['Bravo', 'Alpha']);
+
+      // Clicking the now-active column again flips to descending.
+      await user.click(screen.getByRole('button', { name: buttonName }));
+      expect(nameColumnInOrder()).toEqual(['Alpha', 'Bravo']);
+    };
+
+    await clickAndExpect('Purchase price ($)');
+    await clickAndExpect('Power (W)');
+    await clickAndExpect('Daily usage (h)');
+    await clickAndExpect('Lifetime hours');
+    await clickAndExpect('Depreciation / h');
+    await clickAndExpect('Repairs / h');
   });
 
   // T-125: same coverage gap as CalculatorFilamentsPanel's pending-state
