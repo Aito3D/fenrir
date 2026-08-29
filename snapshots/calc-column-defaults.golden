@@ -62,8 +62,38 @@
    "FLOAT",
    false
   ],
+  "margin_k": [
+   "33.0",
+   "FLOAT",
+   false
+  ],
+  "margin_max_mult": [
+   "1.6",
+   "FLOAT",
+   false
+  ],
+  "margin_min_mult": [
+   "1.15",
+   "FLOAT",
+   false
+  ],
+  "min_task_price": [
+   "12.0",
+   "FLOAT",
+   false
+  ],
   "prototype_rate_pct": [
    "30.0",
+   "FLOAT",
+   false
+  ],
+  "qty_k": [
+   "5.0",
+   "FLOAT",
+   false
+  ],
+  "qty_min_factor": [
+   "0.4",
    "FLOAT",
    false
   ],

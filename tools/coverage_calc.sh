@@ -1,5 +1,7 @@
 #!/bin/bash
-# Campaign-6 coverage gate: runs the FULL suites, but measures coverage over the
+# Campaign-8 coverage gate (campaign 6's gate refreshed 2026-08-28:
+# + hooks/useSettledValue.ts, calculator-only importers; utils/motion stays
+# out, it is shared with Aito): runs the FULL suites, but measures coverage over the
 # campaign SCOPE only (the Calculator x Zoho feature, frontend + backend).
 # Run from repo root: bash tools/coverage_calc.sh [frontend|backend|both]
 #
@@ -34,6 +36,7 @@ FE_FILES=(
   frontend/src/pages/CalculatorQuotePage.tsx
   frontend/src/components/CalculatorSettingsPanels.tsx
   frontend/src/hooks/useCalculatorState.ts
+  frontend/src/hooks/useSettledValue.ts
   frontend/src/utils/calculatorInsights.ts
   frontend/src/utils/quoteSummary.ts
   frontend/src/utils/pricing.ts

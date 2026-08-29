@@ -48,8 +48,32 @@
     "title": "Labor Rate Per Hour",
     "type": "number"
    },
+   "margin_k": {
+    "title": "Margin K",
+    "type": "number"
+   },
+   "margin_max_mult": {
+    "title": "Margin Max Mult",
+    "type": "number"
+   },
+   "margin_min_mult": {
+    "title": "Margin Min Mult",
+    "type": "number"
+   },
+   "min_task_price": {
+    "title": "Min Task Price",
+    "type": "number"
+   },
    "prototype_rate_pct": {
     "title": "Prototype Rate Pct",
+    "type": "number"
+   },
+   "qty_k": {
+    "title": "Qty K",
+    "type": "number"
+   },
+   "qty_min_factor": {
+    "title": "Qty Min Factor",
     "type": "number"
    },
    "stuff_markup_pct": {
@@ -81,6 +105,12 @@
    "default_margin_over_cost_pct",
    "stuff_markup_pct",
    "base_fee_flat",
+   "margin_min_mult",
+   "margin_max_mult",
+   "margin_k",
+   "qty_min_factor",
+   "qty_k",
+   "min_task_price",
    "updated_at"
   ],
   "title": "CalculatorDefaultsResponse",
@@ -229,6 +259,62 @@
     "default": null,
     "title": "Labor Rate Per Hour"
    },
+   "margin_k": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin K"
+   },
+   "margin_max_mult": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin Max Mult"
+   },
+   "margin_min_mult": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin Min Mult"
+   },
+   "min_task_price": {
+    "anyOf": [
+     {
+      "maximum": 100000000.0,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Min Task Price"
+   },
    "prototype_rate_pct": {
     "anyOf": [
      {
@@ -242,6 +328,34 @@
     ],
     "default": null,
     "title": "Prototype Rate Pct"
+   },
+   "qty_k": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 1000000,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty K"
+   },
+   "qty_min_factor": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty Min Factor"
    },
    "stuff_markup_pct": {
     "anyOf": [
