@@ -13,9 +13,10 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,32 @@ class ZohoFilamentMappingError(RuntimeError):
     """
 
 
+class ZohoFilamentRefreshBusyError(RuntimeError):
+    """Raised by ``fetch_catalogue`` when another refresh already holds
+    ``_refresh_lock`` and there is no stale cache to answer from instead
+    (T-094's bounded lock-acquire timeout).
+
+    A ``RuntimeError`` subclass — not an unrelated type — so any caller that
+    still does a broad ``except RuntimeError`` keeps catching this. But
+    ``_fetch_catalogue_or_502`` (T-036) matches it with ``isinstance`` rather
+    than comparing ``str(exc)`` against a second, hand-duplicated copy of
+    ``_SYNC_IN_PROGRESS_DETAIL``: a reword of the message here can no longer
+    silently detach the 409 contract from the text actually raised.
+    """
+
+
 FILAMENT_CATEGORY = "Filaments"
 _PAGE_SIZE = 200
 _MAX_PAGES = 20  # 256 items today; a runaway-loop backstop, not a real limit
 _CACHE_TTL = timedelta(minutes=10)
+
+# T-010: an "ambiguous" ProfileMatch reports at most this many colliding item
+# names. Without a cap, a hand-typed profile whose colour never appears in
+# Zoho reports every same-brand-and-material item in the catalogue — up to
+# _MAX_PAGES x _PAGE_SIZE of them — as one unwrapped wall of names. The true
+# collision size still travels in ProfileMatch.candidates_total so nothing is
+# silently hidden, just not all rendered.
+_MAX_REPORTED_CANDIDATES = 5
 
 # T-094: how long a caller waits to acquire _refresh_lock before giving up on
 # an in-flight walk and answering with the stale cache (or a 502) instead.
@@ -56,24 +79,75 @@ _CACHE_TTL = timedelta(minutes=10)
 # healthy walk of a page or two is not punished by a waiter bailing early.
 _LOCK_ACQUIRE_TIMEOUT = 20.0
 
-# T-094/T-091: how long a cold-cache (no previous catalogue at all) failure
-# is remembered so a burst of callers arriving during a Zoho outage gets a
-# fast failure each instead of every one of them repeating the full paged
-# walk in turn behind _refresh_lock. Deliberately longer than
-# _LOCK_ACQUIRE_TIMEOUT so a caller that just timed out waiting for the lock
-# and retries lands on this fast path rather than starting its own walk, but
-# far shorter than _CACHE_TTL so a real recovery is only masked for seconds,
-# not minutes.
+# T-094/T-091/T-035: how long a recent failure is remembered so a burst (or a
+# steady trickle) of callers arriving during a Zoho outage gets the fast
+# answer each instead of every one of them repeating the full paged walk in
+# turn behind _refresh_lock. This applies whether or not a catalogue exists
+# to fall back to: cold, the memoized failure is re-raised (see the pre-lock
+# check below); warm, the cached copy is served straight back without ever
+# taking the lock. Deliberately longer than _LOCK_ACQUIRE_TIMEOUT so a caller
+# that just timed out waiting for the lock and retries lands on this fast
+# path rather than starting its own walk, but far shorter than _CACHE_TTL so
+# a real recovery is only masked for seconds, not minutes.
 _FAIL_COOLDOWN = timedelta(seconds=30)
 
 _cache: list["FilamentProduct"] | None = None
 _cache_at: datetime | None = None
 
-# T-094: set alongside a cold-cache failure (see the except branch in
-# fetch_catalogue) so the next caller can answer from this instead of
-# re-walking Zoho. Cleared on a successful refresh and by reset_cache().
+# T-034: the ``_cache_at`` of whatever catalogue the MOST RECENT
+# fetch_catalogue() call returned, but only when that call reached one of the
+# two "refresh failed/timed out, serve the stale copy anyway" branches below
+# rather than a genuine fresh fetch or an unexpired cache hit. None means the
+# most recent call did NOT take a stale-serve branch. fetch_catalogue's own
+# signature and return type are frozen (backend/app/api/routes/calculator.py
+# also calls it and is out of scope for T-034), so this module global is the
+# side channel `_fetch_catalogue_or_502` reads immediately after `await
+# fetch_catalogue(...)` returns -- with no `await` in between, so nothing
+# else can run and overwrite it first -- to learn whether the profile-sync
+# route just wrote prices from an arbitrarily old catalogue. Set/cleared at
+# every return point inside fetch_catalogue below.
+_last_stale_serve_at: datetime | None = None
+
+# T-094/T-035: set alongside EVERY refresh failure, cold or warm (see the
+# except branch in fetch_catalogue) so the next caller can answer from this
+# instead of re-walking Zoho. Cleared on a successful refresh and by
+# reset_cache().
 _fail_at: datetime | None = None
 _fail_exc: BaseException | None = None
+
+
+def _clone_exc(exc: BaseException) -> BaseException:
+    """Build a fresh, traceback/cause/context-free instance of ``exc``'s
+    exact class and message/attributes, WITHOUT calling its ``__init__``.
+
+    T-037: used both to memoize ``_fail_exc`` (so the stored instance never
+    accumulates a traceback of its own, which would pin the failed walk's
+    frames -- DB session, httpx objects -- in memory for the whole
+    _FAIL_COOLDOWN) and to hand each fast-fail caller its OWN object rather
+    than the shared stored one (so concurrent callers within the same
+    cooldown window each unwind a private exception instead of racing to
+    mutate one shared object's ``__traceback__``).
+
+    Deliberately does NOT go through ``copy.copy()``: that relies on
+    ``BaseException.__reduce_ex__``, which reconstructs by calling
+    ``type(exc)(*exc.args)`` -- and a subclass whose ``__init__`` folds
+    multiple constructor arguments into one combined message (exactly what
+    ``exc.args`` then holds) breaks that call with a ``TypeError``, the same
+    fragility this fix is meant to avoid. Calling ``cls.__new__(cls,
+    *exc.args)`` directly sidesteps ``__init__`` entirely -- every
+    ``BaseException`` subclass's ``__new__`` accepts ``*args`` and only
+    stores them, regardless of what ``__init__`` later expects -- so the
+    class, message and any extra attributes on ``exc.__dict__`` (e.g.
+    DBAPIError's ``orig``) survive undisturbed.
+    """
+    cls = type(exc)
+    clone = cls.__new__(cls, *exc.args)
+    clone.__dict__.update(exc.__dict__)
+    clone.__traceback__ = None
+    clone.__cause__ = None
+    clone.__context__ = None
+    return clone
+
 
 # T-072: bumped every time reset_cache() runs. A refresh started before a
 # reset (e.g. one parked on a slow Zoho page fetch while the operator rotates
@@ -170,11 +244,20 @@ class ProfileMatch:
     with a different fix: the item exists upstream and simply has no price.
     Roughly a fifth of the catalogue is in that state and writing any of them
     would silently zero out a profile's cost.
+
+    ``candidates_total`` is the TRUE number of catalogue items behind
+    ``candidates``. For ``ambiguous`` that can exceed ``len(candidates)``:
+    the name list is capped at ``_MAX_REPORTED_CANDIDATES`` so a large
+    collision does not turn into an unbounded wall of text, while this field
+    still carries the real count for a "+N more" style report. For every
+    other outcome the list is never capped, so this simply equals
+    ``len(candidates)`` (0 for ``no_match``, 1 for ``matched``/``no_price``).
     """
 
     outcome: str
     product: FilamentProduct | None
     candidates: list[str]
+    candidates_total: int
 
 
 def _normalise(value: str) -> str:
@@ -192,35 +275,59 @@ def _normalise(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
 
 
-def match_profile(
-    catalogue: list[FilamentProduct],
-    brand: str,
-    material: str,
-    colour: str,
-) -> ProfileMatch:
-    """Find the one catalogue item that prices this profile, or say why not.
+@dataclass(frozen=True)
+class CatalogueIndex:
+    """A catalogue pre-grouped by its own (normalised brand, normalised
+    material) pairs.
+
+    Built once per catalogue by :func:`build_match_index` so a caller matching
+    many profiles against the same catalogue (the zoho-sync route) does the
+    O(catalogue) normalisation work exactly once instead of once per profile
+    (T-011) — :func:`match_profile_indexed` then does only O(1) dict work plus
+    the small per-candidate colour narrowing ``match_profile`` always did.
+
+    Each bucket preserves the catalogue's own item order, since a matched
+    "ambiguous" outcome's ``candidates`` ordering is part of the contract
+    :func:`match_profile` has always honoured.
+    """
+
+    by_brand_material: dict[tuple[str, str], list[FilamentProduct]]
+
+
+def build_match_index(catalogue: list[FilamentProduct]) -> CatalogueIndex:
+    """Group ``catalogue`` by (normalised brand, normalised material) once.
+
+    Pass the result to :func:`match_profile_indexed` for every profile in a
+    batch instead of calling :func:`match_profile` (which rebuilds this same
+    grouping on every call) — see T-011.
+    """
+    by_brand_material: dict[tuple[str, str], list[FilamentProduct]] = {}
+    for item in catalogue:
+        key = (_normalise(item.brand), _normalise(item.material))
+        by_brand_material.setdefault(key, []).append(item)
+    return CatalogueIndex(by_brand_material)
+
+
+def _match_candidates(candidates: list[FilamentProduct], colour: str) -> ProfileMatch:
+    """The colour-narrowing half of matching, shared by ``candidates``
+    however they were gathered (a fresh scan or a prebuilt index bucket).
 
     Brand AND material must both agree — brand alone matches every filament
-    that vendor sells. Colour only narrows a collision; a sole candidate is
-    accepted whatever its colour, because price per kg does not vary by colour
-    within a brand and material.
+    that vendor sells. Colour only narrows a collision. A SOLE candidate is
+    only accepted when the profile's own colour agrees with it (or the
+    profile carries no colour at all): dealer price DOES vary by colour
+    within a brand and material (e.g. Bambu ABS-GF is 1866 in Blue and 3208
+    in Black — see the calculator's own docstring), so a colour-blind sole
+    match could silently write the wrong price. A colour-mismatched sole
+    candidate is reported as "ambiguous" rather than accepted — same as any
+    other case where colour cannot pick a single safe answer.
 
     Deliberately not built on ``_score``: that is a relevance ranker for the
     search box and always yields a best row, so it can order candidates but can
     never answer "is this a match at all".
     """
-    want_brand = _normalise(brand)
-    want_material = _normalise(material)
-    if not want_brand or not want_material:
-        return ProfileMatch("no_match", None, [])
-
-    candidates = [
-        item
-        for item in catalogue
-        if _normalise(item.brand) == want_brand and _normalise(item.material) == want_material
-    ]
     if not candidates:
-        return ProfileMatch("no_match", None, [])
+        return ProfileMatch("no_match", None, [], 0)
 
     if len(candidates) > 1:
         want_colour = _normalise(colour)
@@ -229,13 +336,62 @@ def match_profile(
             # Either the colour matched nothing (report the whole collision) or
             # it matched several (report those). Both are the operator's call.
             collision = narrowed or candidates
-            return ProfileMatch("ambiguous", None, [item.name for item in collision])
+            names = [item.name for item in collision]
+            return ProfileMatch("ambiguous", None, names[:_MAX_REPORTED_CANDIDATES], len(names))
         candidates = narrowed
 
     product = candidates[0]
+    want_colour = _normalise(colour)
+    if want_colour and _normalise(product.colour) != want_colour:
+        # T-025: a lone candidate whose colour disagrees with the profile's
+        # must not be auto-priced — price per kg DOES vary by colour within a
+        # brand and material. Reported as "ambiguous" (not a new reason): the
+        # UI already renders candidates for it, and there genuinely is no
+        # single safe answer for this profile in the catalogue.
+        return ProfileMatch("ambiguous", None, [product.name], 1)
     if not product.has_price:
-        return ProfileMatch("no_price", product, [product.name])
-    return ProfileMatch("matched", product, [product.name])
+        return ProfileMatch("no_price", product, [product.name], 1)
+    return ProfileMatch("matched", product, [product.name], 1)
+
+
+def match_profile_indexed(
+    index: CatalogueIndex,
+    brand: str,
+    material: str,
+    colour: str,
+) -> ProfileMatch:
+    """Like :func:`match_profile`, but against a prebuilt :func:`build_match_index`.
+
+    Use this (with one shared index) when matching many profiles against the
+    same catalogue — see T-011. Behaviour is byte-identical to calling
+    ``match_profile(catalogue, brand, material, colour)`` with the catalogue
+    the index was built from.
+    """
+    want_brand = _normalise(brand)
+    want_material = _normalise(material)
+    if not want_brand or not want_material:
+        return ProfileMatch("no_match", None, [], 0)
+
+    candidates = index.by_brand_material.get((want_brand, want_material), [])
+    return _match_candidates(candidates, colour)
+
+
+def match_profile(
+    catalogue: list[FilamentProduct],
+    brand: str,
+    material: str,
+    colour: str,
+) -> ProfileMatch:
+    """Find the one catalogue item that prices this profile, or say why not.
+
+    Matching a single profile against a catalogue that will only be used
+    once. A caller matching MANY profiles against the same catalogue (e.g. a
+    sync loop) should build one :class:`CatalogueIndex` with
+    :func:`build_match_index` and call :func:`match_profile_indexed` per
+    profile instead — this function rebuilds that same index on every call,
+    which is fine for one-off lookups but O(catalogue) work each time (T-011).
+    """
+    return match_profile_indexed(build_match_index(catalogue), brand, material, colour)
 
 
 def reset_cache() -> None:
@@ -246,10 +402,13 @@ def reset_cache() -> None:
     organization does not keep serving the previous org's filaments for the
     rest of the TTL window. Tests call it to isolate each case.
     """
-    global _cache, _cache_at, _generation, _fail_at, _fail_exc
+    global _cache, _cache_at, _generation, _fail_at, _fail_exc, _last_stale_serve_at
     _cache = None
     _cache_at = None
     _generation += 1
+    # T-034: a stale-serve memo from before the reset must not be attributed
+    # to whatever the next fetch_catalogue() call does.
+    _last_stale_serve_at = None
     # T-095: _refresh_lock is intentionally NOT rebuilt here — see its
     # module-level docstring for why rebinding it let a reset manufacture a
     # second concurrent walk.
@@ -304,9 +463,13 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     T-094: waiting for ``_refresh_lock`` is bounded by _LOCK_ACQUIRE_TIMEOUT —
     a caller that queues behind a slow in-flight walk gets the stale cache
     (or, cold, a raise) instead of parking indefinitely behind a walk that
-    can legitimately run for minutes. A cold-cache failure is also remembered
-    for _FAIL_COOLDOWN so a burst of callers arriving during a Zoho outage
-    fails fast instead of each repeating the whole paged walk in turn.
+    can legitimately run for minutes. A failure is also remembered for
+    _FAIL_COOLDOWN, cold or warm, so a burst — or a steady trickle — of
+    callers arriving during a Zoho outage is answered fast instead of each
+    repeating the whole paged walk in turn: cold, the memoized failure is
+    re-raised; warm, the cached copy is served back without ever taking the
+    lock (T-035). A warm short-circuit still counts as a stale serve for
+    T-034's purposes.
 
     T-095: if ``reset_cache()`` runs while this walk is in flight (e.g. a
     Zoho credential rotation mid-fetch), the walk RAISES once it finishes
@@ -314,30 +477,60 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     started it — that caller gets the same stale-cache-or-502 answer as any
     other refresh failure instead of a freshly-labelled answer from the
     pre-rotation organisation.
+
+    T-034: this signature and return type are relied on by
+    ``backend/app/api/routes/calculator.py`` and must not change. Whether a
+    given call served the previous cache because a refresh FAILED (as opposed
+    to it merely being unexpired) is recorded in the module-private
+    ``_last_stale_serve_at`` instead, for ``_fetch_catalogue_or_502`` to read.
     """
-    global _cache, _cache_at, _fail_at, _fail_exc
+    global _cache, _cache_at, _fail_at, _fail_exc, _last_stale_serve_at
 
     now = datetime.now(timezone.utc)
     fresh = _cache_at is not None and now - _cache_at < _CACHE_TTL
     if _cache is not None and (fresh or not refresh):
+        _last_stale_serve_at = None  # T-034: genuine cache hit, not a failure fallback
         return _cache
 
     # T-094/T-091: a cold cache with a recent failure is served immediately —
     # re-raising the memoized failure — rather than taking the lock and
     # repeating a walk that is very likely to fail again the same way.
-    # T-107: this re-raises the STORED INSTANCE (not a same-class
-    # reconstruction from `str(_fail_exc)`) because `_fail_exc` is whatever
+    # T-107/T-037: this raises `_clone_exc(_fail_exc)`, not a same-class
+    # reconstruction from `str(_fail_exc)`, because `_fail_exc` is whatever
     # `except Exception` caught around the whole walk, and that walk reaches
     # SQLAlchemy/httpx — e.g. a DBAPIError subclass whose __init__ takes
     # (statement, params, orig), not a single string. Rebuilding from one
-    # string argument crashes with a TypeError for those. Re-raising the
-    # instance still preserves the class (and therefore whether the route
-    # answers 500 or 502) without that fragility; `with_traceback(None)`
-    # drops the stale traceback from the original failure — the same goal
-    # the reconstruction was after — so what propagates from here is framed
-    # by this call, not the long-finished walk that first observed it.
+    # string argument crashes with a TypeError for those; `_clone_exc`
+    # preserves the class, message and any other attributes regardless of
+    # constructor shape without ever calling `__init__` (see its docstring).
+    # It is ALSO not a re-raise of the stored instance itself
+    # (`_fail_exc.with_traceback(None)`, the previous approach): during a
+    # cold-cache outage several concurrent requests take this branch inside
+    # the same _FAIL_COOLDOWN window, and mutating one shared object's
+    # __traceback__ from each of them raced — a traceback logged for one
+    # request could carry another request's frames, or none at all. Cloning
+    # first gives every caller its own exception object to unwind, so its
+    # __traceback__ is exclusively that call's. `_fail_exc` itself already
+    # has no traceback/cause/context to inherit (cleared at the memo-write
+    # site below), so the clone starts clean and is framed entirely by this
+    # call, not the long-finished walk that first observed the failure.
     if _cache is None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
-        raise _fail_exc.with_traceback(None) from None
+        raise _clone_exc(_fail_exc) from None
+
+    # T-035: the warm-cache twin of the fast-fail above. Once a refresh has
+    # already failed once, a warm cache within _FAIL_COOLDOWN is served
+    # straight back — WITHOUT taking _refresh_lock or walking a single page —
+    # instead of repeating a walk that just failed and is very likely to fail
+    # again the same way. Before this fix, only the cold branch above
+    # remembered a failure, so every sync during a Zoho outage that ever had
+    # a catalogue cached re-walked up to _MAX_PAGES pages (worst case ~400s)
+    # before serving the same stale list back. Still counts as a stale serve
+    # for T-034: the catalogue handed back here is exactly as old as it was
+    # the moment the failure was first observed.
+    if _cache is not None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
+        logger.warning("Zoho filament catalogue refresh failed recently; serving the cached copy without retrying yet")
+        _last_stale_serve_at = _cache_at
+        return _cache
 
     # Captured once, up front, rather than re-reading the global at release
     # time. reset_cache() no longer rebinds _refresh_lock (T-095), so this is
@@ -359,8 +552,14 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             logger.warning(
                 "Zoho filament catalogue refresh lock busy past %.0fs; serving the cached copy", _LOCK_ACQUIRE_TIMEOUT
             )
+            # T-034: the lock-busy fallback answers with whatever `_cache_at`
+            # already was -- unbounded age, since the walk that would have
+            # advanced it never got to.
+            _last_stale_serve_at = _cache_at
             return _cache
-        raise RuntimeError("Zoho filament catalogue refresh is still in progress; try again shortly") from None
+        raise ZohoFilamentRefreshBusyError(
+            "Zoho filament catalogue refresh is still in progress; try again shortly"
+        ) from None
 
     try:
         # Re-check inside the lock: another coroutine may have already done
@@ -370,6 +569,7 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         now = datetime.now(timezone.utc)
         fresh = _cache_at is not None and now - _cache_at < _CACHE_TTL
         if _cache is not None and (fresh or not refresh):
+            _last_stale_serve_at = None  # T-034: genuine cache hit, not a failure fallback
             return _cache
 
         # T-072: captured only now — after the lock is held and the
@@ -432,19 +632,47 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
                     f"None of the {len(active_items)} active Zoho filament items could be mapped"
                 )
         except Exception as exc:
-            if _cache is not None:
-                logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
-                return _cache
-            # T-094/T-091: cold-cache failure — record it so a burst of
-            # concurrent callers doesn't repeat this whole walk one at a time
-            # behind the lock; see the pre-lock check above. Stamped with NOW
-            # (when the failure was observed), not the `now` captured before
-            # the walk began — the walk itself can run for minutes (bounded
-            # by _MAX_PAGES x retries x the httpx timeout), so re-using the
+            # T-094/T-091/T-035: record the failure regardless of whether a
+            # cache exists to fall back to, so a repeat within
+            # _FAIL_COOLDOWN short-circuits instead of repeating this whole
+            # walk — cold, via the pre-lock re-raise above; warm, via the
+            # pre-lock short-circuit above. Stamped with NOW (when the
+            # failure was observed), not the `now` captured before the walk
+            # began — the walk itself can run for minutes (bounded by
+            # _MAX_PAGES x retries x the httpx timeout), so re-using the
             # pre-walk timestamp could write a memo that is already past
             # _FAIL_COOLDOWN the moment it lands.
-            _fail_at = datetime.now(timezone.utc)
-            _fail_exc = exc
+            #
+            # T-043: but only for THIS generation. reset_cache() may have
+            # bumped _generation (and cleared the memo) while this walk was
+            # failing against credentials that were just rotated away — the
+            # same supersession the success path below already guards
+            # against with `if generation != _generation`. Without this
+            # guard, a superseded walk's failure would re-poison the
+            # fast-fail path with a pre-rotation error for the rest of
+            # _FAIL_COOLDOWN, right after the new credentials were put in
+            # place. The failure itself still propagates to its own caller
+            # via `raise` below regardless of generation — only the memo
+            # write is skipped.
+            if generation == _generation:
+                _fail_at = datetime.now(timezone.utc)
+                # T-037: memoize a CLONE of `exc` (see `_clone_exc`) with its
+                # traceback/cause/context stripped, not `exc` itself. The bare
+                # `raise` a few lines below (the real, first-observed failure
+                # propagating to whatever logs it) still uses `exc` with its
+                # traceback intact — this only affects what gets stashed for
+                # later fast-fail reads. Storing the live `exc` would keep the
+                # whole walk's frames (DB session, httpx objects it closed over)
+                # reachable for the entire _FAIL_COOLDOWN window purely because a
+                # traceback pins them; clearing it here, at the moment the memo
+                # is written, is what actually releases them.
+                _fail_exc = _clone_exc(exc)
+            if _cache is not None:
+                logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
+                # T-034: this refresh failed with no upper bound on how long
+                # ago `_cache_at` was -- it is left un-advanced on purpose.
+                _last_stale_serve_at = _cache_at
+                return _cache
             raise
 
         if generation != _generation:
@@ -471,9 +699,74 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         _cache_at = datetime.now(timezone.utc)
         _fail_at = None
         _fail_exc = None
+        _last_stale_serve_at = None  # T-034: a genuine fresh refresh just landed
         return mapped
     finally:
         lock.release()
+
+
+# T-009/T-036: the exact message fetch_catalogue's lock-acquire timeout
+# raises when another refresh is already in flight and there is no cache to
+# fall back to (see the asyncio.TimeoutError branch above, and
+# ZohoFilamentRefreshBusyError). This constant is the HTTP detail text for
+# the 409 response below — the classifier no longer compares against it by
+# string equality (that matched on ``str(exc)``, so a reword here would have
+# silently degraded the 409 to a 502); it now checks the exception's type via
+# ``isinstance``, and this constant only supplies the response body.
+_SYNC_IN_PROGRESS_DETAIL = "Zoho filament catalogue refresh is still in progress; try again shortly"
+
+
+async def _fetch_catalogue_or_502(db: AsyncSession, *, context: str) -> tuple[list[FilamentProduct], datetime | None]:
+    """``fetch_catalogue`` wrapped in the is-configured check and error
+    contract every HTTP caller needs: 503 when Zoho isn't configured (either
+    up front, or discovered mid-refresh if credentials were cleared in the
+    check-then-act window between the check above and the token refresh),
+    409 when another refresh is already in flight with no cache to answer
+    from, 500 when the catalogue fetched but failed to map, 502 for anything
+    else.
+
+    ``context`` is folded into the log message (e.g. ``"during profile
+    sync"``) so a caller's logs can be told apart without duplicating this
+    block per route. Private (leading underscore): every current caller lives
+    in this codebase, so there is no reason to widen it into the module's
+    public surface.
+
+    T-034: returns ``(catalogue, stale_since)``. ``fetch_catalogue`` itself
+    must keep returning a bare list (its signature is frozen — see
+    ``_last_stale_serve_at``'s docstring), so this wrapper reads that module
+    global immediately after the call to learn whether THIS call happened to
+    land on a failed-refresh stale-cache fallback rather than a genuine fetch.
+    ``stale_since`` is ``None`` for a fresh catalogue, or the timestamp the
+    served catalogue was last actually captured at otherwise.
+    """
+    if not await zoho_service.is_configured(db):
+        raise HTTPException(status_code=503, detail="Zoho is not configured")
+    try:
+        catalogue = await fetch_catalogue(db)
+        # No `await` between the call above and this read — see
+        # `_last_stale_serve_at`'s module-level docstring for why that makes
+        # this safe against interleaving from other concurrent callers.
+        return catalogue, _last_stale_serve_at
+    except ZohoFilamentMappingError as exc:
+        logger.error("Zoho filament catalogue mapping failure %s: %s", context, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Zoho filament catalogue could not be mapped") from exc
+    except ZohoNotConfiguredError as exc:
+        # Credentials were cleared between the is_configured() check above
+        # and the token refresh inside fetch_catalogue — a genuine
+        # check-then-act race, not an unreachable Zoho.
+        logger.warning("Zoho credentials were cleared %s: %s", context, exc)
+        raise HTTPException(status_code=503, detail="Zoho is not configured") from exc
+    except ZohoFilamentRefreshBusyError as exc:
+        # Caught by type, not by comparing str(exc) against _SYNC_IN_PROGRESS_
+        # DETAIL (T-036) — that constant now only supplies the 409 body text.
+        logger.warning("Zoho filament catalogue refresh already in progress %s", context)
+        raise HTTPException(status_code=409, detail=_SYNC_IN_PROGRESS_DETAIL) from exc
+    except RuntimeError as exc:
+        logger.warning("Zoho filament catalogue unavailable %s: %s", context, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+    except Exception as exc:
+        logger.warning("Zoho filament catalogue unavailable %s: %s", context, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
 
 
 def _score(product: FilamentProduct, terms: list[str]) -> int:

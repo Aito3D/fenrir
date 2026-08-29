@@ -89,6 +89,25 @@ def test_diameter_in_mm_is_never_read_as_a_weight():
     assert parsed.weight_inferred is True
 
 
+@pytest.mark.parametrize(
+    "weight_token",
+    ["0kg", "0.0kg", "0,0kg"],
+)
+def test_zero_weight_match_falls_through_to_inferred_default(weight_token):
+    """A matched-but-nonpositive weight token must be treated like no match at all.
+
+    _WEIGHT_RE matches '0kg' / '0.0kg' / '0,0kg', but the `weight > 0` guard
+    rejects it, so parsing falls through to the same 1 kg default used when
+    no weight token is present -- never a 0 kg denominator.
+    """
+    parsed = parse_filament_name(f"Brand - Material - Colour - 1.75mm - {weight_token}")
+    assert parsed.brand == "Brand"
+    assert parsed.material == "Material"
+    assert parsed.colour == "Colour"
+    assert parsed.spool_weight_kg == 1.0
+    assert parsed.weight_inferred is True
+
+
 def test_empty_name_is_safe():
     parsed = parse_filament_name("")
     assert parsed.brand == ""

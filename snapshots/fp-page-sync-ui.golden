@@ -1,0 +1,24 @@
+### exit: 0
+### stdout:
+zohoSync first referenced at char True
+no_match: 'filamentProfiles.syncZohoNoMatch',
+ambiguous: 'filamentProfiles.syncZohoAmbiguous',
+unwritable_content: 'filamentProfiles.syncZohoUnwritable',
+bad_price: 'filamentProfiles.syncZohoBadPrice',
+weight_unknown: 'filamentProfiles.syncZohoWeightUnknown',
+content_too_large: 'filamentProfiles.syncZohoContentTooLarge',
+no_price: 'filamentProfiles.syncZohoNoPrice',
+const [zohoSyncing, setZohoSyncing] = useState(false);
+const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
+? t('filamentProfiles.syncZohoStale', { timestamp: new Date(result.catalogue_stale_since).toLocaleString() })
+.concat(attentionCount > 0 ? [t('filamentProfiles.syncZohoAttention', { count: attentionCount })] : [])
+showToast(isApiError ? error.message : t('filamentProfiles.syncZohoUnknown'), 'error');
+<Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
+{zohoSyncing ? (
+{t('filamentProfiles.syncZohoPrices')}
+{t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
+{t('filamentProfiles.syncZohoStale', {
+{t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention_total })}
+
+### stderr:
+

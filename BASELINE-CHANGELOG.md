@@ -4367,3 +4367,2220 @@ as expected (`apikey`, `ApiKey`, `authtoken`, `accesstoken`, `clientsecret`,
 `main.py` clean. This is completing T-129's already-approved change correctly ("password-like
 fields show a placeholder"), not a new behavior change. `main.py` is outside the coverage gate's
 scoped file list, so this follow-up does not move the 99.44% figure (expected, not chased).
+
+---
+
+# Campaign 7 — the filament-profiles Zoho price sync
+
+## Approved 2026-08-25, round 1 — 11 of 11 behaviour-change findings approved by the user
+
+The round-1 panel filed 11 findings whose fixes change something a user observes.
+All 11 were quoted verbatim to the user and all 11 were approved. Each is worked
+as an ordinary task; the worker must re-record the affected golden probe(s),
+update the affected SURFACE.md sections, and append an "applied" line in the SAME
+commit, whose message must contain "(user-approved behaviour change)".
+
+| task | approved change (as quoted to the user) |
+|---|---|
+| T-002 | reason field typed as Literal; response model rejects an unknown outcome instead of passing it through |
+| T-005 | presets with empty or unparseable content move out of `unchanged` into the attention list with a new reason string |
+| T-006 | an open preset editor picks up changes made underneath it instead of silently reverting a synced price on save |
+| T-007 | the Zoho summary panel clears while a sync runs and stays gone when one fails |
+| T-008 | the post-sync toast gains a needs-attention count and stops being green when some profiles could not be priced |
+| T-009 | cleared credentials / a sync already in flight return 503/409 with a specific message instead of 502 "Could not reach Zoho" |
+| T-010 | the attention list shows a truncated set of colliding item names plus a remainder count |
+| T-012 | a non-finite or absurd cost per kg is no longer written; the profile is reported as needing attention |
+| T-014 | POST/PATCH filament-profiles return 422 for a filename containing '/', '\' or '..' |
+| T-015 | a match whose Zoho item name carries no weight is no longer auto-priced; reported for review with a new reason string |
+| T-016 | users holding only filaments:read stop seeing the mutating buttons |
+
+NOTE FOR EVERY WORKER: T-005, T-012 and T-015 each introduce a NEW reason string
+on the wire. The frontend must render it and all 13 locales must carry the key in
+the SAME commit, or the sync shows a raw i18n key to non-English users. The
+fp-i18n-sync-strings golden probe checks cross-locale parity and will catch a
+partial job.
+
+## applied
+
+- T-005 (2026-08-25, user-approved): `apply_filament_cost` now returns a three-state
+  outcome — `"written"` / `"unchanged"` / `"unwritable"` — instead of `(content,
+  bool)`. A confident Zoho match whose preset content is empty, unparseable JSON, or
+  not a JSON object is no longer counted in `unchanged`; it moves into `attention`
+  with a new `reason: "unwritable_content"`, plus a `logger.warning` naming the
+  preset id. Wired end-to-end: `FilamentProfilesPage.tsx`'s reason ternary gained a
+  dedicated branch (previously fell through to the "no price" copy), the typed API
+  client's `FilamentPresetZohoSyncAttention.reason` union gained the new literal,
+  and all 13 locale files gained a `syncZohoUnwritable` translation. Re-recorded
+  probes: `fp-pricing-write`, `fp-sync-endpoint`, `fp-i18n-sync-strings`,
+  `fp-client-method`, `fp-page-sync-ui` — each diff checked to contain only this
+  change. `calc-zoho-pure` still matches (calculator untouched). `reason` stays
+  typed as plain `str` in the Pydantic schema (Literal typing is T-002's job), so
+  OpenAPI/pydantic-schema probes did not move.
+
+- T-006 (2026-08-25, user-approved): frontend-only half. `FilamentProfilesPage.tsx`'s
+  `EditorState` now stores only `presetId` for the 'edit' mode instead of the whole
+  `FilamentPreset` object; the preset shown in the editor is re-derived from the
+  `presets` query cache (`presets.find(p => p.id === editorState.presetId)`) on
+  every render, so a `queryClient.invalidateQueries(['filamentPresets'])` — e.g.
+  from a Zoho price sync run while the editor is still open — feeds the modal
+  fresh data instead of the pre-sync snapshot it was opened with. Because
+  `PresetEditorModal` (out of scope for this campaign) only reads its `preset`
+  prop through mount-time `useState` initializers, re-deriving the prop alone
+  would not have been observed by an already-mounted modal; the page now also
+  keys the `<PresetEditorModal>` element on `` `${presetId}-${updated_at}` ``, so
+  a content change under an open editor forces a clean remount instead of
+  silently doing nothing. Deleted-preset case: if the preset the editor has open
+  is removed from the cache (deleted elsewhere) while open, a new effect closes
+  the editor on the next render rather than leaving it open on a preset that no
+  longer exists. Test added in `FilamentProfilesPage.test.tsx`
+  ("re-syncs the open editor with fresh data when a Zoho sync updates the preset
+  underneath it") — confirmed it fails without the fix (stale `10` instead of
+  refetched `25`) before the fix was reapplied. The optional PATCH
+  `updated_at` precondition described in the audit finding is NOT implemented —
+  it is an API contract change out of this task's scope and was not approved.
+  All 11 golden probes still match, including `fp-page-sync-ui` (its regex only
+  checks `zohoSync*` identifiers, untouched here) and `calc-zoho-pure`; SURFACE.md
+  regenerated byte-identical to the committed copy, so no probe/contract update
+  was needed.
+
+- T-007 (2026-08-25, user-approved): `FilamentProfilesPage.tsx`'s `handleZohoSync`
+  now clears `zohoResult` (`setZohoResult(null)`) at the start of the function and
+  again in the `catch` block. Previously `zohoResult` was only ever written on
+  success, so a failed re-sync left the prior run's summary panel — "Priced 12,
+  unchanged 3" plus its needs-attention list — on screen after a transient red
+  toast auto-dismissed, asserting a successful sync that did not happen. The
+  richer `{status, result}` alternative the audit offered was NOT built; only the
+  approved behaviour ("the Zoho summary panel disappears while a sync runs and
+  stays gone when one fails") was implemented. The toast call itself (T-008's
+  scope) was left untouched. Test added in `FilamentProfilesPage.test.tsx`
+  ("clears the previous run summary panel when a later sync fails") — confirmed
+  it fails without the fix (times out waiting for the stale "Priced 12" text to
+  disappear) before the fix was reapplied. All 11 golden probes still match,
+  including `fp-page-sync-ui` and `calc-zoho-pure`; SURFACE.md regenerated
+  byte-identical to the committed copy, so no probe/contract update was needed.
+
+- T-008 (2026-08-25, user-approved): `FilamentProfilesPage.tsx`'s `handleZohoSync`
+  post-sync toast used to read `t('filamentProfiles.syncZohoDone', { priced,
+  unchanged })` unconditionally as a `'success'` toast, so a run where every
+  profile came back `no_match` (or otherwise needed attention) — the normal
+  outcome the first time an operator's brand strings don't line up with Zoho's
+  item names — produced a green "Priced 0, unchanged 0" success notification;
+  the needs-attention detail existed only in the summary panel further down the
+  page, off-screen on a normal viewport. The toast now appends the existing
+  `filamentProfiles.syncZohoAttention` count (`` `${doneMessage} — ${count} need
+  attention` ``) whenever `result.attention.length > 0`, and the toast variant
+  downgrades from `'success'` to `'warning'` (the only non-green non-error
+  variant `ToastContext` provides) whenever `attention.length > 0` OR
+  `priced + unchanged === 0`. No new i18n key was needed — both
+  `syncZohoDone` and `syncZohoAttention` already existed in all 13 locales and
+  were composed together rather than adding a third string; `fp-i18n-sync-strings`
+  did not move. `ToastContext.tsx` itself (out of this campaign's scope) was not
+  touched. Two tests added in `FilamentProfilesPage.test.tsx` covering both
+  triggers named in the approved wording — a run with attention entries, and a
+  run where `priced + unchanged === 0` with an empty attention list — asserting
+  the toast text includes the attention count and that its border color is not
+  the green success color; both confirmed to fail without the fix before it was
+  reapplied. Two pre-existing zoho-sync tests were re-scoped from a loose
+  `/priced N/i` match to an anchored `` /^Priced N, unchanged N$/i `` match,
+  because the toast's text (and, for the warning variant, its longer auto-dismiss
+  window already defined by `ToastContext`'s `LONG_LIVED_TOAST_TYPES`) now
+  legitimately overlaps with the summary panel's identical prefix — this is
+  disambiguation only, no assertion was weakened. All 11 golden probes
+  re-verified: only `fp-page-sync-ui` moved (diff is exactly the new toast
+  composition in `handleZohoSync`), `fp-i18n-sync-strings` and `calc-zoho-pure`
+  still match byte-for-byte. SURFACE.md regenerated byte-identical to the
+  committed copy, so no i18n-key-surface update was needed.
+
+- T-009 (2026-08-25, user-approved): `zoho_filaments.py`'s `_fetch_catalogue_or_502`
+  — the shared error-mapping helper T-001 extracted, called only by the
+  filament-profiles sync route — gained two explicit branches ahead of its
+  catch-all. A `ZohoNotConfiguredError` (raised inside `fetch_catalogue`'s
+  token refresh if a credential is cleared in Settings in the check-then-act
+  window between the route's up-front `is_configured()` check and the walk
+  itself) now maps to `503 "Zoho is not configured"` instead of falling into
+  the generic 502. A `RuntimeError` whose message is exactly "Zoho filament
+  catalogue refresh is still in progress; try again shortly" (raised when
+  `_refresh_lock` is held by another in-flight walk past its acquire timeout
+  with no cache to answer from) now maps to `409` with that same message as
+  its detail, instead of 502. Matched by message-equality against a bare
+  `RuntimeError` rather than a dedicated exception type, because `fetch_catalogue`
+  itself was out of scope for this change; the two OTHER `RuntimeError`s it can
+  raise (`_MAX_PAGES` truncation, and a superseded-generation retry after a
+  credential rotation mid-walk) have different text and correctly keep falling
+  through to the unchanged `502 "Could not reach Zoho"` fallback. Per the
+  user's explicit carve-out, `str(exc)` is deliberately NOT interpolated into
+  the fallback 502 detail (kept as the fixed string, to avoid leaking upstream
+  exception text into an HTTP response); the underlying exception is still
+  logged. Three tests added to `test_filament_profiles_zoho_sync.py`: one per
+  new branch (each asserting both the status code and the exact detail
+  string), plus a third pinning that a non-`RuntimeError` (e.g. `ValueError`)
+  still falls through to the unchanged generic 502 — needed to keep the
+  scoped coverage ratchet at its 99.78%-statements baseline, since the new
+  `RuntimeError`-specific branch left the pre-existing catch-all's own lines
+  unexercised. The existing `test_502_when_zoho_is_unreachable` was
+  strengthened (not weakened) to also assert the detail string.
+  `backend/app/api/routes/calculator.py` (its own, separate inline copies of
+  this mapping) was not touched. All 11 golden probes re-verified: none
+  moved — `fp-sync-endpoint` does not exercise either new branch (its stub
+  only raises a generic `RuntimeError`/`ZohoFilamentMappingError`/
+  unconfigured, and `tools/` is frozen so it could not be extended); the new
+  branches are guarded by the new unit tests instead. `calc-zoho-pure`
+  still matches byte-for-byte — `fetch_catalogue`, the cache, the generation
+  counter, `_refresh_lock`, `_map_item`, `parse_filament_name` and
+  `match_profile` were all left untouched. SURFACE.md's "Backend module
+  constants" section gained one line (`_SYNC_IN_PROGRESS_DETAIL`, the new
+  module constant carrying the lock-busy message) and was regenerated.
+
+- T-012 (2026-08-25, user-approved): `apply_filament_cost` now validates
+  `cost_per_kg` before it does anything else — reject non-finite (`inf`,
+  `-inf`, `nan`), `<= 0`, or `> 100_000_000.0` — and returns a fourth outcome,
+  `"bad_price"`, with the input content returned untouched (not even parsed).
+  The guard was put inside `apply_filament_cost` rather than the route: it is
+  the function that already owns the outcome enum and does the actual write,
+  so validating the value it is about to write is its job, the same way it
+  already refuses to write into unparseable content. The ceiling reuses the
+  calculator's exact value (100,000,000.0) but as its own module constant,
+  `_MONEY_CEILING`, rather than importing the calculator schema's private
+  `_MONEY_CEILING` — that name is underscore-prefixed specifically to signal
+  it is not for reuse outside `schemas/calculator.py`, and importing across
+  a feature boundary for a private symbol is the worse of the two options the
+  audit laid out; the constant's docstring comment names the calculator's as
+  its source of truth so the two cannot silently diverge unnoticed. The full
+  check mirrors the calculator sync's guard at
+  `backend/app/api/routes/calculator.py`: `not math.isfinite(...)`, `<= 0`,
+  and `> _MONEY_CEILING`, all three — `nan <= 0` and `nan > ceiling` are both
+  `False`, so only the `isfinite` check catches a NaN price, and a dedicated
+  test pins that. `backend/app/api/routes/filament_profiles.py`'s zoho-sync
+  route routes the new `"bad_price"` outcome into `attention` with a new,
+  distinct `reason: "bad_price"` — not the existing `"unwritable_content"` —
+  because the preset's own file is fine here; it is the upstream Zoho item's
+  price that is unusable, and reusing the content reason would tell the
+  operator the wrong thing is broken. Wired through all five layers in the
+  same commit: `FilamentPresetZohoSyncAttention`'s doc comment in
+  `schemas/filament_profile.py`, the typed API client's `reason` union in
+  `client.ts`, `FilamentProfilesPage.tsx`'s reason ternary (its own branch,
+  not a fallthrough), and the `syncZohoBadPrice` key added to all 13 locale
+  files with real, tone-matched translations (not copied English). Eight new
+  unit tests in `test_filament_profile_pricing.py` pin every rejected shape
+  (`inf`, `-inf`, `nan`, `0.0`, a negative value, a value just above the
+  ceiling) and the ceiling boundary from both sides (just below the ceiling
+  still writes). Two endpoint-level tests added to
+  `test_filament_profiles_zoho_sync.py`: one proving a confident match with
+  an infinite price lands in `attention` with `reason: "bad_price"` and
+  leaves the preset byte-identical, and one proving a NaN-priced profile does
+  not stop a healthy sibling in the same sync run from being priced. A
+  frontend test in `FilamentProfilesPage.test.tsx` asserts the new reason
+  renders its own copy and never falls through to the "no price" or
+  "unwritable content" text. `zoho_filaments._map_item`'s `float()`/`round()`
+  and `backend/app/api/routes/calculator.py` were both left untouched, per
+  the audit's explicit carve-out. All 11 golden probes re-verified:
+  `fp-pricing-write` moved (zero and negative price now produce `bad_price`
+  with the content returned as the same object, not a new written string),
+  `fp-i18n-sync-strings` moved (the new key in all 13 locales),
+  `fp-client-method` moved (the widened `reason` union), and `fp-page-sync-ui`
+  moved (the new ternary branch) — all four re-recorded after reading each
+  diff. `fp-sync-endpoint` and the other seven probes matched unchanged.
+  `calc-zoho-pure` still matches byte-for-byte. SURFACE.md's "Backend module
+  constants" section gained one line (`_MONEY_CEILING`) and was regenerated.
+
+- T-013 (2026-08-25, user-approved RETROACTIVELY — this entry was written
+  after the fact because the orchestrator originally misclassified the
+  change as a pure contract fix and told the worker not to log it; the
+  verifier caught the omission and the user then approved the change itself
+  on review): `apply_filament_cost` in
+  `backend/app/services/filament_profile_pricing.py` only caught
+  `json.JSONDecodeError` around `json.loads`, but a preset with
+  pathologically deep JSON nesting (e.g. thousands of nested arrays) makes
+  `json.loads` raise `RecursionError` instead, which is not a
+  `JSONDecodeError` and is not a subclass of `ValueError`. That escaped the
+  function uncaught, and `backend/app/api/routes/filament_profiles.py`'s
+  zoho-sync route has no exception handling around its per-preset loop, so
+  the `RecursionError` propagated all the way out and crashed
+  `POST /filament-profiles/zoho-sync` mid-loop, before `await db.commit()`
+  — at BASE this preset's pathological content aborted the request with an
+  error response and discarded the already-computed prices for every other,
+  healthy preset in the same sync run. At HEAD the `except` clause is
+  widened to `(ValueError, RecursionError)` — `ValueError` is
+  `JSONDecodeError`'s own parent class, so this is a strict widening, not a
+  swap. The pathologically deep preset now takes the same `"unwritable"`
+  outcome T-005 already modelled for unparseable content: the sync returns
+  `200`, that preset is reported in `attention` with `reason:
+  "unwritable_content"` and its content untouched, and every sibling preset
+  in the same run is still priced and committed. A bare `except Exception`
+  was considered and rejected, to avoid also swallowing real programming
+  bugs in this function. One unit test added in
+  `test_filament_profile_pricing.py` (`test_pathologically_deep_json_is_
+  unwritable_not_a_crash`, using the auditor's own repro of `"[" * 120000`)
+  and one endpoint-level test added in
+  `test_filament_profiles_zoho_sync.py`
+  (`test_a_pathologically_deep_preset_does_not_abort_the_whole_sync`)
+  proving the healthy sibling is priced and committed in the same request
+  that flags the pathological one. All 11 golden probes re-verified: NONE
+  moved, including `fp-pricing-write` and `fp-sync-endpoint` — the
+  previously-crashing pathological-nesting case was simply never modelled by
+  any probe's fixture, so there is no probe diff accompanying this entry.
+  That is unusual for an entry in this log and is being stated explicitly so
+  a future reader does not go looking for a snapshot diff that does not
+  exist: the observable-behaviour change here is real (error response with
+  discarded sibling prices, at BASE, versus `200` with `attention` reporting
+  and sibling prices committed, at HEAD) and is evidenced by the two new
+  tests above, not by a probe. Exact commit: `728c039f4`.
+
+## T-014 — 2026-08-26 — user-approved behavior change
+
+`create_filament_profile()`/`update_filament_profile()` (`backend/app/api/routes/
+filament_profiles.py`) stored `filename` on `FilamentPresetCreate`/`FilamentPresetUpdate`
+verbatim, with no check that it was a bare file name. `bambu_sync`'s own
+`_validate_bambu_sync_presets` requires exactly that — `if not filename or ".." in filename
+or "/" in filename or "\\" in filename: raise HTTPException(400, ...)` — and validates the
+entire `presets` list from a single request, so one stored preset with a path-shaped
+`filename` made `POST /filament-profiles/bambu-sync` (Sync-to-PC) 400 for every preset, not
+just the offending one, until the bad row was found and edited. The same unvalidated field is
+also used verbatim as the export ZIP entry name in `FilamentProfilesPage.tsx`
+(`zip.file(p.filename, p.content)`), so a traversal-shaped filename would end up as a
+traversal-shaped entry name in the downloaded archive.
+
+Fixed by adding a `field_validator("filename")` to both `FilamentPresetCreate` and
+`FilamentPresetUpdate` in `backend/app/schemas/filament_profile.py`, sharing one
+`_validate_bare_filename` helper with the exact same predicate as
+`_validate_bambu_sync_presets` (empty, `".."`, `"/"`, or `"\\"` all rejected) so the storage
+boundary and the sync boundary can never disagree about what counts as bare. No route code
+changed; the validator raises before `create_filament_profile`/`update_filament_profile` ever
+run.
+
+Pydantic v2 does not run a field's validator against its own default when the field is
+omitted from the request body (confirmed empirically), so `FilamentPresetCreate.filename`'s
+`= ""` default and `FilamentPresetUpdate.filename`'s `= None` default both still pass through
+untouched when the client sends no `filename` at all — the existing "create/update without a
+filename" behavior (`test_create_defaults_absent_fields_to_empty`) is preserved unchanged. An
+*explicit* `filename: ""` (or `null` on update) does trigger the new check on create, and an
+explicit path-shaped string is rejected on update too; an explicit `filename: null` on update
+is deliberately let through the validator (returns early), because `null` is not a path-shaped
+value to reject — it flows into the existing, unrelated `value if value is not None else ""`
+write path the same as any other explicitly-nulled field on that endpoint, unchanged by this
+fix.
+
+user-approved 2026-08-26: "POST /filament-profiles and PATCH /filament-profiles/{id} would
+start returning 422 for filenames containing a slash, backslash or '..' that are accepted
+today, and any preset already stored with such a filename would fail its next save until
+renamed."
+
+Tests added in `backend/tests/integration/test_filament_profiles_api.py`:
+`test_create_rejects_non_bare_filename` and `test_patch_rejects_non_bare_filename`
+(parametrized over `"a/b.json"`, `"a\\b.json"`, `"../b.json"`, `""`, asserting `422` and, for
+the patch case, that the stored row is untouched by the rejected request), and
+`test_patch_explicit_null_filename_bypasses_bare_check` pinning the `null`-is-not-path-shaped
+carve-out above. No existing test posted a path-shaped `filename` on create/update, so nothing
+needed to change to adopt the new behavior.
+
+All 11 golden probes re-verified (`tools/snapshot.py verify`): all 11 match, including
+`fp-pydantic-schemas` — `field_validator` has no effect on `model_json_schema()` output (no
+`Field(...)` constraint was added), so the probe's captured JSON Schema is unchanged.
+`SURFACE.md` regenerated (`bash tools/gen_surface_fp.sh`) and diffed byte-for-byte identical:
+the schemas file's only `SURFACE.md` entry is a bare `grep -hoE "^class ..."` over class names,
+which doesn't see the new module-level `_validate_bare_filename` function or the new
+`field_validator` methods either way.
+
+`tools/coverage_fp.sh backend`: 481/482 = 99.79% statements (up from the 443/444 = 99.77%
+baseline; the extra denominator is the new validator code, fully covered by the tests above).
+Full backend suite: 12,425 passed, 1 skipped.
+
+## T-002 — 2026-08-26 — `FilamentPresetZohoSyncAttention.reason` tightened to a closed
+`Literal` (user-approved behavior change)
+
+`backend/app/schemas/filament_profile.py`'s `FilamentPresetZohoSyncAttention.reason` was a
+bare `str` with a comment listing its five legal values (`"no_match"`, `"ambiguous"`,
+`"no_price"` — mirroring `zoho_filaments.ProfileMatch.outcome` — plus the route's own
+`"bad_price"` and `"unwritable_content"`, both set directly in
+`api/routes/filament_profiles.py`'s zoho-sync handler, not part of `ProfileMatch.outcome`).
+This is the file's own established convention for a closed string enum elsewhere (15+
+`Literal[...]` hits across `backend/app/schemas/`), so it was tightened to
+`Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price"]` and the
+now-redundant three-value line of the comment was dropped (the two-value explanation for
+`"bad_price"`/`"unwritable_content"` stays, since it explains *why* they exist, not what the
+type is).
+
+**Deviation from the task's evidence:** the task specified narrowing to only the three
+`ProfileMatch.outcome` values (`"no_match"`, `"ambiguous"`, `"no_price"`), on the premise that
+"behavior for all currently-possible values is identical." That premise was false — the same
+route (`zoho-sync`, `filament_profiles.py:243` and `:262`) also constructs this model with
+`reason="bad_price"` and `reason="unwritable_content"` on every normal run where a matched
+item has an unusable price or a preset has unparseable content, and four existing tests in
+`backend/tests/unit/test_filament_profiles_zoho_sync.py` (lines 138, 167, 202, 302 pre-change)
+already assert exactly those two values coming back from a live `POST /zoho-sync` call. A
+3-value `Literal` would have turned those two currently-normal, currently-tested code paths
+into 500s instead of tightening only against a hypothetical future value, which is a real
+regression, not the approved change. The `Literal` was recorded with all five currently-used
+values instead, which achieves the task's actual intent (bare `str` + comment → closed enum,
+matching the file's convention) with zero behavior change for every value the route can
+produce today, and still fails closed on anything else (e.g. `ProfileMatch.outcome`'s own
+`"matched"`, which is never passed to this field, or any new value nobody has wired up yet).
+
+user-approved 2026-08-26: fail-closed `Literal` tightening; behavior for all currently-possible
+values is identical (given the corrected five-value set above).
+
+Tests added in `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+`test_attention_reason_accepts_every_value_the_route_can_set` (parametrized over all five
+legal values, constructing the model directly) and
+`test_attention_reason_rejects_an_unknown_value` (asserts `pydantic.ValidationError` for
+`reason="matched"`, `ProfileMatch`'s one outcome that is never routed to this field) — pinning
+the `Literal` closure itself, on top of the existing endpoint-level tests that already cover
+all five values round-tripping through the live API.
+
+`tools/snapshot.py verify`: 10/11 matched unchanged; `fp-pydantic-schemas` legitimately
+diffed — `model_json_schema()` now emits an `"enum"` array for `reason` — and was re-recorded
+via `tools/snapshot.py record` (only `snapshots/fp-pydantic-schemas.golden` changed; the other
+ten golden files were byte-identical after the re-record). `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`; its `FilamentPresetZohoSyncAttention` openapi-schema line
+picked up the same `"enum"` array and was updated, then re-diffed byte-identical.
+
+`tools/coverage_fp.sh backend`: 481/482 = 99.79% statements, 108/110 = 98.18% branches —
+unchanged from baseline (a `Literal` adds no new executable statements). Full backend suite:
+12,432 passed, 1 skipped (up from 12,425 passed, reflecting the two new tests above, one of
+them parametrized over five values).
+
+## T-010 — 2026-08-26 — `match_profile()`'s "ambiguous" outcome now caps the reported
+collision to 5 names plus a true count (user-approved behavior change)
+
+`match_profile()` (`backend/app/services/zoho_filaments.py`) reported every catalogue item
+sharing a profile's brand and material as `ProfileMatch.candidates` on the "ambiguous"
+outcome, with no cap. An operator with many hand-typed profiles whose colour string never
+appears in Zoho gets one attention entry per profile, each carrying the FULL same-brand-and-
+material colour range — worst case bounded only by `_MAX_PAGES x _PAGE_SIZE` (4000 items).
+`FilamentProfilesPage.tsx` rendered the whole list as one unwrapped `{candidates.join(', ')}`
+line, so a large collision turned the needs-attention report into an unreadable wall of names.
+
+Fixed by adding `_MAX_REPORTED_CANDIDATES = 5` to `zoho_filaments.py` and a new
+`ProfileMatch.candidates_total: int` field carrying the TRUE collision size. The "ambiguous"
+branch now returns `names[:_MAX_REPORTED_CANDIDATES]` for `candidates` and `len(names)` for
+`candidates_total`; every other outcome sets `candidates_total` to `len(candidates)` (0 for
+`no_match`, 1 for `matched`/`no_price`), so the field is always present and never a stale-
+looking sometimes-omitted value. `FilamentPresetZohoSyncAttention`
+(`backend/app/schemas/filament_profile.py`) gained the matching `candidates_total: int = 0`
+field, threaded through by `sync_filament_presets_from_zoho`
+(`backend/app/api/routes/filament_profiles.py`) for the `match.outcome != "matched"` branch;
+the route's other two attention constructions (`bad_price`, `unwritable_content`) already pass
+`candidates=[]` and now rely on the schema's `candidates_total=0` default, which is correct —
+zero candidates behind an empty list.
+
+Frontend: `FilamentProfilesPage.tsx`'s attention-list `<li>` now appends
+`t('common.plusNMore', { count: entry.candidates_total - entry.candidates.length })` whenever
+`candidates_total` exceeds the shown list length. No new i18n key was needed — `common.plusNMore`
+("+{{count}} more") already exists in all 14 locale files and is already used the same way
+elsewhere (`FileManagerPage.tsx`, `QueuePage.tsx`), so this task added zero translation keys.
+`frontend/src/api/client.ts`'s `FilamentPresetZohoSyncAttention` interface gained the matching
+`candidates_total: number` field (type-only).
+
+user-approved 2026-08-26: "the needs-attention list shows a truncated set of colliding item
+names plus a remainder count rather than every name."
+
+Tests added: `backend/tests/unit/test_zoho_filaments_match.py` —
+`test_ambiguous_collision_over_the_cap_is_truncated_with_a_true_total` (7 collisions -> exactly
+5 names + `candidates_total == 7`) and `test_ambiguous_collision_at_the_cap_is_not_truncated`
+(5 collisions -> all 5 + `candidates_total == 5`), plus `candidates_total` assertions added to
+the pre-existing no_match/ambiguous/no_price match tests. `backend/tests/unit/
+test_filament_profiles_zoho_sync.py` — `test_ambiguous_attention_caps_candidates_and_carries_
+the_true_total` pins the route threading the cap and the true total end-to-end through the live
+API. `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` — a new test renders an
+attention entry with 5 shown candidates and `candidates_total: 7`, asserting both the 5 names
+and the "+2 more" text appear.
+
+`tools/snapshot.py verify`: 7/11 matched unchanged; 4 legitimately diffed and were re-recorded
+via `tools/snapshot.py record` — `fp-pydantic-schemas` (the new `candidates_total` field in
+`FilamentPresetZohoSyncAttention`'s JSON Schema), `fp-match-decisions` (the empty-catalogue
+`ProfileMatch` repr now includes `candidates_total=0`), `fp-sync-endpoint` (every attention
+entry's `model_dump()` now includes `candidates_total`), and `fp-client-method` (the new field
+in the client's TypeScript interface). The other 7 golden files were byte-identical after the
+re-record. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: the new
+`_MAX_REPORTED_CANDIDATES` constant, the `candidates_total` property in the
+`FilamentPresetZohoSyncAttention` openapi-schema line, and `common.plusNMore` in the page's
+i18n-keys list were the only changes; applied.
+
+`tools/coverage_fp.sh backend`: 485/486 = 99.79% statements, 108/110 = 98.18% branches — same
+percentage as baseline (481/482 = 99.79%), denominator up by 4 for the new field/cap logic, all
+newly-added lines covered. `tools/coverage_fp.sh frontend`: 163/255 = 63.92% statements — equal
+to the baseline. Full backend suite: 12,435 passed, 1 skipped (one unrelated failure,
+`test_library_slice_api.py::TestSliceArchiveReslicedBedType::test_bed_type_lifted_from_sliced_
+output`, observed only under the coverage run's parallel load and confirmed to pass in
+isolation — a known suite flake, not caused by this change). Full frontend suite: 359 files,
+5120 tests passed.
+
+## T-015 — 2026-08-26 — a Zoho match with a name-inferred spool weight no longer auto-prices
+(user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`backend/app/api/routes/filament_profiles.py`) priced every
+confidently-matched preset from `match.product.cost_per_kg` without checking
+`FilamentProduct.weight_inferred`. That field is `True` when `zoho_filaments.parse_filament_name`
+found no weight token at all in the Zoho item's name and silently assumed 1 kg
+(`services/zoho_filaments.py:113-114`), so `cost_per_kg` for such an item is `dealer_price / 1.0`
+— a value with no real basis. If the vendor later renamed the item to add or change its weight
+suffix, the *next* sync would re-derive a different `cost_per_kg` from the same dealer price and
+silently rewrite every matching preset's stored cost. The pricing calculator's own Zoho sync
+(`api/routes/calculator.py:245`) already refuses exactly this: "The filament's own stored weight
+wins: re-deriving it from the Zoho name on every sync would let an upstream rename re-scale the
+price." This route had no equivalent guard.
+
+A match whose `product.weight_inferred` is `True` is now diverted to the attention list under a
+new reason, `"weight_unknown"`, before `apply_filament_cost` is ever called — the preset's price
+is left untouched (exactly as for `"no_match"`/`"ambiguous"`/`"no_price"`/`"bad_price"`/
+`"unwritable_content"`), and the operator can correct the situation upstream (give the Zoho item
+a real weight in its name) instead of the sync silently trusting an assumed one.
+
+Candidates/candidates_total convention for the new reason, chosen to be consistent with the
+existing `"no_price"` reason (also a single confidently-matched item, reported rather than
+auto-applied): `candidates=[match.product.name]`, `candidates_total=1` — the one matched item
+whose weight the operator needs to go verify, not an empty list (`"no_match"`/`"bad_price"`/
+`"unwritable_content"` use `[]` because there is no single item to point at).
+
+user-approved 2026-08-26: a profile matched to a Zoho item whose name carries no weight is
+reported for review instead of auto-priced; the sync UI gained a new attention reason to render.
+
+Obligations completed in this same change: `FilamentPresetZohoSyncAttention.reason` (`backend/
+app/schemas/filament_profile.py`) extended to
+`Literal["no_match", "ambiguous", "no_price", "unwritable_content", "bad_price",
+"weight_unknown"]`; the route's attention branch; the page's reason-to-i18n-key ternary in
+`frontend/src/pages/FilamentProfilesPage.tsx` gained an explicit `'weight_unknown'` branch (never
+falls through to the `"no_price"` default); a new i18n leaf, `filamentProfiles.
+syncZohoWeightUnknown`, added with real (non-placeholder) translations to all 13 locale files
+under `frontend/src/i18n/locales/`, verified by `node scripts/check-i18n-parity.mjs` and `npx
+vitest run src/__tests__/i18n`. `frontend/src/api/client.ts`'s `FilamentPresetZohoSyncAttention.
+reason` union type also gained `'weight_unknown'` (type-only; needed so the page's new ternary
+branch compiles) — the file is not itself in the campaign's coverage scope (a 265KB file shared
+by the whole app), but its type must track the API contract this task changed.
+
+Tests added: `backend/tests/unit/test_filament_profiles_zoho_sync.py` —
+`test_attention_reason_accepts_every_value_the_route_can_set` extended to the six-value set;
+`test_a_confident_match_with_an_inferred_weight_is_flagged_for_attention` (a lone
+`weight_inferred=True` match reports `"weight_unknown"` with `candidates=[item.name]`,
+`candidates_total=1`, and leaves the preset byte-identical); and
+`test_a_weight_inferred_profile_does_not_stop_healthy_profiles_from_being_priced` (a
+weight-inferred match and a normal match in the same batch: the healthy one still prices, the
+inferred one is reported exactly once, mirroring the existing bad-price sibling test). The
+shared `product()` test helper gained a `weight_inferred` parameter (default `False`, so every
+pre-existing call site — and `test_prices_a_confident_match` in particular — is unchanged and
+still prices normally). `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` — a new
+test (mirroring the T-018-era `bad_price`/`unwritable_content` tests) asserts a `weight_unknown`
+entry renders its own copy, never falls through to the `"no price"` text, and shows its single
+candidate name.
+
+`tools/snapshot.py verify`: 7/11 matched unchanged; 4 legitimately diffed and were re-recorded
+via `tools/snapshot.py record` — `fp-pydantic-schemas` (the widened `reason` enum in
+`FilamentPresetZohoSyncAttention`'s JSON Schema), `fp-i18n-sync-strings` (the new
+`syncZohoWeightUnknown` leaf in every locale), `fp-client-method` (the widened union in the
+client's TypeScript interface), and `fp-page-sync-ui` (the new ternary branch in the page's
+reason grep). `fp-match-decisions` and `fp-sync-endpoint` — the two probes that actually exercise
+`match_profile`/the live route — stayed MATCH unchanged, because neither probe's fixture
+catalogue contains a `weight_inferred=True` product; this is expected, not a gap, since those
+probes are frozen behavioral baselines for scenarios that predate this task. The other 5 golden
+files were byte-identical after the re-record. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: only the `FilamentPresetZohoSyncAttention` openapi-schema line's
+`reason` enum picked up `"weight_unknown"`; applied.
+
+`tools/coverage_fp.sh backend`: 488/489 = 99.80% statements, 110/112 = 98.21% branches — same
+percentage as baseline (485/486 = 99.79%; small denominator increase from the new branch, fully
+covered). Full backend suite: 12,438 passed, 1 skipped. `tools/coverage_fp.sh frontend`:
+163/255 = 63.92% statements — equal to the baseline (the new ternary branch nests inside an
+already-instrumented expression, so it added branch coverage but no new top-level statement; both
+its arms are exercised by the existing and new tests). Full frontend suite (via targeted +
+`src/__tests__/i18n` runs) all green; one unrelated pre-existing flake in
+`src/__tests__/pages/ArchivesPage.test.tsx` was observed once under parallel load and confirmed
+to pass in isolation — not touched by this change.
+
+## T-016 — 2026-08-26 — FilamentProfilesPage's mutating actions are now gated on the
+permission their own backend endpoint enforces (user-approved behavior change)
+
+`frontend/src/pages/FilamentProfilesPage.tsx` never imported `useAuth` or called
+`hasPermission`: every mutating control (Sync base, Import, Sync Zoho prices, Sync to PC, New
+preset, plus each preset's row menu and the editor's Save/Delete buttons) rendered for any
+authenticated user regardless of permissions. Backend enforcement was already correct
+(`RequirePermissionIfAuthEnabled` on every mutating route in `backend/app/api/routes/
+filament_profiles.py`), so a read-only user could click any of these and get a 403 toast — this
+was a defence-in-depth/UX gap, not a bypass, mirroring the pattern `CalculatorPage.tsx` already
+uses (`const canUpdateCalculator = hasPermission('calculator:update')`).
+
+Each control is now gated on the permission its own endpoint actually checks (grepped from
+`RequirePermissionIfAuthEnabled` in the route file):
+- Sync base (`POST /sync-base`, `FILAMENTS_UPDATE`) → `filaments:update`
+- Import (`POST /` per new file after the read-only `bambu-scan`, `FILAMENTS_CREATE`) →
+  `filaments:create`
+- Sync Zoho prices (`POST /zoho-sync`, `FILAMENTS_UPDATE`) → `filaments:update`
+- Sync to PC (`POST /bambu-sync`, dry-run and confirm both `FILAMENTS_UPDATE`) →
+  `filaments:update`
+- New preset (`POST /`, `FILAMENTS_CREATE`) → `filaments:create`
+- Export ZIP left ungated: it calls no backend endpoint (a client-side zip of already-loaded
+  preset data), so there is no permission to check.
+- Row menu (`PresetCard`): Edit → `filaments:update` (`PATCH /{id}`), Duplicate →
+  `filaments:create` (`POST /{id}/duplicate`, which creates a row), Delete → `filaments:delete`
+  (`DELETE /{id}`). The kebab menu button itself is hidden when none of the three are granted
+  (an empty menu is worse than no menu), and the divider before Delete only renders when an item
+  above it is also visible.
+- Editor modal (`PresetEditorModal`): a new `canSave` prop (default `true`, so the two existing
+  component tests that don't pass it are unaffected) hides the Save/Create button when the
+  relevant permission (`filaments:create` in create mode, `filaments:update` in edit mode) is
+  missing — Cancel stays reachable so a read-only user can still back out of a view-only editor.
+  The Delete button was already conditionally rendered via a nullable `onDelete` prop; the page
+  now passes `null` when `filaments:delete` is missing, same mechanism, no modal change needed.
+  Note: clicking a card still opens the editor (view mode) regardless of permission — only
+  Save/Delete inside it are gated — since viewing a preset's content is not itself a mutating
+  action and the list is already gated on `filaments:read` to be visible at all.
+
+`hasPermission` returns `true` unconditionally when auth is disabled (`AuthContext.tsx:229`), so
+auth-disabled installs see every control exactly as before — verified by a dedicated test.
+
+user-approved 2026-08-26: users holding only `filaments:read` no longer see the Sync base /
+Import / Sync Zoho prices / Sync to PC / New preset buttons or the row/editor mutating controls
+that were visible (and clickable, failing with a 403 toast) before; auth-disabled installs and
+users with the corresponding permissions are unaffected.
+
+Files touched: `frontend/src/pages/FilamentProfilesPage.tsx` (permission reads + gating),
+`frontend/src/components/filament-profiles/PresetCard.tsx` (new optional `canEdit`/
+`canDuplicate`/`canDelete` props, each defaulting to `true`), `frontend/src/components/
+filament-profiles/PresetEditorModal.tsx` (new optional `canSave` prop, defaulting to `true`).
+The route-level gap noted in the finding (`<Route path="filament-profiles"
+element={<FilamentProfilesPage />} />` in `App.tsx` has no `PermissionRoute`, unlike
+`calculator`) was left as-is: `App.tsx` was out of scope for this task, and the page itself
+already requires `filaments:read` to render anything from the list/scan endpoints — adding a
+route guard is a separate, larger change (it would need its own approved finding).
+
+Tests added: `frontend/src/__tests__/pages/FilamentProfilesPagePermissions.test.tsx` — a new
+file (mirroring `PrintersPageDropPermission.test.tsx`'s `vi.mock('../../contexts/AuthContext')`
+pattern) rather than editing the existing `FilamentProfilesPage.test.tsx`, because mocking
+`useAuth` applies to every test in the file and would otherwise change that file's
+auth-disabled baseline. Six tests: all five mutating header buttons hidden with only
+`filaments:read`; Export ZIP stays visible; the row kebab menu is absent entirely with no
+create/update/delete permission; the editor's Save button is absent (Cancel stays) for a
+read-only user opening an existing preset; only the row action matching a single granted
+permission (`filaments:update` → Edit only) renders; every control renders with all four
+`filaments:*` permissions granted; every control also renders on an auth-disabled install
+regardless of the (irrelevant) permission set. The existing `FilamentProfilesPage.test.tsx`
+(18 tests) was left unmodified and still passes unchanged — it runs with the real
+`AuthProvider` against the shared mock's `auth_enabled: false`, so `hasPermission` returns
+`true` for everything, same as before this change.
+
+`python3 tools/snapshot.py verify`: 11/11 MATCH, no re-record needed — `fp-page-sync-ui` (the
+only probe that greps `FilamentProfilesPage.tsx`) matches on lines containing `syncZoho`/
+`zohoSync`/`zohoSyncing`, and this change only wrapped existing JSX in a permission conditional
+without touching those identifiers or lines. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: byte-identical, no diff to apply (no exported symbol/interface in the
+page changed; `PresetCard`/`PresetEditorModal` are not in the surface's `R8`-`R11` grep set).
+
+`bash tools/coverage_fp.sh frontend` (scope: `frontend/src/pages/FilamentProfilesPage.tsx`
+only, per that script's FE_FILES list — `components/filament-profiles/**` is explicitly out of
+this scope): 167/259 = 64.47% statements, up from the 163/255 = 63.92% baseline (no drop; the
+new `hasPermission` calls and conditional branches added covered statements). Full frontend
+suite: 5,126/5,127 passed in the scoped coverage run, the one failure
+(`StatsPageUserFilter1894.test.tsx`) a documented load-flake confirmed to pass alone and
+unrelated to this change; a second full run (outside the coverage harness) surfaced the same
+class of flake in `PrintModal.test.tsx`/`ArchivesPage.test.tsx`/`ModelViewerModal.test.tsx`, all
+confirmed passing in isolation and none touching filament-profiles code.
+
+## T-031 — 2026-08-26 — the preset editor now closes reliably when Save succeeds (user-approved behavior change)
+
+`FilamentProfilesPage.tsx` renders `PresetEditorModal` with `key={editorState.mode === 'edit'
+? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}` : 'create'}` (added by loop-2
+for T-006, so a still-open editor picks up a preset changed elsewhere — e.g. a Zoho price sync
+completing — instead of showing the stale snapshot it was opened with). `PresetEditorModal`'s
+own `handleSave` does `await onSave(payload); requestClose();`, where `onSave` is the page's
+`handleSavePreset`, which awaits the API call and then `await
+queryClient.invalidateQueries({queryKey:['filamentPresets']})`. That invalidation's refetch
+returns the saved row with a new `updated_at` (the backend's PATCH bumps it), which changes the
+remount key computed above — React then unmounts the very modal instance whose
+`useDismissableDialog`-driven close (a `setClosing(true)` immediately, then a 220ms
+`setTimeout` before the actual `onClose`) was in flight. The unmount clears that pending
+timeout before it fires, so `onClose` (`() => setEditorState({ mode: 'closed' })`) never runs:
+the preset saves, the toast fires, and the editor stays open showing the just-saved values —
+only Cancel/Escape got out.
+
+Fixed in `frontend/src/pages/FilamentProfilesPage.tsx`'s `handleSavePreset`: it now calls
+`setEditorState({ mode: 'closed' })` itself, right after the create/update API call succeeds
+and before `invalidateQueries`, rather than only ever closing via the child's own
+`onClose` callback. This makes the close unconditional and independent of the child's
+220ms exit-animation timer and of whatever `updated_at` the subsequent refetch happens to
+return — the parent decides the editor is done, and stops rendering it, regardless of that
+race. The remount key itself is untouched, so T-006 (a still-open editor must refresh from a
+preset changed *elsewhere* while it's open) is unaffected: that scenario never sets
+`editorState` to `'closed'` at all, only `handleSavePreset`'s own save path does.
+
+user-approved 2026-08-26: "the preset editor will close again when Save succeeds, instead of
+staying open on the saved values as it does now." This restores the pre-T-006 close-on-save
+behavior; a separate task (T-032) will address dirty-editor conflict banners and was
+deliberately not touched here.
+
+Test added in `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: "closes the editor
+once Save succeeds, even though the refetch it triggers bumps updated_at (T-031)" — stubs a
+PATCH response and a GET refetch that both carry a bumped `updated_at` (the existing `preset()`
+fixture omits the field entirely, which is exactly why this bug shipped uncaught), opens the
+editor, clicks Save, and asserts the dialog is gone. Confirmed failing against the pre-fix code
+(`waitFor` times out with the dialog still present) and passing against the fix. The existing
+T-006 regression test ("re-syncs the open editor with fresh data when a Zoho sync updates the
+preset underneath it") was re-run unmodified and still passes, confirming the remount-key
+refresh path survives this change.
+
+`python3 tools/snapshot.py verify`: 11/11 MATCH, no re-record needed — no probe's captured
+output touches `handleSavePreset` or the editor's close path. `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`: byte-identical, no diff to apply.
+
+`bash tools/coverage_fp.sh frontend`: 173/260 = 66.53% statements, up from the 167/259 = 64.47%
+baseline (no drop). Full frontend suite (`./venv` n/a — `npx vitest run` / `test_frontend.sh`):
+5,125/5,128 passed; the 3 failures (`PrintModal.test.tsx` x2,
+`ArchivesPage.test.tsx` — "shows a toast when printer video ZIP preparation fails") are the
+documented load-flakes, confirmed passing in isolation (`npx vitest run
+src/__tests__/components/PrintModal.test.tsx src/__tests__/pages/ArchivesPage.test.tsx` — 116/116
+passed) and unrelated to this change.
+
+## T-034 — 2026-08-27 — a sync served from a stale Zoho catalogue now discloses that instead of reporting a plain success (user-approved behavior change)
+
+`fetch_catalogue()`'s two failure branches — the refresh-lock-busy timeout (line ~394-398) and
+the refresh-itself-raised path (line ~476-479) — both serve the previous `_cache` back to the
+caller with `_cache_at` left un-advanced, and with no upper bound on how old that cache is: a
+refresh token that has been dead for days, or a Zoho outage lasting hours, produces exactly the
+same return value as a live fetch. `POST /filament-profiles/zoho-sync` (the one caller in this
+codebase that WRITES what it gets, straight into stored preset content) called
+`_fetch_catalogue_or_502`, which forwarded that return value untouched and answered
+`FilamentPresetZohoSyncResponse(priced=..., unchanged=..., attention=[])` — a response
+indistinguishable from a fully live sync. The page turned that into a green "Priced N" toast
+(`FilamentProfilesPage.tsx`). An operator syncing during a Zoho outage was told it succeeded
+with today's prices when it had in fact just re-written every matched preset from however-old
+the last good catalogue happened to be.
+
+user-approved 2026-08-26 (DISCLOSE, not refuse): "a price sync run while Zoho is unreachable
+will report that its prices came from a stale catalogue (or refuse to write) instead of
+returning a plain success." The sync still runs and writes — refusing outright would make the
+feature unusable for the whole outage window — but the response and the UI now surface the
+staleness instead of hiding it.
+
+`fetch_catalogue()`'s public signature and return type are unchanged (`backend/app/api/routes/
+calculator.py` also calls it and is out of scope for this task): a new module-private global,
+`zoho_filaments._last_stale_serve_at`, is set to the stale copy's `_cache_at` at both
+failure-branch return points and cleared (`None`) at every genuine-fresh-cache and successful-
+refresh return point. `_fetch_catalogue_or_502` — the one in-scope caller, private, and with no
+direct test coverage of its own return shape prior to this — now reads that global immediately
+after `await fetch_catalogue(db)` returns (no `await` in between, so nothing else can run and
+overwrite it first) and returns `(catalogue, stale_since)` instead of a bare list.
+`sync_filament_presets_from_zoho` in `backend/app/api/routes/filament_profiles.py` unpacks that
+tuple and passes `stale_since` through as `FilamentPresetZohoSyncResponse.catalogue_stale_since:
+datetime | None = None` — additive and defaulted, so the OpenAPI change is backward compatible
+and old clients ignore it. `calculator.py` was not touched and calls only the untouched
+`fetch_catalogue`; its two call sites (search and calculator sync) are byte-identical.
+
+Frontend: `FilamentPresetZohoSyncResponse.catalogue_stale_since: string | null` added to
+`frontend/src/api/client.ts`. In `FilamentProfilesPage.tsx`'s `handleZohoSync`, `isFullSuccess`
+now also requires `!result.catalogue_stale_since`, so a stale sync never shows the green toast
+even when otherwise fully successful (nothing needing attention, something priced) — it shows
+the warning-yellow toast instead, with a new `filamentProfiles.syncZohoStale` string appended
+alongside the existing attention count. The below-the-fold summary panel gained its own
+amber stale notice with the same string and timestamp. The toast-message assembly was
+refactored from a ternary into an array-join to accommodate the extra optional segment; for
+every case with no staleness (all pre-existing tests) it produces the exact same joined string
+as before.
+
+i18n: `filamentProfiles.syncZohoStale` (one key, `{{timestamp}}` placeholder) added with real
+translations to all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`,
+`it`, `ja`, `ko`, `pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`) — `node scripts/check-i18n-parity.mjs`
+passes (13 locales, 7,076 leaves each, no parity/placeholder/identical-to-en failures) and
+`npx vitest run src/__tests__/i18n` passes (26/26).
+
+Tests added:
+- `backend/tests/unit/test_zoho_filaments_catalogue.py`:
+  `test_fetch_catalogue_or_502_reports_stale_since_when_serving_a_failed_refresh` (drives a real
+  refresh failure against an expired-but-present cache and asserts `_fetch_catalogue_or_502`
+  returns the pre-refresh `_cache_at` as `stale_since`),
+  `test_fetch_catalogue_or_502_reports_no_staleness_for_a_fresh_sync` (a genuine fresh fetch,
+  then a within-TTL cache hit, both report `None`), and an added assertion on the existing
+  `test_lock_acquire_timeout_serves_the_stale_cache_when_warm` confirming the lock-busy branch
+  also sets `_last_stale_serve_at`.
+- `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+  `test_stale_catalogue_discloses_its_age_instead_of_a_plain_success` (end-to-end through the
+  real HTTP route with a real expired warm cache and a failing `list_items_page`, asserting both
+  that the sync still wrote the price AND that `catalogue_stale_since` carries the expected
+  timestamp), plus an added assertion on the existing `test_prices_a_confident_match` that a
+  fresh sync's `catalogue_stale_since` is `null`.
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`:
+  "discloses a stale catalogue instead of reporting a plain success (T-034)" (mocked stale
+  response renders the warning-yellow toast with the timestamp and the summary-panel notice) and
+  "keeps the green success toast for a fresh sync with nothing left to disclose (T-034)" (mocked
+  fresh response, `catalogue_stale_since: null`, still renders the green toast — confirming the
+  pre-existing green path is not broken by this change; T-024's own dedicated green-toast test is
+  a separate task and was not implemented here).
+
+`python3 tools/snapshot.py verify` / `record`: 5 of 11 probes legitimately diffed
+(`fp-pydantic-schemas` and `fp-sync-endpoint` picked up the new additive field;
+`fp-i18n-sync-strings` and `fp-client-method` picked up the new key/field; `fp-page-sync-ui`
+picked up the toast/panel wiring) and were re-recorded; the other 6 (`fp-openapi`, `fp-ddl`,
+`fp-route-perms`, `fp-pricing-write`, `fp-match-decisions`, `calc-zoho-pure`) matched unchanged.
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: one new line,
+`filamentProfiles.syncZohoStale`, under "i18n keys read by FilamentProfilesPage.tsx"; applied.
+
+`bash tools/coverage_fp.sh backend`: 497/498 = 99.80% scoped statements (up from the 488/489
+baseline, same ratio, no drop; the one uncovered line, `zoho_filaments.py`'s `_score()` SKU-term
+branch, is pre-existing and untouched). `bash tools/coverage_fp.sh frontend`: 174/261 = 66.66%
+statements (up from the 173/260 baseline, no drop).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,442
+passed, 1 skipped. One incidental failure on a prior run
+(`test_aito_quote_sync.py::test_wake_drains_a_pending_project_without_waiting_for_the_interval`,
+`sqlalchemy.exc.InvalidRequestError: Could not refresh instance`) reproduced only under `-n 30`
+parallel load and passed cleanly both in isolation and on a clean re-run of the full suite
+(104/104 and 12,442/12,442 respectively) — the documented suite-load flake, unrelated to this
+change (Aito quote sync, not touched). `ruff check` / `ruff format --check` clean on every
+touched backend file. `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` clean on every
+touched frontend file.
+
+## T-021 — 2026-08-26 — calculator.py's Zoho routes migrated onto the shared
+`_fetch_catalogue_or_502` helper (user-approved, incl. scope extension to calculator.py)
+
+`backend/app/services/zoho_filaments._fetch_catalogue_or_502` (503 not-configured / 409
+lock-busy / 500 mapping-failure / 502 generic-unreachable) was introduced for
+`filament_profiles.py`'s Zoho sync route but `backend/app/api/routes/calculator.py`'s two
+older hand-rolled copies — `search_zoho_filaments` (`GET /calculator/zoho-filaments`) and
+`sync_calculator_filaments_from_zoho` (`POST /calculator/filaments/zoho-sync`) — were never
+migrated onto it. Both only caught `ZohoFilamentMappingError` (500) and a bare `except
+Exception` (502), so the lock-busy `RuntimeError` and the check-then-act `ZohoNotConfiguredError`
+race that the shared helper reports as 409 and 503 respectively both fell through to the
+generic 502 in the calculator, even though the same `fetch_catalogue` call underlies both
+modules and can raise either from the same failure.
+
+Fixed by replacing each route's `is_configured()` check + `try/except` block with a single
+call to `zoho_filaments._fetch_catalogue_or_502(db, context=...)`, unpacking the returned
+`(catalogue, stale_since)` tuple and discarding `stale_since` — a stale-catalogue disclosure
+feature for the calculator was not part of this task and is not added; the calculator's
+success-path response shape and data are unchanged. The now-unused `zoho_service` import was
+removed from `calculator.py`.
+
+user-approved 2026-08-26 (incl. one-file scope extension permitting this edit to
+`calculator.py`): "A client hitting GET /calculator/zoho-filaments or POST
+/calculator/filaments/zoho-sync while another Zoho catalogue refresh is in flight would now
+get 409 instead of 502, and would get 503 instead of 502 if Zoho credentials are cleared in
+the check-then-act window."
+
+A side effect of delegating to the shared helper: the failure-path log lines for both routes
+are now emitted from `backend.app.services.zoho_filaments` (the helper's own logger) rather
+than from `backend.app.api.routes.calculator` — the same place `filament_profiles.py`'s
+identical failures already log from. Response status codes and bodies are unaffected; two
+existing tests that asserted on the old logger name were updated to the new one.
+
+Tests added, mirroring `test_filament_profiles_zoho_sync.py`'s equivalent branches:
+`backend/tests/unit/test_calculator_zoho_routes.py`:
+`test_search_returns_503_when_credentials_are_cleared_mid_request` and
+`test_search_returns_409_when_a_sync_is_already_in_progress`.
+`backend/tests/unit/test_calculator_zoho_sync.py`:
+`test_sync_returns_503_when_credentials_are_cleared_mid_request` and
+`test_sync_returns_409_when_a_sync_is_already_in_progress`.
+Updated (logger name only, not the asserted status code): `test_upstream_failure_logs_a_stack_trace`
+and `test_mapping_failure_is_reported_as_internal_server_error` in `test_calculator_zoho_routes.py`;
+`test_sync_upstream_failure_returns_502_and_logs_a_stack_trace` and
+`test_sync_mapping_failure_returns_500_not_bad_gateway` in `test_calculator_zoho_sync.py`. All
+pre-existing 502/500/503 assertions for genuine unreachability, mapping failure, and
+not-configured-up-front kept passing unchanged.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match, including `calc-zoho-pure` (pure
+calculator logic, unaffected). `SURFACE.md` regenerated via `bash tools/gen_surface.sh`: no
+diff (route set unchanged).
+
+`bash tools/coverage_fp.sh backend`: 497/498 = 99.80% scoped statements (unchanged from
+baseline; `calculator.py` is not in the scoped list). Full backend suite (`pytest
+backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,446 passed, 1 skipped. One
+incidental failure on the first run
+(`test_library_slice_api.py::TestSliceArchiveReslicedThumbnail::test_falls_back_to_auxiliaries_when_source_lacks_plate_png`)
+reproduced only under `-n 30` parallel load and passed in isolation — the documented
+suite-load flake, unrelated to this change (library slice API, not touched). `ruff check` /
+`ruff format --check` clean on every touched backend file.
+
+## T-025 — 2026-08-26 — a sole colour-mismatched Zoho catalogue candidate no longer auto-prices
+a filament profile (user-approved behavior change)
+
+`match_profile()` (`backend/app/services/zoho_filaments.py`) accepted a SOLE brand+material
+candidate as a confident match regardless of its colour — the colour comparison lived entirely
+inside the `if len(candidates) > 1:` branch, so a single surviving candidate skipped it
+altogether. That rested on the premise, stated in the function's own docstring, that "price per
+kg does not vary by colour within a brand and material." The calculator's own docstring
+(`backend/app/api/routes/calculator.py:164-166`) directly contradicts that: dealer prices differ
+between colours of the same material (Bambu ABS-GF is 1866 in Blue and 3208 in Black). A
+catalogue holding a single Bambu ABS-GF (Blue, 1866) therefore silently wrote 1866 into a Bambu
+ABS-GF *Black* profile — breaking the route's own promise that "an auto-match can never silently
+write a wrong price" (`routes/filament_profiles.py:186-187`).
+
+Fixed per the finding: after narrowing to a sole candidate (whether it started as the only
+brand+material match, or survived a `> 1` colour narrowing), a NON-EMPTY profile colour must now
+equal the candidate's colour (same `_normalise()` used everywhere else in this function) or the
+outcome is `"ambiguous"` rather than `"matched"` — reusing the existing reason rather than adding
+a new one: the UI already renders candidates for `"ambiguous"`, and there genuinely is no single
+safe price for this profile in the catalogue. `candidates=[product.name]`, `candidates_total=1`
+for this new branch, consistent with how `"no_price"`/`"weight_unknown"` report a single item. A
+profile with an EMPTY/absent colour keeps today's behavior unchanged (the approval covers only
+the actively-disagreeing case, not the unknown one); a sole candidate whose colour matches keeps
+pricing exactly as before. Multi-candidate narrowing, no-match, and no-price logic are otherwise
+byte-identical.
+
+user-approved 2026-08-26: "profiles that today get an auto-priced filament_cost from a
+differently-coloured sole catalogue item will stop being priced and will instead appear in the
+sync's needs-attention list, so the run's `priced` count drops and the toast turns from success
+to warning on installs that relied on that loose match."
+
+Tests added/updated in `backend/tests/unit/test_zoho_filaments_match.py`:
+`test_sole_candidate_with_a_different_colour_is_ambiguous` (new: sole candidate, mismatched
+colour → `"ambiguous"`, `candidates=[item.name]`, `candidates_total=1`);
+`test_sole_candidate_with_the_same_colour_matches` (new: sole candidate, matching colour →
+`"matched"`, pinning that path stays unaffected);
+`test_sole_candidate_matches_when_the_profile_has_no_colour` (new: sole candidate, profile colour
+empty → `"matched"`, pinning today's behavior for the case the approval does not cover). The
+pre-existing `test_sole_candidate_matches_even_when_the_colour_differs` — which pinned the OLD,
+now-disallowed behavior — was replaced by the first new test above (renamed and its assertions
+flipped to the approved outcome) rather than left in place asserting the old contract.
+`backend/tests/unit/test_filament_profiles_zoho_sync.py` gained
+`test_sole_candidate_with_a_different_colour_is_left_unpriced` (route-level: the mismatch lands
+in the attention list with `reason="ambiguous"` and the preset's content is byte-identical
+afterward). No other existing test in either file relied on the old loose-acceptance behavior —
+every other case's catalogue product colour already matched its preset's colour by construction.
+
+`python3 tools/snapshot.py verify`: 9/11 matched unchanged; 2 legitimately diffed and were
+re-recorded via `tools/snapshot.py record` — `fp-match-decisions` (its fixture catalogue includes
+a sole Bambu Lab / PLA Basic candidate deliberately queried with a non-matching colour, and a
+sole no-price eSUN / PETG candidate likewise queried with a non-matching colour; both now report
+`"ambiguous"` instead of `"matched"`/`"no_price"`) and `fp-sync-endpoint` (its fixture catalogue's
+sole `Polymaker - PLA - Grey` item is matched by three presets whose stored colour is `"Any"`;
+all three now land in `attention` with `reason="ambiguous"` instead of being priced/reaching the
+content-write step, so `priced` drops from 2 to 1 in every scenario that preset appears in). Both
+diffs verified to be exactly this change and nothing else. `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`: byte-identical, no diff (reusing the existing `"ambiguous"`
+Literal value changed no schema, route, or frontend surface).
+
+`bash tools/coverage_fp.sh backend`: 500/501 = 99.80% scoped statements, 112/114 = 98.25% branches
+— same percentage as the baseline (497/498 = 99.80%; the denominator grew by the new branch,
+which is fully covered by the tests above). Full backend suite (`pytest backend/tests/ -n 30`,
+excluding `test_bambu_ftp.py`): 12,448 passed, 1 skipped. One incidental failure on this run
+(`test_scheduler_concurrent_dispatch.py::test_uploads_to_different_printers_overlap`) reproduced
+only under `-n 30` parallel load and passed cleanly in isolation — the documented suite-load
+flake, unrelated to this change (printer job scheduler, not touched). `ruff check` / `ruff format
+--check` clean on every touched backend file.
+
+## T-026 — 2026-08-26 — `POST /filament-profiles/bambu-sync` non-dry-run now also requires
+filaments:delete, and rejects an empty preset list (user-approved behavior change)
+
+`bambu_sync()` (`backend/app/api/routes/filament_profiles.py`) gated the whole route on
+`Permission.FILAMENTS_UPDATE` only, but its non-dry-run branch calls `apply_sync()`
+(`backend/app/services/bambu_studio.py`), documented as "Mirror *presets* into every user
+preset folder, removing anything not incoming" — it unlinks any on-disk `.json` not in the
+incoming list. A caller holding only `filaments:update` could therefore delete files
+`filaments:update` never authorised removing. Because `_validate_bambu_sync_presets` accepts
+an empty list without complaint, `POST /filament-profiles/bambu-sync {"presets": [],
+"dry_run": false}` wiped every preset in every configured Bambu Studio filament directory —
+the whole folder gone via a well-formed, permission-checked request.
+
+Fixed per the finding, inside the handler rather than as a second `RequirePermissionIfAuthEnabled`
+dependency (dry-run must stay `filaments:update`-only; only the non-dry-run branch needs the
+extra check). Follows the precedent in `routes/github_backup.py::restore_backup`, which gates
+one dependency-level permission (`github:restore`) and then does a manual
+`current_user.has_all_permissions(...)` check per-category inside the handler body, raising a
+403 with the same `f"Missing required permissions: {...}"` detail shape the shared
+`require_permission_if_auth_enabled` dependency itself uses. The route now captures the
+dependency's `User | None` as `current_user` (was discarded as `_`) and, only on the non-dry-run
+branch, requires `Permission.FILAMENTS_DELETE.value` when `current_user is not None`.
+`current_user is None` covers both "auth disabled" (nothing to check, matching the dependency's
+own behavior) and "authenticated via API key" — `filaments:update`/`filaments:delete` are both
+unmapped in `_APIKEY_SCOPE_BY_PERMISSION` (`backend/app/core/auth.py`), so `authorize_api_key()`
+inside the dependency already 403s any API key before the handler runs; the extra check only
+ever fires for a JWT user. Separately, the non-dry-run branch now rejects an empty `presets` list
+outright with `400`, before calling `apply_sync` — dry-run with an empty list stays allowed
+unchanged (it only computes `stats.removed`, touching no files, so there is nothing destructive
+to gate).
+
+user-approved 2026-08-26: "a user or integration holding filaments:update but not
+filaments:delete will start getting a 403 from Sync-to-PC instead of having their Bambu Studio
+preset folder mirrored, and a non-dry-run call with an empty preset list will be rejected rather
+than clearing the folder."
+
+Frontend: `FilamentProfilesPage.tsx` already gated the Sync-to-PC button on `filaments:update`
+(T-016) and already computes `canDeletePreset` (used by the per-preset delete action). The
+Sync-to-PC button itself is unchanged — dry-run preview stays reachable for an update-only user
+— but `SyncModal` (`frontend/src/components/filament-profiles/SyncModal.tsx`) gained an optional
+`canConfirm` prop (defaults to `true`, so no other caller's behavior changes — it has none) that
+disables the Confirm button and shows a new `filamentProfiles.syncConfirmNeedsDelete` message
+when `false`, so an update-only user sees why Confirm is disabled instead of clicking it and
+hitting the new 403 blind. `FilamentProfilesPage.tsx` passes `canConfirm={canDeletePreset}`.
+
+Tests added: `backend/tests/integration/test_filament_profiles_api.py` —
+`test_bambu_sync_non_dry_run_requires_delete_permission` (JWT user with only `filaments:update`
+→ 403, folder untouched), `test_bambu_sync_non_dry_run_with_delete_permission_still_works`
+(both permissions → 200, unchanged behavior), `test_bambu_sync_non_dry_run_empty_presets_rejected`
+(empty list + `dry_run: false` → 400, folder untouched),
+`test_bambu_sync_dry_run_empty_presets_still_allowed` (empty list + `dry_run: true`, update-only
+permission → 200, pinning today's dry-run behavior). Helpers `_setup_admin` /
+`_create_user_with_perms` mirror `_create_operator_with_perms` in
+`test_users_groups_privilege_escalation.py` — a custom group carrying exactly the permission
+strings under test, nothing implied by a built-in group. Frontend:
+`frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` gained a test (mirroring the
+`mockAuthUser` pattern in `FileManagerFolderDelete.test.tsx`) asserting an authenticated user with
+only `filaments:update` still sees the dry-run preview but gets a disabled Confirm button and the
+new permission message; the mock `bambu-sync` handler additionally asserts every request it
+receives has `dry_run: true`, so the test also fails if the execute call fired.
+
+`python3 tools/snapshot.py verify`: 10/11 matched unchanged; `fp-i18n-sync-strings` legitimately
+diffed (the new `syncConfirmNeedsDelete` key across all 13 locales) and was re-recorded via
+`tools/snapshot.py record`. `fp-sync-endpoint` and `fp-page-sync-ui` are both Zoho-price-sync
+probes (`sync_filament_presets_from_zoho` / the page's `syncZoho*` wiring) — unrelated to
+`bambu_sync` — and matched unchanged, as expected. `SURFACE.md` regenerated via
+`bash tools/gen_surface_fp.sh`: byte-identical, no diff (`fp_i18n_keys.sh` only scans
+`FilamentProfilesPage.tsx`, and the new key is read from `SyncModal.tsx`; the
+`RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE)` grep count on `bambu_sync` is
+unchanged because the new delete check is a manual in-handler call, not a second dependency).
+
+`bash tools/coverage_fp.sh backend`: 504/505 = 99.80% scoped statements (same percentage as the
+500/501 baseline; `filament_profiles.py` itself is 100% covered), 116/118 = 98.31% branches. Full
+backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,453 passed, 1
+skipped. `bash tools/coverage_fp.sh frontend`: 174/261 = 66.66% statements — identical to
+baseline (the new `canConfirm={canDeletePreset}` JSX attribute reuses an existing variable and
+adds no new statement/branch to the scoped file; `SyncModal.tsx` is outside this campaign's
+frontend scope, per `coverage_fp.sh`'s own documented scope decision to exclude
+`frontend/src/components/filament-profiles/**`). One incidental failure
+(`ArchivesPage.test.tsx > ... > shows a toast when printer video ZIP preparation fails`)
+reproduced only under parallel load and passed cleanly alone — the documented suite-load flake,
+unrelated to this change (archives page, not touched). `ruff check` / `ruff format --check` /
+`npx tsc --noEmit` / `npm run lint` clean on every touched file.
+
+## T-027 — 2026-08-27 — `POST /filament-profiles/zoho-sync` now also requires
+calculator:update, and the sync button is gated on both (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`backend/app/api/routes/filament_profiles.py`) gated on
+`Permission.FILAMENTS_UPDATE` alone, yet it reaches the same Zoho catalogue that every other
+Zoho-catalogue route protects with `Permission.CALCULATOR_UPDATE` (`search_zoho_filaments` and
+`sync_calculator_filaments_from_zoho` in `backend/app/api/routes/calculator.py`). A custom role
+holding only `filaments:update` therefore gained read access to upstream Zoho item names
+(`candidates` in the response) and the ability to drive the outbound paged Zoho walk (up to
+`_MAX_PAGES` x `_PAGE_SIZE`, `zoho_filaments.py`) — access no other part of the permission model
+granted it.
+
+Fixed per the finding's first option: the route's dependency now requires BOTH permissions —
+`RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE, Permission.CALCULATOR_UPDATE)`.
+Verified `require_permission_if_auth_enabled`'s varargs are all-must-pass by reading
+`backend/app/core/auth.py`: the JWT branch calls `user.has_all_permissions(*perm_strings)`, and
+the API-key branch calls `authorize_api_key(db, api_key, perm_strings)` with `require_any`
+defaulted to `False` (contrast `require_any_permission_if_auth_enabled`, which explicitly passes
+`require_any=True`) — so adding a second permission narrows access, it does not create an
+any-of. A dedicated `zoho:read` permission (the finding's second option) was rejected as
+explicitly not approved — a new permission is a much bigger surface (API-key classification,
+migrations, role editors) for the same outcome.
+
+API-key posture check: both `Permission.FILAMENTS_UPDATE` and `Permission.CALCULATOR_UPDATE` are
+already in `_APIKEY_DENIED_PERMISSIONS` (`backend/app/core/auth.py`) and neither appears in the
+`_APIKEY_SCOPE_BY_PERMISSION` allowlist. The route was already unreachable via API key (denied on
+`FILAMENTS_UPDATE` alone); adding `CALCULATOR_UPDATE` does not widen or narrow that posture.
+
+user-approved 2026-08-26: "members of a custom role that holds filaments:update but not
+calculator:update will see the Zoho price-sync request start returning 403, and their sync
+button (already gated on filaments:update in FilamentProfilesPage) would need the same second
+check or it will 403 on click."
+
+Frontend: `FilamentProfilesPage.tsx` already gated the "Sync prices from Zoho" button on
+`canUpdatePreset` (`filaments:update`, T-016). Added `canSyncZohoPrices = canUpdatePreset &&
+hasPermission('calculator:update')` and switched the button's gate to it, matching the backend
+exactly. Auth-disabled installs are unaffected (`hasPermission` always returns `true`).
+
+Tests added: `backend/tests/integration/test_filament_profiles_api.py` —
+`TestFilamentProfilesZohoSyncPermissions` with `test_zoho_sync_requires_calculator_update_on_top_of_filaments_update`
+(JWT user with only `filaments:update` → 403 naming `calculator:update` in the detail) and
+`test_zoho_sync_works_with_both_permissions` (both permissions → 200), mirroring the
+`_setup_admin` / `_create_user_with_perms` helper pattern already used by the T-026 bambu-sync
+permission tests in the same file (a Zoho catalogue fetch is stubbed via `monkeypatch` so the
+test never calls out to the network). `backend/tests/unit/test_route_auth_coverage.py` needed no
+change — it only asserts every route has *some* auth dependency, not which permissions. Frontend:
+`frontend/src/__tests__/pages/FilamentProfilesPagePermissions.test.tsx` gained a
+`describe('zoho price sync button (T-027 ...)')` block asserting the button is hidden with only
+`filaments:update` and shown with both permissions; the pre-existing "shows every mutating
+control when the user holds every filaments permission" test was updated to assert the zoho-sync
+button is now absent for a filaments-only role (it previously asserted the button visible under
+that grant, which the approved behavior change makes incorrect).
+
+`python3 tools/snapshot.py verify`: 10/11 matched unchanged; `fp-route-perms` legitimately diffed
+(the `RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE)` count on filament_profiles.py
+dropped from 4 to 3, and a new `RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE,
+Permission.CALCULATOR_UPDATE)` line appeared) and was re-recorded via `tools/snapshot.py record`.
+`fp-sync-endpoint` matched unchanged — the probe calls `sync_filament_presets_from_zoho()`
+directly as a coroutine rather than over HTTP (by design, documented in the probe's own
+docstring: "the permission gate ... [is] frozen separately"), so it never exercises the
+dependency and is blind to this change. `fp-page-sync-ui` matched unchanged — its grep only
+matches lines containing `syncZoho`/`zohoSync`/`zohoSyncing`, none of which the new
+`canSyncZohoPrices` guard line touches. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`:
+one legitimate line changed, mirroring the `fp-route-perms` count (`RequirePermissionIfAuthEnabled
+(Permission.FILAMENTS_UPDATE)` 4 → 3); the two-permission call is invisible to that grep's regex
+(`Permission\.[A-Z_]+\)` requires an immediate close-paren, so a comma-separated multi-permission
+call doesn't match at all) — a pre-existing blind spot in the frozen generator script, not
+something this change could paper over without touching `tools/`.
+
+`bash tools/coverage_fp.sh backend`: 504/505 = 99.80% scoped statements (identical to baseline),
+116/118 = 98.31% branches; full backend suite: 12,455 passed, 1 skipped. `bash tools/coverage_fp.sh
+frontend`: 175/262 = 66.79% statements (baseline 174/261 = 66.66% — the new `canSyncZohoPrices`
+statement is exercised by both new T-027 tests, so coverage did not drop); full frontend suite:
+360 files, 5,133 tests, all passed. `ruff check` / `ruff format --check` / `npx tsc --noEmit` /
+`npx eslint` clean on every touched file.
+
+## T-028 — 2026-08-27 — `FilamentPresetCreate`/`FilamentPresetUpdate` now cap `content` and every
+short text field instead of accepting unbounded input (user-approved behavior change)
+
+`FilamentPresetCreate`/`FilamentPresetUpdate` (`backend/app/schemas/filament_profile.py`) put no
+`max_length` on `content` or on `name`/`brand`/`material`/`color`/`color_hex`/`filename`, and the
+app registers no body-size middleware (`backend/app/main.py` has no `add_middleware` for a size
+limit). `sync_filament_presets_from_zoho()` (`routes/filament_profiles.py`) then materialises
+every stored row at once (`presets = result.scalars().all()`) and hands each `preset.content` to
+`json.loads` plus a re-`json.dumps(..., indent=4)` (`filament_profile_pricing.py`), so a caller
+holding only `filaments:create` could store a handful of very large blobs and make every later
+`/zoho-sync` request hold several multiples of that in memory. Distinct from the already-fixed
+nesting/RecursionError finding: that one bounds depth, this one bounds size, and the
+RecursionError guard does not bound allocation.
+
+**Ceiling measured from evidence, not guessed.** A locally installed Bambu Studio.app ships 2,054
+`*.json` files under `.../profiles/BBL/filament`; every individual per-filament preset (the shape
+`content` actually stores — e.g. `"Bambu ABS @BBL A1 0.2 nozzle.json"`) tops out at **5,164 bytes**
+(`"Bambu TPU 90A @BBL H2D 0.6 nozzle.json"`), average 1,604 bytes across all 2,054 files. The
+handful of larger files in that same directory (`filaments_color_codes.json` 228,827 bytes,
+`filament_name_map.json` 16,181 bytes, `support_recommended_params.json`,
+`fdm_filament_common.json`, `filament_id_map.json`) are shared lookup/template tables the slicer
+reads internally — confirmed by inspecting one (`filaments_color_codes.json` parses to
+`{"data": ..., "total": ...}`, no `name`/`inherits`/`filament_vendor` keys at all) — never a single
+selectable preset's `content`, and `scan_user_presets()` only reads the separate per-user preset
+folder, not this bundle directory, so they are not representative of what actually flows through
+the create/update body. Picked **262,144 bytes (256 KiB)** for `content`: ~50x the measured
+real-world maximum (5,164 B), clearing the "generous margin" bar (design note asked for ≥20x) by
+a wide margin so no real preset — imported from disk or hand-authored — can ever 422.
+
+**Short text fields.** The backing columns (`backend/app/models/filament_profile.py`) are
+unbounded SQLAlchemy `String` (TEXT in SQLite; no existing DB-layer length to match). Picked
+**200** for `name`/`brand`/`material`/`color` — every real preset's corresponding value measured
+above is well under 60 characters, so 200 is generous headroom, not a tight fit. `color_hex` is
+always a normalized CSS hex colour (`"#RRGGBB"`/`"#RRGGBBAA"`, <= 9 characters — see
+`normalizeColorHex` in `frontend/src/components/filament-profiles/presetJson.ts`); picked **32** to
+leave room for a hand-edited value while staying far below the unbounded column. `filename`'s real
+maximum measured above is 52 characters (`"Bambu Support For PLA-PETG @BBL H2DP 0.6
+nozzle.json"`); picked **255**, the common filesystem max-filename-length convention, comfortably
+above that measured maximum.
+
+Applied to both `FilamentPresetCreate` and `FilamentPresetUpdate` (the latter's fields are
+`X | None` — `Field(None, max_length=...)` caps the non-null branch without changing the
+already-optional default). Response models (`FilamentPresetResponse`, `BaseContentResponse`,
+`BambuScanFile`, ...) were left untouched on purpose: a row already stored above a cap (from
+before this change shipped) must still read back in full; only *writing* a new value above the
+cap is rejected. Checked `BambuSyncRequest`/`BambuScanFile` (the "Sync to PC" disk-mirroring
+path) too: `presets: list[Any]` is validated manually in `_validate_bambu_sync_presets`
+(isinstance + bare-filename checks only), not through a Pydantic field type, and that endpoint
+writes straight to the user's own local Bambu Studio directory — it never accumulates rows in one
+Python process the way `/zoho-sync`'s `result.scalars().all()` does, so leaving it uncapped does
+not reintroduce the memory-multiplication risk this task targets. Left it out of scope rather than
+inventing a new manual-validation cap beyond the schema fix the finding actually asked for.
+
+user-approved 2026-08-26 (verbatim): "a create or patch whose content exceeds the new cap will
+return 422 instead of 200, so any client that was storing oversized blobs (including the page's
+disk-import loop, which would count those files as failed imports) stops being able to save them."
+
+Frontend `handleImport`'s per-file disk-import loop (`frontend/src/pages/FilamentProfilesPage.tsx`)
+was verified, not modified: each file's `api.createFilamentPreset(payload)` call is already inside
+its own `try { ok += 1 } catch { failed += 1 }`, so a 422 from an over-cap file is silently
+absorbed into the existing `failed` counter and surfaced via the existing `importPartial` toast
+(`{ok, failed}`) — exactly the approved description's expectation. No frontend change needed or
+made.
+
+Tests added in `backend/tests/integration/test_filament_profiles_api.py`
+(`TestFilamentProfilesCrud`): `test_create_accepts_content_at_cap` /
+`test_create_rejects_content_over_cap` / `test_patch_rejects_content_over_cap` (262,144 chars ->
+200, 262,145 -> 422 on both create and patch, plus a check that a rejected patch left the stored
+row untouched) and `test_create_accepts_name_at_cap` / `test_create_rejects_name_over_cap` /
+`test_patch_rejects_name_over_cap` (200 chars -> 200, 201 -> 422) as the representative short-field
+boundary case.
+
+Snapshot fallout: `fp-pydantic-schemas` mismatched as expected (`model_json_schema()` emits
+`maxLength` in JSON Schema) — diffed golden vs. current before re-recording and confirmed the only
+change was 14 new `"maxLength": N` entries (7 fields x `FilamentPresetCreate`/
+`FilamentPresetUpdate`), nothing else; re-recorded via `tools/snapshot.py record`, all 11 fp-scope
+probes now match. `fp-openapi` was unaffected (matched both before and after) — that probe only
+captures `spec["paths"]`, where request bodies are a `$ref` to the components schema, not the
+inlined body. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`; diffed old vs. new
+before committing and confirmed the only two changed lines are the `FilamentPresetCreate`/
+`FilamentPresetUpdate` OpenAPI-schema-body lines in section 6, each gaining the same 7
+`"maxLength"` entries — no class added/removed, no other section moved.
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/integration/test_filament_profiles_api.py
+backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 66 passed. `bash
+tools/coverage_fp.sh backend`: 508/509 = 99.80% scoped statements (baseline 504/505 = 99.80%,
+percentage held, 4 new schema-file statements all covered), 116/118 = 98.31% branches; full
+backend suite: 1 failed (`test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`,
+unrelated to this change — passed in isolation on a re-run, a known suite-load flake), 12,460
+passed, 1 skipped. `ruff check` / `ruff format --check` clean on every touched Python file.
+Frontend untouched, per the briefing.
+
+## T-032 — 2026-08-27 — a dirty preset editor no longer silently discards unsaved edits when a background refetch lands (user-approved behavior change)
+
+`FilamentProfilesPage.tsx` renders `PresetEditorModal` under
+`key={editorState.mode === 'edit' ? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}`
+: 'create'}` (T-006), so a background refetch that bumps the open preset's `updated_at` — another
+operator's sync, or React Query's `refetchOnWindowFocus` after tabbing away — remounts the whole
+modal with fresh initial state. `PresetEditorModal` holds all in-progress edits (`form`, `dirty`,
+`rawJson`) purely in local `useState`, so that remount silently replaces them with the server copy
+with no prompt, no toast, and no way to recover the typed text. T-006's fix must survive for the
+clean case (a still-open, untouched editor should keep re-syncing to fresh data), so the fix could
+not simply stop keying on `updated_at`.
+
+Fixed by freezing the remount key for as long as the editor is dirty, and having the still-mounted
+modal detect and surface a server-side change instead of silently applying or discarding it:
+
+- `PresetEditorModal` gained an `onDirtyChange?: (dirty: boolean) => void` prop, fired from a
+  `useEffect` on its own `dirty` state. It also gained a `syncedUpdatedAtRef` tracking the
+  `updated_at` its current `form`/`baseData` were derived from, and a `serverConflict` flag set by
+  a `useEffect` on `[preset, dirty]`: while `dirty`, if the incoming `preset.updated_at` moves away
+  from `syncedUpdatedAtRef.current`, `serverConflict` is set instead of touching `form`. A new
+  banner (`role="alert"`, amber, `AlertTriangle` icon) renders above the tab content whenever
+  `serverConflict` is true, with a "Reload from server" button wired to a new
+  `handleReloadFromServer`, which re-derives `baseData`/`form` from the current (already-fresh)
+  `preset` prop via a new `buildFormFromPreset()` helper (extracted from the mount-time
+  `useState` initializers so the two can never drift), re-resolves `inherits` the same way mount
+  does, clears `rawJson`/`jsonError`/`serverConflict`, and sets `dirty` back to `false`.
+- `FilamentProfilesPage` now keeps `liveEditKeyRef` (always mirroring the up-to-date
+  `presetId-updated_at` key, assigned during render) and `frozenEditKey` state. A stable
+  `handleEditorDirtyChange` callback (`useCallback` with an empty dep array, so the modal's own
+  dirty-notify effect never re-fires spuriously) sets `frozenEditKey` to the ref's current value
+  when the modal reports `dirty=true`, and clears it to `null` on `dirty=false`. The element's
+  `key` is `frozenEditKey ?? liveKey`, so a background `updated_at` bump no longer changes the key
+  — and therefore no longer remounts the modal — while it is dirty. A small `useEffect` on
+  `[editorState]` resets `frozenEditKey` on every open/close/preset-switch so a freeze can never
+  leak into the next editor instance. The non-dirty path is untouched: with `frozenEditKey` null,
+  the key still tracks `updated_at` exactly as before, so T-006's remount-and-refresh behavior for
+  a clean editor is unaffected. T-031's save-then-close is likewise unaffected: `handleSavePreset`
+  still sets `editorState` to `'closed'` unconditionally on success, which stops rendering the
+  modal (and resets the freeze via the same `[editorState]` effect) independent of dirty state or
+  the frozen-key mechanism.
+
+user-approved 2026-08-26 (verbatim): "an editor with unsaved edits will no longer silently reset
+to server data when a sync or refetch lands; the user will see a conflict banner and keep their
+typing until they choose to reload."
+
+Two new i18n keys added to all 13 locale files under `filamentProfiles`:
+`serverChangedBanner` (the banner text) and `serverChangedReload` (the reload button label) — real
+translations, not English placeholders.
+
+Tests added:
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: "keeps unsaved edits and shows a
+  conflict banner when a background refetch changes the preset, then adopts the server copy on
+  reload (T-032)" — mirrors the existing T-006 fixture (a GET handler answering differently
+  before/after a Zoho sync, with a bumped `updated_at`), types into the Color field before running
+  the sync, asserts the typed value and the pre-sync cost both survive and the banner appears, then
+  clicks "Reload from server" and asserts the fresh cost is adopted and the banner clears.
+- `frontend/src/__tests__/components/filament-profiles/PresetEditorModal.test.tsx`: "reports dirty
+  via onDirtyChange, ignores a changed preset while clean, and holds+banners it while dirty until
+  Reload is clicked (T-032)" — a component-level test using `rerender` to change the `preset` prop
+  directly: confirms `onDirtyChange` fires `false` on mount and `true` on the first edit, confirms
+  no banner appears from a changed `preset` while clean, confirms the typed value and the banner
+  both appear once the same kind of change lands while dirty, and confirms Reload adopts the fresh
+  copy (color reverts to the fixture's own value) and reports `dirty=false`.
+- The existing T-006 test ("re-syncs the open editor with fresh data when a Zoho sync updates the
+  preset underneath it") and the T-031 test ("closes the editor once Save succeeds...") were
+  re-run unmodified and still pass, confirming both pinned behaviors survive.
+
+`python3 tools/snapshot.py verify`: 11/11 MATCH, no re-record needed — no probe's captured output
+touches the editor's dirty/remount-key/banner logic. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: byte-identical, no diff to apply (neither the page's top-level exports
+nor the `t('...')` keys it reads directly changed — the new i18n keys are read by
+`PresetEditorModal.tsx`, which `gen_surface_fp.sh`'s `R11`/`fp_i18n_keys.sh` does not scan).
+
+`bash tools/coverage_fp.sh frontend`: 183/270 = 67.77% statements, up from the 175/262 = 66.79%
+baseline (no drop; `coverage_fp.sh`'s frontend scope is `FilamentProfilesPage.tsx` only —
+`PresetEditorModal.tsx` is explicitly out of that gate's scope per the script's own comments, even
+though it's in this task's SCOPE). `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` on both
+touched production files and both touched test files: clean. Full frontend suite (`npx vitest run`
+/ `test_frontend.sh`): two runs, 5,135 tests total each time; failures were 6 and 4 respectively,
+always in `PrintModal.test.tsx` and/or `StatsPageUserFilter1894.test.tsx` / `ArchivesPage.test.tsx`
+— never in a filament-profiles file — and each failing file was re-run alone and passed in full,
+confirming the documented parallel-load flake and no new failures from this change.
+
+## T-033 — 2026-08-27 — a Zoho price sync that hangs forever now times out, errors, and re-enables the button (user-approved behavior change)
+
+`handleZohoSync()` (`frontend/src/pages/FilamentProfilesPage.tsx`) awaited
+`api.syncFilamentPresetsFromZoho()`, and that call issued a bare `fetch()` with no `signal` and
+no client-side timeout (`api/client.ts`). The backend route can legitimately run for minutes on
+a cold cache (`zoho_filaments.py`'s own comment: "20 pages x 2 attempts x 10s = ~400s"), and
+during that whole window the only feedback was a greyed-out button — the sibling Sync-Base
+button swaps in a `Loader2` spinner and a "Syncing base…" label while it runs, but the Zoho
+button's icon and label never changed. Worse, if the connection dropped without a reset (a
+proxy idle-kill, the laptop sleeping), the `fetch()` promise never settled, so
+`finally { setZohoSyncing(false) }` never ran: the button stayed disabled for the rest of the
+page session, with no error and no way to retry short of a full reload.
+
+user-approved 2026-08-26: "a Zoho sync that runs past the new deadline will end with an error
+toast and a re-enabled button instead of appearing to run forever."
+
+Deadline chosen: 10 minutes (`ZOHO_SYNC_DEADLINE_MS = 600_000`). `zoho_filaments.py`'s own
+comment documents a ~400s (6m40s) cold-cache worst case for the underlying catalogue walk; 10
+minutes leaves roughly 1.5x headroom above that so a legitimate slow sync is never killed by
+the new deadline, while a connection dropped without a reset still recovers the button instead
+of leaving it dead until the user reloads the page.
+
+Implementation: `api.syncFilamentPresetsFromZoho` (`frontend/src/api/client.ts`) now takes an
+optional `signal?: AbortSignal`, forwarded to `request()`'s `fetch()` call exactly like the
+existing `signal`-accepting methods (e.g. `downloadPrinterFilesAsZip`) — no change to
+`request()` itself, since `RequestInit` already carries `signal` through. `handleZohoSync`
+creates an `AbortController`, arms a `setTimeout(() => controller.abort(), 600_000)` before the
+call and clears it in `finally`, and passes `controller.signal` through. On catch, an aborted
+request is detected by `error.name === 'AbortError'` (checked via `error instanceof Error`
+rather than `instanceof DOMException`, since the abort error's concrete class differs across
+fetch implementations — confirmed empirically: this environment's `fetch()` rejects with an
+`Error` named `AbortError` that is not a `DOMException` instance) and shown with the existing
+generic `filamentProfiles.syncZohoFailed` toast ("Could not sync prices from Zoho") rather than
+the aborted fetch's own raw message, so the abort path never double-toasts through the
+`error instanceof Error ? error.message : ...` generic branch with an unlocalized string. No new
+toast-copy key was needed — `syncZohoFailed` already existed as the sync-failure fallback and
+reads correctly for a timeout too.
+
+The button itself now mirrors `handleSyncBase`'s icon-swap: `zohoSyncing` renders a spinning
+`Loader2` and a new `filamentProfiles.syncingZoho` label ("Syncing prices from Zoho…") in place
+of the idle `RefreshCw` icon and `syncZohoPrices` label, and stays `disabled` exactly as before.
+
+i18n: `filamentProfiles.syncingZoho` (one key, no placeholders) added with real translations to
+all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`, `it`, `ja`, `ko`,
+`pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`), inserted immediately after each locale's existing
+`syncZohoPrices` key. `npx vitest run src/__tests__/i18n` passes (26/26).
+
+Tests added to `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`:
+- "shows a busy spinner and disables the button while a Zoho sync is in flight" — a
+  `zoho-sync` handler that `await delay('infinite')`s (msw), asserts the button's accessible
+  name switches to the "Syncing prices from Zoho…" label and is disabled, and that the idle
+  label is gone.
+- "aborts a Zoho sync that runs past the deadline, shows an error toast, and re-enables the
+  button (T-033)" — driven entirely with `vi.useFakeTimers({ shouldAdvanceTime: true })` and
+  `vi.advanceTimersByTimeAsync` (never a wall-clock sleep, never a real 10-minute wait): a
+  never-resolving `zoho-sync` handler, advances 9 minutes (still syncing, no toast), then
+  crosses the deadline by the smallest workable margin (60,001ms, landing at 600,001ms total) —
+  overshooting further was avoided deliberately, since the error toast auto-dismisses itself a
+  few seconds after showing and a bigger jump let the dismiss timer fire and the toast vanish
+  before the assertion ever saw it. Asserts the `syncZohoFailed` toast text appears and the
+  button returns to its idle, enabled "Sync prices from Zoho" state.
+- All pre-existing Zoho-sync tests (success, attention breakdown, stale-catalogue, backend-error
+  message, editor re-sync) re-run unmodified and still pass.
+
+`python3 tools/snapshot.py verify` / `record`: 3 of 11 probes legitimately diffed exactly to
+this change (`fp-i18n-sync-strings` picked up the new `syncingZoho` key across all 13 locales;
+`fp-client-method` picked up `syncFilamentPresetsFromZoho`'s new `signal` parameter;
+`fp-page-sync-ui` picked up the `isAbort` guard and the button's icon-swap JSX) and were
+re-recorded; the other 8 (`fp-openapi`, `fp-pydantic-schemas`, `fp-ddl`, `fp-route-perms`,
+`fp-pricing-write`, `fp-match-decisions`, `fp-sync-endpoint`, `calc-zoho-pure`) matched
+unchanged. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: one new line,
+`filamentProfiles.syncingZoho`, under the i18n-keys-read-by-`FilamentProfilesPage.tsx` section;
+applied.
+
+`bash tools/coverage_fp.sh frontend`: 189/276 = 68.47% statements, up from the 183/270 = 67.77%
+baseline (no drop). `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` clean on every
+touched file (page, client.ts, test file, all 13 locale files — a stray single-quoted apostrophe
+in the Turkish translation was caught by this eslint pass and fixed to a double-quoted string
+before commit). Full frontend suite (`npx vitest run`): 354 files / 5,107 tests passed outright,
+plus 10 worker-crash ("Timeout waiting for worker to respond") failures across unrelated files
+(`VirtualKeyboard`, `useIsMobile`, `SpoolIcon`, `gcodeToolpath`, `useStreamReconnect`,
+`GcodeToolpathViewerSizing`, `slicerToggle`, `colors`, `useFilamentMapping`,
+`useSpoolBuddyState`) — all 10 re-run together in isolation and passed cleanly (206/206),
+confirming the documented parallel-load flake and no new failures from this change.
+
+## T-035 — 2026-08-27 — a Zoho outage no longer forces every warm-cache sync to repeat the whole paged walk before serving the same stale catalogue (user-approved behavior change)
+
+`fetch_catalogue()`'s negative-cache memo (`_fail_at`/`_fail_exc`, T-094/T-091) was only ever
+written on the COLD-cache failure branch (line ~495-501 before this change). Once a catalogue
+had ever been successfully cached, EVERY subsequent sync during a Zoho outage skipped the
+cold-cache fast-fail check (`_cache is None and _fail_at is not None and ...`), took
+`_refresh_lock`, and re-walked up to `_MAX_PAGES` pages — each page a 10s `httpx` timeout with a
+401 retry, worst case ~400s — before falling back to exactly the same stale list it already had
+cached. Concurrent callers piled onto `_refresh_lock` for `_LOCK_ACQUIRE_TIMEOUT` apiece on top of
+that. Since the browser request has no timeout, the operator's sync button hung for minutes on
+every click during an outage, each click pinning a DB connection for the duration.
+
+user-approved 2026-08-26: "during a Zoho outage repeat syncs return the cached catalogue within
+seconds instead of stalling for minutes, so recovery is noticed up to `_FAIL_COOLDOWN` later than
+today." `_FAIL_COOLDOWN` (30s) is unchanged; this task only extends who benefits from it.
+
+`fetch_catalogue()` (`backend/app/services/zoho_filaments.py`): the `except Exception` branch
+around the paged walk now stamps `_fail_at`/`_fail_exc` unconditionally, before branching on
+whether `_cache is not None` — previously that stamping only happened in the `else` (cold) arm.
+A new pre-lock check, the warm-cache twin of the existing cold-cache fast-fail, was added right
+after it: `if _cache is not None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:`
+sets `_last_stale_serve_at = _cache_at` (T-034's staleness marker — a cooldown-served stale
+catalogue is still stale and must be disclosed the same way the existing warm-refresh-failure
+branch already discloses one) and returns `_cache` directly, WITHOUT ever calling
+`asyncio.wait_for(lock.acquire(), ...)` or making a single `zoho_service.list_items_page` call.
+The pre-existing cold-cache fast-fail (re-raising the memoized `_fail_exc`) is untouched — it
+still only fires when `_cache is None`. Once `_FAIL_COOLDOWN` elapses, the next call falls
+through both fast-path checks and attempts a genuine refresh again (recovery). `fetch_catalogue`'s
+signature and return type are unchanged; `backend/app/api/routes/calculator.py` was not touched
+and calls the same function with the same contract — the cooldown short-circuit is invisible to
+callers except as a return-then-a-bit-later "have I retried recently" behavior common to both of
+`fetch_catalogue`'s two callers (the filament-profiles sync and the calculator's search/sync
+routes), which the user-approved change explicitly accepts as shared.
+
+Tests added to `backend/tests/unit/test_zoho_filaments_catalogue.py`:
+- `test_warm_cache_failure_cooldown_skips_the_walk_and_marks_stale` — a warm cache, then a
+  failure, then a second call within `_FAIL_COOLDOWN`: asserts the second call never invokes the
+  upstream pager again (`calls.count("boom") == 1`), still returns the original cached list, and
+  sets `_last_stale_serve_at` to `_cache_at`.
+- `test_warm_cache_failure_cooldown_expires_and_retries` — using the module's scripted-clock
+  pattern (`_ScriptedClock`, matching `test_cold_cache_failure_memo_survives_a_walk_slower_than_
+  the_cooldown`'s style) to advance past `_FAIL_COOLDOWN` deterministically without a real sleep:
+  a warm failure, a within-cooldown short-circuit (no new pager call), then a past-cooldown call
+  that attempts — and this time succeeds at — a real refresh, asserting the recovered catalogue
+  is returned and `_last_stale_serve_at` is cleared (`None`) for the genuine fresh refresh.
+- All pre-existing tests in the file re-run unmodified and still pass, including the cold-cache
+  negative-cache suite (`test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk`,
+  `test_cold_cache_failure_memo_survives_a_walk_slower_than_the_cooldown`,
+  `test_negative_cache_preserves_the_mapping_failure_exception_type`,
+  `test_negative_cache_replay_reraises_a_multi_arg_exception_instance`) and the T-034 staleness
+  suite (`test_fetch_catalogue_or_502_reports_stale_since_when_serving_a_failed_refresh`,
+  `test_fetch_catalogue_or_502_reports_no_staleness_for_a_fresh_sync`,
+  `test_lock_acquire_timeout_serves_the_stale_cache_when_warm`), confirming both the cold-path
+  behavior and T-034's staleness disclosure are unchanged.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match — no golden diff, as expected for a
+purely internal timing/retry-behavior change with a frozen public contract. `SURFACE.md`
+regenerated via `bash tools/gen_surface_fp.sh`: no diff (no callables, routes, or schema fields
+added or removed).
+
+`bash tools/coverage_fp.sh backend`: 512/513 = 99.81% scoped statements (up from the 508/509
+baseline, same ratio, no drop; the one uncovered line remains `zoho_filaments.py`'s `_score()`
+SKU-term branch, pre-existing and untouched by this task).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,462
+passed, 1 skipped, 1 incidental failure
+(`test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`, an
+environment-dependent `shutil.which` mock/caching interaction under parallel load) that passed
+cleanly in isolation (1/1) — the documented suite-load flake, unrelated to this change
+(external camera ffmpeg discovery, not touched). `ruff check` / `ruff format --check` clean on
+`backend/app/services/zoho_filaments.py` and `backend/tests/unit/test_zoho_filaments_catalogue.py`.
+
+## T-029 — 2026-08-27 — handleExport() now sanitises legacy path-shaped filenames instead of writing them straight into the ZIP (user-approved behavior change)
+
+`handleExport()` (`frontend/src/pages/FilamentProfilesPage.tsx`) built the export archive with
+`candidates.forEach((p) => zip.file(p.filename, p.content))` — `p.filename` came straight from the
+API with no bare-name check on this side. `FilamentPresetCreate`/`FilamentPresetUpdate`
+(`backend/app/schemas/filament_profile.py`) validate new writes reject a filename that isn't a
+bare name, but that guard only covers rows written after it shipped; nothing normalises rows that
+predate it (a data migration is explicitly out of scope — see T-030), and
+`duplicate_filament_profile()` still copies a stored filename verbatim. A legacy row carrying
+`../../x.json` therefore still produced a `filament-presets.zip` entry that escapes the extraction
+directory in any extractor that doesn't sanitise itself.
+
+**Design (sanitize, don't omit):** an omitted preset would silently lose data from a backup
+export, so every candidate preset still gets an entry. `deriveZipEntryName(filename, presetId)`
+splits the stored filename on both `/` and `\`, drops empty/`.`/`..` segments, and takes the last
+surviving segment as the flat entry name; if nothing survives (e.g. `../..`, `///`), it falls back
+to `preset-<id>.json`. `uniqueZipEntryName(name, usedNames)` then guards against two rows
+flattening to the same entry name (e.g. `../x.json` and `nested/x.json` both flatten to `x.json`):
+the first occurrence keeps the flat name, later collisions get a deterministic `-2`, `-3`, ...
+suffix before the extension, skipping any suffix already claimed by an unrelated bare filename.
+A bare filename that doesn't collide with anything else in the batch passes through
+`deriveZipEntryName` unchanged and keeps its name from `uniqueZipEntryName` too, so those exports
+remain byte-identical to today — see the correction below for the case where two candidates share
+the same already-bare filename. Both helpers are private to the page module (not exported — `PresetCard`
+et al. already share nothing from this file, and exporting them would have tripped the
+`react-refresh/only-export-components` rule); they're exercised through the real export flow in
+tests instead of being imported directly.
+
+user-approved 2026-08-26 (verbatim): "on installs holding legacy path-shaped filenames, the
+exported filament-presets.zip will contain those entries under sanitised flat names (or omit them)
+instead of the nested/traversal paths it produces today." This implementation chose the
+sanitise-not-omit branch of that approval.
+
+Tests added to `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`
+(`describe('FilamentProfilesPage export ZIP sanitisation')`), each driving the real `handleExport`
+click handler with real `jszip` (capturing the generated `Blob` via a mocked
+`URL.createObjectURL` and re-reading it with `JSZip.loadAsync`, rather than reimplementing the
+sink's internals):
+- `flattens legacy traversal/mixed-separator filenames and de-duplicates the resulting collision`
+  — `../../x.json` and `a/b\x.json` both flatten to `x.json`; the second becomes `x-2.json`, and a
+  third already-bare filename is exported unchanged.
+- `falls back to a preset-id name when nothing valid survives stripping` — `../..` -> `preset-42.json`.
+- `skips a suffix that is already taken by an unrelated bare filename` — a bare `x-2.json` plus two
+  legacy rows that both flatten to `x.json` land on `x.json` and `x-3.json`, not `x-2.json`.
+- `exports an already-bare filename unchanged` — confirms the no-op path for normal filenames.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match — no golden diff, as expected; none of the
+fp-scope probes exercise the export flow. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: no diff (`FilamentProfilesPage`'s only exported symbol is the component
+itself, unchanged; the two new helpers are module-private).
+
+`cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx`: 29 passed (was
+26; 3 net new tests replacing none). `npx eslint .` and `npx tsc` clean. `bash
+tools/coverage_fp.sh frontend`: 225/295 = 76.27% scoped statements (baseline 189/276 = 68.47%, no
+drop — improved by the new export-path coverage). Full frontend suite
+(`npm run test:run`): 5,077-5,084 passed depending on run: 5 unrelated files
+(`HASensorModal.test.tsx`, `useCardFlight.test.tsx`, `useFilamentLabels.test.tsx`,
+`SpoolBuddyWriteTagPage.test.tsx`) intermittently failed with `[vitest-pool-runner]: Timeout
+waiting for worker to respond` under parallel load — none touch filament profiles or export code;
+all 4 files re-ran clean in isolation (57/57 passed), the documented suite-load flake.
+
+**Correction (2026-08-27), caught by the blind verifier — the "byte-identical" claim above was
+false for one case, and this task's approval didn't cover the divergence.** `uniqueZipEntryName`'s
+dedup is not limited to the legacy path-flattening collisions it was written for: it runs
+unconditionally on every candidate's `deriveZipEntryName(...)` output, so two presets that already
+carried the *same bare* `filename` — most plausibly two rows created via the page's own Duplicate
+action before either was renamed — also collide. At BASE (before this task), that collision hit
+`candidates.forEach((p) => zip.file(p.filename, p.content))` and jszip's repeated `zip.file()` call
+for the same entry name silently kept only the *last* write, so the first preset's content was
+dropped from the export with no error and no indication in the archive. After this task, the same
+two presets export as `x.json` (first) and `x-2.json` (second) — both survive. The sentence above
+originally claimed exports of already-bare filenames are unconditionally byte-identical to BASE;
+that's only true when the bare filename doesn't collide with another candidate in the same export,
+and it is now worded that way in place rather than left to describe behavior that no longer holds.
+The bare-vs-bare case was outside the original approval, which was scoped to path-shaped/traversal
+filenames; the user separately approved keeping the wider dedup on 2026-08-27 ("backups must stop
+silently losing presets") rather than restricting it back to only the legacy-flattening case.
+
+A pinning test was added to the same `describe` block:
+`de-duplicates two presets sharing the same already-bare filename, preserving both contents` —
+two presets both stored with `filename: 'x.json'` export as `x.json` and `x-2.json`, and the
+re-read `JSZip` entry content is asserted for both (`'{"a":1}'` / `'{"a":2}'`) so the fix is pinned
+against the specific failure mode (content loss), not just the entry-name list. `cd frontend &&
+npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx`: 32 passed (was 31 immediately
+before this fix-up — T-038 landed 2 more tests in this file after the count above was written; +1
+net new here). `npx eslint src/__tests__/pages/FilamentProfilesPage.test.tsx` clean. `python3
+tools/snapshot.py verify`: still 11/11 (no production code touched by this fix-up). `bash
+tools/coverage_fp.sh frontend`: 225/295 = 76.27% scoped statements, unchanged from above (the new
+test exercises an already-covered branch of the existing dedup loop, not a new line).
+
+## T-030 — 2026-08-27 — duplicate_filament_profile() now normalises a legacy path-shaped stored filename instead of copying it verbatim (user-approved behavior change)
+
+`duplicate_filament_profile()` (`backend/app/api/routes/filament_profiles.py`) built the new row
+directly from `DUPLICATE_FIELDS` (`FilamentPreset(**{field: getattr(source, field) for field in
+DUPLICATE_FIELDS})`), bypassing `_validate_bare_filename` (`backend/app/schemas/filament_profile.py`)
+entirely — that check only runs through `FilamentPresetCreate`/`FilamentPresetUpdate`, which this
+route never touches. A legacy row stored before that validator existed (T-028) can still carry a
+path-shaped or traversal-shaped `filename` (e.g. `../../x.json`); duplicating it multiplied the bad
+name into a second row instead of inventing a new one, and each copy still made the whole
+Sync-to-PC payload 400 (`_validate_bambu_sync_presets` validates every entry in the request at
+once) and produced a traversal-shaped ZIP export entry name pre-T-029.
+
+**Design (normalise, don't reject):** rejecting would punish the caller for a legacy row they did
+not create, and T-029 already established the sanitise-not-omit precedent for the export path.
+Added `_derive_bare_filename(filename, preset_id)` next to `_validate_bare_filename` in
+`backend/app/schemas/filament_profile.py`, mirroring the frontend's `deriveZipEntryName` (T-029)
+exactly: split the stored filename on both `/` and `\`, drop empty/`.`/`..` segments, and take the
+last surviving segment; if nothing survives (e.g. `../..`), fall back to `preset-<id>.json` keyed
+on the *source* row's id (the new row has none yet at that point). `duplicate_filament_profile()`
+now runs every copied filename through it before adding the row. An already-bare filename passes
+through unchanged, so duplicating a normal preset is byte-identical to today — verified by a
+dedicated test. No de-duplication step was needed here (unlike the export ZIP's
+`uniqueZipEntryName`): `filename` carries no uniqueness constraint on `FilamentPreset`
+(`backend/app/models/filament_profile.py`), and each duplicate call only ever produces one new row
+from one source, so there is no same-request collision to guard against. The existing `name`
+disambiguation (`f"{source.name} (copie)"`) is untouched.
+
+**Declined: the run_migrations() one-time normalisation the finding also suggested.**
+`backend/app/core/database.py` is out of this campaign's scope (explicit do-not-touch), and a data
+migration that rewrites existing stored rows is a materially heavier, riskier change than a
+one-line, user-approved sentence about *this one route*. The user-approved text names only the
+duplicate path ("duplicating a preset whose stored filename is path-shaped will return an error
+(or store a normalised bare filename)"); it says nothing about rewriting rows nobody duplicated.
+Existing legacy rows that are never duplicated, exported, or Sync-to-PC'd are left exactly as they
+are today. Left as a leftover for a human to scope separately.
+
+user-approved 2026-08-26 (verbatim): "duplicating a preset whose stored filename is path-shaped
+will return an error (or store a normalised bare filename) instead of silently producing a second
+row with the same bad name." This implementation chose the normalise branch.
+
+Tests added to `backend/tests/integration/test_filament_profiles_api.py`
+(`TestFilamentProfilesCrud`), each inserting the source row directly via the `db_session` fixture
+(bypassing the create/update validator, like a legacy row) rather than through the API:
+- `test_duplicate_normalises_legacy_path_shaped_filename` — a row stored with
+  `../../evil.json` duplicates to `evil.json`; the source row itself is confirmed untouched.
+- `test_duplicate_falls_back_to_preset_id_name_when_nothing_survives` — `../..` duplicates to
+  `preset-<id>.json`.
+- `test_duplicate_bare_filename_copied_unchanged` — an ordinary API-created preset (already-bare
+  filename) duplicates with the filename copied verbatim, confirming no regression on the common
+  path.
+
+`python3 tools/snapshot.py verify`: 11/11 probes match — no golden diff, as expected (no route
+signature or Pydantic field changed; `_derive_bare_filename` is a private free function, not a
+schema field). `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: no diff (the schemas
+file's surface entry only greps `^class `, and the new helper is a private function, not a class).
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/integration/test_filament_profiles_api.py
+backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 69 passed (was 66; 3 net new tests).
+`ruff check` / `ruff format --check` clean on `backend/app/api/routes/filament_profiles.py`,
+`backend/app/schemas/filament_profile.py`, and the test file. `bash tools/coverage_fp.sh backend`:
+517/518 = 99.81% scoped statements (baseline 512/513 = 99.81%, same ratio, no drop; the one
+uncovered line remains `zoho_filaments.py`'s pre-existing `_score()` SKU-term branch, untouched by
+this task).
+
+## T-038 — 2026-08-27 — the Zoho sync's attention list is now capped at 50 entries, with a new `attention_total` field carrying the true count (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` appended one `FilamentPresetZohoSyncAttention` per unmatched
+preset to `attention` with no bound, and the response carried them all. `FilamentProfilesPage.tsx`
+rendered the whole list into a single un-virtualized `<ul>`. A user who imported a full preset
+library (`handleImport` creates one preset per scanned file) whose brands do not exist in the
+Zoho catalogue got every one of those presets back as `"no_match"` — a response of hundreds of
+entries, and a summary panel that pushed the entire preset grid off-screen with no way to
+collapse it.
+
+user-approved 2026-08-26 (verbatim): "API clients will see a truncated attention array plus a
+total count on very large runs instead of every entry." The API-cap option was the one named in
+the approval (not the collapsible-panel alternative also offered by the finding).
+
+**Backend:** added a new module constant, `_MAX_REPORTED_ATTENTION = 50`, next to
+`DUPLICATE_FIELDS` in `backend/app/api/routes/filament_profiles.py` — mirroring
+`zoho_filaments._MAX_REPORTED_CANDIDATES`'s spirit at a list scale; 50 is generous enough for an
+operator to act on in one sitting. The route still builds the full, untruncated `attention` list
+during the match loop exactly as before — `priced`/`unchanged` counts and which presets get
+WRITTEN are completely unaffected by the cap — and only truncates at the response boundary:
+`attention=attention[:_MAX_REPORTED_ATTENTION]`. A new field,
+`FilamentPresetZohoSyncResponse.attention_total: int = 0`, is always populated as
+`len(attention)` (the untruncated list), so it equals `len(response.attention)` on any run at or
+under the cap and only diverges on a genuinely large run. Additive and defaulted, so old clients
+are unaffected.
+
+**Frontend:** `FilamentPresetZohoSyncResponse.attention_total: number` added to
+`frontend/src/api/client.ts`. In `FilamentProfilesPage.tsx`, the summary panel's headline
+(`filamentProfiles.syncZohoAttention`, "{{count}} need attention") now reads `attention_total`
+instead of `attention.length`, so a capped run's headline still reports the true count rather
+than reading as fewer profiles needing review than it actually did; the same swap was applied to
+the post-sync toast's needs-attention count (`handleZohoSync`'s `attentionCount`) for the same
+reason. A new line renders below the attention `<ul>` when `attention_total > attention.length`,
+reusing the existing `common.plusNMore` key ("+{{count}} more") — the same key the per-entry
+candidates list already uses for its own cap, and it reads correctly as a list-suffix in every
+locale's existing usage, so no new i18n key was needed.
+
+Tests added:
+- `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+  `test_attention_list_is_capped_but_attention_total_carries_the_true_count` (a batch of
+  `_MAX_REPORTED_ATTENTION + 2` presets that all land in `"no_match"`, built in a loop rather than
+  pasted literals, asserts the response's `attention` list is exactly `_MAX_REPORTED_ATTENTION`
+  entries long while `attention_total` carries the true `overflow` count, and that `priced`/
+  `unchanged` are unaffected); an added assertion on the existing
+  `test_a_mixed_batch_produces_disjoint_per_preset_outcomes` that a small (under-cap) run's
+  `attention_total` equals `len(attention)`.
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: `attention_total` added to every
+  existing mocked `/zoho-sync` response fixture in the file (equal to that fixture's own
+  `attention.length`, matching real backend behavior) so the pre-existing toast/panel assertions
+  are unaffected; two new tests — `shows an "and N more" remainder below the attention list when
+  attention_total exceeds the shipped entries (T-038)` (response with `attention_total: 52` and a
+  single shipped entry renders both the true `"52 need attention"` headline and a `"+51 more"`
+  suffix) and `renders no "and N more" remainder when attention_total equals the shipped entries
+  (T-038)` (response with `attention_total` equal to `attention.length` renders no `"more"` text
+  at all).
+
+`python3 tools/snapshot.py verify` / `record`: 4 of 11 probes legitimately diffed
+(`fp-pydantic-schemas` picked up the new additive `attention_total` field in the OpenAPI schema;
+`fp-sync-endpoint` picked up the new `attention_total` values in its fixture responses;
+`fp-client-method` picked up the new field and comment in `client.ts`; `fp-page-sync-ui` picked up
+the `zohoResult.attention.length` → `zohoResult.attention_total` swap in the summary panel's
+headline) and were re-recorded; the other 7 (`fp-openapi`, `fp-ddl`, `fp-route-perms`,
+`fp-pricing-write`, `fp-match-decisions`, `fp-i18n-sync-strings`, `calc-zoho-pure`) matched
+unchanged — no new i18n key, so `fp-i18n-sync-strings` (which enumerates i18n keys the page
+reads) is untouched. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: two lines
+changed — `_MAX_REPORTED_ATTENTION` added under "Backend module constants", and
+`attention_total` added to `FilamentPresetZohoSyncResponse`'s OpenAPI schema body; both applied.
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/unit/test_filament_profiles_zoho_sync.py
+backend/tests/integration/test_filament_profiles_api.py -q`: 70 passed (was 68; 2 net new tests).
+`cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx
+src/__tests__/i18n`: 57 passed (was 55; 2 net new tests). `ruff check` / `ruff format --check`
+clean on every touched backend file; `npx tsc -b` and `npx eslint` clean on every touched
+frontend file. `node scripts/check-i18n-parity.mjs`: 13 locales, 7,080 leaves each, in parity (no
+new key was added by this task).
+
+`bash tools/coverage_fp.sh backend`: 519/520 = 99.81% scoped statements (baseline 517/518 =
+99.81%, same ratio, no drop). `bash tools/coverage_fp.sh frontend`: 225/295 = 76.27% statements
+(baseline 225/295 = 76.27%, unchanged, no drop).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,466 passed,
+1 skipped, 1 incidental failure
+(`test_aito_quote_sync.py::test_wake_drains_a_pending_project_without_waiting_for_the_interval`)
+that reproduced only under `-n 30` parallel load and passed cleanly in isolation — the documented
+suite-load flake, unrelated to this change (Aito quote sync, not touched). The full frontend
+suite showed the same pattern across two coverage runs: a different unrelated test file
+(`StatsPageUserFilter1894.test.tsx` on one run, another on the retry) failed only under load and
+was absent on isolated re-runs; `FilamentProfilesPage.test.tsx` and `src/__tests__/i18n` passed
+cleanly in both full runs.
+
+## T-047 — 2026-08-27 — a failed or aborted Zoho price sync now refetches the presets cache too, and an unconfirmed outcome no longer reads as a definite failure (user-approved behavior change)
+
+`handleZohoSync()`'s `queryClient.invalidateQueries({ queryKey: ['filamentPresets'] })` call
+ran only on the success path. `POST /filament-profiles/zoho-sync` commits `preset.content`
+server-side before it responds, so it is not idempotent from the client's point of view:
+whenever the response was lost but the write had already landed — the 600s (T-033)
+`AbortController` deadline firing on a cold-catalogue walk, an intervening proxy's
+`proxy_read_timeout`, a laptop sleep — the client told the operator the sync had failed and kept
+serving the pre-sync `['filamentPresets']` cache. The grid showed no new price; opening the
+preset seeded `PresetEditorModal`'s `form.filament_cost` from the stale cached content (the
+cached `preset.updated_at` was unchanged, so neither the remount key nor the T-032 conflict
+banner fired); and pressing Save then PATCHed the old `filament_cost` straight back over the
+price the sync had already committed. The generic-failure catch branch also could not
+distinguish an HTTP error response (a definite "the server did not apply it" signal) from an
+`AbortError` or a network `TypeError` (no response ever arrived, so the write's outcome is
+unknown, not definitely failed) — both read identically as `filamentProfiles.syncZohoFailed`.
+
+user-approved 2026-08-27: "after a failed or aborted price sync the grid and any open editor
+will refetch and can visibly change, and the abort toast will read as 'result unknown' instead
+of 'sync failed'."
+
+`frontend/src/pages/FilamentProfilesPage.tsx`'s `handleZohoSync`: the `invalidateQueries`
+call was moved out of the `try` block's success path into a single `finally`, so it now runs on
+every outcome — success, a definite HTTP-error failure, or an abort/network failure — without
+changing the success path's existing `setZohoResult`/toast ordering (it was already the last
+statement on that path; it is still the next thing to run once the `try` block finishes). The
+`catch` block now imports and checks `error instanceof ApiError` (from `api/client.ts`, whose
+`request()` throws `ApiError` only after actually receiving and parsing a non-ok HTTP response)
+to decide the toast: an `ApiError` keeps the existing definite-failure wording using the
+server's own message (e.g. a 502's `detail`); every other `Error` — `AbortError` from the T-033
+deadline, or a plain `TypeError` from a network failure below the HTTP layer — gets a new
+`filamentProfiles.syncZohoUnknown` toast instead of the old generic
+`filamentProfiles.syncZohoFailed` string (which is no longer referenced anywhere in the page;
+left defined but unused in the locale files rather than removed, out of scope for this task).
+
+i18n: `filamentProfiles.syncZohoUnknown` (one key, no placeholders) added with real translations
+to all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`, `it`, `ja`,
+`ko`, `pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`) — `node scripts/check-i18n-parity.mjs` passes
+(13 locales, 7,081 leaves each, no parity/placeholder/identical-to-en failures) and
+`npx vitest run src/__tests__/i18n` passes (26/26).
+
+Tests updated in `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`:
+- "aborts a Zoho sync that runs past the deadline, shows an unknown-outcome toast, refetches
+  presets, and re-enables the button (T-033, T-047)" (renamed/extended from the T-033 abort
+  test): asserts the new `syncZohoUnknown` wording (not the old `syncZohoFailed` text) appears
+  after the deadline fires, and — via a `getCalls` counter on the `GET /filament-profiles`
+  handler — that the presets query refetches (2 GETs: initial load + the `finally` block's
+  invalidation) even though the request was aborted.
+- "shows the backend error message when the Zoho sync fails, and still refetches the presets
+  cache (T-047)" (renamed/extended from the pre-existing 502 test): keeps the original
+  assertion that a `502` with a `detail` message still shows that definite-failure text (not
+  the new unknown-outcome copy), and adds the same `getCalls` counter proving the `finally`
+  block also refetches on this definite-failure path.
+
+All other pre-existing Zoho-sync tests (success, stale-catalogue, attention list, busy-spinner,
+re-syncs-open-editor T-006, conflict-banner T-032, Save-closes-editor T-031) were left unchanged
+and still pass — none of them assert a specific `GET` call count that this change's extra
+`finally`-path invalidation would break, since `stubBase()`'s handlers are persistent (not
+one-time) across every other test.
+
+`python3 tools/snapshot.py verify` / `record`: 2 of 11 probes legitimately diffed —
+`fp-page-sync-ui` (the catch block's `showToast` line changed from
+`!isAbort && error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed')` to
+`isApiError ? error.message : t('filamentProfiles.syncZohoUnknown')`) and `fp-i18n-sync-strings`
+(the new key added, 22→23 leaves per locale in that section) — and were re-recorded; the other 9
+(`fp-openapi`, `fp-pydantic-schemas`, `fp-ddl`, `fp-route-perms`, `fp-pricing-write`,
+`fp-match-decisions`, `fp-sync-endpoint`, `fp-client-method`, `calc-zoho-pure`) matched
+unchanged. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: one section changed —
+"i18n keys read by FilamentProfilesPage.tsx" lost `filamentProfiles.syncZohoFailed` (no longer
+referenced in the page's source, which is exactly what that section's `grep` over
+`FilamentProfilesPage.tsx` is meant to catch) and gained `filamentProfiles.syncZohoUnknown`;
+applied.
+
+`cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx
+src/__tests__/i18n`: 58 passed (58 before this task's edits too — both changed tests were
+extended in place, not duplicated, so the count is unchanged; the T-038 entry's "57" reflects an
+earlier point in the file's history, not the count immediately before this task). `npx eslint` and
+`npx tsc --noEmit -p tsconfig.app.json` clean on every touched frontend file.
+`node scripts/check-i18n-parity.mjs`: 13 locales, 7,081 leaves each, in parity.
+
+`bash tools/coverage_fp.sh frontend`: 225/295 = 76.27% statements (baseline 225/295 = 76.27%,
+unchanged, no drop). An earlier version of this change removed a statement (`const isAbort =
+...`) without replacing it, which dropped the ratio to 224/294 = 76.19% on an otherwise-correct
+diff; the catch block was reshaped to keep an equivalent `const isApiError = ...` statement
+(more readable at the call site than an inline `error instanceof ApiError` ternary, and
+consistent with the removed variable's role) so the scoped statement count returned to parity
+with the baseline instead of merely avoiding a regression.
+
+Full frontend suite (`npx vitest run --retry=3`): 5,144 tests, 5,143 passed in the run recorded
+here — the one failure, `StatsPageUserFilter1894.test.tsx`'s `waitFor(() => screen.getByText('All
+Users'))`, is unrelated to this change (a different page's user filter) and passed cleanly
+(2/2) re-run alone immediately after — the documented suite-load flake. The
+`bash tools/coverage_fp.sh frontend` run whose 225/295 number is reported above also showed one
+unrelated failure, `PrintModal.test.tsx`'s per-plate filament mapping test
+(`AssertionError: expected 5 to be 2`), matching the previously-documented PrintModal flake;
+`FilamentProfilesPage.test.tsx` had zero failures in that run.
+
+## T-048 — 2026-08-27 — an empty Zoho catalogue now fails the sync outright instead of reporting every profile as unmatched (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`POST /filament-profiles/zoho-sync`) called
+`_fetch_catalogue_or_502` and went straight into the per-preset matching loop with no check that
+the returned catalogue held anything. If Books' `cf_nature_du_produit` custom-field filter ever
+stopped matching (a respelling, items re-categorised — the exact hazard
+`zoho.py::get_shipping_catalogue`'s own docstring warns about), `list_items_page` would return
+`items: []`, `fetch_catalogue` would cache that empty list for the full 10-minute `_CACHE_TTL`
+(its `if active_items and not mapped` mapping-failure guard only fires when items WERE present
+but unmappable, so an upstream-empty response sails past it untouched), and `match_profile`
+would then report `"no_match"` for every single profile in the same run. The response looked
+like an ordinary sync that simply failed to match anything — `priced=0, unchanged=0`, one
+attention entry per preset — sending the operator to re-check brand/material/colour spelling on
+profiles that were completely fine, while the actual fault was upstream, and the false wall
+repeated on every retry for the whole cache TTL.
+
+user-approved 2026-08-27, quoting the approved description verbatim: "a sync run while Zoho
+returns zero filament items would show one 'Zoho returned no filament items' error instead of a
+needs-attention list naming every profile."
+
+Of the two options the finding offered — treat an empty catalogue as a refusal returning the
+502 contract, or carry a `catalogue_size` field so the UI can render a dedicated message — the
+502-refusal option was implemented, per the approved wording above (a single error, not a new
+response field). `backend/app/api/routes/filament_profiles.py`: immediately after
+`_fetch_catalogue_or_502` returns, `if not catalogue:` now raises
+`HTTPException(status_code=502, detail="Zoho returned no filament items")` before the preset
+loop (and before `db.execute(select(FilamentPreset)...)`) ever runs. 502 was chosen over 500 to
+match the status family every other "upstream gave us something unusable" branch of
+`_fetch_catalogue_or_502` already uses (`"Could not reach Zoho"`, also 502) — an empty catalogue
+here is exactly that: Zoho answered, but with nothing usable, not a bug in this codebase's own
+mapping logic (which is what earns the existing 500 for `ZohoFilamentMappingError`).
+
+`fetch_catalogue` itself was deliberately left untouched — its empty-cache behavior is shared
+with the pricing calculator's own search, where an empty catalogue legitimately returning `[]`
+from a search is correct behavior, not a bug to refuse. Making the refusal route-local (checked
+in `filament_profiles.py`, not inside `zoho_filaments.fetch_catalogue`) keeps that calculator
+path exactly as it was.
+
+Frontend: no changes needed. `FilamentProfilesPage.tsx`'s `handleZohoSync` catch block (T-047)
+already shows `error.message` verbatim for any `ApiError` — a definite HTTP-error response —
+and every existing server-side detail string surfaced this route already uses plain English
+(`"Zoho is not configured"`, `"Could not reach Zoho"`, `"Zoho filament catalogue could not be
+mapped"`, the sync-in-progress message) with no i18n key of its own; `"Zoho returned no filament
+items"` is the same kind of string through the same path, confirmed by reading
+`handleZohoSync`'s catch block directly rather than assumed.
+
+Tests added to `backend/tests/unit/test_filament_profiles_zoho_sync.py`:
+`test_502_when_the_catalogue_is_empty` (a plain `fetch_catalogue` stub returning `[]` with one
+seeded preset never even reaches the matching loop) and
+`test_502_when_a_stale_empty_catalogue_is_served` (mirrors
+`test_stale_catalogue_discloses_its_age_instead_of_a_plain_success`'s pattern of driving a real
+expired cache through `fetch_catalogue`'s genuine failure-branch stale-cache fallback, but with
+an empty cached list, to pin that a *stale* empty catalogue is refused exactly the same way
+rather than slipping through because `stale_since` happened to be set). Both assert the exact
+502 status and detail string. All pre-existing 503/500/502/409 detail-pinning tests in that file
+were left unchanged and still pass, confirming the non-empty-catalogue error paths are
+untouched.
+
+One pre-existing integration test needed updating, not because it asserted the old
+per-preset-attention behavior directly, but because it relied on an empty catalogue as a cheap
+stub for an unrelated concern:
+`TestFilamentProfilesZohoSyncPermissions::_stub_zoho` (`backend/tests/integration/test_filament_profiles_api.py`)
+stubbed `fetch_catalogue` to return `[]`, which the class's two 403 tests never reach (the
+permission gate rejects before the catalogue is ever fetched) but which its one 200 test
+(`test_zoho_sync_works_with_both_permissions`) did — that test has no seeded presets and exists
+solely to prove the permission gate passes for a user holding both `filaments:update` and
+`calculator:update`, and started failing 502 once the empty catalogue it happened to stub became
+a real refusal. Fixed by changing the shared stub to return one arbitrary `FilamentProduct`
+instead of `[]`; since the class seeds no `FilamentPreset` rows, nothing is ever matched against
+it either way, and the 403 tests are unaffected since they never reach `fetch_catalogue` at all.
+
+`python3 tools/snapshot.py verify`: 10/11 matched unchanged; `fp-sync-endpoint` legitimately
+diffed and was re-recorded — its `"empty catalogue"` case (a real scenario the probe already
+exercised, `run_case("empty catalogue", _Stub(catalogue=[]))`) went from `status=200` with nine
+`"no_match"` attention entries (ids 1-9, one per seeded preset) to `status=502
+detail='Zoho returned no filament items'`, and nothing else in the 240+-line golden moved —
+confirmed by reading the full diff, not just the match count. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: no diff (no route, schema, permission, DDL, or i18n-key surface
+changed; the fix is a conditional inside an existing route body).
+
+`ruff check` / `ruff format --check` on the three touched Python files: clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 34
+passed (32 before this task's two new tests). Full backend suite
+(`./test_backend.sh`, ruff + pytest -n 30, `test_bambu_ftp.py` skipped as usual): 12,473 passed,
+1 skipped, 0 failed — no regressions, including the fixed permission-stub test.
+
+`bash tools/coverage_fp.sh backend`: SCOPED statements 525/526 = 99.81% (baseline 523/524 =
+99.81%, unchanged ratio, two new statements both covered — the route's own file
+(`filament_profiles.py`) is 100.00% with zero missing lines; the suite's one remaining uncovered
+scoped statement is line 642 of `zoho_filaments.py`, pre-existing and untouched by this task).
+SCOPED branches 117/118 = 99.15%.
+
+## T-044 — 2026-08-27 — `/zoho-sync` now checks its own re-indented output against `_CONTENT_MAX_LENGTH` before storing it (user-approved behavior change)
+
+`sync_filament_presets_from_zoho()` (`backend/app/api/routes/filament_profiles.py`) wrote
+`apply_filament_cost()`'s return value straight into `preset.content` on a `"written"` outcome,
+with no length check of its own. `apply_filament_cost` (`backend/app/services/
+filament_profile_pricing.py`) re-serialises with `json.dumps(data, ensure_ascii=False,
+indent=4)` to match the frontend's own writer, and `indent=4` inflates compact JSON
+substantially — a preset saved right under the input-side `_CONTENT_MAX_LENGTH` cap
+(`backend/app/schemas/filament_profile.py`, 262,144 bytes, enforced on `FilamentPresetCreate`/
+`FilamentPresetUpdate.content` at create/update time) could round-trip past that same cap the
+first time this route priced it, since the cap was never re-checked on the *output* side. The
+256 KiB ceiling's own comment names this endpoint's per-request memory use as its reason for
+existing, so a preset that quietly grew past it defeated the cap it was meant to enforce.
+
+user-approved 2026-08-27: "a preset whose re-indented content would exceed 256 KiB stops
+receiving its Zoho price and instead appears in the sync's needs-attention list, so its stored
+`filament_cost` no longer updates."
+
+Reason chosen: a **new** reason, `"content_too_large"`, not a reuse of the existing
+`unwritable_content`. `unwritable_content`'s semantics are documented in three places —
+`FilamentPresetZohoSyncAttention.reason`'s own docstring ("the preset's own content was empty or
+unparseable JSON, so there was nowhere to write the price"), `apply_filament_cost`'s `"unwritable"`
+outcome comment ("content is empty, not valid JSON, or not a JSON object"), and the parametrized
+test named for it (`test_a_confident_match_with_unwritable_content_is_flagged_for_attention`,
+`content` parametrized over `""`, `"{not json"`, `"[1, 2]"`) — as strictly a parse-failure: the
+preset's *input* JSON could not be read at all. Here the input parses and prices cleanly; the
+problem is the *output* of a successful price write being too large. Reusing the reason would
+have told an operator "your preset's data is empty or unreadable," which is false and would send
+them to fix the wrong thing. Added the new value following the established pattern: `Literal`
+entry + a documented rationale, one i18n key with real translations in all 13 locale files, one
+ternary branch in the page, and the standalone Literal-acceptance test's parametrize list.
+
+Backend: `_CONTENT_MAX_LENGTH` imported from `backend.app.schemas.filament_profile` into the
+route (alongside the module's existing private imports, `_derive_bare_filename`/
+`_validate_bare_filename` — not copied as a bare number, so the two enforcement points can never
+drift apart). On a `"written"` outcome, the route now checks `len(content) > _CONTENT_MAX_LENGTH`
+before assigning: at or under the cap, `preset.content = content` and `priced += 1` exactly as
+before (byte-identical for every preset this cap does not affect — the entire existing test
+suite for this route, including every profile in every pre-existing fixture, is comfortably under
+262,144 bytes); over the cap, the preset is left untouched and an attention entry with
+`reason="content_too_large"`, `candidates=[]`, `candidates_total=0` is appended instead (same
+shape as `bad_price`/`unwritable_content`), with a `logger.warning` mirroring the route's existing
+per-reason warnings.
+
+Frontend: `frontend/src/api/client.ts`'s `FilamentPresetZohoSyncAttention.reason` union gained
+`'content_too_large'`. `FilamentProfilesPage.tsx`'s reason-to-i18n-key ternary gained a branch
+mapping `'content_too_large'` to `filamentProfiles.syncZohoContentTooLarge`, inserted before the
+final `weight_unknown`/`no_price` fallback so it cannot be shadowed. i18n: `filamentProfiles.
+syncZohoContentTooLarge` (one key, no placeholders) added with real, non-placeholder translations
+to all 13 locale files under `frontend/src/i18n/locales/` (`de`, `en`, `es`, `fr`, `it`, `ja`,
+`ko`, `pt-BR`, `ru`, `tr`, `uk`, `zh-CN`, `zh-TW`); `npx vitest run src/__tests__/i18n` passes
+(26/26, including the parity/placeholder-detection tests).
+
+Tests added, `backend/tests/unit/test_filament_profiles_zoho_sync.py`: a compact-JSON fixture is
+grown by a binary search (not a pasted byte count, and not a linear scan — a linear scan
+re-serialises the whole growing dict on every step, an O(n^2) walk that takes tens of seconds at
+the ~13,000 filler keys this cap requires) over `apply_filament_cost`'s own real output length,
+so the fixture tracks `_CONTENT_MAX_LENGTH` itself rather than a number that could drift out of
+sync with it. `test_a_confident_match_whose_reindented_content_would_exceed_the_cap_is_flagged_
+for_attention` uses the first content whose written form exceeds the cap: asserts `priced == 0`,
+`unchanged == 0`, one attention entry with `reason == "content_too_large"`, and the preset's
+stored content is byte-identical to what was submitted (never written). `test_a_confident_match_
+whose_reindented_content_is_at_the_cap_still_prices` uses the content one key short of that
+(written length `<= _CONTENT_MAX_LENGTH`): asserts a normal `priced == 1`, no attention, and the
+stored content equals `apply_filament_cost`'s own output exactly. The standalone Literal-
+acceptance test (`test_attention_reason_accepts_every_value_the_route_can_set`) and its docstring
+were extended to include `"content_too_large"` in the parametrize list.
+
+`python3 tools/snapshot.py verify`: 7 of 11 probes matched unchanged (`fp-openapi`, `fp-ddl`,
+`fp-route-perms`, `fp-pricing-write`, `fp-match-decisions`, `fp-sync-endpoint` — its own fixtures
+stay well under the cap, confirming the fix does not touch any already-passing profile —
+`calc-zoho-pure`); `fp-pydantic-schemas`, `fp-i18n-sync-strings`, `fp-client-method`, and
+`fp-page-sync-ui` legitimately diffed (the new enum value, i18n key, client type, and UI ternary
+branch, respectively) and were re-recorded via `python3 tools/snapshot.py record` — `git diff
+--stat snapshots/` confirms only those 4 files changed. `bash tools/gen_surface_fp.sh >
+SURFACE.md`: one line changed (`FilamentPresetZohoSyncAttention`'s `reason` enum gained
+`"content_too_large"`); applied.
+
+`bash tools/coverage_fp.sh backend`: 528/529 = 99.81% scoped statements (up from the 525/526
+baseline, same ratio, no drop; `filament_profiles.py`, `filament_profile_pricing.py`,
+`schemas/filament_profile.py`, and `models/filament_profile.py` are all 100.00%, the one
+remaining uncovered scoped statement is `zoho_filaments.py`, pre-existing and untouched).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,476 passed,
+1 skipped (`test_firmware_versions.py`'s pre-existing `curl_cffi not installed` environment
+skip, unrelated). `ruff check` / `ruff format --check` clean on every touched backend file. Full
+frontend suite (`./test_frontend.sh`): `npx tsc` and `npx eslint .` clean; two separate full runs
+each showed a handful of unrelated failures only under load (`StatsPageUserFilter1894.test.tsx`,
+`ArchivesPage.test.tsx`, `PrintModal.test.tsx` — different files/counts each run, the documented
+suite-load flake) with none in `FilamentProfilesPage.test.tsx` (33/33, including the new
+`content_too_large` case) or `src/__tests__/i18n`. `npm run build` succeeds.
+
+## T-045 — 2026-08-27 — `PATCH /filament-profiles/{id}` now accepts an optional concurrency precondition and 409s on a stale one (user-approved behavior change)
+
+`update_filament_profile()` blind-wrote the whole content blob it was given: `data =
+payload.model_dump(exclude_unset=True)` / a `setattr` loop / `row.updated_at =
+datetime.utcnow()`, with no expected-`updated_at` (or version) check anywhere. T-032 already
+gives the editor a client-side banner for "the row changed while you were editing" — but that
+banner is advisory only; it never blocks the save. A save started before a concurrent
+`/zoho-sync` run (or a second tab, or any direct API caller) landed its price write still
+overwrote that write in full, silently, with no server-side signal at all.
+
+user-approved 2026-08-27: "a PATCH whose expected updated_at no longer matches starts failing
+with 409 instead of succeeding, so any client that saves a preset it loaded a while ago must
+reload and re-apply its edits."
+
+Backend: `FilamentPresetUpdate` gained one new field, `expected_updated_at: datetime | None =
+None`. Omitted (the default, and every pre-T-045 caller) keeps today's unconditional PATCH
+byte-for-byte. When present, `update_filament_profile()` compares it against the fetched row's
+`updated_at` *before* touching anything — a mismatch raises `HTTPException(409, ...)` with no
+`setattr` and no `db.commit()`, so the row is provably untouched on that path (pinned by a test
+that PATCHes with a deliberately stale value and then re-reads the row from a separate `GET`).
+`expected_updated_at` is excluded from the `model_dump()` that feeds the `setattr` loop (`exclude=
+{"expected_updated_at"}`) — it is a precondition, not a stored field, and it is never present on
+the returned `FilamentPresetResponse`. The datetime comparison is a real round trip, not a
+same-process assumption: the value under test is read back from the actual HTTP response's
+`updated_at` (a FastAPI/pydantic ISO-8601 string, no timezone suffix since the column is naive
+UTC) and sent back as-is in the next PATCH's `expected_updated_at`, then compared as parsed
+datetimes against the DB row re-fetched by SQLAlchemy — both ends of that round trip proved
+equal by the passing "matches → 200" test, not asserted in the abstract. The create path and
+`duplicate_filament_profile()` are untouched (neither one runs through this precondition).
+
+Frontend: `PresetEditorModal` already tracks `syncedUpdatedAtRef` (T-032) — the `updated_at` its
+form's fields were actually derived from, which can trail the live `preset` prop while dirty.
+`handleSave` now includes `expected_updated_at: syncedUpdatedAtRef.current` in the payload it
+hands `onSave`, but only in edit mode (`isCreate` branch adds nothing, so a create request is
+byte-identical to before — no `expected_updated_at` key at all, not even `undefined`). A new
+`FilamentPresetEditorPayload` type (`frontend/src/api/client.ts`) carries the optional field
+through `onSave`'s signature; `updateFilamentPreset`'s parameter type became
+`FilamentPresetUpdatePayload` (`Partial<FilamentPresetPayload> & { expected_updated_at?: string
+}`) so the PATCH body actually includes it. `createFilamentPreset`'s signature is untouched.
+
+On a 409, `PresetEditorModal.handleSave`'s existing catch block (T-031's stay-open-on-failure
+path, already in place before this task) now special-cases `err instanceof ApiError && err.status
+=== 409`: it toasts the existing T-032 string, `filamentProfiles.serverChangedBanner` ("This
+preset changed on the server while you were editing it."), instead of the generic `saveFailed:
+{{error}}` — no new i18n key needed, so no locale/i18n-gate changes were required. The editor does
+NOT close on this path: T-031's `setEditorState('closed')` (in the page's `handleSavePreset`)
+sits after the try/catch and is only reached on a successful `await api.updateFilamentPreset(...)`
+— a thrown `ApiError` skips it entirely, same as any other save failure. `handleSavePreset`'s new
+catch also invalidates `['filamentPresets']` specifically on a 409 (not on other failures) before
+rethrowing, so the still-open editor's `preset` prop actually picks up the new `updated_at` on its
+own refetch and T-032's own conflict-banner effect (`serverConflict`) fires without this task
+needing to touch that machinery at all — verified end-to-end (real MSW-mocked PATCH 409 + GET
+refetch, not a mocked `onSave`): editor stays open, both a toast and the in-dialog `role="alert"`
+banner carry the "changed on the server" text, and the user's unsaved edit is still visibly held
+in the input, not discarded by the refetch.
+
+Tests added:
+- `backend/tests/integration/test_filament_profiles_api.py`:
+  `test_patch_omitted_expected_updated_at_is_unconditional` (no field at all → 200, pins legacy
+  behavior), `test_patch_current_expected_updated_at_succeeds` (a real round-tripped `updated_at`
+  → 200), `test_patch_stale_expected_updated_at_409_leaves_row_untouched` (a concurrent PATCH
+  bumps the row, the stale-value PATCH → 409, then a separate `GET` proves the row still carries
+  the concurrent write's data, not a partial mix), `test_patch_expected_updated_at_never_stored`
+  (the field is absent from the response body after a successful conditional PATCH).
+- `frontend/src/__tests__/components/filament-profiles/PresetEditorModal.test.tsx`: the module
+  mock for `api/client` now also exports a minimal `ApiError` class (via `vi.hoisted`, required
+  because `vi.mock` factories are hoisted above normal module-scope declarations) so `instanceof`
+  checks work under test. `sends the updated_at its form was derived from as expected_updated_at
+  (T-045)`, `never sends expected_updated_at when creating (T-045)`, and `409 (stale
+  expected_updated_at) toasts the server-changed message and stays open (T-045)`.
+- `frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx`: `sends the loaded updated_at, and
+  on a 409 keeps the editor open, toasts, and surfaces the T-032 conflict banner (T-045)` — a real
+  MSW `http.patch` handler asserting the actual PATCH body's `expected_updated_at`, a 409
+  response, the dialog staying open, the toast, and the T-032 banner all firing together.
+
+`python3 tools/snapshot.py verify` / `record`: 1 of 11 probes legitimately diffed
+(`fp-pydantic-schemas`, the new additive `expected_updated_at` field on `FilamentPresetUpdate`'s
+schema) and was re-recorded; `git diff --stat snapshots/` confirms only that file changed. The
+other 10 (`fp-openapi`, `fp-ddl`, `fp-route-perms`, `fp-pricing-write`, `fp-match-decisions`,
+`fp-sync-endpoint`, `fp-i18n-sync-strings`, `fp-client-method`, `fp-page-sync-ui`,
+`calc-zoho-pure`) matched unchanged — this task added no new i18n key and no new HTTP route.
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: `FilamentPresetUpdate`'s OpenAPI
+schema gained the new field, and the frontend-exported-symbols section gained the two new
+`api/client.ts` types (`FilamentPresetEditorPayload`, `FilamentPresetUpdatePayload`); applied,
+then re-verified byte-stable by re-running the generator a second time.
+
+`bash tools/coverage_fp.sh backend`: 531/532 = 99.81% scoped statements (up from the 528/529
+baseline, same ratio, no drop; every scoped file is 100.00% except the pre-existing, untouched
+`zoho_filaments.py` line). `bash tools/coverage_fp.sh frontend`: 229/299 = 76.58% statements (up
+from the 225/295 baseline, no drop).
+
+Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`): 12,480 passed,
+1 skipped, both as a plain run and as the coverage-instrumented run. `ruff check` / `ruff format
+--check` clean on every touched backend file. `npx tsc --noEmit -p tsconfig.app.json` and `npx
+eslint .` clean across the whole frontend tree. The coverage-scoped frontend run showed 3
+unrelated failures only under `--retry=3` load (`StatsPageUserFilter1894.test.tsx` among them —
+the documented suite-load flake); the targeted files this task touches
+(`FilamentProfilesPage.test.tsx`, `PresetEditorModal.test.tsx`, `src/__tests__/i18n`) passed
+cleanly in isolation: 91/91.
+
+## T-046 — 2026-08-27 — `_validate_bare_filename` now requires a (case-insensitive) `.json` suffix, so a non-`.json` preset name is rejected instead of being written to disk and orphaned forever (user-approved behavior change)
+
+`_validate_bare_filename` (`backend/app/schemas/filament_profile.py`) only checked path shape
+(non-empty, no `..`, `/` or `\`) — it never required a `.json` suffix. `apply_sync`
+(`backend/app/services/bambu_studio.py`) writes whatever filename a preset carries into every
+configured Bambu Studio user filament directory, but `read_disk_state` only enumerates
+`folder.glob("*.json")`. A preset stored as `foo.sh`, `.env` or `.DS_Store` therefore passed
+create/update validation, got written to disk on the next Sync-to-PC, and then became invisible
+to `compute_sync_stats` and every later sync's removal pass: dropped once and left behind
+permanently, surviving even a full-wipe sync. Containment at the write boundary (`safe_join_under`)
+was never broken — this is a pure storage-visibility bug, not a traversal one.
+
+**Fix:** `_validate_bare_filename` now also rejects a `value` that does not end in `.json`
+(case-insensitively, via `value.lower().endswith(".json")`) or whose stem is empty (the bare name
+`.json`/`.JSON` itself, `len(value) == len(".json")`). Because T-039 had already deduplicated the
+bare-filename check down to one helper, this single change is inherited by all three call sites
+that validate a stored filename: `FilamentPresetCreate`/`FilamentPresetUpdate`'s
+`_filename_is_bare` field validators (`POST`/`PATCH /filament-profiles`) and
+`_validate_bambu_sync_presets` (`POST /filament-profiles/bambu-sync`) — verified by reading each
+call site, not just the shared helper. The two call sites that already wrap the raised
+`ValueError` in their own literal message (`get_base_content`'s `"Invalid filename"`,
+`_validate_bambu_sync_presets`'s `"presets[{i}]: filename must be a bare file name"`) keep those
+exact strings unchanged, per T-039's decision to preserve call-site wording; only the validator's
+own `ValueError` text — which surfaces verbatim in a create/update 422 — was reworded, from
+`"filename must be a bare file name"` to `"filename must be a bare file name ending in .json"`.
+
+**`_derive_bare_filename` (T-030) — normalise, don't leave non-compliant:** this helper's entire
+purpose is producing a filename fit to store (for `duplicate_filament_profile`'s legacy-row path),
+and a result that still failed the new suffix check would just 422 on the very next save of that
+duplicate — a worse outcome than today's byte-identical copy. So `_derive_bare_filename` now also
+ensures its returned name ends in `.json`: if the surviving last path segment already ends in
+`.json` (any case, non-empty stem) it is returned unchanged; otherwise its existing extension (if
+any) is replaced, or `.json` is appended if it had none (`foo.sh` → `foo.json`, `foo` → `foo.json`,
+`archive.tar.gz` → `archive.tar.json`); a segment that reduces to an empty stem (e.g. `.sh`) falls
+back to the existing `preset-<id>.json` id-derived name, same as the empty-segments case. This is
+the "append/replace suffix" branch of the two options considered — normalising is consistent with
+T-030's own precedent (a legacy path-shaped name is flattened, not rejected, at duplicate time) and
+does not multiply a second orphan-shaped row into existence.
+
+**Frontend:** confirmed no change needed. `PresetEditorModal.handleSave` posts
+`` `${computedName}.json` `` unconditionally (both the create and JSON-tab content paths on lines
+401/437) — every filename the editor can produce already carries the suffix. The upload-fallback
+file picker added by the previous commit (`FilamentProfilesPage.handleFilesSelected`) restricts its
+`<input accept=".json,.zip">` and, for a `.zip`, filters entries to `entryLower.endsWith('.json')`
+before ever building a `BambuScanFile`; the server-side `bambu-scan` route reads
+`scan_user_presets()`, which itself only globs `*.json`. No UI path can hand the backend a
+non-`.json` filename today, so this was purely a backend-side gap.
+
+user-approved 2026-08-27 (verbatim): "creating, updating, or syncing a preset whose filename does
+not end in .json starts returning a validation error instead of being accepted and written to
+disk."
+
+Tests added to `backend/tests/integration/test_filament_profiles_api.py`:
+- `test_create_rejects_non_bare_filename` / `test_patch_rejects_non_bare_filename` parametrize
+  lists extended with `"foo.sh"`, `".env"`, `".DS_Store"`, `".json"` and `".JSON"` (the last two
+  pinning the empty-stem rejection case-insensitively) alongside the existing path-shaped cases.
+- `test_create_accepts_json_suffix_case_insensitively` — `"X.JSON"` is accepted and stored
+  verbatim, pinning the case-insensitive acceptance side of the same check.
+- `test_bambu_sync_element_validation` gained a `"foo.sh"` case asserting the existing
+  `presets[0]: filename must be a bare file name` 400.
+- `test_duplicate_normalises_legacy_non_json_filename` — a legacy row inserted directly with
+  `filename="foo.sh"` (bypassing the create/update validator, same technique as T-030's own
+  legacy-row tests) duplicates to `"foo.json"`; the source row itself is confirmed untouched.
+
+`python3 tools/snapshot.py verify`: 10/10 `fp-*` probes match — no golden diff. This is expected:
+`_validate_bare_filename`/`_derive_bare_filename` are private free functions with no `Field(...)`
+annotation change, so `fp-pydantic-schemas`'s `model_json_schema()` output (which the finding
+flagged as a possible-diff risk) is byte-identical — confirmed by running the probe's exact `cmd`
+from `PROBES.json` directly and diffing against the golden. `SURFACE.md` regenerated via `bash
+tools/gen_surface_fp.sh`: no diff (no route, class, constant, permission gate, DDL, or i18n key
+changed).
+
+`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+backend/tests/integration/test_filament_profiles_api.py
+backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 92 passed (was 84; 8 net new tests).
+`ruff check` / `ruff format --check` clean on `backend/app/schemas/filament_profile.py` and the
+test file. Full backend suite (`pytest backend/tests/ -n 30`, excluding `test_bambu_ftp.py`):
+12,491 passed, 1 skipped; one unrelated failure seen once under parallel load
+(`test_slicer_stall_timeout.py::TestSliceIsNotCutOffWhileProgressing::test_a_slow_slice_that_reports_progress_completes`,
+a documented suite-load flake) — re-ran alone and it passed 18/18, confirming it is not caused by
+this change. `bash tools/coverage_fp.sh backend`: 539/540 = 99.81% scoped statements (baseline
+531/532 = 99.81%, same ratio, no drop; the one uncovered line remains `zoho_filaments.py`'s
+pre-existing branch, untouched by this task).
+
+## T-003 — 2026-08-27 — MECHANICAL PROBE RE-RECORD, not a behavior change
+
+Audit `audit-cleanliness` found that `zohoResult.attention`'s reason-to-i18n-key mapping in
+`FilamentProfilesPage.tsx` was a nested ternary with a silent fallthrough: any `reason` value that
+didn't match one of the explicit `===` checks rendered the `syncZohoNoPrice` copy by default. Since
+the finding was filed the `FilamentPresetZohoSyncAttention['reason']` union grew from three values to
+seven (`no_match`, `ambiguous`, `no_price`, `unwritable_content`, `bad_price`, `weight_unknown`,
+`content_too_large`), making the ternary longer and the fallthrough hazard worse — an eighth reason
+added later would silently reuse the `no_price` copy instead of erroring at compile time.
+
+Fixed by replacing the ternary with a module-level `ZOHO_ATTENTION_REASON_KEYS: Record<
+FilamentPresetZohoSyncAttention['reason'], string>` lookup, transcribing all seven existing
+`reason → i18n key` pairs unchanged, and calling `t(ZOHO_ATTENTION_REASON_KEYS[entry.reason])` at
+the render site. Because the `Record` is keyed by the full `reason` union with no index signature,
+TypeScript now errors at compile time if the union ever grows an eighth value without a
+corresponding entry, instead of the old runtime silent-fallback behavior.
+
+**This is not a behavior change.** Every one of the seven reasons renders exactly the same i18n key
+it did before; the per-reason rendering tests in
+`frontend/src/__tests__/pages/FilamentProfilesPage.test.tsx` are unchanged and pin this (34/34
+passing).
+
+`fp-page-sync-ui` is a source-grep probe: it greps `FilamentProfilesPage.tsx` for lines containing
+`syncZoho`/`zohoSync`/`zohoSyncing` and records their literal text. Restructuring the ternary into
+the `Record` necessarily changes which lines match and how they're shaped — the seven `? 'filament
+Profiles.syncZoho...'` / `: 'filamentProfiles.syncZohoNoPrice'` ternary-branch lines are replaced by
+seven `reason: 'filamentProfiles.syncZoho...'` object-entry lines, one per reason, with the identical
+seven i18n key strings and no additions or removals. The golden was re-recorded
+(`python3 tools/snapshot.py record`); `git status --porcelain snapshots/` confirmed only
+`fp-page-sync-ui.golden` changed, and `python3 tools/snapshot.py verify --probe fp-page-sync-ui`
+now matches.
+
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: no diff (no route, class, exported
+constant, permission gate, DDL, or i18n key changed — `ZOHO_ATTENTION_REASON_KEYS` is an unexported
+module-level `const`). `npx tsc --noEmit -p tsconfig.app.json` and `npx eslint` on the touched file:
+both clean. `bash tools/coverage_fp.sh frontend`: 76.66% (230/300) scoped statements, above the
+76.58% (229/299) baseline — no drop.
+
+## T-011 — 2026-08-27 — MECHANICAL SURFACE DIFF, not a behavior change
+
+Audit `audit-robustness` found that `POST /filament-profiles/zoho-sync` called
+`zoho_filaments.match_profile(catalogue, ...)` once per preset, and `match_profile` re-normalised
+every catalogue item's brand and material (a `re.sub` each) on every single call — O(profiles x
+catalogue) regex work in one `for` loop with no `await` inside it, so the whole pass blocks the
+event loop for the duration (measured ~0.84s at the `_MAX_PAGES` ceiling of 4000 catalogue items).
+
+Fixed by splitting `match_profile` into `build_match_index(catalogue) -> CatalogueIndex` (groups
+the catalogue by `(normalised brand, normalised material)` once, preserving each bucket's
+catalogue-order) and `match_profile_indexed(index, brand, material, colour)` (does the O(1) bucket
+lookup plus the same small per-candidate colour-narrowing `match_profile` always did, via a shared
+`_match_candidates` helper extracted unchanged from the old function body). `match_profile` itself
+keeps its old signature and behavior as a thin wrapper — `build_match_index(catalogue)` then
+`match_profile_indexed(...)` — so every existing caller and test is untouched. The zoho-sync route
+now builds one `CatalogueIndex` before its preset loop and calls `match_profile_indexed` per
+preset, making the loop O(catalogue + profiles) instead of O(profiles x catalogue).
+
+**This is not a behavior change.** `_match_candidates` is a verbatim extraction of the second half
+of the old `match_profile` body (candidate-narrowing, colour disambiguation, outcome selection) —
+no branch, ordering, or constant changed. `build_match_index` groups catalogue items by iterating
+the catalogue in its own order and appending to each bucket, so a bucket's contents are in the same
+order the old list comprehension (`[item for item in catalogue if ...]`) would have produced,
+preserving `ProfileMatch.candidates` ordering exactly. All 94 tests in
+`test_zoho_filaments_match.py`, `test_filament_profiles_zoho_sync.py`, `test_zoho_filaments_
+catalogue.py`, and `test_zoho_filaments_parse.py` pass unchanged. `python3 tools/snapshot.py
+verify` matches 11/11 golden probes WITHOUT re-recording, including `fp-match-decisions` and
+`fp-sync-endpoint` — the hard pins on match outcomes and the sync endpoint's response shape.
+
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: diffs by exactly three lines — the
+new `class CatalogueIndex:`, `def build_match_index(...)`, and `def match_profile_indexed(...)`
+entries in the "Backend callables" section, alphabetically sorted in with the rest. No route,
+schema, DDL, permission gate, or i18n key changed. Applied as shown; no other section differs.
+`bash tools/coverage_fp.sh backend`: 539/540 = 99.81% scoped statements, unchanged from baseline
+(the one uncovered line remains `zoho_filaments.py`'s pre-existing branch, untouched by this task).
+
+## T-036 — 2026-08-27 — MECHANICAL SURFACE DIFF, not a behavior change
+
+Audit `audit-robustness` found that `_fetch_catalogue_or_502`'s 409 classifier identified the
+lock-busy error by comparing `str(exc)` against `_SYNC_IN_PROGRESS_DETAIL` — string equality
+against a second, hand-typed copy of the same literal `fetch_catalogue`'s lock-acquire-timeout
+branch raised as a bare `RuntimeError`. Nothing linked the two copies: a reword (or a stray
+trailing space) at the throw site would leave every test that monkeypatches the error green while
+the real lock-busy path silently degraded from "409 refresh already in progress" to "502 Could not
+reach Zoho".
+
+Fixed by adding `ZohoFilamentRefreshBusyError(RuntimeError)` and raising it (instead of a bare
+`RuntimeError`) at the lock-acquire-timeout throw site inside `fetch_catalogue`. `_fetch_
+catalogue_or_502` now has a dedicated `except ZohoFilamentRefreshBusyError` clause ahead of the
+generic `except RuntimeError`, dispatching by type instead of comparing `str(exc)`.
+`_SYNC_IN_PROGRESS_DETAIL` is unchanged as a module-level constant and keeps supplying the 409
+response's `detail` text — it is no longer compared against `str(exc)` anywhere.
+
+**This is not a behavior change.** The exception is still a `RuntimeError` subclass, so any external
+`except RuntimeError` still catches it, and the message text raised is byte-identical to before. The
+HTTP contract is unchanged: 409 with `detail == _SYNC_IN_PROGRESS_DETAIL` on lock-busy, 502
+otherwise. Confirmed the busy-timeout raise still happens *before* the `try` block that stamps
+`_fail_at`/`_fail_exc` (T-035's cooldown memo) — a busy error still cannot poison the cooldown path,
+unchanged from before this task.
+
+Test fakes in `test_filament_profiles_zoho_sync.py`, `test_calculator_zoho_routes.py`, and
+`test_calculator_zoho_sync.py` that previously raised a bare `RuntimeError(_SYNC_IN_PROGRESS_
+DETAIL)` from a monkeypatched `fetch_catalogue` now raise `ZohoFilamentRefreshBusyError` instead —
+strengthening them to exercise the classifier's actual type-based dispatch rather than a string
+match, while keeping the same 409-status and detail-text assertions. `test_zoho_filaments_
+catalogue.py`'s end-to-end lock-timeout test needed no behavioral change (it drives the real throw
+site), but gained an added `isinstance(exc_info.value, ZohoFilamentRefreshBusyError)` assertion
+alongside its existing message check. All 103 tests across the four targeted files pass.
+
+`SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: diffs by exactly one line — the new
+`class ZohoFilamentRefreshBusyError(RuntimeError):` entry in the "Backend callables" section,
+alphabetically sorted in with the rest. No route, schema, DDL, permission gate, or i18n key changed.
+Applied as shown; no other section differs. `python3 tools/snapshot.py verify`: 11/11 golden probes
+match WITHOUT re-recording, including `fp-sync-endpoint` (pins the 409 lock-busy response).
+`bash tools/coverage_fp.sh backend`: 554/555 = 99.82% scoped statements (baseline 553/554 = 99.82%,
+same ratio, no drop). One pre-existing test (`test_library_slice_api.py::TestCrossClassSliceAllLoop
+::test_embedded_settings_slice_all_with_arrange_still_loops`) failed under the parallel full-suite
+run and passed in isolation (1 passed) — a documented suite-load flake, unrelated to this change.
+
+## T-043 — 2026-08-27 — failure memo no longer stamped by a superseded walk (internal-correctness fix, not a behavior change)
+
+The failure-memo write in `fetch_catalogue` now carries the same generation guard as the success
+path, so a walk that started before a `reset_cache()` credential rotation can no longer re-poison
+the fast-fail window with the pre-rotation error. This restores the invariant `reset_cache()`'s own
+comment already promises (`zoho_filaments.py` ~415-419): a failure recorded under the OLD
+credentials must not keep answering "Zoho is down" once they have just been rotated to
+(presumably working) new ones. The superseded failure still propagates to its own caller, and
+T-095's approved user-visible effect is preserved.

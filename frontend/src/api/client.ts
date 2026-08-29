@@ -3510,16 +3510,43 @@ export interface FilamentSyncStats { added: number; updated: number; removed: nu
 export interface FilamentBaseSyncResult { added: number; updated: number; unchanged: number; total: number; }
 export interface BambuScanFile { filename: string; content: string; }
 export type FilamentPresetPayload = Omit<FilamentPreset, 'id' | 'created_at' | 'updated_at'>;
+/** T-045: an update payload may carry the `updated_at` its fields were
+ *  derived from, so the server can 409 instead of silently clobbering a
+ *  write (e.g. a Zoho price sync) that landed after that value was read.
+ *  Omitted entirely (the default) keeps the pre-T-045 unconditional PATCH. */
+export type FilamentPresetUpdatePayload = Partial<FilamentPresetPayload> & { expected_updated_at?: string };
+/** What `PresetEditorModal` hands its `onSave` callback: the full editor
+ *  payload, plus (edit mode only) the `updated_at` its form was derived
+ *  from -- see `FilamentPresetUpdatePayload`. */
+export type FilamentPresetEditorPayload = FilamentPresetPayload & { expected_updated_at?: string };
 export interface FilamentPresetZohoSyncAttention {
   id: number;
   name: string;
-  reason: 'no_match' | 'ambiguous' | 'no_price';
+  reason:
+    | 'no_match'
+    | 'ambiguous'
+    | 'no_price'
+    | 'unwritable_content'
+    | 'bad_price'
+    | 'weight_unknown'
+    | 'content_too_large';
   candidates: string[];
+  candidates_total: number;
 }
 export interface FilamentPresetZohoSyncResponse {
   priced: number;
   unchanged: number;
   attention: FilamentPresetZohoSyncAttention[];
+  // T-038: the true number of presets flagged for attention, before the
+  // backend truncates `attention` to its cap. Equals attention.length on any
+  // run at or under the cap; only very large runs diverge, letting the UI
+  // render an "and N more" suffix instead of a wall of hundreds of rows.
+  attention_total: number;
+  // T-034: set when this sync's catalogue came from a failed-refresh
+  // stale-cache fallback (Zoho was unreachable) rather than a fresh fetch;
+  // the value is when that catalogue was actually last captured. `null`
+  // means the catalogue was fresh.
+  catalogue_stale_since: string | null;
 }
 
 // ── CSV import/export (#1576) ──────────────────────────────────────────────
@@ -6976,7 +7003,7 @@ export const api = {
   getFilamentPresets: () => request<FilamentPreset[]>('/filament-profiles'),
   createFilamentPreset: (data: FilamentPresetPayload) =>
     request<FilamentPreset>('/filament-profiles', { method: 'POST', body: JSON.stringify(data) }),
-  updateFilamentPreset: (id: number, data: Partial<FilamentPresetPayload>) =>
+  updateFilamentPreset: (id: number, data: FilamentPresetUpdatePayload) =>
     request<FilamentPreset>(`/filament-profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFilamentPreset: (id: number) =>
     request<{ success: boolean }>(`/filament-profiles/${id}`, { method: 'DELETE' }),
@@ -6996,8 +7023,8 @@ export const api = {
     request<{ stats: FilamentSyncStats }>('/filament-profiles/bambu-sync', {
       method: 'POST', body: JSON.stringify({ presets, dry_run: dryRun }),
     }),
-  syncFilamentPresetsFromZoho: () =>
-    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST' }),
+  syncFilamentPresetsFromZoho: (signal?: AbortSignal) =>
+    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST', signal }),
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.

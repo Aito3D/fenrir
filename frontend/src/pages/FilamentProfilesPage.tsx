@@ -16,13 +16,15 @@ import {
   Upload,
 } from 'lucide-react';
 
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type {
   BambuScanFile,
   BaseFilamentPreset,
   FilamentBaseSyncResult,
   FilamentPreset,
+  FilamentPresetEditorPayload,
   FilamentPresetPayload,
+  FilamentPresetZohoSyncAttention,
   FilamentPresetZohoSyncResponse,
   FilamentSyncStats,
 } from '../api/client';
@@ -40,6 +42,7 @@ import {
 } from '../components/filament-profiles/presetJson';
 import { collectPresetFiles } from '../components/filament-profiles/pickedFiles';
 import type { GridSize, SortField } from '../components/filament-profiles/types';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
   readBrandFilter,
@@ -58,15 +61,93 @@ const GRID_CLASSES: Record<GridSize, string> = {
 
 const SORT_FIELDS: SortField[] = ['name', 'brand', 'material', 'color'];
 
+// T-003: exhaustive lookup for zohoResult.attention reason -> i18n key. Keying
+// this on the `reason` union (rather than a ternary/switch fallthrough) means
+// TypeScript errors if the union ever grows another value instead of silently
+// reusing a fallback translation.
+const ZOHO_ATTENTION_REASON_KEYS: Record<FilamentPresetZohoSyncAttention['reason'], string> = {
+  no_match: 'filamentProfiles.syncZohoNoMatch',
+  ambiguous: 'filamentProfiles.syncZohoAmbiguous',
+  unwritable_content: 'filamentProfiles.syncZohoUnwritable',
+  bad_price: 'filamentProfiles.syncZohoBadPrice',
+  weight_unknown: 'filamentProfiles.syncZohoWeightUnknown',
+  content_too_large: 'filamentProfiles.syncZohoContentTooLarge',
+  no_price: 'filamentProfiles.syncZohoNoPrice',
+};
+
 /** Every editor open state the page can be in — drives the PresetEditorModal
- *  rendered below (nothing renders for 'closed'). */
-type EditorState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; preset: FilamentPreset };
+ *  rendered below (nothing renders for 'closed'). 'edit' stores only the id:
+ *  the preset itself is re-derived from the `presets` query on every render
+ *  (see `editingPreset` below) so a cache invalidation — e.g. a Zoho price
+ *  sync completing while the editor is open — feeds the modal fresh data
+ *  instead of the pre-sync snapshot captured when it was opened. */
+type EditorState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; presetId: number };
 
 type SyncBaseModalState = { result?: FilamentBaseSyncResult; error?: string } | null;
 type SyncModalState = { state: 'syncing' | 'preview' | 'done'; stats?: FilamentSyncStats } | null;
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Toasts `errorMessage(error)` at most once per mount when `isError` is
+ * true (spec §5.1: "failure -> error toast" on the initial load, not on
+ * every subsequent refetch attempt). A ref flag survives across the
+ * retry-driven re-renders that would otherwise re-fire the effect on every
+ * new error object identity.
+ */
+function useToastOnce(isError: boolean, error: unknown, showToast: (message: string, type?: 'error') => void) {
+  const toastedRef = useRef(false);
+  useEffect(() => {
+    if (isError && !toastedRef.current) {
+      toastedRef.current = true;
+      showToast(errorMessage(error), 'error');
+    }
+  }, [isError, error, showToast]);
+}
+
+/**
+ * Derives a safe, flat ZIP entry name for a preset's stored `filename`
+ * (spec §5.9 / T-029). Legacy rows created before the create/update
+ * validator existed can still carry path-shaped or traversal-shaped
+ * filenames (e.g. `../../x.json`); writing those straight into the archive
+ * would produce entries that escape the extraction directory in extractors
+ * that don't sanitise themselves. This takes the last non-empty path
+ * segment (splitting on both `/` and `\`, and dropping `.`/`..` segments);
+ * if nothing valid remains, it falls back to a name derived from the
+ * preset's id. Already-bare filenames pass through unchanged.
+ */
+function deriveZipEntryName(filename: string, presetId: number): string {
+  const segments = filename
+    .split(/[/\\]+/)
+    .filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
+  const last = segments[segments.length - 1];
+  return last || `preset-${presetId}.json`;
+}
+
+/**
+ * Returns a version of `name` guaranteed not to already be in `usedNames`,
+ * suffixing deterministically (`-2`, `-3`, ...) before the extension when
+ * flattening two legacy filenames collides. Mutates `usedNames` to record
+ * the name it returns.
+ */
+function uniqueZipEntryName(name: string, usedNames: Set<string>): string {
+  if (!usedNames.has(name)) {
+    usedNames.add(name);
+    return name;
+  }
+  const dotIndex = name.lastIndexOf('.');
+  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const ext = dotIndex > 0 ? name.slice(dotIndex) : '';
+  let suffix = 2;
+  let candidate = `${base}-${suffix}${ext}`;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}-${suffix}${ext}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
 }
 
 function SkeletonCard() {
@@ -85,6 +166,21 @@ export function FilamentProfilesPage() {
   const { showToast, showPersistentToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
+  // Each button/menu item below is gated on the permission its own backend
+  // endpoint enforces (RequirePermissionIfAuthEnabled in
+  // routes/filament_profiles.py) — a read-only user no longer sees a control
+  // that would just 403. `hasPermission` returns true unconditionally on
+  // auth-disabled installs, so those keep seeing everything.
+  const { hasPermission } = useAuth();
+  const canCreatePreset = hasPermission('filaments:create');
+  const canUpdatePreset = hasPermission('filaments:update');
+  const canDeletePreset = hasPermission('filaments:delete');
+  // T-027: the backend route requires BOTH filaments:update and
+  // calculator:update (it reaches the same Zoho catalogue the calculator's
+  // own zoho routes gate on calculator:update) — mirror that here so a
+  // filaments:update-only role doesn't see a button that just 403s.
+  const canSyncZohoPrices = canUpdatePreset && hasPermission('calculator:update');
+
   const presetsQuery = useQuery({ queryKey: ['filamentPresets'], queryFn: () => api.getFilamentPresets() });
   const baseQuery = useQuery({ queryKey: ['filamentBasePresets'], queryFn: () => api.getBaseFilamentPresets() });
   // Extends the editor's material dropdown; failure is non-blocking here,
@@ -93,23 +189,9 @@ export function FilamentProfilesPage() {
 
   // Each of these toasts fires at most once per mount (spec §5.1: "failure
   // -> error toast" on the initial load, not on every subsequent refetch
-  // attempt) — a ref flag survives across the retry-driven re-renders that
-  // would otherwise re-fire the effect on every new error object identity.
-  const baseErrorToastedRef = useRef(false);
-  useEffect(() => {
-    if (baseQuery.isError && !baseErrorToastedRef.current) {
-      baseErrorToastedRef.current = true;
-      showToast(errorMessage(baseQuery.error), 'error');
-    }
-  }, [baseQuery.isError, baseQuery.error, showToast]);
-
-  const catalogErrorToastedRef = useRef(false);
-  useEffect(() => {
-    if (catalogQuery.isError && !catalogErrorToastedRef.current) {
-      catalogErrorToastedRef.current = true;
-      showToast(errorMessage(catalogQuery.error), 'error');
-    }
-  }, [catalogQuery.isError, catalogQuery.error, showToast]);
+  // attempt) — see useToastOnce above.
+  useToastOnce(baseQuery.isError, baseQuery.error, showToast);
+  useToastOnce(catalogQuery.isError, catalogQuery.error, showToast);
 
   const presets = useMemo<FilamentPreset[]>(() => presetsQuery.data ?? [], [presetsQuery.data]);
   const baseFilamentPresets = useMemo<BaseFilamentPreset[]>(() => baseQuery.data ?? [], [baseQuery.data]);
@@ -127,6 +209,24 @@ export function FilamentProfilesPage() {
   const [sortField, setSortField] = useState<SortField>('name');
 
   const [editorState, setEditorState] = useState<EditorState>({ mode: 'closed' });
+  // T-032: the editor's remount key below tracks `updated_at` so a stale
+  // editor picks up a preset changed elsewhere while it's open (T-006) —
+  // but doing that unconditionally also remounts (and silently discards)
+  // one with in-progress, unsaved edits. `liveEditKeyRef` always mirrors
+  // the up-to-date key computed at render time; `frozenEditKey` — set only
+  // from the modal's `onDirtyChange` — freezes it from the moment the
+  // editor turns dirty and clears again once it's clean (a reload adopting
+  // the fresh copy, or the parent-driven close on save, see below).
+  const liveEditKeyRef = useRef('create');
+  const [frozenEditKey, setFrozenEditKey] = useState<string | null>(null);
+  const handleEditorDirtyChange = useCallback((dirty: boolean) => {
+    setFrozenEditKey(dirty ? liveEditKeyRef.current : null);
+  }, []);
+  // A fresh open (or close) must never inherit a freeze left over from a
+  // previous editor instance on a different preset.
+  useEffect(() => {
+    setFrozenEditKey(null);
+  }, [editorState]);
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -169,6 +269,17 @@ export function FilamentProfilesPage() {
     }
   }, [presetsQuery.isLoading, presets.length, materials, materialFilter]);
 
+  // If the preset the editor has open is deleted elsewhere (another tab,
+  // or a background sync), it drops out of `presets` on the next
+  // invalidation — close rather than leave a modal open on a preset that no
+  // longer exists (there's nothing to save it back to).
+  useEffect(() => {
+    if (editorState.mode !== 'edit' || presetsQuery.isLoading) return;
+    if (!presets.some((p) => p.id === editorState.presetId)) {
+      setEditorState({ mode: 'closed' });
+    }
+  }, [editorState, presets, presetsQuery.isLoading]);
+
   const searchLower = search.trim().toLowerCase();
   const filteredPresets = useMemo(() => {
     return presets
@@ -200,14 +311,40 @@ export function FilamentProfilesPage() {
 
   // ── Save (used by the editor modal) ─────────────────────────────────────
   const handleSavePreset = useCallback(
-    async (payload: FilamentPresetPayload, editing: FilamentPreset | null) => {
-      if (editing) {
-        await api.updateFilamentPreset(editing.id, payload);
-        showToast(t('filamentProfiles.updatedToast', { name: payload.name }));
-      } else {
-        await api.createFilamentPreset(payload);
-        showToast(t('filamentProfiles.createdToast', { name: payload.name }));
+    async (payload: FilamentPresetEditorPayload, editing: FilamentPreset | null) => {
+      try {
+        if (editing) {
+          await api.updateFilamentPreset(editing.id, payload);
+          showToast(t('filamentProfiles.updatedToast', { name: payload.name }));
+        } else {
+          await api.createFilamentPreset(payload);
+          showToast(t('filamentProfiles.createdToast', { name: payload.name }));
+        }
+      } catch (err) {
+        // T-045: a 409 means `payload.expected_updated_at` no longer
+        // matches the row — a write landed in between. Refetch now so the
+        // still-open editor's `preset` prop picks up the new `updated_at`
+        // and the T-032 conflict banner (`serverConflict`, driven off that
+        // prop) fires on its own; the editor itself stays open and toasts
+        // (see `PresetEditorModal.handleSave`'s catch) because this rethrows
+        // instead of reaching the close-on-success code below (T-031's
+        // close-on-save is for successful saves only).
+        if (err instanceof ApiError && err.status === 409) {
+          await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+        }
+        throw err;
       }
+      // Close now, driven by the parent, BEFORE invalidating — not after
+      // (T-031). The refetch below can bump the saved preset's `updated_at`,
+      // which feeds the editor's remount key just below (kept for T-006: a
+      // stale editor must pick up a preset changed elsewhere, e.g. a Zoho
+      // price sync, while it's open). Awaiting that refetch first races the
+      // modal's own 220ms exit animation (useDismissableDialog's deferred
+      // onClose) — the key can change and remount the modal instance whose
+      // close was already pending, silently dropping it and leaving the
+      // editor stuck open after a successful save. Setting `editorState`
+      // here instead closes it unconditionally, independent of that timer.
+      setEditorState({ mode: 'closed' });
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
     },
     [queryClient, showToast, t],
@@ -231,7 +368,7 @@ export function FilamentProfilesPage() {
       const created = await api.duplicateFilamentPreset(preset.id);
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
       await presetsQuery.refetch();
-      setEditorState({ mode: 'edit', preset: created });
+      setEditorState({ mode: 'edit', presetId: created.id });
     } catch (err) {
       showToast(errorMessage(err), 'error');
     }
@@ -376,16 +513,65 @@ export function FilamentProfilesPage() {
   };
 
   // ── Sync prices from Zoho ────────────────────────────────────────────────
+  // T-033: zoho_filaments' own comment documents a ~400s cold-cache worst case
+  // (20 pages x 2 attempts x 10s). 10 minutes gives comfortable headroom above
+  // that so a legitimate sync is never killed, while a connection dropped
+  // without a reset (proxy idle-kill, laptop sleep) still recovers the button
+  // instead of leaving it dead until reload.
+  const ZOHO_SYNC_DEADLINE_MS = 600_000;
+
   const handleZohoSync = async () => {
     setZohoSyncing(true);
+    setZohoResult(null);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), ZOHO_SYNC_DEADLINE_MS);
     try {
-      const result = await api.syncFilamentPresetsFromZoho();
+      const result = await api.syncFilamentPresetsFromZoho(controller.signal);
       setZohoResult(result);
-      showToast(t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged }), 'success');
-      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+      // A run that priced nothing must not read as a success: report the
+      // needs-attention count in the toast text itself (the detail panel with
+      // the full breakdown lives further down the page, off-screen on a
+      // normal viewport) and downgrade the toast color whenever some
+      // profiles couldn't be priced or nothing was priced/unchanged at all.
+      const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
+      // T-038: the true count, not the (possibly truncated) attention array's
+      // length — a capped run must not read as "fewer profiles needed
+      // review" than it actually did.
+      const attentionCount = result.attention_total;
+      // T-034: Zoho was unreachable and this catalogue came from fetch_catalogue's
+      // failure-branch stale-cache fallback, with no upper bound on its age — the
+      // sync still ran and wrote (see the route), but the toast must disclose
+      // that instead of reading exactly like a live, fully successful sync.
+      const staleMessage = result.catalogue_stale_since
+        ? t('filamentProfiles.syncZohoStale', { timestamp: new Date(result.catalogue_stale_since).toLocaleString() })
+        : null;
+      const toastMessage = [doneMessage]
+        .concat(attentionCount > 0 ? [t('filamentProfiles.syncZohoAttention', { count: attentionCount })] : [])
+        .concat(staleMessage ? [staleMessage] : [])
+        .join(' — ');
+      const isFullSuccess = attentionCount === 0 && result.priced + result.unchanged > 0 && !staleMessage;
+      showToast(toastMessage, isFullSuccess ? 'success' : 'warning');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : t('filamentProfiles.syncZohoFailed'), 'error');
+      setZohoResult(null);
+      // T-047: /zoho-sync commits its write server-side before it responds,
+      // so only a definite HTTP error *response* (an `ApiError` — the server
+      // told us it did NOT apply, e.g. 409/502/503) means the sync really
+      // failed. Every other failure mode here — the client-side deadline's
+      // AbortError, or a network failure (fetch throwing a plain `TypeError`
+      // before any response arrives) — means the response was lost, not
+      // that the write never landed. Those get an "unknown outcome" toast
+      // instead of a definite "failed" one; either way the `finally` below
+      // refetches so the grid/editor stop serving the stale pre-sync cache.
+      const isApiError = error instanceof ApiError;
+      showToast(isApiError ? error.message : t('filamentProfiles.syncZohoUnknown'), 'error');
     } finally {
+      // T-047: invalidate on every path, not just success — a lost response
+      // doesn't mean the server didn't commit the sync, so the failure/abort
+      // paths must refetch too instead of leaving the grid and any open
+      // editor on the pre-sync snapshot (which a subsequent Save would then
+      // PATCH straight back over the committed price).
+      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+      clearTimeout(deadline);
       setZohoSyncing(false);
     }
   };
@@ -402,7 +588,11 @@ export function FilamentProfilesPage() {
     try {
       const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
-      candidates.forEach((p) => zip.file(p.filename, p.content));
+      const usedNames = new Set<string>();
+      candidates.forEach((p) => {
+        const entryName = uniqueZipEntryName(deriveZipEntryName(p.filename, p.id), usedNames);
+        zip.file(entryName, p.content);
+      });
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -514,23 +704,27 @@ export function FilamentProfilesPage() {
           <p className="text-bambu-gray mt-1">{t('filamentProfiles.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
-            {syncBaseBusy ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t('filamentProfiles.syncingBase')}
-              </>
-            ) : (
-              <>
-                <Database className="h-4 w-4" />
-                {t('filamentProfiles.syncBase')}
-              </>
-            )}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={handleImport} disabled={importing}>
-            <Upload className="h-4 w-4" />
-            {t('filamentProfiles.import')}
-          </Button>
+          {canUpdatePreset && (
+            <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
+              {syncBaseBusy ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('filamentProfiles.syncingBase')}
+                </>
+              ) : (
+                <>
+                  <Database className="h-4 w-4" />
+                  {t('filamentProfiles.syncBase')}
+                </>
+              )}
+            </Button>
+          )}
+          {canCreatePreset && (
+            <Button variant="secondary" size="sm" onClick={handleImport} disabled={importing}>
+              <Upload className="h-4 w-4" />
+              {t('filamentProfiles.import')}
+            </Button>
+          )}
           {/* Hidden picker for the upload-fallback import — opened by
               handleImport when the server-side scan finds no Bambu Studio
               folder (remote deploys). */}
@@ -554,27 +748,42 @@ export function FilamentProfilesPage() {
             className="hidden"
             onChange={handleBaseFilesSelected}
           />
-          <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
-            <RefreshCw className="h-4 w-4" />
-            {t('filamentProfiles.syncZohoPrices')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleSyncToPc}
-            disabled={presetsQuery.isLoading || presetsQuery.isError}
-          >
-            <RefreshCw className="h-4 w-4" />
-            {t('filamentProfiles.syncToPc')}
-          </Button>
+          {canSyncZohoPrices && (
+            <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
+              {zohoSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('filamentProfiles.syncingZoho')}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  {t('filamentProfiles.syncZohoPrices')}
+                </>
+              )}
+            </Button>
+          )}
+          {canUpdatePreset && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncToPc}
+              disabled={presetsQuery.isLoading || presetsQuery.isError}
+            >
+              <RefreshCw className="h-4 w-4" />
+              {t('filamentProfiles.syncToPc')}
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={handleExport} disabled={!canExport}>
             <Download className="h-4 w-4" />
             {t('filamentProfiles.exportZip')}
           </Button>
-          <Button size="sm" onClick={() => setEditorState({ mode: 'create' })}>
-            <Plus className="h-4 w-4" />
-            {t('filamentProfiles.newPreset')}
-          </Button>
+          {canCreatePreset && (
+            <Button size="sm" onClick={() => setEditorState({ mode: 'create' })}>
+              <Plus className="h-4 w-4" />
+              {t('filamentProfiles.newPreset')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -683,27 +892,40 @@ export function FilamentProfilesPage() {
           <div className="text-white">
             {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
           </div>
+          {zohoResult.catalogue_stale_since && (
+            <div className="mt-2 text-amber-400">
+              {t('filamentProfiles.syncZohoStale', {
+                timestamp: new Date(zohoResult.catalogue_stale_since).toLocaleString(),
+              })}
+            </div>
+          )}
           {zohoResult.attention.length > 0 && (
             <>
               <div className="mt-2 text-bambu-gray-light">
-                {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention.length })}
+                {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention_total })}
               </div>
               <ul className="mt-1 space-y-0.5 text-bambu-gray-light">
                 {zohoResult.attention.map((entry) => (
                   <li key={entry.id}>
                     <span className="text-white">{entry.name}</span>
                     {' — '}
-                    {t(
-                      entry.reason === 'no_match'
-                        ? 'filamentProfiles.syncZohoNoMatch'
-                        : entry.reason === 'ambiguous'
-                          ? 'filamentProfiles.syncZohoAmbiguous'
-                          : 'filamentProfiles.syncZohoNoPrice',
+                    {t(ZOHO_ATTENTION_REASON_KEYS[entry.reason])}
+                    {entry.candidates.length > 0 && (
+                      <>
+                        {': '}
+                        {entry.candidates.join(', ')}
+                        {entry.candidates_total > entry.candidates.length &&
+                          ` ${t('common.plusNMore', { count: entry.candidates_total - entry.candidates.length })}`}
+                      </>
                     )}
-                    {entry.candidates.length > 0 && `: ${entry.candidates.join(', ')}`}
                   </li>
                 ))}
               </ul>
+              {zohoResult.attention_total > zohoResult.attention.length && (
+                <div className="mt-1 text-bambu-gray-light">
+                  {t('common.plusNMore', { count: zohoResult.attention_total - zohoResult.attention.length })}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -746,10 +968,13 @@ export function FilamentProfilesPage() {
             <PresetCard
               key={preset.id}
               preset={preset}
-              onOpen={() => setEditorState({ mode: 'edit', preset })}
-              onEdit={() => setEditorState({ mode: 'edit', preset })}
+              onOpen={() => setEditorState({ mode: 'edit', presetId: preset.id })}
+              onEdit={() => setEditorState({ mode: 'edit', presetId: preset.id })}
               onDuplicate={() => handleDuplicate(preset)}
               onDelete={() => setConfirmDelete(preset)}
+              canEdit={canUpdatePreset}
+              canDuplicate={canCreatePreset}
+              canDelete={canDeletePreset}
             />
           ))}
         </div>
@@ -757,16 +982,27 @@ export function FilamentProfilesPage() {
 
       {editorState.mode !== 'closed' &&
         (() => {
-          const editingPreset = editorState.mode === 'edit' ? editorState.preset : null;
+          const editingPreset =
+            editorState.mode === 'edit' ? (presets.find((p) => p.id === editorState.presetId) ?? null) : null;
+          // 'edit' with no matching preset means it was just deleted out from
+          // under the open editor (see the effect above, which will close it
+          // on the next render) — don't flash a stale/empty editor meanwhile.
+          if (editorState.mode === 'edit' && !editingPreset) return null;
+          const liveKey =
+            editorState.mode === 'edit' ? `${editorState.presetId}-${editingPreset?.updated_at ?? ''}` : 'create';
+          liveEditKeyRef.current = liveKey;
           return (
             <PresetEditorModal
+              key={frozenEditKey ?? liveKey}
               preset={editingPreset}
               presets={presets}
               basePresets={baseFilamentPresets}
               extraMaterials={extraMaterials}
               onSave={(payload) => handleSavePreset(payload, editingPreset)}
-              onDelete={editingPreset ? () => setConfirmDelete(editingPreset) : null}
+              onDelete={editingPreset && canDeletePreset ? () => setConfirmDelete(editingPreset) : null}
               onClose={() => setEditorState({ mode: 'closed' })}
+              canSave={editorState.mode === 'create' ? canCreatePreset : canUpdatePreset}
+              onDirtyChange={handleEditorDirtyChange}
             />
           );
         })()}
@@ -791,6 +1027,7 @@ export function FilamentProfilesPage() {
           onCancel={() => setSyncModal(null)}
           onConfirm={handleSyncConfirm}
           onClose={() => setSyncModal(null)}
+          canConfirm={canDeletePreset}
         />
       )}
 

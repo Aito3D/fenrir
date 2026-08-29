@@ -22,10 +22,29 @@ import { TagInput } from '../../../components/filament-profiles/TagInput';
 import { api } from '../../../api/client';
 import type { BaseFilamentPreset, FilamentPreset } from '../../../api/client';
 
+// T-045: PresetEditorModal's save-error handling checks `err instanceof
+// ApiError`, so the mock must export a real (if minimal) class rather than
+// just the `api` object — mirrors the shape of the real ApiError in
+// api/client.ts closely enough for `instanceof` and `.status` to work.
+// `vi.mock` factories are hoisted above the module, so the class has to be
+// declared via `vi.hoisted` to avoid a temporal-dead-zone ReferenceError.
+const { MockApiError } = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  }
+  return { MockApiError };
+});
+
 vi.mock('../../../api/client', () => ({
   api: {
     getBaseFilamentPresetContent: vi.fn(),
   },
+  ApiError: MockApiError,
 }));
 
 const mockShowToast = vi.fn();
@@ -370,6 +389,82 @@ describe('PresetEditorModal — edit mode', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('sends the updated_at its form was derived from as expected_updated_at (T-045)', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset({ updated_at: '2026-08-20T12:34:56.789012' })}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.expected_updated_at).toBe('2026-08-20T12:34:56.789012');
+  });
+
+  it('never sends expected_updated_at when creating (T-045)', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={null}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Brand' }));
+    await user.click(screen.getByRole('option', { name: 'SUNLU' }));
+    await user.click(screen.getByRole('combobox', { name: 'Material' }));
+    await user.click(screen.getByRole('option', { name: 'PETG' }));
+    await user.type(screen.getByRole('textbox', { name: 'Color label' }), 'Magenta');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const payload = onSave.mock.calls[0][0];
+    expect('expected_updated_at' in payload).toBe(false);
+  });
+
+  it('409 (stale expected_updated_at) toasts the server-changed message and stays open (T-045)', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValue(new MockApiError('Conflict', 409));
+    const onClose = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringMatching(/changed on the server/i), 'error'),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
   it('ignores Escape while a save is in-flight, same as the Cancel button', async () => {
     const user = userEvent.setup();
     let resolveSave: () => void = () => {};
@@ -424,6 +519,118 @@ describe('PresetEditorModal — edit mode', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe('PresetEditorModal — server conflict banner (T-032)', () => {
+  it('reports dirty via onDirtyChange, ignores a changed preset while clean, and holds+banners it while dirty until Reload is clicked', async () => {
+    const user = userEvent.setup();
+    const onDirtyChange = vi.fn();
+    const baseProps = {
+      presets: [],
+      basePresets: [],
+      extraMaterials: [],
+      onSave: vi.fn(),
+      onDelete: null,
+      onClose: vi.fn(),
+      onDirtyChange,
+    };
+
+    const { rerender } = render(
+      <PresetEditorModal {...baseProps} preset={editPreset({ updated_at: '2026-08-01T00:00:00Z' })} />,
+    );
+
+    // Mount reports the initial (clean) dirty state.
+    expect(onDirtyChange).toHaveBeenCalledWith(false);
+
+    // Clean editor: a changed incoming preset must not raise a banner here
+    // — the page remounts the whole modal for that case (T-006), it never
+    // stays mounted long enough to see this prop change while clean.
+    rerender(<PresetEditorModal {...baseProps} preset={editPreset({ updated_at: '2026-08-10T00:00:00Z' })} />);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // Now make an in-progress, unsaved edit.
+    const colorInput = screen.getByRole('textbox', { name: /color label/i });
+    await user.clear(colorInput);
+    await user.type(colorInput, 'Sunrise');
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
+
+    // The preset changes on the server underneath the dirty editor.
+    rerender(<PresetEditorModal {...baseProps} preset={editPreset({ updated_at: '2026-08-25T00:00:00Z' })} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed on the server/i);
+    // The typed value is held, not silently replaced.
+    expect(screen.getByRole('textbox', { name: /color label/i })).toHaveValue('Sunrise');
+
+    await user.click(screen.getByRole('button', { name: /reload from server/i }));
+
+    // Reload adopts the server copy (color reverts to the fixture's own
+    // "Magenta") and dismisses the banner + dirty flag.
+    expect(screen.getByRole('textbox', { name: /color label/i })).toHaveValue('Magenta');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('re-resolves an inherited parent after Reload from server when the reloaded copy itself has `inherits`', async () => {
+    // The reloaded copy's own content never sets filament_cost — it only
+    // comes from the parent's merge, so seeing it after Reload proves the
+    // parent was actually re-resolved rather than just carried over.
+    getBaseContent.mockResolvedValue({ content: JSON.stringify({ filament_cost: ['24.99'] }) });
+    const basePresets: BaseFilamentPreset[] = [
+      {
+        id: 1,
+        name: 'Bambu PETG Base',
+        inherits: '',
+        brand: 'Bambu Lab',
+        material: 'PETG',
+        color: '',
+        color_hex: '',
+        filename: 'bambu_petg_base.json',
+      },
+    ];
+    const user = userEvent.setup();
+    const baseProps = {
+      presets: [],
+      basePresets,
+      extraMaterials: [],
+      onSave: vi.fn(),
+      onDelete: null,
+      onClose: vi.fn(),
+    };
+    const withInherits = (overrides: Partial<FilamentPreset>) =>
+      editPreset({
+        content: JSON.stringify({
+          filament_vendor: ['SUNLU'],
+          filament_type: ['PETG'],
+          default_filament_colour: ['#ff00ff'],
+          inherits: 'Bambu PETG Base',
+        }),
+        ...overrides,
+      });
+
+    const { rerender } = render(
+      <PresetEditorModal {...baseProps} preset={withInherits({ updated_at: '2026-08-01T00:00:00Z' })} />,
+    );
+
+    // Mount resolves the initial `inherits` — the cost field only appears via the parent merge.
+    expect(await screen.findByText('↳ Bambu PETG Base')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: /Cost/ })).toHaveValue(24.99));
+
+    // Unsaved edit, then the server copy changes underneath it (still inheriting the same parent).
+    const colorInput = screen.getByRole('textbox', { name: /color label/i });
+    await user.clear(colorInput);
+    await user.type(colorInput, 'Sunrise');
+
+    rerender(<PresetEditorModal {...baseProps} preset={withInherits({ updated_at: '2026-08-25T00:00:00Z' })} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed on the server/i);
+
+    await user.click(screen.getByRole('button', { name: /reload from server/i }));
+
+    // Reload rebuilds the form fresh from the server copy (whose own content
+    // has no filament_cost) and then re-resolves `inherits`, re-merging the
+    // parent's cost back in.
+    expect(await screen.findByText('↳ Bambu PETG Base')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: /Cost/ })).toHaveValue(24.99));
   });
 });
 

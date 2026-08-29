@@ -19,13 +19,31 @@ export interface PresetCardProps {
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** Gates the menu's Edit item on `filaments:update` (mirrors the
+   *  backend's own check on the PATCH route) — defaults to true so any
+   *  caller that doesn't pass it keeps today's behavior. */
+  canEdit?: boolean;
+  /** Gates Duplicate on `filaments:create` (the duplicate route creates a
+   *  new row). */
+  canDuplicate?: boolean;
+  /** Gates Delete on `filaments:delete`. */
+  canDelete?: boolean;
 }
 
 /**
  * Horizontal card for a single filament preset: color swatch strip, brand/material/color
  * summary, spec chips parsed from the raw preset JSON, and a hover-revealed action menu.
  */
-export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: PresetCardProps) {
+export function PresetCard({
+  preset,
+  onOpen,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  canEdit = true,
+  canDuplicate = true,
+  canDelete = true,
+}: PresetCardProps) {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -123,45 +141,55 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
               ⌀{nozzle}mm
             </span>
           )}
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              onClick={handleMenuToggle}
-              aria-label={t('filamentProfiles.menu')}
-              className="rounded p-1 text-bambu-gray/60 opacity-0 transition-opacity hover:bg-bambu-dark-tertiary hover:text-white focus:opacity-100 group-hover:opacity-100"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-lg">
-                <button
-                  type="button"
-                  onClick={handleEdit}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white hover:bg-bambu-dark-tertiary"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  {t('filamentProfiles.edit')}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDuplicate}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white hover:bg-bambu-dark-tertiary"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  {t('filamentProfiles.duplicate')}
-                </button>
-                <div className="border-t border-bambu-dark-tertiary" />
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-bambu-dark-tertiary"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {t('filamentProfiles.delete')}
-                </button>
-              </div>
-            )}
-          </div>
+          {(canEdit || canDuplicate || canDelete) && (
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={handleMenuToggle}
+                aria-label={t('filamentProfiles.menu')}
+                className="rounded p-1 text-bambu-gray/60 opacity-0 transition-opacity hover:bg-bambu-dark-tertiary hover:text-white focus:opacity-100 group-hover:opacity-100"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-lg">
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={handleEdit}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white hover:bg-bambu-dark-tertiary"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      {t('filamentProfiles.edit')}
+                    </button>
+                  )}
+                  {canDuplicate && (
+                    <button
+                      type="button"
+                      onClick={handleDuplicate}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-white hover:bg-bambu-dark-tertiary"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      {t('filamentProfiles.duplicate')}
+                    </button>
+                  )}
+                  {canDelete && (
+                    <>
+                      {(canEdit || canDuplicate) && <div className="border-t border-bambu-dark-tertiary" />}
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-bambu-dark-tertiary"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {t('filamentProfiles.delete')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Card>

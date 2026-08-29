@@ -1,0 +1,53 @@
+### exit: 0
+### stdout:
+syncFilamentPresetsFromZoho: (signal?: AbortSignal) =>
+    request<FilamentPresetZohoSyncResponse>('/filament-profiles/zoho-sync', { method: 'POST', signal }),
+  // ── Spool label printing (#809) ──────────────────────────────────────────
+  // Both endpoints return application/pdf. Frontend opens the resulting Blob
+  // in a new tab so the user can print or save from the browser's PDF viewer.
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/inventory/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+export interface FilamentPresetZohoSyncAttention {
+  id: number;
+  name: string;
+  reason:
+    | 'no_match'
+    | 'ambiguous'
+    | 'no_price'
+    | 'unwritable_content'
+    | 'bad_price'
+    | 'weight_unknown'
+    | 'content_too_large';
+  candidates: string[];
+  candidates_total: number;
+}
+export interface FilamentPresetZohoSyncResponse {
+  priced: number;
+  unchanged: number;
+  attention: FilamentPresetZohoSyncAttention[];
+  // T-038: the true number of presets flagged for attention, before the
+  // backend truncates `attention` to its cap. Equals attention.length on any
+  // run at or under the cap; only very large runs diverge, letting the UI
+  // render an "and N more" suffix instead of a wall of hundreds of rows.
+  attention_total: number;
+  // T-034: set when this sync's catalogue came from a failed-refresh
+  // stale-cache fallback (Zoho was unreachable) rather than a fresh fetch;
+  // the value is when that catalogue was actually last captured. `null`
+  // means the catalogue was fresh.
+  catalogue_stale_since: string | null;
+}
+
+### stderr:
+
