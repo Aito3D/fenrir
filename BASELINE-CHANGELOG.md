@@ -6584,3 +6584,70 @@ comment already promises (`zoho_filaments.py` ~415-419): a failure recorded unde
 credentials must not keep answering "Zoho is down" once they have just been rotated to
 (presumably working) new ones. The superseded failure still propagates to its own caller, and
 T-095's approved user-visible effect is preserved.
+
+## T-006 — 2026-08-28 — MarginCurvePreview's K drag handle no longer compounds K through a domain it is itself moving (user-approved behavior change)
+
+`MarginCurvePreview`'s size chart renders `DragHandle`'s K grip against a domain
+(`sizeMax = sizeDomainMax(k, ...)`) computed directly from the live `d.margin_k`. `DragHandle`
+interprets every `pointermove`'s `clientX` against its current `min`/`max` props to derive the new
+value and calls `onChange` (wired to `onDragK`, which writes straight back into `d.margin_k`).
+Because the domain was derived from the same `k` the handle was actively dragging, each
+`pointermove` re-derived K against a domain that K's own previous move had just shifted, compounding
+K by roughly ×10 per event over the course of a single real drag gesture (held at a fixed screen
+position, nine events in a row already reached 216000 from a starting K of 33) instead of settling
+on the pointer-implied value.
+
+user-approved 2026-08-28: "mid-drag the size chart's X domain freezes at the K value the drag
+started with instead of tracking the live (and, until now, runaway) K; the drag control works as an
+ordinary drag instead of blowing up the value on the first move."
+
+Fixed with a new `kDragAnchor` piece of state in `MarginCurvePreview`, and two new optional
+`onDragStart`/`onDragEnd` callback props on `DragHandle` (fired from its existing `onPointerDown`
+and `onPointerUp` handlers, before their respective `onChange`/`releasePointerCapture` calls).
+`onDragStart` snapshots `k` into `kDragAnchor`; `sizeMax` is computed from `kDragAnchor ?? k`, so
+every `pointermove` for the duration of one drag is measured against the domain that existed at
+pointerdown, not the domain the drag has since moved; `onDragEnd` clears `kDragAnchor` back to
+`null`, so the domain (and the grip's `aria-valuemax`) immediately resumes tracking the live K again
+once the pointer is released — unchanged from before this fix for every non-drag path (typed edits,
+programmatic updates, initial render). No other prop, export, or component's behavior changed;
+`DragHandle`'s two new callbacks are optional and every other caller (`CalculatorQuantityCurve`'s
+own K/Q grips) omits them and is unaffected.
+
+Regression coverage added in the new
+`frontend/src/__tests__/components/calculator/MarginCurvePreview.test.tsx`: one test drives eight
+`pointermove` events at a fixed `clientX` after `pointerDown` and asserts every one of the nine
+`onDragK` calls (1 down + 8 moves) reports the same pointer-implied value (99, from a starting K of
+33) instead of compounding — the pre-fix behavior would have reached 216000 by the last call; a
+second test confirms the domain still tracks the live K normally (`aria-valuemax` reflects
+`k * 10`) when no drag is in progress, guarding the freeze itself from leaking outside a drag.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — no probe drives a K
+drag gesture, so none pinned the old compounding behavior. `SURFACE.md` regenerated via
+`bash tools/gen_surface_calc.sh`: no diff from this task alone (`DragHandle`'s two new props are
+optional callback props on an existing exported component, not new exports, DDL, routes, or
+permission gates).
+
+## T-001 + T-002 — 2026-08-28 — MECHANICAL SURFACE DIFF, not a behavior change (user-approved re-baseline)
+
+T-001 extracted the dark-tooltip style object — byte-identical `contentStyle`/`labelStyle`/
+`itemStyle`/`cursor` — that `CalculatorQuantityCurve.tsx` and `MarginCurvePreview.tsx` each defined
+verbatim as a local `const` into a single `export const TOOLTIP` in
+`frontend/src/components/calculator/shared.tsx`, and pointed both components' `<Tooltip {...TOOLTIP}
+/>` at the shared constant instead of their own copy.
+
+T-002 extracted `CalculatorFilamentsPanel`'s chunked, timeout-guarded, QueryClient-persisted Zoho
+sync-walk state machine — unchanged in its chunking, timeout, retry, and progress-reporting logic —
+into a new hook, `export function useZohoFilamentSync(filaments: CalculatorFilament[])`, in the new
+file `frontend/src/components/calculator/useZohoFilamentSync.ts`. `CalculatorFilamentsPanel` now
+calls the hook instead of owning the sync-walk logic inline, so the panel is left with only its
+listing/filtering UI, create-edit form, and dialog wiring.
+
+**This is not a behavior change.** Both extractions moved existing code verbatim (or with only the
+mechanical renames a `const`-to-hook or `const`-to-shared-module move requires) — no branch,
+ordering, timeout value, chunk size, or retry/backoff constant changed, and every existing caller of
+the affected components keeps its previous rendered output and sync behavior. `SURFACE.md`
+regenerated via `bash tools/gen_surface_calc.sh` diffs by exactly two new lines — `export const
+TOOLTIP` and `export function useZohoFilamentSync` — both newly-exported symbols created by these
+two refactors, alphabetically sorted in with the rest; no route, DDL, permission gate, or i18n key
+changed. User approved re-baselining `SURFACE.md` for these two mechanical additions on 2026-08-28.
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged.

@@ -252,6 +252,7 @@ export type RealityCheckSeverity
 1 export const stickyTdCls
 1 export const tdCls
 1 export const thCls
+1 export const TOOLTIP
 1 export function CalculatorBreakdownCard
 1 export function CalculatorDiscountTable
 1 export function CalculatorFilamentsPanel
@@ -286,6 +287,7 @@ export type RealityCheckSeverity
 1 export function useDefaultsForm
 1 export function useEntityCrudMutations
 1 export function useSortToggle
+1 export function useZohoFilamentSync
 1 export function xToValue
 1 export function ZohoFilamentSearch
 1 export interface CurveExample

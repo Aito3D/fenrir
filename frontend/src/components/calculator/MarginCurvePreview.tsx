@@ -2,7 +2,7 @@
 // UNSAVED pricing form so the operator sees the shape they are about to
 // save. Rendered beside the margin fields in CalculatorSettingsPanel.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -13,6 +13,7 @@ import { FormulaPopover } from './FormulaPopover';
 import { DragHandle } from './DragHandle';
 import { NumberField } from '../NumberField';
 import { getCurrencySymbol } from '../../utils/currency';
+import { TOOLTIP } from './shared';
 
 const SIZE_STRIP = [0.25, 0.5, 1, 2, 4, 10]; // × K
 const QTY_STRIP = [1, 2, 5, 10, 20, 50, 100];
@@ -20,14 +21,6 @@ const QTY_STRIP = [1, 2, 5, 10, 20, 50, 100];
 const AXIS = { fontSize: 11 } as const;
 const GRID = 'var(--color-bambu-dark-tertiary)';
 const INK = 'var(--color-bambu-gray)';
-
-// Dark tooltip matching the app's other charts (recharts defaults to white).
-const TOOLTIP = {
-  contentStyle: { background: 'var(--color-bambu-dark-secondary)', border: '1px solid var(--color-bambu-dark-tertiary)', borderRadius: 8, fontSize: 12, padding: '6px 10px' },
-  labelStyle: { color: 'var(--color-bambu-gray)', marginBottom: 2 },
-  itemStyle: { color: '#fff', padding: 0 },
-  cursor: { stroke: 'var(--color-bambu-gray)', strokeWidth: 1 },
-} as const;
 
 function Curve({
   title,
@@ -77,8 +70,17 @@ export function MarginCurvePreview({
   const kq = d.qty_k ?? CURVE_DEFAULTS.qty_k;
   const ex = parsedExample(example);
 
+  // The size chart's domain scales with K (sizeDomainMax = k * 10), which is
+  // exactly the value the K drag handle writes back — left live during a
+  // drag, every pointermove would re-derive K from a domain that K itself
+  // just moved, compounding K by ~10x per move (see T-006). Freezing K at
+  // the value it had when the drag started, for the domain calc only, keeps
+  // the handle's min/max stable for the whole gesture; it snaps back to
+  // tracking the live (typed or post-drop) K once the drag ends.
+  const [kDragAnchor, setKDragAnchor] = useState<number | null>(null);
+
   // Math.max(1, …) — K = 0 would otherwise collapse the size domain to 0.
-  const sizeMax = Math.max(1, sizeDomainMax(k, ex?.unitCost));
+  const sizeMax = Math.max(1, sizeDomainMax(kDragAnchor ?? k, ex?.unitCost));
   const qtyMax = qtyDomainMax(ex?.quantity);
 
   const sizeData = useMemo(() => {
@@ -210,6 +212,8 @@ export function MarginCurvePreview({
                 round={roundK}
                 label={t('calculator.dragK')}
                 readOnly={readOnly}
+                onDragStart={() => setKDragAnchor(k)}
+                onDragEnd={() => setKDragAnchor(null)}
               />
             )}
             <Line type="monotone" dataKey="m" name={t('calculator.sizeMarginGroup')} stroke="var(--viz-1)" dot={false} strokeWidth={2} animationDuration={animMs} animationEasing="ease-out" />

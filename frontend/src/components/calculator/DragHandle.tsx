@@ -10,7 +10,7 @@ const STRIP_W = 24;
 const GRIP = 12;
 
 export function DragHandle({
-  value, min, max, onChange, round, label, readOnly, ariaValue,
+  value, min, max, onChange, round, label, readOnly, ariaValue, onDragStart, onDragEnd,
 }: {
   value: number; min: number; max: number;
   onChange: (v: number) => void;
@@ -21,6 +21,13 @@ export function DragHandle({
    *  handle, which visually sits at `kq + 1` (the ReferenceLine's x) but
    *  whose underlying field value is `kq`. Defaults to `value`. */
   ariaValue?: number;
+  /** Fired on pointerdown / pointerup(-cancel), before the corresponding
+   *  `onChange`. Lets a caller whose `min`/`max` domain is derived from the
+   *  dragged value itself (e.g. a domain that scales with K) freeze that
+   *  domain for the lifetime of one drag — otherwise every `onChange` moves
+   *  the domain the very next move is measured against, compounding. */
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   // `useOffset()` only carries the top/left/right/bottom distances in this
   // recharts version, not width/height — `usePlotArea()` is the hook that
@@ -42,13 +49,17 @@ export function DragHandle({
   };
   const onPointerDown = (e: PointerEvent<SVGGElement>) => {
     e.currentTarget.setPointerCapture?.(e.pointerId);
+    onDragStart?.();
     onChange(valueAt(e.clientX));
   };
   const onPointerMove = (e: PointerEvent<SVGGElement>) => {
     if (e.buttons === 0 && !e.currentTarget.hasPointerCapture?.(e.pointerId)) return;
     onChange(valueAt(e.clientX));
   };
-  const onPointerUp = (e: PointerEvent<SVGGElement>) => e.currentTarget.releasePointerCapture?.(e.pointerId);
+  const onPointerUp = (e: PointerEvent<SVGGElement>) => {
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    onDragEnd?.();
+  };
   const onKeyDown = (e: KeyboardEvent<SVGGElement>) => {
     const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
