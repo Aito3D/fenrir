@@ -3953,14 +3953,18 @@ export interface CalculatorFailureRateEntry {
   printer_id: number | null;
   printer_name: string | null;
   material: string | null;
-  rate_pct: number;
+  // null when the backend suppresses the figure (T-027 cross-window guard);
+  // `sample` is still reported.
+  rate_pct: number | null;
   sample: number;
 }
 
 export interface CalculatorTimeAccuracyEntry {
   printer_id: number;
   printer_name: string;
-  accuracy_pct: number;
+  // null when the backend suppresses the figure (T-027 cross-window guard);
+  // `sample` is still reported.
+  accuracy_pct: number | null;
   sample: number;
 }
 

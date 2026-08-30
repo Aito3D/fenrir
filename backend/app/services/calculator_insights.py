@@ -51,6 +51,20 @@ _MIN_USAGE_DAYS = 14
 
 _FAILED_STATUSES = ("failed", "aborted")
 
+# T-027: the offered windows (InsightsWindowDays) are nested — every run in
+# the 30-day window is also in the 90-day window, which is also in the
+# 365-day window — so a caller who fetches two adjacent windows and
+# subtracts their published aggregates recovers the (narrower, wider] band's
+# figures even though `_residual_leaks` already suppresses *within-window*
+# residuals. Maps a window to the next narrower offered window so we can
+# apply the identical guard across windows: for each group published in the
+# wider window, if its sample count grew by fewer than MIN_SAMPLE between
+# the narrower window and this one, the wider window's rate/mean for that
+# group is suppressed (the narrower window is left untouched — it discloses
+# nothing new by itself). 30 has no narrower neighbor and is never
+# suppressed by this guard.
+_ADJACENT_NARROWER_WINDOW: dict[int, int] = {90: 30, 365: 90}
+
 
 def _residual_leaks(total: int, published: int) -> bool:
     """True if the unpublished remainder of ``total`` (after subtracting the
@@ -75,13 +89,15 @@ class CalculatorInsightsService:
     """Aggregates measured pricing signals for GET /calculator/insights."""
 
     async def compute(self, db: AsyncSession, days: int = 365) -> dict:
-        since = datetime.now(timezone.utc) - timedelta(days=days)
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(days=days)
         failure = await self._failure_rates(db, since)
         time_accuracy = await self._time_accuracy(db, since)
         spool_costs = await self._spool_costs(db)
         spool_costs_by_brand = await self._spool_costs_by_brand(db)
         power = await self._power_draw(db, since)
         usage = await self._daily_usage(db, since)
+        await self._suppress_cross_window_leaks(db, now, days, failure, time_accuracy)
 
         from backend.app.api.routes.settings import get_energy_cost_per_kwh
 
@@ -95,6 +111,108 @@ class CalculatorInsightsService:
             "power_by_printer": power,
             "usage_by_printer": usage,
         }
+
+    async def _suppress_cross_window_leaks(
+        self, db: AsyncSession, now: datetime, days: int, failure: dict, time_accuracy: dict
+    ) -> None:
+        """T-027: suppress `failure`/`time_accuracy` figures a caller could
+        recover by fetching this window and the next narrower offered window
+        and subtracting. Mutates the two dicts in place; only `rate_pct`/
+        `accuracy_pct` are ever blanked, `sample` is always left as computed.
+
+        Deliberately count-only: this issues one bounded COUNT-shaped query
+        per fold (mirroring the fold's own row-eligibility rules) against the
+        single adjacent narrower window, not a full re-fold of every
+        aggregate for that window.
+        """
+        narrower_days = _ADJACENT_NARROWER_WINDOW.get(int(days))
+        if narrower_days is None:
+            return
+        narrower_since = now - timedelta(days=narrower_days)
+
+        printer_counts, material_counts, overall_count = await self._failure_sample_counts(db, narrower_since)
+        for row in failure["by_printer"]:
+            if _residual_leaks(row["sample"], printer_counts.get(row["printer_id"], 0)):
+                row["rate_pct"] = None
+        for row in failure["by_material"]:
+            if _residual_leaks(row["sample"], material_counts.get(row["material"], 0)):
+                row["rate_pct"] = None
+        if failure["overall_pct"] is not None and _residual_leaks(failure["sample"], overall_count):
+            failure["overall_pct"] = None
+
+        ta_printer_counts, ta_overall_count = await self._time_accuracy_sample_counts(db, narrower_since)
+        for row in time_accuracy["by_printer"]:
+            if _residual_leaks(row["sample"], ta_printer_counts.get(row["printer_id"], 0)):
+                row["accuracy_pct"] = None
+        if time_accuracy["overall_pct"] is not None and _residual_leaks(time_accuracy["sample"], ta_overall_count):
+            time_accuracy["overall_pct"] = None
+
+    async def _failure_sample_counts(
+        self, db: AsyncSession, since: datetime
+    ) -> tuple[dict[int, int], dict[str, int], int]:
+        """Total (not completed/failed-split) sample counts per printer,
+        per material, and overall for `since` — the same population
+        `_failure_rates` folds, but counts only (T-027's narrower-window
+        probe), so status isn't part of the grouping key."""
+        rows = await db.execute(
+            select(
+                PrintLogEntry.printer_id,
+                PrintLogEntry.filament_type,
+                func.count(PrintLogEntry.id),
+            )
+            .where(
+                PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+                PrintLogEntry.created_at >= since,
+            )
+            .group_by(PrintLogEntry.printer_id, PrintLogEntry.filament_type)
+        )
+        per_printer: dict[int, int] = {}
+        per_material: dict[str, int] = {}
+        overall = 0
+        for printer_id, filament_type, count in rows.all():
+            overall += count
+            if printer_id is not None:
+                per_printer[printer_id] = per_printer.get(printer_id, 0) + count
+            for material in _split_materials(filament_type):
+                per_material[material] = per_material.get(material, 0) + count
+        return per_printer, per_material, overall
+
+    async def _time_accuracy_sample_counts(self, db: AsyncSession, since: datetime) -> tuple[dict[int, int], int]:
+        """Accuracy-eligible sample counts per printer and overall for
+        `since` — the same population `_time_accuracy` folds, but counts
+        only (T-027's narrower-window probe): no printer-name lookups, no
+        averaging. Applies the identical row eligibility (band, duration
+        resolution) as `_time_accuracy` since that eligibility isn't a pure
+        SQL count without the same Python fold."""
+        rows = await db.execute(
+            select(
+                PrintLogEntry.duration_seconds,
+                PrintLogEntry.started_at,
+                PrintLogEntry.completed_at,
+                PrintLogEntry.printer_id,
+                PrintArchive.print_time_seconds,
+            )
+            .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
+            .where(
+                PrintLogEntry.status == "completed",
+                PrintLogEntry.created_at >= since,
+                PrintArchive.print_time_seconds.isnot(None),
+                PrintArchive.print_time_seconds != 0,
+            )
+        )
+        per_printer: dict[int, int] = {}
+        overall = 0
+        for duration_seconds, started_at, completed_at, printer_id, estimate_seconds in rows.all():
+            actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
+            if not actual_seconds or not estimate_seconds:
+                continue
+            accuracy = (estimate_seconds / actual_seconds) * 100
+            if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
+                continue
+            overall += 1
+            if printer_id is not None:
+                per_printer[printer_id] = per_printer.get(printer_id, 0) + 1
+        return per_printer, overall
 
     async def _failure_rates(self, db: AsyncSession, since: datetime) -> dict:
         rows = await db.execute(
@@ -159,9 +277,42 @@ class CalculatorInsightsService:
         # `_residual_leaks`/T-003). Suppress the overall rate rather than let
         # that residual leak through it; `sample` itself is unaffected.
         published_printer_sample = sum(row["sample"] for row in by_printer)
+
+        # `by_material` is a *second*, independent partition of the same
+        # overall population (a run has exactly one printer_id but can carry
+        # several materials), so it needs the identical residual check: a
+        # small group of runs whose material(s) never clear MIN_SAMPLE is
+        # still a recoverable residual against `overall_pct`, even when the
+        # by_printer partition above is fully covered (e.g. one printer
+        # prints everything, but a rarely-used filament type doesn't).
+        #
+        # T-028: multi-material runs are double-counted here — `filament_type`
+        # is comma-joined and `_split_materials` fans one run's outcome out to
+        # every material it names, so a run shared by two *published*
+        # materials is added into `published_material_sample` twice. That can
+        # only inflate the sum (never deflate it), which only ever shrinks the
+        # computed residual (`overall_sample - published_material_sample`)
+        # below the true count of runs left out of every published material
+        # group — never grows it. So this reuses the exact same sum/threshold
+        # as the by_printer check with no de-duplication attempt: on the rare
+        # overlap that pulls the computed residual to <= 0 despite a genuine
+        # small uncovered group, that overlap itself entangles the shared
+        # runs' outcomes into the published materials' rates, which blocks
+        # the clean subtraction the residual check exists to prevent in the
+        # first place (see T-028 discussion). Whenever double-counting doesn't
+        # fully mask the gap, the residual still lands in (0, MIN_SAMPLE) and
+        # is suppressed exactly like the non-overlapping case. Erring toward
+        # this cheaper, unified check (rather than a bespoke de-duplicated
+        # count) is the conservative choice: it never publishes `overall_pct`
+        # in a case the by_printer-only guard would have caught, and it only
+        # additionally suppresses on genuine small material residuals.
+        published_material_sample = sum(row["sample"] for row in by_material)
+
         overall_pct = (
             overall_rate
-            if overall_sample >= MIN_SAMPLE and not _residual_leaks(overall_sample, published_printer_sample)
+            if overall_sample >= MIN_SAMPLE
+            and not _residual_leaks(overall_sample, published_printer_sample)
+            and not _residual_leaks(overall_sample, published_material_sample)
             else None
         )
 

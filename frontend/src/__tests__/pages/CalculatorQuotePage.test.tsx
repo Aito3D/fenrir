@@ -105,16 +105,22 @@ describe('CalculatorQuotePage', () => {
 
     expect(await screen.findByText('Quote')).toBeInTheDocument();
     // Same reference case as the calculator page tests: 1 608 FCFP TTC —
-    // shown twice: the headline total and the breakdown's total row.
+    // shown twice: the headline total and the totals table's total row.
     expect(await screen.findAllByText('1 608 FCFP')).toHaveLength(2);
     expect(screen.getByText('Generic PLA')).toBeInTheDocument();
     // Selected printer appears in the job details.
     expect(screen.getByText('H2S')).toBeInTheDocument();
-    // Cost breakdown replaces the old volume-pricing table: waterfall lines
-    // and no discount grid. "Filament" appears twice — job-details label and
-    // the breakdown's first cost row.
-    expect(screen.getByText('Cost breakdown')).toBeInTheDocument();
-    expect(screen.getAllByText('Filament')).toHaveLength(2);
+    // Price-facing lines only: subtotal + tax + total, no internal cost or
+    // margin build-up. "Filament" appears only once now (the job-details
+    // label) since the per-step cost rows (Filament, Margin, ...) are gone.
+    expect(screen.getByText('Totals')).toBeInTheDocument();
+    expect(screen.queryByText('Cost breakdown')).not.toBeInTheDocument();
+    expect(screen.getByText('Total excl. tax')).toBeInTheDocument();
+    expect(screen.getByText('Tax')).toBeInTheDocument();
+    expect(screen.getAllByText('Filament')).toHaveLength(1);
+    expect(screen.queryByText('Margin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Provisions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Labor')).not.toBeInTheDocument();
     expect(screen.queryByText('Volume pricing')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Print/ })).toBeInTheDocument();
     // Date-of-quote line: rendered in the app language (i18n.language), not
@@ -184,13 +190,24 @@ describe('CalculatorQuotePage', () => {
     const total = money(screen.getByTestId('quote-task-ttc').textContent!);
     expect(Math.abs(unit * 6 - total)).toBeLessThanOrEqual(0.01 * 6);
 
-    // The breakdown table's Total row must print the SAME figure as the
+    // The totals table's Total row must print the SAME figure as the
     // headline — one unit price per quote, not two that can disagree by a
     // cent (the bug this fixture was built to catch).
     const table = screen.getByRole('table');
     const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
     const totalCell = within(totalRow).getAllByRole('cell')[1];
     expect(totalCell.textContent).toBe(screen.getByTestId('quote-unit-ttc').textContent);
+
+    // Price-facing lines only: subtotal (HT) and tax, no cost/margin rows.
+    const taskHtRounded = Math.round(result.total_ht_qty * 100) / 100;
+    const unitHtDisplayed = taskHtRounded / 6;
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    expect(within(subtotalRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitHtDisplayed, 'USD'));
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    expect(within(taxRow).getAllByRole('cell')[1].textContent).toBe(
+      formatMoney(taskRounded / 6 - unitHtDisplayed, 'USD'),
+    );
+    expect(screen.queryByText('Margin')).not.toBeInTheDocument();
   });
 
   it('derives the unit price from the rounded task total for a zero-decimal currency', async () => {
@@ -217,11 +234,22 @@ describe('CalculatorQuotePage', () => {
     expect(Math.abs(unit * 3 - total)).toBeLessThanOrEqual(1 * 3);
 
     // Same one-price invariant as the USD test above, for a zero-decimal
-    // currency's breakdown table.
+    // currency's totals table.
     const table = screen.getByRole('table');
     const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
     const totalCell = within(totalRow).getAllByRole('cell')[1];
     expect(totalCell.textContent).toBe(screen.getByTestId('quote-unit-ttc').textContent);
+
+    // Price-facing lines only: subtotal (HT) and tax, no cost/margin rows.
+    const taskHtRounded = Math.round(result.total_ht_qty);
+    const unitHtDisplayed = taskHtRounded / 3;
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    expect(within(subtotalRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitHtDisplayed, 'XPF'));
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    expect(within(taxRow).getAllByRole('cell')[1].textContent).toBe(
+      formatMoney(taskRounded / 3 - unitHtDisplayed, 'XPF'),
+    );
+    expect(screen.queryByText('Margin')).not.toBeInTheDocument();
   });
 
   it('shows the empty hint when no job is stored', async () => {

@@ -243,12 +243,17 @@ class InsightsWindowDays(IntEnum):
 
 
 class FailureRateEntry(BaseModel):
-    """Measured failure rate for one printer or one material."""
+    """Measured failure rate for one printer or one material.
+
+    ``rate_pct`` is ``None`` when a cross-window subtraction against the next
+    narrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``
+    individual print-log rows for this group — ``sample`` is still reported.
+    """
 
     printer_id: int | None = None
     printer_name: str | None = None
     material: str | None = None
-    rate_pct: float
+    rate_pct: float | None = None
     sample: int
 
 
@@ -260,9 +265,15 @@ class FailureInsights(BaseModel):
 
 
 class TimeAccuracyEntry(BaseModel):
+    """Measured slicer-estimate accuracy for one printer.
+
+    ``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as
+    ``FailureRateEntry.rate_pct`` — ``sample`` is still reported.
+    """
+
     printer_id: int
     printer_name: str
-    accuracy_pct: float
+    accuracy_pct: float | None = None
     sample: int
 
 

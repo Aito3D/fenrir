@@ -105,10 +105,13 @@ function pickFailureRate(
   const named = insights.failure.by_printer.flatMap((p) =>
     p.printer_name ? [{ ...p, printer_name: p.printer_name }] : [],
   );
-  const matches = matchPrinters(named, printer);
+  // A suppressed entry (rate_pct null — T-027 cross-window guard) contributes
+  // nothing: it's excluded here exactly like a below-MIN_SAMPLE entry, from
+  // both the aggregation numerator and the sample denominator.
+  const matches = matchPrinters(named, printer).filter((p) => p.rate_pct !== null);
   if (printer && matches.length > 0) {
     const sample = matches.reduce((s, m) => s + m.sample, 0);
-    const rate_pct = matches.reduce((s, m) => s + m.rate_pct * m.sample, 0) / sample;
+    const rate_pct = matches.reduce((s, m) => s + m.rate_pct! * m.sample, 0) / sample;
     return { rate_pct, sample, scope: fleetScope(matches, printer), printerCount: matches.length };
   }
   if (filament?.material) {
@@ -116,7 +119,7 @@ function pickFailureRate(
     const match = insights.failure.by_material.find(
       (m) => m.material && containsEitherWay(m.material.toLowerCase(), material),
     );
-    if (match && match.sample >= MIN_SAMPLE) {
+    if (match && match.sample >= MIN_SAMPLE && match.rate_pct !== null) {
       return { rate_pct: match.rate_pct, sample: match.sample, scope: match.material };
     }
   }
@@ -361,12 +364,15 @@ export function pickTimeAccuracy(
   if (!insights) return null;
   if (printer) {
     const name = printer.name.toLowerCase();
+    // A suppressed entry (accuracy_pct null — T-027 cross-window guard)
+    // contributes nothing, same as a below-sample entry: excluded from both
+    // the aggregation numerator and the sample denominator.
     const matches = insights.time_accuracy.by_printer.filter(
-      (p) => p.sample >= 3 && containsEitherWay(p.printer_name.toLowerCase(), name),
+      (p) => p.sample >= 3 && p.accuracy_pct !== null && containsEitherWay(p.printer_name.toLowerCase(), name),
     );
     if (matches.length > 0) {
       const sample = matches.reduce((s, m) => s + m.sample, 0);
-      const accuracy_pct = matches.reduce((s, m) => s + m.accuracy_pct * m.sample, 0) / sample;
+      const accuracy_pct = matches.reduce((s, m) => s + m.accuracy_pct! * m.sample, 0) / sample;
       return { accuracy_pct, sample, scope: fleetScope(matches, printer), printers: matches.length };
     }
   }

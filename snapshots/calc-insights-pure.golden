@@ -5,6 +5,10 @@
   "MIN_SAMPLE": 5,
   "_ACCURACY_BAND_HI": 200.0,
   "_ACCURACY_BAND_LO": 50.0,
+  "_ADJACENT_NARROWER_WINDOW": {
+   "90": 30,
+   "365": 90
+  },
   "_FAILED_STATUSES": [
    "failed",
    "aborted"

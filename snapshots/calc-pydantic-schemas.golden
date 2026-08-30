@@ -1031,7 +1031,7 @@
     "type": "object"
    },
    "FailureRateEntry": {
-    "description": "Measured failure rate for one printer or one material.",
+    "description": "Measured failure rate for one printer or one material.\n\n``rate_pct`` is ``None`` when a cross-window subtraction against the next\nnarrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``\nindividual print-log rows for this group \u2014 ``sample`` is still reported.",
     "properties": {
      "material": {
       "anyOf": [
@@ -1070,8 +1070,16 @@
       "title": "Printer Name"
      },
      "rate_pct": {
-      "title": "Rate Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Rate Pct"
      },
      "sample": {
       "title": "Sample",
@@ -1079,7 +1087,6 @@
      }
     },
     "required": [
-     "rate_pct",
      "sample"
     ],
     "title": "FailureRateEntry",
@@ -1166,10 +1173,19 @@
     "type": "object"
    },
    "TimeAccuracyEntry": {
+    "description": "Measured slicer-estimate accuracy for one printer.\n\n``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as\n``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "accuracy_pct": {
-      "title": "Accuracy Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Accuracy Pct"
      },
      "printer_id": {
       "title": "Printer Id",
@@ -1187,7 +1203,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "accuracy_pct",
      "sample"
     ],
     "title": "TimeAccuracyEntry",
@@ -1593,7 +1608,7 @@
  "FailureInsights": {
   "$defs": {
    "FailureRateEntry": {
-    "description": "Measured failure rate for one printer or one material.",
+    "description": "Measured failure rate for one printer or one material.\n\n``rate_pct`` is ``None`` when a cross-window subtraction against the next\nnarrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``\nindividual print-log rows for this group \u2014 ``sample`` is still reported.",
     "properties": {
      "material": {
       "anyOf": [
@@ -1632,8 +1647,16 @@
       "title": "Printer Name"
      },
      "rate_pct": {
-      "title": "Rate Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Rate Pct"
      },
      "sample": {
       "title": "Sample",
@@ -1641,7 +1664,6 @@
      }
     },
     "required": [
-     "rate_pct",
      "sample"
     ],
     "title": "FailureRateEntry",
@@ -1689,7 +1711,7 @@
   "type": "object"
  },
  "FailureRateEntry": {
-  "description": "Measured failure rate for one printer or one material.",
+  "description": "Measured failure rate for one printer or one material.\n\n``rate_pct`` is ``None`` when a cross-window subtraction against the next\nnarrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``\nindividual print-log rows for this group \u2014 ``sample`` is still reported.",
   "properties": {
    "material": {
     "anyOf": [
@@ -1728,8 +1750,16 @@
     "title": "Printer Name"
    },
    "rate_pct": {
-    "title": "Rate Pct",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Rate Pct"
    },
    "sample": {
     "title": "Sample",
@@ -1737,7 +1767,6 @@
    }
   },
   "required": [
-   "rate_pct",
    "sample"
   ],
   "title": "FailureRateEntry",
@@ -1824,10 +1853,19 @@
   "type": "object"
  },
  "TimeAccuracyEntry": {
+  "description": "Measured slicer-estimate accuracy for one printer.\n\n``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as\n``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
   "properties": {
    "accuracy_pct": {
-    "title": "Accuracy Pct",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Accuracy Pct"
    },
    "printer_id": {
     "title": "Printer Id",
@@ -1845,7 +1883,6 @@
   "required": [
    "printer_id",
    "printer_name",
-   "accuracy_pct",
    "sample"
   ],
   "title": "TimeAccuracyEntry",
@@ -1854,10 +1891,19 @@
  "TimeAccuracyInsights": {
   "$defs": {
    "TimeAccuracyEntry": {
+    "description": "Measured slicer-estimate accuracy for one printer.\n\n``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as\n``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "accuracy_pct": {
-      "title": "Accuracy Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Accuracy Pct"
      },
      "printer_id": {
       "title": "Printer Id",
@@ -1875,7 +1921,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "accuracy_pct",
      "sample"
     ],
     "title": "TimeAccuracyEntry",

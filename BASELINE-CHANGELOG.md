@@ -7025,3 +7025,256 @@ Verification (fix-up): `ruff check backend/` / `ruff format --check backend/` cl
 `bash tools/coverage_calc.sh backend` — full suite (`-n 30`) — scoped statements 832/836 = 99.52%.
 `./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes matched (no schema/DDL/OpenAPI
 change). `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-028 — 2026-08-29 — `_failure_rates`' residual guard now also covers the by_material partition (user-approved behavior change)
+
+Audit `audit-security` found that T-003/T-021's residual-suppression guard on `_failure_rates`'
+`overall_pct` only ever checked `by_printer`'s coverage of the overall sample. `by_material` is a
+*second*, independent published partition of the exact same population — a print-log row carries
+exactly one `printer_id` but can name several materials — so a run's completed/failed count can
+also be recoverable by subtraction when every printer individually clears `MIN_SAMPLE` (so the
+by_printer residual is 0, and `overall_pct` publishes) while a rarely-used filament type never
+clears `MIN_SAMPLE` on its own and is left out of `by_material` entirely.
+
+The fix extends the existing `_residual_leaks(total, published)` helper (the T-021 extraction) to
+the material side: `published_material_sample = sum(row["sample"] for row in by_material)` is
+computed the same way `published_printer_sample` already was, and `overall_pct` is now gated on
+`overall_sample >= MIN_SAMPLE and not _residual_leaks(overall_sample, published_printer_sample) and
+not _residual_leaks(overall_sample, published_material_sample)` — suppressed if *either* partition
+leaves a small, recoverable residual. `by_printer`, `by_material`, and `sample` are all unchanged;
+only `overall_pct`'s gate grew a second check.
+
+**Multi-material double-counting, and why the naive sum is the conservative choice:** unlike
+`printer_id`, a run's `filament_type` is comma-joined and `_split_materials` fans one run's
+completed/failed outcome out to *every* material it names, so a run shared by two materials that
+both individually clear `MIN_SAMPLE` and get published is added into
+`published_material_sample` twice. This can only inflate the sum, never deflate it, which can only
+shrink the computed residual (`overall_sample - published_material_sample`) below the true count of
+runs left out of every published material group — never grow it — so the new check can never
+*wrongly* suppress a fully-covered case. The residual case that matters is the opposite direction:
+could this inflation ever hide a genuine small residual by pushing the computed value to 0 or below
+when uncovered runs still exist? Working through the shared-row arithmetic: whenever double-counted
+overlap pulls the computed residual down far enough to mask a real gap, that same overlap has
+already mixed the shared runs' outcomes into the published materials' rates, which breaks the clean
+`overall_failed - sum(published material_failed)` subtraction the guard exists to block in the first
+place — the recoverable-by-subtraction property the guard is designed to catch requires exactly the
+*non*-overlapping case this reasoning shows overlap prevents. Wherever overlap does *not* fully mask
+the gap, the residual still lands in `(0, MIN_SAMPLE)` and is suppressed exactly like the
+non-overlapping case (pinned by the new
+`test_failure_overall_suppressed_when_material_residual_below_min_sample` test, which has no
+overlap at all). No de-duplicated coverage count was implemented — it would be strictly more
+complex for no case the naive sum's failure mode above doesn't already make either safe (blocked
+subtraction) or already-caught (residual still in range). This reasoning and its direction are
+recorded as a code comment alongside the check.
+
+`_time_accuracy` was also audited for an analogous second partition: it groups only by `printer_id`
+(no `_split_materials`/by-material fold exists anywhere in that method), so there is no by_material
+partition to extend there, and no change was made to `_time_accuracy`.
+
+**User-visible effect (as approved):** "the failure-rate reality-check row will disappear in
+installs where a small material group exists, in cases where it currently shows an overall
+percentage."
+
+Tests added to `test_calculator_insights.py`:
+`test_failure_overall_suppressed_when_material_residual_below_min_sample` pins case (a) — one
+printer, fully covered (by_printer residual 0), with a 3-run ABS group below `MIN_SAMPLE` alongside
+a published 7-run PLA group; `overall_pct` is suppressed even though every printer clears
+`MIN_SAMPLE`. `test_failure_overall_present_when_both_partitions_fully_covered` pins case (b) — two
+materials (5 and 5 runs) both individually published, summing exactly to the overall sample
+(residual 0 on both partitions); `overall_pct` publishes as today (20.0).
+`test_failure_overall_present_when_material_residual_at_min_sample` pins case (c) — the boundary: a
+published 10-run PLA group plus two small, unpublished ABS (3) and TPU (2) groups whose combined
+residual is exactly `MIN_SAMPLE` (5); the strict `< MIN_SAMPLE` check does not suppress, and
+`overall_pct` publishes (26.7). All three fixtures pin the by_printer partition at residual 0 (a
+single printer covers every run) so each isolates the new by_material guard specifically.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_insights.py -q` — 77 passed.
+`bash tools/coverage_calc.sh backend` (full suite, `-n 30`): 12535 passed, 1 skipped; SCOPED
+statements 835/837 = 99.76% (branches 161/164 = 98.17%), `calculator_insights.py` itself at 98.68%
+— no drop from the 99.76%/834/836 baseline. `./venv/bin/python3 tools/snapshot.py verify` — 10/10
+probes match, none re-recorded (`calc-insights-pure` only exercises this module's constants,
+`_resolve_duration`, and `_split_materials`, none of which changed). `bash tools/gen_surface_calc.sh
+| diff - SURFACE.md` — empty, no export/route changed.
+
+## T-027 — 2026-08-29 — GET /calculator/insights suppresses a rate/mean recoverable by subtracting adjacent 30/90/365 windows (user-approved behavior change)
+
+Audit `audit-security` found that `InsightsWindowDays` (T-128) only *narrows* the cross-window
+subtraction channel, it doesn't close it. The three offered windows are nested
+(`PrintLogEntry.created_at >= since`), so a caller who fetches `?days=30` and `?days=90` and
+subtracts the published completed/failed counts for a group that appears in both responses recovers
+the exact figures for the `(30, 90]` band — even when that band itself holds fewer than
+`MIN_SAMPLE` runs. The same subtraction works for the `(90, 365]` band via `?days=90`/`?days=365`.
+This is a distinct channel from T-003/T-028's *within-window* residual guard (an unpublished
+remainder inside one response) — here both figures being subtracted are individually published,
+just in different responses.
+
+**Variant built:** the suppression variant named in the brief, not the remove-the-picker variant —
+it loses far less functionality (the 30/90/365 picker stays; only the unsafe figures blank out).
+
+**Fix:** `CalculatorInsightsService.compute()` now calls a new
+`_suppress_cross_window_leaks(db, now, days, failure, time_accuracy)` step after the normal
+`_failure_rates`/`_time_accuracy` folds run. For the requested `days`, it looks up the *next
+narrower* offered window via a new fixed map, `_ADJACENT_NARROWER_WINDOW = {90: 30, 365: 90}` (30
+has no narrower neighbor and is never touched by this guard). If there is one, it runs two new
+count-only queries — `_failure_sample_counts` and `_time_accuracy_sample_counts` — against that
+narrower window's `since` to get each group's *true* sample count there (per-printer, per-material,
+and overall; these are plain counts, not the full rate/accuracy fold, so the added query cost is one
+bounded COUNT-shaped read per fold, not a second full aggregation). For every group already
+published in the requested (wider) window, it reuses the existing `_residual_leaks(total,
+published)` helper — `total` = the group's sample in the requested window, `published` = the same
+group's sample in the narrower window — and blanks that group's `rate_pct`/`accuracy_pct` to `None`
+(the entry stays in the list; `sample` is untouched) whenever the delta is `0 < delta < MIN_SAMPLE`.
+A delta of exactly `0` (nothing new since the narrower window) or `>= MIN_SAMPLE` (the recoverable
+band is itself a large-enough sample to publish safely) leaves the figure unchanged. This is applied
+to `failure.by_printer`, `failure.by_material`, `failure.overall_pct`, `time_accuracy.by_printer`,
+and `time_accuracy.overall_pct` — every published group/aggregate in both folds, per the brief.
+Deliberately suppresses the **wider** window's figure and leaves the narrower window untouched: the
+narrower window alone discloses nothing new, so blanking only the side whose subtraction against the
+already-known narrower figure would reveal the band closes the channel with the smaller loss of
+information. `_failure_rates` and `_time_accuracy` themselves are unchanged — the new step is a
+post-process in `compute()` — so the existing T-076 differential/reference tests (which call
+`_time_accuracy`/`_power_draw` directly, bypassing `compute()`) needed no update; they still compare
+against the unmodified fold.
+
+Because a suppressed entry must keep reporting `sample` while blanking only the rate/mean,
+`FailureRateEntry.rate_pct` and `TimeAccuracyEntry.accuracy_pct` changed from required `float` to
+optional `float | None = None` in `backend/app/schemas/calculator.py` (the already-nullable
+`overall_pct` fields needed no change). This is the only schema change; `CalculatorInsightsResponse`
+itself, every other field, and every route/permission are untouched.
+
+**User-visible effect (as approved):** "the reality-check card would stop offering the 30/90/365
+window choice (or would show blanks for some printers at some windows) where it currently always
+shows a figure." This ships the second half of that quote — the picker is kept, and a printer/
+material/overall figure blanks out (with its sample count still shown) only when comparing to the
+next narrower window would otherwise let a caller recover a small, unpublished band.
+
+Tests added to `test_calculator_insights.py` (all via the real `/api/v1/calculator/insights`
+endpoint, so they exercise `compute()`'s new step end-to-end):
+`test_failure_cross_window_suppressed_when_band_delta_below_min_sample` pins case (a) — a printer
+(and its one material) with 5 completed runs inside the 30-day window and 2 more only inside the
+90-day window (band delta 2, `< MIN_SAMPLE`): `?days=30` publishes `overall_pct`/`rate_pct` as
+today (`sample` 5), `?days=90` suppresses `overall_pct` and every `rate_pct` (`sample` 7, unchanged).
+`test_failure_cross_window_unaffected_when_band_delta_is_zero` and
+`test_failure_cross_window_unaffected_when_band_delta_at_min_sample` pin case (b) — a delta of 0 and
+a delta of exactly `MIN_SAMPLE` both leave `?days=90` identical to today.
+`test_time_accuracy_cross_window_suppressed_when_band_delta_below_min_sample`,
+`test_time_accuracy_cross_window_unaffected_when_band_delta_is_zero`, and
+`test_time_accuracy_cross_window_unaffected_when_band_delta_at_min_sample` mirror (a)/(b) for
+`time_accuracy`. `test_failure_cross_window_guard_does_not_apply_to_narrowest_window` pins that
+`?days=30` (no narrower neighbor) is never touched by this guard.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_insights.py -q` — 84 passed (77
+existing + 7 new). `./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_routes.py -q` —
+77 passed. `bash tools/coverage_calc.sh backend` (full suite, `-n 30`): 12542 passed, 1 skipped;
+SCOPED statements 885/887 = 99.77% (branches 193/196 = 98.47%), `calculator_insights.py` itself at
+99.03% — no drop from the 99.76%/835/837 baseline (the one remaining uncovered line,
+`_spool_costs`'s `if not material: continue`, is pre-existing and untouched by this change).
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes match. Two probes were re-recorded, both
+sanctioned by the schema/behavior change above: `calc-pydantic-schemas` (the `rate_pct`/
+`accuracy_pct` fields becoming optional) and `calc-insights-pure` (the new
+`_ADJACENT_NARROWER_WINDOW` module constant). `calc-openapi` was checked and needed no re-record —
+it matched byte-for-byte. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty, no
+export/route added or removed.
+
+### Fix-up (second attempt, same task) — 2026-08-29 — frontend never received the nullable figures
+
+The blind verifier failed the first attempt: the backend change above makes `rate_pct`/
+`accuracy_pct` nullable on published `by_printer`/`by_material`/`by_printer` (time-accuracy)
+entries, but nothing on the frontend was told. `frontend/src/api/client.ts` still typed both fields
+as required `number`, so `CalculatorFailureRateEntry.rate_pct`/`CalculatorTimeAccuracyEntry
+.accuracy_pct` lied about what the backend could now send. Worse,
+`frontend/src/utils/calculatorInsights.ts`'s `pickFailureRate` (material branch) forwarded a `null`
+`rate_pct` straight into a reality-check row whenever the matched material entry met `MIN_SAMPLE`
+(sample is intentionally left intact by the backend suppression) — `CalculatorRealityCheckCard`'s
+`fmt` then called `.toFixed(1)` on it, crashing the calculator page's render. Its printer-branch
+sibling and `pickTimeAccuracy`'s equivalent branches instead **silently coerced** a suppressed entry
+to a fabricated `0` inside `matches.reduce((s, m) => s + m.rate_pct * m.sample, 0)`, which the row's
+own Apply button could then write into stored defaults/profiles as a false measured value.
+
+**Fix:** `client.ts`'s two field types relaxed to `number | null` (the only edit to that file; no
+other consumer of either field needed changes — `npm run build` surfaced none). In
+`calculatorInsights.ts`, both `pickFailureRate` and `pickTimeAccuracy` now treat a `null`-valued
+entry exactly like a below-`MIN_SAMPLE` entry: excluded from the weighted-average numerator *and*
+the `sample` denominator (`matchPrinters(...).filter((p) => p.rate_pct !== null)` for the printer
+branch; an added `&& match.rate_pct !== null` guard for the material branch; the analogous filter in
+`pickTimeAccuracy`'s printer branch). When every candidate for a given check is suppressed, the
+function falls through its existing fallback chain (printer → material → overall for failure,
+printer → overall for time-accuracy) exactly as it already does for a below-sample entry today, and
+if every fallback is exhausted it returns `null` — no reality-check row is emitted for that check, no
+fabricated value, no crash. `RealityCheck.measured` and `pickTimeAccuracy`'s/`pickFailureRate`'s
+return types stay non-nullable `number`: a row's `measured` field can no longer be `null` by
+construction (the type is honest because the filtering happens before a result object is ever
+built), so `CalculatorRealityCheckCard`'s `fmt(check, value: number)` needed no defensive-null
+change.
+
+Tests added to `calculatorInsights.test.ts`: three new `selectRealityChecks` cases pin (a) a
+suppressed material `rate_pct` with no printer match and no overall figure → no `failure` row and no
+throw, (b) a fleet with one suppressed and one valid printer entry → `measured`/`sample` reflect only
+the valid entry (30, not 50), and (c) an all-suppressed fleet with no other fallback data → no
+`failure` row. Three new `pickTimeAccuracy` cases mirror (a)-(c) for `accuracy_pct`: one suppressed +
+one valid printer entry → the valid entry's figure only, an all-suppressed fleet falling through to
+the overall figure, and both the fleet and the overall suppressed → `null`.
+
+Verification: `npm run build` clean (no other `rate_pct`/`accuracy_pct` consumer needed a fix);
+`static/` reverted before commit. `npx eslint` clean on `client.ts`, `calculatorInsights.ts`, and the
+test file. `npx vitest run` — `calculatorInsights.test.ts` 38/38 (32 existing + 6 new),
+`CalculatorRealityCheckCard.test.tsx` 11/11, `CalculatorPage.test.tsx` 49/49,
+`CalculatorQuotePage.test.tsx` 4/4 — all unchanged, no fixture updates needed. `bash
+tools/coverage_calc.sh frontend` (run on an idle machine — an earlier run under parallel load from
+other work on the same host measured a transient 96.49%, consistent with this suite's documented
+load-flakiness; re-run alone once idle): statements 96.9% (1410/1455), meeting the 96.90% floor
+(baseline was 1409/1454) — `calculatorInsights.ts` itself unchanged at 99.26% statement coverage,
+its one uncovered statement pre-existing and untouched by this fix-up. `./venv/bin/python3
+tools/snapshot.py verify` — 10/10; `calc-frontend-pure` (which bundles `calculatorInsights.ts`)
+matched unchanged, confirming the pinned pure outputs for non-null inputs are byte-identical.
+`bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-029 — 2026-08-29 — customer quote shows only price lines (user-approved behavior change)
+
+Audit `audit-security` found that `CalculatorQuotePage.tsx` — whose own docstring says "this is the
+one surface meant to leave the workshop" — rendered the full internal cost/margin waterfall
+(`buildWaterfall(result)` mapped via `STEP_LABEL_KEY`): filament cost, printer depreciation +
+repairs, energy, failure/prototype provisions, ads + consumables, labor, and a line literally
+labelled "Margin" (`STEP_LABEL_KEY.marge = 'calculator.marge' = 'Margin'`), i.e. the exact same
+per-step cost build-up shown on the operator-only calculator page, printed on the document handed
+to customers.
+
+The fix replaces that waterfall table with a price-facing-only totals table: subtotal (`Total
+excl. tax`, derived from `result.total_ht_qty` with the same task-first rounding already used for
+the TTC headline), tax (the difference between the displayed TTC and HT figures), and total
+(`Total incl. tax`, unchanged — still the same rounded headline value, so the Total row and the
+headline can never disagree). The per-step cost/margin rows and the `buildWaterfall`/
+`STEP_LABEL_KEY` imports are gone from this file; `pricing.ts` itself (and every other caller of
+`buildWaterfall`/`STEP_LABEL_KEY`, e.g. the operator-facing calculator page's own breakdown card)
+is untouched. The section heading changed from `calculator.breakdown` ("Cost breakdown") to the
+already-translated `calculator.totals` ("Totals"), since the section no longer breaks down costs.
+No new UI or toggle was added — the internal cost view remains available only on the calculator
+page itself, which this task deliberately did not touch.
+
+**User-visible effect (as approved):** "the printed quote handed to customers would no longer list
+the per-step cost build-up or the margin amount, only the price lines." The job-details section,
+the headline unit/task TTC figures, and the footnote are all unchanged; only the "Cost breakdown"
+table's per-step rows (filament, printer, energy, provisions, ads/consumables, labor, marge) are
+gone, replaced by a three-row subtotal/tax/total table.
+
+Tests updated in `CalculatorQuotePage.test.tsx`: the first test now asserts `Totals` (not `Cost
+breakdown`) is shown, `Total excl. tax` and `Tax` rows are present, `Filament` appears only once
+(the job-details label, since the breakdown's `Filament` cost row is gone), and `Margin`,
+`Provisions`, and `Labor` are all absent. The two rounding-fixture tests (USD qty 6, XPF qty 3) each
+gained assertions that the totals table's `Total excl. tax` and `Tax` rows print the expected
+subtotal/tax amounts derived from `result.total_ht_qty`, alongside the existing bounded-residual and
+one-price-per-quote invariants (both unchanged, since the Total row's value and rounding logic did
+not change) and an explicit `queryByText('Margin')` absence check.
+
+Verification: `npx eslint` clean on both changed files. `npx vitest run
+CalculatorQuotePage.test.tsx` — 4/4 passed; `CalculatorPage.test.tsx` — 49/49 passed (unaffected,
+`buildWaterfall`/`STEP_LABEL_KEY` still used there). `npm run build` clean; `static/` reverted
+before commit. `bash tools/coverage_calc.sh frontend`: 96.9% statements (1409/1454), meeting the
+96.90% floor exactly — `CalculatorQuotePage.tsx` itself dropped from a larger waterfall-`.map`
+branch surface to a fixed three-row table, shrinking both its covered and total statement counts;
+the file's own line coverage is 95.83%. `./venv/bin/python3 tools/snapshot.py verify` — 10/10,
+`calc-frontend-pure` (the only frontend probe) does not touch this page or `buildWaterfall`/
+`STEP_LABEL_KEY`, so nothing was re-recorded. `bash tools/gen_surface_calc.sh | diff - SURFACE.md`
+— empty; the page's default export is unchanged.
