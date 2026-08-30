@@ -180,6 +180,26 @@ describe('CalculatorSettingsPanel', () => {
     expect(k).toHaveValue(4000);
   });
 
+  it('shows an error toast and keeps the Save bar open when the save request fails', async () => {
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)),
+      http.patch('/api/v1/calculator/defaults', () => HttpResponse.json({ detail: 'Save failed' }, { status: 500 })),
+    );
+    const user = userEvent.setup();
+    render(<CalculatorSettingsPanel canUpdate />);
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    await user.clear(tariff);
+    await user.type(tariff, '150');
+    await user.click(saveButton());
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument();
+    // The failed PATCH neither cleared the edit nor closed the bar — the
+    // operator's change is not silently discarded.
+    expect(screen.getByText('1 unsaved change')).toBeInTheDocument();
+    expect(saveButton()).toBeInTheDocument();
+    expect(tariff).toHaveValue(150);
+  });
+
   it('blocks save when M_MAX < M_MIN and names the problem in the bar', async () => {
     serveDefaults();
     const user = userEvent.setup();

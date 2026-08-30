@@ -1386,6 +1386,88 @@ describe('CalculatorFilamentsPanel permission gating (T-020)', () => {
     await user.click(screen.getByRole('button', { name: 'Material' }));
     expect(materialColumnInOrder()).toEqual(['PLA', 'ABS-GF']);
   });
+
+  // T-039: same coverage gap as CalculatorPrintersPanel's numeric sorts
+  // (T-011) — the `switch (sortKey)` in the `visible` useMemo has a brand,
+  // cost, sale and difficulty branch (plus the already-covered material one)
+  // that no test ever reaches. Alpha/Bravo are built so every one of those
+  // metrics' ascending order is Bravo-then-Alpha, the *opposite* of the
+  // default name-ascending order (Alpha, Bravo) — a sort that silently fell
+  // back to comparing by name would fail every assertion here.
+  it('sorts by each of brand/cost/sale/margin/difficulty', async () => {
+    const alpha: CalculatorFilament = {
+      ...baseFilament,
+      id: 1,
+      name: 'Alpha Filament',
+      brand: 'Zeta',
+      material: 'Zylon',
+      cost_per_kg: 100,
+      sale_price_per_kg: 150,
+      margin_pct: 90,
+      difficulty_pct: 900,
+    };
+    const bravo: CalculatorFilament = {
+      ...baseFilament,
+      id: 2,
+      name: 'Bravo Filament',
+      brand: 'Acme',
+      material: 'ABS',
+      cost_per_kg: 10,
+      sale_price_per_kg: 15,
+      margin_pct: 10,
+      difficulty_pct: 100,
+    };
+
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([alpha, bravo])));
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: 'Zylon' });
+
+    // Brand is column 0, material column 1 — both are stable identifiers of
+    // "which fixture is this row" no matter which column is currently
+    // driving the sort, except when the sort itself is on that column (the
+    // Brand-column assertions below use Material as the identity instead).
+    const brandColumnInOrder = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1) // drop the header row
+        .map((row) => within(row).getAllByRole('cell')[0].textContent);
+    const materialColumnInOrder = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => within(row).getAllByRole('cell')[1].textContent);
+
+    // Default sort is by name ascending: "Alpha Filament" before "Bravo
+    // Filament".
+    expect(brandColumnInOrder()).toEqual(['Zeta', 'Acme']);
+
+    // Brand: identify rows by Material instead, since Brand is the column
+    // being sorted here.
+    await user.click(screen.getByRole('button', { name: 'Brand' }));
+    expect(materialColumnInOrder()).toEqual(['ABS', 'Zylon']);
+    await user.click(screen.getByRole('button', { name: 'Brand' }));
+    expect(materialColumnInOrder()).toEqual(['Zylon', 'ABS']);
+
+    const clickAndExpect = async (buttonName: string) => {
+      // First click on a not-yet-active column starts it ascending, which
+      // (by construction) puts Bravo (brand "Acme") before Alpha (brand
+      // "Zeta") for every metric here.
+      await user.click(screen.getByRole('button', { name: buttonName }));
+      expect(brandColumnInOrder()).toEqual(['Acme', 'Zeta']);
+
+      // Clicking the now-active column again flips to descending.
+      await user.click(screen.getByRole('button', { name: buttonName }));
+      expect(brandColumnInOrder()).toEqual(['Zeta', 'Acme']);
+    };
+
+    await clickAndExpect('Cost per kg ($)');
+    await clickAndExpect('Printing cost per kg ($)');
+    await clickAndExpect('Margin over cost (%)');
+    await clickAndExpect('Difficulty factor (%)');
+  });
 });
 
 describe('CalculatorPrintersPanel', () => {
