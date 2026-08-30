@@ -7278,3 +7278,60 @@ the file's own line coverage is 95.83%. `./venv/bin/python3 tools/snapshot.py ve
 `calc-frontend-pure` (the only frontend probe) does not touch this page or `buildWaterfall`/
 `STEP_LABEL_KEY`, so nothing was re-recorded. `bash tools/gen_surface_calc.sh | diff - SURFACE.md`
 — empty; the page's default export is unchanged.
+
+## T-042 + T-045 — 2026-08-30 — user-approved behavior change
+
+Two audits (`audit-security` T-042, `audit-robustness` T-045) independently found the same hole in
+T-027's cross-window suppression guard: `_ADJACENT_NARROWER_WINDOW: dict[int, int] = {90: 30, 365:
+90}` probed each offered window only against its single *immediate* narrower neighbour, but a
+caller can subtract any two of the three offered windows (30/90/365), not only adjacent ones.
+Concretely (the pinned evidence scenario): a printer with 10 runs (2 failed) in the last 30 days,
+3 more (1 failed) only in the (30, 90] band, and none in (90, 365]. `days=30` publishes `sample=10,
+rate_pct=20.0` (no narrower neighbour to probe). `days=90` computes `sample=13` and is correctly
+suppressed — its residual against the 30-day count of 10 is 3, in `(0, MIN_SAMPLE)`. `days=365`
+also computes `sample=13`, but the old code probed it only against `days=90`'s count (also 13,
+residual 0 — "nothing new since 90") and published `rate_pct=23.1`. Fetching `days=365` and
+`days=30` and subtracting recovers exactly the 3-run, 1-failure band `days=90` had refused to
+disclose. The identical construction applies to `failure.overall_pct`, `failure.by_material`, and
+`time_accuracy.by_printer`/`overall_pct` — anywhere `_residual_leaks` gates a published rate/mean.
+
+The fix replaces the single-neighbour map with `_NARROWER_WINDOWS: dict[int, tuple[int, ...]] =
+{90: (30,), 365: (90, 30)}` and probes a wider window's published groups against *every* narrower
+offered window, suppressing `rate_pct`/`accuracy_pct` if `_residual_leaks(wider_count,
+narrower_count)` holds for **any** of them (not just the adjacent one). `days=365` now issues one
+extra bounded COUNT query per fold (failure, time-accuracy) against `days=30` in addition to the
+existing one against `days=90` — at most two extra count queries per fold, as scoped — no change to
+`days=90` (still one probe, against `days=30`) or `days=30` (still has no narrower window and is
+never suppressed by this guard). `sample` itself is never touched, only `rate_pct`/`accuracy_pct`.
+`_failure_sample_counts`/`_time_accuracy_sample_counts` themselves are unchanged in shape — only
+their docstrings and the caller's loop were updated to reflect being called once per narrower
+window instead of once total.
+
+**User-visible effect (as approved):** "more per-printer/per-material rate_pct and accuracy_pct
+values come back null on the 365-day window than today, for installs with a thin 30-90 day band" /
+"GET /calculator/insights?days=365 will return null rate_pct/accuracy_pct for some groups that
+currently return a number." `days=30` and `days=90` responses are unaffected; `sample` counts at
+every window are unaffected; a fleet with a large-enough delta in every band (>= MIN_SAMPLE between
+each pair of offered windows) still publishes unchanged at every window — this only newly
+suppresses `days=365` groups whose band against 30 (not just against 90) is thin.
+
+Tests added to `backend/tests/unit/test_calculator_insights.py`, both failure and time-accuracy
+variants: the pinned evidence scenario (thin (30, 90] band, nothing in (90, 365]) now suppressed at
+**both** `days=90` and `days=365` (previously leaked at 365); a fleet with a large delta in every
+band (< 30 days, (30, 90], (90, 365]) unchanged at all three windows; `days=30` asserted unaffected
+in both new scenarios (it has no narrower window to probe).
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean. `./venv/bin/python3
+-m pytest backend/tests/unit/test_calculator_insights.py -q` — 88/88 passed. `bash
+tools/coverage_calc.sh backend` — scoped statements 882/884 = 99.77% (meets the 99.77% floor),
+branches 191/194 = 98.45%; full backend suite 12545 passed / 1 skipped, one unrelated
+`test_mfa_api::TestEmailOTP` failure was a load flake (6/6 green in isolation, matching this repo's
+documented suite-load-flake pattern — not touched by this change). `./venv/bin/python3
+tools/snapshot.py verify` — 10/10; **`calc-insights-pure` was re-recorded** (sanctioned) because it
+pins every module-level constant's exact value via `dir(m)`, and `_ADJACENT_NARROWER_WINDOW` was
+renamed to `_NARROWER_WINDOWS` with a different shape (`dict[int, int]` → `dict[int, tuple[int,
+...]]`) — the diff is exactly that one constant's key/value swap, nothing else in the golden
+changed. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty: the constant is declared
+with a type annotation (`_NAME: dict[...] = ...`), which SURFACE's `R4` regex
+(`^_?[A-Z][A-Z0-9_]+ =`) does not match — `_ADJACENT_NARROWER_WINDOW` was never on the surface
+either, so the rename is not a surface change.

@@ -5,10 +5,6 @@
   "MIN_SAMPLE": 5,
   "_ACCURACY_BAND_HI": 200.0,
   "_ACCURACY_BAND_LO": 50.0,
-  "_ADJACENT_NARROWER_WINDOW": {
-   "90": 30,
-   "365": 90
-  },
   "_FAILED_STATUSES": [
    "failed",
    "aborted"
@@ -16,6 +12,15 @@
   "_MAX_PRINT_SECONDS": 345600,
   "_MIN_POWER_SECONDS": 300,
   "_MIN_USAGE_DAYS": 14,
+  "_NARROWER_WINDOWS": {
+   "90": [
+    30
+   ],
+   "365": [
+    90,
+    30
+   ]
+  },
   "_WATTS_BAND_HI": 3000.0,
   "_WATTS_BAND_LO": 1.0
  },

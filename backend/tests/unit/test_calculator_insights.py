@@ -523,6 +523,183 @@ async def test_failure_cross_window_guard_does_not_apply_to_narrowest_window(
     assert at_30["by_printer"][0]["rate_pct"] == 0.0
 
 
+# --- T-042 + T-045: probe every narrower offered window, not just the ------
+# immediate neighbour --------------------------------------------------------
+#
+# `_ADJACENT_NARROWER_WINDOW` only ever checked a window against its single
+# nearest narrower neighbour (365 against 90, 90 against 30). That misses
+# the case where the (30, 90] band is itself thin: `days=90` correctly
+# suppresses it, but `days=365` — having no additional runs in (90, 365] —
+# has the *same* sample count as `days=90` and so its residual against 90
+# alone is zero, letting it publish. Fetching `days=365` and `days=30` and
+# subtracting then recovers exactly the thin (30, 90] band `days=90` refused
+# to disclose. `days=365` must therefore be probed against both 90 and 30.
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failure_cross_window_suppressed_at_90_and_365_for_thin_middle_band(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """Evidence scenario, pinned exactly: 10 runs (2 failed) in the last 30
+    days, 3 more (1 failed) in the (30, 90] band, none in (90, 365]. Before
+    T-042/T-045, `days=365`'s sample (13) matched `days=90`'s sample (13)
+    exactly — a zero residual against the single adjacent neighbour — so it
+    published `rate_pct` even though `days=90` (residual 3 against 30)
+    suppressed it. `days=365` must now also probe 30 directly and suppress."""
+    printer = await printer_factory()
+    for _ in range(8):
+        db_session.add(_run(printer.id, "completed", created_at=NOW - timedelta(days=1)))
+    for _ in range(2):
+        db_session.add(_run(printer.id, "failed", created_at=NOW - timedelta(days=1)))
+    for _ in range(2):
+        db_session.add(_run(printer.id, "completed", created_at=NOW - timedelta(days=60)))
+    db_session.add(_run(printer.id, "failed", created_at=NOW - timedelta(days=60)))
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["failure"]
+    assert at_30["sample"] == 10
+    assert at_30["overall_pct"] == 20.0
+    assert at_30["by_printer"][0]["rate_pct"] == 20.0
+    assert at_30["by_material"][0]["rate_pct"] == 20.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["failure"]
+    assert at_90["sample"] == 13
+    assert at_90["overall_pct"] is None
+    assert at_90["by_printer"][0]["rate_pct"] is None
+    assert at_90["by_material"][0]["rate_pct"] is None
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["failure"]
+    assert at_365["sample"] == 13
+    assert at_365["overall_pct"] is None
+    assert at_365["by_printer"][0]["rate_pct"] is None
+    assert at_365["by_material"][0]["rate_pct"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failure_cross_window_unaffected_when_fat_at_every_band(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """A fleet with a large-enough delta in *every* band (< 30 days, the
+    (30, 90] band, and the (90, 365] band) must publish unchanged at every
+    window — probing extra narrower windows must never suppress a genuinely
+    well-sampled group."""
+    printer = await printer_factory()
+    for _ in range(10):
+        db_session.add(_run(printer.id, "completed", created_at=NOW - timedelta(days=1)))
+    for _ in range(10):
+        db_session.add(_run(printer.id, "completed", created_at=NOW - timedelta(days=60)))
+    for _ in range(10):
+        db_session.add(_run(printer.id, "completed", created_at=NOW - timedelta(days=200)))
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["failure"]
+    assert at_30["sample"] == 10
+    assert at_30["overall_pct"] == 0.0
+    assert at_30["by_printer"][0]["rate_pct"] == 0.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["failure"]
+    assert at_90["sample"] == 20
+    assert at_90["overall_pct"] == 0.0
+    assert at_90["by_printer"][0]["rate_pct"] == 0.0
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["failure"]
+    assert at_365["sample"] == 30
+    assert at_365["overall_pct"] == 0.0
+    assert at_365["by_printer"][0]["rate_pct"] == 0.0
+    assert at_365["by_material"][0]["rate_pct"] == 0.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_cross_window_suppressed_at_90_and_365_for_thin_middle_band(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """`time_accuracy` variant of the pinned evidence scenario: MIN_SAMPLE
+    accuracy-eligible runs in the last 30 days, 3 more only in the (30, 90]
+    band, none in (90, 365]. `days=90` suppresses (residual 3 against 30);
+    `days=365` has the same sample as `days=90` (zero residual against the
+    single adjacent neighbour) but must still suppress once probed directly
+    against 30."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    for _ in range(MIN_SAMPLE):
+        db_session.add(
+            _run(
+                printer.id,
+                "completed",
+                archive_id=archive.id,
+                duration_seconds=3600,
+                created_at=NOW - timedelta(days=1),
+            )
+        )
+    for _ in range(3):
+        db_session.add(
+            _run(
+                printer.id,
+                "completed",
+                archive_id=archive.id,
+                duration_seconds=3600,
+                created_at=NOW - timedelta(days=60),
+            )
+        )
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["time_accuracy"]
+    assert at_30["sample"] == MIN_SAMPLE
+    assert at_30["overall_pct"] == 100.0
+    assert at_30["by_printer"][0]["accuracy_pct"] == 100.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["time_accuracy"]
+    assert at_90["sample"] == MIN_SAMPLE + 3
+    assert at_90["overall_pct"] is None
+    assert at_90["by_printer"][0]["accuracy_pct"] is None
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["time_accuracy"]
+    assert at_365["sample"] == MIN_SAMPLE + 3
+    assert at_365["overall_pct"] is None
+    assert at_365["by_printer"][0]["accuracy_pct"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_cross_window_unaffected_when_fat_at_every_band(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """`time_accuracy` variant: a large-enough delta in every band publishes
+    unchanged at every window."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    for offset_days in (1, 60, 200):
+        for _ in range(MIN_SAMPLE):
+            db_session.add(
+                _run(
+                    printer.id,
+                    "completed",
+                    archive_id=archive.id,
+                    duration_seconds=3600,
+                    created_at=NOW - timedelta(days=offset_days),
+                )
+            )
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["time_accuracy"]
+    assert at_30["sample"] == MIN_SAMPLE
+    assert at_30["overall_pct"] == 100.0
+    assert at_30["by_printer"][0]["accuracy_pct"] == 100.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["time_accuracy"]
+    assert at_90["sample"] == MIN_SAMPLE * 2
+    assert at_90["overall_pct"] == 100.0
+    assert at_90["by_printer"][0]["accuracy_pct"] == 100.0
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["time_accuracy"]
+    assert at_365["sample"] == MIN_SAMPLE * 3
+    assert at_365["overall_pct"] == 100.0
+    assert at_365["by_printer"][0]["accuracy_pct"] == 100.0
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_time_accuracy_with_band_clamp(async_client: AsyncClient, printer_factory, archive_factory, db_session):

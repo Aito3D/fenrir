@@ -51,19 +51,24 @@ _MIN_USAGE_DAYS = 14
 
 _FAILED_STATUSES = ("failed", "aborted")
 
-# T-027: the offered windows (InsightsWindowDays) are nested — every run in
-# the 30-day window is also in the 90-day window, which is also in the
-# 365-day window — so a caller who fetches two adjacent windows and
-# subtracts their published aggregates recovers the (narrower, wider] band's
-# figures even though `_residual_leaks` already suppresses *within-window*
-# residuals. Maps a window to the next narrower offered window so we can
-# apply the identical guard across windows: for each group published in the
-# wider window, if its sample count grew by fewer than MIN_SAMPLE between
-# the narrower window and this one, the wider window's rate/mean for that
-# group is suppressed (the narrower window is left untouched — it discloses
-# nothing new by itself). 30 has no narrower neighbor and is never
+# T-027/T-042/T-045: the offered windows (InsightsWindowDays) are nested —
+# every run in the 30-day window is also in the 90-day window, which is also
+# in the 365-day window — so a caller who fetches ANY two offered windows
+# (not only adjacent ones) and subtracts their published aggregates recovers
+# the (narrower, wider] band's figures even though `_residual_leaks` already
+# suppresses *within-window* residuals. Probing only the immediate neighbour
+# (365 against 90 alone) misses the case where the 90-day window itself
+# suppressed a thin band against 30: the 365-vs-90 delta can still look
+# large enough to publish even though 365-vs-30 recovers a sub-MIN_SAMPLE
+# band that 90 already refused to disclose. Maps a window to *every*
+# narrower offered window (widest first is irrelevant; all are probed) so we
+# can apply the identical guard against each one: for each group published
+# in the wider window, if its sample count grew by fewer than MIN_SAMPLE
+# between some narrower window and this one, the wider window's rate/mean
+# for that group is suppressed (the narrower window is left untouched — it
+# discloses nothing new by itself). 30 has no narrower window and is never
 # suppressed by this guard.
-_ADJACENT_NARROWER_WINDOW: dict[int, int] = {90: 30, 365: 90}
+_NARROWER_WINDOWS: dict[int, tuple[int, ...]] = {90: (30,), 365: (90, 30)}
 
 
 def _residual_leaks(total: int, published: int) -> bool:
@@ -115,36 +120,54 @@ class CalculatorInsightsService:
     async def _suppress_cross_window_leaks(
         self, db: AsyncSession, now: datetime, days: int, failure: dict, time_accuracy: dict
     ) -> None:
-        """T-027: suppress `failure`/`time_accuracy` figures a caller could
-        recover by fetching this window and the next narrower offered window
-        and subtracting. Mutates the two dicts in place; only `rate_pct`/
-        `accuracy_pct` are ever blanked, `sample` is always left as computed.
+        """T-027/T-042/T-045: suppress `failure`/`time_accuracy` figures a
+        caller could recover by fetching this window and ANY narrower
+        offered window and subtracting. Mutates the two dicts in place; only
+        `rate_pct`/`accuracy_pct` are ever blanked, `sample` is always left
+        as computed.
+
+        Probing only the immediate narrower neighbour is not enough: a
+        caller can subtract *any* two offered windows, not just adjacent
+        ones, so days=365 must be probed against both 90 and 30 — otherwise
+        a thin (30, 90] band that 90 itself suppresses can still be
+        recovered from 365 (whose count against 90 alone looks large enough
+        to publish) minus 30. A group is suppressed if its sample count grew
+        by fewer than MIN_SAMPLE against *any* narrower offered window.
 
         Deliberately count-only: this issues one bounded COUNT-shaped query
-        per fold (mirroring the fold's own row-eligibility rules) against the
-        single adjacent narrower window, not a full re-fold of every
-        aggregate for that window.
+        per fold per narrower offered window (mirroring the fold's own
+        row-eligibility rules) — at most two extra queries per fold at
+        days=365 — not a full re-fold of every aggregate for that window.
         """
-        narrower_days = _ADJACENT_NARROWER_WINDOW.get(int(days))
-        if narrower_days is None:
+        narrower_windows = _NARROWER_WINDOWS.get(int(days))
+        if not narrower_windows:
             return
-        narrower_since = now - timedelta(days=narrower_days)
 
-        printer_counts, material_counts, overall_count = await self._failure_sample_counts(db, narrower_since)
+        failure_counts = [
+            await self._failure_sample_counts(db, now - timedelta(days=narrower_days))
+            for narrower_days in narrower_windows
+        ]
         for row in failure["by_printer"]:
-            if _residual_leaks(row["sample"], printer_counts.get(row["printer_id"], 0)):
+            if any(_residual_leaks(row["sample"], counts[0].get(row["printer_id"], 0)) for counts in failure_counts):
                 row["rate_pct"] = None
         for row in failure["by_material"]:
-            if _residual_leaks(row["sample"], material_counts.get(row["material"], 0)):
+            if any(_residual_leaks(row["sample"], counts[1].get(row["material"], 0)) for counts in failure_counts):
                 row["rate_pct"] = None
-        if failure["overall_pct"] is not None and _residual_leaks(failure["sample"], overall_count):
+        if failure["overall_pct"] is not None and any(
+            _residual_leaks(failure["sample"], counts[2]) for counts in failure_counts
+        ):
             failure["overall_pct"] = None
 
-        ta_printer_counts, ta_overall_count = await self._time_accuracy_sample_counts(db, narrower_since)
+        ta_counts = [
+            await self._time_accuracy_sample_counts(db, now - timedelta(days=narrower_days))
+            for narrower_days in narrower_windows
+        ]
         for row in time_accuracy["by_printer"]:
-            if _residual_leaks(row["sample"], ta_printer_counts.get(row["printer_id"], 0)):
+            if any(_residual_leaks(row["sample"], counts[0].get(row["printer_id"], 0)) for counts in ta_counts):
                 row["accuracy_pct"] = None
-        if time_accuracy["overall_pct"] is not None and _residual_leaks(time_accuracy["sample"], ta_overall_count):
+        if time_accuracy["overall_pct"] is not None and any(
+            _residual_leaks(time_accuracy["sample"], counts[1]) for counts in ta_counts
+        ):
             time_accuracy["overall_pct"] = None
 
     async def _failure_sample_counts(
@@ -152,8 +175,9 @@ class CalculatorInsightsService:
     ) -> tuple[dict[int, int], dict[str, int], int]:
         """Total (not completed/failed-split) sample counts per printer,
         per material, and overall for `since` — the same population
-        `_failure_rates` folds, but counts only (T-027's narrower-window
-        probe), so status isn't part of the grouping key."""
+        `_failure_rates` folds, but counts only (called once per narrower
+        offered window by T-027/T-042/T-045's cross-window probe), so status
+        isn't part of the grouping key."""
         rows = await db.execute(
             select(
                 PrintLogEntry.printer_id,
@@ -180,35 +204,15 @@ class CalculatorInsightsService:
     async def _time_accuracy_sample_counts(self, db: AsyncSession, since: datetime) -> tuple[dict[int, int], int]:
         """Accuracy-eligible sample counts per printer and overall for
         `since` — the same population `_time_accuracy` folds, but counts
-        only (T-027's narrower-window probe): no printer-name lookups, no
-        averaging. Applies the identical row eligibility (band, duration
-        resolution) as `_time_accuracy` since that eligibility isn't a pure
-        SQL count without the same Python fold."""
-        rows = await db.execute(
-            select(
-                PrintLogEntry.duration_seconds,
-                PrintLogEntry.started_at,
-                PrintLogEntry.completed_at,
-                PrintLogEntry.printer_id,
-                PrintArchive.print_time_seconds,
-            )
-            .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-            .where(
-                PrintLogEntry.status == "completed",
-                PrintLogEntry.created_at >= since,
-                PrintArchive.print_time_seconds.isnot(None),
-                PrintArchive.print_time_seconds != 0,
-            )
-        )
+        only (called once per narrower offered window by T-027/T-042/T-045's
+        cross-window probe): no printer-name lookups, no averaging. Applies
+        the identical row eligibility (band, duration resolution) as
+        `_time_accuracy` since that eligibility isn't a pure SQL count
+        without the same Python fold — see `_time_accuracy_rows`, the shared
+        helper both methods fold over."""
         per_printer: dict[int, int] = {}
         overall = 0
-        for duration_seconds, started_at, completed_at, printer_id, estimate_seconds in rows.all():
-            actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
-            if not actual_seconds or not estimate_seconds:
-                continue
-            accuracy = (estimate_seconds / actual_seconds) * 100
-            if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
-                continue
+        for printer_id, _accuracy in await _time_accuracy_rows(db, since):
             overall += 1
             if printer_id is not None:
                 per_printer[printer_id] = per_printer.get(printer_id, 0) + 1
@@ -324,59 +328,9 @@ class CalculatorInsightsService:
         }
 
     async def _time_accuracy(self, db: AsyncSession, since: datetime) -> dict:
-        # These extra predicates are a pure row-count optimization: they only
-        # exclude rows that `_resolve_duration` + the accuracy-band check
-        # below would discard anyway, so the Python fold that follows is
-        # untouched and sees the exact same (duration, estimate) pairs it
-        # always did. Two cases are pushed to SQL because they're exact
-        # integer/IEEE-754 float mirrors of the Python arithmetic:
-        #   - duration_seconds is usable (truthy) directly, no timestamp math;
-        #   - the accuracy ratio and its [50, 200] band, using `col * 1.0 / col`
-        #     to force float division exactly like Python's `int / int`.
-        # Rows needing the started_at/completed_at fallback (duration_seconds
-        # null or 0) are always fetched and still resolved/banded in Python,
-        # since replicating that elapsed-time fallback in SQL would risk
-        # timezone/precision drift this task explicitly warns against.
-        duration_usable = _duration_usable_expr()
-        duration_missing = _duration_missing_expr()
-        accuracy_in_band = (PrintArchive.print_time_seconds * 1.0 / PrintLogEntry.duration_seconds * 100).between(
-            _ACCURACY_BAND_LO, _ACCURACY_BAND_HI
-        )
-        rows = await db.execute(
-            select(
-                PrintLogEntry.duration_seconds,
-                PrintLogEntry.started_at,
-                PrintLogEntry.completed_at,
-                PrintLogEntry.printer_id,
-                PrintArchive.print_time_seconds,
-            )
-            .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-            .where(
-                PrintLogEntry.status == "completed",
-                PrintLogEntry.created_at >= since,
-                PrintArchive.print_time_seconds.isnot(None),
-                # `not estimate_seconds` in the fold below also drops 0.
-                PrintArchive.print_time_seconds != 0,
-                or_(
-                    and_(duration_usable, accuracy_in_band),
-                    and_(
-                        duration_missing,
-                        PrintLogEntry.started_at.isnot(None),
-                        PrintLogEntry.completed_at.isnot(None),
-                    ),
-                ),
-            )
-        )
-
         accuracies: list[float] = []
         per_printer: dict[int, list[float]] = {}
-        for duration_seconds, started_at, completed_at, printer_id, estimate_seconds in rows.all():
-            actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
-            if not actual_seconds or not estimate_seconds:
-                continue
-            accuracy = (estimate_seconds / actual_seconds) * 100
-            if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
-                continue
+        for printer_id, accuracy in await _time_accuracy_rows(db, since):
             accuracies.append(accuracy)
             if printer_id is not None:
                 per_printer.setdefault(printer_id, []).append(accuracy)
@@ -628,6 +582,71 @@ class CalculatorInsightsService:
             for brand, material, avg_cost, count in rows.all()
             if brand and material and count >= MIN_SAMPLE
         ]
+
+
+async def _time_accuracy_rows(db: AsyncSession, since: datetime) -> list[tuple[int | None, float]]:
+    """Shared row-eligibility fold for `_time_accuracy` and
+    `_time_accuracy_sample_counts`: yields one (printer_id, accuracy) pair
+    per completed run since `since` whose duration resolves and whose
+    accuracy ratio falls in [`_ACCURACY_BAND_LO`, `_ACCURACY_BAND_HI`]. One
+    home for the band/duration-resolution rule so a future change to either
+    can't drift between the two callers.
+
+    The extra SQL predicates below are a pure row-count optimization: they
+    only exclude rows that `_resolve_duration` + the accuracy-band check
+    below would discard anyway, so the Python fold that follows is untouched
+    and sees the exact same (duration, estimate) pairs it always did. Two
+    cases are pushed to SQL because they're exact integer/IEEE-754 float
+    mirrors of the Python arithmetic:
+      - duration_seconds is usable (truthy) directly, no timestamp math;
+      - the accuracy ratio and its [50, 200] band, using `col * 1.0 / col`
+        to force float division exactly like Python's `int / int`.
+    Rows needing the started_at/completed_at fallback (duration_seconds null
+    or 0) are always fetched and still resolved/banded in Python, since
+    replicating that elapsed-time fallback in SQL would risk timezone/
+    precision drift this task explicitly warns against.
+    """
+    duration_usable = _duration_usable_expr()
+    duration_missing = _duration_missing_expr()
+    accuracy_in_band = (PrintArchive.print_time_seconds * 1.0 / PrintLogEntry.duration_seconds * 100).between(
+        _ACCURACY_BAND_LO, _ACCURACY_BAND_HI
+    )
+    rows = await db.execute(
+        select(
+            PrintLogEntry.duration_seconds,
+            PrintLogEntry.started_at,
+            PrintLogEntry.completed_at,
+            PrintLogEntry.printer_id,
+            PrintArchive.print_time_seconds,
+        )
+        .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
+        .where(
+            PrintLogEntry.status == "completed",
+            PrintLogEntry.created_at >= since,
+            PrintArchive.print_time_seconds.isnot(None),
+            # `not estimate_seconds` in the fold below also drops 0.
+            PrintArchive.print_time_seconds != 0,
+            or_(
+                and_(duration_usable, accuracy_in_band),
+                and_(
+                    duration_missing,
+                    PrintLogEntry.started_at.isnot(None),
+                    PrintLogEntry.completed_at.isnot(None),
+                ),
+            ),
+        )
+    )
+
+    result: list[tuple[int | None, float]] = []
+    for duration_seconds, started_at, completed_at, printer_id, estimate_seconds in rows.all():
+        actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
+        if not actual_seconds or not estimate_seconds:
+            continue
+        accuracy = (estimate_seconds / actual_seconds) * 100
+        if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
+            continue
+        result.append((printer_id, accuracy))
+    return result
 
 
 async def _printer_names(db: AsyncSession, printer_ids) -> dict[int, str]:
