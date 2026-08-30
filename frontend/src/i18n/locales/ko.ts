@@ -8010,7 +8010,7 @@ export default {
     syncZohoPrices: '가격 동기화',
     syncProgress: '{{done}} / {{total}}',
     syncSummary:
-      '{{updated}}개 업데이트됨 · {{unchanged}}개 변경 없음 · {{skipped}}개 딜러 가격 없음 · {{missing}}개 Zoho에 없음',
+      '{{updated}}개 업데이트됨 · {{unchanged}}개 변경 없음 · {{skipped}}개 딜러 가격 없음 · {{missing}}개 Zoho에 없음 · {{unpriced}}개 가격 미설정(무게 불명)',
     syncFailed: '동기화 중지됨: {{error}}',
     syncTimedOut: '동기화 시간이 초과되었습니다. 일부 청크는 적용되었을 수 있습니다',
     zohoDuplicateWarning: '{{name}}에 대한 필라멘트가 이미 존재합니다',

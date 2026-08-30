@@ -8377,7 +8377,7 @@ export default {
     syncZohoPrices: 'Sincronizza prezzi',
     syncProgress: '{{done}} / {{total}}',
     syncSummary:
-      '{{updated}} aggiornati · {{unchanged}} invariati · {{skipped}} senza prezzo rivenditore · {{missing}} mancanti in Zoho',
+      '{{updated}} aggiornati · {{unchanged}} invariati · {{skipped}} senza prezzo rivenditore · {{missing}} mancanti in Zoho · {{unpriced}} senza prezzo (peso sconosciuto)',
     syncFailed: 'Sincronizzazione interrotta: {{error}}',
     syncTimedOut: 'Sincronizzazione scaduta; alcuni blocchi potrebbero comunque essere stati applicati',
     zohoDuplicateWarning: 'Esiste già un filamento per {{name}}',

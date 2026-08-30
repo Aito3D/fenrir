@@ -6856,3 +6856,172 @@ records BOTH dismissals, where previously the second write clobbered the first, 
 re-appeared, and the loss was persisted. Single dismissals are byte-identical to before — the
 function updater and the object-patch spread it replaces compute the same next state when only one
 dismissal is in flight.
+
+## T-024 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** "linked filaments with no stored spool weight whose Zoho item
+name carries no weight would stop being repriced by the sync and would show up in the chunk
+counts as unpriced instead of updated."
+
+`POST /api/v1/calculator/filaments/zoho-sync` computed `weight = filament.spool_weight_kg or
+product.spool_weight_kg or 1.0` before dividing the Zoho dealer price by it. The route's own
+docstring claimed "the filament's own stored weight wins", but that only holds while the stored
+weight is non-null — `CalculatorFilamentUpdate.spool_weight_kg` is explicitly nullable, and a
+linked filament can carry `spool_weight_kg IS NULL` (unlinking clears it and a subsequent
+re-link does not require it). When that happens the fallback becomes `product.spool_weight_kg`,
+which is itself a silent 1 kg default (`ParsedName(..., 1.0, True)`,
+`zoho_filaments.py::parse_filament_name`) whenever the Zoho item name carries no weight segment
+at all (`product.weight_inferred`). `product.weight_inferred` was never consulted by the sync,
+so a spool of any other real size divided the dealer price by an assumed 1 kg, silently
+re-scaling `cost_per_kg` and the derived `sale_price_per_kg`, and the row was reported as
+`updated` with a fresh `zoho_synced_at` stamp as if a real price had been applied.
+
+Fixed in `backend/app/api/routes/calculator.py`: before computing `weight`, the row is now
+skipped when `filament.spool_weight_kg is None and product.weight_inferred` — nothing is
+written, `zoho_synced_at` is left untouched, and the row is counted under a new `unpriced`
+outcome instead of `updated`. When either condition is false (the filament has its own stored
+weight, or the Zoho name did carry a real weight so `product.weight_inferred` is false),
+behavior is byte-identical to before: the `or 1.0` fallback is now dead code precisely because
+`parse_filament_name` never returns a non-inferred weight of 0 or less.
+
+`CalculatorFilamentSyncResponse` gained the `unpriced: int` field (the five outcome counts now
+sum to `processed`, not four); the calculator settings panel's sync summary line and its
+`useZohoFilamentSync` chunk-total accumulator were extended to surface the new count, and
+`CalculatorFilamentSyncResult` in `frontend/src/api/client.ts` gained the matching field. All 13
+locale files' `calculator.syncSummary` string were extended with an `{{unpriced}}` clause to
+keep i18n parity.
+
+Visible delta: a linked filament with `spool_weight_kg IS NULL` whose linked Zoho product's name
+carries no weight segment is no longer repriced from the assumed 1 kg default — its
+`cost_per_kg`/`sale_price_per_kg` stay untouched, `zoho_synced_at` stays null, and the sync
+response (and the settings panel's summary line) counts it under `unpriced` instead of
+`updated`. Every other linked filament — stored weight present, or the Zoho name did carry a
+real weight — is priced exactly as before.
+
+Tests: `backend/tests/unit/test_calculator_zoho_sync.py` —
+`test_null_stored_weight_with_inferred_product_weight_is_left_unpriced` (null stored weight +
+`weight_inferred` product → `unpriced: 1`, `updated: 0`, cost/sale price untouched,
+`zoho_synced_at` stays null), `test_stored_weight_present_overrides_an_inferred_product_weight`
+(stored weight present, even against an inferred-weight product → priced normally, `unpriced:
+0`), `test_null_stored_weight_with_a_real_product_weight_is_priced_normally` (null stored
+weight against a real, non-inferred product weight → priced normally, `unpriced: 0`).
+`test_counts_sum_to_processed` extended to include the new `unpriced` term.
+
+Verification: `ruff check`/`ruff format --check` clean on the touched backend files.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_zoho_sync.py
+backend/tests/unit/test_calculator_zoho_routes.py -q` — 41 passed. `bash tools/coverage_calc.sh
+backend` — scoped statements 817/821 = 99.51%, at the baseline floor. `cd frontend && npm run
+build` clean (static/ reverted before commit); `npx eslint` clean on every touched frontend
+file; `node scripts/check-i18n-parity.mjs` — all 12 non-English locales in parity with en;
+`npx vitest run src/__tests__/components/CalculatorSettingsPanels.test.tsx
+src/__tests__/i18n/locales.test.ts` — 82 passed. `bash tools/coverage_calc.sh frontend` — scoped
+statements 96.01% (1396/1454), at/above the 96.00% baseline floor. `./venv/bin/python3
+tools/snapshot.py verify` — `calc-pydantic-schemas` mismatched (the new `unpriced` field on
+`CalculatorFilamentSyncResponse`'s JSON schema) and was re-recorded; the other 9 probes
+(including `calc-openapi`, which only captures `paths`, not `components/schemas`) already
+matched and were re-recorded unchanged. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` —
+empty; a new field on an existing schema class does not change the surface.
+
+## T-025 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** "a PATCH that would invert the margin pair against a
+concurrently-committed change now returns 422 instead of succeeding."
+
+`update_calculator_defaults`'s margin min/max ordering check
+(`if defaults.margin_max_mult < defaults.margin_min_mult`) validated the in-memory ORM object
+the request's own `_get_or_create_defaults` had read — not the row as it actually stands at
+commit time. `useDefaultsForm.save` PATCHes only the dirty keys, so two settings tabs saving at
+the same time can send disjoint single-field bodies: request A sends `margin_min_mult: 1.5`
+(valid against the stored max of 1.6, which A's own read still shows); request B sends
+`margin_max_mult: 1.4` (valid against the stored min of 1.15, which B's own read — taken before
+A committed — still shows). Both individually-valid checks pass and both PATCHes commit,
+leaving the stored row at max 1.4 < min 1.5 — an inverted pair with no error anywhere. From
+then on `sizeMargin`'s `if (k <= 0 || mMax < mMin) return mMin` guard (`utils/pricing.ts:164`)
+silently flattens every quote to a constant ×1.5 margin with no size curve, and nothing in the
+UI surfaces it until someone reopens the settings tab.
+
+Fixed in `backend/app/api/routes/calculator.py` by moving the pair check from a Python-level
+comparison after the fact into the `WHERE` clause of the `UPDATE` statement itself, so the
+check and the write happen as a single atomic SQL operation against whatever is actually
+stored at that instant — not a snapshot a possibly-stale read produced earlier in the request.
+Only the genuinely racy case needs the extra guard: when the PATCH body carries exactly one of
+`margin_min_mult` / `margin_max_mult`, the `UPDATE` gains a `WHERE` term comparing the new
+value against the *other* field's live column (e.g. sending only `margin_min_mult` adds
+`WHERE calculator_defaults.margin_max_mult >= :new_min`); zero rows affected means the guard
+failed, which is now treated as the same 422 the old code raised, with the same message. When
+both fields are sent together the pair is already validated as a unit by
+`CalculatorDefaultsUpdate`'s `model_validator`, and when neither is sent there is nothing to
+guard, so both cases skip the extra `WHERE` term and update unconditionally exactly as before.
+SQLite (aiosqlite, WAL) serializes writers at the statement level, so whichever PATCH's
+`UPDATE` executes second necessarily sees the first one's already-committed value in its
+`WHERE` clause — the loser of the race is rejected instead of silently inverting the stored
+pair.
+
+Visible delta: only the interleaved-single-field race described above — for a single request in
+isolation the outcome (status, message, stored row) is unchanged: both fields sent together
+(schema-level 422, message and status unchanged), one field sent alone against an
+already-consistent stored row (same 422, same message, same "equal is allowed" boundary), or
+unrelated fields only, all match BASE. Reaching that outcome now goes through an unconditional
+Core `update(...).values(**changes)` instead of a per-field ORM `setattr`, so two invariants the
+first version of this fix got wrong needed a follow-up (fix-up, this same task, second attempt):
+a no-op PATCH (every sent value equal to what is already stored) must skip the `UPDATE` entirely
+rather than issue it unconditionally — otherwise `updated_at`'s `onupdate=func.now()` fires on a
+request that changed nothing, which the old `setattr` path's dirty-tracking always suppressed —
+and a PATCH against a row that is *already* stored inverted (pre-existing bad data, or written
+outside the API) must still 422 even when the request touches neither margin field, since the
+atomic `WHERE` guard only ever fires for the one-sided racing case and never runs at all for an
+unrelated-field or no-op PATCH. Both are restored by comparing each sent value against the
+stored row before deciding what to write (skipping the `UPDATE` if nothing differs) and by
+re-checking the margin pair unconditionally whenever the request itself did not touch either
+margin field, rolling back (so an unrelated field change is not persisted) if that check fails.
+
+Tests: `backend/tests/unit/test_calculator_routes.py` —
+`test_patch_concurrent_single_field_race_loser_rejected` pins the race deterministically
+without two genuinely-overlapping live sessions (this suite's single in-memory SQLite
+connection cannot hold two concurrent transactions open without deadlocking): request A's
+PATCH (raising min to 1.5, valid against the untouched stored max of 1.6) is committed first;
+request B's own `_get_or_create_defaults` read is then substituted (via
+`sqlalchemy.orm.attributes.set_committed_value`, which does not mark the object dirty or write
+anything back) to return the pre-A snapshot (min 1.15 / max 1.6) it would have seen had its
+read genuinely run before A committed; B's PATCH then lowers max to 1.4 — valid against B's own
+stale snapshot, but not against what is actually stored. Asserted against the pre-fix code
+(temporarily reverting the route change) that this test fails there — 200, with the row left at
+the inverted min 1.5 / max 1.4 — confirming it actually exercises the race rather than passing
+vacuously. All pre-existing `TestCalculatorDefaults` cases (`test_patch_curve_fields_round_trip`,
+`test_patch_rejects_inverted_pair_sent_together`,
+`test_patch_rejects_inverted_pair_against_stored_row`, `test_patch_roundtrip`, and the
+out-of-range/infinite/ceiling parametrizations) pass unchanged.
+
+Verification: `ruff check`/`ruff format --check` clean on the touched files.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_routes.py -q` — 75 passed.
+`bash tools/coverage_calc.sh backend` — full suite (`-n 30`, one pre-existing unrelated flake in
+`test_library_slice_api.py` that passes in isolation) — scoped statements 827/831 = 99.52%,
+above the 99.51% baseline floor. `./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes
+matched unchanged (no schema or DDL change). `bash tools/gen_surface_calc.sh | diff - SURFACE.md`
+— empty.
+
+**Fix-up (second attempt, same task):** the blind verifier caught the two regressions described
+above empirically — a value-unchanged PATCH bumped `updated_at`, and a PATCH against an
+already-inverted stored row (with neither margin field in the request body) returned 200 instead
+of 422. Fixed in `update_calculator_defaults` by filtering `changes` down to an
+`effective_changes` dict (only keys whose sent value differs from `getattr(defaults, key)`)
+before building the `UPDATE`, skipping the statement entirely when it is empty, and by adding an
+unconditional `if not margin_touched and defaults.margin_max_mult < defaults.margin_min_mult`
+check (rolling back before raising) that only fires when neither margin field is among the
+*effective* changes — the atomic `WHERE`-guarded single-field case and the schema-validated
+both-fields-together case are left to their existing checks so the race fix from the first
+attempt is untouched. New tests:
+`test_patch_noop_does_not_write_or_bump_updated_at` (spies on `AsyncSession.execute` to assert no
+`UPDATE calculator_defaults` statement is issued for a same-value PATCH, and that `updated_at` is
+unchanged in both the response and a follow-up `GET`) and
+`test_patch_unrelated_field_still_422s_against_an_inverted_row` (forces the stored row inverted
+directly through `db_session`, bypassing the route and its schema validation, then PATCHes an
+unrelated field and asserts 422 with the same message and that neither the unrelated field nor
+the margin pair changed). `test_patch_concurrent_single_field_race_loser_rejected` and the rest of
+`TestCalculatorDefaults` remain green.
+
+Verification (fix-up): `ruff check backend/` / `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_routes.py -q` — 77 passed.
+`bash tools/coverage_calc.sh backend` — full suite (`-n 30`) — scoped statements 832/836 = 99.52%.
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes matched (no schema/DDL/OpenAPI
+change). `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.

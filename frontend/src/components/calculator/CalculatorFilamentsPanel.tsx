@@ -496,6 +496,7 @@ export function CalculatorFilamentsPanel({
               unchanged: syncSummary.unchanged,
               skipped: syncSummary.skipped_no_price,
               missing: syncSummary.missing,
+              unpriced: syncSummary.unpriced,
             })}
           </p>
         )}

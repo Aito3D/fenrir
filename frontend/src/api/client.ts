@@ -3884,7 +3884,7 @@ export interface ZohoFilamentProduct {
   has_price: boolean;
 }
 
-/** Outcome of one sync chunk. The four outcome counts sum to `processed`. */
+/** Outcome of one sync chunk. The five outcome counts sum to `processed`. */
 export interface CalculatorFilamentSyncResult {
   processed: number;
   total: number;
@@ -3892,6 +3892,9 @@ export interface CalculatorFilamentSyncResult {
   unchanged: number;
   skipped_no_price: number;
   missing: number;
+  /** Filament has no stored spool weight and the Zoho item name carries none
+   *  either; dividing by the assumed 1 kg default was refused, price kept. */
+  unpriced: number;
   /** Pass as `after_id` for the next chunk; null when the last chunk is done. */
   next_after_id: number | null;
 }

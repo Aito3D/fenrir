@@ -761,7 +761,7 @@
   "type": "object"
  },
  "CalculatorFilamentSyncResponse": {
-  "description": "Outcome of one sync chunk. The four outcome counts sum to ``processed``.",
+  "description": "Outcome of one sync chunk. The five outcome counts sum to ``processed``.",
   "properties": {
    "missing": {
     "description": "Linked item no longer in the Zoho catalogue; link and price kept",
@@ -801,6 +801,11 @@
     "title": "Unchanged",
     "type": "integer"
    },
+   "unpriced": {
+    "description": "Filament has no stored spool weight and the Zoho item name carries none either (product.weight_inferred); dividing by the assumed 1 kg default was refused, so price kept",
+    "title": "Unpriced",
+    "type": "integer"
+   },
    "updated": {
     "description": "Cost per kg changed",
     "title": "Updated",
@@ -813,7 +818,8 @@
    "updated",
    "unchanged",
    "skipped_no_price",
-   "missing"
+   "missing",
+   "unpriced"
   ],
   "title": "CalculatorFilamentSyncResponse",
   "type": "object"

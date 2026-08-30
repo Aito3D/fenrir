@@ -350,7 +350,7 @@ class CalculatorFilamentSyncRequest(BaseModel):
 
 
 class CalculatorFilamentSyncResponse(BaseModel):
-    """Outcome of one sync chunk. The four outcome counts sum to ``processed``."""
+    """Outcome of one sync chunk. The five outcome counts sum to ``processed``."""
 
     processed: int = Field(description="Filaments examined in this chunk")
     total: int = Field(description="Linked filaments overall, for progress display")
@@ -358,6 +358,12 @@ class CalculatorFilamentSyncResponse(BaseModel):
     unchanged: int = Field(description="Zoho price matched the stored cost")
     skipped_no_price: int = Field(description="Zoho dealer price was 0; nothing written")
     missing: int = Field(description="Linked item no longer in the Zoho catalogue; link and price kept")
+    unpriced: int = Field(
+        description=(
+            "Filament has no stored spool weight and the Zoho item name carries none either "
+            "(product.weight_inferred); dividing by the assumed 1 kg default was refused, so price kept"
+        )
+    )
     next_after_id: int | None = Field(
         default=None, description="Pass as after_id for the next chunk; null when finished"
     )

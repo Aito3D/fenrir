@@ -8317,7 +8317,7 @@ export default {
     syncZohoPrices: 'Fiyatları senkronize et',
     syncProgress: '{{done}} / {{total}}',
     syncSummary:
-      '{{updated}} güncellendi · {{unchanged}} değişmedi · {{skipped}} bayi fiyatı yok · {{missing}} Zoho\'da yok',
+      '{{updated}} güncellendi · {{unchanged}} değişmedi · {{skipped}} bayi fiyatı yok · {{missing}} Zoho\'da yok · {{unpriced}} fiyatlandırılmadı (ağırlık bilinmiyor)',
     syncFailed: 'Senkronizasyon durduruldu: {{error}}',
     syncTimedOut: 'Senkronizasyon zaman aşımına uğradı; bazı parçalar yine de uygulanmış olabilir',
     zohoDuplicateWarning: '{{name}} için zaten bir filament var',

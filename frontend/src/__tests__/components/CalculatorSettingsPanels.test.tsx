@@ -933,6 +933,7 @@ describe('CalculatorFilamentsPanel Zoho price sync', () => {
     unchanged: 0,
     skipped_no_price: 0,
     missing: 0,
+    unpriced: 0,
     next_after_id: null,
     ...over,
   });

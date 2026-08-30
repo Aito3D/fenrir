@@ -127,7 +127,15 @@ export function useZohoFilamentSync(filaments: CalculatorFilament[]) {
       done: 0,
       total: filaments.filter((f) => f.zoho_item_id).length,
     });
-    const totals = { processed: 0, total: 0, updated: 0, unchanged: 0, skipped_no_price: 0, missing: 0 };
+    const totals = {
+      processed: 0,
+      total: 0,
+      updated: 0,
+      unchanged: 0,
+      skipped_no_price: 0,
+      missing: 0,
+      unpriced: 0,
+    };
     let afterId: number | null = 0;
     try {
       while (afterId !== null) {
@@ -143,6 +151,7 @@ export function useZohoFilamentSync(filaments: CalculatorFilament[]) {
         totals.unchanged += chunk.unchanged;
         totals.skipped_no_price += chunk.skipped_no_price;
         totals.missing += chunk.missing;
+        totals.unpriced += chunk.unpriced;
         totals.total = chunk.total;
         // `total` is a fresh COUNT on every chunk, so rows added or deleted
         // mid-walk make it drift. Never let the denominator fall behind what

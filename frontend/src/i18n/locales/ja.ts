@@ -8389,7 +8389,7 @@ export default {
     syncZohoPrices: '価格を同期',
     syncProgress: '{{done}} / {{total}}',
     syncSummary:
-      '{{updated}} 件更新 · {{unchanged}} 件変更なし · {{skipped}} 件は販売店価格なし · {{missing}} 件はZohoに見つかりません',
+      '{{updated}} 件更新 · {{unchanged}} 件変更なし · {{skipped}} 件は販売店価格なし · {{missing}} 件はZohoに見つかりません · {{unpriced}} 件は価格未設定（重量不明）',
     syncFailed: '同期を停止しました: {{error}}',
     syncTimedOut: '同期がタイムアウトしました。一部のチャンクは適用された可能性があります',
     zohoDuplicateWarning: '{{name}} のフィラメントは既に存在します',

@@ -460,7 +460,111 @@ async def test_counts_sum_to_processed(async_client, zoho_catalogue):
     await _create(async_client, zoho_item_id="B", material="PETG")
     await _create(async_client, zoho_item_id="GONE", material="PLA")
     body = (await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})).json()
-    assert body["updated"] + body["unchanged"] + body["skipped_no_price"] + body["missing"] == body["processed"]
+    assert (
+        body["updated"] + body["unchanged"] + body["skipped_no_price"] + body["missing"] + body["unpriced"]
+        == body["processed"]
+    )
+
+
+# --- T-024: a linked filament with no stored weight must not be repriced off
+# the Zoho name's silent 1 kg default ----------------------------------------
+
+
+@pytest.fixture
+def zoho_catalogue_with_inferred_weight(monkeypatch):
+    """A catalogue with one product whose name carried no weight segment at
+    all, so its ``spool_weight_kg`` is the silent 1 kg default
+    (``weight_inferred=True``), alongside a normally-priced, real-weight one.
+    """
+    catalogue = [
+        FilamentProduct(
+            item_id="INFERRED",
+            name="Item INFERRED",
+            sku="SKU-INFERRED",
+            brand="Bambu Lab",
+            material="PLA",
+            colour="Noir (Black)",
+            spool_weight_kg=1.0,
+            weight_inferred=True,
+            dealer_price=500.0,
+            cost_per_kg=500.0,
+            has_price=True,
+        ),
+        _product("REAL", 2000.0, weight=1.0),  # weight_inferred=False
+    ]
+
+    async def configured(db):
+        return True
+
+    async def fetch(db, *, refresh=True):
+        return catalogue
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", fetch)
+    return catalogue
+
+
+@pytest.mark.asyncio
+async def test_null_stored_weight_with_inferred_product_weight_is_left_unpriced(
+    async_client, zoho_catalogue_with_inferred_weight
+):
+    """A 3 kg spool whose Zoho name lost its weight segment must not be priced
+    as if it were 1 kg: the row is counted as ``unpriced`` instead of
+    ``updated``, the stored cost is untouched, and — since nothing was
+    actually synced — ``zoho_synced_at`` must stay null rather than being
+    stamped with a price that was never written.
+    """
+    created = await _create(async_client, zoho_item_id="INFERRED", material="PLA", spool_weight_kg=None)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    body = resp.json()
+    assert body["unpriced"] == 1
+    assert body["updated"] == 0
+    assert body["unchanged"] == 0
+
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["id"] == created["id"]
+    assert row["cost_per_kg"] == 1000.0  # _create's default, untouched
+    assert row["sale_price_per_kg"] == 1500.0  # untouched
+    assert row["zoho_synced_at"] is None  # never actually synced
+
+
+@pytest.mark.asyncio
+async def test_stored_weight_present_overrides_an_inferred_product_weight(
+    async_client, zoho_catalogue_with_inferred_weight
+):
+    """When the filament carries its OWN stored weight, an inferred product
+    weight is irrelevant — the row is priced exactly as before this fix.
+    """
+    created = await _create(async_client, zoho_item_id="INFERRED", material="PLA", spool_weight_kg=0.25)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    body = resp.json()
+    assert body["unpriced"] == 0
+    assert body["updated"] == 1
+
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["id"] == created["id"]
+    assert row["cost_per_kg"] == 2000.0  # 500.0 dealer price / 0.25 kg stored weight
+    assert row["zoho_synced_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_null_stored_weight_with_a_real_product_weight_is_priced_normally(
+    async_client, zoho_catalogue_with_inferred_weight
+):
+    """No stored weight, but the Zoho name DID carry a real one
+    (``weight_inferred=False``) — nothing to refuse, priced exactly as
+    before this fix.
+    """
+    created = await _create(async_client, zoho_item_id="REAL", material="ABS-GF", spool_weight_kg=None)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    body = resp.json()
+    assert body["unpriced"] == 0
+    assert body["updated"] == 1
+
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["id"] == created["id"]
+    assert row["cost_per_kg"] == 2000.0  # 2000.0 dealer price / 1.0 kg product weight
+    assert row["zoho_synced_at"] is not None
 
 
 @pytest.mark.asyncio
