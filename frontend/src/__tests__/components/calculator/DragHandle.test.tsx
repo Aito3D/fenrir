@@ -66,6 +66,23 @@ describe('DragHandle', () => {
     fireEvent.keyDown(grip, { key: 'ArrowLeft', shiftKey: true });
     expect(onChange).toHaveBeenLastCalledWith(400);
   });
+  it('ignores a hover move with no button held and no pointer capture', () => {
+    const onChange = vi.fn();
+    render(<svg><DragHandle value={500} min={0} max={1000} onChange={onChange} round={(v) => Math.round(v)} label="Drag to set K" /></svg>);
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
+    const strip = grip.parentElement!.querySelector('[data-testid="drag-strip"]')!;
+    // No prior pointerDown, and `buttons: 0` — the handler's guard should
+    // treat this as a plain hover and drop it without calling `onChange`.
+    fireEvent.pointerMove(strip, { clientX: 200, pointerId: 1, buttons: 0 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+  it('no-ops on a keydown that is not an arrow key', () => {
+    const onChange = vi.fn();
+    render(<svg><DragHandle value={500} min={0} max={1000} onChange={onChange} round={(v) => v} label="Drag to set K" /></svg>);
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
+    fireEvent.keyDown(grip, { key: 'Enter' });
+    expect(onChange).not.toHaveBeenCalled();
+  });
   it('renders nothing interactive when read-only', () => {
     render(<svg><DragHandle value={500} min={0} max={1000} onChange={() => {}} round={(v) => v} label="Drag to set K" readOnly /></svg>);
     expect(screen.queryByRole('slider')).not.toBeInTheDocument();

@@ -1008,6 +1008,104 @@ async def test_power_draw_matches_reference_implementation_exactly(printer_facto
     assert len(new_result) >= 3  # p_main, p5, p6
 
 
+# --- T-034: elapsed-fallback accuracy/watts band guards ---------------------
+#
+# When `duration_seconds` is usable, the SQL query itself pre-filters the
+# accuracy/watts band (`accuracy_in_band` / `implied_watts_expr.between(...)`
+# above), so out-of-band rows never reach the Python fold. When it's
+# unusable and `_resolve_duration` must fall back to `started_at`/
+# `completed_at` elapsed time, no such SQL band pre-filter exists — the
+# in-loop `if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
+# continue` / `if implied_watts < _WATTS_BAND_LO or implied_watts >
+# _WATTS_BAND_HI: continue` guards are the *only* thing excluding them.
+# `_build_time_accuracy_dataset`/`_build_power_draw_dataset` only add
+# fallback rows that land safely mid-band, so these two `continue`
+# statements are otherwise never exercised. Isolated, dedicated datasets
+# below so as not to perturb the exact sample counts asserted above.
+
+
+@pytest.mark.asyncio
+async def test_time_accuracy_elapsed_fallback_excludes_out_of_band_accuracy(
+    printer_factory, archive_factory, db_session
+):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)  # 1h slicer estimate
+
+    # duration_seconds unusable -> elapsed-time fallback. Elapsed=100s ->
+    # accuracy = 3600/100*100 = 3600% (way over HI=200).
+    db_session.add(
+        _run(
+            printer.id,
+            "completed",
+            archive_id=archive.id,
+            duration_seconds=None,
+            started_at=NOW - timedelta(seconds=100),
+            completed_at=NOW,
+        )
+    )
+    # Elapsed=100000s -> accuracy = 3600/100000*100 = 3.6% (way under LO=50).
+    db_session.add(
+        _run(
+            printer.id,
+            "completed",
+            archive_id=archive.id,
+            duration_seconds=None,
+            started_at=NOW - timedelta(seconds=100000),
+            completed_at=NOW,
+        )
+    )
+    await db_session.commit()
+
+    result = await calculator_insights_service._time_accuracy(db_session, since)
+
+    # Both rows are resolvable (elapsed > 0) and estimate is usable, so
+    # without the band guard they'd land in `accuracies`/`per_printer`. The
+    # guard must exclude both.
+    assert result["sample"] == 0
+    assert result["overall_pct"] is None
+    assert result["by_printer"] == []
+
+
+@pytest.mark.asyncio
+async def test_power_draw_elapsed_fallback_excludes_out_of_band_watts(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+
+    # duration_seconds unusable -> elapsed-time fallback. Elapsed=3600s (1h,
+    # safely inside the duration band) with energy_kwh=5.0 -> implied_watts
+    # = 5000W (over HI=3000).
+    db_session.add(
+        _run(
+            printer.id,
+            "completed",
+            duration_seconds=None,
+            energy_kwh=5.0,
+            started_at=NOW - timedelta(seconds=3600),
+            completed_at=NOW,
+        )
+    )
+    # Elapsed=3600s with energy_kwh=0.0001 -> implied_watts = 0.1W (under LO=1.0).
+    db_session.add(
+        _run(
+            printer.id,
+            "completed",
+            duration_seconds=None,
+            energy_kwh=0.0001,
+            started_at=NOW - timedelta(seconds=3600),
+            completed_at=NOW,
+        )
+    )
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+
+    # Both rows resolve to a duration inside [_MIN_POWER_SECONDS,
+    # _MAX_PRINT_SECONDS], so without the watts-band guard they'd land in
+    # `per_printer`. The guard must exclude both.
+    assert result == []
+
+
 # --- T-087: `_resolve_duration`'s started_at/completed_at fallback ----------
 #
 # The differential tests above mix fallback rows into a larger dataset and

@@ -118,6 +118,32 @@ describe('MarginCurvePreview — K drag handle domain', () => {
     expect(onK).toHaveBeenLastCalledWith(99);
   });
 
+  it('unfreezes the domain after pointerUp so it reflects the live, post-drop K', () => {
+    // Companion to the "does not compound" test above: that test only ever
+    // reads `onK`'s call values, never re-checking the handle's own
+    // `aria-valuemax` once the gesture completes. The frozen anchor
+    // (`kDragAnchor`) is supposed to clear on `onDragEnd`, so the domain
+    // should go back to scaling off the live (post-drop) K rather than
+    // staying pinned to the K the drag started with.
+    const onK = vi.fn();
+    render(<DragHost onK={onK} />);
+    const strip = getKStrip();
+
+    fireEvent.pointerDown(strip, { clientX: 110, pointerId: 1 });
+    for (let i = 0; i < 8; i++) {
+      fireEvent.pointerMove(strip, { clientX: 110, pointerId: 1, buttons: 1 });
+    }
+    fireEvent.pointerUp(strip, { pointerId: 1 });
+
+    // The drag above lands on K=99 (30 % of the frozen 330 domain — see the
+    // "does not compound" test's math). `DragHost` feeds that back into `d`,
+    // so once the anchor unfreezes the domain is 99 × 10 = 990, not the
+    // drag-start anchor's 33 × 10 = 330.
+    expect(onK).toHaveBeenLastCalledWith(99);
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
+    expect(grip).toHaveAttribute('aria-valuemax', '990');
+  });
+
   it('still lets the domain track K normally outside of a drag (typed edits, or after drop)', () => {
     // Regression guard for the freeze itself: once the drag ends the anchor
     // clears and the chart must go back to scaling with the live K, exactly
