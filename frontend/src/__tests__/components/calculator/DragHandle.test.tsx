@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { DragHandle } from '../../../components/calculator/DragHandle';
+import { roundK } from '../../../components/calculator/curveGeometry';
 
 // `DragHandle` reads plot geometry from `usePlotArea()` (the installed
 // recharts' `useOffset()` carries only top/left/right/bottom, not
@@ -65,6 +66,32 @@ describe('DragHandle', () => {
     expect(onChange).toHaveBeenLastCalledWith(510);
     fireEvent.keyDown(grip, { key: 'ArrowLeft', shiftKey: true });
     expect(onChange).toHaveBeenLastCalledWith(400);
+  });
+  // T-047: the `onDragStart`-gated keyboard step is sized from the decade
+  // of the value being stepped TOWARD, not FROM, so it stays an exact
+  // inverse of itself across a decade boundary (10 <-> 9.99) — not just
+  // within one decade, which the panel-level regression test above already
+  // covers away from any boundary.
+  it('round-trips exactly across a decade boundary with onDragStart wired (K-style handle)', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <svg>
+        <DragHandle value={10} min={0} max={100} onChange={onChange} round={roundK} label="Drag to set K" onDragStart={() => {}} />
+      </svg>,
+    );
+    const grip = screen.getByRole('slider', { name: 'Drag to set K' });
+    // From an exact decade value, ArrowLeft now moves one fine-grid step
+    // (to 9.99) instead of the old coarse step (to 9.9) — the approved
+    // user-visible change.
+    fireEvent.keyDown(grip, { key: 'ArrowLeft' });
+    expect(onChange).toHaveBeenLastCalledWith(9.99);
+    rerender(
+      <svg>
+        <DragHandle value={9.99} min={0} max={100} onChange={onChange} round={roundK} label="Drag to set K" onDragStart={() => {}} />
+      </svg>,
+    );
+    fireEvent.keyDown(grip, { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(10);
   });
   it('ignores a hover move with no button held and no pointer capture', () => {
     const onChange = vi.fn();

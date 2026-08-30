@@ -3984,14 +3984,14 @@ export interface CalculatorSpoolCostBrandEntry {
 export interface CalculatorPowerDrawEntry {
   printer_id: number;
   printer_name: string;
-  avg_watts: number;
+  avg_watts: number | null;
   sample: number;
 }
 
 export interface CalculatorDailyUsageEntry {
   printer_id: number;
   printer_name: string;
-  hours_per_day: number;
+  hours_per_day: number | null;
   observed_days: number;
   sample: number;
 }

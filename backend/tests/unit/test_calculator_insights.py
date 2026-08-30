@@ -1194,6 +1194,152 @@ async def test_daily_usage_at_min_days_included(async_client: AsyncClient, print
     assert usage[0]["observed_days"] == 14
 
 
+# --- T-046/T-044 cross-window suppression for power/usage -------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_power_cross_window_suppressed_at_90_and_365_for_thin_middle_band(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """`power_by_printer` variant of the T-042/T-045 pinned evidence
+    scenario: MIN_SAMPLE power-eligible prints in the last 30 days, 3 more
+    only in the (30, 90] band, none in (90, 365]. `days=90`'s sample (8) has
+    a residual of 3 against 30 — below MIN_SAMPLE — so it must suppress
+    `avg_watts` (keeping `sample`). `days=365` has the same sample as
+    `days=90` (zero residual against that single adjacent neighbour) but
+    must still suppress once probed directly against 30, exactly like the
+    failure/time_accuracy folds."""
+    printer = await printer_factory()
+    for _ in range(MIN_SAMPLE):
+        db_session.add(
+            _run(printer.id, "completed", duration_seconds=7200, energy_kwh=0.2, created_at=NOW - timedelta(days=1))
+        )
+    for _ in range(3):
+        db_session.add(
+            _run(printer.id, "completed", duration_seconds=7200, energy_kwh=0.2, created_at=NOW - timedelta(days=60))
+        )
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["power_by_printer"]
+    assert at_30[0]["sample"] == MIN_SAMPLE
+    assert at_30[0]["avg_watts"] == 100.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["power_by_printer"]
+    assert at_90[0]["sample"] == MIN_SAMPLE + 3
+    assert at_90[0]["avg_watts"] is None
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["power_by_printer"]
+    assert at_365[0]["sample"] == MIN_SAMPLE + 3
+    assert at_365[0]["avg_watts"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_power_cross_window_unaffected_when_fat_at_every_band(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """A fleet with a large-enough delta in every band (< 30 days, the
+    (30, 90] band, and the (90, 365] band) must publish `avg_watts` unchanged
+    at every window — probing extra narrower windows must never suppress a
+    genuinely well-sampled printer."""
+    printer = await printer_factory()
+    for offset_days in (1, 60, 200):
+        for _ in range(MIN_SAMPLE):
+            db_session.add(
+                _run(
+                    printer.id,
+                    "completed",
+                    duration_seconds=7200,
+                    energy_kwh=0.2,
+                    created_at=NOW - timedelta(days=offset_days),
+                )
+            )
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["power_by_printer"]
+    assert at_30[0]["sample"] == MIN_SAMPLE
+    assert at_30[0]["avg_watts"] == 100.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["power_by_printer"]
+    assert at_90[0]["sample"] == MIN_SAMPLE * 2
+    assert at_90[0]["avg_watts"] == 100.0
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["power_by_printer"]
+    assert at_365[0]["sample"] == MIN_SAMPLE * 3
+    assert at_365[0]["avg_watts"] == 100.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_usage_cross_window_suppressed_at_90_and_365_for_thin_middle_band(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """`usage_by_printer` variant of the T-042/T-045 pinned evidence
+    scenario: 10 usage-eligible prints spanning the last 20 days (comfortably
+    over `_MIN_USAGE_DAYS`), 3 more only in the (30, 90] band. `days=90`'s
+    sample (13) has a residual of 3 against 30 — below MIN_SAMPLE — so it
+    must suppress `hours_per_day` (keeping `sample`/`observed_days`).
+    `days=365` has the same sample as `days=90` (zero residual against that
+    single adjacent neighbour) but must still suppress once probed directly
+    against 30."""
+    printer = await printer_factory()
+    for i in range(10):
+        db_session.add(_run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=20 - i)))
+    for _ in range(3):
+        db_session.add(_run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=60)))
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["usage_by_printer"]
+    assert at_30[0]["sample"] == 10
+    assert at_30[0]["hours_per_day"] == 3.0
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["usage_by_printer"]
+    assert at_90[0]["sample"] == 13
+    assert at_90[0]["hours_per_day"] is None
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["usage_by_printer"]
+    assert at_365[0]["sample"] == 13
+    assert at_365[0]["hours_per_day"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_usage_cross_window_unaffected_when_fat_at_every_band(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    """A fleet with a large-enough delta in every band must publish
+    `hours_per_day` unchanged at every window — probing extra narrower
+    windows must never suppress a genuinely well-sampled printer."""
+    printer = await printer_factory()
+    # Batch A: 10 prints over days 1-20 (observed 20 days) — inside every window.
+    for i in range(10):
+        db_session.add(_run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=20 - i)))
+    # Batch B: 10 prints over days 40-60 — only inside the 90/365 windows.
+    for i in range(10):
+        db_session.add(
+            _run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=60 - i * 2))
+        )
+    # Batch C: 10 prints over days 150-170 — only inside the 365 window.
+    for i in range(10):
+        db_session.add(
+            _run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=170 - i * 2))
+        )
+    await db_session.commit()
+
+    at_30 = (await async_client.get("/api/v1/calculator/insights?days=30")).json()["usage_by_printer"]
+    assert at_30[0]["sample"] == 10
+    assert at_30[0]["hours_per_day"] is not None
+
+    at_90 = (await async_client.get("/api/v1/calculator/insights?days=90")).json()["usage_by_printer"]
+    assert at_90[0]["sample"] == 20
+    assert at_90[0]["hours_per_day"] is not None
+
+    at_365 = (await async_client.get("/api/v1/calculator/insights?days=365")).json()["usage_by_printer"]
+    assert at_365[0]["sample"] == 30
+    assert at_365[0]["hours_per_day"] is not None
+
+
 # --- T-076 differential test -------------------------------------------------
 #
 # `_time_accuracy` and `_power_draw` were changed to push row-count-reducing

@@ -956,11 +956,19 @@
  "CalculatorInsightsResponse": {
   "$defs": {
    "DailyUsageEntry": {
-    "description": "Measured usage-hours/day for one printer over the observed window.",
+    "description": "Measured usage-hours/day for one printer over the observed window.\n\n``hours_per_day`` is ``None`` under the same T-027/T-044 cross-window\nguard as ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "hours_per_day": {
-      "title": "Hours Per Day",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Hours Per Day"
      },
      "observed_days": {
       "title": "Observed Days",
@@ -982,7 +990,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "hours_per_day",
      "observed_days",
      "sample"
     ],
@@ -1093,11 +1100,19 @@
     "type": "object"
    },
    "PowerDrawEntry": {
-    "description": "Energy-weighted average watts measured for one printer.",
+    "description": "Energy-weighted average watts measured for one printer.\n\n``avg_watts`` is ``None`` under the same T-027/T-046 cross-window guard\nas ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "avg_watts": {
-      "title": "Avg Watts",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Avg Watts"
      },
      "printer_id": {
       "title": "Printer Id",
@@ -1115,7 +1130,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "avg_watts",
      "sample"
     ],
     "title": "PowerDrawEntry",
@@ -1572,11 +1586,19 @@
   "type": "object"
  },
  "DailyUsageEntry": {
-  "description": "Measured usage-hours/day for one printer over the observed window.",
+  "description": "Measured usage-hours/day for one printer over the observed window.\n\n``hours_per_day`` is ``None`` under the same T-027/T-044 cross-window\nguard as ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
   "properties": {
    "hours_per_day": {
-    "title": "Hours Per Day",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Hours Per Day"
    },
    "observed_days": {
     "title": "Observed Days",
@@ -1598,7 +1620,6 @@
   "required": [
    "printer_id",
    "printer_name",
-   "hours_per_day",
    "observed_days",
    "sample"
   ],
@@ -1773,11 +1794,19 @@
   "type": "object"
  },
  "PowerDrawEntry": {
-  "description": "Energy-weighted average watts measured for one printer.",
+  "description": "Energy-weighted average watts measured for one printer.\n\n``avg_watts`` is ``None`` under the same T-027/T-046 cross-window guard\nas ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
   "properties": {
    "avg_watts": {
-    "title": "Avg Watts",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Avg Watts"
    },
    "printer_id": {
     "title": "Printer Id",
@@ -1795,7 +1824,6 @@
   "required": [
    "printer_id",
    "printer_name",
-   "avg_watts",
    "sample"
   ],
   "title": "PowerDrawEntry",

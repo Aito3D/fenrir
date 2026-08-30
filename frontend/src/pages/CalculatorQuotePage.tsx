@@ -39,12 +39,23 @@ export function CalculatorQuotePage() {
   const decimals = moneyDecimals(currency);
   const scale = 10 ** decimals;
   const taskTtcRounded = result ? Math.round(result.total_ttc_qty * scale) / scale : 0;
-  const unitTtcDisplayed = result && result.quantity > 1 ? taskTtcRounded / result.quantity : taskTtcRounded;
+  const unitTtcQuotient = result && result.quantity > 1 ? taskTtcRounded / result.quantity : taskTtcRounded;
   // Same task-first rounding for the pre-tax figure, so the printed
   // subtotal/tax/total lines below stay internally consistent with the
   // headline total.
   const taskHtRounded = result ? Math.round(result.total_ht_qty * scale) / scale : 0;
-  const unitHtDisplayed = result && result.quantity > 1 ? taskHtRounded / result.quantity : taskHtRounded;
+  const unitHtQuotient = result && result.quantity > 1 ? taskHtRounded / result.quantity : taskHtRounded;
+  // Round the unit HT/TTC figures to display precision FIRST — using
+  // toFixed, the exact rounding formatMoney applies internally, so the
+  // rounded value reproduces the same digits formatMoney would print for the
+  // raw quotient (Math.round(x * scale) / scale can disagree with toFixed at
+  // floating-point edge cases and would silently shift the printed HT/TTC
+  // figures, not just the tax line) — then derive the tax line as their
+  // difference. That way the three printed cells always sum exactly at
+  // display precision, even when quantity doesn't divide the total evenly
+  // (e.g. 100.00 HT / 113.00 TTC at quantity 3: 33.33 + 4.34 = 37.67).
+  const unitHtDisplayed = Number(unitHtQuotient.toFixed(decimals));
+  const unitTtcDisplayed = Number(unitTtcQuotient.toFixed(decimals));
   const unitTaxDisplayed = unitTtcDisplayed - unitHtDisplayed;
   const timeLabel = [
     num(state.timeD) > 0 ? `${Math.max(0, num(state.timeD))}${t('calculator.durationDaysShort')}` : '',

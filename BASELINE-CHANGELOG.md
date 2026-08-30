@@ -7335,3 +7335,171 @@ changed. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty: the con
 with a type annotation (`_NAME: dict[...] = ...`), which SURFACE's `R4` regex
 (`^_?[A-Z][A-Z0-9_]+ =`) does not match — `_ADJACENT_NARROWER_WINDOW` was never on the surface
 either, so the rename is not a surface change.
+
+## T-046 + T-044 — 2026-08-30 — user-approved behavior change
+
+Two audits (`audit-robustness` T-046, `audit-security` T-044) independently found that
+`power_by_printer` and `usage_by_printer` — both windowed the same way as `failure` and
+`time_accuracy` — were passed into T-027/T-042/T-045's cross-window suppression guard not at
+all. `_power_draw(db, since)`/`_daily_usage(db, since)` publish `avg_watts`/`hours_per_day` plus
+`sample` per printer under the same `since` bound as the other two folds, with no guard against
+a caller fetching two offered windows and subtracting. Concretely (the robustness audit's
+scenario): a printer with 100 power-eligible prints in the 30-day window (avg 120.0 W) and 102 in
+the 90-day window (avg 120.5 W) — both publish, and `(120.5*102 - 120.0*100)` recovers the
+energy-weighted draw of the 2 prints in the (30, 90] band, exactly the sub-`MIN_SAMPLE` disclosure
+the guard exists to prevent. The security audit found the same hole for `usage_by_printer`:
+`hours_per_day x observed_days` inverts to a total duration, recoverable the same way by
+subtraction across windows.
+
+The fix extends `_suppress_cross_window_leaks` to take the `power`/`usage` lists and, for each
+published printer row, probes the identical `_NARROWER_WINDOWS` map (`90: (30,)`, `365: (90, 30)`)
+with count-only queries mirroring each fold's own row eligibility — `_power_sample_counts` (watts
+band + min/max-seconds rules, shared with `_power_draw` via the new `_power_draw_rows` row
+generator, the same extraction pattern `_time_accuracy_rows` already uses) and `_usage_sample_counts`
+(pure-SQL: printer/created_at/duration-present/duration-cap/status, no `_MIN_USAGE_DAYS` gate —
+that's an aggregate check on the published entry's `observed_days`, not a per-row filter, exactly
+like `MIN_SAMPLE` is not part of `_failure_sample_counts`). A row's sample count growing by fewer
+than `MIN_SAMPLE` against **any** narrower offered window blanks that row's `avg_watts`/
+`hours_per_day`; `sample` (and, for usage, `observed_days`) is always left as computed. `power`/
+`usage` are per-printer only — no overall/material figure to guard, unlike `failure`.
+
+`PowerDrawEntry.avg_watts` and `DailyUsageEntry.hours_per_day` are now `float | None = None`
+(`sample` stays required), matching `FailureRateEntry.rate_pct`/`TimeAccuracyEntry.accuracy_pct`.
+`CalculatorPowerDrawEntry.avg_watts`/`CalculatorDailyUsageEntry.hours_per_day` in
+`frontend/src/api/client.ts` are now `number | null`. `frontend/src/utils/calculatorInsights.ts`'s
+`pickPowerDraw`/`pickDailyUsage` now filter suppressed (null) entries out of `matchPrinters`'
+results before folding — excluded from both the weighted-average numerator and the sample/
+observed-days-weighted denominator, exactly like `pickFailureRate`/`pickTimeAccuracy` already treat
+a suppressed `rate_pct`/`accuracy_pct` — so a suppressed entry never fabricates a `0` and never
+crashes the fold.
+
+**User-visible effect (as approved):** "power and daily-hours rows can come back with a null
+measured value (sample still present), so the reality-check card's power/dailyHours rows and their
+one-click 'update printer profile' buttons disappear for those printers" (T-044's variant: "the
+daily-usage reality-check row and its 'update printer profile' button will stop appearing for
+printers whose print count barely grows between windows"). `days=30` is unaffected (no narrower
+window to probe); a fleet with a large-enough delta in every band still publishes unchanged at
+every window.
+
+Tests added to `backend/tests/unit/test_calculator_insights.py`, mirroring the T-042/T-045 shapes
+for both folds: the pinned evidence scenario (`MIN_SAMPLE` in the last 30 days, 3 more only in the
+(30, 90] band) suppressed at both `days=90` and `days=365`; a fleet with a large delta in every
+band (< 30 days, (30, 90], (90, 365]) unchanged at all three windows. Tests added to
+`frontend/src/__tests__/utils/calculatorInsights.test.ts`, mirroring the T-027 fix-up's shape for
+both folds: a suppressed (null) sole entry yields no row and does not throw; a suppressed entry
+mixed with a valid one is excluded from both the numerator and the denominator; every matching
+entry suppressed yields no row.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean. `./venv/bin/python3
+-m pytest backend/tests/unit/test_calculator_insights.py -q` — 92/92 passed. `cd frontend && npm
+run build` clean (no new consumers of the now-nullable fields were missed), `static/` reverted
+before commit. `npx eslint` clean on `calculatorInsights.ts`, `client.ts`, and the two test files.
+`npx vitest run src/__tests__/utils/calculatorInsights.test.ts` — 44/44 passed;
+`CalculatorRealityCheckCard.test.tsx` — 11/11 passed; `CalculatorPage.test.tsx` — 49/49 passed.
+`bash tools/coverage_calc.sh both` — see commit for the exact ratios (must clear BE >= 99.77%,
+FE >= 96.90%). `./venv/bin/python3 tools/snapshot.py verify` — 10/10; **`calc-pydantic-schemas` was
+re-recorded** (sanctioned) because `PowerDrawEntry.avg_watts`/`DailyUsageEntry.hours_per_day`
+became `anyOf[number, null]` with `default: null` — the diff is exactly those two fields' schema
+shape plus their updated docstrings, nothing else in the golden changed. `bash
+tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-047 — 2026-08-30 — decade-boundary keyboard steps are exact inverses (user-approved behavior change)
+
+`DragHandle`'s `onDragStart`-gated keyboard step (T-022's fix: a fixed unit of the dragged value's
+own order-of-magnitude grid, so repeated presses don't compound through a self-referential domain)
+sized that unit from the CURRENT value's decade (`10 ** (Math.floor(Math.log10(basis)) - 2)`),
+while `round` (`roundK`) always re-snaps its result to the DESTINATION value's own decade. At an
+exact decade boundary the two disagree: from K=99.9, ArrowRight steps by 0.1 (99.9's decade) to
+100; but ArrowLeft from 100 then steps by 1 (100's decade) to 99, not back to 99.9 — a net -0.9 per
+round trip, and the whole 99.0-99.9 band was unreachable from above. Same at 9.99 -> 10 -> 9.9 and
+999 -> 1000 -> 990. An operator nudging the K handle back and forth to compare curves would
+silently land on a different `margin_k` than they started with — and that value is what the Save
+bar writes to the stored pricing curve.
+
+Fixed by sizing the step from the decade of the value being stepped TOWARD, not FROM: for a
+leftward step (`dir < 0`) only, the basis value is nudged down by an epsilon (`value * (1 - 1e-9)`)
+before taking its decade, so an exact power of ten (10, 100, 1000) reads as belonging to the decade
+just below it — the same decade `roundK` will land the destination in. Rightward steps are
+unaffected (their basis is already the source decade, which already matches a rightward
+destination approaching a boundary from below, e.g. 9.99 -> 10). This makes ArrowRight/ArrowLeft
+exact inverses of each other at every boundary, including starting from an exact decade value, while
+leaving every within-decade step (no boundary crossed) byte-for-byte unchanged.
+
+**User-visible effect (as approved):** "ArrowLeft from an exact decade value (10, 100, 1000) now
+moves one fine-grid step (to 9.99) instead of one coarse step (to 9.9)."
+
+Shift+arrow (10-unit step) uses the same basis calculation and so gets the same fix at an exact
+decade value: Shift+ArrowLeft from 10 now lands on 9.9 (was 9) and Shift+ArrowRight from 9.9 returns
+exactly to 10 — also an exact round trip at the boundary now. This does not extend to a shift-step
+starting from a fine-grid value already within an epsilon of a boundary from below (e.g.
+Shift+ArrowRight from 9.99, which crosses into the next decade because the 10x step itself is
+larger than the remaining room in the source decade): that combination round-tripped incorrectly
+before this fix too and still does not round-trip after it — an unaffected pre-existing limitation
+of sizing a step from a single decade's grid, not a regression introduced here.
+
+Regression coverage added in `frontend/src/__tests__/components/calculator/DragHandle.test.tsx`: a
+new test wires `onDragStart` and `round={roundK}` directly (no `MarginCurvePreview` in the tree) and
+drives ArrowLeft from K=10 (asserts 9.99, the approved change) then ArrowRight from 9.99 (asserts
+exactly 10), pinning the round trip at a decade boundary at the `DragHandle` level per audit-tests'
+T-050 finding that this branch had no direct component-level test. The existing panel-level
+round-trip test in `CalculatorSettingsPanelDrag.test.tsx` (33 <-> 35, no boundary crossed) is
+unaffected and continues to pass unchanged.
+
+Verification: `npx eslint` clean on `DragHandle.tsx` and its test file. `cd frontend && npm run
+build` clean, `static/` reverted before commit. `npx vitest run
+src/__tests__/components/calculator/DragHandle.test.tsx` — 7/7 passed;
+`src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx` — 6/6 passed;
+`src/__tests__/components/calculator/MarginCurvePreview.test.tsx` — 3/3 passed. `bash
+tools/coverage_calc.sh frontend` — 96.91% statements (1413/1458), clearing the required >= 96.91%
+(1412/1457) floor. `./venv/bin/python3 tools/snapshot.py verify` — 10/10, no probe pins keyboard
+stepping. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-048 — 2026-08-30 — printed quote's price lines always sum exactly at display precision (user-approved behavior change)
+
+`CalculatorQuotePage`'s totals table derived its Tax row as `unitTtcDisplayed - unitHtDisplayed`
+where both operands were **unrounded quotients** (`taskTtcRounded / quantity`,
+`taskHtRounded / quantity`), while all three cells (Total excl. tax, Tax, Total incl. tax) were
+then independently rounded for display by `formatMoney`. At a quantity that doesn't divide the
+task total evenly, rounding each of the three raw numbers separately can leave the printed HT and
+Tax cells a display unit short of (or over) the printed Total cell directly beneath them — e.g. the
+`CalculatorQuotePage.test.tsx` qty-6 USD fixture printed Total excl. tax `$742.55` + Tax `$96.53`
+= `$839.08`, a cent OVER the printed Total incl. tax of `$839.07`. This is the one document meant
+to leave the workshop; a customer or their accountant reading the three figures would find they
+don't add up.
+
+Fixed by rounding the unit HT and TTC figures to the currency's display precision FIRST — via
+`.toFixed(decimals)` (the exact rounding `formatMoney` applies internally, so the pre-rounded
+value is guaranteed to reproduce the same digits `formatMoney` would print for the raw quotient) —
+and then deriving the Tax row as the difference of those two already-rounded values, so the three
+printed cells always satisfy HT + Tax = TTC exactly at display precision. `Math.round(x * scale) /
+scale` was deliberately NOT used for this pre-rounding step: it can disagree with `toFixed` at
+floating-point edge cases (verified while building this fix — one fixture had `Math.round`-based
+rounding silently shift the printed TTC headline itself from `$839.07` to `$839.08`, not just the
+tax line), which would have been an unsanctioned, undetected second behavior change. At quantity 1
+the HT/TTC figures were already display-rounded (`taskHtRounded`/`taskTtcRounded` themselves), so
+re-rounding them is a no-op and today's quantity-1 output is unchanged.
+
+**User-visible effect (as approved):** "the tax (or subtotal) line on a printed quote can shift by
+one display unit at quantities that don't divide the total evenly."
+
+The existing quantity-6 (USD, 2-decimal) and quantity-3 (XPF, 0-decimal) tests in
+`CalculatorQuotePage.test.tsx` were updated to compute their expected Tax-row value the same way
+production now does (rounded HT/TTC difference, not a raw-quotient difference) — the qty-6 USD
+fixture's sanctioned tax value changes from `$96.53` to `$96.52`; the qty-3 XPF fixture's value is
+unchanged text (`181 FCFP`) either way, since that particular fixture doesn't happen to straddle a
+rounding boundary, but its assertion now matches the new derivation for correctness. Both tests
+gained an exact-sum invariant: the three rendered cells are parsed back into minor display units
+(cents for USD, whole units for XPF) and asserted to sum exactly, not merely "close." A new
+`it.each` regression test was also added, covering a 2-decimal (USD) and a 0-decimal (XPF) fixture
+at quantity 2 chosen specifically because the task total does NOT divide evenly by 2 at display
+precision for either currency — both fixtures pin the rendered Tax cell to the sanctioned
+(rounded-difference) value, assert it differs from the naive raw-quotient-difference value a
+regression would reintroduce, and assert the same exact minor-unit sum invariant.
+
+Verification: `npx eslint` clean on `CalculatorQuotePage.tsx` and its test file. `cd frontend &&
+npm run build` clean, `static/` reverted before commit. `npx vitest run
+src/__tests__/pages/CalculatorQuotePage.test.tsx` — 6/6 passed; `src/__tests__/pages/
+CalculatorPage.test.tsx` — 49/49 passed. `bash tools/coverage_calc.sh frontend` — 96.91% statements
+(1415/1460), clearing the required >= 96.91% (1413/1458) floor. `./venv/bin/python3
+tools/snapshot.py verify` — 10/10, no probe pins the printed quote's rounding. `bash
+tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.

@@ -297,20 +297,28 @@ class SpoolCostBrandEntry(BaseModel):
 
 
 class PowerDrawEntry(BaseModel):
-    """Energy-weighted average watts measured for one printer."""
+    """Energy-weighted average watts measured for one printer.
+
+    ``avg_watts`` is ``None`` under the same T-027/T-046 cross-window guard
+    as ``FailureRateEntry.rate_pct`` — ``sample`` is still reported.
+    """
 
     printer_id: int
     printer_name: str
-    avg_watts: float
+    avg_watts: float | None = None
     sample: int
 
 
 class DailyUsageEntry(BaseModel):
-    """Measured usage-hours/day for one printer over the observed window."""
+    """Measured usage-hours/day for one printer over the observed window.
+
+    ``hours_per_day`` is ``None`` under the same T-027/T-044 cross-window
+    guard as ``FailureRateEntry.rate_pct`` — ``sample`` is still reported.
+    """
 
     printer_id: int
     printer_name: str
-    hours_per_day: float
+    hours_per_day: float | None = None
     observed_days: int
     sample: int
 

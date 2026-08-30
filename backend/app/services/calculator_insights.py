@@ -102,7 +102,7 @@ class CalculatorInsightsService:
         spool_costs_by_brand = await self._spool_costs_by_brand(db)
         power = await self._power_draw(db, since)
         usage = await self._daily_usage(db, since)
-        await self._suppress_cross_window_leaks(db, now, days, failure, time_accuracy)
+        await self._suppress_cross_window_leaks(db, now, days, failure, time_accuracy, power, usage)
 
         from backend.app.api.routes.settings import get_energy_cost_per_kwh
 
@@ -118,13 +118,28 @@ class CalculatorInsightsService:
         }
 
     async def _suppress_cross_window_leaks(
-        self, db: AsyncSession, now: datetime, days: int, failure: dict, time_accuracy: dict
+        self,
+        db: AsyncSession,
+        now: datetime,
+        days: int,
+        failure: dict,
+        time_accuracy: dict,
+        power: list[dict],
+        usage: list[dict],
     ) -> None:
-        """T-027/T-042/T-045: suppress `failure`/`time_accuracy` figures a
-        caller could recover by fetching this window and ANY narrower
-        offered window and subtracting. Mutates the two dicts in place; only
-        `rate_pct`/`accuracy_pct` are ever blanked, `sample` is always left
-        as computed.
+        """T-027/T-042/T-045/T-046/T-044: suppress `failure`/`time_accuracy`/
+        `power`/`usage` figures a caller could recover by fetching this
+        window and ANY narrower offered window and subtracting. Mutates the
+        four collections in place; only `rate_pct`/`accuracy_pct`/
+        `avg_watts`/`hours_per_day` are ever blanked, `sample` (and, for
+        usage, `observed_days`) is always left as computed.
+
+        `power`/`usage` are per-printer only (no overall/material figure to
+        guard, unlike `failure`) — the weighted-mean subtraction the T-046
+        audit demonstrated for `avg_watts` (and the equivalent for
+        `hours_per_day` x `observed_days`) recovers the narrow band's figure
+        the exact same way an unpublished residual does for the other two
+        folds, so the identical count-only probe applies.
 
         Probing only the immediate narrower neighbour is not enough: a
         caller can subtract *any* two offered windows, not just adjacent
@@ -169,6 +184,22 @@ class CalculatorInsightsService:
             _residual_leaks(time_accuracy["sample"], counts[1]) for counts in ta_counts
         ):
             time_accuracy["overall_pct"] = None
+
+        power_counts = [
+            await self._power_sample_counts(db, now - timedelta(days=narrower_days))
+            for narrower_days in narrower_windows
+        ]
+        for row in power:
+            if any(_residual_leaks(row["sample"], counts.get(row["printer_id"], 0)) for counts in power_counts):
+                row["avg_watts"] = None
+
+        usage_counts = [
+            await self._usage_sample_counts(db, now - timedelta(days=narrower_days))
+            for narrower_days in narrower_windows
+        ]
+        for row in usage:
+            if any(_residual_leaks(row["sample"], counts.get(row["printer_id"], 0)) for counts in usage_counts):
+                row["hours_per_day"] = None
 
     async def _failure_sample_counts(
         self, db: AsyncSession, since: datetime
@@ -217,6 +248,38 @@ class CalculatorInsightsService:
             if printer_id is not None:
                 per_printer[printer_id] = per_printer.get(printer_id, 0) + 1
         return per_printer, overall
+
+    async def _power_sample_counts(self, db: AsyncSession, since: datetime) -> dict[int, int]:
+        """Power-eligible sample counts per printer for `since` — the same
+        population `_power_draw` folds, but counts only (called once per
+        narrower offered window by T-046's cross-window probe). Applies the
+        identical row eligibility (watts band, min/max seconds, duration
+        resolution) as `_power_draw` since that eligibility isn't a pure SQL
+        count without the same Python fold — see `_power_draw_rows`, the
+        shared helper both methods fold over."""
+        per_printer: dict[int, int] = {}
+        for printer_id, _energy_kwh, _hours in await _power_draw_rows(db, since):
+            per_printer[printer_id] = per_printer.get(printer_id, 0) + 1
+        return per_printer
+
+    async def _usage_sample_counts(self, db: AsyncSession, since: datetime) -> dict[int, int]:
+        """Usage-eligible sample counts per printer for `since` — the same
+        row eligibility `_daily_usage`'s SQL WHERE clause applies (no
+        MIN_USAGE_DAYS gate: that's an aggregate check on the published
+        entry's `observed_days`, not a per-row filter), called once per
+        narrower offered window by T-044's cross-window probe."""
+        rows = await db.execute(
+            select(PrintLogEntry.printer_id, func.count(PrintLogEntry.id))
+            .where(
+                PrintLogEntry.printer_id.isnot(None),
+                PrintLogEntry.created_at >= since,
+                PrintLogEntry.duration_seconds.isnot(None),
+                PrintLogEntry.duration_seconds <= _MAX_PRINT_SECONDS,
+                PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+            )
+            .group_by(PrintLogEntry.printer_id)
+        )
+        return dict(rows.all())
 
     async def _failure_rates(self, db: AsyncSession, since: datetime) -> dict:
         rows = await db.execute(
@@ -375,54 +438,8 @@ class CalculatorInsightsService:
         the plug powers only the printer; a plug also feeding a dryer or light
         inflates the figure (the outlier band catches the worst of it).
         """
-        # Same technique as `_time_accuracy`: only pre-filter rows that the
-        # Python fold below would discard anyway, for the duration_seconds-
-        # usable case where the arithmetic is an exact SQL mirror of the
-        # Python expressions (`hours = actual/3600`, `implied_watts =
-        # energy_kwh*1000/hours`, both forced to float division to match
-        # Python's automatic int/int promotion). Rows needing the
-        # started_at/completed_at fallback are always fetched, unresolved,
-        # and handled by the unchanged Python loop.
-        duration_usable = _duration_usable_expr()
-        duration_missing = _duration_missing_expr()
-        hours_expr = PrintLogEntry.duration_seconds * 1.0 / 3600
-        implied_watts_expr = PrintLogEntry.energy_kwh * 1000 / hours_expr
-        rows = await db.execute(
-            select(
-                PrintLogEntry.energy_kwh,
-                PrintLogEntry.duration_seconds,
-                PrintLogEntry.started_at,
-                PrintLogEntry.completed_at,
-                PrintLogEntry.printer_id,
-            ).where(
-                PrintLogEntry.energy_kwh > 0,
-                PrintLogEntry.printer_id.isnot(None),
-                PrintLogEntry.created_at >= since,
-                PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
-                or_(
-                    and_(
-                        duration_usable,
-                        PrintLogEntry.duration_seconds.between(_MIN_POWER_SECONDS, _MAX_PRINT_SECONDS),
-                        implied_watts_expr.between(_WATTS_BAND_LO, _WATTS_BAND_HI),
-                    ),
-                    and_(
-                        duration_missing,
-                        PrintLogEntry.started_at.isnot(None),
-                        PrintLogEntry.completed_at.isnot(None),
-                    ),
-                ),
-            )
-        )
-
         per_printer: dict[int, dict[str, float]] = {}
-        for energy_kwh, duration_seconds, started_at, completed_at, printer_id in rows.all():
-            actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
-            if not actual_seconds or actual_seconds < _MIN_POWER_SECONDS or actual_seconds > _MAX_PRINT_SECONDS:
-                continue
-            hours = actual_seconds / 3600
-            implied_watts = energy_kwh * 1000 / hours
-            if implied_watts < _WATTS_BAND_LO or implied_watts > _WATTS_BAND_HI:
-                continue
+        for printer_id, energy_kwh, hours in await _power_draw_rows(db, since):
             bucket = per_printer.setdefault(printer_id, {"kwh": 0.0, "hours": 0.0, "sample": 0})
             bucket["kwh"] += energy_kwh
             bucket["hours"] += hours
@@ -646,6 +663,69 @@ async def _time_accuracy_rows(db: AsyncSession, since: datetime) -> list[tuple[i
         if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
             continue
         result.append((printer_id, accuracy))
+    return result
+
+
+async def _power_draw_rows(db: AsyncSession, since: datetime) -> list[tuple[int, float, float]]:
+    """Shared row-eligibility fold for `_power_draw` and
+    `_power_sample_counts`: yields one (printer_id, energy_kwh, hours) tuple
+    per print since `since` whose duration resolves and whose implied watts
+    (`energy_kwh*1000/hours`) falls in [`_WATTS_BAND_LO`, `_WATTS_BAND_HI`],
+    with actual seconds bounded by [`_MIN_POWER_SECONDS`,
+    `_MAX_PRINT_SECONDS`]. One home for that eligibility rule so a future
+    change to either caller can't drift from the other — see
+    `_time_accuracy_rows`, the same pattern for the accuracy fold.
+
+    The extra SQL predicates below are a pure row-count optimization: they
+    only exclude rows that the Python fold below would discard anyway, for
+    the duration_seconds-usable case where the arithmetic is an exact SQL
+    mirror of the Python expressions (`hours = actual/3600`, `implied_watts =
+    energy_kwh*1000/hours`, both forced to float division to match Python's
+    automatic int/int promotion). Rows needing the started_at/completed_at
+    fallback are always fetched, unresolved, and handled by the unchanged
+    Python loop.
+    """
+    duration_usable = _duration_usable_expr()
+    duration_missing = _duration_missing_expr()
+    hours_expr = PrintLogEntry.duration_seconds * 1.0 / 3600
+    implied_watts_expr = PrintLogEntry.energy_kwh * 1000 / hours_expr
+    rows = await db.execute(
+        select(
+            PrintLogEntry.energy_kwh,
+            PrintLogEntry.duration_seconds,
+            PrintLogEntry.started_at,
+            PrintLogEntry.completed_at,
+            PrintLogEntry.printer_id,
+        ).where(
+            PrintLogEntry.energy_kwh > 0,
+            PrintLogEntry.printer_id.isnot(None),
+            PrintLogEntry.created_at >= since,
+            PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+            or_(
+                and_(
+                    duration_usable,
+                    PrintLogEntry.duration_seconds.between(_MIN_POWER_SECONDS, _MAX_PRINT_SECONDS),
+                    implied_watts_expr.between(_WATTS_BAND_LO, _WATTS_BAND_HI),
+                ),
+                and_(
+                    duration_missing,
+                    PrintLogEntry.started_at.isnot(None),
+                    PrintLogEntry.completed_at.isnot(None),
+                ),
+            ),
+        )
+    )
+
+    result: list[tuple[int, float, float]] = []
+    for energy_kwh, duration_seconds, started_at, completed_at, printer_id in rows.all():
+        actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
+        if not actual_seconds or actual_seconds < _MIN_POWER_SECONDS or actual_seconds > _MAX_PRINT_SECONDS:
+            continue
+        hours = actual_seconds / 3600
+        implied_watts = energy_kwh * 1000 / hours
+        if implied_watts < _WATTS_BAND_LO or implied_watts > _WATTS_BAND_HI:
+            continue
+        result.append((printer_id, energy_kwh, hours))
     return result
 
 

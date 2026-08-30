@@ -76,9 +76,22 @@ export function DragHandle({
     // add/subtract a constant and ArrowRight/ArrowLeft exactly cancel.
     // Handles whose domain doesn't depend on their own value (e.g. KQ, which
     // passes no `onDragStart`) keep the original percent-of-span step.
+    //
+    // The step must be sized from the decade of the value being stepped
+    // TOWARD, not the value being stepped FROM — `round` (roundK) always
+    // snaps its input to ITS OWN decade, so at an exact decade boundary
+    // (e.g. 10) the two decades disagree: sizing the ArrowLeft step from
+    // `value`'s decade (10 → scale 1) undershoots the fine-grid neighbor
+    // (9.99) that ArrowRight would have produced from it, breaking the
+    // exact-cancellation property this comment promises. Nudging the value
+    // down by an epsilon before taking its decade (for dir < 0 only) makes
+    // an exact power of ten read as belonging to the decade just below it —
+    // the same decade the destination value will land in — so ArrowRight
+    // and ArrowLeft are exact inverses even across a decade boundary.
     let step: number;
     if (onDragStart) {
-      const basis = Number.isFinite(value) && value >= 1 ? value : 1;
+      const basisValue = dir < 0 ? value * (1 - 1e-9) : value;
+      const basis = Number.isFinite(basisValue) && basisValue >= 1 ? basisValue : 1;
       const scale = 10 ** (Math.floor(Math.log10(basis)) - 2);
       step = scale * (e.shiftKey ? 10 : 1) * dir;
     } else {

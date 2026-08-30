@@ -260,6 +260,86 @@ describe('selectRealityChecks', () => {
     const checks = selectRealityChecks(allNull, unmatchedFilament, profile, defaults, noOverrides);
     expect(checks.find((c) => c.kind === 'failure')).toBeUndefined();
   });
+
+  // --- T-046: suppressed (null) avg_watts behaves like a below-MIN_SAMPLE entry ---
+
+  it('a suppressed (null) avg_watts entry yields no power row, and does not crash', () => {
+    const suppressed: CalculatorInsights = {
+      ...insights,
+      power_by_printer: [{ printer_id: 3, printer_name: 'X1 Carbon', avg_watts: null, sample: 25 }],
+    };
+    expect(() => selectRealityChecks(suppressed, filament, printer, defaults, noOverrides)).not.toThrow();
+    const checks = selectRealityChecks(suppressed, filament, printer, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'power')).toBeUndefined();
+  });
+
+  it('excludes a suppressed (null) power entry from both the weighted average and the sample denominator', () => {
+    const partial: CalculatorInsights = {
+      ...insights,
+      power_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', avg_watts: null, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', avg_watts: 105, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(partial, filament, profile, defaults, noOverrides);
+    // Only X1C05 (valid) contributes: measured 105, sample 30 — not diluted by
+    // X1C04's suppressed entry in either the numerator or the denominator.
+    expect(checks.find((c) => c.kind === 'power')).toMatchObject({ measured: 105, sample: 30, scope: 'X1C05' });
+  });
+
+  it('emits no power row when every matching printer entry is suppressed', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      power_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', avg_watts: null, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', avg_watts: null, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(allNull, filament, profile, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'power')).toBeUndefined();
+  });
+
+  // --- T-044: suppressed (null) hours_per_day behaves like a below-MIN_SAMPLE entry ---
+
+  it('a suppressed (null) hours_per_day entry yields no dailyHours row, and does not crash', () => {
+    const suppressed: CalculatorInsights = {
+      ...insights,
+      usage_by_printer: [{ printer_id: 3, printer_name: 'X1 Carbon', hours_per_day: null, observed_days: 90, sample: 48 }],
+    };
+    expect(() => selectRealityChecks(suppressed, filament, printer, defaults, noOverrides)).not.toThrow();
+    const checks = selectRealityChecks(suppressed, filament, printer, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'dailyHours')).toBeUndefined();
+  });
+
+  it('excludes a suppressed (null) usage entry from both the weighted average and the day-weighted denominator', () => {
+    const partial: CalculatorInsights = {
+      ...insights,
+      usage_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', hours_per_day: null, observed_days: 60, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', hours_per_day: 3.2, observed_days: 90, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(partial, filament, profile, defaults, noOverrides);
+    // Only X1C05 (valid) contributes: measured 3.2, sample 30 — not diluted by
+    // X1C04's suppressed entry in either the numerator or the denominator.
+    expect(checks.find((c) => c.kind === 'dailyHours')).toMatchObject({ measured: 3.2, sample: 30, scope: 'X1C05' });
+  });
+
+  it('emits no dailyHours row when every matching printer entry is suppressed', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      usage_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', hours_per_day: null, observed_days: 60, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', hours_per_day: null, observed_days: 90, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(allNull, filament, profile, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'dailyHours')).toBeUndefined();
+  });
 });
 
 describe('checkKey', () => {
