@@ -52,6 +52,15 @@ _MIN_USAGE_DAYS = 14
 _FAILED_STATUSES = ("failed", "aborted")
 
 
+def _residual_leaks(total: int, published: int) -> bool:
+    """True if the unpublished remainder of ``total`` (after subtracting the
+    ``published`` partition) is small enough to be recoverable by subtraction
+    but too small to publish on its own — i.e. it must be suppressed rather
+    than let its figure leak through an aggregate. See T-003.
+    """
+    return 0 < (total - published) < MIN_SAMPLE
+
+
 def _duration_usable_expr():
     """SQL predicate: ``duration_seconds`` is present and non-zero (usable as-is)."""
     return and_(PrintLogEntry.duration_seconds.isnot(None), PrintLogEntry.duration_seconds != 0)
@@ -146,12 +155,15 @@ class CalculatorInsightsService:
         # no printer_id, or attributed to printers that didn't individually
         # clear MIN_SAMPLE) — that residual's completed/failed counts are
         # recoverable by subtraction even though no single group discloses
-        # them directly (same rule as `_spool_costs`, see T-003). Suppress
-        # the overall rate rather than let that residual leak through it;
-        # `sample` itself is unaffected.
+        # them directly (same rule as `_time_accuracy`/`_spool_costs`, see
+        # `_residual_leaks`/T-003). Suppress the overall rate rather than let
+        # that residual leak through it; `sample` itself is unaffected.
         published_printer_sample = sum(row["sample"] for row in by_printer)
-        residual = overall_sample - published_printer_sample
-        overall_pct = overall_rate if overall_sample >= MIN_SAMPLE and not (0 < residual < MIN_SAMPLE) else None
+        overall_pct = (
+            overall_rate
+            if overall_sample >= MIN_SAMPLE and not _residual_leaks(overall_sample, published_printer_sample)
+            else None
+        )
 
         return {
             "overall_pct": overall_pct,
@@ -231,17 +243,18 @@ class CalculatorInsightsService:
             if len(values) >= MIN_SAMPLE
         ]
 
-        # Same residual rule as `_failure_rates`/`_spool_costs` (T-003): the
-        # published by_printer rows are a visible partition of `accuracies`.
-        # If they leave a small residual population — runs with no printer_id,
-        # or attributed to printers that didn't individually clear MIN_SAMPLE
-        # — that residual's mean accuracy is recoverable by subtraction.
-        # Suppress the overall figure rather than let that residual leak
-        # through it; `sample` itself is unaffected.
+        # Same residual rule as `_failure_rates`/`_spool_costs` (`_residual_leaks`,
+        # T-003): the published by_printer rows are a visible partition of
+        # `accuracies`. If they leave a small residual population — runs with
+        # no printer_id, or attributed to printers that didn't individually
+        # clear MIN_SAMPLE — that residual's mean accuracy is recoverable by
+        # subtraction. Suppress the overall figure rather than let that
+        # residual leak through it; `sample` itself is unaffected.
         published_printer_sample = sum(row["sample"] for row in by_printer)
-        residual = len(accuracies) - published_printer_sample
         overall_pct = (
-            round(sum(accuracies) / len(accuracies), 1) if accuracies and not (0 < residual < MIN_SAMPLE) else None
+            round(sum(accuracies) / len(accuracies), 1)
+            if accuracies and not _residual_leaks(len(accuracies), published_printer_sample)
+            else None
         )
         return {
             "overall_pct": overall_pct,
@@ -435,10 +448,10 @@ class CalculatorInsightsService:
             # population — this material's total minus the sum of its
             # published brand subgroups — that residual's average is
             # recoverable by subtraction even though no single query
-            # discloses it directly (see T-089/T-106). Suppress the whole
-            # material row rather than let that residual leak through it.
-            residual = count - published_brand_counts.get(material, 0)
-            if 0 < residual < MIN_SAMPLE:
+            # discloses it directly (see T-089/T-106, `_residual_leaks`/T-003).
+            # Suppress the whole material row rather than let that residual
+            # leak through it.
+            if _residual_leaks(count, published_brand_counts.get(material, 0)):
                 continue
             result.append({"material": material, "avg_cost_per_kg": round(totals["avg"], 2), "sample": count})
         return result

@@ -68,13 +68,35 @@ const serveDefaults = (d: CalculatorDefaults = baseDefaults) =>
   server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(d)));
 
 describe('CalculatorSettingsPanel — drag handles', () => {
+  // T-022: the K handle's own domain scales with K (sizeMax = k * 10), so a
+  // step sized as a percentage of that domain used to compound (33 -> 66
+  // from a single Shift+ArrowRight). The step is now a fixed unit of K's own
+  // order-of-magnitude grid (the same grid roundK snaps to) instead: at 33
+  // that grid unit is 0.1, so Shift+ArrowRight (10 units) moves K by 1.
   it('dragging K writes the field and opens the Save bar', async () => {
     serveDefaults();
     render(<CalculatorSettingsPanel canUpdate />);
     const grip = await screen.findByRole('slider', { name: 'Drag to set K' });
-    fireEvent.keyDown(grip, { key: 'ArrowRight', shiftKey: true }); // +10 % of 0..330 = 33
-    expect(screen.getByLabelText(/K,/)).toHaveValue(66);
+    fireEvent.keyDown(grip, { key: 'ArrowRight', shiftKey: true }); // 33 -> 34
+    expect(screen.getByLabelText(/K,/)).toHaveValue(34);
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
+  });
+
+  // The fixed grid-unit step (see above) is the same for ArrowRight and
+  // ArrowLeft, so repeated opposite presses cancel exactly instead of
+  // drifting (33 -> 36.3 -> 32.67 under the old percent-of-span step).
+  it('repeated Shift+arrow presses on the K grip do not compound and round-trip exactly', async () => {
+    serveDefaults();
+    render(<CalculatorSettingsPanel canUpdate />);
+    const grip = await screen.findByRole('slider', { name: 'Drag to set K' });
+    fireEvent.keyDown(grip, { key: 'ArrowRight', shiftKey: true }); // 33 -> 34
+    expect(screen.getByLabelText(/K,/)).toHaveValue(34);
+    fireEvent.keyDown(grip, { key: 'ArrowRight', shiftKey: true }); // 34 -> 35, not 34 -> 68
+    expect(screen.getByLabelText(/K,/)).toHaveValue(35);
+    fireEvent.keyDown(grip, { key: 'ArrowLeft', shiftKey: true }); // 35 -> 34
+    expect(screen.getByLabelText(/K,/)).toHaveValue(34);
+    fireEvent.keyDown(grip, { key: 'ArrowLeft', shiftKey: true }); // 34 -> 33 (back to start)
+    expect(screen.getByLabelText(/K,/)).toHaveValue(33);
   });
 
   // Defaults: qty_k = 5 → the ReferenceLine/handle sits at KQ + 1 = 6, over

@@ -473,7 +473,7 @@ export function CalculatorPage() {
                         // Same as above — the override survives a failed save.
                         updatePrinterProfileMutation.mutate({ id, patch });
                       }}
-                      onDismiss={(key) => set({ dismissedChecks: [...state.dismissedChecks, key] })}
+                      onDismiss={(key) => set((s) => ({ dismissedChecks: [...s.dismissedChecks, key] }))}
                       dismissedCount={state.dismissedChecks.length}
                       onRestoreDismissed={() => set({ dismissedChecks: [] })}
                       canUpdate={canUpdateCalculator}

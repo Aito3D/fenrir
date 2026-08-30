@@ -64,7 +64,26 @@ export function DragHandle({
     const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
     e.preventDefault();
-    const step = span * (e.shiftKey ? 0.1 : 0.01) * dir;
+    // `onDragStart` being wired up is the same signal the pointer path uses
+    // to detect "this handle's own domain scales with the value it drags"
+    // (see the prop's JSDoc above) — e.g. the K handle's `max` is `k * 10`.
+    // A step sized as a percentage of `span` in that case re-derives from a
+    // domain the very last `onChange` just moved, compounding every
+    // keypress (T-022): a 10 % step of `span` is actually a 100 % step of
+    // `value`, doubling it. Step by a fixed, value-independent amount
+    // instead — one unit of the same order-of-magnitude grid `round` snaps
+    // values to (mirrors roundK's own digit scale) — so repeated presses
+    // add/subtract a constant and ArrowRight/ArrowLeft exactly cancel.
+    // Handles whose domain doesn't depend on their own value (e.g. KQ, which
+    // passes no `onDragStart`) keep the original percent-of-span step.
+    let step: number;
+    if (onDragStart) {
+      const basis = Number.isFinite(value) && value >= 1 ? value : 1;
+      const scale = 10 ** (Math.floor(Math.log10(basis)) - 2);
+      step = scale * (e.shiftKey ? 10 : 1) * dir;
+    } else {
+      step = span * (e.shiftKey ? 0.1 : 0.01) * dir;
+    }
     onChange(round(Math.min(max, Math.max(min, value + step))));
   };
 

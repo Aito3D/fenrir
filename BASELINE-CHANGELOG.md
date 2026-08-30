@@ -6787,3 +6787,72 @@ dead-code guard) — every new residual-guard branch in both folds is exercised 
 exercises this module's constants, `_resolve_duration`, and `_split_materials`, none of which
 changed. `SURFACE.md` (`bash tools/gen_surface_calc.sh`): byte-identical — no export or route
 changed.
+
+## T-022 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** "one Shift+ArrowRight on the K grip would no longer double
+margin_k (33 -> 66); it would move it by a fixed, non-compounding amount, and repeated left/right
+presses would return to the starting value."
+
+`DragHandle`'s arrow-key step was `span * (shift ? 0.1 : 0.01) * dir`, where `span = max - min`.
+For the K handle, `max` is `sizeDomainMax(k, ...)` = `k * 10` (`MarginCurvePreview.tsx`), so a
+Shift+Arrow step was actually `10% * (k * 10) = k` — adding 100% of K to itself, doubling it every
+press; held with OS key-autorepeat this ran `margin_k` to the 1e8 ceiling in well under a second.
+Plain Arrow (`1% * (k * 10) = 10% of k`) meant ArrowRight then ArrowLeft were not inverses either
+(33 -> 36.3 -> 32.67).
+
+Fix: when the handle's own domain scales with the value it drags (signalled by the presence of
+`onDragStart`/`onDragEnd`, which only the K handle wires up — the same signal the pointer-drag path
+already uses to freeze the domain for the gesture, per the existing `kDragAnchor` mechanism in
+`MarginCurvePreview.tsx`), the keyboard step is now computed from a fixed, value-independent
+quantity instead of `span`: one unit of the same order-of-magnitude grid `roundK` itself snaps
+values to (`scale = 10 ** (floor(log10(value)) - 2)`), 1 unit per plain Arrow and 10 units per
+Shift+Arrow. This scale is constant across an entire decade of `value`, so repeated same-direction
+presses add/subtract a constant (no compounding) and ArrowRight/ArrowLeft cancel exactly as long as
+`value` stays within the same order of magnitude. The KQ handle passes no `onDragStart`/`onDragEnd`
+(its domain, `qtyMax`, never depended on the dragged value) and keeps the original
+percent-of-`span` step unchanged, per its existing, already-correct behavior.
+
+Example: `margin_k = 33`, Shift+ArrowRight now yields `34` (was `66`); one more Shift+ArrowRight
+yields `35`, then two Shift+ArrowLeft presses return to `34`, then exactly `33` — where the old
+formula doubled K on every ArrowRight press regardless of its current value (33 -> 66 -> 132 -> ...)
+and, on ArrowLeft, always subtracted 100% of the *current* (already-doubled) K, so it never
+retraced the same path back down.
+
+Tests: `CalculatorSettingsPanelDrag.test.tsx`'s `dragging K writes the field and opens the Save
+bar` updated from the old pinned `33 -> 66` to `33 -> 34`. A new test, `repeated Shift+arrow
+presses on the K grip do not compound and round-trip exactly`, pins two consecutive
+Shift+ArrowRight presses (33 -> 34 -> 35, not 33 -> 66 -> 132) followed by two Shift+ArrowLeft
+presses returning exactly to 33. The KQ pinning test (`dragging KQ writes the field...`, expecting
+`15`) is unchanged — the KQ handle's formula was not touched.
+
+Verification: `cd frontend && npm run build` clean (static/ reverted before commit); `npx eslint
+src/components/calculator/` clean. `CalculatorSettingsPanelDrag.test.tsx` (6/6),
+`DragHandle.test.tsx` (4/4), `MarginCurvePreview.test.tsx`, and `CalculatorSettingsPanel.test.tsx`
+all pass (38 tests total across the latter three files). `tools/coverage_calc.sh frontend`: scoped
+statements 95.73% (1391/1453), at/above the 95.72% baseline floor. `tools/snapshot.py verify`:
+10/10 probes match (no probe drives keyboard stepping). `bash tools/gen_surface_calc.sh | diff -
+SURFACE.md`: empty — the new step-scale logic is an unexported, module-local branch inside
+`DragHandle.tsx`'s existing `onKeyDown`, not a new export.
+
+## T-023 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** commit `a7e539d9f`, `frontend/src/pages/CalculatorPage.tsx` +
+`frontend/src/hooks/useCalculatorState.ts` — the reality-check `onDismiss` handler now uses a
+functional update (`set((s) => ({ dismissedChecks: [...s.dismissedChecks, key] }))`; `set` gained a
+function-updater overload, existing object-patch callers unchanged) instead of spreading the
+render-closure `state` snapshot.
+
+Previously `onDismiss` read `dismissedChecks` off the `state` value captured by the enclosing
+render's closure. If two reality-check rows were dismissed within the same 150ms leave-animation
+window, both dismiss handlers closed over the same pre-dismissal `state`, so the second `set` call
+overwrote the first: only the later key survived in `dismissedChecks`, and the first row's
+animation reappeared moments later as its dismissal was silently lost (not persisted). Routing the
+update through a function updater reads the latest `dismissedChecks` at apply time instead of the
+stale closure snapshot, so both dismissals are recorded.
+
+Visible delta: dismissing two reality-check rows within the 150ms leave-animation window now
+records BOTH dismissals, where previously the second write clobbered the first, the first row
+re-appeared, and the loss was persisted. Single dismissals are byte-identical to before — the
+function updater and the object-patch spread it replaces compute the same next state when only one
+dismissal is in flight.

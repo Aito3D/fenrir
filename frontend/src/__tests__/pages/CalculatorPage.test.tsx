@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
@@ -447,6 +447,73 @@ describe('CalculatorPage', () => {
     await waitFor(() => expect(screen.queryAllByText(measuredFailureTotal)).toHaveLength(0));
     expect(screen.queryByText('Applied')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument();
+  });
+
+  it('reality check: dismissing two rows within the 150ms leave window keeps both dismissals (T-023)', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    vi.mocked(localStorage.setItem).mockClear();
+    // Failure rate (assumed 30%, measured 8%) AND electricity tariff
+    // (assumed 120, measured 200) both disagree — two rows, so their
+    // deferred onDismiss calls can land inside the same 150ms window.
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({ ...failureCheckInsights, energy_cost_per_kwh: 200 }),
+      ),
+    );
+
+    render(<CalculatorPage />);
+    await screen.findAllByText('1 608 FCFP');
+    await screen.findByText('Reality check');
+    const dismissButtons = await screen.findAllByRole('button', { name: 'Dismiss' });
+    expect(dismissButtons).toHaveLength(2);
+
+    // Both clicks fire well under LEAVE_MS (150ms) apart — each one's
+    // deferred onDismiss captured `dismissedChecks: []` before the fix.
+    fireEvent.click(dismissButtons[0]);
+    fireEvent.click(dismissButtons[1]);
+
+    // Both rows are gone (not just the second one) once the leave timers
+    // fire — the only visible remnant is the restore-2 affordance.
+    await screen.findByText('Restore 2 dismissed');
+    expect(screen.queryByText(/Failure rate/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Electricity price')).not.toBeInTheDocument();
+
+    // And the persisted state (after the 500ms debounce) has both keys, not
+    // just whichever dismissal's stale closure won the race.
+    await waitFor(
+      () => {
+        const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'calculator-state');
+        expect(calls.length).toBeGreaterThan(0);
+        expect(JSON.parse(calls[calls.length - 1][1]).dismissedChecks.sort()).toEqual(['failure:H2S', 'tariff:all']);
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it('reality check: dismissing a single row still records exactly that one dismissal', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    vi.mocked(localStorage.setItem).mockClear();
+    server.use(http.get('/api/v1/calculator/insights', () => HttpResponse.json(failureCheckInsights)));
+
+    render(<CalculatorPage />);
+    await screen.findAllByText('1 608 FCFP');
+    await screen.findByText('Reality check');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await screen.findByText('Restore 1 dismissed');
+
+    await waitFor(
+      () => {
+        const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'calculator-state');
+        expect(calls.length).toBeGreaterThan(0);
+        expect(JSON.parse(calls[calls.length - 1][1]).dismissedChecks).toEqual(['failure:H2S']);
+      },
+      { timeout: 2000 },
+    );
   });
 
   it('reality check: updating the filament profile from a spool-cost check calls the API with the measured value', async () => {
