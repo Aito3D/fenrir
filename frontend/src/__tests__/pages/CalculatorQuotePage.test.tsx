@@ -117,6 +117,49 @@ describe('CalculatorQuotePage', () => {
     expect(screen.queryByText('Cost breakdown')).not.toBeInTheDocument();
     expect(screen.getByText('Total excl. tax')).toBeInTheDocument();
     expect(screen.getByText('Tax')).toBeInTheDocument();
+
+    // Numeric check for the quantity===1 branch (unit === task, no
+    // division): the "Total excl. tax" / "Tax" cells must match
+    // computePricing's total_ht_qty/total_ttc_qty for this fixture, rounded
+    // the same way the page does (task-first, then HT/TTC toFixed'd to
+    // display precision with tax as their difference) — not merely be
+    // present in the document.
+    const quantityOneResult = computePricing(
+      {
+        weight_g: 40,
+        printing_time_h: 2,
+        quantity: 1,
+        modeling_hours: 0,
+        modeling_base_price: 0,
+        prep_model_min: 0,
+        prep_slicing_min: 0,
+        prep_transfer_min: 0,
+        post_removal_min: 0,
+        post_support_min: 0,
+        post_additional_min: 0,
+        post_fulfillment_min: 0,
+        stuff_amount: 0,
+        stuff_markup_pct: 20,
+      },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const decimals = moneyDecimals('XPF');
+    const scale = 10 ** decimals;
+    const taskTtcRounded = Math.round(quantityOneResult.total_ttc_qty * scale) / scale;
+    const taskHtRounded = Math.round(quantityOneResult.total_ht_qty * scale) / scale;
+    // Quantity === 1: unitHtQuotient/unitTtcQuotient equal the task figures
+    // directly (no division by quantity).
+    const unitHtDisplayed = Number(taskHtRounded.toFixed(decimals));
+    const unitTtcDisplayed = Number(taskTtcRounded.toFixed(decimals));
+    const unitTaxDisplayed = unitTtcDisplayed - unitHtDisplayed;
+    const table = screen.getByRole('table');
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    expect(within(subtotalRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitHtDisplayed, 'XPF'));
+    expect(within(taxRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitTaxDisplayed, 'XPF'));
+
     expect(screen.getAllByText('Filament')).toHaveLength(1);
     expect(screen.queryByText('Margin')).not.toBeInTheDocument();
     expect(screen.queryByText('Provisions')).not.toBeInTheDocument();

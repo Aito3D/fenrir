@@ -13,6 +13,7 @@ import type { ComponentProps } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MarginCurvePreview } from '../../../components/calculator/MarginCurvePreview';
+import { qtyDomainMax } from '../../../components/calculator/curveGeometry';
 import type { PricingDefaults } from '../../../utils/pricing';
 
 // `ResponsiveContainer` measures its DOM node in real recharts, which is
@@ -162,5 +163,101 @@ describe('MarginCurvePreview — K drag handle domain', () => {
     // No drag has happened, so the domain must be derived from the live K
     // (100 × 10 = 1000), not any stale/default anchor.
     expect(grip).toHaveAttribute('aria-valuemax', '1000');
+  });
+});
+
+/** Wraps MarginCurvePreview with the bit of state a real caller (the
+ *  settings form) supplies for the KQ handle: `onDragKQ` writes back into
+ *  `d.qty_k`, exactly like `CalculatorSettingsPanel`'s
+ *  `onDragKQ={(v) => setField('qty_k', String(v))}`. */
+function KqDragHost({ startKq, onKq }: { startKq: number; onKq?: (kq: number) => void }) {
+  const [d, setD] = useState<PricingDefaults>({ ...baseDefaults, qty_k: startKq });
+  return (
+    <MarginCurvePreview
+      d={d}
+      currency="USD"
+      example={{ unitCost: '', quantity: '' }}
+      onExampleChange={() => {}}
+      onDragK={() => {}}
+      onDragKQ={(kq) => {
+        setD((prev) => ({ ...prev, qty_k: kq }));
+        onKq?.(kq);
+      }}
+    />
+  );
+}
+
+function getKqGrip() {
+  return screen.getByRole('slider', { name: 'Drag to set KQ' });
+}
+function getKqStrip() {
+  return getKqGrip().parentElement!.querySelector('[data-testid="drag-strip"]')!;
+}
+
+describe('MarginCurvePreview — KQ drag handle domain (T-049)', () => {
+  it('a stored qty_k of 500 no longer clamps the handle to the domain edge, and an arrow key does not collapse it to 99', () => {
+    render(<KqDragHost startKq={500} />);
+    const grip = getKqGrip();
+
+    // The domain now stretches past kq + 1 = 501 instead of staying pinned
+    // at the un-stretched floor of 100.
+    const expectedMax = qtyDomainMax(undefined, 500);
+    expect(expectedMax).toBeGreaterThan(501);
+    expect(grip).toHaveAttribute('aria-valuemax', String(expectedMax));
+    // aria-valuenow announces the underlying field value (kq), not the
+    // visual position (kq + 1) — unaffected by this fix.
+    expect(grip).toHaveAttribute('aria-valuenow', '500');
+
+    // Before the fix, ANY arrow key here clamped `value` (501) down to the
+    // un-stretched `max` (100), and the KQ chart's `onChange` wrapper
+    // (`Math.max(1, v - 1)`) turned that into `qty_k = 99` — see the
+    // finding's exact repro. With the domain now containing 501 with room
+    // to spare, a single ArrowLeft nudges the value down by a small,
+    // pointer-implied amount instead of collapsing it.
+    fireEvent.keyDown(grip, { key: 'ArrowLeft' });
+    const newKq = Number(grip.getAttribute('aria-valuenow'));
+    expect(newKq).not.toBe(99);
+    expect(newKq).toBeGreaterThan(400); // nowhere near the old 100-floor clamp
+  });
+
+  it('small qty_k (today\'s shipped default and below) keeps the un-stretched 100-wide domain', () => {
+    render(<KqDragHost startKq={5} />);
+    const grip = getKqGrip();
+    expect(grip).toHaveAttribute('aria-valuemax', '100');
+  });
+
+  it('does not exponentially compound kq across repeated pointermoves held at the plot\'s right edge (no drag anchor needed)', () => {
+    // T-006 showed that a domain multiplicatively tied to the value it
+    // renders (sizeMax = k * 10) compounds ~10x per held pointermove event
+    // because the handle sits at a *constant* fraction (1/10) of its own
+    // domain no matter how large the value gets. qtyDomainMax's kq
+    // relationship is additive (kq + KQ_HEADROOM), so the same live-domain
+    // read-back can add at most a constant per event — this test pins that
+    // it is linear drift, not runaway exponential growth, holding the
+    // pointer at the plot's clamped right edge (t = 1), the single worst
+    // case for this formula.
+    const onKq = vi.fn();
+    render(<KqDragHost startKq={500} onKq={onKq} />);
+    const strip = getKqStrip();
+
+    // Plot rect is mocked to x=50, width=200 (see the `usePlotArea` mock
+    // above) — clientX beyond `left + width` (250) clamps to the domain max.
+    fireEvent.pointerDown(strip, { clientX: 999, pointerId: 1 });
+    for (let i = 0; i < 8; i++) {
+      fireEvent.pointerMove(strip, { clientX: 999, pointerId: 1, buttons: 1 });
+    }
+    fireEvent.pointerUp(strip, { pointerId: 1 });
+
+    expect(onKq).toHaveBeenCalledTimes(9); // 1 down + 8 moves
+    const values = onKq.mock.calls.map((c) => c[0] as number);
+    // Each held-position event can add at most KQ_HEADROOM (a fixed
+    // constant baked into qtyDomainMax, not exposed — 50 as of this fix) to
+    // the previous value; never a multiplicative jump. Nine calls starting
+    // from 500 stay in the low hundreds/thousands, orders of magnitude
+    // below the K bug's 216000-from-33 blow-up over the same nine calls.
+    for (let i = 1; i < values.length; i++) {
+      expect(values[i] - values[i - 1]).toBeLessThanOrEqual(50);
+    }
+    expect(Math.max(...values)).toBeLessThan(1000);
   });
 });

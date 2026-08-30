@@ -7503,3 +7503,80 @@ CalculatorPage.test.tsx` — 49/49 passed. `bash tools/coverage_calc.sh frontend
 (1415/1460), clearing the required >= 96.91% (1413/1458) floor. `./venv/bin/python3
 tools/snapshot.py verify` — 10/10, no probe pins the printed quote's rounding. `bash
 tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-049 — 2026-08-30 — the quantity chart's x-axis now stretches to always contain a large qty_k (user-approved behavior change)
+
+**Approved change (verbatim):** "the quantity chart's x-axis extends past 100 when qty_k is large,
+so its curve and tick labels are drawn over a wider range than today."
+
+`MarginCurvePreview`'s quantity chart drew its X domain from `qtyDomainMax(ex?.quantity)`, which
+only ever grows past the fixed floor `QTY_DOMAIN[1] = 100` for a large EXAMPLE quantity — unlike
+`sizeDomainMax(k, exampleUnitCost)`, which always contains K (`k * 10`), nothing stretched the
+quantity domain to contain `qty_k` (kq) itself. The KQ `DragHandle` renders at `value={midQty}`
+(`kq + 1`) against `max={qtyMax}`; with a stored `qty_k` of 500, `midQty` (501) sat clamped to the
+domain's right edge (100), so a single click or arrow key on that grip computed
+`onDragKQ(Math.max(1, 100 - 1))` — rewriting the field from 500 to 99 the instant an operator
+touched the handle, without them changing anything.
+
+Fixed by giving `qtyDomainMax` a new, optional second parameter (`kq`) so its existing single-
+argument callers and signature position are unchanged (`curveGeometry.ts`'s only other export
+change is none — `qtyDomainMax` was already exported): when `kq + 1` (the point the handle actually
+renders at) exceeds the pre-existing 100 floor, the domain stretches to `kq + 1 + KQ_HEADROOM`
+(`KQ_HEADROOM = 50`) instead of staying pinned at 100. Below that floor — every `qty_k` value used
+by today's shipped defaults, and every existing test — the formula is byte-for-byte the old one:
+`qtyDomainMax(exampleQty, kq)` returns exactly 100 for any `kq <= 99`, identical to
+`qtyDomainMax(exampleQty)` before this change.
+
+**Feedback-loop analysis (T-006 reconsidered for KQ):** `sizeDomainMax`'s K coverage is
+*multiplicative* (`k * 10`), which puts the K handle at a *constant* fraction (1/10) of its own
+domain no matter how large K gets — a live drag re-reads that domain after every `onChange`, so
+each `pointermove` re-derives K against a domain K's own previous move just shifted, compounding K
+by roughly x10 per event (T-006, fixed there with a `kDragAnchor` that freezes the domain for the
+whole gesture, and a matching keyboard-step fix, T-022, gated on the same anchor wiring). Naively
+copying that multiplicative shape onto KQ would reopen the identical bug for the KQ handle. Instead,
+the new KQ coverage is *additive* (`kq + KQ_HEADROOM`, a fixed constant, not a multiplier on `kq`):
+this caps the domain's growth rate with respect to `kq` at exactly 1, so the same live-domain
+read-back can, at worst, add a constant (`KQ_HEADROOM`) per held-position pointer event — linear
+drift at the plot's clamped right edge, never the multiplicative bug's exponential blow-up. This
+means **no drag anchor and no keyboard-step change were needed for KQ**: `MarginCurvePreview`'s
+`DragHandle` for KQ still passes no `onDragStart`/`onDragEnd` (unchanged from before this fix), so
+`DragHandle`'s `onKeyDown` keeps the original percent-of-span step for KQ — the two pre-existing
+`qty_k`-drag pinning tests in `CalculatorSettingsPanelDrag.test.tsx` (`dragging KQ writes the field
+and opens the Save bar`, expecting `15`; `dragging KQ left at the floor never pushes the field below
+1`) pass unmodified, because their seeded `qty_k` values (5 and 1) are both well below the 100
+floor where the new coupling activates at all.
+
+**`CalculatorQuantityCurve` decision:** this sibling chart (the unit-price-vs-quantity table/curve
+below the settings form) does not call `qtyDomainMax` at all — its `XAxis` domain is
+`['dataMin', 'dataMax']` over the real `points` array `unitPriceCurve()` computes for the job
+(a data-driven log-scale domain, not `curveGeometry`'s literal `[1, 100]`/`qtyDomainMax` domain), so
+there is no shared surface to keep coherent here and no risk of an unapproved change leaking into
+it; it is untouched.
+
+Regression coverage: `curveGeometry.test.ts` gained a direct test of `qtyDomainMax`'s new `kq`
+parameter (100 for every `kq <= 99` including 0/NaN/negative — treated as "no coupling", same as
+omitting it; `551` for `kq = 500`; `151` for `kq = 100`; the example-quantity stretch still composes
+on top). `MarginCurvePreview.test.tsx` gained a `describe('MarginCurvePreview — KQ drag handle
+domain (T-049)')` block with three tests: (1) with `qty_k = 500` seeded, the grip's
+`aria-valuemax` is the stretched `qtyDomainMax(undefined, 500)` (> 501), and a single ArrowLeft
+keypress does NOT collapse the field to 99 (asserts it stays > 400) — the exact repro from the
+finding; (2) `qty_k = 5` (today's shipped default) keeps the un-stretched `aria-valuemax="100"`; (3)
+a drag-no-feedback test mirroring T-006's own — nine `pointermove` events (1 down + 8 moves) held at
+the plot's clamped right edge (`t = 1`, the formula's single worst case) starting from `qty_k = 500`
+— pins that consecutive values never jump by more than `KQ_HEADROOM` (50) per event and stay under
+1000 after nine calls, in contrast to T-006's pre-fix K blow-up (33 to 216000 over the same nine
+calls) — demonstrating linear drift, not exponential compounding, without needing a drag anchor.
+
+Verification: `npx eslint` clean on `curveGeometry.ts`, `MarginCurvePreview.tsx`, and both test
+files. `cd frontend && npm run build` clean, `static/` reverted before commit. `npx vitest run
+src/__tests__/components/calculator/curveGeometry.test.ts` — 6/6 passed; `src/__tests__/components/
+calculator/MarginCurvePreview.test.tsx` — 6/6 passed; `src/__tests__/components/
+CalculatorQuantityCurve.test.tsx` — 2/2 passed; `src/__tests__/components/calculator/
+DragHandle.test.tsx` — 7/7 passed; `src/__tests__/components/CalculatorSettingsPanel.test.tsx` —
+33/33 passed; `src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx` — 6/6 passed
+unmodified. `bash tools/coverage_calc.sh frontend` — 96.92% statements (1418/1463), at/above the
+96.91% (1415/1460) floor. `./venv/bin/python3 tools/snapshot.py verify` — 10/10; `calc-frontend-pure`
+bundles only `calculatorInsights.ts`/`quoteSummary.ts` (see `tools/probe_calc_frontend_entry.ts`),
+not `curveGeometry.ts`, so no probe drives `qtyDomainMax` and none needed re-recording. `bash
+tools/gen_surface_calc.sh | diff - SURFACE.md` — empty (`curveGeometry.ts` is outside R8's glob,
+and `qtyDomainMax`'s new parameter is optional, not a new export).

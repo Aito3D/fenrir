@@ -81,7 +81,10 @@ export function MarginCurvePreview({
 
   // Math.max(1, …) — K = 0 would otherwise collapse the size domain to 0.
   const sizeMax = Math.max(1, sizeDomainMax(kDragAnchor ?? k, ex?.unitCost));
-  const qtyMax = qtyDomainMax(ex?.quantity);
+  // T-049: unlike the size domain, the KQ handle needs no drag anchor — see
+  // qtyDomainMax's own doc comment for why the additive kq relationship it
+  // uses can't runaway the way the multiplicative sizeDomainMax(k * 10) can.
+  const qtyMax = qtyDomainMax(ex?.quantity, kq);
 
   const sizeData = useMemo(() => {
     return Array.from({ length: 81 }, (_, i) => {
