@@ -7653,3 +7653,62 @@ Note: `backend/tests/unit/test_settings_dedupe_migration.py` fails in isolation 
 It passes when run as part of the full suite (`Base.metadata` is a process-global singleton
 populated by other tests' model imports first), which is exactly what the coverage-gate run above
 shows (12559 passed, no failures).
+
+## T-020 — 2026-08-31 — a client that cannot accept a broadcast within the timeout is dropped instead of stalling everyone else (user-approved behavior change)
+
+**Approved change (verbatim):** "a client that cannot accept a broadcast within the timeout will
+be dropped from the connection list and have to reconnect, instead of silently holding everyone
+else up."
+
+`ConnectionManager.broadcast()` (`backend/app/core/websocket.py`) previously awaited each
+connection's `send_text()` serially, inside `async with self._lock`. uvicorn's WebSocket transport
+applies TCP backpressure, so `send_text()` to a client whose socket window is full (a laptop that
+slept with the dashboard open, a phone on a dead cell link) does not return until the socket
+drains or dies — there was no timeout anywhere on this path. Because `connect()`, `disconnect()`,
+and every other broadcaster (`printer_status`, `print_complete`, FTP upload progress, `aito_changed`)
+take the same `self._lock`, one wedged client stalled live updates for every other user in the
+farm and blocked new WebSocket connections from registering, for as long as the dead socket stayed
+open.
+
+Fixed: `broadcast()` now takes a snapshot of `active_connections` under the lock and releases the
+lock before doing any I/O. Sends fan out concurrently via `asyncio.gather(..., return_exceptions=True)`,
+each wrapped in `asyncio.wait_for(..., timeout=_BROADCAST_SEND_TIMEOUT)` (5.0s — long enough that a
+merely-slow-but-healthy client on a congested LAN/Wi-Fi link isn't penalized, given printer-status
+broadcasts already recur every 1-2s and a single delayed frame is invisible; short enough that a
+genuinely wedged socket can't stall the fan-out to everyone else for more than one broadcast
+cycle). A connection whose send times out or raises is removed from `active_connections` under the
+lock, against the live list rather than the snapshot, exactly like a normal disconnect — so it
+can't race a concurrent `connect()`/`disconnect()` and doesn't get double-removed. `broadcast_aito()`
+and `broadcast_to_user()` are unchanged; the message payload, JSON serialization, and set of
+recipients under normal (non-wedged) conditions are identical to before.
+
+Regression coverage: new `backend/tests/unit/test_ws_broadcast_backpressure.py`.
+`test_slow_client_does_not_block_delivery_to_other_clients` is the core-bug regression: a
+never-returning `send_text()` on one connection must not prevent a second, healthy connection from
+receiving the broadcast — verified to fail (times out) against the old serial-under-lock
+implementation. `test_client_exceeding_timeout_is_removed_from_active_connections` pins that a
+timed-out connection is dropped from `active_connections` while healthy ones remain.
+`test_one_failing_client_does_not_stop_others` exercises the `return_exceptions=True` path: an
+immediately-raising `send_text()` must not cancel delivery to other connections.
+`test_lock_is_not_held_across_sends_connect_proceeds_during_broadcast` starts a broadcast against a
+wedged client, then asserts `connect()` and `disconnect()` still complete promptly while that
+broadcast is in flight — proving the lock is released before the I/O rather than held across it;
+this test also failed (timed out) against the old implementation. Reverting `broadcast()` to the
+old serial-loop-under-lock implementation and re-running the new test file confirmed 3 of 4 tests
+fail (only the `return_exceptions` test, which doesn't depend on concurrency, still passed),
+confirming the tests actually exercise the fix.
+
+Verification: `ruff check backend/app/core/websocket.py backend/tests/unit/test_ws_broadcast_backpressure.py`
+and `ruff format --check` on the same — both clean. `../venv/bin/python3 -m pytest
+tests/unit/test_ws_broadcast_backpressure.py -v` — 4/4 passed. `../venv/bin/python3 -m pytest
+tests/ -q -k "websocket or broadcast"` — 79 passed. Full-suite coverage gate (`bash
+tools/coverage_all.sh backend`, whole `backend/app` tree, `-n 30`) — 12567 passed, TOTAL 74%
+statements, matching the 74% baseline exactly (no decrease); `app/core/websocket.py` itself at 88%.
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved (no golden probe exercises
+broadcast timing/backpressure), so nothing was re-recorded. `bash tools/gen_surface_all.sh | diff -
+SURFACE.md` — empty; `ConnectionManager`'s public methods, their signatures, and the WebSocket
+route contract are unchanged, so `SURFACE.md` was left byte-identical.
+
+Note: `backend/tests/unit/services/test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`
+failed once during the full coverage run and passed in isolation and on a clean re-run of the full
+suite — a pre-existing flake (declared `KNOWN_FLAKY` for this task), not caused by this change.

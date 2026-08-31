@@ -8,6 +8,16 @@ from fastapi import WebSocket
 class ConnectionManager:
     """Manages WebSocket connections and broadcasts."""
 
+    # (T-020) Per-send bound for broadcast(). uvicorn applies TCP backpressure,
+    # so send_text() to a client whose socket window is full (sleeping laptop,
+    # dead cell link) never returns on its own. 5s is generous enough that a
+    # merely-slow-but-healthy client on a congested LAN/Wi-Fi round-trip is not
+    # penalized (printer-status broadcasts already recur every 1-2s, so a
+    # single delayed frame is invisible to the user), while being short enough
+    # that a genuinely wedged socket cannot stall the fan-out to everyone else
+    # for more than one broadcast cycle.
+    _BROADCAST_SEND_TIMEOUT = 5.0
+
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self._lock = asyncio.Lock()
@@ -50,23 +60,42 @@ class ConnectionManager:
             await self.broadcast_aito(self.aito_presence_state())
 
     async def broadcast(self, message: dict[str, Any]):
-        """Broadcast a message to all connected clients."""
-        if not self.active_connections:
+        """Broadcast a message to all connected clients.
+
+        (T-020) Sends fan out concurrently, and the lock is only held to take
+        a snapshot of ``active_connections`` / to apply cleanup afterwards —
+        never across the actual I/O. Holding it across ``send_text`` would
+        mean one client stuck behind TCP backpressure (a laptop that slept
+        with the dashboard open, a phone on a dead cell link) stalls delivery
+        to every other client *and* blocks ``connect()``/``disconnect()``
+        from registering new sockets, since they take the same lock. Each
+        send is bounded by ``_BROADCAST_SEND_TIMEOUT``; a connection that
+        times out or raises is dropped via the same removal path a normal
+        disconnect uses, under the lock, against the live list (not the
+        snapshot) so it can't race a concurrent connect()/disconnect().
+        """
+        async with self._lock:
+            connections = list(self.active_connections)
+        if not connections:
             return
 
         data = json.dumps(message)
-        async with self._lock:
-            disconnected = []
-            for connection in self.active_connections:
-                try:
-                    await connection.send_text(data)
-                except Exception:
-                    disconnected.append(connection)
+        results = await asyncio.gather(
+            *(
+                asyncio.wait_for(connection.send_text(data), timeout=self._BROADCAST_SEND_TIMEOUT)
+                for connection in connections
+            ),
+            return_exceptions=True,
+        )
 
-            # Clean up disconnected clients
-            for conn in disconnected:
-                if conn in self.active_connections:
-                    self.active_connections.remove(conn)
+        disconnected = [
+            conn for conn, result in zip(connections, results, strict=True) if isinstance(result, Exception)
+        ]
+        if disconnected:
+            async with self._lock:
+                for conn in disconnected:
+                    if conn in self.active_connections:
+                        self.active_connections.remove(conn)
 
     async def broadcast_aito(self, message: dict[str, Any]):
         """Broadcast an Aito board message (``aito_changed`` /
