@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -1119,6 +1120,77 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
         await pg_engine.dispose()
 
 
+def _restore_data_directory(name: str, src_dir: Path, dest_dir: Path) -> None:
+    """Restore one data directory (archive, icons, ...) from a backup.
+
+    T-017 fix: the previous implementation cleared ``dest_dir`` *before*
+    copying the replacement in, so a mid-copy failure (ENOSPC is the
+    realistic case — the backup ZIP was just unpacked onto the same
+    filesystem) left the live directory (e.g. the entire print archive)
+    partially or fully deleted with nothing to restore it. This copies
+    the backup contents into a sibling staging directory first; only
+    once that copy has fully succeeded do we clear the destination and
+    move the staged files in (a same-filesystem rename, not a copy).
+    If the staging copy raises OSError, the destination is never
+    touched and the exception propagates to the caller so the restore
+    is reported as failed rather than a false success.
+    """
+    stage_dir = dest_dir.parent / f".{dest_dir.name}.restore-staging"
+    if stage_dir.exists():
+        # Leftover from a previous failed restore attempt.
+        shutil.rmtree(stage_dir, ignore_errors=True)
+    stage_dir.mkdir(parents=True)
+    try:
+        for item in src_dir.iterdir():
+            stage_item = stage_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, stage_item)
+            else:
+                shutil.copy2(item, stage_item)
+
+        # Staging copy succeeded — now it's safe to clear the destination
+        # and move the staged files in.
+        if dest_dir.exists():
+            for item in dest_dir.iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except OSError as e:
+                    logger.warning("Could not delete %s: %s", item, e)
+        else:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in stage_dir.iterdir():
+            shutil.move(str(item), str(dest_dir / item.name))
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+
+
+def _raise_if_directories_failed(failed_dirs: list[str]) -> None:
+    """Turn a non-empty ``failed_dirs`` list into a failed restore response.
+
+    T-017 fix: the previous restore_backup implementation collected these
+    names as "skipped_dirs" and still returned ``{"success": True, ...}``
+    with a footnote mentioning them — even though the directory copy had
+    failed. Any caller of this must run it *before* building the success
+    response, so a copy failure is reported as HTTP 500 rather than a
+    disguised success.
+    """
+    if not failed_dirs:
+        return
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            "Restore partially failed: the database was restored, but these "
+            f"data directories could not be restored ({', '.join(failed_dirs)}). "
+            "Their original contents were left untouched (not deleted). Check "
+            "server logs (disk space is the likely cause) and retry."
+        ),
+    )
+
+
 @router.post("/restore")
 async def restore_backup(
     file: UploadFile = File(...),
@@ -1130,7 +1202,6 @@ async def restore_backup(
     Replaces the database and all data directories from the backup ZIP.
     Requires a restart after restore.
     """
-    import shutil
     import tempfile
 
     from fastapi import HTTPException
@@ -1318,7 +1389,13 @@ async def restore_backup(
                 ("projects", base_dir / "projects"),
             ]
 
-            skipped_dirs = []
+            # T-017: a directory whose staging copy fails is left with its
+            # live contents untouched (see _restore_data_directory) — it is
+            # NOT deleted then silently skipped. We still attempt every
+            # directory so the ones that succeed are restored, but any
+            # failure turns the whole request into an HTTP 500 below
+            # instead of a success=True response with a footnote.
+            failed_dirs = []
             for name, dest_dir in dirs_to_restore:
                 src_dir = (
                     temp_path / name
@@ -1326,28 +1403,15 @@ async def restore_backup(
                 if src_dir.exists():
                     logger.info("Restoring %s directory...", name)
                     try:
-                        # Clear destination contents (not the dir itself - may be Docker mount)
-                        if dest_dir.exists():
-                            for item in dest_dir.iterdir():
-                                try:
-                                    if item.is_dir():
-                                        shutil.rmtree(item)
-                                    else:
-                                        item.unlink()
-                                except OSError as e:
-                                    logger.warning("Could not delete %s: %s", item, e)
-                        else:
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                        # Copy contents from backup
-                        for item in src_dir.iterdir():
-                            dest_item = dest_dir / item.name
-                            if item.is_dir():
-                                shutil.copytree(item, dest_item)
-                            else:
-                                shutil.copy2(item, dest_item)
+                        _restore_data_directory(name, src_dir, dest_dir)
                     except OSError as e:
-                        logger.warning("Could not restore %s directory: %s", name, e)
-                        skipped_dirs.append(name)
+                        logger.error(
+                            "Could not restore %s directory: %s — destination left untouched.",
+                            name,
+                            e,
+                            exc_info=True,
+                        )
+                        failed_dirs.append(name)
 
             # 7. Reset the encryption singleton so the migration that runs
             # inside init_db() picks up the restored key file (if a new one
@@ -1365,13 +1429,16 @@ async def restore_backup(
             await reinitialize_database()
             await init_db()
 
+            # T-017: the database has already been restored at this point,
+            # but any directory in failed_dirs was left untouched (not
+            # deleted) because its staging copy failed — this must run
+            # before the success response below is built.
+            _raise_if_directories_failed(failed_dirs)
+
             logger.info("Restore complete - restart required")
-            message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."
-            if skipped_dirs:
-                message += f" Note: Some directories could not be restored ({', '.join(skipped_dirs)})."
             return {
                 "success": True,
-                "message": message,
+                "message": "Backup restored successfully. Please restart Bambuddy for changes to take effect.",
             }
 
         except HTTPException:

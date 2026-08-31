@@ -7580,3 +7580,76 @@ bundles only `calculatorInsights.ts`/`quoteSummary.ts` (see `tools/probe_calc_fr
 not `curveGeometry.ts`, so no probe drives `qtyDomainMax` and none needed re-recording. `bash
 tools/gen_surface_calc.sh | diff - SURFACE.md` — empty (`curveGeometry.ts` is outside R8's glob,
 and `qtyDomainMax`'s new parameter is optional, not a new export).
+
+## T-017 — 2026-08-31 — a restore whose data-directory copy fails now reports failure instead of a disguised success (user-approved behavior change)
+
+**Approved change (verbatim):** "a restore whose file copy fails will report failure (HTTP 500)
+instead of returning success with a note in the message."
+
+`restore_backup` (`backend/app/api/routes/settings.py`, `/api/v1/settings/restore`) restores each
+live data directory (`archive`, `virtual_printer`, `plate_calibration`, `icons`, `projects`) from
+the uploaded backup ZIP. The old loop cleared the destination's contents first (`shutil.rmtree` /
+`item.unlink()` over every existing entry), and only then copied the backup's contents in
+(`shutil.copytree` / `shutil.copy2`). Since the ZIP had just been unpacked onto the same
+filesystem as the destination, a mid-copy `OSError` (ENOSPC is the realistic case — disk full
+partway through restoring a large `archive/` directory of 3MFs/timelapses/photos) was caught,
+logged as a "skipped" directory, and the loop moved on — leaving the live directory destroyed
+with nothing to replace it. The handler still returned `{"success": True, "message": "Backup
+restored successfully..."}` with only a `" Note: Some directories could not be restored (archive)."`
+footnote appended.
+
+Fixed with a new helper, `_restore_data_directory(name, src_dir, dest_dir)`: it copies the backup's
+contents into a sibling staging directory (`dest_dir.parent / f".{dest_dir.name}.restore-staging"`,
+guaranteed to be on the same filesystem as `dest_dir`) first. Only once that copy has fully
+succeeded does it clear `dest_dir`'s contents and move (same-filesystem rename, not a copy) the
+staged files in. If the staging copy itself raises `OSError`, the destination is never touched —
+the exception propagates to `restore_backup`'s caller, which now collects the failing directory
+name into `failed_dirs` instead of swallowing it into `skipped_dirs`. A second new helper,
+`_raise_if_directories_failed(failed_dirs)`, runs immediately after every directory has been
+attempted and *before* the success response is built: if `failed_dirs` is non-empty it raises
+`HTTPException(status_code=500, ...)` naming the failed directories and stating that their
+original contents were left untouched — the route now surfaces the failure to the caller instead
+of reporting `success=True`. Directories that copy successfully are still restored even if a
+different directory in the same request fails (each directory is independent); only a failure
+turns the whole response into a 500.
+
+The database-restore step (SQLite online backup API / Postgres import) and the MFA-key-write step
+are unrelated to this change and untouched — those already had their own failure handling (the
+MFA key write aborts with `HTTPException(500)` *before* the DB swap; the DB restore uses SQLite's
+backup API specifically to avoid WAL corruption, see `test_restore_sqlite_wal_safety.py`). This
+fix only changes the five-directory copy loop that runs *after* the database has already been
+restored.
+
+Regression coverage: new `backend/tests/unit/test_restore_data_directory_safety.py`.
+`TestRestoreDataDirectorySuccess` pins the ordinary case (backup contents replace destination
+contents, destination auto-created if missing, no staging directory left behind).
+`TestRestoreDataDirectoryFailurePath` is the load-bearing regression test: it monkeypatches
+`shutil.copy2` (and, in a second test, `shutil.copytree`) to raise `OSError(28, "No space left on
+device")` partway through copying a backup directory that has pre-existing, valuable live files
+(`irreplaceable_print.3mf`, `timelapse.mp4`) in the destination, asserts the `OSError` propagates
+out of `_restore_data_directory`, and — the actual bug being fixed — asserts the live files are
+**still present and unmodified** afterward, with no partially-copied backup files and no leftover
+staging directory. `TestRaiseIfDirectoriesFailed` exercises `_raise_if_directories_failed`
+directly: an empty list does not raise; a non-empty list raises `HTTPException` with
+`status_code=500` naming every failed directory in the detail message (single and multiple
+directories).
+
+Verification: `ruff check backend/app/api/routes/settings.py
+backend/tests/unit/test_restore_data_directory_safety.py` and `ruff format --check` on the same —
+both clean. `../venv/bin/python3 -m pytest tests/unit/test_restore_data_directory_safety.py
+tests/unit/test_restore_sqlite_wal_safety.py tests/unit/test_postgres_restore_drop_cascade.py -v`
+— 21/21 passed. `../venv/bin/python3 -m pytest tests/integration/test_settings_api.py -q` — 56/56
+passed. Full-suite coverage gate (`bash tools/coverage_all.sh backend`, whole `backend/app` tree,
+`-n 30`) — 12559 passed, TOTAL 74% statements, matching the 74% baseline exactly (no decrease).
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved (the restore endpoint's
+directory-copy failure path isn't reachable from any golden probe), so nothing was re-recorded.
+`bash tools/gen_surface_all.sh | diff - SURFACE.md` — empty; the route's path, method, and
+permission (`settings:restore`) are unchanged, so `SURFACE.md` was left byte-identical.
+
+Note: `backend/tests/unit/test_settings_dedupe_migration.py` fails in isolation (3 tests,
+`sqlite3.OperationalError: no such table: print_log_entries` from `run_migrations`'s unconditional
+`ALTER TABLE print_log_entries ...`) because its `_register_all_models()` helper omits the
+`print_log` model — a pre-existing gap in that unrelated test's fixture, not touched by this change.
+It passes when run as part of the full suite (`Base.metadata` is a process-global singleton
+populated by other tests' model imports first), which is exactly what the coverage-gate run above
+shows (12559 passed, no failures).
