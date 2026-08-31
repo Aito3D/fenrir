@@ -1440,6 +1440,7 @@ export default {
       slicedFor: "Нарезано для {{model}}",
       suggestedPriceTooltip: "Рекомендуемая цена продажи из калькулятора (без учёта работы)\nФиламент: {{filament}}\nПринтер: {{printer}}\nСтоимость за единицу {{unitCost}} → ×{{sizeMargin}} маржа по размеру",
       suggestedPriceFloor: "Применена минимальная цена за задачу",
+      suggestedPriceNoFilamentMatch: "Ни один профиль калькулятора не соответствует {{material}} — цена рассчитана по {{filament}}",
       uploadedBy: "Загрузил",
       noPermissionReprint: "У вас нет разрешения на повторную печать",
       noFileForReprint: "Файл 3MF недоступен: при сохранении задания не удалось скачать его с принтера",

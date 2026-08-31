@@ -1493,6 +1493,7 @@ export default {
       slicedFor: 'Sliced for {{model}}',
       suggestedPriceTooltip: 'Suggested sale price from the calculator (excludes labor)\nFilament: {{filament}}\nPrinter: {{printer}}\nUnit cost {{unitCost}} → ×{{sizeMargin}} size margin',
       suggestedPriceFloor: 'Minimum task price applied',
+      suggestedPriceNoFilamentMatch: 'No calculator profile matches {{material}} — priced with {{filament}}',
       uploadedBy: 'Uploaded By',
       noPermissionReprint: 'You do not have permission to reprint',
       noFileForReprint: 'No 3MF file available — the file could not be downloaded from the printer when the print was recorded',

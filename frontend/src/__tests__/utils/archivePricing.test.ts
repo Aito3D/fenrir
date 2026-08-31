@@ -627,3 +627,78 @@ describe('medianUnitCost', () => {
     expect(medianUnitCost([row(0), row(0), row(0), row(0), row(0), row(0)], calcConfig, names)).toBeNull();
   });
 });
+
+// Regression suite for the filament matcher, built from the profiles and the
+// slicer material labels of a real installation. Ordered by name because that
+// is the order the API returns (`order_by(name, id)`), which decides which
+// profile the no-match fallback lands on.
+const realProfiles: NamedCalculatorFilament[] = [
+  { id: 8, name: 'Bambu Lab ABS-GF', brand: 'Bambu Lab', material: 'ABS-GF', cost_per_kg: 7199, sale_price_per_kg: 10799, difficulty_pct: 150 },
+  { id: 13, name: 'Bambu Lab PA6-CF', brand: 'Bambu Lab', material: 'PA6-CF', cost_per_kg: 13465, sale_price_per_kg: 20198, difficulty_pct: 150 },
+  { id: 15, name: 'Bambu Lab PAHT-CF', brand: 'Bambu Lab', material: 'PAHT-CF', cost_per_kg: 14112, sale_price_per_kg: 21168, difficulty_pct: 150 },
+  { id: 4, name: 'SUNLU ASA', brand: 'SUNLU', material: 'ASA', cost_per_kg: 1648, sale_price_per_kg: 2472, difficulty_pct: 150 },
+  { id: 11, name: 'SUNLU PA', brand: 'SUNLU', material: 'PA', cost_per_kg: 2080, sale_price_per_kg: 3120, difficulty_pct: 150 },
+  { id: 6, name: 'SUNLU PA12-CF', brand: 'SUNLU', material: 'PA12-CF', cost_per_kg: 5716, sale_price_per_kg: 8574, difficulty_pct: 150 },
+  { id: 1, name: 'SUNLU PA6-CF', brand: 'SUNLU', material: 'PA6-CF', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },
+  { id: 9, name: 'SUNLU PA6-GF', brand: 'SUNLU', material: 'PA6-GF', cost_per_kg: 2996, sale_price_per_kg: 4494, difficulty_pct: 150 },
+  { id: 2, name: 'SUNLU PETG', brand: 'SUNLU', material: 'PETG', cost_per_kg: 1114, sale_price_per_kg: 1671, difficulty_pct: 150 },
+  { id: 3, name: 'SUNLU PETG-CF', brand: 'SUNLU', material: 'PETG-CF', cost_per_kg: 2080, sale_price_per_kg: 3120, difficulty_pct: 150 },
+  { id: 5, name: 'SUNLU TPU 95A', brand: 'SUNLU', material: 'TPU 95A', cost_per_kg: 2080, sale_price_per_kg: 3120, difficulty_pct: 150 },
+];
+
+const pick = (type: string | null, vendor?: string | null) =>
+  matchCalculatorFilament(type, realProfiles, vendor);
+
+describe('matchCalculatorFilament — reinforcement and grade awareness', () => {
+  it('never lets an unreinforced profile absorb a CF/GF print', () => {
+    // The reported bug: "PA-CF" priced as plain "SUNLU PA" (or, with no plain
+    // PA on file, as the alphabetically first profile "Bambu Lab ABS-GF").
+    expect(pick('PA-CF', 'SUNLU').filament.name).not.toBe('SUNLU PA');
+    expect(pick('PA-CF', 'SUNLU').filament.name).not.toBe('Bambu Lab ABS-GF');
+    expect(pick('PA6-CF', 'SUNLU').filament.name).not.toBe('SUNLU PA');
+    expect(pick('PA-GF', 'SUNLU').filament.name).not.toBe('SUNLU PA');
+    expect(pick('PETG-CF', 'SUNLU').filament.name).not.toBe('SUNLU PETG');
+  });
+
+  it('resolves a gradeless CF label to the graded profile the slicer cannot name', () => {
+    // A slicer that had printed PA6-CF would have said "PA6-CF"; "PA-CF" is
+    // what a custom PA12-CF profile reports, so PA12-CF is the only candidate.
+    expect(pick('PA-CF', 'SUNLU')).toEqual({ filament: realProfiles[5], matched: true });
+  });
+
+  it('still resolves a gradeless GF label when only a graded profile exists', () => {
+    expect(pick('PA-GF', 'SUNLU')).toEqual({ filament: realProfiles[7], matched: true });
+  });
+
+  it('prefers an exact material match over the family fallback', () => {
+    expect(pick('PA6-CF', 'SUNLU')).toEqual({ filament: realProfiles[6], matched: true });
+    expect(pick('PA6-CF', 'Bambu Lab')).toEqual({ filament: realProfiles[1], matched: true });
+    expect(pick('PETG-CF', 'SUNLU')).toEqual({ filament: realProfiles[9], matched: true });
+    expect(pick('PA', 'SUNLU')).toEqual({ filament: realProfiles[4], matched: true });
+  });
+
+  it('does not cross polymer families on a shared prefix', () => {
+    // PET-CF is not PETG-CF, and PAHT-CF is not PA-CF.
+    expect(pick('PET-CF', 'Bambu Lab').matched).toBe(false);
+    expect(pick('PA-CF', 'SUNLU').filament.name).not.toBe('Bambu Lab PAHT-CF');
+  });
+
+  it('ignores slicer variant suffixes that do not change the material', () => {
+    expect(pick('TPU-AMS', 'Bambu Lab')).toEqual({ filament: realProfiles[10], matched: true });
+    expect(pick('TPU', 'SUNLU')).toEqual({ filament: realProfiles[10], matched: true });
+  });
+
+  it('reports no match rather than silently pricing a different material', () => {
+    // No plain-ABS profile on file: ABS-GF is a different, pricier material.
+    expect(pick('ABS', 'Bambu Lab').matched).toBe(false);
+  });
+
+  it('matches the first material of a multi-material print, in slot order', () => {
+    expect(pick('PA-CF, ASA', 'SUNLU, Bambu Lab')).toEqual({ filament: realProfiles[5], matched: true });
+    expect(pick('ASA, PA-CF', 'Bambu Lab, SUNLU')).toEqual({ filament: realProfiles[3], matched: true });
+  });
+
+  it('falls through to the next material when the first one matches nothing', () => {
+    expect(pick('PET-CF, ASA', 'Bambu Lab, SUNLU')).toEqual({ filament: realProfiles[3], matched: true });
+  });
+});

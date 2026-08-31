@@ -1484,6 +1484,7 @@ export default {
       slicedFor: '{{model}} için dilimlendi',
       suggestedPriceTooltip: 'Hesaplayıcıdan önerilen satış fiyatı (işçilik hariç)\nFilament: {{filament}}\nYazıcı: {{printer}}\nBirim maliyet {{unitCost}} → ×{{sizeMargin}} boyut marjı',
       suggestedPriceFloor: 'Görev başına asgari fiyat uygulandı',
+      suggestedPriceNoFilamentMatch: '{{material}} ile eşleşen hesaplayıcı profili yok — {{filament}} ile fiyatlandırıldı',
       uploadedBy: 'Yükleyen',
       noPermissionReprint: 'Yeniden yazdırma izniniz yok',
       noFileForReprint: 'Kullanılabilir 3MF dosyası yok — baskı kaydedildiğinde dosya yazıcıdan indirilemedi',

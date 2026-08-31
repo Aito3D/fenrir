@@ -1484,6 +1484,7 @@ export default {
       slicedFor: '为 {{model}} 切片',
       suggestedPriceTooltip: '计算器建议售价（不含人工）\n耗材：{{filament}}\n打印机：{{printer}}\n单价 {{unitCost}} → ×{{sizeMargin}} 尺寸利润率',
       suggestedPriceFloor: '已应用最低任务价格',
+      suggestedPriceNoFilamentMatch: '没有与 {{material}} 匹配的计算器配置 — 已按 {{filament}} 计价',
       uploadedBy: '上传者',
       noPermissionReprint: '您没有重新打印的权限',
       noFileForReprint: '无可用的 3MF 文件 — 打印记录时无法从打印机下载该文件',
