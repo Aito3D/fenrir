@@ -1,72 +1,92 @@
 [
   {
-    "id": "calc-openapi",
-    "cmd": "./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if '/calculator' in k}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
-    "timeout": 120,
-    "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
+    "id": "app-openapi-index",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_openapi.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-pydantic-schemas",
-    "cmd": "./venv/bin/python3 -c \"import json, inspect; import backend.app.schemas.calculator as m; from pydantic import BaseModel; out = {n: c.model_json_schema() for n, c in sorted(vars(m).items()) if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == m.__name__}; print(json.dumps(out, sort_keys=True, indent=1))\" 2>/dev/null",
-    "timeout": 120,
-    "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
+    "id": "app-ddl",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items())]\" 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-ddl",
-    "cmd": "./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items()) if n.startswith('calculator_')]\" 2>/dev/null",
-    "timeout": 120,
-    "scrub": [],
+    "id": "app-permissions",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core import permissions as p; print(json.dumps({'all': sorted(p.ALL_PERMISSIONS), 'categories': {k: sorted(v) if isinstance(v, (list, set)) else v for k, v in sorted(p.PERMISSION_CATEGORIES.items())}, 'default_groups': {k: sorted(v) if isinstance(v, (list, set)) else v for k, v in sorted(p.DEFAULT_GROUPS.items())}}, sort_keys=True, indent=1, default=str))\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-column-defaults",
-    "cmd": "./venv/bin/python3 -c \"import json, backend.app.main; from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter; out = {}; [out.setdefault(M.__tablename__, {c.name: (repr(c.default.arg) if c.default is not None and getattr(c.default, 'is_scalar', False) else None, str(c.type), c.nullable) for c in M.__table__.columns}) for M in (CalculatorDefaults, CalculatorFilament, CalculatorPrinter)]; print(json.dumps(out, sort_keys=True, indent=1))\" 2>/dev/null",
-    "timeout": 120,
-    "scrub": [],
+    "id": "app-settings",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core.config import settings; M = type(settings).model_fields; print(json.dumps({n: {'type': str(f.annotation), 'default': repr(f.default), 'required': f.is_required()} for n, f in sorted(M.items())}, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-route-perms",
-    "cmd": "grep -oE 'RequirePermissionIfAuthEnabled\\([^)]*\\)' backend/app/api/routes/calculator.py | sort | uniq -c | sed 's/^ *//'",
+    "id": "app-middleware-stack",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"from backend.app.main import app; [print(i, m.cls.__name__) for i, m in enumerate(app.user_middleware)]\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-migrations-index",
+    "cmd": "grep -oE '^\\s*#\\s*Migration:.*' backend/app/core/database.py | sed 's/^[[:space:]]*//' | nl -ba",
     "timeout": 60,
-    "scrub": [],
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-zoho-pure",
-    "cmd": "PYTHONPATH=. ./venv/bin/python3 tools/probe_calc_zoho.py",
-    "timeout": 120,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "calc-insights-pure",
-    "cmd": "PYTHONPATH=. ./venv/bin/python3 -c \"import json; from datetime import datetime; import backend.app.services.calculator_insights as m; d = datetime(2026,1,2,3,4,5); print(json.dumps({'constants': {k: getattr(m,k) for k in sorted(dir(m)) if k.isupper() or (k.startswith('_') and k[1:].isupper()) or k in ('MIN_SAMPLE',)}, 'resolve_duration': [m._resolve_duration(a,b,c) for a,b,c in [(3600,None,None),(0,None,None),(None,d,datetime(2026,1,2,5,4,5)),(None,d,None),(None,None,None),(-5,None,None),(None,datetime(2026,1,3,3,4,5),d)]], 'split_materials': {repr(s): m._split_materials(s) for s in ['PLA','PLA;PETG','PLA; PETG ;ABS','', None,'  ','PLA,PETG']}}, default=str, sort_keys=True, indent=1))\" 2>/dev/null",
-    "timeout": 120,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "calc-migration-sql",
-    "cmd": "./venv/bin/python3 -c \"import re,sys; s=open('backend/app/core/database.py').read(); i=s.index('# Migration: calculator filaments can be linked'); j=s.index('# Migration:', i+50); sys.stdout.write(s[i:j].rstrip()+chr(10))\"",
+    "id": "app-route-perms",
+    "cmd": "grep -rhoE 'RequirePermissionIfAuthEnabled\\(Permission\\.[A-Z_]+\\)' backend/app/api/routes/ | sort | uniq -c | sed 's/^ *//' ",
     "timeout": 60,
-    "scrub": [],
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-pricing",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/utils/pricing.ts --format cjs --file /tmp/bambuddy-refactor-probe/pricing.cjs >/dev/null 2>&1 && node tools/probe_calc_pricing.cjs",
-    "timeout": 120,
-    "scrub": [],
+    "id": "fe-router",
+    "cmd": "grep -oE 'path=\"[^\"]*\"|<Route|element=\\{<[A-Za-z0-9_]+' frontend/src/App.tsx | sed 's/element={</element=/' | nl -ba",
+    "timeout": 60,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   },
   {
-    "id": "calc-frontend-pure",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_calc_frontend_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/calcFrontend.cjs >/dev/null 2>&1 && node tools/probe_calc_frontend.cjs",
-    "timeout": 120,
-    "scrub": [],
+    "id": "fe-i18n-parity",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_fp_i18n_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/i18nAll.cjs >/dev/null 2>&1 && node tools/probe_i18n_parity.cjs",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "fe-money-pure",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_money_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/money.cjs >/dev/null 2>&1 && node tools/probe_money.cjs",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
     "files": []
   }
 ]

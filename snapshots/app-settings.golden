@@ -1,0 +1,127 @@
+### exit: 0
+### stdout:
+{
+ "api_prefix": {
+  "default": "'/api/v1'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "app_dir": {
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
+  "required": false,
+  "type": "<class 'pathlib.Path'>"
+ },
+ "app_name": {
+  "default": "'Bambuddy'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "archive_dir": {
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')",
+  "required": false,
+  "type": "<class 'pathlib.Path'>"
+ },
+ "bambu_studio_api_url": {
+  "default": "'http://localhost:3001'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "bambu_studio_bundle_dir": {
+  "default": "None",
+  "required": false,
+  "type": "str | None"
+ },
+ "bambu_studio_user_dirs": {
+  "default": "None",
+  "required": false,
+  "type": "list[str] | None"
+ },
+ "bambu_user_id": {
+  "default": "'1961034787'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "base_dir": {
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
+  "required": false,
+  "type": "<class 'pathlib.Path'>"
+ },
+ "database_url": {
+  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "db_max_overflow": {
+  "default": "None",
+  "required": false,
+  "type": "int | None"
+ },
+ "db_pool_recycle": {
+  "default": "None",
+  "required": false,
+  "type": "int | None"
+ },
+ "db_pool_size": {
+  "default": "None",
+  "required": false,
+  "type": "int | None"
+ },
+ "db_pool_timeout": {
+  "default": "None",
+  "required": false,
+  "type": "int | None"
+ },
+ "db_pool_use_lifo": {
+  "default": "None",
+  "required": false,
+  "type": "bool | None"
+ },
+ "debug": {
+  "default": "False",
+  "required": false,
+  "type": "<class 'bool'>"
+ },
+ "log_backup_count": {
+  "default": "3",
+  "required": false,
+  "type": "<class 'int'>"
+ },
+ "log_dir": {
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')",
+  "required": false,
+  "type": "<class 'pathlib.Path'>"
+ },
+ "log_level": {
+  "default": "'INFO'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "log_max_bytes": {
+  "default": "5242880",
+  "required": false,
+  "type": "<class 'int'>"
+ },
+ "log_to_file": {
+  "default": "True",
+  "required": false,
+  "type": "<class 'bool'>"
+ },
+ "plate_calibration_dir": {
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')",
+  "required": false,
+  "type": "<class 'pathlib.Path'>"
+ },
+ "slicer_api_url": {
+  "default": "'http://localhost:3003'",
+  "required": false,
+  "type": "<class 'str'>"
+ },
+ "static_dir": {
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')",
+  "required": false,
+  "type": "<class 'pathlib.Path'>"
+ }
+}
+
+### stderr:
+

@@ -1,0 +1,428 @@
+### exit: 0
+### stdout:
+{
+ "CURVE_DEFAULTS": {
+  "margin_min_mult": 1.15,
+  "margin_max_mult": 1.6,
+  "margin_k": 33,
+  "qty_min_factor": 0.4,
+  "qty_k": 5,
+  "min_task_price": 12
+ },
+ "CURVE_QUANTITIES": [
+  1,
+  2,
+  5,
+  10,
+  20,
+  50,
+  100,
+  200,
+  500
+ ],
+ "DISCOUNT_COLUMNS": [
+  0,
+  0.05,
+  0.1,
+  0.2,
+  0.3,
+  0.5
+ ],
+ "MEDIAN_MIN_MAX": [
+  5,
+  100
+ ],
+ "moneyDecimals": [
+  [
+   "XPF",
+   0
+  ],
+  [
+   "EUR",
+   2
+  ],
+  [
+   "USD",
+   2
+  ],
+  [
+   "JPY",
+   0
+  ]
+ ],
+ "formatMoney": [
+  [
+   1234.567,
+   "EUR",
+   "€1 234.57"
+  ],
+  [
+   1234.567,
+   "XPF",
+   "1 235 FCFP"
+  ],
+  [
+   0,
+   "USD",
+   "$0.00"
+  ],
+  [
+   -9.5,
+   "EUR",
+   "-€9.50"
+  ]
+ ],
+ "formatPct": [
+  [
+   0,
+   "0.00%"
+  ],
+  [
+   0.125,
+   "12.50%"
+  ],
+  [
+   1,
+   "100.00%"
+  ],
+  [
+   -0.4,
+   "-40.00%"
+  ]
+ ],
+ "qtyFactor": [
+  [
+   1,
+   1
+  ],
+  [
+   2,
+   0.9
+  ],
+  [
+   5,
+   0.7333333333333334
+  ],
+  [
+   10,
+   0.6142857142857143
+  ],
+  [
+   25,
+   0.503448275862069
+  ],
+  [
+   100,
+   0.4288461538461539
+  ]
+ ],
+ "sizeMargin": [
+  [
+   0,
+   1.6
+  ],
+  [
+   1,
+   1.586764705882353
+  ],
+  [
+   10,
+   1.4953488372093025
+  ],
+  [
+   100,
+   1.261654135338346
+  ],
+  [
+   1000,
+   1.1643756050338818
+  ]
+ ],
+ "unitMultiplier": [
+  [
+   1,
+   1.261654135338346
+  ],
+  [
+   3,
+   1.2167991407089152
+  ],
+  [
+   12,
+   1.1537218045112783
+  ],
+  [
+   60,
+   1.1169266917293232
+  ]
+ ],
+ "unitPriceCurve": [
+  {
+   "quantity": 1,
+   "unit_ht": 202.32532161661914,
+   "unit_ttc": 242.79038593994295,
+   "task_ttc": 242.79038593994295,
+   "multiplier": 1.2268610239878806,
+   "qty_factor": 1,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 2,
+   "unit_ht": 130.18056316260086,
+   "unit_ttc": 156.21667579512103,
+   "task_ttc": 312.43335159024207,
+   "multiplier": 1.234933708862656,
+   "qty_factor": 0.9,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 3,
+   "unit_ht": 105.48789209944886,
+   "unit_ttc": 126.58547051933863,
+   "task_ttc": 379.7564115580159,
+   "multiplier": 1.2322973892795848,
+   "qty_factor": 0.8285714285714285,
+   "floor_applied": false,
+   "current": true
+  },
+  {
+   "quantity": 5,
+   "unit_ht": 85.21489471315563,
+   "unit_ttc": 102.25787365578675,
+   "task_ttc": 511.28936827893375,
+   "multiplier": 1.22105633999985,
+   "qty_factor": 0.7333333333333334,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 10,
+   "unit_ht": 69.46714684887299,
+   "unit_ttc": 83.36057621864758,
+   "task_ttc": 833.6057621864758,
+   "multiplier": 1.1980112929885487,
+   "qty_factor": 0.6142857142857143,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 20,
+   "unit_ht": 61.30065190918562,
+   "unit_ttc": 73.56078229102273,
+   "task_ttc": 1471.2156458204547,
+   "multiplier": 1.175938072623267,
+   "qty_factor": 0.525,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 50,
+   "unit_ht": 56.26038581975435,
+   "unit_ttc": 67.51246298370522,
+   "task_ttc": 3375.623149185261,
+   "multiplier": 1.1565914835414137,
+   "qty_factor": 0.4555555555555556,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 100,
+   "unit_ht": 54.55056905138596,
+   "unit_ttc": 65.46068286166316,
+   "task_ttc": 6546.068286166316,
+   "multiplier": 1.1487199497957887,
+   "qty_factor": 0.4288461538461539,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 200,
+   "unit_ht": 53.68929717978594,
+   "unit_ttc": 64.42715661574313,
+   "task_ttc": 12885.431323148627,
+   "multiplier": 1.144464474393711,
+   "qty_factor": 0.4147058823529412,
+   "floor_applied": false,
+   "current": false
+  },
+  {
+   "quantity": 500,
+   "unit_ht": 53.170379367064434,
+   "unit_ttc": 63.80445524047732,
+   "task_ttc": 31902.22762023866,
+   "multiplier": 1.1418007542737394,
+   "qty_factor": 0.40595238095238095,
+   "floor_applied": false,
+   "current": false
+  }
+ ],
+ "computePricing": {
+  "filament_cost": 6.75,
+  "depreciation_cost": 0.4931506849315068,
+  "energy_cost": 0.27,
+  "repairs_cost": 0.07397260273972601,
+  "machine_cost": 7.587123287671233,
+  "prototype_cost": 0.7584470319634703,
+  "failures_cost": 1.264078386605784,
+  "machine_cost_safety": 9.609648706240487,
+  "ads_cost": 3.1121637260273975,
+  "consumables_flat": 2,
+  "base_fee_total": 8,
+  "base_fee": 2.6666666666666665,
+  "modeling_cost_total": 92.5,
+  "prep_cost_total": 12.833333333333332,
+  "modeling_cost": 30.833333333333332,
+  "prep_cost": 4.277777777777778,
+  "post_processing_cost": 13.416666666666668,
+  "stuff_cost": 15,
+  "labor_total": 63.52777777777777,
+  "risk_base": 25.28156773211568,
+  "total_cost": 80.91625687671234,
+  "margin_global": 18.796635222736523,
+  "size_margin": 1.2803589180960506,
+  "qty_factor": 0.8285714285714285,
+  "margin_multiplier": 1.2322973892795848,
+  "floor_applied": false,
+  "margin_filament": 4.2749999999999995,
+  "margin_stuff": 1.5,
+  "marge": 24.57163522273652,
+  "total_ht": 105.48789209944886,
+  "total_ttc": 126.58547051933863,
+  "margin_pct": 0.23293322801039174,
+  "quantity": 3,
+  "total_ht_qty": 316.46367629834657,
+  "total_ttc_qty": 379.7564115580159
+ },
+ "breakEvenDiscount": [
+  [
+   0.1,
+   null
+  ],
+  [
+   0.25,
+   null
+  ],
+  [
+   0.5,
+   null
+  ]
+ ],
+ "targetPriceProfit": [
+  [
+   100,
+   0.3,
+   {
+    "net": 99.70089730807578,
+    "profit": null,
+    "margin": null
+   }
+  ],
+  [
+   250,
+   0.5,
+   {
+    "net": 248.75621890547265,
+    "profit": null,
+    "margin": null
+   }
+  ]
+ ],
+ "discountMatrix": [
+  {
+   "discount": 0,
+   "machine_cost": null,
+   "machine_cost_safety": null,
+   "price": null,
+   "price_ht": null,
+   "discount_amount": null,
+   "potential_profit": null
+  },
+  {
+   "discount": 0.05,
+   "machine_cost": null,
+   "machine_cost_safety": null,
+   "price": null,
+   "price_ht": null,
+   "discount_amount": null,
+   "potential_profit": null
+  },
+  {
+   "discount": 0.1,
+   "machine_cost": null,
+   "machine_cost_safety": null,
+   "price": null,
+   "price_ht": null,
+   "discount_amount": null,
+   "potential_profit": null
+  },
+  {
+   "discount": 0.2,
+   "machine_cost": null,
+   "machine_cost_safety": null,
+   "price": null,
+   "price_ht": null,
+   "discount_amount": null,
+   "potential_profit": null
+  },
+  {
+   "discount": 0.3,
+   "machine_cost": null,
+   "machine_cost_safety": null,
+   "price": null,
+   "price_ht": null,
+   "discount_amount": null,
+   "potential_profit": null
+  },
+  {
+   "discount": 0.5,
+   "machine_cost": null,
+   "machine_cost_safety": null,
+   "price": null,
+   "price_ht": null,
+   "discount_amount": null,
+   "potential_profit": null
+  }
+ ],
+ "printerRates": [
+  [
+   "lifetimeHours",
+   14600
+  ],
+  [
+   "depreciation",
+   0.0821917808219178
+  ],
+  [
+   "repairs",
+   0.00821917808219178
+  ]
+ ],
+ "filamentLineCost": 11.025,
+ "estimateFilamentCost": null,
+ "estimateArchiveSalePrice": null,
+ "containsEitherWay": [
+  [
+   "abc",
+   "b",
+   true
+  ],
+  [
+   "b",
+   "abc",
+   true
+  ],
+  [
+   "x",
+   "y",
+   false
+  ]
+ ],
+ "skuKey": "[object Object]||||||",
+ "medianUnitCost": null,
+ "addDays": "<SCRUBBED>Z"
+}
+
+### stderr:
+
