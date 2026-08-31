@@ -1483,6 +1483,7 @@ export default {
       slicedFor: '{{model}}用にスライス',
       suggestedPriceTooltip: '計算機による推奨販売価格（人件費を除く）\nフィラメント: {{filament}}\nプリンター: {{printer}}\n単価 {{unitCost}} → ×{{sizeMargin}} サイズマージン',
       suggestedPriceFloor: 'タスクごとの最低価格を適用',
+      suggestedPriceNoFilamentMatch: '{{material}} に一致する計算機プロファイルがありません — {{filament}} で価格計算',
       uploadedBy: 'アップロード者',
       noPermissionReprint: '再印刷する権限がありません',
       noFileForReprint: '3MFファイルがありません — 印刷記録時にプリンターからファイルをダウンロードできませんでした',

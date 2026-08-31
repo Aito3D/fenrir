@@ -84,34 +84,126 @@ const vendorHints = (vendor: string | null | undefined): string[] =>
     .map((v) => v.trim().toLowerCase())
     .filter((v) => v.length > 0 && !v.startsWith('generic'));
 
-/** Match an archive's filament type (e.g. "PLA") against the calculator's
- *  filaments by case-insensitive containment in either direction. When the
- *  archive also knows the vendor it was sliced with (e.g. "SUNLU"), a profile
- *  matching both brand and material wins first — so a SUNLU PLA print is
- *  priced with SUNLU PLA, not the cheapest PLA. Otherwise the match runs on
- *  the profile's material, then on its display name; when several profiles
- *  match (e.g. Bambu Lab ASA and SUNLU ASA), the cheapest cost_per_kg wins.
- *  Falls back to the first filament with matched=false. */
+/** The materials of a print, in slot order. A multi-material job reports them
+ *  comma-joined ("PA-CF, ASA"); each is matched on its own so a two-colour
+ *  print is priced from its first material rather than from whichever of the
+ *  two happens to be cheapest. */
+const materialSegments = (filamentType: string | null | undefined): string[] =>
+  (filamentType ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+const materialTokens = (label: string): string[] =>
+  label
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 0);
+
+/** "PA6-CF" and "pa6 cf" both canonicalise to "pa6-cf". */
+const canonicalMaterial = (label: string): string => materialTokens(label).join('-');
+
+/** Tokens denoting a reinforcement filler (carbon / glass / aramid fibre).
+ *  A filler changes both the material and its price by a large factor, so two
+ *  labels may only be treated as the same filament when their filler sets are
+ *  identical: "PA" must never absorb "PA-CF", nor "ABS" absorb "ABS-GF". */
+const FILLER_TOKEN = /^(?:cf|gf|af|kf)\d*$/;
+
+const fillerSet = (label: string): string[] =>
+  [...new Set(materialTokens(label).filter((t) => FILLER_TOKEN.test(t)))].sort();
+
+const sameReinforcement = (a: string, b: string): boolean => {
+  const fa = fillerSet(a);
+  const fb = fillerSet(b);
+  return fa.length === fb.length && fa.every((f, i) => f === fb[i]);
+};
+
+/** The base polymer with its grade number dropped: "pa6" and "pa12" both
+ *  reduce to "pa". Only a trailing number goes, so "pet" and "petg" — and
+ *  "pa" and "paht" — stay distinct families. */
+const polymerFamily = (label: string): string => (materialTokens(label)[0] ?? '').replace(/\d+$/, '');
+
+/** Same polymer family and the same reinforcement, e.g. "PA-CF" ↔ "PA12-CF". */
+const sameFamily = (a: string, b: string): boolean => {
+  const family = polymerFamily(a);
+  return family.length > 0 && family === polymerFamily(b) && sameReinforcement(a, b);
+};
+
+/** Material labels a slicer emits verbatim in `filament_type`. A profile whose
+ *  material is one of these names a material the slicer can report itself, so
+ *  it is NOT what an ambiguous gradeless label means: a print made of PA6-CF
+ *  would have said "PA6-CF", therefore "PA-CF" is the custom PA12-CF profile.
+ *  Consulted only to rank family candidates — when every candidate is a slicer
+ *  label ("PA-GF" with only a "PA6-GF" profile on file) they all stay in play. */
+const SLICER_MATERIAL_LABELS = new Set([
+  'pla', 'pla-cf', 'pla-gf', 'pla-aero', 'pla-s',
+  'petg', 'petg-cf', 'petg-gf', 'pet', 'pet-cf',
+  'abs', 'abs-cf', 'abs-gf',
+  'asa', 'asa-cf', 'asa-gf', 'asa-aero',
+  'pc', 'pc-cf', 'pc-fr',
+  'pa', 'pa-cf', 'pa-gf', 'pa6-cf', 'pa6-gf', 'paht-cf',
+  'ppa-cf', 'ppa-gf', 'pps', 'pps-cf',
+  'pe', 'pe-cf', 'pp', 'pp-cf', 'pp-gf',
+  'eva', 'pha', 'hips', 'pva', 'bvoh', 'sbs',
+  'tpu', 'tpu-ams',
+]);
+
+/** Pick one filament out of a ranked group: a profile whose brand matches one
+ *  of the print's vendors wins (vendors are tried in slot order), otherwise
+ *  the cheapest of the group. */
+const pickFromTier = (
+  tier: NamedCalculatorFilament[],
+  hints: string[],
+): NamedCalculatorFilament | undefined => {
+  if (tier.length === 0) return undefined;
+  for (const hint of hints) {
+    const brandMatch = cheapest(tier.filter((f) => !!f.brand && containsEitherWay(f.brand.toLowerCase(), hint)));
+    if (brandMatch) return brandMatch;
+  }
+  return cheapest(tier);
+};
+
+/** Match an archive's filament type (e.g. "PA-CF") against the calculator's
+ *  filaments, most specific reading first:
+ *
+ *    1. the same material exactly ("PA6-CF" → PA6-CF);
+ *    2. the same polymer family and reinforcement, preferring a profile the
+ *       slicer could not have named itself ("PA-CF" → PA12-CF, not PA6-CF);
+ *    3. the same family and reinforcement, any profile ("PA-GF" → PA6-GF);
+ *    4. legacy display-name containment, for profiles saved before brand and
+ *       material were separate fields.
+ *
+ *  Reinforcement is never crossed at any tier, so "PA" cannot be priced as
+ *  PA-CF and "ABS" cannot be priced as ABS-GF. Within a tier the print's
+ *  vendor decides ("SUNLU PLA" over the cheapest PLA), then the lowest cost.
+ *  A multi-material print is matched on its first material that resolves.
+ *  Falls back to the first filament with matched=false — callers must treat
+ *  that as "unknown", not as a price. */
 export function matchCalculatorFilament(
   filamentType: string | null | undefined,
   filaments: NamedCalculatorFilament[],
   filamentVendor?: string | null,
 ): { filament: NamedCalculatorFilament; matched: boolean } | null {
   if (filaments.length === 0) return null;
-  const type = filamentType?.trim().toLowerCase();
-  if (type) {
-    const materialMatches = filaments.filter(
-      (f) => !!f.material && containsEitherWay(f.material.toLowerCase(), type),
-    );
-    for (const hint of vendorHints(filamentVendor)) {
-      const brandMatch = cheapest(
-        materialMatches.filter((f) => !!f.brand && containsEitherWay(f.brand.toLowerCase(), hint)),
-      );
-      if (brandMatch) return { filament: brandMatch, matched: true };
+  const hints = vendorHints(filamentVendor);
+  const withMaterial = filaments.filter((f) => !!f.material);
+
+  for (const segment of materialSegments(filamentType)) {
+    const canonical = canonicalMaterial(segment);
+    const familyMatches = withMaterial.filter((f) => sameFamily(f.material!, segment));
+    const tiers: NamedCalculatorFilament[][] = [
+      withMaterial.filter((f) => canonicalMaterial(f.material!) === canonical),
+      familyMatches.filter((f) => !SLICER_MATERIAL_LABELS.has(canonicalMaterial(f.material!))),
+      familyMatches,
+      filaments.filter(
+        (f) =>
+          containsEitherWay(f.name.toLowerCase(), segment.toLowerCase()) && sameReinforcement(f.name, segment),
+      ),
+    ];
+    for (const tier of tiers) {
+      const hit = pickFromTier(tier, hints);
+      if (hit) return { filament: hit, matched: true };
     }
-    const match =
-      cheapest(materialMatches) ?? cheapest(filaments.filter((f) => containsEitherWay(f.name.toLowerCase(), type)));
-    if (match) return { filament: match, matched: true };
   }
   return { filament: filaments[0], matched: false };
 }

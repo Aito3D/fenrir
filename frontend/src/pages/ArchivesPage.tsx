@@ -1305,6 +1305,14 @@ function ArchiveCard({
                   unitCost: formatMoney(priceEstimate.unitCost, currencyCode),
                   sizeMargin: priceEstimate.sizeMargin.toFixed(3),
                 }),
+                ...(priceEstimate.filamentMatched
+                  ? []
+                  : [
+                      t('archives.card.suggestedPriceNoFilamentMatch', {
+                        material: archive.filament_type || '—',
+                        filament: priceEstimate.filamentName,
+                      }),
+                    ]),
                 ...(priceEstimate.floorApplied ? [t('archives.card.suggestedPriceFloor')] : []),
               ].join('\n')}
             >

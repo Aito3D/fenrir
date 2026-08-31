@@ -1484,6 +1484,7 @@ export default {
       slicedFor: 'Laminado para {{model}}',
       suggestedPriceTooltip: 'Precio de venta sugerido por la calculadora (sin mano de obra)\nFilamento: {{filament}}\nImpresora: {{printer}}\nCoste unitario {{unitCost}} → ×{{sizeMargin}} margen de tamaño',
       suggestedPriceFloor: 'Precio mínimo por tarea aplicado',
+      suggestedPriceNoFilamentMatch: 'Ningún perfil de la calculadora coincide con {{material}}: precio calculado con {{filament}}',
       uploadedBy: 'Subido por',
       noPermissionReprint: 'No tiene permiso para reimprimir',
       noFileForReprint: 'No hay archivo 3MF disponible — no se pudo descargar el archivo de la impresora cuando se registró la impresión',

@@ -1438,6 +1438,7 @@ export default {
       slicedFor: '{{model}}용으로 슬라이싱됨',
       suggestedPriceTooltip: '계산기의 추천 판매 가격 (인건비 제외)\n필라멘트: {{filament}}\n프린터: {{printer}}\n단가 {{unitCost}} → ×{{sizeMargin}} 크기 마진',
       suggestedPriceFloor: '작업당 최소 가격 적용됨',
+      suggestedPriceNoFilamentMatch: '{{material}}과(와) 일치하는 계산기 프로필이 없습니다 — {{filament}}(으)로 가격 계산됨',
       uploadedBy: '업로드한 사용자',
       noPermissionReprint: '재인쇄 권한이 없습니다',
       noFileForReprint: '3MF 파일 없음 — 인쇄 기록 시 프린터에서 파일을 다운로드할 수 없었습니다',
