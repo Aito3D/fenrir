@@ -8390,7 +8390,7 @@ export default {
     syncZohoPrices: 'Preise synchronisieren',
     syncProgress: '{{done}} / {{total}}',
     syncSummary:
-      '{{updated}} aktualisiert · {{unchanged}} unverändert · {{skipped}} ohne Händlerpreis · {{missing}} in Zoho fehlend',
+      '{{updated}} aktualisiert · {{unchanged}} unverändert · {{skipped}} ohne Händlerpreis · {{missing}} in Zoho fehlend · {{unpriced}} ohne Preis (Gewicht unbekannt)',
     syncFailed: 'Synchronisierung gestoppt: {{error}}',
     syncTimedOut: 'Synchronisierung abgelaufen; einige Blöcke wurden möglicherweise dennoch übernommen',
     zohoDuplicateWarning: 'Für {{name}} existiert bereits ein Filament',

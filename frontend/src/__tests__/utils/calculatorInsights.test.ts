@@ -203,6 +203,143 @@ describe('selectRealityChecks', () => {
     expect(selectRealityChecks(undefined, filament, printer, defaults, noOverrides)).toEqual([]);
     expect(selectRealityChecks(insights, filament, printer, undefined, noOverrides)).toEqual([]);
   });
+
+  // --- T-027: suppressed (null) rate_pct/accuracy_pct behave like below-MIN_SAMPLE entries ---
+
+  it('a suppressed (null) material rate_pct yields no failure row, and does not crash', () => {
+    const suppressed: CalculatorInsights = {
+      ...insights,
+      failure: {
+        overall_pct: null,
+        sample: 100,
+        by_printer: [],
+        by_material: [{ printer_id: null, printer_name: null, material: 'PLA', rate_pct: null, sample: 60 }],
+      },
+    };
+    const unmatched = { id: 9, name: 'Unmatched 9000' } as CalculatorPrinter;
+    expect(() => selectRealityChecks(suppressed, filament, unmatched, defaults, noOverrides)).not.toThrow();
+    const checks = selectRealityChecks(suppressed, filament, unmatched, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'failure')).toBeUndefined();
+  });
+
+  it('excludes a suppressed (null) printer entry from both the weighted average and the sample denominator', () => {
+    const partial: CalculatorInsights = {
+      ...insights,
+      failure: {
+        overall_pct: 10,
+        sample: 100,
+        by_printer: [
+          { printer_id: 3, printer_name: 'X1C04', material: null, rate_pct: null, sample: 20 },
+          { printer_id: 4, printer_name: 'X1C05', material: null, rate_pct: 15, sample: 30 },
+        ],
+        by_material: insights.failure.by_material,
+      },
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(partial, filament, profile, defaults, noOverrides);
+    // Only X1C05 (valid) contributes: measured 15, sample 30 — not diluted by X1C04's
+    // suppressed entry in either the numerator or the denominator.
+    expect(checks.find((c) => c.kind === 'failure')).toMatchObject({ measured: 15, sample: 30, scope: 'X1C05' });
+  });
+
+  it('emits no failure row when every matching printer entry is suppressed and no other data exists', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      failure: {
+        overall_pct: null,
+        sample: 100,
+        by_printer: [
+          { printer_id: 3, printer_name: 'X1C04', material: null, rate_pct: null, sample: 20 },
+          { printer_id: 4, printer_name: 'X1C05', material: null, rate_pct: null, sample: 30 },
+        ],
+        by_material: [],
+      },
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const unmatchedFilament = { id: 2, material: 'TPU', cost_per_kg: 30 } as CalculatorFilament;
+    const checks = selectRealityChecks(allNull, unmatchedFilament, profile, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'failure')).toBeUndefined();
+  });
+
+  // --- T-046: suppressed (null) avg_watts behaves like a below-MIN_SAMPLE entry ---
+
+  it('a suppressed (null) avg_watts entry yields no power row, and does not crash', () => {
+    const suppressed: CalculatorInsights = {
+      ...insights,
+      power_by_printer: [{ printer_id: 3, printer_name: 'X1 Carbon', avg_watts: null, sample: 25 }],
+    };
+    expect(() => selectRealityChecks(suppressed, filament, printer, defaults, noOverrides)).not.toThrow();
+    const checks = selectRealityChecks(suppressed, filament, printer, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'power')).toBeUndefined();
+  });
+
+  it('excludes a suppressed (null) power entry from both the weighted average and the sample denominator', () => {
+    const partial: CalculatorInsights = {
+      ...insights,
+      power_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', avg_watts: null, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', avg_watts: 105, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(partial, filament, profile, defaults, noOverrides);
+    // Only X1C05 (valid) contributes: measured 105, sample 30 — not diluted by
+    // X1C04's suppressed entry in either the numerator or the denominator.
+    expect(checks.find((c) => c.kind === 'power')).toMatchObject({ measured: 105, sample: 30, scope: 'X1C05' });
+  });
+
+  it('emits no power row when every matching printer entry is suppressed', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      power_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', avg_watts: null, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', avg_watts: null, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(allNull, filament, profile, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'power')).toBeUndefined();
+  });
+
+  // --- T-044: suppressed (null) hours_per_day behaves like a below-MIN_SAMPLE entry ---
+
+  it('a suppressed (null) hours_per_day entry yields no dailyHours row, and does not crash', () => {
+    const suppressed: CalculatorInsights = {
+      ...insights,
+      usage_by_printer: [{ printer_id: 3, printer_name: 'X1 Carbon', hours_per_day: null, observed_days: 90, sample: 48 }],
+    };
+    expect(() => selectRealityChecks(suppressed, filament, printer, defaults, noOverrides)).not.toThrow();
+    const checks = selectRealityChecks(suppressed, filament, printer, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'dailyHours')).toBeUndefined();
+  });
+
+  it('excludes a suppressed (null) usage entry from both the weighted average and the day-weighted denominator', () => {
+    const partial: CalculatorInsights = {
+      ...insights,
+      usage_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', hours_per_day: null, observed_days: 60, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', hours_per_day: 3.2, observed_days: 90, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(partial, filament, profile, defaults, noOverrides);
+    // Only X1C05 (valid) contributes: measured 3.2, sample 30 — not diluted by
+    // X1C04's suppressed entry in either the numerator or the denominator.
+    expect(checks.find((c) => c.kind === 'dailyHours')).toMatchObject({ measured: 3.2, sample: 30, scope: 'X1C05' });
+  });
+
+  it('emits no dailyHours row when every matching printer entry is suppressed', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      usage_by_printer: [
+        { printer_id: 3, printer_name: 'X1C04', hours_per_day: null, observed_days: 60, sample: 20 },
+        { printer_id: 4, printer_name: 'X1C05', hours_per_day: null, observed_days: 90, sample: 30 },
+      ],
+    };
+    const profile = { id: 9, name: 'X1C', power_watts: 200, daily_usage_hours: 8 } as CalculatorPrinter;
+    const checks = selectRealityChecks(allNull, filament, profile, defaults, noOverrides);
+    expect(checks.find((c) => c.kind === 'dailyHours')).toBeUndefined();
+  });
 });
 
 describe('checkKey', () => {
@@ -282,6 +419,14 @@ describe('realityCheckImpact', () => {
   it('spool cost has no price effect — the quote prices from sale price', () => {
     expect(impact({ kind: 'spoolCost', assumed: 25, measured: 18 })).toBeNull();
   });
+
+  it('a higher measured electricity tariff raises the price', () => {
+    expect(impact({ kind: 'tariff', assumed: 0.15, measured: 0.25 })!).toBeGreaterThan(0);
+  });
+
+  it('a higher measured printing time raises the price', () => {
+    expect(impact({ kind: 'time', assumed: 6, measured: 10 })!).toBeGreaterThan(0);
+  });
 });
 
 describe('foldSessionOverrides', () => {
@@ -357,6 +502,55 @@ describe('pickTimeAccuracy', () => {
   it('falls back to the overall accuracy', () => {
     const other = { id: 9, name: 'Nope' } as CalculatorPrinter;
     expect(pickTimeAccuracy(insights, other)).toMatchObject({ accuracy_pct: 104, scope: null });
+  });
+
+  // --- T-027: suppressed (null) accuracy_pct behaves like a below-sample entry ---
+
+  it('excludes a suppressed (null) printer entry from the fleet average', () => {
+    const partial: CalculatorInsights = {
+      ...insights,
+      time_accuracy: {
+        overall_pct: 104,
+        sample: 50,
+        by_printer: [
+          { printer_id: 3, printer_name: 'X1C04', accuracy_pct: null, sample: 10 },
+          { printer_id: 4, printer_name: 'X1C05', accuracy_pct: 130, sample: 20 },
+        ],
+      },
+    };
+    const profile = { id: 9, name: 'X1C' } as CalculatorPrinter;
+    // Only X1C05 (valid) contributes — X1C04's suppressed entry is excluded from
+    // both the numerator and the sample denominator.
+    expect(pickTimeAccuracy(partial, profile)).toMatchObject({ accuracy_pct: 130, sample: 20, scope: 'X1C05' });
+  });
+
+  it('falls through to the overall figure once every matching printer entry is suppressed', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      time_accuracy: {
+        overall_pct: 104,
+        sample: 50,
+        by_printer: [
+          { printer_id: 3, printer_name: 'X1C04', accuracy_pct: null, sample: 10 },
+          { printer_id: 4, printer_name: 'X1C05', accuracy_pct: null, sample: 20 },
+        ],
+      },
+    };
+    const profile = { id: 9, name: 'X1C' } as CalculatorPrinter;
+    expect(pickTimeAccuracy(allNull, profile)).toMatchObject({ accuracy_pct: 104, scope: null });
+  });
+
+  it('returns null when both the matching printer entries and the overall figure are suppressed', () => {
+    const allNull: CalculatorInsights = {
+      ...insights,
+      time_accuracy: {
+        overall_pct: null,
+        sample: 50,
+        by_printer: [{ printer_id: 3, printer_name: 'X1C04', accuracy_pct: null, sample: 10 }],
+      },
+    };
+    const profile = { id: 9, name: 'X1C' } as CalculatorPrinter;
+    expect(pickTimeAccuracy(allNull, profile)).toBeNull();
   });
 });
 

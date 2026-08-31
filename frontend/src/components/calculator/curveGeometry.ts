@@ -9,8 +9,29 @@ export function sizeDomainMax(k: number, exampleUnitCost?: number): number {
   return exampleUnitCost !== undefined && exampleUnitCost > base ? exampleUnitCost * 1.1 : base;
 }
 
-export function qtyDomainMax(exampleQty?: number): number {
-  return exampleQty !== undefined && exampleQty > QTY_DOMAIN[1] ? exampleQty * 1.1 : QTY_DOMAIN[1];
+/** T-049: previously this only ever grew past QTY_DOMAIN[1]=100 for a large
+ *  example quantity — unlike `sizeDomainMax`, which always contains K
+ *  (`k * 10`), a stored `qty_k` (kq) at or beyond 100 rendered the KQ handle
+ *  clamped to the domain's right edge, so a single click or arrow key
+ *  collapsed it back down. `kq` is optional and stretches the domain to
+ *  always contain `kq + 1` (the point the KQ handle actually renders at),
+ *  mirroring sizeDomainMax's K coverage — but additively (`kq + KQ_HEADROOM`),
+ *  not multiplicatively (`k * 10`). K's handle sits at a *constant* fraction
+ *  (1/10) of its domain no matter how large K gets, so a live drag re-reading
+ *  that domain after every `onChange` compounds K by ~10x per pointer event
+ *  (T-006) — an anchor is required to freeze the domain for the gesture. An
+ *  additive relationship keeps the domain's growth rate with respect to kq at
+ *  exactly 1, so the same live-domain read-back can, at worst, add a constant
+ *  (`KQ_HEADROOM`) per event — linear drift at the plot's clamped right edge,
+ *  never the K bug's exponential blow-up — so no drag anchor is needed here.
+ *  Below the pre-existing 100 floor this is byte-for-byte the old formula:
+ *  `kq` only ever pushes the domain out past where it already was. */
+const KQ_HEADROOM = 50;
+
+export function qtyDomainMax(exampleQty?: number, kq?: number): number {
+  const kqFloor = kq !== undefined && Number.isFinite(kq) && kq > 0 ? kq + 1 : 0;
+  const base = kqFloor > QTY_DOMAIN[1] ? kqFloor + KQ_HEADROOM : QTY_DOMAIN[1];
+  return exampleQty !== undefined && exampleQty > base ? exampleQty * 1.1 : base;
 }
 
 /** Linear map of a pointer x (page px) onto [min, max] over the plot area

@@ -7993,7 +7993,7 @@ export default {
     syncZohoPrices: "Синхронизировать цены",
     syncProgress: "{{done}} / {{total}}",
     syncSummary:
-      "{{updated}} обновлено · {{unchanged}} без изменений · {{skipped}} без цены дилера · {{missing}} отсутствует в Zoho",
+      "{{updated}} обновлено · {{unchanged}} без изменений · {{skipped}} без цены дилера · {{missing}} отсутствует в Zoho · {{unpriced}} без цены (вес неизвестен)",
     syncFailed: "Синхронизация остановлена: {{error}}",
     syncTimedOut: "Истекло время ожидания синхронизации; некоторые блоки могли всё же примениться",
     zohoDuplicateWarning: "Филамент для {{name}} уже существует",

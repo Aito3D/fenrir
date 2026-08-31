@@ -3,17 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { TrendingDown } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader } from '../Card';
-import { rowCls, stickyTdCls, tdCls, thCls } from './shared';
+import { rowCls, stickyTdCls, tdCls, thCls, TOOLTIP } from './shared';
 import { formatMoney, type CurvePoint } from '../../utils/pricing';
-
-// Dark tooltip matching the app's other charts (recharts defaults to white).
-const TOOLTIP = {
-  contentStyle: { background: 'var(--color-bambu-dark-secondary)', border: '1px solid var(--color-bambu-dark-tertiary)', borderRadius: 8, fontSize: 12, padding: '6px 10px' },
-  labelStyle: { color: 'var(--color-bambu-gray)', marginBottom: 2 },
-  itemStyle: { color: '#fff', padding: 0 },
-  cursor: { stroke: 'var(--color-bambu-gray)', strokeWidth: 1 },
-} as const;
-
 
 /** Unit price versus quantity — the curve the margin model draws for this
  *  job. Points come from unitPriceCurve() in the page (full recompute per

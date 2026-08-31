@@ -6584,3 +6584,999 @@ comment already promises (`zoho_filaments.py` ~415-419): a failure recorded unde
 credentials must not keep answering "Zoho is down" once they have just been rotated to
 (presumably working) new ones. The superseded failure still propagates to its own caller, and
 T-095's approved user-visible effect is preserved.
+
+## T-006 — 2026-08-28 — MarginCurvePreview's K drag handle no longer compounds K through a domain it is itself moving (user-approved behavior change)
+
+`MarginCurvePreview`'s size chart renders `DragHandle`'s K grip against a domain
+(`sizeMax = sizeDomainMax(k, ...)`) computed directly from the live `d.margin_k`. `DragHandle`
+interprets every `pointermove`'s `clientX` against its current `min`/`max` props to derive the new
+value and calls `onChange` (wired to `onDragK`, which writes straight back into `d.margin_k`).
+Because the domain was derived from the same `k` the handle was actively dragging, each
+`pointermove` re-derived K against a domain that K's own previous move had just shifted, compounding
+K by roughly ×10 per event over the course of a single real drag gesture (held at a fixed screen
+position, nine events in a row already reached 216000 from a starting K of 33) instead of settling
+on the pointer-implied value.
+
+user-approved 2026-08-28: "mid-drag the size chart's X domain freezes at the K value the drag
+started with instead of tracking the live (and, until now, runaway) K; the drag control works as an
+ordinary drag instead of blowing up the value on the first move."
+
+Fixed with a new `kDragAnchor` piece of state in `MarginCurvePreview`, and two new optional
+`onDragStart`/`onDragEnd` callback props on `DragHandle` (fired from its existing `onPointerDown`
+and `onPointerUp` handlers, before their respective `onChange`/`releasePointerCapture` calls).
+`onDragStart` snapshots `k` into `kDragAnchor`; `sizeMax` is computed from `kDragAnchor ?? k`, so
+every `pointermove` for the duration of one drag is measured against the domain that existed at
+pointerdown, not the domain the drag has since moved; `onDragEnd` clears `kDragAnchor` back to
+`null`, so the domain (and the grip's `aria-valuemax`) immediately resumes tracking the live K again
+once the pointer is released — unchanged from before this fix for every non-drag path (typed edits,
+programmatic updates, initial render). No other prop, export, or component's behavior changed;
+`DragHandle`'s two new callbacks are optional and every other caller (`CalculatorQuantityCurve`'s
+own K/Q grips) omits them and is unaffected.
+
+Regression coverage added in the new
+`frontend/src/__tests__/components/calculator/MarginCurvePreview.test.tsx`: one test drives eight
+`pointermove` events at a fixed `clientX` after `pointerDown` and asserts every one of the nine
+`onDragK` calls (1 down + 8 moves) reports the same pointer-implied value (99, from a starting K of
+33) instead of compounding — the pre-fix behavior would have reached 216000 by the last call; a
+second test confirms the domain still tracks the live K normally (`aria-valuemax` reflects
+`k * 10`) when no drag is in progress, guarding the freeze itself from leaking outside a drag.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — no probe drives a K
+drag gesture, so none pinned the old compounding behavior. `SURFACE.md` regenerated via
+`bash tools/gen_surface_calc.sh`: no diff from this task alone (`DragHandle`'s two new props are
+optional callback props on an existing exported component, not new exports, DDL, routes, or
+permission gates).
+
+## T-001 + T-002 — 2026-08-28 — MECHANICAL SURFACE DIFF, not a behavior change (user-approved re-baseline)
+
+T-001 extracted the dark-tooltip style object — byte-identical `contentStyle`/`labelStyle`/
+`itemStyle`/`cursor` — that `CalculatorQuantityCurve.tsx` and `MarginCurvePreview.tsx` each defined
+verbatim as a local `const` into a single `export const TOOLTIP` in
+`frontend/src/components/calculator/shared.tsx`, and pointed both components' `<Tooltip {...TOOLTIP}
+/>` at the shared constant instead of their own copy.
+
+T-002 extracted `CalculatorFilamentsPanel`'s chunked, timeout-guarded, QueryClient-persisted Zoho
+sync-walk state machine — unchanged in its chunking, timeout, retry, and progress-reporting logic —
+into a new hook, `export function useZohoFilamentSync(filaments: CalculatorFilament[])`, in the new
+file `frontend/src/components/calculator/useZohoFilamentSync.ts`. `CalculatorFilamentsPanel` now
+calls the hook instead of owning the sync-walk logic inline, so the panel is left with only its
+listing/filtering UI, create-edit form, and dialog wiring.
+
+**This is not a behavior change.** Both extractions moved existing code verbatim (or with only the
+mechanical renames a `const`-to-hook or `const`-to-shared-module move requires) — no branch,
+ordering, timeout value, chunk size, or retry/backoff constant changed, and every existing caller of
+the affected components keeps its previous rendered output and sync behavior. `SURFACE.md`
+regenerated via `bash tools/gen_surface_calc.sh` diffs by exactly two new lines — `export const
+TOOLTIP` and `export function useZohoFilamentSync` — both newly-exported symbols created by these
+two refactors, alphabetically sorted in with the rest; no route, DDL, permission gate, or i18n key
+changed. User approved re-baselining `SURFACE.md` for these two mechanical additions on 2026-08-28.
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged.
+
+## T-007 — 2026-08-29 — useDefaultsForm.save() no longer reverts edits typed while its PATCH is in flight (user-approved behavior change)
+
+`useDefaultsForm`'s save mutation used a base `useMutation({ onSuccess })` that read `toFormRef.
+current(saved)` and unconditionally called `setSeed`/`setForm` with the full server response —
+overwriting *every* field, including one the operator had typed into after clicking Save but before
+the PATCH resolved. `save()` now snapshots `dirtyKeys` at click-time into `submittedKeys` and passes
+`onSuccess` as `mutate()`'s own per-call option (immune to TanStack Query's onSuccess-rebinding,
+per the identical landmine already documented on `useEntityCrudMutations`) rather than as a
+`useMutation`-level option. That per-call `onSuccess` re-seeds only the keys captured in
+`submittedKeys`, merging them into `seed`/`form` field-by-field instead of replacing the whole
+object.
+
+Visible delta: a field edited after Save was clicked and before the response lands keeps the
+operator's typed value and stays dirty (the Save bar stays open for it) instead of being silently
+reverted to the pre-edit server row. The common case — no further edits while the PATCH is in
+flight — is unchanged: `submittedKeys` equals every key that was dirty at click-time, so the merge
+re-seeds all of them and is indistinguishable from the old full re-seed; every field matches the
+server row and the Save bar closes.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — no probe drives a second
+edit mid-flight. `SURFACE.md` regenerated via `bash tools/gen_surface_calc.sh`: no diff (no new
+export; `useDefaultsForm`'s returned `save` keeps the same signature).
+
+## T-008 — 2026-08-29 — spoolCost reality-check row no longer offers "Update profile" for a value the backend would reject (user-approved behavior change)
+
+`CalculatorRealityCheckCard`'s spoolCost row rendered its "Update profile" button whenever
+`canUpdate && check.filamentId !== undefined`, regardless of `check.measured`. The backend's
+`CalculatorFilamentUpdate.cost_per_kg` is bounded `gt=0, le=100_000_000`; a material whose spools
+were all logged at a cost of 0 (or, at the other extreme, above the ceiling) produces an
+`avg_cost_per_kg` the API rejects with a 422. A new `postableSpoolCost` helper — mirroring the
+existing `postableDailyUsageHours` guard already used by the row above it — computes the exact
+value `onUpdateFilamentCost` would post and returns `null` unless `0 < measured <= 100_000_000`; the
+button is now gated on `postableSpoolCost(check) !== null` and posts that computed value.
+
+Visible delta: when a material's measured spool average is 0 (or exceeds the ceiling), the
+"Update profile" button — which previously always rendered and always produced a 422 error toast on
+click — no longer appears. The rest of the row (label, figures, delta badge, dismiss control) is
+unchanged, and every spoolCost row with a measured value inside the valid range renders and behaves
+exactly as before.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — no probe drives a
+zero-cost spool. `SURFACE.md` regenerated via `bash tools/gen_surface_calc.sh`: no diff
+(`postableSpoolCost` is a local, unexported helper).
+
+## T-009 — 2026-08-29 — buildWaterfall no longer drops a genuinely negative marge step (user-approved behavior change)
+
+`buildWaterfall`'s per-step filter dropped any step with `value <= 0.005`, conflating two distinct
+cases: rounding-noise/zero steps (intentionally dropped so a blank grid row isn't rendered for a
+`0.00` cost) and a genuinely negative step, which can occur for the combined marge when a legacy
+filament row was backfilled with a negative `margin_pct` and prices below cost. Dropping a negative
+step silently removed one of the raw components that, by construction, exactly sum to `total_ttc`,
+so the visible steps' cumulative walk stopped reconciling with the printed total. The condition is
+now `value >= 0 && value <= 0.005`, so only true zero/near-zero steps are dropped and a negative
+step is kept and rendered as its own signed step.
+
+Visible delta: with a negative combined margin, the breakdown/waterfall/quote UI now shows a
+signed "marge" step and the cumulative walk (and the sum of all visible steps) matches `total_ttc`
+exactly, where before the step vanished and the chart/legend/line items disagreed with the printed
+total. The common case — every component non-negative, as in every existing pricing scenario except
+a backfilled negative-margin filament — is unchanged: zero/near-zero steps are dropped exactly as
+before.
+
+`python3 tools/snapshot.py verify`: 10/10 golden probes match unchanged — the `calc-pricing` golden
+probe (10/10 MATCH) drives only non-negative-margin scenarios. `SURFACE.md` regenerated via
+`bash tools/gen_surface_calc.sh`: no diff (`buildWaterfall`'s signature and exported step shape are
+unchanged; only its internal filter condition changed).
+
+## T-003 — 2026-08-29 — `overall_pct` in `_failure_rates` and `_time_accuracy` no longer leaks a MIN_SAMPLE-suppressed residual by subtraction (user-approved behavior change)
+
+Audit `audit-security` found that T-106/T-117/T-120's residual-suppression rule — already applied
+to `_spool_costs` — was never extended to `_failure_rates` or `_time_accuracy` in
+`calculator_insights.py`, even though both folds have the identical shape: an `overall_pct`
+computed over the whole population, published alongside per-printer rows that each carry an exact
+`sample` count. Within one window, `overall_pct * sample` minus the sum of the published
+`by_printer` rows' contributions recovers the completed/failed counts (for `_failure_rates`) or the
+summed accuracy (for `_time_accuracy`) of any under-sampled printer whenever exactly one printer
+group falls below `MIN_SAMPLE` — the exact scenario `schemas/calculator.py`'s
+`InsightsWindowDays` docstring says the fixed `days` allowlist (T-128) exists to prevent a caller
+from differencing across, but which was never closed *within* a single window here. Runs with no
+`printer_id` at all (a printer later deleted, or a log entry never attributed) are an equally live
+source of the same residual, since they are counted in `overall`/`accuracies` but can never appear
+in `by_printer` regardless of how many there are — the same shape as `_spool_costs`' unbranded-spool
+residual.
+
+The fix applies T-106's exact rule to both folds: suppress `overall_pct` (keep `sample` as-is) when
+`overall sample - sum(published by_printer samples)` leaves a residual strictly between 0 and
+`MIN_SAMPLE`. `_failure_rates` computes `published_printer_sample = sum(row["sample"] for row in
+by_printer)` and gates `overall_pct` on `overall_sample >= MIN_SAMPLE and not (0 < residual <
+MIN_SAMPLE)` (the original `overall_sample >= MIN_SAMPLE` check is unchanged, ANDed with the new
+guard). `_time_accuracy` mirrors this with `residual = len(accuracies) - published_printer_sample`,
+gating on `accuracies and not (0 < residual < MIN_SAMPLE)`. Neither `by_printer`, `by_material`,
+nor any other field changed.
+
+**User-visible effect (as approved):** on installs where exactly one printer sits below
+`MIN_SAMPLE`, the calculator's reality-check card would stop showing the overall failure-rate and
+time-accuracy rows it shows today. Every install where every printer is either fully above
+`MIN_SAMPLE` or contributes nothing measurable is unaffected — `overall_pct` publishes exactly as
+before.
+
+Tests added/updated in `test_calculator_insights.py`: `test_failure_overall_suppressed_when_residual_below_min_sample`
+and `test_time_accuracy_overall_suppressed_when_residual_below_min_sample` pin case (a) — a
+published printer plus a handful of unattributed runs leaving a residual of 3 (in `(0,
+MIN_SAMPLE)`) suppresses `overall_pct` while `by_printer` is untouched.
+`test_failure_overall_present_when_residual_at_min_sample` and
+`test_time_accuracy_overall_present_when_residual_at_min_sample` pin the boundary — a residual of
+exactly `MIN_SAMPLE` still publishes `overall_pct` normally. Three pre-existing tests whose
+fixtures happened to be exactly this leak's repro case were updated to the new (correct) behavior
+rather than left pinning the vulnerability: `test_time_accuracy_by_printer_suppressed_below_min_sample`
+(a lone under-sampled printer — residual 4 — now expects `overall_pct is None`, where it previously
+asserted `overall_pct` was "unaffected by per-printer suppression", which was the leak itself) and
+`test_time_accuracy_lo_bound_is_inclusive` / `test_time_accuracy_hi_bound_is_inclusive` (each was a
+single in-band row on a lone printer, residual 1; both now pad in `MIN_SAMPLE - 1` mid-band
+baseline rows so the band-edge check they exist to pin is isolated from the new residual guard, with
+`overall_pct` recomputed for the padded dataset: 90.0 and 120.0 respectively).
+`test_time_accuracy_by_printer_published_at_min_sample` (residual 0) gained an explicit
+`overall_pct == 100.0` assertion. The `_reference_time_accuracy` verbatim-copy used by the T-076
+SQL-prefiltering differential test was given the identical residual guard, so that test continues
+to prove only the SQL-prefiltering refactor is behavior-preserving, not this fold's business rule.
+Every other pre-existing `_failure_rates`/`_time_accuracy` test (single-printer, fully-published,
+or fully-suppressed-by-`MIN_SAMPLE` fixtures) passes unchanged — none of their fixtures produce a
+`0 < residual < MIN_SAMPLE` case.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean on both changed files.
+Full backend suite via `tools/coverage_calc.sh backend`: 12523 passed, 1 skipped, 1 failed
+(`test_slicer_stall_timeout.py::TestSliceIsNotCutOffWhileProgressing::test_a_slow_slice_that_reports_progress_completes`,
+a documented parallel-load flake — 18/18 passed alone) under `-n 30`; no new failure.
+`tools/coverage_calc.sh backend`: SCOPED statements 814/818 = 99.51% (branches 149/154 = 96.75%);
+`calculator_insights.py` itself at 96.92%, with all four uncovered lines pre-existing and untouched
+by this change (`_time_accuracy`'s `if printer_id is not None`, `_power_draw`'s per-row bucket
+accumulation, `_daily_usage`'s observed-days gate, `_spool_costs`'s `if not material: continue`
+dead-code guard) — every new residual-guard branch in both folds is exercised by the tests above.
+`tools/snapshot.py verify`: 10/10 probes match, none re-recorded — `calc-insights-pure` only
+exercises this module's constants, `_resolve_duration`, and `_split_materials`, none of which
+changed. `SURFACE.md` (`bash tools/gen_surface_calc.sh`): byte-identical — no export or route
+changed.
+
+## T-022 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** "one Shift+ArrowRight on the K grip would no longer double
+margin_k (33 -> 66); it would move it by a fixed, non-compounding amount, and repeated left/right
+presses would return to the starting value."
+
+`DragHandle`'s arrow-key step was `span * (shift ? 0.1 : 0.01) * dir`, where `span = max - min`.
+For the K handle, `max` is `sizeDomainMax(k, ...)` = `k * 10` (`MarginCurvePreview.tsx`), so a
+Shift+Arrow step was actually `10% * (k * 10) = k` — adding 100% of K to itself, doubling it every
+press; held with OS key-autorepeat this ran `margin_k` to the 1e8 ceiling in well under a second.
+Plain Arrow (`1% * (k * 10) = 10% of k`) meant ArrowRight then ArrowLeft were not inverses either
+(33 -> 36.3 -> 32.67).
+
+Fix: when the handle's own domain scales with the value it drags (signalled by the presence of
+`onDragStart`/`onDragEnd`, which only the K handle wires up — the same signal the pointer-drag path
+already uses to freeze the domain for the gesture, per the existing `kDragAnchor` mechanism in
+`MarginCurvePreview.tsx`), the keyboard step is now computed from a fixed, value-independent
+quantity instead of `span`: one unit of the same order-of-magnitude grid `roundK` itself snaps
+values to (`scale = 10 ** (floor(log10(value)) - 2)`), 1 unit per plain Arrow and 10 units per
+Shift+Arrow. This scale is constant across an entire decade of `value`, so repeated same-direction
+presses add/subtract a constant (no compounding) and ArrowRight/ArrowLeft cancel exactly as long as
+`value` stays within the same order of magnitude. The KQ handle passes no `onDragStart`/`onDragEnd`
+(its domain, `qtyMax`, never depended on the dragged value) and keeps the original
+percent-of-`span` step unchanged, per its existing, already-correct behavior.
+
+Example: `margin_k = 33`, Shift+ArrowRight now yields `34` (was `66`); one more Shift+ArrowRight
+yields `35`, then two Shift+ArrowLeft presses return to `34`, then exactly `33` — where the old
+formula doubled K on every ArrowRight press regardless of its current value (33 -> 66 -> 132 -> ...)
+and, on ArrowLeft, always subtracted 100% of the *current* (already-doubled) K, so it never
+retraced the same path back down.
+
+Tests: `CalculatorSettingsPanelDrag.test.tsx`'s `dragging K writes the field and opens the Save
+bar` updated from the old pinned `33 -> 66` to `33 -> 34`. A new test, `repeated Shift+arrow
+presses on the K grip do not compound and round-trip exactly`, pins two consecutive
+Shift+ArrowRight presses (33 -> 34 -> 35, not 33 -> 66 -> 132) followed by two Shift+ArrowLeft
+presses returning exactly to 33. The KQ pinning test (`dragging KQ writes the field...`, expecting
+`15`) is unchanged — the KQ handle's formula was not touched.
+
+Verification: `cd frontend && npm run build` clean (static/ reverted before commit); `npx eslint
+src/components/calculator/` clean. `CalculatorSettingsPanelDrag.test.tsx` (6/6),
+`DragHandle.test.tsx` (4/4), `MarginCurvePreview.test.tsx`, and `CalculatorSettingsPanel.test.tsx`
+all pass (38 tests total across the latter three files). `tools/coverage_calc.sh frontend`: scoped
+statements 95.73% (1391/1453), at/above the 95.72% baseline floor. `tools/snapshot.py verify`:
+10/10 probes match (no probe drives keyboard stepping). `bash tools/gen_surface_calc.sh | diff -
+SURFACE.md`: empty — the new step-scale logic is an unexported, module-local branch inside
+`DragHandle.tsx`'s existing `onKeyDown`, not a new export.
+
+## T-023 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** commit `a7e539d9f`, `frontend/src/pages/CalculatorPage.tsx` +
+`frontend/src/hooks/useCalculatorState.ts` — the reality-check `onDismiss` handler now uses a
+functional update (`set((s) => ({ dismissedChecks: [...s.dismissedChecks, key] }))`; `set` gained a
+function-updater overload, existing object-patch callers unchanged) instead of spreading the
+render-closure `state` snapshot.
+
+Previously `onDismiss` read `dismissedChecks` off the `state` value captured by the enclosing
+render's closure. If two reality-check rows were dismissed within the same 150ms leave-animation
+window, both dismiss handlers closed over the same pre-dismissal `state`, so the second `set` call
+overwrote the first: only the later key survived in `dismissedChecks`, and the first row's
+animation reappeared moments later as its dismissal was silently lost (not persisted). Routing the
+update through a function updater reads the latest `dismissedChecks` at apply time instead of the
+stale closure snapshot, so both dismissals are recorded.
+
+Visible delta: dismissing two reality-check rows within the 150ms leave-animation window now
+records BOTH dismissals, where previously the second write clobbered the first, the first row
+re-appeared, and the loss was persisted. Single dismissals are byte-identical to before — the
+function updater and the object-patch spread it replaces compute the same next state when only one
+dismissal is in flight.
+
+## T-024 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** "linked filaments with no stored spool weight whose Zoho item
+name carries no weight would stop being repriced by the sync and would show up in the chunk
+counts as unpriced instead of updated."
+
+`POST /api/v1/calculator/filaments/zoho-sync` computed `weight = filament.spool_weight_kg or
+product.spool_weight_kg or 1.0` before dividing the Zoho dealer price by it. The route's own
+docstring claimed "the filament's own stored weight wins", but that only holds while the stored
+weight is non-null — `CalculatorFilamentUpdate.spool_weight_kg` is explicitly nullable, and a
+linked filament can carry `spool_weight_kg IS NULL` (unlinking clears it and a subsequent
+re-link does not require it). When that happens the fallback becomes `product.spool_weight_kg`,
+which is itself a silent 1 kg default (`ParsedName(..., 1.0, True)`,
+`zoho_filaments.py::parse_filament_name`) whenever the Zoho item name carries no weight segment
+at all (`product.weight_inferred`). `product.weight_inferred` was never consulted by the sync,
+so a spool of any other real size divided the dealer price by an assumed 1 kg, silently
+re-scaling `cost_per_kg` and the derived `sale_price_per_kg`, and the row was reported as
+`updated` with a fresh `zoho_synced_at` stamp as if a real price had been applied.
+
+Fixed in `backend/app/api/routes/calculator.py`: before computing `weight`, the row is now
+skipped when `filament.spool_weight_kg is None and product.weight_inferred` — nothing is
+written, `zoho_synced_at` is left untouched, and the row is counted under a new `unpriced`
+outcome instead of `updated`. When either condition is false (the filament has its own stored
+weight, or the Zoho name did carry a real weight so `product.weight_inferred` is false),
+behavior is byte-identical to before: the `or 1.0` fallback is now dead code precisely because
+`parse_filament_name` never returns a non-inferred weight of 0 or less.
+
+`CalculatorFilamentSyncResponse` gained the `unpriced: int` field (the five outcome counts now
+sum to `processed`, not four); the calculator settings panel's sync summary line and its
+`useZohoFilamentSync` chunk-total accumulator were extended to surface the new count, and
+`CalculatorFilamentSyncResult` in `frontend/src/api/client.ts` gained the matching field. All 13
+locale files' `calculator.syncSummary` string were extended with an `{{unpriced}}` clause to
+keep i18n parity.
+
+Visible delta: a linked filament with `spool_weight_kg IS NULL` whose linked Zoho product's name
+carries no weight segment is no longer repriced from the assumed 1 kg default — its
+`cost_per_kg`/`sale_price_per_kg` stay untouched, `zoho_synced_at` stays null, and the sync
+response (and the settings panel's summary line) counts it under `unpriced` instead of
+`updated`. Every other linked filament — stored weight present, or the Zoho name did carry a
+real weight — is priced exactly as before.
+
+Tests: `backend/tests/unit/test_calculator_zoho_sync.py` —
+`test_null_stored_weight_with_inferred_product_weight_is_left_unpriced` (null stored weight +
+`weight_inferred` product → `unpriced: 1`, `updated: 0`, cost/sale price untouched,
+`zoho_synced_at` stays null), `test_stored_weight_present_overrides_an_inferred_product_weight`
+(stored weight present, even against an inferred-weight product → priced normally, `unpriced:
+0`), `test_null_stored_weight_with_a_real_product_weight_is_priced_normally` (null stored
+weight against a real, non-inferred product weight → priced normally, `unpriced: 0`).
+`test_counts_sum_to_processed` extended to include the new `unpriced` term.
+
+Verification: `ruff check`/`ruff format --check` clean on the touched backend files.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_zoho_sync.py
+backend/tests/unit/test_calculator_zoho_routes.py -q` — 41 passed. `bash tools/coverage_calc.sh
+backend` — scoped statements 817/821 = 99.51%, at the baseline floor. `cd frontend && npm run
+build` clean (static/ reverted before commit); `npx eslint` clean on every touched frontend
+file; `node scripts/check-i18n-parity.mjs` — all 12 non-English locales in parity with en;
+`npx vitest run src/__tests__/components/CalculatorSettingsPanels.test.tsx
+src/__tests__/i18n/locales.test.ts` — 82 passed. `bash tools/coverage_calc.sh frontend` — scoped
+statements 96.01% (1396/1454), at/above the 96.00% baseline floor. `./venv/bin/python3
+tools/snapshot.py verify` — `calc-pydantic-schemas` mismatched (the new `unpriced` field on
+`CalculatorFilamentSyncResponse`'s JSON schema) and was re-recorded; the other 9 probes
+(including `calc-openapi`, which only captures `paths`, not `components/schemas`) already
+matched and were re-recorded unchanged. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` —
+empty; a new field on an existing schema class does not change the surface.
+
+## T-025 — 2026-08-29 — user-approved behavior change
+
+**Approved change (verbatim):** "a PATCH that would invert the margin pair against a
+concurrently-committed change now returns 422 instead of succeeding."
+
+`update_calculator_defaults`'s margin min/max ordering check
+(`if defaults.margin_max_mult < defaults.margin_min_mult`) validated the in-memory ORM object
+the request's own `_get_or_create_defaults` had read — not the row as it actually stands at
+commit time. `useDefaultsForm.save` PATCHes only the dirty keys, so two settings tabs saving at
+the same time can send disjoint single-field bodies: request A sends `margin_min_mult: 1.5`
+(valid against the stored max of 1.6, which A's own read still shows); request B sends
+`margin_max_mult: 1.4` (valid against the stored min of 1.15, which B's own read — taken before
+A committed — still shows). Both individually-valid checks pass and both PATCHes commit,
+leaving the stored row at max 1.4 < min 1.5 — an inverted pair with no error anywhere. From
+then on `sizeMargin`'s `if (k <= 0 || mMax < mMin) return mMin` guard (`utils/pricing.ts:164`)
+silently flattens every quote to a constant ×1.5 margin with no size curve, and nothing in the
+UI surfaces it until someone reopens the settings tab.
+
+Fixed in `backend/app/api/routes/calculator.py` by moving the pair check from a Python-level
+comparison after the fact into the `WHERE` clause of the `UPDATE` statement itself, so the
+check and the write happen as a single atomic SQL operation against whatever is actually
+stored at that instant — not a snapshot a possibly-stale read produced earlier in the request.
+Only the genuinely racy case needs the extra guard: when the PATCH body carries exactly one of
+`margin_min_mult` / `margin_max_mult`, the `UPDATE` gains a `WHERE` term comparing the new
+value against the *other* field's live column (e.g. sending only `margin_min_mult` adds
+`WHERE calculator_defaults.margin_max_mult >= :new_min`); zero rows affected means the guard
+failed, which is now treated as the same 422 the old code raised, with the same message. When
+both fields are sent together the pair is already validated as a unit by
+`CalculatorDefaultsUpdate`'s `model_validator`, and when neither is sent there is nothing to
+guard, so both cases skip the extra `WHERE` term and update unconditionally exactly as before.
+SQLite (aiosqlite, WAL) serializes writers at the statement level, so whichever PATCH's
+`UPDATE` executes second necessarily sees the first one's already-committed value in its
+`WHERE` clause — the loser of the race is rejected instead of silently inverting the stored
+pair.
+
+Visible delta: only the interleaved-single-field race described above — for a single request in
+isolation the outcome (status, message, stored row) is unchanged: both fields sent together
+(schema-level 422, message and status unchanged), one field sent alone against an
+already-consistent stored row (same 422, same message, same "equal is allowed" boundary), or
+unrelated fields only, all match BASE. Reaching that outcome now goes through an unconditional
+Core `update(...).values(**changes)` instead of a per-field ORM `setattr`, so two invariants the
+first version of this fix got wrong needed a follow-up (fix-up, this same task, second attempt):
+a no-op PATCH (every sent value equal to what is already stored) must skip the `UPDATE` entirely
+rather than issue it unconditionally — otherwise `updated_at`'s `onupdate=func.now()` fires on a
+request that changed nothing, which the old `setattr` path's dirty-tracking always suppressed —
+and a PATCH against a row that is *already* stored inverted (pre-existing bad data, or written
+outside the API) must still 422 even when the request touches neither margin field, since the
+atomic `WHERE` guard only ever fires for the one-sided racing case and never runs at all for an
+unrelated-field or no-op PATCH. Both are restored by comparing each sent value against the
+stored row before deciding what to write (skipping the `UPDATE` if nothing differs) and by
+re-checking the margin pair unconditionally whenever the request itself did not touch either
+margin field, rolling back (so an unrelated field change is not persisted) if that check fails.
+
+Tests: `backend/tests/unit/test_calculator_routes.py` —
+`test_patch_concurrent_single_field_race_loser_rejected` pins the race deterministically
+without two genuinely-overlapping live sessions (this suite's single in-memory SQLite
+connection cannot hold two concurrent transactions open without deadlocking): request A's
+PATCH (raising min to 1.5, valid against the untouched stored max of 1.6) is committed first;
+request B's own `_get_or_create_defaults` read is then substituted (via
+`sqlalchemy.orm.attributes.set_committed_value`, which does not mark the object dirty or write
+anything back) to return the pre-A snapshot (min 1.15 / max 1.6) it would have seen had its
+read genuinely run before A committed; B's PATCH then lowers max to 1.4 — valid against B's own
+stale snapshot, but not against what is actually stored. Asserted against the pre-fix code
+(temporarily reverting the route change) that this test fails there — 200, with the row left at
+the inverted min 1.5 / max 1.4 — confirming it actually exercises the race rather than passing
+vacuously. All pre-existing `TestCalculatorDefaults` cases (`test_patch_curve_fields_round_trip`,
+`test_patch_rejects_inverted_pair_sent_together`,
+`test_patch_rejects_inverted_pair_against_stored_row`, `test_patch_roundtrip`, and the
+out-of-range/infinite/ceiling parametrizations) pass unchanged.
+
+Verification: `ruff check`/`ruff format --check` clean on the touched files.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_routes.py -q` — 75 passed.
+`bash tools/coverage_calc.sh backend` — full suite (`-n 30`, one pre-existing unrelated flake in
+`test_library_slice_api.py` that passes in isolation) — scoped statements 827/831 = 99.52%,
+above the 99.51% baseline floor. `./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes
+matched unchanged (no schema or DDL change). `bash tools/gen_surface_calc.sh | diff - SURFACE.md`
+— empty.
+
+**Fix-up (second attempt, same task):** the blind verifier caught the two regressions described
+above empirically — a value-unchanged PATCH bumped `updated_at`, and a PATCH against an
+already-inverted stored row (with neither margin field in the request body) returned 200 instead
+of 422. Fixed in `update_calculator_defaults` by filtering `changes` down to an
+`effective_changes` dict (only keys whose sent value differs from `getattr(defaults, key)`)
+before building the `UPDATE`, skipping the statement entirely when it is empty, and by adding an
+unconditional `if not margin_touched and defaults.margin_max_mult < defaults.margin_min_mult`
+check (rolling back before raising) that only fires when neither margin field is among the
+*effective* changes — the atomic `WHERE`-guarded single-field case and the schema-validated
+both-fields-together case are left to their existing checks so the race fix from the first
+attempt is untouched. New tests:
+`test_patch_noop_does_not_write_or_bump_updated_at` (spies on `AsyncSession.execute` to assert no
+`UPDATE calculator_defaults` statement is issued for a same-value PATCH, and that `updated_at` is
+unchanged in both the response and a follow-up `GET`) and
+`test_patch_unrelated_field_still_422s_against_an_inverted_row` (forces the stored row inverted
+directly through `db_session`, bypassing the route and its schema validation, then PATCHes an
+unrelated field and asserts 422 with the same message and that neither the unrelated field nor
+the margin pair changed). `test_patch_concurrent_single_field_race_loser_rejected` and the rest of
+`TestCalculatorDefaults` remain green.
+
+Verification (fix-up): `ruff check backend/` / `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_routes.py -q` — 77 passed.
+`bash tools/coverage_calc.sh backend` — full suite (`-n 30`) — scoped statements 832/836 = 99.52%.
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes matched (no schema/DDL/OpenAPI
+change). `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-028 — 2026-08-29 — `_failure_rates`' residual guard now also covers the by_material partition (user-approved behavior change)
+
+Audit `audit-security` found that T-003/T-021's residual-suppression guard on `_failure_rates`'
+`overall_pct` only ever checked `by_printer`'s coverage of the overall sample. `by_material` is a
+*second*, independent published partition of the exact same population — a print-log row carries
+exactly one `printer_id` but can name several materials — so a run's completed/failed count can
+also be recoverable by subtraction when every printer individually clears `MIN_SAMPLE` (so the
+by_printer residual is 0, and `overall_pct` publishes) while a rarely-used filament type never
+clears `MIN_SAMPLE` on its own and is left out of `by_material` entirely.
+
+The fix extends the existing `_residual_leaks(total, published)` helper (the T-021 extraction) to
+the material side: `published_material_sample = sum(row["sample"] for row in by_material)` is
+computed the same way `published_printer_sample` already was, and `overall_pct` is now gated on
+`overall_sample >= MIN_SAMPLE and not _residual_leaks(overall_sample, published_printer_sample) and
+not _residual_leaks(overall_sample, published_material_sample)` — suppressed if *either* partition
+leaves a small, recoverable residual. `by_printer`, `by_material`, and `sample` are all unchanged;
+only `overall_pct`'s gate grew a second check.
+
+**Multi-material double-counting, and why the naive sum is the conservative choice:** unlike
+`printer_id`, a run's `filament_type` is comma-joined and `_split_materials` fans one run's
+completed/failed outcome out to *every* material it names, so a run shared by two materials that
+both individually clear `MIN_SAMPLE` and get published is added into
+`published_material_sample` twice. This can only inflate the sum, never deflate it, which can only
+shrink the computed residual (`overall_sample - published_material_sample`) below the true count of
+runs left out of every published material group — never grow it — so the new check can never
+*wrongly* suppress a fully-covered case. The residual case that matters is the opposite direction:
+could this inflation ever hide a genuine small residual by pushing the computed value to 0 or below
+when uncovered runs still exist? Working through the shared-row arithmetic: whenever double-counted
+overlap pulls the computed residual down far enough to mask a real gap, that same overlap has
+already mixed the shared runs' outcomes into the published materials' rates, which breaks the clean
+`overall_failed - sum(published material_failed)` subtraction the guard exists to block in the first
+place — the recoverable-by-subtraction property the guard is designed to catch requires exactly the
+*non*-overlapping case this reasoning shows overlap prevents. Wherever overlap does *not* fully mask
+the gap, the residual still lands in `(0, MIN_SAMPLE)` and is suppressed exactly like the
+non-overlapping case (pinned by the new
+`test_failure_overall_suppressed_when_material_residual_below_min_sample` test, which has no
+overlap at all). No de-duplicated coverage count was implemented — it would be strictly more
+complex for no case the naive sum's failure mode above doesn't already make either safe (blocked
+subtraction) or already-caught (residual still in range). This reasoning and its direction are
+recorded as a code comment alongside the check.
+
+`_time_accuracy` was also audited for an analogous second partition: it groups only by `printer_id`
+(no `_split_materials`/by-material fold exists anywhere in that method), so there is no by_material
+partition to extend there, and no change was made to `_time_accuracy`.
+
+**User-visible effect (as approved):** "the failure-rate reality-check row will disappear in
+installs where a small material group exists, in cases where it currently shows an overall
+percentage."
+
+Tests added to `test_calculator_insights.py`:
+`test_failure_overall_suppressed_when_material_residual_below_min_sample` pins case (a) — one
+printer, fully covered (by_printer residual 0), with a 3-run ABS group below `MIN_SAMPLE` alongside
+a published 7-run PLA group; `overall_pct` is suppressed even though every printer clears
+`MIN_SAMPLE`. `test_failure_overall_present_when_both_partitions_fully_covered` pins case (b) — two
+materials (5 and 5 runs) both individually published, summing exactly to the overall sample
+(residual 0 on both partitions); `overall_pct` publishes as today (20.0).
+`test_failure_overall_present_when_material_residual_at_min_sample` pins case (c) — the boundary: a
+published 10-run PLA group plus two small, unpublished ABS (3) and TPU (2) groups whose combined
+residual is exactly `MIN_SAMPLE` (5); the strict `< MIN_SAMPLE` check does not suppress, and
+`overall_pct` publishes (26.7). All three fixtures pin the by_printer partition at residual 0 (a
+single printer covers every run) so each isolates the new by_material guard specifically.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_insights.py -q` — 77 passed.
+`bash tools/coverage_calc.sh backend` (full suite, `-n 30`): 12535 passed, 1 skipped; SCOPED
+statements 835/837 = 99.76% (branches 161/164 = 98.17%), `calculator_insights.py` itself at 98.68%
+— no drop from the 99.76%/834/836 baseline. `./venv/bin/python3 tools/snapshot.py verify` — 10/10
+probes match, none re-recorded (`calc-insights-pure` only exercises this module's constants,
+`_resolve_duration`, and `_split_materials`, none of which changed). `bash tools/gen_surface_calc.sh
+| diff - SURFACE.md` — empty, no export/route changed.
+
+## T-027 — 2026-08-29 — GET /calculator/insights suppresses a rate/mean recoverable by subtracting adjacent 30/90/365 windows (user-approved behavior change)
+
+Audit `audit-security` found that `InsightsWindowDays` (T-128) only *narrows* the cross-window
+subtraction channel, it doesn't close it. The three offered windows are nested
+(`PrintLogEntry.created_at >= since`), so a caller who fetches `?days=30` and `?days=90` and
+subtracts the published completed/failed counts for a group that appears in both responses recovers
+the exact figures for the `(30, 90]` band — even when that band itself holds fewer than
+`MIN_SAMPLE` runs. The same subtraction works for the `(90, 365]` band via `?days=90`/`?days=365`.
+This is a distinct channel from T-003/T-028's *within-window* residual guard (an unpublished
+remainder inside one response) — here both figures being subtracted are individually published,
+just in different responses.
+
+**Variant built:** the suppression variant named in the brief, not the remove-the-picker variant —
+it loses far less functionality (the 30/90/365 picker stays; only the unsafe figures blank out).
+
+**Fix:** `CalculatorInsightsService.compute()` now calls a new
+`_suppress_cross_window_leaks(db, now, days, failure, time_accuracy)` step after the normal
+`_failure_rates`/`_time_accuracy` folds run. For the requested `days`, it looks up the *next
+narrower* offered window via a new fixed map, `_ADJACENT_NARROWER_WINDOW = {90: 30, 365: 90}` (30
+has no narrower neighbor and is never touched by this guard). If there is one, it runs two new
+count-only queries — `_failure_sample_counts` and `_time_accuracy_sample_counts` — against that
+narrower window's `since` to get each group's *true* sample count there (per-printer, per-material,
+and overall; these are plain counts, not the full rate/accuracy fold, so the added query cost is one
+bounded COUNT-shaped read per fold, not a second full aggregation). For every group already
+published in the requested (wider) window, it reuses the existing `_residual_leaks(total,
+published)` helper — `total` = the group's sample in the requested window, `published` = the same
+group's sample in the narrower window — and blanks that group's `rate_pct`/`accuracy_pct` to `None`
+(the entry stays in the list; `sample` is untouched) whenever the delta is `0 < delta < MIN_SAMPLE`.
+A delta of exactly `0` (nothing new since the narrower window) or `>= MIN_SAMPLE` (the recoverable
+band is itself a large-enough sample to publish safely) leaves the figure unchanged. This is applied
+to `failure.by_printer`, `failure.by_material`, `failure.overall_pct`, `time_accuracy.by_printer`,
+and `time_accuracy.overall_pct` — every published group/aggregate in both folds, per the brief.
+Deliberately suppresses the **wider** window's figure and leaves the narrower window untouched: the
+narrower window alone discloses nothing new, so blanking only the side whose subtraction against the
+already-known narrower figure would reveal the band closes the channel with the smaller loss of
+information. `_failure_rates` and `_time_accuracy` themselves are unchanged — the new step is a
+post-process in `compute()` — so the existing T-076 differential/reference tests (which call
+`_time_accuracy`/`_power_draw` directly, bypassing `compute()`) needed no update; they still compare
+against the unmodified fold.
+
+Because a suppressed entry must keep reporting `sample` while blanking only the rate/mean,
+`FailureRateEntry.rate_pct` and `TimeAccuracyEntry.accuracy_pct` changed from required `float` to
+optional `float | None = None` in `backend/app/schemas/calculator.py` (the already-nullable
+`overall_pct` fields needed no change). This is the only schema change; `CalculatorInsightsResponse`
+itself, every other field, and every route/permission are untouched.
+
+**User-visible effect (as approved):** "the reality-check card would stop offering the 30/90/365
+window choice (or would show blanks for some printers at some windows) where it currently always
+shows a figure." This ships the second half of that quote — the picker is kept, and a printer/
+material/overall figure blanks out (with its sample count still shown) only when comparing to the
+next narrower window would otherwise let a caller recover a small, unpublished band.
+
+Tests added to `test_calculator_insights.py` (all via the real `/api/v1/calculator/insights`
+endpoint, so they exercise `compute()`'s new step end-to-end):
+`test_failure_cross_window_suppressed_when_band_delta_below_min_sample` pins case (a) — a printer
+(and its one material) with 5 completed runs inside the 30-day window and 2 more only inside the
+90-day window (band delta 2, `< MIN_SAMPLE`): `?days=30` publishes `overall_pct`/`rate_pct` as
+today (`sample` 5), `?days=90` suppresses `overall_pct` and every `rate_pct` (`sample` 7, unchanged).
+`test_failure_cross_window_unaffected_when_band_delta_is_zero` and
+`test_failure_cross_window_unaffected_when_band_delta_at_min_sample` pin case (b) — a delta of 0 and
+a delta of exactly `MIN_SAMPLE` both leave `?days=90` identical to today.
+`test_time_accuracy_cross_window_suppressed_when_band_delta_below_min_sample`,
+`test_time_accuracy_cross_window_unaffected_when_band_delta_is_zero`, and
+`test_time_accuracy_cross_window_unaffected_when_band_delta_at_min_sample` mirror (a)/(b) for
+`time_accuracy`. `test_failure_cross_window_guard_does_not_apply_to_narrowest_window` pins that
+`?days=30` (no narrower neighbor) is never touched by this guard.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_insights.py -q` — 84 passed (77
+existing + 7 new). `./venv/bin/python3 -m pytest backend/tests/unit/test_calculator_routes.py -q` —
+77 passed. `bash tools/coverage_calc.sh backend` (full suite, `-n 30`): 12542 passed, 1 skipped;
+SCOPED statements 885/887 = 99.77% (branches 193/196 = 98.47%), `calculator_insights.py` itself at
+99.03% — no drop from the 99.76%/835/837 baseline (the one remaining uncovered line,
+`_spool_costs`'s `if not material: continue`, is pre-existing and untouched by this change).
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 probes match. Two probes were re-recorded, both
+sanctioned by the schema/behavior change above: `calc-pydantic-schemas` (the `rate_pct`/
+`accuracy_pct` fields becoming optional) and `calc-insights-pure` (the new
+`_ADJACENT_NARROWER_WINDOW` module constant). `calc-openapi` was checked and needed no re-record —
+it matched byte-for-byte. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty, no
+export/route added or removed.
+
+### Fix-up (second attempt, same task) — 2026-08-29 — frontend never received the nullable figures
+
+The blind verifier failed the first attempt: the backend change above makes `rate_pct`/
+`accuracy_pct` nullable on published `by_printer`/`by_material`/`by_printer` (time-accuracy)
+entries, but nothing on the frontend was told. `frontend/src/api/client.ts` still typed both fields
+as required `number`, so `CalculatorFailureRateEntry.rate_pct`/`CalculatorTimeAccuracyEntry
+.accuracy_pct` lied about what the backend could now send. Worse,
+`frontend/src/utils/calculatorInsights.ts`'s `pickFailureRate` (material branch) forwarded a `null`
+`rate_pct` straight into a reality-check row whenever the matched material entry met `MIN_SAMPLE`
+(sample is intentionally left intact by the backend suppression) — `CalculatorRealityCheckCard`'s
+`fmt` then called `.toFixed(1)` on it, crashing the calculator page's render. Its printer-branch
+sibling and `pickTimeAccuracy`'s equivalent branches instead **silently coerced** a suppressed entry
+to a fabricated `0` inside `matches.reduce((s, m) => s + m.rate_pct * m.sample, 0)`, which the row's
+own Apply button could then write into stored defaults/profiles as a false measured value.
+
+**Fix:** `client.ts`'s two field types relaxed to `number | null` (the only edit to that file; no
+other consumer of either field needed changes — `npm run build` surfaced none). In
+`calculatorInsights.ts`, both `pickFailureRate` and `pickTimeAccuracy` now treat a `null`-valued
+entry exactly like a below-`MIN_SAMPLE` entry: excluded from the weighted-average numerator *and*
+the `sample` denominator (`matchPrinters(...).filter((p) => p.rate_pct !== null)` for the printer
+branch; an added `&& match.rate_pct !== null` guard for the material branch; the analogous filter in
+`pickTimeAccuracy`'s printer branch). When every candidate for a given check is suppressed, the
+function falls through its existing fallback chain (printer → material → overall for failure,
+printer → overall for time-accuracy) exactly as it already does for a below-sample entry today, and
+if every fallback is exhausted it returns `null` — no reality-check row is emitted for that check, no
+fabricated value, no crash. `RealityCheck.measured` and `pickTimeAccuracy`'s/`pickFailureRate`'s
+return types stay non-nullable `number`: a row's `measured` field can no longer be `null` by
+construction (the type is honest because the filtering happens before a result object is ever
+built), so `CalculatorRealityCheckCard`'s `fmt(check, value: number)` needed no defensive-null
+change.
+
+Tests added to `calculatorInsights.test.ts`: three new `selectRealityChecks` cases pin (a) a
+suppressed material `rate_pct` with no printer match and no overall figure → no `failure` row and no
+throw, (b) a fleet with one suppressed and one valid printer entry → `measured`/`sample` reflect only
+the valid entry (30, not 50), and (c) an all-suppressed fleet with no other fallback data → no
+`failure` row. Three new `pickTimeAccuracy` cases mirror (a)-(c) for `accuracy_pct`: one suppressed +
+one valid printer entry → the valid entry's figure only, an all-suppressed fleet falling through to
+the overall figure, and both the fleet and the overall suppressed → `null`.
+
+Verification: `npm run build` clean (no other `rate_pct`/`accuracy_pct` consumer needed a fix);
+`static/` reverted before commit. `npx eslint` clean on `client.ts`, `calculatorInsights.ts`, and the
+test file. `npx vitest run` — `calculatorInsights.test.ts` 38/38 (32 existing + 6 new),
+`CalculatorRealityCheckCard.test.tsx` 11/11, `CalculatorPage.test.tsx` 49/49,
+`CalculatorQuotePage.test.tsx` 4/4 — all unchanged, no fixture updates needed. `bash
+tools/coverage_calc.sh frontend` (run on an idle machine — an earlier run under parallel load from
+other work on the same host measured a transient 96.49%, consistent with this suite's documented
+load-flakiness; re-run alone once idle): statements 96.9% (1410/1455), meeting the 96.90% floor
+(baseline was 1409/1454) — `calculatorInsights.ts` itself unchanged at 99.26% statement coverage,
+its one uncovered statement pre-existing and untouched by this fix-up. `./venv/bin/python3
+tools/snapshot.py verify` — 10/10; `calc-frontend-pure` (which bundles `calculatorInsights.ts`)
+matched unchanged, confirming the pinned pure outputs for non-null inputs are byte-identical.
+`bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-029 — 2026-08-29 — customer quote shows only price lines (user-approved behavior change)
+
+Audit `audit-security` found that `CalculatorQuotePage.tsx` — whose own docstring says "this is the
+one surface meant to leave the workshop" — rendered the full internal cost/margin waterfall
+(`buildWaterfall(result)` mapped via `STEP_LABEL_KEY`): filament cost, printer depreciation +
+repairs, energy, failure/prototype provisions, ads + consumables, labor, and a line literally
+labelled "Margin" (`STEP_LABEL_KEY.marge = 'calculator.marge' = 'Margin'`), i.e. the exact same
+per-step cost build-up shown on the operator-only calculator page, printed on the document handed
+to customers.
+
+The fix replaces that waterfall table with a price-facing-only totals table: subtotal (`Total
+excl. tax`, derived from `result.total_ht_qty` with the same task-first rounding already used for
+the TTC headline), tax (the difference between the displayed TTC and HT figures), and total
+(`Total incl. tax`, unchanged — still the same rounded headline value, so the Total row and the
+headline can never disagree). The per-step cost/margin rows and the `buildWaterfall`/
+`STEP_LABEL_KEY` imports are gone from this file; `pricing.ts` itself (and every other caller of
+`buildWaterfall`/`STEP_LABEL_KEY`, e.g. the operator-facing calculator page's own breakdown card)
+is untouched. The section heading changed from `calculator.breakdown` ("Cost breakdown") to the
+already-translated `calculator.totals` ("Totals"), since the section no longer breaks down costs.
+No new UI or toggle was added — the internal cost view remains available only on the calculator
+page itself, which this task deliberately did not touch.
+
+**User-visible effect (as approved):** "the printed quote handed to customers would no longer list
+the per-step cost build-up or the margin amount, only the price lines." The job-details section,
+the headline unit/task TTC figures, and the footnote are all unchanged; only the "Cost breakdown"
+table's per-step rows (filament, printer, energy, provisions, ads/consumables, labor, marge) are
+gone, replaced by a three-row subtotal/tax/total table.
+
+Tests updated in `CalculatorQuotePage.test.tsx`: the first test now asserts `Totals` (not `Cost
+breakdown`) is shown, `Total excl. tax` and `Tax` rows are present, `Filament` appears only once
+(the job-details label, since the breakdown's `Filament` cost row is gone), and `Margin`,
+`Provisions`, and `Labor` are all absent. The two rounding-fixture tests (USD qty 6, XPF qty 3) each
+gained assertions that the totals table's `Total excl. tax` and `Tax` rows print the expected
+subtotal/tax amounts derived from `result.total_ht_qty`, alongside the existing bounded-residual and
+one-price-per-quote invariants (both unchanged, since the Total row's value and rounding logic did
+not change) and an explicit `queryByText('Margin')` absence check.
+
+Verification: `npx eslint` clean on both changed files. `npx vitest run
+CalculatorQuotePage.test.tsx` — 4/4 passed; `CalculatorPage.test.tsx` — 49/49 passed (unaffected,
+`buildWaterfall`/`STEP_LABEL_KEY` still used there). `npm run build` clean; `static/` reverted
+before commit. `bash tools/coverage_calc.sh frontend`: 96.9% statements (1409/1454), meeting the
+96.90% floor exactly — `CalculatorQuotePage.tsx` itself dropped from a larger waterfall-`.map`
+branch surface to a fixed three-row table, shrinking both its covered and total statement counts;
+the file's own line coverage is 95.83%. `./venv/bin/python3 tools/snapshot.py verify` — 10/10,
+`calc-frontend-pure` (the only frontend probe) does not touch this page or `buildWaterfall`/
+`STEP_LABEL_KEY`, so nothing was re-recorded. `bash tools/gen_surface_calc.sh | diff - SURFACE.md`
+— empty; the page's default export is unchanged.
+
+## T-042 + T-045 — 2026-08-30 — user-approved behavior change
+
+Two audits (`audit-security` T-042, `audit-robustness` T-045) independently found the same hole in
+T-027's cross-window suppression guard: `_ADJACENT_NARROWER_WINDOW: dict[int, int] = {90: 30, 365:
+90}` probed each offered window only against its single *immediate* narrower neighbour, but a
+caller can subtract any two of the three offered windows (30/90/365), not only adjacent ones.
+Concretely (the pinned evidence scenario): a printer with 10 runs (2 failed) in the last 30 days,
+3 more (1 failed) only in the (30, 90] band, and none in (90, 365]. `days=30` publishes `sample=10,
+rate_pct=20.0` (no narrower neighbour to probe). `days=90` computes `sample=13` and is correctly
+suppressed — its residual against the 30-day count of 10 is 3, in `(0, MIN_SAMPLE)`. `days=365`
+also computes `sample=13`, but the old code probed it only against `days=90`'s count (also 13,
+residual 0 — "nothing new since 90") and published `rate_pct=23.1`. Fetching `days=365` and
+`days=30` and subtracting recovers exactly the 3-run, 1-failure band `days=90` had refused to
+disclose. The identical construction applies to `failure.overall_pct`, `failure.by_material`, and
+`time_accuracy.by_printer`/`overall_pct` — anywhere `_residual_leaks` gates a published rate/mean.
+
+The fix replaces the single-neighbour map with `_NARROWER_WINDOWS: dict[int, tuple[int, ...]] =
+{90: (30,), 365: (90, 30)}` and probes a wider window's published groups against *every* narrower
+offered window, suppressing `rate_pct`/`accuracy_pct` if `_residual_leaks(wider_count,
+narrower_count)` holds for **any** of them (not just the adjacent one). `days=365` now issues one
+extra bounded COUNT query per fold (failure, time-accuracy) against `days=30` in addition to the
+existing one against `days=90` — at most two extra count queries per fold, as scoped — no change to
+`days=90` (still one probe, against `days=30`) or `days=30` (still has no narrower window and is
+never suppressed by this guard). `sample` itself is never touched, only `rate_pct`/`accuracy_pct`.
+`_failure_sample_counts`/`_time_accuracy_sample_counts` themselves are unchanged in shape — only
+their docstrings and the caller's loop were updated to reflect being called once per narrower
+window instead of once total.
+
+**User-visible effect (as approved):** "more per-printer/per-material rate_pct and accuracy_pct
+values come back null on the 365-day window than today, for installs with a thin 30-90 day band" /
+"GET /calculator/insights?days=365 will return null rate_pct/accuracy_pct for some groups that
+currently return a number." `days=30` and `days=90` responses are unaffected; `sample` counts at
+every window are unaffected; a fleet with a large-enough delta in every band (>= MIN_SAMPLE between
+each pair of offered windows) still publishes unchanged at every window — this only newly
+suppresses `days=365` groups whose band against 30 (not just against 90) is thin.
+
+Tests added to `backend/tests/unit/test_calculator_insights.py`, both failure and time-accuracy
+variants: the pinned evidence scenario (thin (30, 90] band, nothing in (90, 365]) now suppressed at
+**both** `days=90` and `days=365` (previously leaked at 365); a fleet with a large delta in every
+band (< 30 days, (30, 90], (90, 365]) unchanged at all three windows; `days=30` asserted unaffected
+in both new scenarios (it has no narrower window to probe).
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean. `./venv/bin/python3
+-m pytest backend/tests/unit/test_calculator_insights.py -q` — 88/88 passed. `bash
+tools/coverage_calc.sh backend` — scoped statements 882/884 = 99.77% (meets the 99.77% floor),
+branches 191/194 = 98.45%; full backend suite 12545 passed / 1 skipped, one unrelated
+`test_mfa_api::TestEmailOTP` failure was a load flake (6/6 green in isolation, matching this repo's
+documented suite-load-flake pattern — not touched by this change). `./venv/bin/python3
+tools/snapshot.py verify` — 10/10; **`calc-insights-pure` was re-recorded** (sanctioned) because it
+pins every module-level constant's exact value via `dir(m)`, and `_ADJACENT_NARROWER_WINDOW` was
+renamed to `_NARROWER_WINDOWS` with a different shape (`dict[int, int]` → `dict[int, tuple[int,
+...]]`) — the diff is exactly that one constant's key/value swap, nothing else in the golden
+changed. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty: the constant is declared
+with a type annotation (`_NAME: dict[...] = ...`), which SURFACE's `R4` regex
+(`^_?[A-Z][A-Z0-9_]+ =`) does not match — `_ADJACENT_NARROWER_WINDOW` was never on the surface
+either, so the rename is not a surface change.
+
+## T-046 + T-044 — 2026-08-30 — user-approved behavior change
+
+Two audits (`audit-robustness` T-046, `audit-security` T-044) independently found that
+`power_by_printer` and `usage_by_printer` — both windowed the same way as `failure` and
+`time_accuracy` — were passed into T-027/T-042/T-045's cross-window suppression guard not at
+all. `_power_draw(db, since)`/`_daily_usage(db, since)` publish `avg_watts`/`hours_per_day` plus
+`sample` per printer under the same `since` bound as the other two folds, with no guard against
+a caller fetching two offered windows and subtracting. Concretely (the robustness audit's
+scenario): a printer with 100 power-eligible prints in the 30-day window (avg 120.0 W) and 102 in
+the 90-day window (avg 120.5 W) — both publish, and `(120.5*102 - 120.0*100)` recovers the
+energy-weighted draw of the 2 prints in the (30, 90] band, exactly the sub-`MIN_SAMPLE` disclosure
+the guard exists to prevent. The security audit found the same hole for `usage_by_printer`:
+`hours_per_day x observed_days` inverts to a total duration, recoverable the same way by
+subtraction across windows.
+
+The fix extends `_suppress_cross_window_leaks` to take the `power`/`usage` lists and, for each
+published printer row, probes the identical `_NARROWER_WINDOWS` map (`90: (30,)`, `365: (90, 30)`)
+with count-only queries mirroring each fold's own row eligibility — `_power_sample_counts` (watts
+band + min/max-seconds rules, shared with `_power_draw` via the new `_power_draw_rows` row
+generator, the same extraction pattern `_time_accuracy_rows` already uses) and `_usage_sample_counts`
+(pure-SQL: printer/created_at/duration-present/duration-cap/status, no `_MIN_USAGE_DAYS` gate —
+that's an aggregate check on the published entry's `observed_days`, not a per-row filter, exactly
+like `MIN_SAMPLE` is not part of `_failure_sample_counts`). A row's sample count growing by fewer
+than `MIN_SAMPLE` against **any** narrower offered window blanks that row's `avg_watts`/
+`hours_per_day`; `sample` (and, for usage, `observed_days`) is always left as computed. `power`/
+`usage` are per-printer only — no overall/material figure to guard, unlike `failure`.
+
+`PowerDrawEntry.avg_watts` and `DailyUsageEntry.hours_per_day` are now `float | None = None`
+(`sample` stays required), matching `FailureRateEntry.rate_pct`/`TimeAccuracyEntry.accuracy_pct`.
+`CalculatorPowerDrawEntry.avg_watts`/`CalculatorDailyUsageEntry.hours_per_day` in
+`frontend/src/api/client.ts` are now `number | null`. `frontend/src/utils/calculatorInsights.ts`'s
+`pickPowerDraw`/`pickDailyUsage` now filter suppressed (null) entries out of `matchPrinters`'
+results before folding — excluded from both the weighted-average numerator and the sample/
+observed-days-weighted denominator, exactly like `pickFailureRate`/`pickTimeAccuracy` already treat
+a suppressed `rate_pct`/`accuracy_pct` — so a suppressed entry never fabricates a `0` and never
+crashes the fold.
+
+**User-visible effect (as approved):** "power and daily-hours rows can come back with a null
+measured value (sample still present), so the reality-check card's power/dailyHours rows and their
+one-click 'update printer profile' buttons disappear for those printers" (T-044's variant: "the
+daily-usage reality-check row and its 'update printer profile' button will stop appearing for
+printers whose print count barely grows between windows"). `days=30` is unaffected (no narrower
+window to probe); a fleet with a large-enough delta in every band still publishes unchanged at
+every window.
+
+Tests added to `backend/tests/unit/test_calculator_insights.py`, mirroring the T-042/T-045 shapes
+for both folds: the pinned evidence scenario (`MIN_SAMPLE` in the last 30 days, 3 more only in the
+(30, 90] band) suppressed at both `days=90` and `days=365`; a fleet with a large delta in every
+band (< 30 days, (30, 90], (90, 365]) unchanged at all three windows. Tests added to
+`frontend/src/__tests__/utils/calculatorInsights.test.ts`, mirroring the T-027 fix-up's shape for
+both folds: a suppressed (null) sole entry yields no row and does not throw; a suppressed entry
+mixed with a valid one is excluded from both the numerator and the denominator; every matching
+entry suppressed yields no row.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean. `./venv/bin/python3
+-m pytest backend/tests/unit/test_calculator_insights.py -q` — 92/92 passed. `cd frontend && npm
+run build` clean (no new consumers of the now-nullable fields were missed), `static/` reverted
+before commit. `npx eslint` clean on `calculatorInsights.ts`, `client.ts`, and the two test files.
+`npx vitest run src/__tests__/utils/calculatorInsights.test.ts` — 44/44 passed;
+`CalculatorRealityCheckCard.test.tsx` — 11/11 passed; `CalculatorPage.test.tsx` — 49/49 passed.
+`bash tools/coverage_calc.sh both` — see commit for the exact ratios (must clear BE >= 99.77%,
+FE >= 96.90%). `./venv/bin/python3 tools/snapshot.py verify` — 10/10; **`calc-pydantic-schemas` was
+re-recorded** (sanctioned) because `PowerDrawEntry.avg_watts`/`DailyUsageEntry.hours_per_day`
+became `anyOf[number, null]` with `default: null` — the diff is exactly those two fields' schema
+shape plus their updated docstrings, nothing else in the golden changed. `bash
+tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-047 — 2026-08-30 — decade-boundary keyboard steps are exact inverses (user-approved behavior change)
+
+`DragHandle`'s `onDragStart`-gated keyboard step (T-022's fix: a fixed unit of the dragged value's
+own order-of-magnitude grid, so repeated presses don't compound through a self-referential domain)
+sized that unit from the CURRENT value's decade (`10 ** (Math.floor(Math.log10(basis)) - 2)`),
+while `round` (`roundK`) always re-snaps its result to the DESTINATION value's own decade. At an
+exact decade boundary the two disagree: from K=99.9, ArrowRight steps by 0.1 (99.9's decade) to
+100; but ArrowLeft from 100 then steps by 1 (100's decade) to 99, not back to 99.9 — a net -0.9 per
+round trip, and the whole 99.0-99.9 band was unreachable from above. Same at 9.99 -> 10 -> 9.9 and
+999 -> 1000 -> 990. An operator nudging the K handle back and forth to compare curves would
+silently land on a different `margin_k` than they started with — and that value is what the Save
+bar writes to the stored pricing curve.
+
+Fixed by sizing the step from the decade of the value being stepped TOWARD, not FROM: for a
+leftward step (`dir < 0`) only, the basis value is nudged down by an epsilon (`value * (1 - 1e-9)`)
+before taking its decade, so an exact power of ten (10, 100, 1000) reads as belonging to the decade
+just below it — the same decade `roundK` will land the destination in. Rightward steps are
+unaffected (their basis is already the source decade, which already matches a rightward
+destination approaching a boundary from below, e.g. 9.99 -> 10). This makes ArrowRight/ArrowLeft
+exact inverses of each other at every boundary, including starting from an exact decade value, while
+leaving every within-decade step (no boundary crossed) byte-for-byte unchanged.
+
+**User-visible effect (as approved):** "ArrowLeft from an exact decade value (10, 100, 1000) now
+moves one fine-grid step (to 9.99) instead of one coarse step (to 9.9)."
+
+Shift+arrow (10-unit step) uses the same basis calculation and so gets the same fix at an exact
+decade value: Shift+ArrowLeft from 10 now lands on 9.9 (was 9) and Shift+ArrowRight from 9.9 returns
+exactly to 10 — also an exact round trip at the boundary now. This does not extend to a shift-step
+starting from a fine-grid value already within an epsilon of a boundary from below (e.g.
+Shift+ArrowRight from 9.99, which crosses into the next decade because the 10x step itself is
+larger than the remaining room in the source decade): that combination round-tripped incorrectly
+before this fix too and still does not round-trip after it — an unaffected pre-existing limitation
+of sizing a step from a single decade's grid, not a regression introduced here.
+
+Regression coverage added in `frontend/src/__tests__/components/calculator/DragHandle.test.tsx`: a
+new test wires `onDragStart` and `round={roundK}` directly (no `MarginCurvePreview` in the tree) and
+drives ArrowLeft from K=10 (asserts 9.99, the approved change) then ArrowRight from 9.99 (asserts
+exactly 10), pinning the round trip at a decade boundary at the `DragHandle` level per audit-tests'
+T-050 finding that this branch had no direct component-level test. The existing panel-level
+round-trip test in `CalculatorSettingsPanelDrag.test.tsx` (33 <-> 35, no boundary crossed) is
+unaffected and continues to pass unchanged.
+
+Verification: `npx eslint` clean on `DragHandle.tsx` and its test file. `cd frontend && npm run
+build` clean, `static/` reverted before commit. `npx vitest run
+src/__tests__/components/calculator/DragHandle.test.tsx` — 7/7 passed;
+`src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx` — 6/6 passed;
+`src/__tests__/components/calculator/MarginCurvePreview.test.tsx` — 3/3 passed. `bash
+tools/coverage_calc.sh frontend` — 96.91% statements (1413/1458), clearing the required >= 96.91%
+(1412/1457) floor. `./venv/bin/python3 tools/snapshot.py verify` — 10/10, no probe pins keyboard
+stepping. `bash tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-048 — 2026-08-30 — printed quote's price lines always sum exactly at display precision (user-approved behavior change)
+
+`CalculatorQuotePage`'s totals table derived its Tax row as `unitTtcDisplayed - unitHtDisplayed`
+where both operands were **unrounded quotients** (`taskTtcRounded / quantity`,
+`taskHtRounded / quantity`), while all three cells (Total excl. tax, Tax, Total incl. tax) were
+then independently rounded for display by `formatMoney`. At a quantity that doesn't divide the
+task total evenly, rounding each of the three raw numbers separately can leave the printed HT and
+Tax cells a display unit short of (or over) the printed Total cell directly beneath them — e.g. the
+`CalculatorQuotePage.test.tsx` qty-6 USD fixture printed Total excl. tax `$742.55` + Tax `$96.53`
+= `$839.08`, a cent OVER the printed Total incl. tax of `$839.07`. This is the one document meant
+to leave the workshop; a customer or their accountant reading the three figures would find they
+don't add up.
+
+Fixed by rounding the unit HT and TTC figures to the currency's display precision FIRST — via
+`.toFixed(decimals)` (the exact rounding `formatMoney` applies internally, so the pre-rounded
+value is guaranteed to reproduce the same digits `formatMoney` would print for the raw quotient) —
+and then deriving the Tax row as the difference of those two already-rounded values, so the three
+printed cells always satisfy HT + Tax = TTC exactly at display precision. `Math.round(x * scale) /
+scale` was deliberately NOT used for this pre-rounding step: it can disagree with `toFixed` at
+floating-point edge cases (verified while building this fix — one fixture had `Math.round`-based
+rounding silently shift the printed TTC headline itself from `$839.07` to `$839.08`, not just the
+tax line), which would have been an unsanctioned, undetected second behavior change. At quantity 1
+the HT/TTC figures were already display-rounded (`taskHtRounded`/`taskTtcRounded` themselves), so
+re-rounding them is a no-op and today's quantity-1 output is unchanged.
+
+**User-visible effect (as approved):** "the tax (or subtotal) line on a printed quote can shift by
+one display unit at quantities that don't divide the total evenly."
+
+The existing quantity-6 (USD, 2-decimal) and quantity-3 (XPF, 0-decimal) tests in
+`CalculatorQuotePage.test.tsx` were updated to compute their expected Tax-row value the same way
+production now does (rounded HT/TTC difference, not a raw-quotient difference) — the qty-6 USD
+fixture's sanctioned tax value changes from `$96.53` to `$96.52`; the qty-3 XPF fixture's value is
+unchanged text (`181 FCFP`) either way, since that particular fixture doesn't happen to straddle a
+rounding boundary, but its assertion now matches the new derivation for correctness. Both tests
+gained an exact-sum invariant: the three rendered cells are parsed back into minor display units
+(cents for USD, whole units for XPF) and asserted to sum exactly, not merely "close." A new
+`it.each` regression test was also added, covering a 2-decimal (USD) and a 0-decimal (XPF) fixture
+at quantity 2 chosen specifically because the task total does NOT divide evenly by 2 at display
+precision for either currency — both fixtures pin the rendered Tax cell to the sanctioned
+(rounded-difference) value, assert it differs from the naive raw-quotient-difference value a
+regression would reintroduce, and assert the same exact minor-unit sum invariant.
+
+Verification: `npx eslint` clean on `CalculatorQuotePage.tsx` and its test file. `cd frontend &&
+npm run build` clean, `static/` reverted before commit. `npx vitest run
+src/__tests__/pages/CalculatorQuotePage.test.tsx` — 6/6 passed; `src/__tests__/pages/
+CalculatorPage.test.tsx` — 49/49 passed. `bash tools/coverage_calc.sh frontend` — 96.91% statements
+(1415/1460), clearing the required >= 96.91% (1413/1458) floor. `./venv/bin/python3
+tools/snapshot.py verify` — 10/10, no probe pins the printed quote's rounding. `bash
+tools/gen_surface_calc.sh | diff - SURFACE.md` — empty.
+
+## T-049 — 2026-08-30 — the quantity chart's x-axis now stretches to always contain a large qty_k (user-approved behavior change)
+
+**Approved change (verbatim):** "the quantity chart's x-axis extends past 100 when qty_k is large,
+so its curve and tick labels are drawn over a wider range than today."
+
+`MarginCurvePreview`'s quantity chart drew its X domain from `qtyDomainMax(ex?.quantity)`, which
+only ever grows past the fixed floor `QTY_DOMAIN[1] = 100` for a large EXAMPLE quantity — unlike
+`sizeDomainMax(k, exampleUnitCost)`, which always contains K (`k * 10`), nothing stretched the
+quantity domain to contain `qty_k` (kq) itself. The KQ `DragHandle` renders at `value={midQty}`
+(`kq + 1`) against `max={qtyMax}`; with a stored `qty_k` of 500, `midQty` (501) sat clamped to the
+domain's right edge (100), so a single click or arrow key on that grip computed
+`onDragKQ(Math.max(1, 100 - 1))` — rewriting the field from 500 to 99 the instant an operator
+touched the handle, without them changing anything.
+
+Fixed by giving `qtyDomainMax` a new, optional second parameter (`kq`) so its existing single-
+argument callers and signature position are unchanged (`curveGeometry.ts`'s only other export
+change is none — `qtyDomainMax` was already exported): when `kq + 1` (the point the handle actually
+renders at) exceeds the pre-existing 100 floor, the domain stretches to `kq + 1 + KQ_HEADROOM`
+(`KQ_HEADROOM = 50`) instead of staying pinned at 100. Below that floor — every `qty_k` value used
+by today's shipped defaults, and every existing test — the formula is byte-for-byte the old one:
+`qtyDomainMax(exampleQty, kq)` returns exactly 100 for any `kq <= 99`, identical to
+`qtyDomainMax(exampleQty)` before this change.
+
+**Feedback-loop analysis (T-006 reconsidered for KQ):** `sizeDomainMax`'s K coverage is
+*multiplicative* (`k * 10`), which puts the K handle at a *constant* fraction (1/10) of its own
+domain no matter how large K gets — a live drag re-reads that domain after every `onChange`, so
+each `pointermove` re-derives K against a domain K's own previous move just shifted, compounding K
+by roughly x10 per event (T-006, fixed there with a `kDragAnchor` that freezes the domain for the
+whole gesture, and a matching keyboard-step fix, T-022, gated on the same anchor wiring). Naively
+copying that multiplicative shape onto KQ would reopen the identical bug for the KQ handle. Instead,
+the new KQ coverage is *additive* (`kq + KQ_HEADROOM`, a fixed constant, not a multiplier on `kq`):
+this caps the domain's growth rate with respect to `kq` at exactly 1, so the same live-domain
+read-back can, at worst, add a constant (`KQ_HEADROOM`) per held-position pointer event — linear
+drift at the plot's clamped right edge, never the multiplicative bug's exponential blow-up. This
+means **no drag anchor and no keyboard-step change were needed for KQ**: `MarginCurvePreview`'s
+`DragHandle` for KQ still passes no `onDragStart`/`onDragEnd` (unchanged from before this fix), so
+`DragHandle`'s `onKeyDown` keeps the original percent-of-span step for KQ — the two pre-existing
+`qty_k`-drag pinning tests in `CalculatorSettingsPanelDrag.test.tsx` (`dragging KQ writes the field
+and opens the Save bar`, expecting `15`; `dragging KQ left at the floor never pushes the field below
+1`) pass unmodified, because their seeded `qty_k` values (5 and 1) are both well below the 100
+floor where the new coupling activates at all.
+
+**`CalculatorQuantityCurve` decision:** this sibling chart (the unit-price-vs-quantity table/curve
+below the settings form) does not call `qtyDomainMax` at all — its `XAxis` domain is
+`['dataMin', 'dataMax']` over the real `points` array `unitPriceCurve()` computes for the job
+(a data-driven log-scale domain, not `curveGeometry`'s literal `[1, 100]`/`qtyDomainMax` domain), so
+there is no shared surface to keep coherent here and no risk of an unapproved change leaking into
+it; it is untouched.
+
+Regression coverage: `curveGeometry.test.ts` gained a direct test of `qtyDomainMax`'s new `kq`
+parameter (100 for every `kq <= 99` including 0/NaN/negative — treated as "no coupling", same as
+omitting it; `551` for `kq = 500`; `151` for `kq = 100`; the example-quantity stretch still composes
+on top). `MarginCurvePreview.test.tsx` gained a `describe('MarginCurvePreview — KQ drag handle
+domain (T-049)')` block with three tests: (1) with `qty_k = 500` seeded, the grip's
+`aria-valuemax` is the stretched `qtyDomainMax(undefined, 500)` (> 501), and a single ArrowLeft
+keypress does NOT collapse the field to 99 (asserts it stays > 400) — the exact repro from the
+finding; (2) `qty_k = 5` (today's shipped default) keeps the un-stretched `aria-valuemax="100"`; (3)
+a drag-no-feedback test mirroring T-006's own — nine `pointermove` events (1 down + 8 moves) held at
+the plot's clamped right edge (`t = 1`, the formula's single worst case) starting from `qty_k = 500`
+— pins that consecutive values never jump by more than `KQ_HEADROOM` (50) per event and stay under
+1000 after nine calls, in contrast to T-006's pre-fix K blow-up (33 to 216000 over the same nine
+calls) — demonstrating linear drift, not exponential compounding, without needing a drag anchor.
+
+Verification: `npx eslint` clean on `curveGeometry.ts`, `MarginCurvePreview.tsx`, and both test
+files. `cd frontend && npm run build` clean, `static/` reverted before commit. `npx vitest run
+src/__tests__/components/calculator/curveGeometry.test.ts` — 6/6 passed; `src/__tests__/components/
+calculator/MarginCurvePreview.test.tsx` — 6/6 passed; `src/__tests__/components/
+CalculatorQuantityCurve.test.tsx` — 2/2 passed; `src/__tests__/components/calculator/
+DragHandle.test.tsx` — 7/7 passed; `src/__tests__/components/CalculatorSettingsPanel.test.tsx` —
+33/33 passed; `src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx` — 6/6 passed
+unmodified. `bash tools/coverage_calc.sh frontend` — 96.92% statements (1418/1463), at/above the
+96.91% (1415/1460) floor. `./venv/bin/python3 tools/snapshot.py verify` — 10/10; `calc-frontend-pure`
+bundles only `calculatorInsights.ts`/`quoteSummary.ts` (see `tools/probe_calc_frontend_entry.ts`),
+not `curveGeometry.ts`, so no probe drives `qtyDomainMax` and none needed re-recording. `bash
+tools/gen_surface_calc.sh | diff - SURFACE.md` — empty (`curveGeometry.ts` is outside R8's glob,
+and `qtyDomainMax`'s new parameter is optional, not a new export).

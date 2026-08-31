@@ -240,15 +240,9 @@ export function useDefaultsForm<K extends string>(
       }
       return api.updateCalculatorDefaults(payload);
     },
-    onSuccess: (saved) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
       showToast(t(savedMsgKey));
-      // Adopt the operator's own successful save as the new baseline —
-      // otherwise the form would look perpetually dirty and ignore the very
-      // refetch its own save just triggered.
-      const next = toFormRef.current(saved);
-      setSeed(next);
-      setForm(next);
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -256,5 +250,42 @@ export function useDefaultsForm<K extends string>(
   const setField = (key: K, v: string) => setForm((f) => ({ ...f, [key]: v }));
   const discard = () => setForm(seed);
 
-  return { form, setField, dirtyKeys, save: () => saveMutation.mutate(), discard, isPending: saveMutation.isPending };
+  // `dirtyKeys` is snapshotted here, at the moment the operator clicks Save
+  // (mutate-time) — not read fresh inside `onSuccess`, which TanStack Query
+  // rebinds to whatever render is current when the response actually lands
+  // (see the identical landmine documented on `useEntityCrudMutations`
+  // above). Passing this `onSuccess` as `mutate()`'s own per-call option
+  // (rather than a base `useMutation` option) is what makes it immune to
+  // that rebinding: `MutationObserver#mutate` captures its second argument
+  // once and never refreshes it.
+  //
+  // Only the snapshotted keys are re-seeded from the server response. A
+  // field the operator edits *after* Save was clicked — while the PATCH is
+  // still in flight — was never part of `submittedKeys`, so it is left at
+  // whatever the operator has since typed instead of being silently
+  // reverted to the pre-edit server row the moment the response arrives.
+  // When nothing changes during the request (the common case), every key
+  // that was dirty at click-time is exactly the set the effect below would
+  // otherwise leave dirty, so the result is identical to a full re-seed:
+  // every field matches the server row and the Save bar closes.
+  const save = () => {
+    const submittedKeys = dirtyKeys;
+    saveMutation.mutate(undefined, {
+      onSuccess: (saved) => {
+        const next = toFormRef.current(saved);
+        setSeed((prev) => {
+          const merged = { ...prev };
+          for (const key of submittedKeys) merged[key] = next[key];
+          return merged;
+        });
+        setForm((prev) => {
+          const merged = { ...prev };
+          for (const key of submittedKeys) merged[key] = next[key];
+          return merged;
+        });
+      },
+    });
+  };
+
+  return { form, setField, dirtyKeys, save, discard, isPending: saveMutation.isPending };
 }

@@ -243,12 +243,17 @@ class InsightsWindowDays(IntEnum):
 
 
 class FailureRateEntry(BaseModel):
-    """Measured failure rate for one printer or one material."""
+    """Measured failure rate for one printer or one material.
+
+    ``rate_pct`` is ``None`` when a cross-window subtraction against the next
+    narrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``
+    individual print-log rows for this group — ``sample`` is still reported.
+    """
 
     printer_id: int | None = None
     printer_name: str | None = None
     material: str | None = None
-    rate_pct: float
+    rate_pct: float | None = None
     sample: int
 
 
@@ -260,9 +265,15 @@ class FailureInsights(BaseModel):
 
 
 class TimeAccuracyEntry(BaseModel):
+    """Measured slicer-estimate accuracy for one printer.
+
+    ``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as
+    ``FailureRateEntry.rate_pct`` — ``sample`` is still reported.
+    """
+
     printer_id: int
     printer_name: str
-    accuracy_pct: float
+    accuracy_pct: float | None = None
     sample: int
 
 
@@ -286,20 +297,28 @@ class SpoolCostBrandEntry(BaseModel):
 
 
 class PowerDrawEntry(BaseModel):
-    """Energy-weighted average watts measured for one printer."""
+    """Energy-weighted average watts measured for one printer.
+
+    ``avg_watts`` is ``None`` under the same T-027/T-046 cross-window guard
+    as ``FailureRateEntry.rate_pct`` — ``sample`` is still reported.
+    """
 
     printer_id: int
     printer_name: str
-    avg_watts: float
+    avg_watts: float | None = None
     sample: int
 
 
 class DailyUsageEntry(BaseModel):
-    """Measured usage-hours/day for one printer over the observed window."""
+    """Measured usage-hours/day for one printer over the observed window.
+
+    ``hours_per_day`` is ``None`` under the same T-027/T-044 cross-window
+    guard as ``FailureRateEntry.rate_pct`` — ``sample`` is still reported.
+    """
 
     printer_id: int
     printer_name: str
-    hours_per_day: float
+    hours_per_day: float | None = None
     observed_days: int
     sample: int
 
@@ -350,7 +369,7 @@ class CalculatorFilamentSyncRequest(BaseModel):
 
 
 class CalculatorFilamentSyncResponse(BaseModel):
-    """Outcome of one sync chunk. The four outcome counts sum to ``processed``."""
+    """Outcome of one sync chunk. The five outcome counts sum to ``processed``."""
 
     processed: int = Field(description="Filaments examined in this chunk")
     total: int = Field(description="Linked filaments overall, for progress display")
@@ -358,6 +377,12 @@ class CalculatorFilamentSyncResponse(BaseModel):
     unchanged: int = Field(description="Zoho price matched the stored cost")
     skipped_no_price: int = Field(description="Zoho dealer price was 0; nothing written")
     missing: int = Field(description="Linked item no longer in the Zoho catalogue; link and price kept")
+    unpriced: int = Field(
+        description=(
+            "Filament has no stored spool weight and the Zoho item name carries none either "
+            "(product.weight_inferred); dividing by the assumed 1 kg default was refused, so price kept"
+        )
+    )
     next_after_id: int | None = Field(
         default=None, description="Pass as after_id for the next chunk; null when finished"
     )

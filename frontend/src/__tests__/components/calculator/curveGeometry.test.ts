@@ -13,6 +13,31 @@ describe('curveGeometry', () => {
     expect(qtyDomainMax(50)).toBe(100);
     expect(qtyDomainMax(250)).toBeCloseTo(275, 6);
   });
+  // T-049: qty_k (kq) renders the KQ handle at kq + 1, so the domain must
+  // stretch to always contain it — otherwise the handle clamps to the
+  // domain's edge and a single click/arrow key collapses the field back
+  // down (a stored qty_k of 500 rewriting itself to 99).
+  it('quantity domain also stretches to always contain kq + 1, unlike the un-stretched size floor', () => {
+    // Small kq (including every value used by today's shipped defaults and
+    // existing tests) fits comfortably inside the un-stretched 100 floor —
+    // domain/ticks stay byte-for-byte what they were before this fix.
+    expect(qtyDomainMax(undefined, 5)).toBe(100);
+    expect(qtyDomainMax(undefined, 1)).toBe(100);
+    expect(qtyDomainMax(undefined, 0)).toBe(100);
+    expect(qtyDomainMax(undefined, 99)).toBe(100); // kq + 1 = 100, still exactly at the floor
+    // kq large enough that kq + 1 would sit at/past the floor stretches the
+    // domain to comfortably contain it (additively, not proportionally —
+    // see the KQ_HEADROOM comment on qtyDomainMax).
+    expect(qtyDomainMax(undefined, 500)).toBe(551);
+    expect(qtyDomainMax(undefined, 100)).toBe(151);
+    // An example quantity beyond the kq-stretched base still stretches
+    // further, exactly as it does past the un-stretched 100 floor.
+    expect(qtyDomainMax(1000, 500)).toBeCloseTo(1100, 6);
+    // A NaN/negative/zero kq is treated as "no kq coupling", same as
+    // omitting it — never collapses or inflates the floor.
+    expect(qtyDomainMax(undefined, NaN)).toBe(100);
+    expect(qtyDomainMax(undefined, -5)).toBe(100);
+  });
   it('maps pixels linearly across the plot area and clamps outside it', () => {
     expect(xToValue(60, 60, 200, 0, 1000)).toBe(0);
     expect(xToValue(160, 60, 200, 0, 1000)).toBe(500);

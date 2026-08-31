@@ -136,6 +136,70 @@ describe('CalculatorSettingsPanel', () => {
     expect(k).toHaveValue(4000);
   });
 
+  it('does not revert a field edited while a slow save is still in flight (T-007)', async () => {
+    let resolvePatch: (v: CalculatorDefaults) => void = () => {};
+    const patchPromise = new Promise<CalculatorDefaults>((resolve) => {
+      resolvePatch = resolve;
+    });
+    let sent: Record<string, number> | null = null;
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)),
+      http.patch('/api/v1/calculator/defaults', async ({ request }) => {
+        sent = (await request.json()) as Record<string, number>;
+        return HttpResponse.json(await patchPromise);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<CalculatorSettingsPanel canUpdate />);
+
+    // Dirty margin_k, click Save — the PATCH now hangs on `patchPromise`.
+    const k = await screen.findByLabelText(/K,/);
+    await user.clear(k);
+    await user.type(k, '4000');
+    await user.click(saveButton());
+    await waitFor(() => expect(sent).toEqual({ margin_k: 4000 }));
+
+    // While that save is still pending, edit a *different* field.
+    const tariff = screen.getByLabelText(/Electricity tariff/);
+    await user.clear(tariff);
+    await user.type(tariff, '150');
+    expect(await screen.findByText('2 unsaved changes')).toBeInTheDocument();
+
+    // The PATCH lands, echoing back only the field it actually saved
+    // (margin_k) — as a real partial update would.
+    resolvePatch({ ...baseDefaults, margin_k: 4000, updated_at: '2026-08-28T00:00:00Z' });
+    await screen.findByText('Settings saved');
+
+    // The in-flight edit survives instead of being silently reverted to the
+    // pre-edit server row...
+    expect(tariff).toHaveValue(150);
+    // ...and stays flagged as unsaved so the operator knows to save it too.
+    expect(await screen.findByText('1 unsaved change')).toBeInTheDocument();
+    // The key this save actually submitted (margin_k) re-seeds from the
+    // response and is no longer dirty.
+    expect(k).toHaveValue(4000);
+  });
+
+  it('shows an error toast and keeps the Save bar open when the save request fails', async () => {
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)),
+      http.patch('/api/v1/calculator/defaults', () => HttpResponse.json({ detail: 'Save failed' }, { status: 500 })),
+    );
+    const user = userEvent.setup();
+    render(<CalculatorSettingsPanel canUpdate />);
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    await user.clear(tariff);
+    await user.type(tariff, '150');
+    await user.click(saveButton());
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument();
+    // The failed PATCH neither cleared the edit nor closed the bar — the
+    // operator's change is not silently discarded.
+    expect(screen.getByText('1 unsaved change')).toBeInTheDocument();
+    expect(saveButton()).toBeInTheDocument();
+    expect(tariff).toHaveValue(150);
+  });
+
   it('blocks save when M_MAX < M_MIN and names the problem in the bar', async () => {
     serveDefaults();
     const user = userEvent.setup();

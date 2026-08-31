@@ -48,8 +48,32 @@
     "title": "Labor Rate Per Hour",
     "type": "number"
    },
+   "margin_k": {
+    "title": "Margin K",
+    "type": "number"
+   },
+   "margin_max_mult": {
+    "title": "Margin Max Mult",
+    "type": "number"
+   },
+   "margin_min_mult": {
+    "title": "Margin Min Mult",
+    "type": "number"
+   },
+   "min_task_price": {
+    "title": "Min Task Price",
+    "type": "number"
+   },
    "prototype_rate_pct": {
     "title": "Prototype Rate Pct",
+    "type": "number"
+   },
+   "qty_k": {
+    "title": "Qty K",
+    "type": "number"
+   },
+   "qty_min_factor": {
+    "title": "Qty Min Factor",
     "type": "number"
    },
    "stuff_markup_pct": {
@@ -81,6 +105,12 @@
    "default_margin_over_cost_pct",
    "stuff_markup_pct",
    "base_fee_flat",
+   "margin_min_mult",
+   "margin_max_mult",
+   "margin_k",
+   "qty_min_factor",
+   "qty_k",
+   "min_task_price",
    "updated_at"
   ],
   "title": "CalculatorDefaultsResponse",
@@ -229,6 +259,62 @@
     "default": null,
     "title": "Labor Rate Per Hour"
    },
+   "margin_k": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin K"
+   },
+   "margin_max_mult": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin Max Mult"
+   },
+   "margin_min_mult": {
+    "anyOf": [
+     {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Margin Min Mult"
+   },
+   "min_task_price": {
+    "anyOf": [
+     {
+      "maximum": 100000000.0,
+      "minimum": 0,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Min Task Price"
+   },
    "prototype_rate_pct": {
     "anyOf": [
      {
@@ -242,6 +328,34 @@
     ],
     "default": null,
     "title": "Prototype Rate Pct"
+   },
+   "qty_k": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 1000000,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty K"
+   },
+   "qty_min_factor": {
+    "anyOf": [
+     {
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty Min Factor"
    },
    "stuff_markup_pct": {
     "anyOf": [
@@ -647,7 +761,7 @@
   "type": "object"
  },
  "CalculatorFilamentSyncResponse": {
-  "description": "Outcome of one sync chunk. The four outcome counts sum to ``processed``.",
+  "description": "Outcome of one sync chunk. The five outcome counts sum to ``processed``.",
   "properties": {
    "missing": {
     "description": "Linked item no longer in the Zoho catalogue; link and price kept",
@@ -687,6 +801,11 @@
     "title": "Unchanged",
     "type": "integer"
    },
+   "unpriced": {
+    "description": "Filament has no stored spool weight and the Zoho item name carries none either (product.weight_inferred); dividing by the assumed 1 kg default was refused, so price kept",
+    "title": "Unpriced",
+    "type": "integer"
+   },
    "updated": {
     "description": "Cost per kg changed",
     "title": "Updated",
@@ -699,7 +818,8 @@
    "updated",
    "unchanged",
    "skipped_no_price",
-   "missing"
+   "missing",
+   "unpriced"
   ],
   "title": "CalculatorFilamentSyncResponse",
   "type": "object"
@@ -836,11 +956,19 @@
  "CalculatorInsightsResponse": {
   "$defs": {
    "DailyUsageEntry": {
-    "description": "Measured usage-hours/day for one printer over the observed window.",
+    "description": "Measured usage-hours/day for one printer over the observed window.\n\n``hours_per_day`` is ``None`` under the same T-027/T-044 cross-window\nguard as ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "hours_per_day": {
-      "title": "Hours Per Day",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Hours Per Day"
      },
      "observed_days": {
       "title": "Observed Days",
@@ -862,7 +990,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "hours_per_day",
      "observed_days",
      "sample"
     ],
@@ -911,7 +1038,7 @@
     "type": "object"
    },
    "FailureRateEntry": {
-    "description": "Measured failure rate for one printer or one material.",
+    "description": "Measured failure rate for one printer or one material.\n\n``rate_pct`` is ``None`` when a cross-window subtraction against the next\nnarrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``\nindividual print-log rows for this group \u2014 ``sample`` is still reported.",
     "properties": {
      "material": {
       "anyOf": [
@@ -950,8 +1077,16 @@
       "title": "Printer Name"
      },
      "rate_pct": {
-      "title": "Rate Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Rate Pct"
      },
      "sample": {
       "title": "Sample",
@@ -959,18 +1094,25 @@
      }
     },
     "required": [
-     "rate_pct",
      "sample"
     ],
     "title": "FailureRateEntry",
     "type": "object"
    },
    "PowerDrawEntry": {
-    "description": "Energy-weighted average watts measured for one printer.",
+    "description": "Energy-weighted average watts measured for one printer.\n\n``avg_watts`` is ``None`` under the same T-027/T-046 cross-window guard\nas ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "avg_watts": {
-      "title": "Avg Watts",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Avg Watts"
      },
      "printer_id": {
       "title": "Printer Id",
@@ -988,7 +1130,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "avg_watts",
      "sample"
     ],
     "title": "PowerDrawEntry",
@@ -1046,10 +1187,19 @@
     "type": "object"
    },
    "TimeAccuracyEntry": {
+    "description": "Measured slicer-estimate accuracy for one printer.\n\n``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as\n``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "accuracy_pct": {
-      "title": "Accuracy Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Accuracy Pct"
      },
      "printer_id": {
       "title": "Printer Id",
@@ -1067,7 +1217,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "accuracy_pct",
      "sample"
     ],
     "title": "TimeAccuracyEntry",
@@ -1437,11 +1586,19 @@
   "type": "object"
  },
  "DailyUsageEntry": {
-  "description": "Measured usage-hours/day for one printer over the observed window.",
+  "description": "Measured usage-hours/day for one printer over the observed window.\n\n``hours_per_day`` is ``None`` under the same T-027/T-044 cross-window\nguard as ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
   "properties": {
    "hours_per_day": {
-    "title": "Hours Per Day",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Hours Per Day"
    },
    "observed_days": {
     "title": "Observed Days",
@@ -1463,7 +1620,6 @@
   "required": [
    "printer_id",
    "printer_name",
-   "hours_per_day",
    "observed_days",
    "sample"
   ],
@@ -1473,7 +1629,7 @@
  "FailureInsights": {
   "$defs": {
    "FailureRateEntry": {
-    "description": "Measured failure rate for one printer or one material.",
+    "description": "Measured failure rate for one printer or one material.\n\n``rate_pct`` is ``None`` when a cross-window subtraction against the next\nnarrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``\nindividual print-log rows for this group \u2014 ``sample`` is still reported.",
     "properties": {
      "material": {
       "anyOf": [
@@ -1512,8 +1668,16 @@
       "title": "Printer Name"
      },
      "rate_pct": {
-      "title": "Rate Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Rate Pct"
      },
      "sample": {
       "title": "Sample",
@@ -1521,7 +1685,6 @@
      }
     },
     "required": [
-     "rate_pct",
      "sample"
     ],
     "title": "FailureRateEntry",
@@ -1569,7 +1732,7 @@
   "type": "object"
  },
  "FailureRateEntry": {
-  "description": "Measured failure rate for one printer or one material.",
+  "description": "Measured failure rate for one printer or one material.\n\n``rate_pct`` is ``None`` when a cross-window subtraction against the next\nnarrower offered window (T-027) would recover fewer than ``MIN_SAMPLE``\nindividual print-log rows for this group \u2014 ``sample`` is still reported.",
   "properties": {
    "material": {
     "anyOf": [
@@ -1608,8 +1771,16 @@
     "title": "Printer Name"
    },
    "rate_pct": {
-    "title": "Rate Pct",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Rate Pct"
    },
    "sample": {
     "title": "Sample",
@@ -1617,18 +1788,25 @@
    }
   },
   "required": [
-   "rate_pct",
    "sample"
   ],
   "title": "FailureRateEntry",
   "type": "object"
  },
  "PowerDrawEntry": {
-  "description": "Energy-weighted average watts measured for one printer.",
+  "description": "Energy-weighted average watts measured for one printer.\n\n``avg_watts`` is ``None`` under the same T-027/T-046 cross-window guard\nas ``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
   "properties": {
    "avg_watts": {
-    "title": "Avg Watts",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Avg Watts"
    },
    "printer_id": {
     "title": "Printer Id",
@@ -1646,7 +1824,6 @@
   "required": [
    "printer_id",
    "printer_name",
-   "avg_watts",
    "sample"
   ],
   "title": "PowerDrawEntry",
@@ -1704,10 +1881,19 @@
   "type": "object"
  },
  "TimeAccuracyEntry": {
+  "description": "Measured slicer-estimate accuracy for one printer.\n\n``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as\n``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
   "properties": {
    "accuracy_pct": {
-    "title": "Accuracy Pct",
-    "type": "number"
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Accuracy Pct"
    },
    "printer_id": {
     "title": "Printer Id",
@@ -1725,7 +1911,6 @@
   "required": [
    "printer_id",
    "printer_name",
-   "accuracy_pct",
    "sample"
   ],
   "title": "TimeAccuracyEntry",
@@ -1734,10 +1919,19 @@
  "TimeAccuracyInsights": {
   "$defs": {
    "TimeAccuracyEntry": {
+    "description": "Measured slicer-estimate accuracy for one printer.\n\n``accuracy_pct`` is ``None`` under the same T-027 cross-window guard as\n``FailureRateEntry.rate_pct`` \u2014 ``sample`` is still reported.",
     "properties": {
      "accuracy_pct": {
-      "title": "Accuracy Pct",
-      "type": "number"
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Accuracy Pct"
      },
      "printer_id": {
       "title": "Printer Id",
@@ -1755,7 +1949,6 @@
     "required": [
      "printer_id",
      "printer_name",
-     "accuracy_pct",
      "sample"
     ],
     "title": "TimeAccuracyEntry",

@@ -10,7 +10,7 @@ import { CalculatorQuotePage } from '../../pages/CalculatorQuotePage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import i18n from '../../i18n';
-import { computePricing, formatMoney } from '../../utils/pricing';
+import { computePricing, formatMoney, moneyDecimals } from '../../utils/pricing';
 
 const mockFilaments = [
   {
@@ -105,16 +105,65 @@ describe('CalculatorQuotePage', () => {
 
     expect(await screen.findByText('Quote')).toBeInTheDocument();
     // Same reference case as the calculator page tests: 1 608 FCFP TTC —
-    // shown twice: the headline total and the breakdown's total row.
+    // shown twice: the headline total and the totals table's total row.
     expect(await screen.findAllByText('1 608 FCFP')).toHaveLength(2);
     expect(screen.getByText('Generic PLA')).toBeInTheDocument();
     // Selected printer appears in the job details.
     expect(screen.getByText('H2S')).toBeInTheDocument();
-    // Cost breakdown replaces the old volume-pricing table: waterfall lines
-    // and no discount grid. "Filament" appears twice — job-details label and
-    // the breakdown's first cost row.
-    expect(screen.getByText('Cost breakdown')).toBeInTheDocument();
-    expect(screen.getAllByText('Filament')).toHaveLength(2);
+    // Price-facing lines only: subtotal + tax + total, no internal cost or
+    // margin build-up. "Filament" appears only once now (the job-details
+    // label) since the per-step cost rows (Filament, Margin, ...) are gone.
+    expect(screen.getByText('Totals')).toBeInTheDocument();
+    expect(screen.queryByText('Cost breakdown')).not.toBeInTheDocument();
+    expect(screen.getByText('Total excl. tax')).toBeInTheDocument();
+    expect(screen.getByText('Tax')).toBeInTheDocument();
+
+    // Numeric check for the quantity===1 branch (unit === task, no
+    // division): the "Total excl. tax" / "Tax" cells must match
+    // computePricing's total_ht_qty/total_ttc_qty for this fixture, rounded
+    // the same way the page does (task-first, then HT/TTC toFixed'd to
+    // display precision with tax as their difference) — not merely be
+    // present in the document.
+    const quantityOneResult = computePricing(
+      {
+        weight_g: 40,
+        printing_time_h: 2,
+        quantity: 1,
+        modeling_hours: 0,
+        modeling_base_price: 0,
+        prep_model_min: 0,
+        prep_slicing_min: 0,
+        prep_transfer_min: 0,
+        post_removal_min: 0,
+        post_support_min: 0,
+        post_additional_min: 0,
+        post_fulfillment_min: 0,
+        stuff_amount: 0,
+        stuff_markup_pct: 20,
+      },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const decimals = moneyDecimals('XPF');
+    const scale = 10 ** decimals;
+    const taskTtcRounded = Math.round(quantityOneResult.total_ttc_qty * scale) / scale;
+    const taskHtRounded = Math.round(quantityOneResult.total_ht_qty * scale) / scale;
+    // Quantity === 1: unitHtQuotient/unitTtcQuotient equal the task figures
+    // directly (no division by quantity).
+    const unitHtDisplayed = Number(taskHtRounded.toFixed(decimals));
+    const unitTtcDisplayed = Number(taskTtcRounded.toFixed(decimals));
+    const unitTaxDisplayed = unitTtcDisplayed - unitHtDisplayed;
+    const table = screen.getByRole('table');
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    expect(within(subtotalRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitHtDisplayed, 'XPF'));
+    expect(within(taxRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitTaxDisplayed, 'XPF'));
+
+    expect(screen.getAllByText('Filament')).toHaveLength(1);
+    expect(screen.queryByText('Margin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Provisions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Labor')).not.toBeInTheDocument();
     expect(screen.queryByText('Volume pricing')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Print/ })).toBeInTheDocument();
     // Date-of-quote line: rendered in the app language (i18n.language), not
@@ -184,13 +233,45 @@ describe('CalculatorQuotePage', () => {
     const total = money(screen.getByTestId('quote-task-ttc').textContent!);
     expect(Math.abs(unit * 6 - total)).toBeLessThanOrEqual(0.01 * 6);
 
-    // The breakdown table's Total row must print the SAME figure as the
+    // The totals table's Total row must print the SAME figure as the
     // headline — one unit price per quote, not two that can disagree by a
     // cent (the bug this fixture was built to catch).
     const table = screen.getByRole('table');
     const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
     const totalCell = within(totalRow).getAllByRole('cell')[1];
     expect(totalCell.textContent).toBe(screen.getByTestId('quote-unit-ttc').textContent);
+
+    // Price-facing lines only: subtotal (HT) and tax, no cost/margin rows.
+    // The tax line is derived from the HT/TTC figures ALREADY rounded to
+    // display precision (toFixed, matching formatMoney's own rounding) —
+    // not their raw quotients — so it always closes the gap to the printed
+    // total exactly (see the invariant check below). This fixture also
+    // discriminates that derivation: the raw-quotient-diff a naive
+    // implementation would use prints "$96.53" here (742.55 + 96.53 =
+    // 839.08, a cent OVER the printed total of $839.07); the sanctioned
+    // rounded-difference figure is "$96.52".
+    const taskHtRounded = Math.round(result.total_ht_qty * 100) / 100;
+    const unitHtQuotient = taskHtRounded / 6;
+    const unitHtDisplayed = Number(unitHtQuotient.toFixed(2));
+    const unitTtcDisplayed = Number((taskRounded / 6).toFixed(2));
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    expect(within(subtotalRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitHtDisplayed, 'USD'));
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    const taxCellText = within(taxRow).getAllByRole('cell')[1].textContent!;
+    expect(taxCellText).toBe(formatMoney(unitTtcDisplayed - unitHtDisplayed, 'USD'));
+    expect(taxCellText).toBe('$96.52');
+
+    // Invariant: the three printed cells must sum EXACTLY in minor units
+    // (cents), not merely be "close" — this is the one document a customer
+    // or their accountant reads, and the audit fixture this guards against
+    // printed a total a cent short of its own HT + Tax lines.
+    const cents = (s: string) => Math.round(money(s) * 100);
+    const htCents = cents(within(subtotalRow).getAllByRole('cell')[1].textContent!);
+    const taxCents = cents(taxCellText);
+    const ttcCents = cents(totalCell.textContent!);
+    expect(htCents + taxCents).toBe(ttcCents);
+
+    expect(screen.queryByText('Margin')).not.toBeInTheDocument();
   });
 
   it('derives the unit price from the rounded task total for a zero-decimal currency', async () => {
@@ -217,11 +298,115 @@ describe('CalculatorQuotePage', () => {
     expect(Math.abs(unit * 3 - total)).toBeLessThanOrEqual(1 * 3);
 
     // Same one-price invariant as the USD test above, for a zero-decimal
-    // currency's breakdown table.
+    // currency's totals table.
     const table = screen.getByRole('table');
     const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
     const totalCell = within(totalRow).getAllByRole('cell')[1];
     expect(totalCell.textContent).toBe(screen.getByTestId('quote-unit-ttc').textContent);
+
+    // Price-facing lines only: subtotal (HT) and tax, no cost/margin rows.
+    // Same rounded-then-differenced derivation as the USD test above (this
+    // particular fixture happens to land on the same figure either way, but
+    // the derivation itself must match production so the invariant below is
+    // meaningful for a zero-decimal currency too).
+    const taskHtRounded = Math.round(result.total_ht_qty);
+    const unitHtQuotient = taskHtRounded / 3;
+    const unitHtDisplayed = Number(unitHtQuotient.toFixed(0));
+    const unitTtcDisplayed = Number((taskRounded / 3).toFixed(0));
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    expect(within(subtotalRow).getAllByRole('cell')[1].textContent).toBe(formatMoney(unitHtDisplayed, 'XPF'));
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    const taxCellText = within(taxRow).getAllByRole('cell')[1].textContent!;
+    expect(taxCellText).toBe(formatMoney(unitTtcDisplayed - unitHtDisplayed, 'XPF'));
+
+    // Invariant: the three printed cells must sum EXACTLY (whole FCFP units
+    // here, since this currency has no fractional display unit).
+    const htUnits = money(within(subtotalRow).getAllByRole('cell')[1].textContent!);
+    const taxUnits = money(taxCellText);
+    const ttcUnits = money(totalCell.textContent!);
+    expect(htUnits + taxUnits).toBe(ttcUnits);
+
+    expect(screen.queryByText('Margin')).not.toBeInTheDocument();
+  });
+
+  // Regression coverage for the printed quote's Total excl. tax / Tax /
+  // Total incl. tax rows failing to sum to their own printed total at
+  // quantities that don't divide it evenly (e.g. 100.00 HT / 113.00 TTC at
+  // qty 3 used to print 33.33 + 4.33 = 37.66, a cent short of the printed
+  // 37.67). Fixtures below (found by scanning weight/time/quantity/currency
+  // combinations) reproduce the same class of drift for both a 2-decimal
+  // and a 0-decimal currency, and pin the tax cell to the SANCTIONED
+  // (rounded-HT/TTC-difference) value rather than the naive raw-quotient
+  // difference a regression would reintroduce.
+  it.each([
+    {
+      label: '2-decimal currency (USD)',
+      currency: 'USD',
+      weight: '1',
+      timeH: '0',
+      timeM: '30',
+      quantity: '2',
+      printingTimeH: 0.5,
+    },
+    {
+      label: '0-decimal currency (XPF)',
+      currency: 'XPF',
+      weight: '1',
+      timeH: '0',
+      timeM: '18',
+      quantity: '2',
+      printingTimeH: 0.3,
+    },
+  ])('sums HT + tax to the printed total exactly for $label', async ({ currency, weight, timeH, timeM, quantity, printingTimeH }) => {
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ currency })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight, timeH, timeM, quantity }) : null,
+    );
+
+    render(<CalculatorQuotePage />);
+    await screen.findByText(new RegExp(`Total for ${quantity} units`));
+
+    const result = computePricing(
+      quoteFixtureInputs(Number(weight), printingTimeH, Number(quantity)),
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const decimals = moneyDecimals(currency);
+    const scale = 10 ** decimals;
+    const qty = Number(quantity);
+    const taskTtcRounded = Math.round(result.total_ttc_qty * scale) / scale;
+    const taskHtRounded = Math.round(result.total_ht_qty * scale) / scale;
+    const unitHtDisplayed = Number((taskHtRounded / qty).toFixed(decimals));
+    const unitTtcDisplayed = Number((taskTtcRounded / qty).toFixed(decimals));
+    const sanctionedTaxValue = unitTtcDisplayed - unitHtDisplayed;
+    // The naive raw-quotient-difference (the pre-fix bug) disagrees with
+    // the sanctioned figure for this fixture — that disagreement is exactly
+    // what makes it a useful regression fixture.
+    const buggyTaxValue = taskTtcRounded / qty - taskHtRounded / qty;
+    const buggyTaxText = formatMoney(buggyTaxValue, currency);
+    const sanctionedTaxText = formatMoney(sanctionedTaxValue, currency);
+    expect(buggyTaxText).not.toBe(sanctionedTaxText);
+
+    const table = screen.getByRole('table');
+    const subtotalRow = within(table).getByText('Total excl. tax').closest('tr')!;
+    const taxRow = within(table).getByText('Tax').closest('tr')!;
+    const totalRow = within(table).getByText('Total incl. tax').closest('tr')!;
+    const htCellText = within(subtotalRow).getAllByRole('cell')[1].textContent!;
+    const taxCellText = within(taxRow).getAllByRole('cell')[1].textContent!;
+    const ttcCellText = within(totalRow).getAllByRole('cell')[1].textContent!;
+
+    expect(htCellText).toBe(formatMoney(unitHtDisplayed, currency));
+    // The rendered tax cell must be the SANCTIONED figure, never the buggy
+    // raw-quotient one.
+    expect(taxCellText).toBe(sanctionedTaxText);
+    expect(taxCellText).not.toBe(buggyTaxText);
+
+    // Invariant: parse the three rendered cells and assert they sum exactly
+    // in minor display units — not merely within a cent of each other.
+    const money = (s: string) => Number(s.replace(/[^\d.-]/g, ''));
+    const minorUnits = (s: string) => Math.round(money(s) * scale);
+    expect(minorUnits(htCellText) + minorUnits(taxCellText)).toBe(minorUnits(ttcCellText));
   });
 
   it('shows the empty hint when no job is stored', async () => {

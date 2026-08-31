@@ -202,7 +202,15 @@ export function useCalculatorState() {
     return () => clearTimeout(handle);
   }, [state]);
 
-  const set = (patch: Partial<CalcState>) => setState((s) => ({ ...s, ...patch }));
+  // Accepts either a plain patch object or a functional updater (React
+  // setState style) so callers that need the latest state — e.g. appending
+  // to an array from a deferred callback — aren't stuck with a stale
+  // render-closure snapshot.
+  function set(patch: Partial<CalcState>): void;
+  function set(updater: (s: CalcState) => Partial<CalcState>): void;
+  function set(patchOrUpdater: Partial<CalcState> | ((s: CalcState) => Partial<CalcState>)): void {
+    setState((s) => ({ ...s, ...(typeof patchOrUpdater === 'function' ? patchOrUpdater(s) : patchOrUpdater) }));
+  }
 
   const reset = () => {
     setState((s) => ({ ...DEFAULT_STATE, easyMode: s.easyMode }));

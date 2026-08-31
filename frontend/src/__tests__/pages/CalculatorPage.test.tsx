@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
@@ -449,6 +449,73 @@ describe('CalculatorPage', () => {
     expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument();
   });
 
+  it('reality check: dismissing two rows within the 150ms leave window keeps both dismissals (T-023)', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    vi.mocked(localStorage.setItem).mockClear();
+    // Failure rate (assumed 30%, measured 8%) AND electricity tariff
+    // (assumed 120, measured 200) both disagree — two rows, so their
+    // deferred onDismiss calls can land inside the same 150ms window.
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({ ...failureCheckInsights, energy_cost_per_kwh: 200 }),
+      ),
+    );
+
+    render(<CalculatorPage />);
+    await screen.findAllByText('1 608 FCFP');
+    await screen.findByText('Reality check');
+    const dismissButtons = await screen.findAllByRole('button', { name: 'Dismiss' });
+    expect(dismissButtons).toHaveLength(2);
+
+    // Both clicks fire well under LEAVE_MS (150ms) apart — each one's
+    // deferred onDismiss captured `dismissedChecks: []` before the fix.
+    fireEvent.click(dismissButtons[0]);
+    fireEvent.click(dismissButtons[1]);
+
+    // Both rows are gone (not just the second one) once the leave timers
+    // fire — the only visible remnant is the restore-2 affordance.
+    await screen.findByText('Restore 2 dismissed');
+    expect(screen.queryByText(/Failure rate/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Electricity price')).not.toBeInTheDocument();
+
+    // And the persisted state (after the 500ms debounce) has both keys, not
+    // just whichever dismissal's stale closure won the race.
+    await waitFor(
+      () => {
+        const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'calculator-state');
+        expect(calls.length).toBeGreaterThan(0);
+        expect(JSON.parse(calls[calls.length - 1][1]).dismissedChecks.sort()).toEqual(['failure:H2S', 'tariff:all']);
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it('reality check: dismissing a single row still records exactly that one dismissal', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    vi.mocked(localStorage.setItem).mockClear();
+    server.use(http.get('/api/v1/calculator/insights', () => HttpResponse.json(failureCheckInsights)));
+
+    render(<CalculatorPage />);
+    await screen.findAllByText('1 608 FCFP');
+    await screen.findByText('Reality check');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await screen.findByText('Restore 1 dismissed');
+
+    await waitFor(
+      () => {
+        const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'calculator-state');
+        expect(calls.length).toBeGreaterThan(0);
+        expect(JSON.parse(calls[calls.length - 1][1]).dismissedChecks).toEqual(['failure:H2S']);
+      },
+      { timeout: 2000 },
+    );
+  });
+
   it('reality check: updating the filament profile from a spool-cost check calls the API with the measured value', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
@@ -867,6 +934,41 @@ describe('CalculatorPage', () => {
     );
   });
 
+  it('normalizes an overflowing minutes value into hours when focus leaves the duration group', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    const minutes = screen.getByLabelText('Minutes');
+    await user.type(minutes, '90');
+    // Click a field outside the SegmentedDuration group so focus actually
+    // leaves it (tabbing from the last segment would do the same, but a
+    // click elsewhere is the most direct way to fire onGroupBlur).
+    await user.click(weight);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Hours')).toHaveValue(1);
+    });
+    expect(screen.getByLabelText('Minutes')).toHaveValue(30);
+    expect(screen.getByLabelText('Days')).toHaveValue(null);
+  });
+
+  it('normalizes an overflowing hours value by rolling into days when focus leaves the duration group', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    const hours = screen.getByLabelText('Hours');
+    await user.type(hours, '25');
+    await user.click(weight);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Days')).toHaveValue(1);
+    });
+    expect(screen.getByLabelText('Hours')).toHaveValue(1);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(null);
+  });
+
   it('validates quantity ≥ 1 and dims results behind an alert', async () => {
     const user = userEvent.setup();
     render(<CalculatorPage />);
@@ -876,6 +978,18 @@ describe('CalculatorPage', () => {
     await user.type(quantity, '0');
 
     await screen.findByText('Must be at least 1');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('flags a negative weight as invalid and dims results behind an alert', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    await user.clear(weight);
+    await user.type(weight, '-5');
+
+    await screen.findByText('Must be 0 or more');
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
@@ -1026,6 +1140,48 @@ describe('CalculatorPage', () => {
     expect(quantity).toHaveValue(2);
     await user.click(dec);
     expect(quantity).toHaveValue(1);
+  });
+
+  it('Reset button opens a confirm modal; Cancel leaves inputs untouched', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    await user.type(weight, '40');
+    expect(weight).toHaveValue(40);
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+
+    expect(screen.getByText('Reset inputs')).toBeInTheDocument();
+    expect(
+      screen.getByText('Reset all calculator inputs to their defaults? Filaments, printers and defaults are kept.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText('Reset inputs')).not.toBeInTheDocument();
+    expect(weight).toHaveValue(40);
+    expect(localStorage.removeItem).not.toHaveBeenCalledWith('calculator-state');
+  });
+
+  it('Reset button, confirmed, clears inputs back to defaults and removes the persisted state', async () => {
+    const user = userEvent.setup();
+    render(<CalculatorPage />);
+
+    const weight = await screen.findByLabelText('Object weight');
+    const hours = screen.getByLabelText('Hours');
+    await user.type(weight, '40');
+    await user.type(hours, '2');
+    expect(weight).toHaveValue(40);
+    expect(hours).toHaveValue(2);
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(screen.queryByText('Reset inputs')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Object weight')).toHaveValue(null);
+    expect(screen.getByLabelText('Hours')).toHaveValue(null);
+    expect(localStorage.removeItem).toHaveBeenCalledWith('calculator-state');
   });
 
   it('shows the empty-state call to action when no filament exists', async () => {
@@ -1357,6 +1513,48 @@ describe('CalculatorPage', () => {
       });
       await screen.findByText('Copy failed — your browser blocked clipboard access');
       expect(screen.queryByText('Summary copied to clipboard')).not.toBeInTheDocument();
+    });
+  });
+
+  // The tree renders under a BrowserRouter, so navigate() mutates the jsdom
+  // URL for every test that follows — reset it, matching FileManagerPage's
+  // "Open in calculator" navigation tests.
+  describe('totals card — open quote button', () => {
+    beforeEach(() => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) =>
+        key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+      );
+    });
+
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('flushes the just-typed state to localStorage synchronously — ahead of the pending 500ms debounce — and navigates to the quote page', async () => {
+      const user = userEvent.setup();
+      render(<CalculatorPage />);
+      await screen.findAllByText('1 608 FCFP');
+
+      // Edit an input so a debounced persist for the NEW value is scheduled
+      // but has not fired yet (it won't for another ~500ms). If "Get quote"
+      // only relied on that debounce, the flushed data would still show the
+      // stale weight ('40') that was on disk before this edit.
+      const weight = screen.getByLabelText('Object weight');
+      await user.clear(weight);
+      await user.type(weight, '55');
+      vi.mocked(localStorage.setItem).mockClear();
+
+      await user.click(screen.getByRole('button', { name: 'Open printable quote' }));
+
+      // No waitFor/advance-timers here: the assertion runs immediately after
+      // the click resolves, well under the 500ms debounce window, so a
+      // passing check proves persistCalculatorStateNow's setItem ran
+      // synchronously inside the click handler rather than via the debounce.
+      const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'calculator-state');
+      expect(calls.length).toBeGreaterThan(0);
+      expect(JSON.parse(calls.at(-1)![1]).weight).toBe('55');
+
+      expect(window.location.pathname).toBe('/calculator/quote');
     });
   });
 });

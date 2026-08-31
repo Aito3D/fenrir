@@ -8443,7 +8443,7 @@ export default {
     syncZohoPrices: 'Sync prices',
     syncProgress: '{{done}} / {{total}}',
     syncSummary:
-      '{{updated}} updated · {{unchanged}} unchanged · {{skipped}} without a dealer price · {{missing}} missing in Zoho',
+      '{{updated}} updated · {{unchanged}} unchanged · {{skipped}} without a dealer price · {{missing}} missing in Zoho · {{unpriced}} unpriced (weight unknown)',
     syncFailed: 'Sync stopped: {{error}}',
     syncTimedOut: 'Sync timed out; some chunks may have applied',
     zohoDuplicateWarning: 'A filament for {{name}} already exists',

@@ -6,7 +6,7 @@ import { ArrowLeft, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from '../components/Button';
 import { buildPricingInputs, foldSessionOverrides, loadCalculatorState, num } from '../hooks/useCalculatorState';
-import { buildWaterfall, computePricing, formatMoney, moneyDecimals, STEP_LABEL_KEY } from '../utils/pricing';
+import { computePricing, formatMoney, moneyDecimals } from '../utils/pricing';
 
 /**
  * Client-facing printable quote. Deliberately light-on-white and free of the
@@ -34,13 +34,29 @@ export function CalculatorQuotePage() {
     return computePricing(effective.inputs, filament, effective.printer, effective.defaults);
   }, [state, filament, printer, defaults]);
 
-  const waterfall = useMemo(() => (result ? buildWaterfall(result) : []), [result]);
   // The quote rounds the TASK figure and derives the unit price from it, so
   // unit × quantity reproduces the printed total to the cent.
   const decimals = moneyDecimals(currency);
   const scale = 10 ** decimals;
   const taskTtcRounded = result ? Math.round(result.total_ttc_qty * scale) / scale : 0;
-  const unitTtcDisplayed = result && result.quantity > 1 ? taskTtcRounded / result.quantity : taskTtcRounded;
+  const unitTtcQuotient = result && result.quantity > 1 ? taskTtcRounded / result.quantity : taskTtcRounded;
+  // Same task-first rounding for the pre-tax figure, so the printed
+  // subtotal/tax/total lines below stay internally consistent with the
+  // headline total.
+  const taskHtRounded = result ? Math.round(result.total_ht_qty * scale) / scale : 0;
+  const unitHtQuotient = result && result.quantity > 1 ? taskHtRounded / result.quantity : taskHtRounded;
+  // Round the unit HT/TTC figures to display precision FIRST — using
+  // toFixed, the exact rounding formatMoney applies internally, so the
+  // rounded value reproduces the same digits formatMoney would print for the
+  // raw quotient (Math.round(x * scale) / scale can disagree with toFixed at
+  // floating-point edge cases and would silently shift the printed HT/TTC
+  // figures, not just the tax line) — then derive the tax line as their
+  // difference. That way the three printed cells always sum exactly at
+  // display precision, even when quantity doesn't divide the total evenly
+  // (e.g. 100.00 HT / 113.00 TTC at quantity 3: 33.33 + 4.34 = 37.67).
+  const unitHtDisplayed = Number(unitHtQuotient.toFixed(decimals));
+  const unitTtcDisplayed = Number(unitTtcQuotient.toFixed(decimals));
+  const unitTaxDisplayed = unitTtcDisplayed - unitHtDisplayed;
   const timeLabel = [
     num(state.timeD) > 0 ? `${Math.max(0, num(state.timeD))}${t('calculator.durationDaysShort')}` : '',
     `${Math.max(0, num(state.timeH))}h`,
@@ -127,36 +143,34 @@ export function CalculatorQuotePage() {
               )}
             </section>
 
-            {waterfall.length > 0 && (
-              <section className="mb-8">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-                  {t('calculator.breakdown')}
-                  {result.quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
-                </h2>
-                {/* Same steps as the calculator's waterfall — exact per-unit
-                    amounts whose sum may differ from the displayed total by
-                    at most one display unit (rounding residual, see the
-                    bounded-drift check in CalculatorQuotePage.test.tsx). The
-                    Total row below prints the same rounded value as the
-                    headline, not the raw sum of these steps. */}
-                <table className="w-full text-sm">
-                  <tbody>
-                    {waterfall.map((step) => (
-                      <tr key={step.key} className="border-b border-gray-100">
-                        <td className="py-1.5 text-gray-500">{t(STEP_LABEL_KEY[step.key])}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatMoney(step.value, currency)}</td>
-                      </tr>
-                    ))}
-                    <tr>
-                      <td className="py-2 font-semibold">{t('calculator.totalTTC')}</td>
-                      <td className="py-2 text-right font-semibold tabular-nums">
-                        {formatMoney(unitTtcDisplayed, currency)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-            )}
+            <section className="mb-8">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                {t('calculator.totals')}
+                {result.quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
+              </h2>
+              {/* Price-facing lines only — no internal cost/margin build-up.
+                  The Total row prints the same rounded value as the
+                  headline, not a raw sum, so the two can never disagree
+                  (bounded-drift check in CalculatorQuotePage.test.tsx). */}
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr className="border-b border-gray-100">
+                    <td className="py-1.5 text-gray-500">{t('calculator.totalHT')}</td>
+                    <td className="py-1.5 text-right tabular-nums">{formatMoney(unitHtDisplayed, currency)}</td>
+                  </tr>
+                  <tr className="border-b border-gray-100">
+                    <td className="py-1.5 text-gray-500">{t('calculator.waterfall.tax')}</td>
+                    <td className="py-1.5 text-right tabular-nums">{formatMoney(unitTaxDisplayed, currency)}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 font-semibold">{t('calculator.totalTTC')}</td>
+                    <td className="py-2 text-right font-semibold tabular-nums">
+                      {formatMoney(unitTtcDisplayed, currency)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
 
             <footer className="text-xs text-gray-400 border-t border-gray-200 pt-4">
               {t('calculator.quote.footnote')}

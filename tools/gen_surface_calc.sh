@@ -1,5 +1,5 @@
 #!/bin/bash
-# Campaign-6 SURFACE generator: the Calculator x Zoho feature's public contract.
+# Campaign-8 SURFACE generator (campaign 6's, + hooks/useSettledValue.ts in R8): the Calculator x Zoho feature's public contract.
 # Regenerate the whole file with:  bash tools/gen_surface_calc.sh > SURFACE.md
 # Every section is produced by the `regen:` command printed above it, so the
 # file is byte-replayable. ANY diff = a surface change = the iteration FAILS.
@@ -17,7 +17,7 @@ R4='grep -hoE "^_?[A-Z][A-Z0-9_]+ =" backend/app/api/routes/calculator.py backen
 R5='grep -hoE "settings\.[a-z_]+" backend/app/api/routes/calculator.py backend/app/services/zoho_filaments.py backend/app/services/calculator_insights.py | sort -u'
 R6='grep -hoE "RequirePermissionIfAuthEnabled\(Permission\.[A-Z_]+\)" backend/app/api/routes/calculator.py | sort | uniq -c | sed "s/^ *//"'
 R7='./venv/bin/python3 -c "import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + \";\") for n, t in sorted(Base.metadata.tables.items()) if n.startswith(\"calculator_\")]" 2>/dev/null'
-R8='grep -hoE "^export (const|function|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/utils/calculatorInsights.ts frontend/src/utils/quoteSummary.ts frontend/src/utils/pricing.ts frontend/src/hooks/useCalculatorState.ts | sort'
+R8='grep -hoE "^export (const|function|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/utils/calculatorInsights.ts frontend/src/utils/quoteSummary.ts frontend/src/utils/pricing.ts frontend/src/hooks/useCalculatorState.ts frontend/src/hooks/useSettledValue.ts | sort'
 R9='grep -rhoE --include="*.ts" --include="*.tsx" "^export (default function|function|const|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/components/calculator frontend/src/components/CalculatorSettingsPanels.tsx frontend/src/pages/CalculatorPage.tsx frontend/src/pages/CalculatorQuotePage.tsx | sort | uniq -c | sed "s/^ *//"'
 R10='grep -oE "^  [a-zA-Z][A-Za-z0-9_]*(:|\()" frontend/src/api/client.ts | grep -iE "calculator|zohofilament" | tr -d ":(" | sort -u'
 

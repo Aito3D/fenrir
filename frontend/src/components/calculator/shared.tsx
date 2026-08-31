@@ -17,6 +17,14 @@ export const tdCls = 'px-3 py-2 text-right text-sm text-white tabular-nums white
 export const stickyTdCls = 'sticky left-0 z-10 bg-inherit';
 export const rowCls = 'calc-table-row border-b border-bambu-dark-tertiary/50 transition-colors';
 
+// Dark tooltip matching the app's other charts (recharts defaults to white).
+export const TOOLTIP = {
+  contentStyle: { background: 'var(--color-bambu-dark-secondary)', border: '1px solid var(--color-bambu-dark-tertiary)', borderRadius: 8, fontSize: 12, padding: '6px 10px' },
+  labelStyle: { color: 'var(--color-bambu-gray)', marginBottom: 2 },
+  itemStyle: { color: '#fff', padding: 0 },
+  cursor: { stroke: 'var(--color-bambu-gray)', strokeWidth: 1 },
+} as const;
+
 
 /** Numeric interpolation toward `target` (~250ms ease-out). Inactive (and
  *  snapped to the target) when disabled or reduced motion is preferred. */

@@ -3884,7 +3884,7 @@ export interface ZohoFilamentProduct {
   has_price: boolean;
 }
 
-/** Outcome of one sync chunk. The four outcome counts sum to `processed`. */
+/** Outcome of one sync chunk. The five outcome counts sum to `processed`. */
 export interface CalculatorFilamentSyncResult {
   processed: number;
   total: number;
@@ -3892,6 +3892,9 @@ export interface CalculatorFilamentSyncResult {
   unchanged: number;
   skipped_no_price: number;
   missing: number;
+  /** Filament has no stored spool weight and the Zoho item name carries none
+   *  either; dividing by the assumed 1 kg default was refused, price kept. */
+  unpriced: number;
   /** Pass as `after_id` for the next chunk; null when the last chunk is done. */
   next_after_id: number | null;
 }
@@ -3950,14 +3953,18 @@ export interface CalculatorFailureRateEntry {
   printer_id: number | null;
   printer_name: string | null;
   material: string | null;
-  rate_pct: number;
+  // null when the backend suppresses the figure (T-027 cross-window guard);
+  // `sample` is still reported.
+  rate_pct: number | null;
   sample: number;
 }
 
 export interface CalculatorTimeAccuracyEntry {
   printer_id: number;
   printer_name: string;
-  accuracy_pct: number;
+  // null when the backend suppresses the figure (T-027 cross-window guard);
+  // `sample` is still reported.
+  accuracy_pct: number | null;
   sample: number;
 }
 
@@ -3977,14 +3984,14 @@ export interface CalculatorSpoolCostBrandEntry {
 export interface CalculatorPowerDrawEntry {
   printer_id: number;
   printer_name: string;
-  avg_watts: number;
+  avg_watts: number | null;
   sample: number;
 }
 
 export interface CalculatorDailyUsageEntry {
   printer_id: number;
   printer_name: string;
-  hours_per_day: number;
+  hours_per_day: number | null;
   observed_days: number;
   sample: number;
 }

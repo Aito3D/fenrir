@@ -687,6 +687,135 @@ class TestCalculatorDefaults:
         assert body["margin_max_mult"] == 1.15
 
     @pytest.mark.asyncio
+    async def test_patch_concurrent_single_field_race_loser_rejected(self, async_client, monkeypatch):
+        """T-025: two concurrent single-field PATCHes must never invert the pair.
+
+        Reproduces the audit's interleaving without two genuinely-overlapping
+        live sessions (this suite's single in-memory SQLite connection can't
+        hold two concurrent transactions open at once without deadlocking):
+        request A's PATCH -- raising min to 1.5, valid against the untouched
+        stored max of 1.6 -- is committed first, exactly as it would be had
+        it landed while request B's read was still in flight. Request B's own
+        ``_get_or_create_defaults`` read is then made to return the pre-A
+        snapshot (min 1.15 / max 1.6) it would have seen had its SELECT
+        genuinely run before A committed, using ``set_committed_value`` so
+        the substitution itself never touches the database. B's PATCH then
+        lowers max to 1.4 -- valid against ITS OWN stale snapshot, but not
+        against what is actually stored.
+
+        Under the old check-then-act code (which validated the pair against
+        the in-memory object the read returned) this passes and inverts the
+        stored pair. The fix validates atomically against the live row at
+        UPDATE time, so B -- the loser of the race -- must be rejected with
+        422, and the stored pair must never invert.
+        """
+        from unittest.mock import patch
+
+        from sqlalchemy.orm.attributes import set_committed_value
+
+        from backend.app.api.routes import calculator as calculator_routes
+
+        resp = await async_client.get("/api/v1/calculator/defaults")
+        assert resp.status_code == 200
+        stale_min = resp.json()["margin_min_mult"]
+        stale_max = resp.json()["margin_max_mult"]
+        assert (stale_min, stale_max) == (1.15, 1.6)
+
+        # Request A lands and commits first (min 1.5 is valid against the
+        # untouched stored max of 1.6).
+        resp_a = await async_client.patch("/api/v1/calculator/defaults", json={"margin_min_mult": 1.5})
+        assert resp_a.status_code == 200, resp_a.text
+
+        real_get_or_create = calculator_routes._get_or_create_defaults
+
+        async def stale_get_or_create(db):
+            defaults = await real_get_or_create(db)
+            # What request B's own read would have returned had it run
+            # before A committed -- set via `set_committed_value` so this
+            # substitution does not mark the object dirty (and therefore
+            # cannot itself write anything back via autoflush).
+            set_committed_value(defaults, "margin_min_mult", stale_min)
+            set_committed_value(defaults, "margin_max_mult", stale_max)
+            return defaults
+
+        with patch.object(calculator_routes, "_get_or_create_defaults", stale_get_or_create):
+            resp_b = await async_client.patch("/api/v1/calculator/defaults", json={"margin_max_mult": 1.4})
+        assert resp_b.status_code == 422, resp_b.text
+
+        # The stored pair must reflect only A's committed write -- never the
+        # inverted min 1.5 / max 1.4 that the old code would have produced.
+        body = (await async_client.get("/api/v1/calculator/defaults")).json()
+        assert body["margin_min_mult"] == 1.5
+        assert body["margin_max_mult"] == 1.6
+
+    @pytest.mark.asyncio
+    async def test_patch_noop_does_not_write_or_bump_updated_at(self, async_client):
+        """A PATCH whose values equal what is already stored must not touch
+        the row. The old ``setattr``-per-field path relied on SQLAlchemy's
+        own dirty-state tracking to suppress the UPDATE (and therefore
+        ``updated_at``'s ``onupdate=func.now()``) when nothing actually
+        changed; the atomic Core ``update()`` used for the race fix must
+        keep doing the same rather than issuing an unconditional write.
+        """
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        before = (await async_client.get("/api/v1/calculator/defaults")).json()
+        assert before["tax_pct"] == 13.0
+
+        real_execute = AsyncSession.execute
+        issued_update = {"seen": False}
+
+        async def spy_execute(self, statement, *args, **kwargs):
+            if "update calculator_defaults" in str(statement).lower():
+                issued_update["seen"] = True
+            return await real_execute(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", spy_execute):
+            resp = await async_client.patch("/api/v1/calculator/defaults", json={"tax_pct": 13.0})
+        assert resp.status_code == 200, resp.text
+        assert not issued_update["seen"], "a no-op PATCH must not issue an UPDATE statement"
+        assert resp.json()["updated_at"] == before["updated_at"]
+
+        after = (await async_client.get("/api/v1/calculator/defaults")).json()
+        assert after["updated_at"] == before["updated_at"]
+
+    @pytest.mark.asyncio
+    async def test_patch_unrelated_field_still_422s_against_an_inverted_row(self, async_client, db_session):
+        """A row forced inverted outside the API (legacy data, a manual DB
+        edit, etc.) must still reject ANY PATCH with the same pair-ordering
+        422 -- not just PATCHes that touch the margin fields themselves. The
+        atomic WHERE-clause guard only fires for the racing single-field
+        case; an unrelated-field PATCH must still hit the unconditional
+        invariant re-check, and must not persist its own change against the
+        already-bad row.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.calculator import CalculatorDefaults
+
+        # Ensure the row exists, then force it inverted directly through the
+        # session -- bypassing the route (and its schema validation)
+        # entirely, the way a pre-existing bad row would already sit in the
+        # database.
+        await async_client.get("/api/v1/calculator/defaults")
+        result = await db_session.execute(select(CalculatorDefaults).where(CalculatorDefaults.id == 1))
+        row = result.scalar_one()
+        row.margin_min_mult = 1.6
+        row.margin_max_mult = 1.15
+        await db_session.commit()
+
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"tax_pct": 42.0})
+        assert resp.status_code == 422, resp.text
+        assert "margin_max_mult" in resp.text
+
+        body = (await async_client.get("/api/v1/calculator/defaults")).json()
+        assert body["tax_pct"] == 13.0  # unrelated change was not persisted
+        assert body["margin_min_mult"] == 1.6
+        assert body["margin_max_mult"] == 1.15
+
+    @pytest.mark.asyncio
     async def test_patch_roundtrip(self, async_client):
         resp = await async_client.patch("/api/v1/calculator/defaults", json={"tax_pct": 11.0})
         assert resp.status_code == 200

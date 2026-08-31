@@ -5,7 +5,7 @@ import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -212,7 +212,7 @@ async def sync_calculator_filaments_from_zoho(
     by_item_id = {product.item_id: product for product in catalogue}
     now = datetime.now(timezone.utc)
 
-    updated = unchanged = skipped_no_price = missing = 0
+    updated = unchanged = skipped_no_price = missing = unpriced = 0
     for filament in chunk:
         product = by_item_id.get(filament.zoho_item_id or "")
         if product is None:
@@ -221,7 +221,18 @@ async def sync_calculator_filaments_from_zoho(
 
         # The filament's own stored weight wins: re-deriving it from the Zoho
         # name on every sync would let an upstream rename re-scale the price.
-        weight = filament.spool_weight_kg or product.spool_weight_kg or 1.0
+        # But when the row has NO stored weight (spool_weight_kg is an
+        # explicit null — allowed by _NULLABLE_FILAMENT_FIELDS) the only
+        # fallback is the Zoho product's own weight, and that can itself be a
+        # silent 1 kg default (``product.weight_inferred``) when the item
+        # name carries no weight segment at all. Dividing the dealer price by
+        # an assumed 1 kg would misprice a spool of any other size, so this
+        # row is left unpriced by the sync instead of guessing.
+        if filament.spool_weight_kg is None and product.weight_inferred:
+            unpriced += 1
+            continue
+
+        weight = filament.spool_weight_kg or product.spool_weight_kg
         new_cost = round(product.dealer_price / weight, 2)
         new_sale = derive_sale_price(new_cost, filament.margin_pct)
 
@@ -257,13 +268,15 @@ async def sync_calculator_filaments_from_zoho(
 
     next_after_id = chunk[-1].id if has_more and chunk else None
     logger.info(
-        "Zoho filament sync chunk after=%s limit=%s: %s updated, %s unchanged, %s without a dealer price, %s missing",
+        "Zoho filament sync chunk after=%s limit=%s: %s updated, %s unchanged, %s without a dealer price, "
+        "%s missing, %s unpriced (weight unknown)",
         payload.after_id,
         payload.limit,
         updated,
         unchanged,
         skipped_no_price,
         missing,
+        unpriced,
     )
     return CalculatorFilamentSyncResponse(
         processed=len(chunk),
@@ -272,6 +285,7 @@ async def sync_calculator_filaments_from_zoho(
         unchanged=unchanged,
         skipped_no_price=skipped_no_price,
         missing=missing,
+        unpriced=unpriced,
         next_after_id=next_after_id,
     )
 
@@ -384,12 +398,61 @@ async def update_calculator_defaults(
     """Update the global calculator defaults."""
     defaults = await _get_or_create_defaults(db)
 
-    for key, value in update_data.model_dump(exclude_unset=True, exclude_none=True).items():
-        setattr(defaults, key, value)
+    changes = update_data.model_dump(exclude_unset=True, exclude_none=True)
 
-    # A partial PATCH can invert the pair against the stored row; the schema
-    # validator only sees the fields that were sent.
-    if defaults.margin_max_mult < defaults.margin_min_mult:
+    # Sending a value identical to what is already stored must not touch the
+    # row: the old ORM `setattr` path relied on SQLAlchemy's own dirty-state
+    # tracking to skip the UPDATE (and therefore `onupdate=func.now()`) when
+    # nothing actually changed. The Core `update()` below is unconditional,
+    # so we replicate that suppression explicitly by only sending the fields
+    # whose value actually differs from the stored row.
+    effective_changes = {key: value for key, value in changes.items() if getattr(defaults, key) != value}
+    margin_touched = "margin_min_mult" in effective_changes or "margin_max_mult" in effective_changes
+
+    if effective_changes:
+        # A partial PATCH can invert the pair against the stored row: the
+        # schema validator only sees fields sent in *this* request, and two
+        # concurrent single-field PATCHes (one raising min, one lowering
+        # max) can each pass their own check against a row the other has
+        # not committed yet. Checking `defaults.margin_max_mult` in Python
+        # here would race the same way, since it reflects whatever this
+        # request read minus whatever it just set -- not what is actually
+        # stored at commit time.
+        #
+        # Baking the guard into the UPDATE's WHERE clause instead makes the
+        # check atomic with the write: SQLite evaluates WHERE against the
+        # live row when the statement takes its write lock, so whichever
+        # request commits second re-validates against the *other* request's
+        # already-committed value and loses the race with 0 rows affected,
+        # instead of silently inverting the stored pair. Only the one-sided
+        # case is racy -- when both fields are sent together the pair is
+        # already validated as a unit by the schema, and when neither is
+        # sent there is nothing to guard.
+        guard = None
+        if "margin_min_mult" in effective_changes and "margin_max_mult" not in effective_changes:
+            guard = CalculatorDefaults.margin_max_mult >= effective_changes["margin_min_mult"]
+        elif "margin_max_mult" in effective_changes and "margin_min_mult" not in effective_changes:
+            guard = CalculatorDefaults.margin_min_mult <= effective_changes["margin_max_mult"]
+
+        stmt = update(CalculatorDefaults).where(CalculatorDefaults.id == defaults.id)
+        if guard is not None:
+            stmt = stmt.where(guard)
+        stmt = stmt.values(**effective_changes)
+
+        result = await db.execute(stmt)
+        if result.rowcount == 0:
+            await db.rollback()
+            raise HTTPException(status_code=422, detail="margin_max_mult must be >= margin_min_mult")
+
+    # The WHERE guard above only fires for the one-sided racing case, and
+    # only when that side actually changed. It never runs for a no-op PATCH
+    # or for a PATCH that doesn't touch the margin pair at all, so a row
+    # that is *already* stored inverted (e.g. from data predating this
+    # guard, or written outside the API) would otherwise slip through
+    # unnoticed. Re-validate the pair unconditionally in that case, exactly
+    # as the previous unconditional post-apply check did, and roll back so
+    # an unrelated field change is not persisted against a bad row either.
+    if not margin_touched and defaults.margin_max_mult < defaults.margin_min_mult:
         await db.rollback()
         raise HTTPException(status_code=422, detail="margin_max_mult must be >= margin_min_mult")
 
