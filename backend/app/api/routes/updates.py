@@ -324,11 +324,12 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], app_dir, 
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await process.communicate()
-    except (OSError, asyncio.CancelledError):
+        stdout, _ = await _communicate_with_timeout(process, _GIT_LOCAL_TIMEOUT_SECONDS)
+    except (OSError, asyncio.CancelledError, asyncio.TimeoutError):
         # Fail closed: let the caller go through the rewrite branch if we
-        # can't even invoke git. The unconditional set-url is the safer
-        # fallback, only mildly destructive.
+        # can't even invoke git (or it inexplicably hangs on a purely local
+        # config read). The unconditional set-url is the safer fallback,
+        # only mildly destructive.
         return False
     if process.returncode != 0:
         # Most likely cause: no `origin` defined yet (fresh clone-style
@@ -680,6 +681,60 @@ async def _discover_target_release(db: AsyncSession) -> str | None:
     return None
 
 
+# Per-step subprocess timeouts for `_perform_update` (#T-021). `git fetch` has
+# no default network timeout, so a half-open TCP connection to github.com used
+# to leave `communicate()` pending forever with `_update_status["status"]`
+# stuck on "downloading" — `apply_update` refuses every retry until the
+# process is restarted. Each value below is picked per-step, not copy-pasted:
+#
+# - Local git metadata reads/writes (`remote get-url`, `remote set-url`) never
+#   touch the network — 30s is generous headroom for disk/lock contention on a
+#   busy host while still failing far faster than a real hang would.
+# - `git fetch --tags` is network-bound and Bambuddy commonly runs on
+#   constrained/metered connections (self-hosted, e.g. behind a home router or
+#   on a Raspberry Pi) — 10 minutes matches typical CI git-fetch conventions.
+# - `git reset --hard` is local disk I/O only (no network) but self-hosted
+#   installs sometimes live on SD cards or network shares — 3 minutes is ample
+#   without being so long a genuine hang goes unnoticed for the length of a
+#   coffee break.
+# - `pip install -r requirements.txt` is network download *and* potentially
+#   compiling C extensions on ARM hardware — 15 minutes.
+# - `npm install` shares the same network + constrained-hardware rationale.
+# - `npm run build` is CPU-bound (no network) but still slow on ARM — 10
+#   minutes, matching the fetch timeout.
+_GIT_LOCAL_TIMEOUT_SECONDS = 30
+_GIT_FETCH_TIMEOUT_SECONDS = 600
+_GIT_RESET_TIMEOUT_SECONDS = 180
+_PIP_INSTALL_TIMEOUT_SECONDS = 900
+_NPM_INSTALL_TIMEOUT_SECONDS = 900
+_NPM_BUILD_TIMEOUT_SECONDS = 600
+
+
+async def _communicate_with_timeout(process: asyncio.subprocess.Process, timeout: float) -> tuple[bytes, bytes]:
+    """``process.communicate()`` bounded by ``timeout``, with a real kill on expiry.
+
+    ``asyncio.wait_for`` only cancels the *awaiting coroutine* on timeout — the
+    child process itself keeps running attached to our pipes (this is
+    documented asyncio behaviour, not a bug). Left alone, that either wedges
+    the caller forever waiting on a process nobody is reading from, or leaks
+    an orphaned git/pip/npm process. So on timeout we ``kill()`` the child and
+    then await ``communicate()`` a second time (no timeout) purely to reap it
+    and drain any already-buffered pipe output — bounded, because the process
+    is already dying.
+    """
+    try:
+        return await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        process.kill()
+        try:
+            await process.communicate()
+        except Exception:
+            # Reaping is best-effort — the process is already being killed;
+            # nothing more we can do if even that fails.
+            pass
+        raise
+
+
 async def _perform_update(target_ref: str):
     """Perform the actual update using git fetch and reset.
 
@@ -753,7 +808,17 @@ async def _perform_update(target_ref: str):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await process.communicate()
+            try:
+                await _communicate_with_timeout(process, _GIT_LOCAL_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.error("git remote set-url timed out after %ss", _GIT_LOCAL_TIMEOUT_SECONDS)
+                _update_status = {
+                    "status": "error",
+                    "progress": 0,
+                    "message": "Failed to configure git",
+                    "error": f"git remote set-url timed out after {_GIT_LOCAL_TIMEOUT_SECONDS}s",
+                }
+                return
 
         _update_status = {
             "status": "downloading",
@@ -787,7 +852,18 @@ async def _perform_update(target_ref: str):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await _communicate_with_timeout(process, _GIT_FETCH_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            error_msg = f"git fetch timed out after {_GIT_FETCH_TIMEOUT_SECONDS}s"
+            logger.error(error_msg)
+            _update_status = {
+                "status": "error",
+                "progress": 0,
+                "message": "Failed to fetch updates",
+                "error": error_msg,
+            }
+            return
 
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "Git fetch failed"
@@ -823,7 +899,18 @@ async def _perform_update(target_ref: str):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await _communicate_with_timeout(process, _GIT_RESET_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            error_msg = f"git reset --hard timed out after {_GIT_RESET_TIMEOUT_SECONDS}s"
+            logger.error(error_msg)
+            _update_status = {
+                "status": "error",
+                "progress": 0,
+                "message": "Failed to apply updates",
+                "error": error_msg,
+            }
+            return
 
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "Git reset failed"
@@ -859,7 +946,18 @@ async def _perform_update(target_ref: str):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await _communicate_with_timeout(process, _PIP_INSTALL_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            error_msg = f"pip install timed out after {_PIP_INSTALL_TIMEOUT_SECONDS}s"
+            logger.error(error_msg)
+            _update_status = {
+                "status": "error",
+                "progress": 0,
+                "message": "Failed to install dependencies",
+                "error": error_msg,
+            }
+            return
 
         if process.returncode != 0:
             logger.warning("pip install warning: %s", stderr.decode() if stderr else "unknown")
@@ -884,7 +982,18 @@ async def _perform_update(target_ref: str):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await process.communicate()
+            try:
+                await _communicate_with_timeout(process, _NPM_INSTALL_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                error_msg = f"npm install timed out after {_NPM_INSTALL_TIMEOUT_SECONDS}s"
+                logger.error(error_msg)
+                _update_status = {
+                    "status": "error",
+                    "progress": 0,
+                    "message": "Failed to build frontend",
+                    "error": error_msg,
+                }
+                return
 
             # npm run build
             process = await asyncio.create_subprocess_exec(
@@ -895,7 +1004,18 @@ async def _perform_update(target_ref: str):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await _communicate_with_timeout(process, _NPM_BUILD_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                error_msg = f"npm run build timed out after {_NPM_BUILD_TIMEOUT_SECONDS}s"
+                logger.error(error_msg)
+                _update_status = {
+                    "status": "error",
+                    "progress": 0,
+                    "message": "Failed to build frontend",
+                    "error": error_msg,
+                }
+                return
 
             if process.returncode != 0:
                 logger.warning("Frontend build warning: %s", stderr.decode() if stderr else "unknown")

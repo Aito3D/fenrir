@@ -11,6 +11,50 @@ import { FileUploadModal } from '../../components/FileUploadModal';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
+// --- Hashing instrumentation used by the "duplicate-check concurrency" tests below ---
+// jsdom's File has neither `arrayBuffer()` nor `text()`, so we give each test file its
+// own `arrayBuffer` override (rather than relying on real file reads). This lets us:
+//  - track how many hashes are in flight at once (proves the pool is bounded), and
+//  - control completion order independently of input order (proves correct attribution).
+let concurrentHashCalls = 0;
+let peakConcurrentHashCalls = 0;
+let hashCompletionOrder: string[] = [];
+
+function resetHashInstrumentation() {
+  concurrentHashCalls = 0;
+  peakConcurrentHashCalls = 0;
+  hashCompletionOrder = [];
+}
+
+function makeInstrumentedFile(
+  content: string,
+  name: string,
+  opts: { delayMs?: number; fail?: boolean } = {},
+): File {
+  const file = new File([content], name, { type: 'application/octet-stream' });
+  const buffer = new TextEncoder().encode(content).buffer;
+  Object.defineProperty(file, 'arrayBuffer', {
+    configurable: true,
+    value: async () => {
+      concurrentHashCalls++;
+      peakConcurrentHashCalls = Math.max(peakConcurrentHashCalls, concurrentHashCalls);
+      try {
+        if (opts.delayMs) {
+          await new Promise((resolve) => setTimeout(resolve, opts.delayMs));
+        }
+        if (opts.fail) {
+          throw new RangeError(`Array buffer allocation failed for ${name}`);
+        }
+        hashCompletionOrder.push(name);
+        return buffer;
+      } finally {
+        concurrentHashCalls--;
+      }
+    },
+  });
+  return file;
+}
+
 describe('FileUploadModal', () => {
   const defaultProps = {
     folderId: null as number | null,
@@ -20,6 +64,7 @@ describe('FileUploadModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetHashInstrumentation();
 
     server.use(
       http.post('/api/v1/library/files', () => {
@@ -650,5 +695,124 @@ describe('FileUploadModal', () => {
         expect(defaultProps.onClose).toHaveBeenCalled();
       });
     });
+  });
+
+  describe('duplicate-check hashing (bounded concurrency, ordering, failure surfacing)', () => {
+    it('never runs more than 3 hashes concurrently for a large batch of files', async () => {
+      const user = userEvent.setup();
+      render(<FileUploadModal {...defaultProps} />);
+
+      // 6 files, all with the same artificial delay: if hashing were still
+      // fanned out with Promise.all (the bug), all 6 would start at once and
+      // peakConcurrentHashCalls would hit 6. A bounded pool of 3 must never
+      // exceed 3, and — since 6 > 3 — should actually reach 3 (not silently
+      // serialize to 1), proving real bounded parallelism is happening.
+      const files = Array.from({ length: 6 }, (_, i) =>
+        makeInstrumentedFile(`content-${i}`, `file${i}.3mf`, { delayMs: 30 }),
+      );
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, files);
+
+      await waitFor(
+        () => {
+          expect(hashCompletionOrder.length).toBe(6);
+        },
+        { timeout: 5000 },
+      );
+
+      expect(peakConcurrentHashCalls).toBe(3);
+    });
+
+    // INVARIANT GUARD, not a fix-pinning regression test: this also passes against
+    // the pre-fix `Promise.all(map)` code, which preserved order too. It exists to
+    // catch a FUTURE change to runWithConcurrencyLimit that attributes results by
+    // completion order (e.g. push-on-resolve) instead of by claimed slot index —
+    // a hash mapped to the wrong file would be silent data corruption.
+    it('attributes hashes/duplicate results to the correct file even when completion order differs from input order', async () => {
+      const user = userEvent.setup();
+      render(<FileUploadModal {...defaultProps} />);
+
+      // fileB finishes first (shortest delay) despite being added second —
+      // exercises the "completion order != input order" case. Only fileB's
+      // content hashes to the value the server reports as a duplicate.
+      const fileA = makeInstrumentedFile('aaa-content', 'fileA.3mf', { delayMs: 60 });
+      const fileB = makeInstrumentedFile('bbb-content', 'fileB.3mf', { delayMs: 5 });
+      const fileC = makeInstrumentedFile('ccc-content', 'fileC.3mf', { delayMs: 30 });
+
+      const bbbHash = '3fe4fb767f8a7283f23b1f486b069d4cbd4774ffcea5364f246ed7096ffa0376';
+      server.use(
+        http.post('/api/v1/library/files/check-duplicates', () => {
+          return HttpResponse.json({
+            duplicates: {
+              [bbbHash]: { id: 42, filename: 'fileB.3mf', folder_id: null, folder_name: 'Existing Folder' },
+            },
+          });
+        }),
+      );
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, [fileA, fileB, fileC]);
+
+      // Sanity check on the instrumentation itself: B really did finish before A.
+      await waitFor(
+        () => {
+          expect(hashCompletionOrder).toEqual(['fileB.3mf', 'fileC.3mf', 'fileA.3mf']);
+        },
+        { timeout: 5000 },
+      );
+
+      // Only fileB's row should be flagged as a duplicate, despite it having
+      // completed hashing first — proves the result wasn't misattributed to
+      // whichever file happened to finish first (e.g. fileA).
+      await waitFor(
+        () => {
+          expect(screen.getByText(/Already in library/)).toBeInTheDocument();
+        },
+        { timeout: 5000 },
+      );
+
+      const rowB = screen.getByText('fileB.3mf').closest('.flex.items-center.gap-3');
+      const rowA = screen.getByText('fileA.3mf').closest('.flex.items-center.gap-3');
+      const rowC = screen.getByText('fileC.3mf').closest('.flex.items-center.gap-3');
+
+      expect(rowB?.textContent).toContain('Already in library');
+      expect(rowA?.textContent).not.toContain('Already in library');
+      expect(rowC?.textContent).not.toContain('Already in library');
+    });
+
+    it('surfaces a per-file hashing failure instead of silently dropping it', async () => {
+      const user = userEvent.setup();
+      render(<FileUploadModal {...defaultProps} />);
+
+      const goodFile = makeInstrumentedFile('good-content', 'good.3mf');
+      const brokenFile = makeInstrumentedFile('irrelevant', 'broken.3mf', { fail: true });
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, [goodFile, brokenFile]);
+
+      // The failure is visible to the user rather than silently swallowed.
+      await waitFor(
+        () => {
+          expect(screen.getByText(/Array buffer allocation failed for broken\.3mf/)).toBeInTheDocument();
+        },
+        { timeout: 5000 },
+      );
+
+      // The failure message is attached to the broken file's row, not the good one.
+      const brokenRow = screen.getByText('broken.3mf').closest('.flex.items-center.gap-3');
+      const goodRow = screen.getByText('good.3mf').closest('.flex.items-center.gap-3');
+      expect(brokenRow?.textContent).toContain('Array buffer allocation failed for broken.3mf');
+      expect(goodRow?.textContent).not.toContain('Array buffer allocation failed');
+
+      // The file with the hashing failure still proceeds to upload (it just
+      // wasn't checked for duplicates) — this must not regress the upload flow.
+      await waitFor(
+        () => {
+          expect(screen.getByRole('button', { name: /Upload \(2\)/i })).not.toBeDisabled();
+        },
+        { timeout: 5000 },
+      );
+    });
+
   });
 });

@@ -1,10 +1,38 @@
 """Integration tests for Updates API endpoints."""
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 from httpx import AsyncClient
+
+
+class _HangingProcess:
+    """Fake subprocess whose first `communicate()` never returns on its own.
+
+    Used to simulate a wedged `git`/`pip`/`npm` child (e.g. a half-open TCP
+    connection to github.com) for the T-021 timeout regression tests below.
+    The first call sleeps far longer than any timeout the tests inject, so it
+    only ever completes via `asyncio.wait_for` cancelling it. `kill()` flips
+    `killed`; a *second* `communicate()` call (the reap after kill, see
+    `_communicate_with_timeout`) returns immediately, mirroring how a real
+    killed process's pipes drain once it's dead.
+    """
+
+    def __init__(self):
+        self.killed = False
+        self.returncode = 0
+        self.communicate_calls = 0
+
+    async def communicate(self):
+        self.communicate_calls += 1
+        if not self.killed:
+            await asyncio.sleep(10)
+        return (b"", b"")
+
+    def kill(self):
+        self.killed = True
 
 
 class TestUpdatesAPI:
@@ -471,6 +499,278 @@ class TestUpdatesAPI:
             "fail the whole fetch (the rest of the refs update cleanly). "
             f"Captured fetch call: {fetch_calls[0]['args']}"
         )
+
+    @pytest.mark.asyncio
+    async def test_communicate_with_timeout_kills_process_and_reaps_it(self):
+        """Regression for T-021: `asyncio.wait_for` alone only cancels the
+        *await*, never the child process — the docs are explicit that the
+        subprocess keeps running. A step that hangs (e.g. `git fetch` against
+        a half-open TCP connection, which has no default network timeout)
+        would otherwise wedge `_perform_update` forever and leak an orphaned
+        process. `_communicate_with_timeout` must both raise on timeout AND
+        `kill()` the process, then reap it with a second `communicate()`.
+
+        This hangs the mocked `communicate()` for 10s but injects a 0.05s
+        timeout — it only completes quickly because `_communicate_with_timeout`
+        bounds the wait; against the pre-fix code (a bare
+        `await process.communicate()`) this helper doesn't exist at all, so
+        this test fails with an AttributeError, not a false pass.
+        """
+        from backend.app.api.routes import updates as updates_module
+
+        proc = _HangingProcess()
+
+        with pytest.raises(asyncio.TimeoutError):
+            await updates_module._communicate_with_timeout(proc, timeout=0.05)
+
+        assert proc.killed is True, "Timeout must actually kill() the child process, not just abandon the await"
+        assert proc.communicate_calls == 2, (
+            "communicate() must be called a second time after kill() to reap the process and drain its "
+            f"pipes; expected exactly 2 calls, got {proc.communicate_calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_perform_update_git_fetch_timeout_kills_process_and_sets_error_status(self, tmp_path):
+        """Regression for T-021's evidence case: `git fetch --prune --tags
+        --force origin` (line ~790 pre-fix) hanging on a half-open TCP
+        connection used to leave `_update_status["status"]` stuck on
+        "downloading" forever, and `apply_update` refuses every retry while
+        status is "downloading"/"installing" — so the Update button stayed
+        dead until the process was restarted.
+
+        Asserts the hung process is actually killed (not just abandoned) and
+        that `_update_status` ends in the error shape so the guard clears.
+        Against the pre-fix code there is no `_GIT_FETCH_TIMEOUT_SECONDS`
+        constant, so `patch.object(..., "_GIT_FETCH_TIMEOUT_SECONDS", ...)`
+        below raises AttributeError immediately rather than hanging the
+        suite — this test cannot pass against the old implementation.
+        """
+        from backend.app.api.routes import updates as updates_module
+
+        app_dir = tmp_path / "app"
+        data_dir = tmp_path / "app" / "data"
+        app_dir.mkdir()
+        data_dir.mkdir()
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        hanging = _HangingProcess()
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            if "fetch" in args:
+                return hanging
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", return_value="/usr/bin/git"),
+            patch.object(updates_module, "_GIT_FETCH_TIMEOUT_SECONDS", 0.05),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        assert hanging.killed is True, "A hung git fetch must be kill()ed, not just abandoned to run forever"
+        status = updates_module._update_status
+        assert status["status"] == "error", (
+            f"After a timeout, _update_status must land in the error shape so apply_update's "
+            f'"already in progress" guard clears; got {status}'
+        )
+        assert status["status"] not in ("downloading", "installing"), (
+            "A status left as downloading/installing here reproduces the exact wedge this fix addresses"
+        )
+        assert "timed out" in (status["error"] or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_perform_update_git_reset_timeout_kills_process_and_sets_error_status(self, tmp_path):
+        """Same regression as the fetch-timeout test above, but for `git
+        reset --hard <target_ref>` (line ~826 pre-fix) — a local-only step,
+        but still unbounded pre-fix. Confirms the fetch step succeeding
+        doesn't matter; reset itself is independently bounded and its
+        failure path independently clears the guard."""
+        from backend.app.api.routes import updates as updates_module
+
+        app_dir = tmp_path / "app"
+        data_dir = tmp_path / "app" / "data"
+        app_dir.mkdir()
+        data_dir.mkdir()
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        hanging = _HangingProcess()
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            if "reset" in args and "--hard" in args:
+                return hanging
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", return_value="/usr/bin/git"),
+            patch.object(updates_module, "_GIT_RESET_TIMEOUT_SECONDS", 0.05),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        assert hanging.killed is True, "A hung git reset must be kill()ed, not just abandoned to run forever"
+        status = updates_module._update_status
+        assert status["status"] == "error"
+        assert status["status"] not in ("downloading", "installing")
+        assert "timed out" in (status["error"] or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_perform_update_pip_install_timeout_is_fatal_and_kills_process(self, tmp_path):
+        """`pip install` (line ~862 pre-fix) is unusual: an ordinary non-zero
+        exit code from pip is only ever logged as a warning — the update
+        proceeds regardless (existing, unchanged behaviour; see the sibling
+        happy-path tests). A *timeout* must not get the same free pass: a
+        hung pip process signals something structurally wrong (e.g. a stalled
+        PyPI download) and must abort the update with a clear error, not
+        silently continue as if pip had merely warned. This also independently
+        confirms the guard clears from this step, not just from git fetch/reset."""
+        from backend.app.api.routes import updates as updates_module
+
+        app_dir = tmp_path / "app"
+        data_dir = tmp_path / "app" / "data"
+        app_dir.mkdir()
+        data_dir.mkdir()
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        hanging = _HangingProcess()
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            if "pip" in args and "install" in args:
+                return hanging
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", return_value="/usr/bin/git"),
+            patch.object(updates_module, "_PIP_INSTALL_TIMEOUT_SECONDS", 0.05),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        assert hanging.killed is True, "A hung pip install must be kill()ed, not just abandoned to run forever"
+        status = updates_module._update_status
+        assert status["status"] == "error", (
+            "A pip install timeout must be fatal (unlike an ordinary non-zero pip exit code, which only "
+            f"warns and continues) so the update doesn't silently limp forward; got {status}"
+        )
+        assert status["status"] not in ("downloading", "installing")
+        assert "timed out" in (status["error"] or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_perform_update_npm_install_timeout_is_fatal_and_kills_process(self, tmp_path):
+        """`npm install` (line ~887 pre-fix) had no failure handling at all
+        pre-fix — not even a warning on non-zero exit. A hang there must
+        still be bounded and fatal, same as every other step."""
+        from backend.app.api.routes import updates as updates_module
+
+        app_dir = tmp_path / "app"
+        data_dir = tmp_path / "app" / "data"
+        frontend_dir = app_dir / "frontend"
+        app_dir.mkdir()
+        data_dir.mkdir()
+        frontend_dir.mkdir()
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        hanging = _HangingProcess()
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            if args[:2] == ("/usr/bin/npm", "install"):
+                return hanging
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        def fake_find_executable(name):
+            return f"/usr/bin/{name}"
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", side_effect=fake_find_executable),
+            patch.object(updates_module, "_NPM_INSTALL_TIMEOUT_SECONDS", 0.05),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        assert hanging.killed is True, "A hung npm install must be kill()ed, not just abandoned to run forever"
+        status = updates_module._update_status
+        assert status["status"] == "error"
+        assert status["status"] not in ("downloading", "installing")
+        assert "timed out" in (status["error"] or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_apply_update_not_blocked_after_a_prior_step_timed_out(self, async_client: AsyncClient):
+        """End-to-end guard-clearing check requested by T-021: once a step
+        inside `_perform_update` has timed out and left `_update_status` in
+        the error shape, a fresh `POST /apply` must be allowed through again
+        — not rejected with "Update already in progress". Pre-fix, a hung
+        step left `_update_status["status"]` stuck on "downloading"/
+        "installing" forever, and this exact guard (apply_update, ~line 933)
+        refused every retry until the process was restarted."""
+        from backend.app.api.routes import updates as updates_module
+
+        # Simulate the state _perform_update leaves behind after any step
+        # times out.
+        updates_module._update_status = {
+            "status": "error",
+            "progress": 0,
+            "message": "Failed to fetch updates",
+            "error": "git fetch timed out after 600s",
+        }
+
+        with (
+            patch.object(updates_module, "_is_ha_addon", return_value=False),
+            patch.object(updates_module, "_is_docker_environment", return_value=False),
+            patch.object(updates_module, "_discover_target_release", new_callable=AsyncMock, return_value="v9.9.9"),
+            patch.object(updates_module, "_perform_update", new_callable=AsyncMock),
+        ):
+            response = await async_client.post("/api/v1/updates/apply")
+
+        body = response.json()
+        assert body["success"] is True, f"apply_update must not refuse a retry once status is 'error'; got: {body}"
+        assert body["message"] != "Update already in progress"
 
     @pytest.mark.asyncio
     async def test_apply_update_passes_discovered_release_to_perform_update(self, async_client: AsyncClient):

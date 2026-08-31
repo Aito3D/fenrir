@@ -7712,3 +7712,223 @@ route contract are unchanged, so `SURFACE.md` was left byte-identical.
 Note: `backend/tests/unit/services/test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`
 failed once during the full coverage run and passed in isolation and on a clean re-run of the full
 suite — a pre-existing flake (declared `KNOWN_FLAKY` for this task), not caused by this change.
+
+## T-023 — 2026-08-31 — a printer whose firmware sends a frame the status parser cannot handle now stays connected instead of going permanently offline (user-approved behavior change)
+
+**Approved change (verbatim):** "a printer whose firmware sends a frame the parser cannot handle
+stays connected (with that frame logged and skipped) instead of going permanently offline."
+
+`BambuMQTTClient._on_message()` (`backend/app/services/bambu_mqtt.py`) is paho-mqtt's `on_message`
+callback, invoked on paho's own network thread. It wrapped `self._process_message(payload)` in a
+`try`/`except json.JSONDecodeError: pass` and nothing else. paho is left at its default
+`suppress_exceptions=False`, and `loop_forever()` only catches `OSError` around the network loop —
+so any other exception raised anywhere inside `_process_message` (the ~7000-line status parser
+that reads AMS, xcam, layer/progress, HMS, and dozens of other fields out of each frame) escaped
+`_on_message`, propagated out of paho's thread, and killed it. Once that thread died the printer's
+MQTT session never reconnected — its card went permanently stale until the whole app was
+restarted. Two field-level guards already existed for this exact failure mode (`total_layer_num` at
+`_process_message`'s `int(data["total_layer_num"] or 0)` conversion, `layer_num` at its own
+`int(data["layer_num"])` conversion — both wrapped in `except (TypeError, ValueError)` with a
+comment explaining the network-thread-death risk), but they only covered the two fields someone had
+already hit in practice; any other field with an unexpected type in any other firmware build would
+reproduce the same permanent disconnect through an uncovered code path.
+
+Fixed by adding a trailing `except Exception: logger.exception(...)` to `_on_message`, after the
+existing `except json.JSONDecodeError: pass`. `Exception` (not `BaseException`) is caught, so
+`KeyboardInterrupt`/`SystemExit`/`asyncio.CancelledError` still propagate normally. The log call
+uses `logger.exception(...)` (not `.error()`/`.warning()`) so the traceback is preserved, and
+includes the printer's serial number, the MQTT topic, and a bounded excerpt of the raw payload
+(`msg.payload[:200]`, i.e. the first 200 bytes) — enough to diagnose which field broke the parser
+without dumping a whole frame into the log or risking credentials (MQTT frames here carry printer
+telemetry/commands, not secrets). This is a narrow entry-point hardening: the two existing
+field-level guards at `total_layer_num`/`layer_num` were left untouched, and the parser itself was
+not refactored.
+
+Two things checked and worth recording rather than silently assuming away:
+- **Log-flooding risk:** if the *same* frame shape fails on every message (a firmware field the
+  parser will genuinely never handle, sent on every status push), this now logs at ERROR on every
+  one of those frames — status pushes recur every 1-2s, so a printer stuck on such a field would
+  produce a steady stream of ERROR-level tracebacks for as long as it stays connected. No
+  rate-limiting was added: there is no existing rate-limiting pattern anywhere else in this file to
+  match (checked — none of the other exception handlers in `bambu_mqtt.py` throttle), and this
+  failure mode is a firmware regression that should be *loud* so it gets noticed and reported,
+  rather than quietly rate-limited into obscurity. It trades a dead connection (silent, permanent,
+  previously required an app restart to notice) for a noisy but recoverable one (log spam, but the
+  printer's card stays live) — which matches the approved change's intent.
+- **Partially-applied state:** `_process_message` mutates `self.state` field-by-field as it walks
+  through the payload (e.g. `self.state.wifi_signal = ...`, then later `self.state.developer_mode =
+  ...`, then the large `"print" in payload` block with many more direct assignments), with no
+  transactional/rollback mechanism — this was already true before this change. If an exception is
+  raised partway through, the fields processed before the raise point are already applied to
+  `self.state.raw_data`/`self.state.<field>`; the remainder of that one frame is simply skipped.
+  Previously this didn't matter in practice because such an exception killed the connection outright
+  (no more frames would arrive to observe the partial state). After this fix, the connection
+  survives and the *next* frame's `_process_message` call runs against that partially-updated state
+  — but every individual field assignment already reads from the frame's own payload rather than
+  from previously-derived state (each `if "<field>" in payload:` block is independent), so a stale
+  single field from a half-processed frame is overwritten by the next frame's value for that same
+  field exactly as it would be on any other dropped/incomplete frame (e.g. a frame lost to a network
+  blip). No transactional/rollback mechanism was added — none is needed for this fix; this is
+  reported per the task's request, not treated as a defect to fix here.
+
+Regression coverage: new `TestUnhandledParserErrorDoesNotKillTheConnection` class in
+`backend/tests/unit/services/test_bambu_mqtt.py`. `test_bad_frame_does_not_propagate_and_is_logged`
+monkeypatches `_parse_xcam_data` (reached from `_process_message` via a top-level `"xcam"` frame) to
+raise `RuntimeError`, delivers that frame through the real `_on_message` path, and asserts the call
+does not raise while the log record contains the printer's serial number and the traceback
+(`RuntimeError`). `test_next_good_frame_is_processed_normally_afterward` delivers the same bad frame,
+restores the real parser, then delivers a normal `{"print": {"mc_percent": 55}}` frame and asserts
+`mqtt_client.state.progress == 55` — proving the connection (and the client object's ability to keep
+processing) survives the bad frame. Verified both tests fail against the pre-fix code: the
+`except Exception` block was temporarily removed from a scratch copy of `_on_message` (restoring the
+old `except json.JSONDecodeError: pass`-only body), the two new tests were run against it, and both
+failed with `RuntimeError: simulated parser bug` propagating out of `_on_message` uncaught — then the
+fix was restored and the full file diffed byte-for-byte back to the fixed version before re-running
+the suite.
+
+Verification: `ruff check backend/app/services/bambu_mqtt.py backend/tests/unit/services/test_bambu_mqtt.py`
+and `ruff format --check` on the same — both clean (`All checks passed!`, `2 files already
+formatted`). `../venv/bin/python3 -m pytest tests/ -q -k "mqtt or bambu"` — 1029 passed. New test
+class alone: `../venv/bin/python3 -m pytest tests/unit/services/test_bambu_mqtt.py -k
+"TestUnhandledParserErrorDoesNotKillTheConnection" -v` — 2 passed. Full-suite coverage gate (`bash
+tools/coverage_all.sh backend`) — 12568 passed, 1 failed (`test_external_camera.py::
+TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`, declared `KNOWN_FLAKY` for this task;
+re-run alone immediately after — passed), TOTAL 74% statements, matching the 74% baseline exactly
+(no decrease). `./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved. `bash
+tools/gen_surface_all.sh | diff - SURFACE.md` — empty; no class, method signature, route, or schema
+changed (only the body of a private callback method), so `SURFACE.md` was left byte-identical.
+
+## T-021 — 2026-08-31 — an update step that hangs forever now times out and clears the "in progress" guard (user-approved behavior change)
+
+**Approved change (verbatim):** "an update that currently hangs indefinitely will instead fail
+with a timeout error after a bounded wait, and the Update button becomes usable again."
+
+`_perform_update` (`backend/app/api/routes/updates.py`, the background task started by
+`POST /api/v1/updates/apply`) ran every subprocess step — `git remote set-url`, `git fetch --prune
+--tags --force origin`, `git reset --hard <target_ref>`, `pip install -r requirements.txt`, `npm
+install`, `npm run build` — as a bare `await process.communicate()` with no timeout anywhere. `git`
+has no default network timeout, so a half-open TCP connection to github.com (or a stalled PyPI/npm
+registry download) left `communicate()` pending forever, with the module-global `_update_status`
+stuck on `"downloading"`/`"installing"`. `apply_update` refuses every new `/apply` request while
+`_update_status["status"]` is in `["downloading", "installing"]` (`"Update already in progress"`),
+and nothing ever reset that value — so a single hung step wedged the in-app updater until the whole
+process was restarted.
+
+Fixed with a new helper, `_communicate_with_timeout(process, timeout)`: it wraps
+`process.communicate()` in `asyncio.wait_for(..., timeout=timeout)`. `asyncio.wait_for` only cancels
+the *awaiting coroutine* on timeout — the child process itself keeps running — so on timeout the
+helper explicitly `kill()`s the process, then calls `communicate()` a second time (no timeout) to
+reap it and drain any buffered pipe output (bounded, because the process is already dying), then
+re-raises `asyncio.TimeoutError`. Every `process.communicate()` call in `_perform_update` (and in
+`_origin_points_at_repo`, the local `git remote get-url` helper it calls) now goes through this
+wrapper with a per-step timeout, each picked and justified individually rather than copy-pasted: 30s
+for local git metadata reads/writes (`remote get-url`/`remote set-url` — no network involved), 600s
+(10 min) for `git fetch` (network-bound; Bambuddy commonly runs on constrained/metered connections,
+e.g. behind a home router or on a Raspberry Pi), 180s (3 min) for `git reset --hard` (local disk I/O
+only, but self-hosted installs sometimes live on SD cards or network shares), 900s (15 min) each for
+`pip install` and `npm install` (network download plus potential native-extension compilation on
+ARM hardware), and 600s for `npm run build` (CPU-bound, no network, but still slow on ARM).
+
+Every timeout site sets `_update_status` to the `"error"` shape (with a message naming which step
+timed out) and returns, so the guard clears on every failure path, not just the one most likely to
+hang first. This also changes `pip install`'s and `npm install`'s ordinary non-zero-exit-code
+behavior indirectly by contrast: an ordinary non-zero exit from `pip`/`npm` was, and still is, only
+logged as a warning (the update proceeds regardless — unchanged, existing behavior) — but a
+*timeout* on those same steps is now always fatal, since a hung process signals something
+structurally different (a stalled network transfer, not a package's own exit code) and letting the
+update silently limp forward afterward would be worse than surfacing the failure. `_origin_points_at_repo`
+keeps its existing fail-closed contract: a timeout there (like the pre-existing `OSError`/
+`CancelledError` handling) makes it return `False`, so `_perform_update` falls through to the
+`git remote set-url` rewrite branch rather than crashing the whole update over a purely local
+config read that should never realistically hang.
+
+Considered and concluded, not fixed here (no rollback mechanism was built, per the task's
+instruction): a timeout mid-`git reset --hard` can leave the working tree in a genuinely mixed state
+— `git reset --hard` doesn't write atomically, so `kill()`ing it mid-checkout can leave some files at
+the old ref's content and others already rewritten to the target ref's content, on disk, with no
+git-level indication anything is wrong (the index will look consistent because reset writes it
+incrementally too). A timeout mid-`pip install` is comparatively safer: pip installs each package
+into a temp location and only moves it into `site-packages` on success, so a mid-install kill
+typically leaves *some* packages upgraded and others still at their old version — a dependency skew,
+not filesystem corruption, and reasonably self-healing on a subsequent successful `pip install -r
+requirements.txt` run. Both cases now at least *fail loudly* (the pre-fix behavior was silent
+indefinite hang, which is strictly worse for the user), and the update flow already has no
+transactional/rollback story for the analogous case of a step failing with a normal non-zero exit
+code — this fix does not regress that pre-existing limitation, only bounds how long the user waits
+to find out about it.
+
+Regression coverage: extended `backend/tests/integration/test_updates_api.py` with a shared
+`_HangingProcess` fake (first `communicate()` sleeps far past any injected timeout; `kill()` flips a
+flag; a second `communicate()` call returns immediately, like a real killed process draining its
+pipes) and six new tests. `test_communicate_with_timeout_kills_process_and_reaps_it` exercises the
+helper directly: asserts it raises `asyncio.TimeoutError`, that `kill()` was actually called (not
+just abandoned), and that `communicate()` was called exactly twice (send + reap).
+`test_perform_update_git_fetch_timeout_kills_process_and_sets_error_status` and the analogous
+`..._git_reset_timeout_...` and `..._pip_install_timeout_is_fatal_and_kills_process` and
+`..._npm_install_timeout_is_fatal_and_kills_process` tests each hang one specific step end-to-end
+through `_perform_update` (with the others mocked to succeed instantly), and assert: the hung
+process was killed, `_update_status["status"] == "error"`, the status is NOT `"downloading"`/
+`"installing"`, and the error message names a timeout. The pip/npm variants specifically assert the
+timeout is fatal even though those steps' ordinary non-zero-exit path is only a warning.
+`test_apply_update_not_blocked_after_a_prior_step_timed_out` seeds `_update_status` with the error
+shape a timeout leaves behind and asserts a fresh `POST /apply` succeeds rather than returning
+`"Update already in progress"` — the guard-clearing postcondition the task asked for explicitly.
+Verified the tests fail against the pre-fix code: temporarily restored `git show
+HEAD:backend/app/api/routes/updates.py` over the working file (the new test file left in place) and
+re-ran just the new tests — 5 of 6 failed immediately with `AttributeError` (e.g. `does not have the
+attribute '_GIT_FETCH_TIMEOUT_SECONDS'`) because the timeout constants/helper don't exist pre-fix,
+proving these tests are tied to the fix rather than passing vacuously; the sixth
+(`test_apply_update_not_blocked_after_a_prior_step_timed_out`) passed unchanged against old code
+too, since it only pins the pre-existing (and already-correct) guard-clearing logic in
+`apply_update` itself, not the new timeout mechanism — noted as an intentional general-regression
+test rather than a fix-specific one. The working file was then restored from a saved copy and
+diffed byte-for-byte back to the fixed version before re-running the full suite.
+
+Verification: `ruff check backend/app/api/routes/updates.py
+backend/tests/integration/test_updates_api.py` and `ruff format --check` on the same — both clean
+(`All checks passed!`, files already formatted after one auto-format pass each).
+`../venv/bin/python3 -m pytest tests/ -q -k "update"` — 507 passed (was 501 before the 6 new tests).
+New tests alone: `../venv/bin/python3 -m pytest tests/integration/test_updates_api.py -q -k
+"timeout or communicate_with_timeout or not_blocked_after"` — 6 passed in 2.26s (short injected
+timeouts, no multi-second real sleeps). Full-suite coverage gate (`bash tools/coverage_all.sh
+backend`, whole `backend/app` tree, `-n 30`) — 12575 passed, TOTAL 74% statements, matching the 74%
+baseline exactly (no decrease); `app/api/routes/updates.py` itself at 72%.
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved (no golden probe exercises
+the in-app updater's subprocess timing). `bash tools/gen_surface_all.sh | diff - SURFACE.md` —
+empty; no route path, method, permission, or public schema changed (only private helper functions
+and error-path message strings inside an existing background task), so `SURFACE.md` was left
+byte-identical.
+
+## T-027 — 2026-08-31 — a file whose duplicate-check hash fails now says so in the upload list instead of silently skipping duplicate detection (user-approved behavior change)
+
+Approved by the user on 2026-08-31, RETROACTIVELY, after the iteration-4 verifier correctly
+failed the iteration for an unsanctioned behavior change. Recording the provenance honestly,
+because the gap is in the loop's own machinery and will recur otherwise:
+
+The audit-robustness finding behind T-027 carried `behavior_change: false`, so `plan.py ingest`
+never routed it to the approval gate — yet the auditor's own `fix` text said "surface the per-file
+failure rather than returning the unhashed entry silently", which is a user-visible change by
+definition. The orchestrator then passed that instruction to the worker verbatim. The worker did
+exactly what it was told; the loop asked for a behavior change without ever asking the user.
+The blind verifier caught it from the diff alone, with no knowledge of the task list — which is
+the entire reason that gate is blind.
+
+WHAT CHANGED. `FileUploadModal.checkDuplicates` previously did `catch { return uf; }` when
+`computeSha256` threw: the file kept its place in the upload list with no hash, silently skipped
+duplicate detection, and was re-uploaded with nothing shown to the user. It now sets
+`hashError: "Duplicate check failed: <message>"` on that file, rendered as a yellow
+`text-xs text-yellow-400` line under the file's row (with the text also on the `title` attribute),
+matching the placement and idiom of the existing duplicate-warning text in the same list.
+The file's `status` stays `pending` and it still uploads exactly as before — only the silence changed.
+
+NOT CHANGED (behaviour-neutral, and the actual OOM fix): hashing is now run through
+`runWithConcurrencyLimit` with `HASH_POOL_SIZE = 3` instead of an uncapped `Promise.all`, so
+dragging 50 x 40 MB of 3MFs no longer allocates every ArrayBuffer at once. Hashes are byte-identical
+(`computeSha256` itself is untouched) and results are written to `results[current]`, where `current`
+is claimed synchronously before any await — so attribution cannot drift when workers finish out of order.
+
+KNOWN INCOMPLETE, needs a user decision before it can be finished: `crypto.subtle.digest` is one-shot
+and cannot be fed incrementally, so a SINGLE very large file is still read whole into memory. Truly
+streaming the digest would require adding an incremental SHA-256 runtime dependency (e.g. hash-wasm)
+to the frontend. The worker checked package.json and node_modules, found none, and correctly declined
+to add one on its own initiative. The "many files at once" OOM is fixed; the "one huge file" case is not.
