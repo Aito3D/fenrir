@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import sys
 import time
 
@@ -323,6 +324,7 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], app_dir, 
             cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         stdout, _ = await _communicate_with_timeout(process, _GIT_LOCAL_TIMEOUT_SECONDS)
     except (OSError, asyncio.CancelledError, asyncio.TimeoutError):
@@ -709,6 +711,81 @@ _PIP_INSTALL_TIMEOUT_SECONDS = 900
 _NPM_INSTALL_TIMEOUT_SECONDS = 900
 _NPM_BUILD_TIMEOUT_SECONDS = 600
 
+# Belt-and-braces bound on the post-kill reap in `_communicate_with_timeout`
+# (#T-021 follow-up). A process-group SIGKILL should make `communicate()`'s
+# EOF arrive almost immediately — but "should" isn't a bound, and the whole
+# point of this helper is that `_perform_update` can never hang regardless of
+# what the child does. 5s is generous for scheduler jitter and draining
+# already-buffered pipe data from an already-dead process group, while still
+# being short enough that if EOF hasn't arrived by then, waiting longer won't
+# help either (something has escaped the group entirely — e.g. a double-fork
+# daemonizing itself out of the session — and no amount of extra patience
+# reaches it).
+_REAP_TIMEOUT_SECONDS = 5.0
+
+
+def _safe_kill(process: asyncio.subprocess.Process) -> None:
+    """``process.kill()`` that never raises.
+
+    A bare ``process.kill()`` can raise ``ProcessLookupError`` if the child
+    already exited in the race between our timeout firing and this call
+    running. That is a faster-than-expected exit, not an error — letting it
+    propagate would replace the pending ``TimeoutError`` in
+    ``_communicate_with_timeout`` with a generic exception, which
+    ``_perform_update``'s outer handler then reports as "Update failed
+    unexpectedly" instead of the step-specific timeout message.
+    """
+    try:
+        process.kill()
+    except ProcessLookupError:
+        pass
+
+
+def _kill_process_group(process: asyncio.subprocess.Process) -> None:
+    """Kill every process in ``process``'s session, not just the direct child.
+
+    ``process.kill()`` alone only signals the direct child. That is not
+    enough for the steps this bounds: `git fetch` spawns
+    git-remote-https/ssh, `pip install` spawns build backends, `npm install`
+    / `npm run build` spawn node workers — any of which can inherit our
+    stdout/stderr pipe fds and keep them open (so `communicate()` never sees
+    EOF) even after the direct child is gone. Every subprocess this module
+    starts is launched with ``start_new_session=True`` for exactly this
+    reason: it makes that subprocess the leader of a new session/process
+    group, so ``os.killpg`` here reaches every descendant that inherited the
+    pipes, not just the one PID we hold a handle to.
+
+    SIGKILL only, no SIGTERM grace period: every step this bounds (git
+    fetch/reset, pip install, npm install/build) is a stateless, idempotent
+    CLI invocation — a retry re-runs it from scratch, so there is nothing
+    gained by giving the group a chance to shut down cleanly, and a
+    catchable SIGTERM could simply be ignored, forcing a SIGKILL follow-up
+    anyway. Going straight to an uncatchable SIGKILL keeps the timeout bound
+    tight instead of adding a grace-period sleep to every timed-out step.
+
+    Both ``os.getpgid`` and ``os.killpg`` can raise ``ProcessLookupError`` if
+    the child (and therefore its group) already exited in the race between
+    the timeout firing and this call running — see ``_safe_kill`` for why
+    that must be swallowed here rather than left to propagate.
+    """
+    try:
+        pgid = os.getpgid(process.pid)
+    except (ProcessLookupError, AttributeError):
+        # ProcessLookupError: already reaped. AttributeError: no real pid
+        # available (defensive — every real asyncio subprocess.Process has
+        # one). Either way, fall back to killing just the direct child so
+        # the timeout path still makes progress.
+        _safe_kill(process)
+        return
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        # Any other OS-level failure to signal the group — fall back to the
+        # direct child so the timeout path still makes progress.
+        _safe_kill(process)
+
 
 async def _communicate_with_timeout(process: asyncio.subprocess.Process, timeout: float) -> tuple[bytes, bytes]:
     """``process.communicate()`` bounded by ``timeout``, with a real kill on expiry.
@@ -717,20 +794,27 @@ async def _communicate_with_timeout(process: asyncio.subprocess.Process, timeout
     child process itself keeps running attached to our pipes (this is
     documented asyncio behaviour, not a bug). Left alone, that either wedges
     the caller forever waiting on a process nobody is reading from, or leaks
-    an orphaned git/pip/npm process. So on timeout we ``kill()`` the child and
-    then await ``communicate()`` a second time (no timeout) purely to reap it
-    and drain any already-buffered pipe output — bounded, because the process
-    is already dying.
+    an orphaned git/pip/npm process. So on timeout we kill the whole process
+    GROUP (``_kill_process_group`` — see its docstring for why the direct
+    child alone is not enough) and then await ``communicate()`` a second time
+    to reap it and drain any already-buffered pipe output.
+
+    That second ``communicate()`` is itself wrapped in ``_REAP_TIMEOUT_SECONDS``
+    rather than run unbounded. A process-group SIGKILL should make EOF arrive
+    almost immediately in the overwhelmingly common case, but "should" is not
+    a guarantee this helper can hang on — if some descendant has escaped the
+    group entirely, the reap bound below is what keeps this function's total
+    runtime bounded regardless, not the kill itself.
     """
     try:
         return await asyncio.wait_for(process.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        process.kill()
+        _kill_process_group(process)
         try:
-            await process.communicate()
+            await asyncio.wait_for(process.communicate(), timeout=_REAP_TIMEOUT_SECONDS)
         except Exception:
-            # Reaping is best-effort — the process is already being killed;
-            # nothing more we can do if even that fails.
+            # Reaping is best-effort — the process (group) is already being
+            # killed; nothing more we can do if even the bounded reap fails.
             pass
         raise
 
@@ -807,6 +891,7 @@ async def _perform_update(target_ref: str):
                 cwd=str(app_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
             try:
                 await _communicate_with_timeout(process, _GIT_LOCAL_TIMEOUT_SECONDS)
@@ -851,6 +936,7 @@ async def _perform_update(target_ref: str):
             cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             stdout, stderr = await _communicate_with_timeout(process, _GIT_FETCH_TIMEOUT_SECONDS)
@@ -898,6 +984,7 @@ async def _perform_update(target_ref: str):
             cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             stdout, stderr = await _communicate_with_timeout(process, _GIT_RESET_TIMEOUT_SECONDS)
@@ -945,6 +1032,7 @@ async def _perform_update(target_ref: str):
             cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             stdout, stderr = await _communicate_with_timeout(process, _PIP_INSTALL_TIMEOUT_SECONDS)
@@ -981,6 +1069,7 @@ async def _perform_update(target_ref: str):
                 cwd=str(frontend_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
             try:
                 await _communicate_with_timeout(process, _NPM_INSTALL_TIMEOUT_SECONDS)
@@ -1003,6 +1092,7 @@ async def _perform_update(target_ref: str):
                 cwd=str(frontend_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
             try:
                 stdout, stderr = await _communicate_with_timeout(process, _NPM_BUILD_TIMEOUT_SECONDS)

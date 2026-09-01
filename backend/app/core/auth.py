@@ -284,6 +284,9 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # `require_ownership_permission`. Purge stays denied as a genuinely
         # destructive op.
         Permission.LIBRARY_PURGE,
+        # AMS_HISTORY_DELETE (T-032) — bulk age-based purge of AMS sensor
+        # history, same tier as ARCHIVES_PURGE / LIBRARY_PURGE above.
+        Permission.AMS_HISTORY_DELETE,
         # PROJECTS_CREATE / _UPDATE / _DELETE moved to the allowlist under
         # `can_manage_projects` (#1893) — they were denied for every API key,
         # making the project-management surface (create, add-archives, delete)

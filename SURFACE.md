@@ -826,6 +826,7 @@ aito:create
 aito:delete
 aito:read
 aito:update
+ams_history:delete
 ams_history:read
 api_keys:create
 api_keys:delete

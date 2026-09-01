@@ -133,6 +133,10 @@ class Permission(StrEnum):
 
     # AMS History
     AMS_HISTORY_READ = "ams_history:read"
+    # Admin-only bulk purge of old AMS sensor history (age-based delete), same
+    # tier as ARCHIVES_PURGE / LIBRARY_PURGE — a read-only role must not be
+    # able to destroy history via the read permission (T-032).
+    AMS_HISTORY_DELETE = "ams_history:delete"
     PRINTER_SENSOR_HISTORY_READ = "printer_sensor_history:read"
 
     # Stats/Metrics
@@ -322,6 +326,7 @@ PERMISSION_CATEGORIES = {
     ],
     "Stats & History": [
         Permission.AMS_HISTORY_READ,
+        Permission.AMS_HISTORY_DELETE,
         Permission.PRINTER_SENSOR_HISTORY_READ,
         Permission.STATS_READ,
         Permission.STATS_FILTER_BY_USER,

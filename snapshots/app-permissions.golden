@@ -6,6 +6,7 @@
   "aito:delete",
   "aito:read",
   "aito:update",
+  "ams_history:delete",
   "ams_history:read",
   "api_keys:create",
   "api_keys:delete",
@@ -282,6 +283,7 @@
    "smart_plugs:update"
   ],
   "Stats & History": [
+   "ams_history:delete",
    "ams_history:read",
    "printer_sensor_history:read",
    "stats:filter_by_user",
@@ -391,6 +393,7 @@
     "firmware:read",
     "firmware:update",
     "ams_history:read",
+    "ams_history:delete",
     "printer_sensor_history:read",
     "stats:read",
     "stats:filter_by_user",
