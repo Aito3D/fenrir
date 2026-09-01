@@ -8223,3 +8223,215 @@ change from this task — printer permissions were only reordered/renamed at cal
 `bash tools/gen_surface_all.sh | diff - SURFACE.md` — empty; route paths, methods, and the permission
 catalogue are unchanged (`SURFACE.md` records path+method, not which dependency gates a route), so
 `SURFACE.md` was left byte-identical and not rewritten.
+
+## T-033 — 2026-08-31 — `DELETE /printer-sensor-history/{printer_id}` now requires a write-level permission instead of the read-only one, and honors an API key's per-printer allowlist (user-approved behavior change)
+
+**Approved change (verbatim):** "the built-in 'Viewers' role holds PRINTER_SENSOR_HISTORY_READ
+(core/permissions.py:544) and can currently purge sensor history; it would start getting 403."
+
+`delete_old_history` in `backend/app/api/routes/printer_sensor_history.py` (the age-based bulk
+purge behind `DELETE /api/v1/printer-sensor-history/{printer_id}`) was gated on
+`Permission.PRINTER_SENSOR_HISTORY_READ` — the same read-only permission the sibling `GET` route
+(`get_printer_sensor_history`) uses. Any principal holding only that permission (the built-in
+Viewers role, and — as with T-032 — the built-in Operators role too, since neither held any
+write-level printer-sensor-history permission) could destroy heater sensor history despite their
+role being described as read-only. The route also never checked an API key's `printer_ids`
+allowlist, even though the path is printer-scoped (`/{printer_id}`). Unlike AMS history, this file
+has only the one sibling `GET` route (`get_printer_sensor_history`, also `/{printer_id}`) — it is
+left unchanged (still `RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)`, no
+printer-scope check), matching the read-gate-is-out-of-scope precedent set by T-032 for its sibling
+GET route; a read-only gate leaking a printer's own history to a caller who has the read permission
+but not that printer's allowlist entry is a materially different, narrower issue than a caller being
+able to destroy history outright, and was not in this task's evidence or fix instructions.
+
+**Design decision — new `Permission.PRINTER_SENSOR_HISTORY_DELETE`
+(`"printer_sensor_history:delete"`), not a reused admin permission — mirrors T-032 exactly.** Added
+to `backend/app/core/permissions.py`: the `Permission` enum (immediately after
+`PRINTER_SENSOR_HISTORY_READ`), the `"Stats & History"` `PERMISSION_CATEGORIES` entry (immediately
+after `PRINTER_SENSOR_HISTORY_READ`), and picked up automatically by `ALL_PERMISSIONS` / the
+`Administrators` group (which grants `ALL_PERMISSIONS`). It was deliberately **not** added to the
+`Operators` or `Viewers` group permission lists — Administrators only, following the same
+`ARCHIVES_PURGE` / `LIBRARY_PURGE` / `AMS_HISTORY_DELETE` precedent T-032 established, and the same
+explicit user decision reused here: Operators loses purge access on this route too, a wider blast
+radius than the approved-change text names (which called out only Viewers) but the unavoidable,
+symmetric consequence of removing the read permission from the gate without granting Operators a
+substitute. For API-key classification (`backend/app/core/auth.py`),
+`Permission.PRINTER_SENSOR_HISTORY_DELETE` was added to `_APIKEY_DENIED_PERMISSIONS` (admin-only for
+keys), directly alongside the `AMS_HISTORY_DELETE` / `ARCHIVES_PURGE` / `LIBRARY_PURGE` entries
+there, satisfying the structural `test_every_permission_has_a_classification` drift guard in
+`test_auth_apikey_rbac.py`. No existing-install migration is needed, for the mechanism T-032's
+correction already established: `User.has_permission` short-circuits on `self.is_admin`
+(group-NAME based, `any(g.name == "Administrators")`), so administrators on upgraded installs keep
+access without any DB change — `User.get_permissions()` itself reads the STORED `Group.permissions`
+JSON column, not `DEFAULT_GROUPS` live, so an upgraded install's stored Administrators row will not
+list `printer_sensor_history:delete` until the group is re-saved; that is cosmetic (group editor UI
+only) and identical to every prior permission addition in this codebase, including T-032's.
+
+The route dependency changed from
+`RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)` to
+`RequirePrinterPermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_DELETE)` — the same
+printer-scoped dependency used for `AMS_HISTORY_DELETE` (T-032) and the 10 `PRINTERS_FILES` routes
+in `printers.py`, which additionally enforces an API key's `printer_ids` allowlist via
+`check_printer_access` after the permission check passes. Path, method, query parameters (`days`),
+and the response shape (`{"deleted": ..., "message": ...}`) are all unchanged. The disabled-auth
+path is unchanged: `require_permission_if_auth_enabled` returns `None` immediately when auth is off,
+before any permission or printer-scope check runs, so an anonymous caller with auth disabled still
+gets 200 exactly as before (regression-tested below).
+
+Regression coverage added to `backend/tests/unit/test_printer_sensor_history.py` (the file's
+existing test suite for this route; no separate integration file existed for
+printer-sensor-history, unlike AMS history):
+- `test_delete_with_auth_disabled_is_unchanged` — auth explicitly disabled via
+  `Settings(key="auth_enabled", value="false")`, anonymous DELETE still succeeds with `deleted: 0`.
+- `TestDeleteOldHistoryPermissionGate` — static/closure tests (matching the pattern in
+  `test_ams_history_api.py::_declared_permissions`, itself mirroring `test_aito_contacted.py`)
+  asserting the DELETE route's declared permission is `["printer_sensor_history:delete"]` (not
+  `["printer_sensor_history:read"]`), that the sibling GET route's permission is unchanged, and that
+  the DELETE route's dependency callable is
+  `require_printer_permission_if_auth_enabled.<locals>.checker` (the printer-scoped wrapper, not the
+  plain one).
+- `TestDeleteOldHistoryRoleEnforcement` — end-to-end HTTP tests with a real JWT-authenticated
+  Viewers-role user (403) and a custom test-only group holding only
+  `printer_sensor_history:delete` (200), isolating "has the write permission" from "is an
+  Administrator" (which holds every permission and wouldn't distinguish a real fix from a
+  coincidence).
+- `TestDeleteOldHistoryApiKeyPrinterAllowlist::test_api_key_excluded_from_the_printer_gets_403` — an
+  API key whose `printer_ids` excludes the target printer gets 403 naming the printer id. Because
+  `PRINTER_SENSOR_HISTORY_DELETE` is classified admin-only for API keys (see design decision above),
+  a real API key can never clear the permission gate to reach the printer_ids check at all — that
+  classification is covered separately by the existing `test_auth_apikey_rbac.py` structural tests.
+  To exercise the printer-scoped allowlist wiring on *this* route in isolation, the test
+  monkeypatches `backend.app.core.auth._check_apikey_permissions` to a no-op so the request reaches
+  `check_printer_access`, proving the DELETE route is actually wired to the printer-scoped
+  dependency rather than a plain permission dependency.
+
+Verified the new regression tests fail against the pre-fix code: temporarily reverted just the one
+line in `printer_sensor_history.py` back to
+`RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)` (kept the new test file
+content and the `Permission.PRINTER_SENSOR_HISTORY_DELETE` enum member in place) and re-ran the
+file's full test suite — `test_delete_route_requires_the_write_permission`,
+`test_delete_route_no_longer_accepts_the_read_permission`,
+`test_delete_route_uses_the_printer_scoped_dependency`, `test_viewers_role_is_refused`,
+`test_write_permission_holder_succeeds`, and `test_api_key_excluded_from_the_printer_gets_403` all
+failed (6 of 12 in the file; the role-enforcement test failed with `assert 200 == 403` — the
+Viewers-only user's DELETE succeeded, exactly the vulnerability this task closes; the
+write-permission-holder test failed with `assert 403 == 200` since the deleter group's
+`printer_sensor_history:delete` permission doesn't satisfy the pre-fix
+`printer_sensor_history:read` gate), confirming they are tied to the fix rather than passing
+vacuously. The file was then restored and diffed byte-for-byte back to the fixed version (`diff`
+reported no differences) before re-running the full suite, which passed 12/12.
+
+Verification: `ruff check backend/app/api/routes/printer_sensor_history.py
+backend/app/core/permissions.py backend/app/core/auth.py backend/tests/unit/test_printer_sensor_history.py`
+and `ruff format --check` on the same four files — both clean (`All checks passed!`, `4 files
+already formatted`).
+`../venv/bin/python3 -m pytest tests/unit/test_printer_sensor_history.py -q` — 12 passed.
+`../venv/bin/python3 -m pytest tests/ -q -k "sensor_history or permission or api_key"` — 343 passed.
+
+**Probes.** `./venv/bin/python3 tools/snapshot.py verify` — before this change: 10/10 match (checked
+`git status` first; the two other concurrent workers in this shared worktree had only
+`backend/app/schemas/archive.py` and frontend files modified, neither of which affects any probe
+this task touches). After this change: `app-permissions` moved (new
+`printer_sensor_history:delete` permission — sanctioned). Diffed the live probe command's output
+against the pre-change golden first to confirm the only additions were the three expected
+occurrences of `printer_sensor_history:delete` — in `all` (the sorted `ALL_PERMISSIONS` list), in
+`categories."Stats & History"`, and in `default_groups.Administrators.permissions` — nowhere else,
+confirming Operators/Viewers do not carry it; then re-recorded only those three lines by hand
+(surgical patch, not a full `snapshot.py record`, to avoid baking the other two workers' in-flight
+`archive.py`/frontend edits into the shared golden files — though neither of those files is read by
+this probe anyway). `app-route-perms` moved —
+`RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)` count dropped from 2 to 1
+(the DELETE route's occurrence, sanctioned by this entry; the new
+`RequirePrinterPermissionIfAuthEnabled(...)` call does not match that probe's grep pattern at all,
+by construction — `RequirePrinterPermissionIfAuthEnabled(` never contains the substring
+`RequirePermissionIfAuthEnabled(` immediately after `Require`, since `Printer` intervenes). Patched
+only that one count line in `snapshots/app-route-perms.golden` by hand; no `PRINTERS_*` or other
+line needed touching, since (unlike the T-032/T-031 concurrent run) no other worker had
+`backend/app/api/routes/*.py` in flight at the time. `./venv/bin/python3 tools/snapshot.py verify`
+now reports 10/10 match again. `app-openapi-index` did not move (permission gates aren't part of the
+OpenAPI schema).
+
+`bash tools/coverage_all.sh backend` — TOTAL statement coverage 74% (70255 statements, 18381 missed;
+12630 passed, 1 warning, no failures) — at the 74% baseline, matching within rounding (T-031 recorded
+70244 statements at the same 74%; the ~11-statement difference here reflects the small number of
+statements this task and the two other concurrent workers' in-flight files added, well within normal
+churn for a shared worktree). `SURFACE.md`'s "Permission catalogue" section was hand-patched with the
+single new line (`printer_sensor_history:delete`, sorted immediately before
+`printer_sensor_history:read`) and diffed byte-for-byte against the real `regen:` command's live
+output to confirm exact placement and that no other line in that section moved; the full
+`gen_surface_all.sh` was deliberately not run, since it would also re-snapshot the HTTP-routes,
+database-tables, and frontend-symbol sections against this same shared worktree's other two workers'
+in-flight, uncommitted changes to `backend/app/schemas/archive.py` and the frontend.
+
+## T-034 REMEDIATION — 2026-08-31 — archive URL normalization confined to the write path; SURFACE.md's four new exports covered (user-approved)
+
+A blind verifier flagged the T-034 commit that introduced `NormalizedUrl = Annotated[str | None,
+BeforeValidator(normalize_link_scheme)]` in `backend/app/schemas/archive.py`: the annotation had been
+applied not only to `ArchiveBase.external_url` (the write path, inherited by `ArchiveUpdate`) but also
+to `ArchiveResponse.makerworld_url` and `ArchiveResponse.external_url` — the read path. That meant a
+row already stored scheme-less (e.g. `makerworld.com/models/999`) came back from the API rewritten to
+`https://makerworld.com/models/999`: the API was mutating bytes for data it never touched, invisible to
+every golden probe and to `SURFACE.md`, since a `BeforeValidator` doesn't change the JSON schema. The
+user decided: keep normalization on the write path only.
+
+**Fix.** Removed `NormalizedUrl` from both `ArchiveResponse.makerworld_url` and
+`ArchiveResponse.external_url`, restoring their declared types to byte-identical matches of
+`git show refactor-base:backend/app/schemas/archive.py` (`makerworld_url: str | None` and
+`external_url: str | None = None`). `ArchiveBase.external_url` keeps `NormalizedUrl`, and
+`normalize_link_scheme`/`NormalizedUrl` remain defined and exercised on every write
+(`ArchiveUpdate`, which inherits from `ArchiveBase`).
+
+**Surviving behavior changes (what remains after this remediation):**
+- A scheme-less `external_url` submitted on the write path (`PATCH /api/v1/archives/{id}`, or any
+  other caller of `ArchiveUpdate`) is still stored normalized to `https://<value>` — it is not
+  rejected; `normalize_link_scheme` never raises.
+- The read path was reverted by this remediation: `ArchiveResponse` no longer applies
+  `normalize_link_scheme` to `makerworld_url` or `external_url`. The API now returns whatever is
+  stored, verbatim — a scheme-less value already in the database (from before this validator existed,
+  or from a write path that bypasses `ArchiveUpdate`, e.g. 3MF metadata ingestion or a GitHub backup
+  restore) is no longer silently rewritten on the way out.
+- In the UI, this is user-visible: all four archive external-link sinks now refuse to open a
+  `javascript:` or `data:` URL outright, and a scheme-less value now opens as `https://<value>` where
+  it previously opened as a path relative to the app origin (`frontend/src/utils/safeExternalUrl.ts`'s
+  `openSafeExternalUrl`/`toSafeExternalUrl`, unchanged by this remediation — the security boundary
+  lives there, at the display sink, not in the API response).
+
+**SURFACE.md's four new exports (additive-only, no changelog gap remains):**
+- `frontend/src/utils/safeExternalUrl.ts` -> `openSafeExternalUrl`, `toSafeExternalUrl` (T-034) — the
+  frontend display-sink guard described above.
+- `frontend/src/utils/date.ts` -> `formatDateTimeOrDash`, `formatDurationOrDash` (T-001) — new names
+  added alongside the pre-existing `formatDate`/`formatDuration`, which were left byte-identical; no
+  caller was repointed to the new names, so no rendered output changed.
+
+**Tests.** `backend/tests/unit/test_archive_schema_url_normalize.py` was corrected, not deleted: its
+two `ArchiveResponse` tests that asserted the read-path rewrite were replaced —
+`test_archive_response_normalizes_scheme_less_makerworld_url` became
+`test_archive_response_returns_scheme_less_url_verbatim`, now asserting `ArchiveResponse` returns a
+stored scheme-less `makerworld_url` unchanged. Verified this new test is a real regression guard by
+temporarily re-adding `NormalizedUrl` to both `ArchiveResponse` fields (pre-remediation state) and
+re-running it alone: it failed —
+`AssertionError: assert 'https://makerworld.com/en/models/12345' == 'makerworld.com/en/models/12345'`
+— then the schema file was restored and re-diffed byte-for-byte against the corrected version before
+re-running the full file. Also added three tests pinning that the validator still never rejects:
+whitespace-only, a Windows-style path (`C:\models\thing.3mf` — its `C:` matches the leading-scheme
+regex, so it passes through unchanged rather than gaining a prefix), and a value with an embedded
+newline. `test_archive_response_leaves_valid_makerworld_url_unchanged` and
+`test_archive_response_does_not_reject_javascript_external_url` needed no change — both already
+described values that pass through unmodified by construction, which is what the reverted read path
+still does. `backend/tests/integration/test_archives_api.py`'s two T-034 tests
+(`test_update_archive_external_url_scheme_less_normalized_to_https`,
+`test_update_archive_external_url_does_not_reject_unusual_schemes`) needed no change either: both PATCH
+the write path, so normalization happens once, at write, before the row is stored; the subsequent
+response read-back returns the already-normalized stored value verbatim, so the assertions still hold.
+
+**Verification.** `../venv/bin/python3 -m pytest tests/unit/test_archive_schema_url_normalize.py -v` —
+15 passed (10 original plus 3 new never-rejects tests plus the corrected verbatim-read test).
+`../venv/bin/python3 -m pytest tests/ -q -k "archive"` — 734 passed. `ruff check` and
+`ruff format --check` on the touched files — both clean. `./venv/bin/python3 tools/snapshot.py verify`
+— 10/10 match, and `bash tools/gen_surface_all.sh` diffed byte-for-byte against the committed
+`SURFACE.md` confirmed no movement (removing a `BeforeValidator` application doesn't change the
+`SURFACE.md` schema-derived output, as expected — the four exports this entry documents were already
+present from the original T-034/T-001 work; this remediation adds no new export). `bash
+tools/coverage_all.sh backend` — TOTAL statement coverage 74%, at baseline (12632 passed, 1 pre-existing
+unrelated flake in `test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`
+that passed alone on immediate re-run — a listed known-flaky test, not caused by this change).

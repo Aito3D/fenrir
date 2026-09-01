@@ -138,6 +138,11 @@ class Permission(StrEnum):
     # able to destroy history via the read permission (T-032).
     AMS_HISTORY_DELETE = "ams_history:delete"
     PRINTER_SENSOR_HISTORY_READ = "printer_sensor_history:read"
+    # Admin-only bulk purge of old printer heater sensor history (age-based
+    # delete), same tier as AMS_HISTORY_DELETE / ARCHIVES_PURGE / LIBRARY_PURGE
+    # — a read-only role must not be able to destroy history via the read
+    # permission (T-033).
+    PRINTER_SENSOR_HISTORY_DELETE = "printer_sensor_history:delete"
 
     # Stats/Metrics
     STATS_READ = "stats:read"
@@ -328,6 +333,7 @@ PERMISSION_CATEGORIES = {
         Permission.AMS_HISTORY_READ,
         Permission.AMS_HISTORY_DELETE,
         Permission.PRINTER_SENSOR_HISTORY_READ,
+        Permission.PRINTER_SENSOR_HISTORY_DELETE,
         Permission.STATS_READ,
         Permission.STATS_FILTER_BY_USER,
     ],

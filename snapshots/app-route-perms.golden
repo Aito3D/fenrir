@@ -61,7 +61,7 @@
 6 RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ)
 3 RequirePermissionIfAuthEnabled(Permission.PIPELINES_RUN)
 4 RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE)
-2 RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)
+1 RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)
 2 RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL)
 3 RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE)
 5 RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ)

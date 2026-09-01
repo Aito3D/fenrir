@@ -85,6 +85,7 @@
   "pipelines:read",
   "pipelines:run",
   "pipelines:write",
+  "printer_sensor_history:delete",
   "printer_sensor_history:read",
   "printers:ams_rfid",
   "printers:clear_plate",
@@ -285,6 +286,7 @@
   "Stats & History": [
    "ams_history:delete",
    "ams_history:read",
+   "printer_sensor_history:delete",
    "printer_sensor_history:read",
    "stats:filter_by_user",
    "stats:read"
@@ -395,6 +397,7 @@
     "ams_history:read",
     "ams_history:delete",
     "printer_sensor_history:read",
+    "printer_sensor_history:delete",
     "stats:read",
     "stats:filter_by_user",
     "cost_centers:read_own",

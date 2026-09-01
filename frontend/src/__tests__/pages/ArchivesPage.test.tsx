@@ -2,7 +2,7 @@
  * Tests for the ArchivesPage component.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
@@ -892,6 +892,108 @@ describe('ArchivesPage', () => {
       const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
       const el = await within(card).findByTitle(/Suggested sale price from the calculator/, undefined, { timeout: 5000 });
       expect(el.title).toMatch(/Minimum task price applied$/);
+    });
+  });
+
+  describe('external link safety (T-034)', () => {
+    // The globe button's onClick hands archive.external_url straight to
+    // window.open. A javascript:/data: URL must never reach it, no matter
+    // what the backend returns (github_restore.py writes external_url
+    // straight from a backup JSON, bypassing the ArchiveUpdate schema).
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('does not call window.open for a javascript: external_url', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'javascript:alert(document.cookie)' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not call window.open for a data: external_url', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'data:text/html,<script>alert(1)</script>' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens a scheme-less external_url normalised to https://', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'printables.com/model/12345' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).toHaveBeenCalledWith('https://printables.com/model/12345', '_blank');
+    });
+
+    it('opens a normal https:// external_url unchanged', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'https://printables.com/model/12345' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).toHaveBeenCalledWith('https://printables.com/model/12345', '_blank');
     });
   });
 });

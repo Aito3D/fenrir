@@ -15,6 +15,8 @@ import {
   formatTimeOnly,
   formatETA,
   formatDuration,
+  formatDurationOrDash,
+  formatDateTimeOrDash,
   formatRelativeTime,
   formatElapsedTime,
   elapsedDays,
@@ -380,6 +382,73 @@ describe('formatDuration', () => {
     expect(formatDuration(3600)).toBe('1h 0m');
     expect(formatDuration(5400)).toBe('1h 30m');
     expect(formatDuration(9000)).toBe('2h 30m');
+  });
+});
+
+describe('formatDurationOrDash', () => {
+  it('returns an em dash for 0 seconds (unlike formatDuration, which says "0m")', () => {
+    expect(formatDurationOrDash(0)).toBe('—');
+  });
+
+  it('returns an em dash for null', () => {
+    expect(formatDurationOrDash(null)).toBe('—');
+  });
+
+  it('returns an em dash for negative values', () => {
+    expect(formatDurationOrDash(-5)).toBe('—');
+  });
+
+  it('formats minutes only when under 1 hour', () => {
+    expect(formatDurationOrDash(59)).toBe('0m');
+    expect(formatDurationOrDash(60)).toBe('1m');
+    expect(formatDurationOrDash(3599)).toBe('59m');
+  });
+
+  it('formats hours and minutes at and beyond the hour boundary', () => {
+    expect(formatDurationOrDash(3600)).toBe('1h 0m');
+    expect(formatDurationOrDash(3661)).toBe('1h 1m');
+  });
+
+  it('formats very large durations', () => {
+    expect(formatDurationOrDash(360000)).toBe('100h 0m');
+  });
+
+  it('is a distinct function from formatDuration — the zero/placeholder behavior differs on purpose', () => {
+    // Same input, deliberately different outputs. If a future refactor makes
+    // these two agree on 0, this assertion will fail loudly.
+    expect(formatDuration(0)).toBe('0m');
+    expect(formatDurationOrDash(0)).toBe('—');
+    expect(formatDuration(null)).toBe('--');
+    expect(formatDurationOrDash(null)).toBe('—');
+  });
+});
+
+describe('formatDateTimeOrDash', () => {
+  it('returns an em dash for null', () => {
+    expect(formatDateTimeOrDash(null)).toBe('—');
+  });
+
+  it('does NOT guard against unparseable strings the way it guards against null (matches the pre-move local helper exactly)', () => {
+    // parseUTCDate appends 'Z' and hands back whatever `new Date` makes of
+    // that — for junk input that's a truthy Invalid Date, not null, so the
+    // `d ? ... : '—'` check never catches it and toLocaleString() runs on
+    // the Invalid Date. This is a pre-existing quirk being preserved
+    // byte-for-byte from the original local `formatDate` in
+    // PrintLogTable.tsx / FileHistoryModal.tsx, not new behavior.
+    expect(formatDateTimeOrDash('not-a-date')).toBe('Invalid Date');
+  });
+
+  it('round-trips a valid ISO string through parseUTCDate + toLocaleString (locale-agnostic)', () => {
+    const isoString = '2025-06-15T12:00:00Z';
+    const expected = parseUTCDate(isoString)!.toLocaleString();
+    expect(formatDateTimeOrDash(isoString)).toBe(expected);
+  });
+
+  it('is a distinct function from formatDate — the null placeholder differs on purpose', () => {
+    // Same input, deliberately different outputs. If a future refactor
+    // makes these two agree on null, this assertion will fail loudly.
+    expect(formatDate(null)).toBe('');
+    expect(formatDateTimeOrDash(null)).toBe('—');
   });
 });
 

@@ -905,6 +905,7 @@ orca_cloud:auth
 pipelines:read
 pipelines:run
 pipelines:write
+printer_sensor_history:delete
 printer_sensor_history:read
 printers:ams_rfid
 printers:clear_plate
@@ -1683,9 +1684,11 @@ export function formatDate
 export function formatDateInput
 export function formatDateOnly
 export function formatDateTime
+export function formatDateTimeOrDash
 export function formatDisplayName
 export function formatDuration
 export function formatDurationFromHours
+export function formatDurationOrDash
 export function formatElapsedTime
 export function formatETA
 export function formatFileSize
@@ -1770,6 +1773,7 @@ export function normalizePreheatFilamentType
 export function openArchiveInSlicer
 export function openCameraWindow
 export function openInSlicer
+export function openSafeExternalUrl
 export function parseDateInput
 export function parseFilamentColor
 export function parseGridFrames
@@ -1848,6 +1852,7 @@ export function taskTotal
 export function titleCaseSegments
 export function toDateTimeLocalValue
 export function toOptimisticProjects
+export function toSafeExternalUrl
 export function toTaskLike
 export function unitMultiplier
 export function unitPriceCurve

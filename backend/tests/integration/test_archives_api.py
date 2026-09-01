@@ -775,6 +775,41 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_archive_external_url_scheme_less_normalized_to_https(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """A bare domain/path is normalised to https:// rather than dropped
+        (#T-034) -- it is not rejected, unlike ExternalLinkBase.validate_url."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}", json={"external_url": "printables.com/model/12345"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["external_url"] == "https://printables.com/model/12345"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_external_url_does_not_reject_unusual_schemes(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """The schema must not 422 a value it previously accepted -- a
+        javascript: payload round-trips unmodified through the API; the
+        frontend (not this schema) is the boundary that refuses to open it."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}", json={"external_url": "javascript:alert(1)"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["external_url"] == "javascript:alert(1)"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_filament_grams_can_be_set_by_hand(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):

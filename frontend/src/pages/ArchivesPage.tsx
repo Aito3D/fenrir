@@ -104,6 +104,7 @@ import type { PlateMetadata } from '../types/plates';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatFileSize } from '../utils/file';
+import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -625,8 +626,7 @@ function ArchiveCard({
       label: archive.external_url ? t('archives.menu.externalLink') : t('archives.menu.viewOnMakerWorld'),
       icon: <Globe className="w-4 h-4" />,
       onClick: () => {
-        const url = archive.external_url || archive.makerworld_url;
-        if (url) window.open(url, '_blank');
+        openSafeExternalUrl(archive.external_url || archive.makerworld_url);
       },
       disabled: !archive.external_url && !archive.makerworld_url,
     },
@@ -1462,8 +1462,7 @@ function ArchiveCard({
             size="sm"
             className="min-w-0 p-1 sm:p-1.5"
             onClick={() => {
-              const url = archive.external_url || archive.makerworld_url;
-              if (url) window.open(url, '_blank');
+              openSafeExternalUrl(archive.external_url || archive.makerworld_url);
             }}
             disabled={!archive.external_url && !archive.makerworld_url}
             title={
@@ -2111,8 +2110,7 @@ function ArchiveListRow({
       label: archive.external_url ? t('archives.menu.externalLink') : t('archives.menu.viewOnMakerWorld'),
       icon: <Globe className="w-4 h-4" />,
       onClick: () => {
-        const url = archive.external_url || archive.makerworld_url;
-        if (url) window.open(url, '_blank');
+        openSafeExternalUrl(archive.external_url || archive.makerworld_url);
       },
       disabled: !archive.external_url && !archive.makerworld_url,
     },
@@ -2506,7 +2504,7 @@ function ArchiveListRow({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => window.open((archive.external_url || archive.makerworld_url)!, '_blank')}
+              onClick={() => openSafeExternalUrl(archive.external_url || archive.makerworld_url)}
               title={archive.external_url ? t('archives.card.externalLink') : 'MakerWorld'}
             >
               <Globe className="w-4 h-4" />
