@@ -372,7 +372,11 @@ class ZohoService:
 
     async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
         payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
-        return [_map_contact(c) for c in payload.get("contacts", [])]
+        # Books' /contacts search matches vendors as well as customers, but an
+        # estimate can only be issued to a customer — and a vendor sharing a
+        # customer's name shows up as a phantom duplicate in the picker.
+        contacts = [c for c in payload.get("contacts", []) if c.get("contact_type", "customer") == "customer"]
+        return [_map_contact(c) for c in contacts]
 
     async def search_estimates(self, db: AsyncSession, query: str) -> list[dict]:
         """Quotes for the Aito import picker.

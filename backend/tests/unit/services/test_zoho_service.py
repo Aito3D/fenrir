@@ -405,6 +405,31 @@ async def test_search_contacts_carries_customer_sub_type(async_client, db_sessio
 
 
 @pytest.mark.asyncio
+async def test_search_contacts_drops_vendors(async_client, db_session):
+    """Zoho's /contacts search returns vendors too; the client picker must not
+    offer them — an estimate can only be issued to a customer, and a vendor
+    sharing a customer's name reads as a duplicate in the dropdown."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={
+                "contacts": [
+                    {"contact_id": "v1", "contact_name": "MATUVU", "contact_type": "vendor"},
+                    {"contact_id": "c1", "contact_name": "Matuvu", "contact_type": "customer"},
+                ]
+            },
+        )
+
+    zoho_service.transport = _transport(handler)
+    results = await zoho_service.search_contacts(db_session, "matu")
+    assert [c["id"] for c in results] == ["c1"]
+
+
+@pytest.mark.asyncio
 async def test_create_contact_response_carries_customer_sub_type(async_client, db_session):
     await _configure(async_client)
 
