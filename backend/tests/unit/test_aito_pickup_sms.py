@@ -65,9 +65,12 @@ def _patch_send_sms(monkeypatch, fake):
 async def test_draft_returns_the_model_answer(async_client, monkeypatch):
     project = await _create_finished(async_client)
 
-    async def fake(db, description, client_name=None):
+    async def fake(db, description, client_name=None, parts=None):
         assert description == "Pièce en aluminium de 50mm pour Renault Clio"
         assert client_name == "ACME"
+        # The helper's accepted-with-no-tasks card: the route still forwards
+        # the (empty) title list rather than omitting the argument.
+        assert parts == []
         return "Ia Ora na, la pièce pour la Renault Clio est disponible à nos bureaux à Arue. Aito3D", "m"
 
     _patch_pickup_message(monkeypatch, fake)
@@ -85,7 +88,7 @@ async def test_draft_is_refused_while_the_work_is_unfinished(async_client, monke
     # anyone can make about it yet, so no paid call is ever made.
     project = (await _create(async_client)).json()
 
-    async def fake(db, description, client_name=None):  # pragma: no cover - must not run
+    async def fake(db, description, client_name=None, parts=None):  # pragma: no cover - must not run
         raise AssertionError("an unfinished project reached the model")
 
     _patch_pickup_message(monkeypatch, fake)
@@ -104,7 +107,7 @@ async def test_draft_unconfigured_409(async_client):
 async def test_draft_upstream_502(async_client, monkeypatch):
     project = await _create_finished(async_client)
 
-    async def fake(db, description, client_name=None):
+    async def fake(db, description, client_name=None, parts=None):
         raise openrouter_service.OpenRouterUpstreamError("boom")
 
     _patch_pickup_message(monkeypatch, fake)
@@ -345,7 +348,50 @@ async def test_pickup_message_strips_a_wrapping_quote_pair(db_session, monkeypat
 
     monkeypatch.setattr(openrouter_service, "_chat", fake_chat)
     message, _ = await openrouter_service.pickup_message(db_session, "Capot")
-    assert message == "Ia Ora na, prêt. Aito3D"
+    # The normalizer also moves the signature onto its own line — see below.
+    assert message == "Ia Ora na, prêt.\nAito3D"
+
+
+@pytest.mark.asyncio
+async def test_pickup_message_lists_every_part_for_the_model(db_session, monkeypatch):
+    """Multiple tasks → the prompt carries each title as its own list line,
+    so the model can be held to naming all of them."""
+    db_session.add(Settings(key="openrouter_api_key", value="sk-test"))
+    await db_session.commit()
+    seen = {}
+
+    async def fake_chat(api_key, model, system, user, max_tokens, **kwargs):
+        seen.update(system=system, user=user)
+        return "Ia Ora na, le cache de vis de jante et le cache attelage Fox sont prêts à Arue.\nAito3D"
+
+    monkeypatch.setattr(openrouter_service, "_chat", fake_chat)
+    message, _ = await openrouter_service.pickup_message(
+        db_session, "Caches pour Andy", "Andy JONQUILLE", parts=["Cache de vis de jante", "Cache attelage Fox"]
+    )
+    assert "- Cache de vis de jante" in seen["user"]
+    assert "- Cache attelage Fox" in seen["user"]
+    # The prompt's part rules, pinned: every part, object names only, and no
+    # production steps or colours leaking into the SMS.
+    assert "toutes sans exception" in seen["system"]
+    assert "couleurs" in seen["system"]
+    assert message.endswith("\nAito3D")
+
+
+def test_normalize_fixes_the_lowercase_greeting():
+    """Mistral has answered « la Ora na » — an L that reads as an I in most
+    fonts, and a mistake the client would notice. Fixed mechanically."""
+    assert openrouter_service._normalize_pickup("la Ora na, prêt.\nAito3D") == "Ia Ora na, prêt.\nAito3D"
+    assert openrouter_service._normalize_pickup("La Ora na, prêt.\nAito3D") == "Ia Ora na, prêt.\nAito3D"
+    # A genuine capital I passes through untouched.
+    assert openrouter_service._normalize_pickup("Ia Ora na, prêt.\nAito3D") == "Ia Ora na, prêt.\nAito3D"
+
+
+def test_normalize_puts_the_signature_on_its_own_line():
+    assert openrouter_service._normalize_pickup("Ia Ora na, prêt. Aito3D") == "Ia Ora na, prêt.\nAito3D"
+    # Already on its own line: no second newline stacked on top.
+    assert openrouter_service._normalize_pickup("Ia Ora na, prêt.\nAito3D") == "Ia Ora na, prêt.\nAito3D"
+    # No signature at all: the user may have edited it out on purpose.
+    assert openrouter_service._normalize_pickup("Ia Ora na, prêt.") == "Ia Ora na, prêt."
 
 
 # ---------------------------------------------------------------- permissions

@@ -2600,8 +2600,14 @@ async def generate_pickup_message(
     """
     project = await _get_active_project_or_404(db, project_id)
     await _finished_or_409(db, project)
+    # The task titles are the names the client knows the parts by — the SMS
+    # must list every one of them (see pickup_message). Titles only: the
+    # tasks' services, colours and prices are exactly what the prompt forbids.
+    tasks = (await _tasks_by_project(db, [project_id])).get(project_id, ())
     try:
-        message, model = await pickup_message(db, project.description, project.client_name)
+        message, model = await pickup_message(
+            db, project.description, project.client_name, parts=[t.title for t in tasks]
+        )
     except OpenRouterNotConfiguredError:
         raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
     except OpenRouterUpstreamError as e:
