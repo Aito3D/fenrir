@@ -52,13 +52,14 @@ export function ImpressionCostBand({
   // The bar splits the PRICE, margin included: in a quoting context the
   // useful reading is "of the 8 750 F charged, 1 200 is filament and 6 400 is
   // margin". Deliberately not CalculatorPage's segment list, which splits
-  // `total_cost` and carries labor and base-fee segments that
-  // `computeImpressionCost` forces to zero.
+  // `total_cost` and carries labor segments that `computeImpressionCost`
+  // forces to zero.
   //
   // These six sum to EXACTLY `total_ht`, which is why the bar always fills:
-  // cost_subtotal here is machine + prototype + failures (labor, base fee,
-  // consumables and stuff are all zeroed for an impression), plus ads, plus
-  // marge. If that ever stops holding the bar will grow a gap.
+  // cost_subtotal here is machine + prototype + failures + the per-job flats
+  // (labor and stuff are zeroed for an impression; base fee and consumables
+  // ride in the "other" segment with ads, same grouping as CalculatorPage),
+  // plus ads, plus marge. If that ever stops holding the bar will grow a gap.
   const segments: Segment[] = useMemo(() => {
     if (!result) return [];
     return [
@@ -76,7 +77,12 @@ export function ImpressionCostBand({
         value: result.prototype_cost + result.failures_cost,
         color: 'var(--viz-4)',
       },
-      { key: 'ads', label: t('calculator.costAds'), value: result.ads_cost, color: 'var(--viz-5)' },
+      {
+        key: 'other',
+        label: t('calculator.splitAdsConsumables'),
+        value: result.ads_cost + result.consumables_flat + result.base_fee,
+        color: 'var(--viz-5)',
+      },
       { key: 'marge', label: t('calculator.marge'), value: result.marge, color: 'var(--viz-6)' },
     ].filter((s) => s.value > 0.005);
   }, [result, t]);
@@ -119,6 +125,8 @@ export function ImpressionCostBand({
                     ['calculator.costEnergy', result.energy_cost],
                     ['calculator.costRepairs', result.repairs_cost],
                     ['calculator.groupProvisions', result.prototype_cost + result.failures_cost],
+                    ['calculator.costConsumables', result.consumables_flat],
+                    ['calculator.costBaseFee', result.base_fee],
                     ['calculator.costAds', result.ads_cost],
                     ['calculator.marge', result.marge],
                   ] as const

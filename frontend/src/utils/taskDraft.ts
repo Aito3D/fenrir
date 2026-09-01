@@ -201,14 +201,15 @@ export function joinMinutes(parts: { days: number; hours: number; minutes: numbe
 
 /** Impression3D's cost, through the same engine the calculator page uses.
  *
- *  Two departures from a calculator quote, both deliberate:
- *  - The per-job flats (`base_fee_flat`, `consumables_packaging_flat`) are
- *    zeroed. The engine treats them as one-time per JOB; a project is the job,
- *    so a project with three print tasks would otherwise be charged them three
- *    times, silently.
+ *  One departure from a calculator quote, deliberate:
  *  - Modelling, prep, post-processing and extras are zero. Modelisation3D is
  *    its own service line, so including modelling here would double-count it;
  *    the rest are not captured by this form at all.
+ *  - The per-job flats (`base_fee_flat`, `consumables_packaging_flat`) are
+ *    NOT zeroed (2026-08-31, reversing the 2026-07-27 decision): each print
+ *    task is treated as its own job, so the same inputs price identically
+ *    here and on the calculator page. A multi-task project therefore carries
+ *    the flats once per print task, by design.
  *  - The margin curves (utils/pricing.ts) apply per TASK: size margin on the
  *    unit cost, quantity discount on this task's quantity, and the task floor
  *    once per task — a three-task project meets the floor three times, by
@@ -245,7 +246,7 @@ export function computeImpressionCost(
     },
     filament,
     printer,
-    { ...defaults, base_fee_flat: 0, consumables_packaging_flat: 0 },
+    defaults,
   );
 }
 

@@ -13,6 +13,7 @@ import {
   normaliseTaskDraft,
   roundUpTo50,
 } from '../../utils/taskDraft';
+import { computePricing } from '../../utils/pricing';
 import type { PricingDefaults, PricingFilament, PricingPrinter } from '../../utils/pricing';
 import type { AitoTask } from '../../api/client';
 
@@ -82,19 +83,36 @@ describe('computeImpressionCost', () => {
     expect(computeImpressionCost(impression, filament, null, defaults)).toBeNull();
   });
 
-  it('zeroes the per-job flats so a project is not charged them per print', () => {
-    // The engine treats base_fee_flat and consumables_packaging_flat as
-    // one-time per JOB. A project is the job, so a task must not carry them —
-    // three print tasks would otherwise be charged them three times.
-    const withFlats = computeImpressionCost(impression, filament, printer, defaults);
-    const withoutFlats = computeImpressionCost(impression, filament, printer, {
-      ...defaults,
-      base_fee_flat: 0,
-      consumables_packaging_flat: 0,
-    });
-    expect(withFlats!.total_ttc_qty).toBeCloseTo(withoutFlats!.total_ttc_qty, 6);
-    expect(withFlats!.base_fee_total).toBe(0);
-    expect(withFlats!.consumables_flat).toBe(0);
+  it('carries the per-job flats so a task prices exactly like the calculator page', () => {
+    // Each print task is its own job: it carries base_fee_flat and
+    // consumables_packaging_flat just like a calculator quote, so the same
+    // inputs produce the same figure on both screens (2026-08-31 decision,
+    // reversing the 2026-07-27 zeroing).
+    const task = computeImpressionCost(impression, filament, printer, defaults)!;
+    const page = computePricing(
+      {
+        weight_g: impression.weightG,
+        printing_time_h: impression.timeMin / 60,
+        quantity: impression.quantity,
+        modeling_hours: 0,
+        modeling_base_price: 0,
+        prep_model_min: 0,
+        prep_slicing_min: 0,
+        prep_transfer_min: 0,
+        post_removal_min: 0,
+        post_support_min: 0,
+        post_additional_min: 0,
+        post_fulfillment_min: 0,
+        stuff_amount: 0,
+        stuff_markup_pct: 0,
+      },
+      filament,
+      printer,
+      defaults,
+    );
+    expect(task.total_ttc_qty).toBeCloseTo(page.total_ttc_qty, 6);
+    expect(task.base_fee_total).toBe(defaults.base_fee_flat);
+    expect(task.consumables_flat).toBe(defaults.consumables_packaging_flat);
   });
 
   it('excludes labour, which the sibling services carry', () => {
@@ -112,10 +130,10 @@ describe('computeImpressionCost', () => {
     // 2x one unit.
     const one = computeImpressionCost(impression, filament, printer, defaults)!;
     const two = computeImpressionCost({ ...impression, quantity: 2 }, filament, printer, defaults)!;
-    // No per-quantity fixed cost in an impression line (base_fee_flat and
-    // consumables_packaging_flat are zeroed), so the per-unit cost basis is
-    // identical at both quantities — only the margin curve moves.
-    expect(two.total_cost).toBeCloseTo(one.total_cost, 10);
+    // The one-time base fee is amortized across the quantity (engine
+    // behavior), so the per-unit cost basis shrinks as quantity rises —
+    // on top of the margin curve's own quantity discount.
+    expect(two.total_cost).toBeLessThan(one.total_cost);
     expect(two.qty_factor).toBeLessThan(one.qty_factor);
     // total_ht = total_cost + marge = total_cost*margin_multiplier +
     // margin_filament + margin_stuff (identity, since the floor doesn't bite
@@ -134,7 +152,10 @@ describe('computeImpressionCost', () => {
   it('impression cost: size margin on the unit, quantity discount on the task quantity', () => {
     const one = computeImpressionCost({ ...impression, quantity: 1 }, filament, printer, defaults)!;
     const ten = computeImpressionCost({ ...impression, quantity: 10 }, filament, printer, defaults)!;
-    expect(ten.size_margin).toBeCloseTo(one.size_margin, 10);
+    // The amortized base fee shrinks the per-unit cost basis at higher
+    // quantity, and the size margin is decreasing in unit cost — so it can
+    // only rise (slightly) with quantity, never fall.
+    expect(ten.size_margin).toBeGreaterThanOrEqual(one.size_margin);
     expect(ten.qty_factor).toBeLessThan(1);
     expect(one.qty_factor).toBe(1);
     expect(ten.total_ht).toBeLessThan(one.total_ht);
