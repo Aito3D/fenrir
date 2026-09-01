@@ -81,11 +81,34 @@ def _is_slice_post(request: httpx.Request) -> bool:
 
 
 async def _wait_for_job(client: AsyncClient, job_id: int, timeout: float = 5.0) -> dict:
-    """Poll `/api/v1/slice-jobs/{id}` until the job hits a terminal state.
+    """Wait for `/api/v1/slice-jobs/{id}` to reach a terminal state.
 
-    The dispatcher runs work as an asyncio task on the same event loop, so
-    poll-with-sleep here is enough — a few yields and the task finishes.
+    The dispatcher (`slice_dispatch.py`) keeps a handle to the job's asyncio
+    task in `slice_dispatch._tasks` until `_run_job`'s `finally` block pops
+    it — and that pop only happens *after* `job.status` has already flipped
+    to "completed"/"failed". Awaiting that task is a real completion signal
+    (asyncio wakes us via the task's done-callback the instant it finishes),
+    not a guess about how promptly a sleep-poll loop gets rescheduled — so it
+    holds up under CPU-starved parallel runs (`-n 30`) where a fixed
+    wall-clock budget can lose the race against 30 workers contending for
+    the same cores.
+
+    If the task has already been popped by the time we look (it finished
+    between the POST returning and this call — status is necessarily
+    terminal by then, see above) fall back to a single-shot poll loop as a
+    backstop; `timeout` only matters for a genuinely stuck job.
     """
+    task = slice_dispatch._tasks.get(job_id)
+    if task is not None:
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise AssertionError(f"slice job {job_id} did not finish in {timeout}s") from None
+        r = await client.get(f"/api/v1/slice-jobs/{job_id}")
+        if r.status_code != 200:
+            raise AssertionError(f"slice-jobs poll failed: {r.status_code} {r.text}")
+        return r.json()
+
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         r = await client.get(f"/api/v1/slice-jobs/{job_id}")

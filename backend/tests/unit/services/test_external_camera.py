@@ -251,6 +251,17 @@ class TestFormatMjpegFrame:
 class TestGetFfmpegPath:
     """Tests for ffmpeg path detection."""
 
+    @pytest.fixture(autouse=True)
+    def _reset_ffmpeg_path_cache(self, monkeypatch):
+        # get_ffmpeg_path() memoizes into a module-level global on
+        # backend.app.services.camera. Other test modules in this worker
+        # process (e.g. test_extract_video_last_frame.py) call the real
+        # function and populate that cache with the host's actual ffmpeg
+        # path (or None), which would otherwise leak into these tests
+        # depending on execution order. monkeypatch restores the prior
+        # value automatically after each test.
+        monkeypatch.setattr("backend.app.services.camera._ffmpeg_path", None)
+
     def test_get_ffmpeg_path_from_shutil_which(self):
         """Verify ffmpeg found via shutil.which is returned."""
         from backend.app.services.external_camera import get_ffmpeg_path
