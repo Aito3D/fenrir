@@ -54,15 +54,17 @@ _PROOFREAD_SYSTEM_PROMPT = (
 _PICKUP_SYSTEM_PROMPT = (
     "Tu rédiges des SMS pour Aito3D, un atelier de fabrication 3D situé à Arue, en Polynésie française. "
     "Préviens le client que ses pièces sont prêtes et qu'il peut venir les récupérer à nos bureaux à Arue. "
-    "Écris 1 à 2 phrases courtes, chaleureuses et simples. Commence exactement par « Ia Ora na » "
+    "Écris 1 à 2 phrases courtes, chaleureuses et simples, en tutoyant toujours le client "
+    "(« tu », « tes pièces » — jamais « vous »). Commence exactement par « Ia Ora na » "
     "(I majuscule, comme dans Igloo — jamais « la Ora na »). "
     "Nomme chaque pièce de la liste fournie, toutes sans exception, réduite au nom de l'objet : "
     "pas de couleurs, pas de dimensions, pas de matériaux, pas de prix, et jamais les étapes de "
     "fabrication (impression, modélisation, scan, usinage). "
     "Exemple — pièces « Cache de vis de jante » et « Cache attelage Fox » : "
-    "« Ia Ora na, le cache de vis de jante et le cache attelage Fox sont prêts et vous attendent "
-    "à nos bureaux à Arue. » "
-    "Termine par la signature « Aito3D » seule sur sa propre ligne, après un retour à la ligne. "
+    "« Ia Ora na, ton cache de vis de jante et ton cache attelage Fox sont prêts, tu peux venir "
+    "les récupérer à nos bureaux à Arue. » "
+    "Termine par la signature « Aito3D » seule sur la ligne suivante — un simple retour à la "
+    "ligne, sans ligne vide entre le message et la signature. "
     "Réponds uniquement par le SMS, sans guillemets, sans commentaire, sans explication."
 )
 
@@ -198,17 +200,18 @@ def _normalize_pickup(message: str) -> str:
        lowercase L where « Ia Ora na » wants a capital I, an easy confusion in
        most fonts and a mistake the client WILL notice. Fixed mechanically
        rather than trusted to the prompt.
-    2. The signature: « Aito3D » must sit alone on its own line. When the
-       model appends it to the last sentence instead, the line break is
-       inserted here.
+    2. The signature: « Aito3D » must sit alone on its own line, separated by
+       EXACTLY one line break — the model has produced both no break at all
+       and a blank line, so whatever whitespace precedes the signature is
+       collapsed to a single "\n" here.
     """
     stripped = message.strip()
     if stripped[:9].lower() == "la ora na" and stripped[:1] in "lL":
         stripped = "Ia Ora na" + stripped[9:]
-    if stripped.endswith("Aito3D") and not stripped.removesuffix("Aito3D").endswith("\n"):
+    if stripped.endswith("Aito3D"):
         body = stripped.removesuffix("Aito3D").rstrip()
-        # A trailing period the signature was glued onto stays with the body.
-        stripped = f"{body}\nAito3D"
+        if body:
+            stripped = f"{body}\nAito3D"
     return stripped
 
 

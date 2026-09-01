@@ -370,10 +370,11 @@ async def test_pickup_message_lists_every_part_for_the_model(db_session, monkeyp
     )
     assert "- Cache de vis de jante" in seen["user"]
     assert "- Cache attelage Fox" in seen["user"]
-    # The prompt's part rules, pinned: every part, object names only, and no
-    # production steps or colours leaking into the SMS.
+    # The prompt's part rules, pinned: every part, object names only, no
+    # production steps or colours leaking into the SMS — and always tutoiement.
     assert "toutes sans exception" in seen["system"]
     assert "couleurs" in seen["system"]
+    assert "tutoyant" in seen["system"]
     assert message.endswith("\nAito3D")
 
 
@@ -390,6 +391,9 @@ def test_normalize_puts_the_signature_on_its_own_line():
     assert openrouter_service._normalize_pickup("Ia Ora na, prêt. Aito3D") == "Ia Ora na, prêt.\nAito3D"
     # Already on its own line: no second newline stacked on top.
     assert openrouter_service._normalize_pickup("Ia Ora na, prêt.\nAito3D") == "Ia Ora na, prêt.\nAito3D"
+    # A blank line (the model's other observed habit) collapses to one break.
+    assert openrouter_service._normalize_pickup("Ia Ora na, prêt.\n\nAito3D") == "Ia Ora na, prêt.\nAito3D"
+    assert openrouter_service._normalize_pickup("Ia Ora na, prêt.\n \n Aito3D") == "Ia Ora na, prêt.\nAito3D"
     # No signature at all: the user may have edited it out on purpose.
     assert openrouter_service._normalize_pickup("Ia Ora na, prêt.") == "Ia Ora na, prêt."
 
