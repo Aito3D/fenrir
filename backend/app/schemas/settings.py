@@ -30,6 +30,11 @@ LAN_SERVICE_URL_SETTINGS = (
     # nothing for legitimate values and blocks metadata-endpoint redirection.
     "zoho_base_url",
     "zoho_accounts_url",
+    # Fork: the Pushcut webhook the Aito pickup SMS is relayed through.
+    # Public-cloud https (api.pushcut.io) in every real configuration, but an
+    # admin-editable fetch target all the same — same reasoning as the Zoho
+    # pair above.
+    "pushcut_sms_url",
 )
 
 # ``docker_compose_dir`` is unusual among the string settings: it is not
@@ -621,6 +626,10 @@ class AppSettings(BaseModel):
         description="OpenRouter model id used to generate French project summaries",
     )
 
+    # Pushcut — Aito pickup-SMS relay to the user's iPhone. The URL embeds its
+    # secret token, hence write-only.
+    pushcut_sms_url: str = Field(default="", description="Pushcut SMS notification webhook URL (write-only)")
+
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
     obico_ml_url: str = Field(
@@ -807,6 +816,7 @@ class AppSettingsUpdate(BaseModel):
     zoho_default_contact_name: str | None = None
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
+    pushcut_sms_url: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     obico_ml_token: str | None = None

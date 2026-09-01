@@ -1452,6 +1452,8 @@ export interface AppSettings {
   // OpenRouter AI integration
   openrouter_api_key: string;
   openrouter_model: string;
+  // Pushcut pickup-SMS relay (write-only — the URL embeds its secret token)
+  pushcut_sms_url: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -4327,6 +4329,18 @@ export interface AitoSummarizeResponse {
 export interface AitoProofreadResponse {
   text: string;
   model: string;
+}
+
+/** POST /aito/{id}/pickup-message — the AI-drafted "come and collect" SMS.
+ *  A draft only: the panel shows it editable, and nothing is sent until
+ *  /pickup-sms. */
+export interface AitoPickupMessageResponse {
+  message: string;
+  model: string;
+}
+
+export interface AitoPickupSmsResponse {
+  sent: boolean;
 }
 
 // Zoho Books integration
@@ -7587,6 +7601,15 @@ export const api = {
     request<AitoProofreadResponse>('/aito/proofread', {
       method: 'POST',
       body: JSON.stringify({ text }),
+    }),
+  generateAitoPickupMessage: (id: number) =>
+    request<AitoPickupMessageResponse>(`/aito/${id}/pickup-message`, {
+      method: 'POST',
+    }),
+  sendAitoPickupSms: (id: number, message: string) =>
+    request<AitoPickupSmsResponse>(`/aito/${id}/pickup-sms`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
     }),
   importAitoProjects: (data: { projects: { description: string; column: AitoColumnId; position: number }[] }) =>
     request<AitoProject[]>('/aito/import', {

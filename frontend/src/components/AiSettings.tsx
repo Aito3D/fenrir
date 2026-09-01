@@ -21,8 +21,11 @@ export function AiSettings() {
   // Model — prefilled from settings.
   const [model, setModel] = useState('');
 
-  // Write-only secret field — always starts empty (server returns "").
+  // Write-only secret fields — always start empty (server returns "").
   const [apiKey, setApiKey] = useState('');
+  // The Pushcut webhook URL embeds its secret token, so it gets the same
+  // write-only treatment as the API key beside it.
+  const [pushcutUrl, setPushcutUrl] = useState('');
 
   const { data: settings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['settings'],
@@ -48,6 +51,7 @@ export function AiSettings() {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       showToast(t('settings.toast.settingsSaved'), 'success');
       setApiKey('');
+      setPushcutUrl('');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -57,8 +61,9 @@ export function AiSettings() {
   const handleSave = () => {
     saveMutation.mutate({
       openrouter_model: model.trim() || DEFAULT_MODEL,
-      // Omit an untouched key so saving never wipes the stored secret.
+      // Omit an untouched secret so saving never wipes the stored one.
       ...(apiKey.trim() ? { openrouter_api_key: apiKey.trim() } : {}),
+      ...(pushcutUrl.trim() ? { pushcut_sms_url: pushcutUrl.trim() } : {}),
     });
   };
 
@@ -104,6 +109,18 @@ export function AiSettings() {
         </div>
 
         <p className="text-sm text-bambu-gray">{t('settings.openrouterModelHint')}</p>
+
+        <div>
+          <label className="block text-sm text-bambu-gray mb-1">{t('settings.pushcutUrl')}</label>
+          <input
+            type="password"
+            value={pushcutUrl}
+            onChange={(e) => setPushcutUrl(e.target.value)}
+            placeholder={t('settings.pushcutUrlHint')}
+            className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+          />
+          <p className="text-sm text-bambu-gray mt-1">{t('settings.pushcutUrlDescription')}</p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-bambu-dark-tertiary">
           <Button variant="primary" size="sm" onClick={handleSave} disabled={!canUpdate || saveMutation.isPending}>

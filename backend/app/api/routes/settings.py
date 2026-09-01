@@ -35,6 +35,7 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
     "zoho_client_secret",
     "zoho_refresh_token",
     "openrouter_api_key",
+    "pushcut_sms_url",
 )
 
 
@@ -267,6 +268,9 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
 
     # OpenRouter API key is write-only — never returned to any caller.
     settings_dict["openrouter_api_key"] = ""
+
+    # The Pushcut URL embeds its secret token — write-only, like the above.
+    settings_dict["pushcut_sms_url"] = ""
 
     if is_api_key:
         for field in _SENSITIVE_FIELDS_FOR_API_KEY:

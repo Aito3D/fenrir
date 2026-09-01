@@ -29,6 +29,7 @@ import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
 import { ContactedControl } from './ContactedControl';
+import { SmsPickupButton } from './SmsPickupButton';
 import { FlagControl } from './FlagControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
@@ -428,7 +429,7 @@ function PanelHeader({
               cannot be passed through `className`; without it a long client
               or island label squeezes "Marquer urgent" out of shape. */}
           {canUpdate && (
-            <span className="flex-shrink-0">
+            <span className="flex-shrink-0 flex items-center gap-1.5">
               {/* One slot, two controls, chosen by whether the work is over.
                   A finished project has no use for a production flag — see
                   `isFinished` — so showing the flag editor there would be
@@ -438,7 +439,16 @@ function PanelHeader({
                   itself is untouched throughout and its editor comes straight
                   back if work reappears and the card leaves Finish. */}
               {isFinished(project.column) ? (
-                <ContactedControl project={project} />
+                <>
+                  {/* Finish only, never Done, and only while the contact is
+                      still owed: the SMS is how the debt ContactedControl
+                      tracks gets paid, and once it is paid — or the card is
+                      archived — a "come and collect" message has no job. */}
+                  {project.column === 'finish' && project.client_contacted_at === null && (
+                    <SmsPickupButton project={project} />
+                  )}
+                  <ContactedControl project={project} />
+                </>
               ) : (
                 <FlagControl project={project} />
               )}

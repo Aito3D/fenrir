@@ -51,6 +51,18 @@ _PROOFREAD_SYSTEM_PROMPT = (
 )
 
 
+_PICKUP_SYSTEM_PROMPT = (
+    "Tu rédiges des SMS pour Aito3D, un atelier de fabrication 3D situé à Arue, en Polynésie française. "
+    "Préviens le client que sa pièce est prête et qu'il peut venir la récupérer à nos bureaux à Arue. "
+    "Écris 1 à 2 phrases courtes, chaleureuses et simples. Commence par « Ia Ora na » et termine par la "
+    "signature « Aito3D ». Désigne la pièce en quelques mots tirés de la description — jamais la description "
+    "complète : pas de dimensions, pas de matériaux, pas de prix, pas de détails techniques. "
+    "Exemple — description « Pièce en aluminium de 50mm pour Renault Clio » : "
+    "« Ia Ora na, la pièce pour la Renault Clio est disponible à nos bureaux à Arue. Aito3D ». "
+    "Réponds uniquement par le SMS, sans guillemets, sans commentaire, sans explication."
+)
+
+
 class OpenRouterNotConfiguredError(Exception):
     """No API key in settings."""
 
@@ -173,6 +185,32 @@ async def summarize_tasks(db: AsyncSession, tasks: list[dict]) -> tuple[str, str
     model = (await _setting(db, "openrouter_model")).strip() or DEFAULT_MODEL
     summary = await _chat(api_key, model, _SYSTEM_PROMPT, "\n".join(_task_lines(tasks)), max_tokens=200)
     return summary, model
+
+
+async def pickup_message(db: AsyncSession, description: str, client_name: str | None = None) -> tuple[str, str]:
+    """The "come and collect your part" SMS draft. Returns (message, model).
+
+    Takes the project's description rather than its tasks: the SMS must name
+    the part the way the client would ("la pièce pour la Renault Clio"), and
+    the description is the one field written in those terms. The prompt
+    forbids restating the description's technical detail — the message tells
+    the client to come, not what they ordered. Raises the two module errors;
+    never returns "".
+    """
+    api_key = await _api_key(db)
+    model = (await _setting(db, "openrouter_model")).strip() or DEFAULT_MODEL
+    # Bounded like _task_lines' fields: a pathological description must not
+    # blow up the prompt or the bill.
+    lines = [f"Description du projet : {description.strip()[:500]}"]
+    if client_name and client_name.strip():
+        lines.append(f"Client : {client_name.strip()[:200]}")
+    message = await _chat(api_key, model, _PICKUP_SYSTEM_PROMPT, "\n".join(lines), max_tokens=150)
+    # Same quote-stripping proofread_text needs, for the same reason: telling
+    # the model not to wrap its answer is not a guarantee, and this text goes
+    # to a customer's phone verbatim. The empty original means "always strip
+    # a wrapping pair"; a reply that was ONLY a quote pair falls back to the
+    # raw answer rather than "" (and _chat already refused an empty answer).
+    return _unquote(message, "") or message, model
 
 
 def _unquote(corrected: str, original: str) -> str:

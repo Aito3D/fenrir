@@ -107,7 +107,7 @@ registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback:
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
 registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywords: 'backup github restore download cloud sync profiles archives', anchor: 'card-backup' });
 registerSettingsSearch({ labelKey: 'zoho.title', tab: 'zoho', keywords: 'zoho books client crm contacts api oauth aito', anchor: 'card-zoho' });
-registerSettingsSearch({ labelKey: 'settings.openrouterTitle', tab: 'zoho', keywords: 'openrouter ai summary model api key aito', anchor: 'card-openrouter' });
+registerSettingsSearch({ labelKey: 'settings.openrouterTitle', tab: 'zoho', keywords: 'openrouter ai summary model api key aito pushcut sms', anchor: 'card-openrouter' });
 // Sidebar (system pages and external links settings is rendered in the General tab)
 registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
