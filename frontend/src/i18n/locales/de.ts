@@ -258,6 +258,7 @@ export default {
     syncIdle: 'Aktuell',
     syncPendingLabel: 'Ausstehend',
     syncError: 'Synchronisierung fehlgeschlagen',
+    pdfSyncPending: 'Synchronisierung läuft — das Dokument ist noch nicht aktuell',
     quoteLocked: 'Angebot fakturiert',
     quoteLockedHelp: 'Dieses Angebot wurde fakturiert: Änderungen bleiben lokal.',
     quoteDeclinedNoDraft: 'Zoho erlaubt es nicht, ein Angebot wieder in einen Entwurf umzuwandeln.',

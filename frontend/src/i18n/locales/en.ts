@@ -262,6 +262,7 @@ export default {
     syncIdle: 'Up to date',
     syncPendingLabel: 'Pending',
     syncError: 'Sync failed',
+    pdfSyncPending: "Sync in progress — the document isn’t up to date yet",
     quoteLocked: 'Quote invoiced',
     quoteLockedHelp: 'This quote has been invoiced: changes stay local.',
     quoteDeclinedNoDraft: 'Zoho does not allow reverting a quote back to draft.',

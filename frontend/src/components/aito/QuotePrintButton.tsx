@@ -25,6 +25,12 @@ export function QuotePrintButton({
       fetchPdf={() => api.getAitoQuotePdf(project.id)}
       label={t('aito.printQuote')}
       failureMessage={t('aito.printFailed')}
+      // 'pending' = an edit the worker has not pushed to Zoho yet, so the
+      // PDF Books would return is the PRE-edit quote. Not 'error': the panel
+      // already surfaces that with a retry, and the stale PDF may still be
+      // wanted while it is sorted out.
+      disabled={project.quote_sync_state === 'pending'}
+      disabledTitle={t('aito.pdfSyncPending')}
     />
   );
 }

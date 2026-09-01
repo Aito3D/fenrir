@@ -258,6 +258,7 @@ export default {
     syncIdle: 'À jour',
     syncPendingLabel: 'En attente',
     syncError: 'Échec de la synchronisation',
+    pdfSyncPending: "Synchronisation en cours — le document n’est pas encore à jour",
     quoteLocked: 'Devis facturé',
     quoteLockedHelp: 'Ce devis a été facturé : les modifications restent locales.',
     quoteDeclinedNoDraft: 'Zoho ne permet pas de repasser un devis en brouillon.',

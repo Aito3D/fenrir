@@ -26,6 +26,10 @@ export function QuoteDownloadButton({
       label={t('aito.downloadQuote')}
       filename={project.quote_number || 'quote'}
       failureMessage={t('aito.printFailed')}
+      // Same gate, same reason as QuotePrintButton: a download taken while
+      // an edit is still on its way to Zoho saves the pre-edit PDF.
+      disabled={project.quote_sync_state === 'pending'}
+      disabledTitle={t('aito.pdfSyncPending')}
     />
   );
 }

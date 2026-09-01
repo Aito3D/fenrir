@@ -3,6 +3,7 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QuotePrintButton } from '../../components/aito/QuotePrintButton';
+import { QuoteDownloadButton } from '../../components/aito/QuoteDownloadButton';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 import { ACTION_CELL } from '../../components/aito/quoteActionGroup';
@@ -65,6 +66,27 @@ describe('QuotePrintButton', () => {
     render(<QuotePrintButton project={{ ...project, quote_id: null } as unknown as AitoProject} />);
     expect(screen.queryByRole('button', { name: /print quote/i })).not.toBeInTheDocument();
   });
+
+  it('is disabled, with the tooltip explaining why, while the quote sync is pending', () => {
+    // 'pending' means the worker has not pushed the latest edit to Zoho yet,
+    // so the PDF Books would return is the PRE-edit quote. Handing that to
+    // the operator is exactly the outdated-document mistake this gate stops.
+    render(<QuotePrintButton project={{ ...project, quote_sync_state: 'pending' } as unknown as AitoProject} />);
+    const button = screen.getByRole('button', { name: /print quote/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringMatching(/sync in progress/i));
+  });
+
+  it.each(['idle', 'error', 'locked', 'unmanaged'] as const)(
+    'stays enabled when the sync state is %s',
+    (state) => {
+      // 'error' deliberately stays enabled: the Zoho copy is stale there too,
+      // but the panel already surfaces the failure with a retry button, and
+      // the old PDF may still be what the operator wants while it is sorted.
+      render(<QuotePrintButton project={{ ...project, quote_sync_state: state } as unknown as AitoProject} />);
+      expect(screen.getByRole('button', { name: /print quote/i })).toBeEnabled();
+    },
+  );
 
   it('is icon-only', () => {
     render(<QuotePrintButton project={project} />);
@@ -280,5 +302,27 @@ describe('QuotePrintButton', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('QuoteDownloadButton', () => {
+  beforeEach(() => {
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    globalThis.URL.revokeObjectURL = vi.fn();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('is disabled, with the tooltip explaining why, while the quote sync is pending', () => {
+    // Same gate, same reason as the print twin above: a download taken now
+    // would save the pre-edit PDF under the current quote number.
+    render(<QuoteDownloadButton project={{ ...project, quote_sync_state: 'pending' } as unknown as AitoProject} />);
+    const button = screen.getByRole('button', { name: /download quote/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringMatching(/sync in progress/i));
+  });
+
+  it('stays enabled when the sync is idle', () => {
+    render(<QuoteDownloadButton project={{ ...project, quote_sync_state: 'idle' } as unknown as AitoProject} />);
+    expect(screen.getByRole('button', { name: /download quote/i })).toBeEnabled();
   });
 });

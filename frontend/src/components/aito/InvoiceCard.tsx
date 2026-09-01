@@ -161,11 +161,24 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
       {/* The same segmented control as the Quote card's row, deliberately: the
           two cards share that 230.4px column and are meant to read as one
           family. See quoteActionGroup.ts. */}
+      {/* Both PDF buttons sit out a pending quote sync: the invoice has no
+          sync state of its own, so the project's is the only signal that an
+          edit is still on its way to Zoho — and until it lands, the PDF
+          Books returns may not match what the operator sees here. */}
       <div className={ACTION_GROUP}>
-        <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} />
+        <InvoicePrintButton
+          projectId={project.id}
+          invoiceId={invoice.id}
+          disabled={project.quote_sync_state === 'pending'}
+        />
         {/* Saves the same PDF the print button fetches, named after the
             invoice number. */}
-        <InvoiceDownloadButton projectId={project.id} invoiceId={invoice.id} invoiceNumber={invoice.number} />
+        <InvoiceDownloadButton
+          projectId={project.id}
+          invoiceId={invoice.id}
+          invoiceNumber={invoice.number}
+          disabled={project.quote_sync_state === 'pending'}
+        />
         {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
             same call site pattern, as SendQuoteButton one card up. */}
         {canUpdate && <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} />}

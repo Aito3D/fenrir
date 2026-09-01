@@ -258,6 +258,7 @@ export default {
     syncIdle: 'Atualizado',
     syncPendingLabel: 'Pendente',
     syncError: 'Falha na sincronização',
+    pdfSyncPending: 'Sincronização em andamento — o documento ainda não está atualizado',
     quoteLocked: 'Orçamento faturado',
     quoteLockedHelp: 'Este orçamento foi faturado: as alterações permanecem apenas locais.',
     quoteDeclinedNoDraft: 'O Zoho não permite reverter um orçamento para rascunho.',

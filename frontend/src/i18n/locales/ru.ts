@@ -258,6 +258,7 @@ export default {
     syncIdle: 'Актуально',
     syncPendingLabel: 'Ожидание',
     syncError: 'Ошибка синхронизации',
+    pdfSyncPending: 'Идёт синхронизация — документ ещё не обновлён',
     quoteLocked: 'Смета выставлена',
     quoteLockedHelp: 'Эта смета уже выставлена: изменения остаются только локальными.',
     quoteDeclinedNoDraft: 'Zoho не позволяет вернуть смету в статус черновика.',

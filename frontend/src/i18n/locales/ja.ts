@@ -258,6 +258,7 @@ export default {
     syncIdle: '最新',
     syncPendingLabel: '保留中',
     syncError: '同期に失敗しました',
+    pdfSyncPending: '同期中 — ドキュメントはまだ最新ではありません',
     quoteLocked: '見積書は請求済みです',
     quoteLockedHelp: 'この見積書は請求済みのため、変更内容はローカルにのみ保存されます。',
     quoteDeclinedNoDraft: 'Zohoでは見積書を下書きに戻すことはできません。',

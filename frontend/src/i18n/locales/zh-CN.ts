@@ -258,6 +258,7 @@ export default {
     syncIdle: '已是最新',
     syncPendingLabel: '待处理',
     syncError: '同步失败',
+    pdfSyncPending: '正在同步 — 文档尚未更新',
     quoteLocked: '报价单已开票',
     quoteLockedHelp: '此报价单已开票：更改仅保留在本地。',
     quoteDeclinedNoDraft: 'Zoho 不允许将报价单重新转为草稿。',

@@ -18,9 +18,15 @@ export function InvoicePrintButton({
    *  the operator never saw. The server still owns the candidate set; this
    *  only says which of them. */
   invoiceId,
+  /** True while the project's quote sync is pending — the invoice has no
+   *  sync state of its own, so the card passes the quote's down. The state
+   *  lives on the project, which this button does not receive; the caller
+   *  holds it, so the caller decides. */
+  disabled = false,
 }: {
   projectId: number;
   invoiceId: string;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -29,6 +35,8 @@ export function InvoicePrintButton({
       fetchPdf={() => api.getAitoInvoicePdf(projectId, invoiceId)}
       label={t('aito.printInvoice')}
       failureMessage={t('aito.invoicePrintFailed')}
+      disabled={disabled}
+      disabledTitle={t('aito.pdfSyncPending')}
     />
   );
 }

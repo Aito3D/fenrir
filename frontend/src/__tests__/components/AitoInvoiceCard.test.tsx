@@ -106,6 +106,32 @@ describe('InvoiceCard', () => {
     await waitFor(() => expect(spy).not.toHaveBeenCalled());
   });
 
+  it('disables print and download, with the tooltip explaining why, while the quote sync is pending', async () => {
+    // The invoice has no sync state of its own — it is fetched live — so the
+    // project's quote_sync_state is the only staleness signal there is. While
+    // an edit is still on its way to Zoho, the PDF Books returns may not
+    // match what the operator sees on the board.
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+
+    render(<InvoiceCard project={{ ...project, quote_sync_state: 'pending' } as AitoProject} canUpdate />);
+
+    const print = await screen.findByRole('button', { name: /print invoice/i });
+    expect(print).toBeDisabled();
+    expect(print).toHaveAttribute('title', expect.stringMatching(/sync in progress/i));
+    const download = screen.getByRole('button', { name: /download invoice/i });
+    expect(download).toBeDisabled();
+    expect(download).toHaveAttribute('title', expect.stringMatching(/sync in progress/i));
+  });
+
+  it('keeps print and download enabled on a locked (invoiced) sync state', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+
+    render(<InvoiceCard project={project} canUpdate />);
+
+    expect(await screen.findByRole('button', { name: /print invoice/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /download invoice/i })).toBeEnabled();
+  });
+
   it('shows the balance only while something is still owed', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'partially_paid', balance: 5000 });
 

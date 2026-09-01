@@ -258,6 +258,7 @@ export default {
     syncIdle: 'Güncel',
     syncPendingLabel: 'Beklemede',
     syncError: 'Senkronizasyon başarısız',
+    pdfSyncPending: 'Eşitleme sürüyor — belge henüz güncel değil',
     quoteLocked: 'Teklif faturalandı',
     quoteLockedHelp: 'Bu teklif faturalandırıldı: değişiklikler yalnızca yerel olarak kalır.',
     quoteDeclinedNoDraft: 'Zoho, bir teklifin yeniden taslağa döndürülmesine izin vermiyor.',

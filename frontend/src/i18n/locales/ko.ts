@@ -258,6 +258,7 @@ export default {
     syncIdle: '최신 상태',
     syncPendingLabel: '대기 중',
     syncError: '동기화 실패',
+    pdfSyncPending: '동기화 진행 중 — 문서가 아직 최신이 아닙니다',
     quoteLocked: '견적서가 청구됨',
     quoteLockedHelp: '이 견적서는 청구되어 변경 사항이 로컬에만 유지됩니다.',
     quoteDeclinedNoDraft: 'Zoho에서는 견적서를 다시 임시 저장 상태로 되돌릴 수 없습니다.',

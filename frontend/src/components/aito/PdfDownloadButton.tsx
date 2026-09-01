@@ -36,11 +36,19 @@ export function PdfDownloadButton({
    *  someone their QUOTE could not be fetched when they clicked Download on
    *  an invoice sends them to look at the wrong document. */
   failureMessage,
+  /** Externally forced off — see PdfPrintButton: the caller knows the PDF
+   *  the endpoint would return is outdated. */
+  disabled = false,
+  /** Tooltip shown instead of `label` while `disabled`; aria-label stays
+   *  `label` so the accessible name never changes. */
+  disabledTitle,
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   filename: string;
   failureMessage: string;
+  disabled?: boolean;
+  disabledTitle?: string;
 }) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -86,9 +94,9 @@ export function PdfDownloadButton({
     <button
       type="button"
       onClick={download}
-      disabled={busy}
+      disabled={busy || disabled}
       aria-label={label}
-      title={label}
+      title={disabled && disabledTitle ? disabledTitle : label}
       className={ACTION_CELL}
     >
       {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}

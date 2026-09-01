@@ -45,10 +45,20 @@ export function PdfPrintButton({
    *  QUOTE could not be fetched when they clicked Print on an invoice sends
    *  them to look at the wrong document. */
   failureMessage,
+  /** Externally forced off — the caller knows the PDF the endpoint would
+   *  return is outdated (a quote edit still on its way to Zoho). Distinct
+   *  from `busy`, which is this component's own in-flight state. */
+  disabled = false,
+  /** Tooltip shown INSTEAD of `label` while `disabled` — the one place the
+   *  operator can learn why the button refuses. aria-label stays `label`
+   *  so the button keeps its accessible name (and test queries) either way. */
+  disabledTitle,
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   failureMessage: string;
+  disabled?: boolean;
+  disabledTitle?: string;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -212,9 +222,9 @@ export function PdfPrintButton({
     <button
       type="button"
       onClick={print}
-      disabled={busy}
+      disabled={busy || disabled}
       aria-label={label}
-      title={label}
+      title={disabled && disabledTitle ? disabledTitle : label}
       className={ACTION_CELL}
     >
       {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}

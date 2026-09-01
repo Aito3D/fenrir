@@ -258,6 +258,7 @@ export default {
     syncIdle: '已是最新',
     syncPendingLabel: '待處理',
     syncError: '同步失敗',
+    pdfSyncPending: '正在同步 — 文件尚未更新',
     quoteLocked: '報價單已開立發票',
     quoteLockedHelp: '此報價單已開立發票：變更僅保留在本機。',
     quoteDeclinedNoDraft: 'Zoho 不允許將報價單重新轉為草稿。',
