@@ -1888,6 +1888,7 @@ export function useIsWideLayout
 export function useLatestProjectEvent
 export function useLoadedFilaments
 export function useLongPress
+export function useMediaQuery
 export function useMjpegStream
 export function useMultiPrinterFilamentMapping
 export function useNewProjectDraft

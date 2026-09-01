@@ -8435,3 +8435,28 @@ present from the original T-034/T-001 work; this remediation adds no new export)
 tools/coverage_all.sh backend` — TOTAL statement coverage 74%, at baseline (12632 passed, 1 pre-existing
 unrelated flake in `test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`
 that passed alone on immediate re-run — a listed known-flaky test, not caused by this change).
+
+## T-002 — 2026-08-31 — new additive export `useMediaQuery` (no behavior change)
+
+Not a behavior change, recorded only so that EVERY SURFACE.md delta in this campaign maps to a
+changelog entry. That invariant is not bookkeeping for its own sake: it is what caught T-034's
+read-path rewrite, which no golden probe could see. A single unexplained SURFACE line would blunt it.
+
+`frontend/src/hooks/useMediaQuery.ts` is new and adds one export, `useMediaQuery`. Five previously
+independent breakpoint implementations now call it: useIsMobile, useIsSidebarCompact, useIsWideLayout,
+Dashboard's `stackBelow` effect, and CalculatorMobileSummary's local `useBelowXl`. Nothing was removed
+or renamed, so the change is purely additive to the declared surface.
+
+Behavior is preserved per call site rather than normalised, which is the whole point — the five
+originals genuinely differed:
+  * QUERY STRINGS are passed in verbatim, so every boundary pixel is unchanged: at 768px useIsMobile
+    still does NOT match (its query is 767), at 1144px useIsSidebarCompact still does NOT match (1143),
+    at 1024px useIsWideLayout matches, at 1279px useBelowXl matches, and Dashboard still matches AT
+    `stackBelow` exactly because its query carries no -1 offset like the others do.
+  * INITIAL STATE is passed in as a lambda. The three hooks that computed eagerly from
+    window.innerWidth still do; the two that started at a fixed `false` still do. That difference is
+    visible as a first-paint flash, so unifying it would have been user-visible.
+  * The legacy addListener/removeListener fallback (previously only in Dashboard) now applies to all
+    five. This is a STRICT SUPERSET: `addEventListener` is tested first, so in every environment the
+    originals supported the legacy branch is unreachable. It only helps pre-Safari-14, where the four
+    others previously threw TypeError inside the effect.

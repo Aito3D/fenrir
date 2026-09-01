@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMediaQuery } from './useMediaQuery';
 
 /**
  * Tailwind's `lg`. Kept in sync with the `lg:` classes it is paired with —
@@ -16,22 +16,7 @@ const WIDE_LAYOUT_BREAKPOINT = 1024;
  * has its own column, for instance, which CSS cannot express on its own.
  */
 export function useIsWideLayout(): boolean {
-  const [isWide, setIsWide] = useState(() =>
+  return useMediaQuery(`(min-width: ${WIDE_LAYOUT_BREAKPOINT}px)`, () =>
     typeof window !== 'undefined' ? window.innerWidth >= WIDE_LAYOUT_BREAKPOINT : false
   );
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(`(min-width: ${WIDE_LAYOUT_BREAKPOINT}px)`);
-
-    const handleChange = (e: MediaQueryListEvent) => {
-      setIsWide(e.matches);
-    };
-
-    setIsWide(mediaQuery.matches);
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
-
-  return isWide;
 }

@@ -19,6 +19,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Eye, EyeOff, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from './Button';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 export interface DashboardWidget {
   id: string;
@@ -186,29 +187,7 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
   });
 
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
-  const [isStacked, setIsStacked] = useState(false);
-
-  useEffect(() => {
-    if (!stackBelow) return undefined;
-    const mediaQuery = window.matchMedia(`(max-width: ${stackBelow}px)`);
-    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
-      setIsStacked(event.matches);
-    };
-    handleChange(mediaQuery);
-    const onChange = (event: MediaQueryListEvent) => handleChange(event);
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', onChange);
-    } else {
-      mediaQuery.addListener(onChange);
-    }
-    return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', onChange);
-      } else {
-        mediaQuery.removeListener(onChange);
-      }
-    };
-  }, [stackBelow]);
+  const isStacked = useMediaQuery(stackBelow ? `(max-width: ${stackBelow}px)` : null);
 
   const effectiveColumns = stackBelow && isStacked ? 1 : columns;
 
