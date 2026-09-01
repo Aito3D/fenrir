@@ -838,3 +838,34 @@ class AitoProofreadRequest(BaseModel):
 class AitoProofreadResponse(BaseModel):
     text: str
     model: str
+
+
+class AitoPickupMessageResponse(BaseModel):
+    """The AI-drafted "come and collect" SMS. A draft, never sent as-is: the
+    panel shows it editable and only /pickup-sms sends anything."""
+
+    message: str
+    model: str
+
+
+class AitoPickupSmsRequest(BaseModel):
+    """The message to relay — the user may have edited the draft, so this is
+    what actually goes to the phone, not what the model wrote."""
+
+    # 1000: several times a long SMS, and bounds what a paste can push into a
+    # lock-screen notification.
+    message: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("message")
+    @classmethod
+    def _reject_blank(cls, v: str) -> str:
+        """Whitespace-only is not a message. Trimmed, so the SMS never opens
+        or closes with stray newlines from the textarea."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("message must not be blank")
+        return stripped
+
+
+class AitoPickupSmsResponse(BaseModel):
+    sent: bool = True

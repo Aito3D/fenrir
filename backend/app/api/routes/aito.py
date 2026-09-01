@@ -27,6 +27,9 @@ from backend.app.schemas.aito import (
     AitoInvoiceEmailRequest,
     AitoInvoiceResponse,
     AitoNoteCreate,
+    AitoPickupMessageResponse,
+    AitoPickupSmsRequest,
+    AitoPickupSmsResponse,
     AitoProjectCreate,
     AitoProjectImport,
     AitoProjectMove,
@@ -67,8 +70,14 @@ from backend.app.services.aito_shipping import (
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
+    pickup_message,
     proofread_text,
     summarize_tasks,
+)
+from backend.app.services.pushcut import (
+    PushcutNotConfiguredError,
+    PushcutUpstreamError,
+    send_sms_notification,
 )
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
@@ -2559,6 +2568,90 @@ async def set_project_contacted(
         await db.refresh(project)
 
     return await _project_response(db, project)
+
+
+async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:
+    """409 unless the project's DERIVED column is finish/done — the same gate,
+    for the same reason, as set_project_contacted: "your part is ready" is not
+    a statement anyone can make about a job still on a printer, and the stored
+    column can lag the rules (a step just unticked)."""
+    summary = await _summary_for(db, project.id)
+    column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
+    if column not in _FINISHED_COLUMNS:
+        raise HTTPException(
+            status_code=409,
+            detail="A pickup SMS can only be prepared once the project is finished",
+        )
+
+
+@router.post("/{project_id}/pickup-message", response_model=AitoPickupMessageResponse)
+async def generate_pickup_message(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Draft the "come and collect" SMS for a finished project.
+
+    A draft only — nothing leaves the building here. The panel shows the
+    answer in an editable textarea and /pickup-sms is the send. AITO_UPDATE
+    for the same reason set_project_contacted reuses it: contacting the
+    client is an act on the card, and "may edit an Aito card" is the right
+    authority for it.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    await _finished_or_409(db, project)
+    try:
+        message, model = await pickup_message(db, project.description, project.client_name)
+    except OpenRouterNotConfiguredError:
+        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
+    except OpenRouterUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoPickupMessageResponse(message=message, model=model)
+
+
+@router.post("/{project_id}/pickup-sms", response_model=AitoPickupSmsResponse)
+async def send_pickup_sms(
+    project_id: int,
+    payload: AitoPickupSmsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Relay the (possibly edited) pickup SMS to the user's phone via Pushcut.
+
+    Deliberately does NOT set the contacted mark: Pushcut accepting the
+    notification proves it reached the phone, not that the SMS left it — the
+    user still has to tap accept there, and they record the contact by hand
+    once it truly went out. The event is written all the same, because "we
+    pushed an SMS to the phone at 14:02" is exactly what the timeline is for.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    await _finished_or_409(db, project)
+    phone = (project.client_phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=409, detail="The project's client has no phone number")
+    try:
+        await send_sms_notification(
+            db,
+            phone=phone,
+            text=payload.message,
+            title=f"SMS — {project.client_name}" if project.client_name else "SMS client",
+        )
+    except PushcutNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
+    except PushcutUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    await record(
+        db,
+        project.id,
+        "project.sms.sent",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"phone": phone},
+    )
+    await db.commit()
+    return AitoPickupSmsResponse()
 
 
 @router.post("/{project_id}/sync", response_model=AitoProjectResponse)

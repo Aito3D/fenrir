@@ -64,6 +64,11 @@ KINDS: dict[str, str] = {
     # took it back by hand.
     "project.contacted.set": "story",
     "project.contacted.cleared": "story",
+    # The pickup SMS was handed to the user's phone (Pushcut accepted the
+    # notification) — not proof the SMS left the phone, which is why sending
+    # one does NOT set the contacted mark. Story depth for the same reason
+    # the contacted pair has it: it is part of "who told them, and when".
+    "project.sms.sent": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

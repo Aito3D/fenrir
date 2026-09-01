@@ -39,6 +39,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.sav.cleared': 'aito.history.projectSavCleared',
   'project.pause.set': 'aito.history.projectPauseSet',
   'project.pause.cleared': 'aito.history.projectPauseCleared',
+  'project.sms.sent': 'aito.history.smsSent',
 };
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
