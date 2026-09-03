@@ -1,24 +1,8 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ArchiveSlim } from '../../api/client';
-import { computeUtilization } from './printerUtilization';
+import type { PrinterUtilization } from './printerUtilization';
 
-export function PrinterUtilizationWidget({
-  archives,
-  printerMap,
-  dateFrom,
-  dateTo,
-}: {
-  archives: ArchiveSlim[];
-  printerMap: Map<string, string>;
-  dateFrom?: string;
-  dateTo?: string;
-}) {
+export function PrinterUtilizationWidget({ rows }: { rows: PrinterUtilization[] }) {
   const { t } = useTranslation();
-  const rows = useMemo(
-    () => computeUtilization(archives, printerMap, dateFrom, dateTo),
-    [archives, printerMap, dateFrom, dateTo],
-  );
 
   if (rows.length === 0) {
     return <p className="text-bambu-gray text-center py-4">{t('stats.utilizationNoData')}</p>;

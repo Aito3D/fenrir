@@ -23,6 +23,8 @@ import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 export interface DashboardWidget {
   id: string;
   title: string;
+  /** Optional value rendered next to the title in the card header (e.g. a total). */
+  titleExtra?: ReactNode;
   /** Render function that receives the current size for responsive content */
   component: ReactNode | ((size: 1 | 2 | 4) => ReactNode);
   defaultVisible?: boolean;
@@ -53,6 +55,7 @@ interface LayoutState {
 function SortableWidget({
   id,
   title,
+  titleExtra,
   component,
   isHidden,
   size,
@@ -62,6 +65,7 @@ function SortableWidget({
 }: {
   id: string;
   title: string;
+  titleExtra?: ReactNode;
   component: ReactNode | ((size: 1 | 2 | 4) => ReactNode);
   isHidden: boolean;
   size: 1 | 2 | 4;
@@ -109,6 +113,7 @@ function SortableWidget({
             <GripVertical className="w-6 h-6 md:w-4 md:h-4 text-bambu-gray" />
           </button>
           <h3 className="text-sm font-medium text-white">{title}</h3>
+          {titleExtra != null && <span className="text-sm text-bambu-gray">{titleExtra}</span>}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -379,6 +384,7 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
                   key={widget.id}
                   id={widget.id}
                   title={widget.title}
+                  titleExtra={widget.titleExtra}
                   component={widget.component}
                   isHidden={layout.hidden.includes(widget.id)}
                   size={size}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { WifiOff } from 'lucide-react';
@@ -15,7 +15,7 @@ import { useFlipReorder } from '../hooks/useFlipReorder';
 import { useIdleHide } from '../hooks/useIdleHide';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import type { GridLayout } from './cameraGridLayout';
-import { GRID_LAYOUT_COLS } from './cameraGridLayout';
+import { GRID_LAYOUT_COLS, computeWallFit } from './cameraGridLayout';
 import { CameraGridCard } from './cameraGrid/CameraGridCard';
 import type { GridCardHandlers } from './cameraGrid/CameraGridCard';
 import { WebRTCGridCard } from './cameraGrid/WebRTCGridCard';
@@ -352,6 +352,37 @@ export function CameraGrid({
   // Slide tiles to their new slots when the triage order changes (statuses
   // update live) or the spotlight moves — spanning a tile reflows the wall.
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Fullscreen wall: measure the box the grid can fill so tiles can be sized
+  // to it (see computeWallFit). Width comes from the grid itself; height is
+  // whatever remains of the viewport below the grid's top edge. The kiosk
+  // toolbar above only fades (opacity), so the top edge is stable and only
+  // real resizes re-measure.
+  const [wallBox, setWallBox] = useState<{ width: number; height: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!fullscreen) {
+      setWallBox(null);
+      return;
+    }
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      setWallBox({
+        width: rect.width,
+        // Small bottom inset so the last row's rounded corners don't kiss the edge
+        height: Math.max(0, window.innerHeight - rect.top - 8),
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [fullscreen]);
   // Include paused ids: a pause flips the tile to 2×2, which reflows the wall
   // and must animate even when the tile's slot order is unchanged.
   const pausedKey = gridPrinters.filter(p => p.state === 'PAUSE').map(p => p.id).join(',');
@@ -380,6 +411,21 @@ export function CameraGrid({
 
   const kioskHidden = !!fullscreen && kioskIdle;
 
+  const gapClass = layout === 'compact' ? 'gap-2' : 'gap-4';
+  const gapPx = layout === 'compact' ? 8 : 16;
+  // Paused prints auto-expand to 2x2 exactly like a manual spotlight (see the
+  // `spotlighted` prop below) — count them all so the fit accounts for the span.
+  const spotlightCount = gridPrinters.filter(p => spotlightId === p.id || p.state === 'PAUSE').length;
+  const wallFit = fullscreen && wallBox
+    ? computeWallFit({
+        count: gridPrinters.length,
+        spotlights: spotlightCount,
+        width: wallBox.width,
+        height: wallBox.height,
+        gap: gapPx,
+      })
+    : null;
+
   return (
     <div className={kioskHidden ? 'cursor-none' : undefined}>
       <GridToolbar
@@ -392,7 +438,11 @@ export function CameraGrid({
         getStatsSnapshot={getStatsSnapshot}
         hidden={kioskHidden}
       />
-      <div ref={gridRef} className={`grid ${layout === 'compact' ? 'gap-2' : 'gap-4'} ${GRID_LAYOUT_COLS[layout]}`}>
+      <div
+        ref={gridRef}
+        className={`grid ${gapClass} ${wallFit ? 'justify-center' : GRID_LAYOUT_COLS[layout]}`}
+        style={wallFit ? { gridTemplateColumns: `repeat(${wallFit.cols}, ${wallFit.tileWidth}px)` } : undefined}
+      >
         {/* One interleaved list in triage order — each tile picks its stream type
             (go2rtc: RTSP models via WebRTC, chamber models via the MJPEG grid) */}
         {gridPrinters.map(p => {

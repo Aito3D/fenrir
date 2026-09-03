@@ -49,6 +49,7 @@ import { CHART_TOOLTIP_STYLE } from '../components/stats/chartTheme';
 import { computeDelta } from '../components/stats/deltas';
 import { DeltaBadge } from '../components/stats/DeltaBadge';
 import { PrinterUtilizationWidget } from '../components/stats/PrinterUtilizationWidget';
+import { computeUtilization } from '../components/stats/printerUtilization';
 import { CostBreakdownWidget } from '../components/stats/CostBreakdownWidget';
 import { FilamentForecastWidget } from '../components/stats/FilamentForecastWidget';
 import { MaintenanceReliabilityWidget } from '../components/stats/MaintenanceReliabilityWidget';
@@ -1257,6 +1258,11 @@ export function StatsPage() {
   );
   const deltaTitle = previousRange ? t('stats.deltaVsPrevious', { days: previousRange.spanDays }) : undefined;
   const printDates = useMemo(() => archives?.map((a) => a.created_at) || [], [archives]);
+  const utilizationRows = useMemo(
+    () => computeUtilization(archives || [], printerMap, effectiveDateRange.dateFrom, effectiveDateRange.dateTo),
+    [archives, printerMap, effectiveDateRange.dateFrom, effectiveDateRange.dateTo],
+  );
+  const utilizationTotalHours = utilizationRows.reduce((sum, r) => sum + r.busySeconds, 0) / 3600;
 
   if (isLoading) {
     return (
@@ -1359,14 +1365,11 @@ export function StatsPage() {
     {
       id: 'printer-utilization',
       title: t('stats.printerUtilization'),
-      component: (
-        <PrinterUtilizationWidget
-          archives={archives || []}
-          printerMap={printerMap}
-          dateFrom={effectiveDateRange.dateFrom}
-          dateTo={effectiveDateRange.dateTo}
-        />
-      ),
+      titleExtra:
+        utilizationRows.length > 0
+          ? t('stats.utilizationBusy', { hours: utilizationTotalHours.toFixed(1) })
+          : undefined,
+      component: <PrinterUtilizationWidget rows={utilizationRows} />,
       defaultSize: 2,
     },
     ...(canUseCalculator

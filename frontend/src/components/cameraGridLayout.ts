@@ -62,3 +62,52 @@ export function gridBlinkSyncStyle(
   if (!highlightClass.includes('animate-grid-border-blink')) return undefined;
   return { animationDelay: `-${now % GRID_BLINK_PERIOD_MS}ms` };
 }
+
+/** 16:9 — every wall tile is `aspect-video`. */
+const TILE_ASPECT = 16 / 9;
+
+export interface WallFit {
+  cols: number;
+  /** Tile width in px; the grid centers columns of exactly this width. */
+  tileWidth: number;
+}
+
+/**
+ * Best-fit column count for the fullscreen wall: pick the layout that renders
+ * the LARGEST tiles that still fit every row inside the viewport, instead of
+ * the breakpoint column classes (which size tiles by width alone and can
+ * leave a third of a kiosk display black below the last row).
+ *
+ * For each candidate column count the tile width is capped by both axes —
+ * `(width - gaps) / cols` horizontally and `(height - gaps) / rows * 16/9`
+ * vertically — and the candidate maximizing that cap wins. Ties prefer fewer
+ * columns (wider tiles over emptier last rows).
+ *
+ * Spotlighted tiles span 2×2, so each consumes 4 grid slots and forces at
+ * least 2 columns. Row math treats those slots as if they were laid out
+ * contiguously — close enough for sizing, exact when there are none.
+ */
+export function computeWallFit(opts: {
+  count: number;
+  spotlights?: number;
+  width: number;
+  height: number;
+  gap: number;
+}): WallFit | null {
+  const { count, width, height, gap } = opts;
+  const spotlights = Math.min(opts.spotlights ?? 0, count);
+  if (count <= 0 || width <= 0 || height <= 0) return null;
+
+  const slots = count + spotlights * 3;
+  const minCols = spotlights > 0 ? 2 : 1;
+  let best: WallFit | null = null;
+  for (let cols = minCols; cols <= slots; cols++) {
+    const rows = Math.ceil(slots / cols);
+    const widthCap = (width - gap * (cols - 1)) / cols;
+    const heightCap = ((height - gap * (rows - 1)) / rows) * TILE_ASPECT;
+    const tileWidth = Math.floor(Math.min(widthCap, heightCap));
+    if (tileWidth <= 0) continue;
+    if (!best || tileWidth > best.tileWidth) best = { cols, tileWidth };
+  }
+  return best;
+}
