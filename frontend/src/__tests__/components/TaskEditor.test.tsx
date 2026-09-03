@@ -929,10 +929,17 @@ describe('TaskRow', () => {
     // let a negative weight reach `computeImpressionCost` and corrupt the
     // printed total).
     const onChangeSpy = vi.fn();
+    const impression = { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' };
     const task: TaskDraft = {
       ...emptyTaskDraft(),
-      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
-      impressionCost: 500,
+      impression,
+      // The calculator's own figure, so the price starts LINKED and the edit
+      // below reprices. A diverged (manual) starting cost would hit the
+      // never-overwrite guard instead, and the repricing this test pins would
+      // not happen at all.
+      impressionCost: roundUpTo50(
+        computeImpressionCost(impression, mockFilaments[0], mockPrinters[0], mockDefaults)!.total_ttc,
+      ),
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
@@ -972,10 +979,14 @@ describe('TaskRow', () => {
     // dropped, both of which would let a bad piece count reach the printed
     // total.
     const onChangeSpy = vi.fn();
+    const impression = { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 2, color: 'Noir' };
     const task: TaskDraft = {
       ...emptyTaskDraft(),
-      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 2, color: 'Noir' },
-      impressionCost: 500,
+      impression,
+      // Linked starting cost (unit × 2), for the same reason as the weight
+      // clamp test above: a diverged cost would never reprice.
+      impressionCost:
+        roundUpTo50(computeImpressionCost(impression, mockFilaments[0], mockPrinters[0], mockDefaults)!.total_ttc) * 2,
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
@@ -1276,7 +1287,7 @@ describe('TaskRow', () => {
     // and make Apply appear for the same wrong reason as above.
     fireEvent.change(await screen.findByLabelText(/weight/i), { target: { value: '45' } });
     await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
-    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Follow calculator' })).not.toBeInTheDocument();
   });
 
   it('printing: a hand-typed price offers the computed one, and applying it stores unit × quantity', async () => {
@@ -1291,7 +1302,7 @@ describe('TaskRow', () => {
     // 20 000 apiece by hand is not what the calculator makes of 40 g on the
     // H2S, so the alternative becomes offerable — this is the case the old UI
     // silently lost.
-    const apply = await screen.findByRole('button', { name: 'Apply' });
+    const apply = await screen.findByRole('button', { name: 'Follow calculator' });
     fireEvent.click(apply);
 
     const next = onChange.mock.calls.at(-1)?.[0];
@@ -1313,7 +1324,121 @@ describe('TaskRow', () => {
     // computable" verdict for the operator to interpret.
     expect(await screen.findByTestId('impression-computed')).toHaveTextContent('—');
     expect(screen.getByText('Calculator price')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Follow calculator' })).not.toBeInTheDocument();
+  });
+
+  it('printing: a calculator edit never rewrites a hand-set price — the stored cost survives the edit', async () => {
+    // The reported bug: operator A types a negotiated price, operator B (or A)
+    // later touches any calculator field, and the quote silently changes. A
+    // stored price that diverges from the calculator's figure is manual by
+    // definition (after any calculator write the two agree — see
+    // ImpressionFields' provenance comment), so a calculator edit may propose
+    // but must never write.
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 40_000,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '45' } });
+
+    // Give every pending render and query a chance to flush — under the old
+    // unguarded handleChange the computed total lands here.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression.weightG).toBe(45);
+    expect(lastTask.impressionCost).toBe(40_000);
+    // Sanity: the guard is what kept 40 000, not the computed price happening
+    // to equal it.
+    const priced = computeImpressionCost(lastTask.impression, mockFilaments[0], mockPrinters[0], mockDefaults);
+    expect(roundUpTo50(priced!.total_ttc)).not.toBe(40_000);
+    // The new price is still on offer, one explicit click away.
+    expect(screen.getByRole('button', { name: 'Follow calculator' })).toBeInTheDocument();
+  });
+
+  it('printing: "Follow calculator" adopts the computed price, and the next calculator edit then follows automatically', async () => {
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 40_000,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Follow calculator' }));
+    const priced40 = computeImpressionCost(task.impression, mockFilaments[0], mockPrinters[0], mockDefaults);
+    await waitFor(() => {
+      const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+      expect(lastTask.impressionCost).toBe(roundUpTo50(priced40!.total_ttc));
+    });
+
+    // Stored and computed now agree, which IS the linked state — no flag to
+    // persist. The next calculator edit prices automatically again.
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '45' } });
+    const priced45 = computeImpressionCost(
+      { ...task.impression, weightG: 45 },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    await waitFor(() => {
+      const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+      expect(lastTask.impressionCost).toBe(roundUpTo50(priced45!.total_ttc));
+    });
+  });
+
+  it('printing: a diverged price badges the cost field "Manual"', async () => {
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 40_000,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+    expect(await screen.findByTestId('impression-price-provenance')).toHaveTextContent('Manual');
+  });
+
+  it('printing: a price that matches the calculator badges the cost field "Calculator"', async () => {
+    const impression = { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' };
+    const priced = computeImpressionCost(impression, mockFilaments[0], mockPrinters[0], mockDefaults);
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression,
+      impressionCost: roundUpTo50(priced!.total_ttc),
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+    expect(await screen.findByTestId('impression-price-provenance')).toHaveTextContent('Calculator');
+  });
+
+  it('printing: an imported price the calculator cannot recompute badges "Manual" — and stays untouched', async () => {
+    // The import shape: a cost from the quote, no printer or filament, so
+    // computeImpressionCost is null forever. The price is not the
+    // calculator's, and the badge says so.
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      id: 7,
+      impression: { printerId: null, filamentId: null, weightG: 210, timeMin: 780, quantity: 1, color: 'Noir' },
+      impressionCost: 2400,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+    expect(await screen.findByTestId('impression-price-provenance')).toHaveTextContent('Manual');
+  });
+
+  it('printing: no provenance badge while the task has no stored cost', async () => {
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: null,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Printing' }));
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    expect(screen.queryByTestId('impression-price-provenance')).not.toBeInTheDocument();
   });
 
   it('printing: the note is one click away, and already open when the task has one', async () => {

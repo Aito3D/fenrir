@@ -62,6 +62,17 @@ function GridRow({
   );
 }
 
+/** Who owns the stored unit price right now — derived, never stored.
+ *
+ *  `linked` means the stored price IS the calculator's current figure, so a
+ *  calculator edit may keep it in sync automatically. `manual` means someone
+ *  set it by hand (or it arrived from an imported quote), so the calculator
+ *  must never write over it — only propose. `null` means there is nothing to
+ *  own yet (no stored cost), or the reference data has not resolved enough to
+ *  say. Divergence is the whole signal: after any calculator write the two
+ *  figures agree, so disagreement can only mean a human put the price there. */
+export type PriceProvenance = 'linked' | 'manual' | null;
+
 export interface ImpressionFieldsProps {
   value: ImpressionDraft;
   /** Reports the edited draft, plus the recomputed price when — and only
@@ -80,13 +91,19 @@ export interface ImpressionFieldsProps {
   /** The Impression3D cost control, owned by TaskStepFields (it owns the
    *  null-vs-0 rule) but seated HERE, as a row of this block's grid.
    *
-   *  A slot is a FRAGMENT of exactly two nodes — its `<label>` then its
-   *  control — not a wrapped cell. This component wraps them in the subgrid
-   *  row itself, which is what lets it own row placement (see `GridRow`)
-   *  without the parent having to know the grid at all. Do not wrap the pair
-   *  in a `<div>` on the parent's side: that would put one element where the
-   *  subgrid expects two, and the label would swallow the field's column. */
-  costField: React.ReactNode;
+   *  A render prop, not a node: this component is the only one that can tell
+   *  who owns the price (it holds the reference data and the computed unit),
+   *  while the parent owns the field — so the provenance travels through the
+   *  slot for the parent to badge the label with.
+   *
+   *  The returned slot is a FRAGMENT of exactly two nodes — its `<label>`
+   *  then its control — not a wrapped cell. This component wraps them in the
+   *  subgrid row itself, which is what lets it own row placement (see
+   *  `GridRow`) without the parent having to know the grid at all. Do not
+   *  wrap the pair in a `<div>` on the parent's side: that would put one
+   *  element where the subgrid expects two, and the label would swallow the
+   *  field's column. */
+  costField: (provenance: PriceProvenance) => React.ReactNode;
   /** Same fragment contract as `costField`. Owned by TaskStepFields because
    *  the discount lives on the TASK beside `impressionCost` — it modifies the
    *  price, not the print parameters this component edits. */
@@ -183,10 +200,18 @@ export function ImpressionFields({
   // equal to what is already stored.
   const computedUnit = result ? roundUpTo50(result.total_ttc) : null;
   // Divergence IS the provenance signal. After any calculator edit the two
-  // agree (handleChange just wrote it), so the button appears only once a
-  // cost has been typed by hand — which is the one case the old UI dropped
-  // the computed alternative on the floor. This is why the `hasEdited` flag
-  // that used to live here is not coming back.
+  // agree (handleChange just wrote it), so disagreement can only mean the
+  // price was set by hand — or imported from a quote the calculator cannot
+  // recompute. This is why the `hasEdited` flag that used to live here is
+  // not coming back. `null` while the reference data is still loading, not
+  // `manual`: a linked price would flash "Manual" for the cold-cache window
+  // otherwise.
+  const provenance: PriceProvenance =
+    unitCost === null || referenceDataLoading
+      ? null
+      : computedUnit !== null && unitCost === computedUnit
+        ? 'linked'
+        : 'manual';
   const canApplyComputed = computedUnit !== null && unitCost !== computedUnit;
 
   // Pricing is a side effect on the parent, so it happens here — at the moment
@@ -199,6 +224,16 @@ export function ImpressionFields({
   // `next` is priced, not `value`: state has not advanced yet at this point.
   const handleChange = (next: ImpressionDraft) => {
     if (!defaults || referenceDataLoading) {
+      onChange(next);
+      return;
+    }
+    // A manual price is never written over by a calculator edit — that is the
+    // "another operator touches the calculator and the quote silently
+    // changes" bug. The edit itself still goes through; the recomputed figure
+    // only shows up on the calculator-price row, where "Follow calculator"
+    // adopts it explicitly. Adopting also re-links: stored equals computed
+    // from then on, so this guard stops matching and live repricing resumes.
+    if (provenance === 'manual') {
       onChange(next);
       return;
     }
@@ -320,7 +355,7 @@ export function ImpressionFields({
         {/* Price column. Row 1 and 3 are slots; quantity is ours because the
             draft owns it. */}
         <div className="impression-price-row" style={{ '--ip-row': 1 } as React.CSSProperties}>
-          {costField}
+          {costField(provenance)}
         </div>
 
         <GridRow side="price" row={2} htmlFor={`${reactId}-quantity`} label={t('aito.quantity')}>
@@ -358,7 +393,14 @@ export function ImpressionFields({
             </span>
           ) : (
             <span data-testid="impression-computed" className="flex items-center gap-2">
-              <Money currency={currency} value={computedUnit} className="text-sm text-white" />
+              {/* Amber while it is a pending proposal against a manual price
+                  — the "your quote would change" color — plain white when it
+                  simply restates the linked price or fills an empty cost. */}
+              <Money
+                currency={currency}
+                value={computedUnit}
+                className={`text-sm ${provenance === 'manual' ? 'font-semibold text-amber-400' : 'text-white'}`}
+              />
               {canApplyComputed && (
                 <button
                   type="button"
@@ -366,12 +408,14 @@ export function ImpressionFields({
                     // The existing channel: the second argument has always
                     // meant "the calculator's cost, in stored (already
                     // multiplied) form". Adopting a price therefore takes the
-                    // same path a calculator edit does.
+                    // same path a calculator edit does — and, because stored
+                    // then equals computed, the price is linked again and
+                    // follows the calculator until the next hand edit.
                     onChange(value, computedUnit * Math.max(1, Math.floor(value.quantity || 1)))
                   }
                   className={`rounded-md bg-bambu-green px-2 py-0.5 text-xs font-semibold text-bambu-dark transition-colors hover:bg-bambu-green-light ${focusRingCls}`}
                 >
-                  {t('aito.applyPrice')}
+                  {t('aito.followCalculator')}
                 </button>
               )}
             </span>

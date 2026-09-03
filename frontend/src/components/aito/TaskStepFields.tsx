@@ -385,12 +385,27 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               }
               onChange({ ...task, impression: next, impressionCost });
             }}
-            costField={
+            costField={(provenance) => (
               // A fragment, not a cell: ImpressionFields wraps this pair in
-              // its own subgrid row (see its `costField` doc).
+              // its own subgrid row (see its `costField` doc). The provenance
+              // badge lives INSIDE the label cell, stacked under the label
+              // text: overlaying it on the input would fight the value for
+              // width, and appending it inline would widen the shared
+              // price-column label track (see the note-row comment below on
+              // how that track is sized).
               <>
                 <label htmlFor={`${reactId}-impression`} className={rowLabelCls}>
                   {t('aito.serviceUnitCost')}
+                  {provenance !== null && (
+                    <span
+                      data-testid="impression-price-provenance"
+                      className={`mt-0.5 block text-[10px] font-semibold uppercase tracking-wide ${
+                        provenance === 'manual' ? 'text-amber-400' : 'text-bambu-green-light'
+                      }`}
+                    >
+                      {t(provenance === 'manual' ? 'aito.priceManual' : 'aito.priceLinked')}
+                    </span>
+                  )}
                 </label>
                 <CostInput
                   id={`${reactId}-impression`}
@@ -402,7 +417,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                   autoFocus={autoFocusService === 'impression'}
                 />
               </>
-            }
+            )}
             lineTotal={lineTotal}
             unitRate={unitRate}
             unitCost={unitCost}
