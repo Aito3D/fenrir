@@ -378,6 +378,61 @@ export function formatDuration(seconds: number | null | undefined): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+/**
+ * NOTE ON TWO PARALLEL FAMILIES: `formatDuration`/`formatDate` above and
+ * `formatDurationOrDash`/`formatDateTimeOrDash` below look similar but are
+ * deliberately NOT the same function and must not be merged.
+ *
+ *  - Placeholder string: `formatDuration`/`formatDate` return '--' / '' for
+ *    a missing/unparseable value; the "OrDash" pair returns an em dash '—'
+ *    (U+2014), matching how the tables that use them render every other
+ *    empty cell.
+ *  - Zero handling: `formatDuration(0)` is "0m" (zero is a valid duration).
+ *    `formatDurationOrDash(0)` treats 0 the same as missing and returns the
+ *    em dash, because the tables that use it show 0/undefined durations as
+ *    "not yet known" rather than "took no time".
+ *  - Options: `formatDate` accepts an `Intl.DateTimeFormatOptions` override
+ *    and defaults to a specific year/month/day/hour/minute shape.
+ *    `formatDateTimeOrDash` always calls the un-optioned `toLocaleString()`
+ *    (whatever the browser's default datetime format is) and takes no
+ *    options argument.
+ *
+ * If you're tempted to collapse these into one implementation, check every
+ * call site's zero/placeholder behavior first — that's exactly the
+ * distinction this comment exists to protect.
+ */
+
+/**
+ * Format a duration in seconds to a human-readable string, em-dash
+ * placeholder variant: any falsy/zero/negative value renders as '—'
+ * rather than "0m". See the note above for how this differs from
+ * `formatDuration`.
+ *
+ * @param seconds - Duration in seconds, or null
+ * @returns Formatted string (e.g., "2h 30m", "45m") or '—' if no value
+ */
+export function formatDurationOrDash(seconds: number | null): string {
+  if (!seconds || seconds <= 0) return '—';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/**
+ * Format a UTC date string via the browser's default `toLocaleString()`,
+ * em-dash placeholder variant. See the note above for how this differs
+ * from `formatDate`.
+ *
+ * @param isoString - Date string from backend, or null
+ * @returns Localized date/time string, or '—' if no value / unparseable
+ */
+export function formatDateTimeOrDash(isoString: string | null): string {
+  if (!isoString) return '—';
+  const d = parseUTCDate(isoString);
+  return d ? d.toLocaleString() : '—';
+}
+
 type TranslateFunction = (key: string, options?: Record<string, unknown>) => string;
 
 /**

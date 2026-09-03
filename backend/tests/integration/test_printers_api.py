@@ -4907,3 +4907,216 @@ class TestCoverUsesTheRunningPrintsArchive:
             await async_client.get(f"/api/v1/printers/{printer.id}/cover")
 
         assert threemf.is_file(), "the cover flow deleted the running print's archived 3MF"
+
+
+class TestPrinterControlAPIKeyPrinterScope:
+    """Regression coverage for T-031: printer-control routes (pause / resume /
+    stop / jog / temperature / fan-speed / home-axes / AMS load-unload / ...)
+    previously used the ungated ``RequirePermissionIfAuthEnabled``, so an API
+    key restricted to printer A via its ``printer_ids`` allowlist could still
+    pause, heat, jog, or otherwise control printer B — the exact allowlist the
+    ``/files`` routes already enforced via ``RequirePrinterPermissionIfAuthEnabled``
+    (see ``test_printer_file_routes_enforce_api_key_printer_scope`` above).
+    These routes now go through that same printer-scoped dependency.
+    """
+
+    # (http_method, path_suffix, query_params) — one representative from each
+    # control family named in the audit finding (pause/resume/stop, jog, home,
+    # temperature, fan-speed, AMS load/unload).
+    CONTROL_ROUTES = [
+        ("post", "print/pause", {}),
+        ("post", "print/resume", {}),
+        ("post", "print/stop", {}),
+        ("post", "home-axes", {}),
+        ("post", "bed-jog", {"distance": "1.0"}),
+        ("post", "temperature/nozzle", {"target": "200"}),
+        ("post", "fan-speed", {"fan": "part", "speed": "50"}),
+        ("post", "ams/load", {"tray_id": "0"}),
+        ("post", "ams/unload", {}),
+    ]
+
+    @staticmethod
+    async def _make_scoped_key(db_session, allowed_printer_id, *, name):
+        """Create an enabled, ``can_control_printer`` API key.
+
+        ``allowed_printer_id=None`` mints an unrestricted (global) key —
+        ``printer_ids`` stays ``None``, which ``check_printer_access`` treats
+        as "access to all printers".
+        """
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name=name,
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                can_control_printer=True,
+                printer_ids=[allowed_printer_id] if allowed_printer_id is not None else None,
+                enabled=True,
+            )
+        )
+        await db_session.commit()
+        return full_key
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("method,route,params", CONTROL_ROUTES)
+    async def test_control_route_denies_api_key_outside_printer_scope(
+        self,
+        async_client: AsyncClient,
+        printer_factory,
+        db_session,
+        method: str,
+        route: str,
+        params: dict,
+    ):
+        """A key restricted to printer A must get 403 controlling printer B."""
+        printer_a = await printer_factory(name="ScopeCtrlA", serial_number="SCOPECTRLA000001")
+        printer_b = await printer_factory(name="ScopeCtrlB", serial_number="SCOPECTRLB000001")
+
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ctrladmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+        full_key = await self._make_scoped_key(db_session, printer_a.id, name=f"ctrl-deny-{route}")
+        headers = {"X-API-Key": full_key}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = MagicMock()
+            response = await getattr(async_client, method)(
+                f"/api/v1/printers/{printer_b.id}/{route}",
+                params=params,
+                headers=headers,
+            )
+
+        assert response.status_code == 403, response.text
+        assert "printer" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("method,route,params", CONTROL_ROUTES)
+    async def test_control_route_allows_api_key_within_printer_scope(
+        self,
+        async_client: AsyncClient,
+        printer_factory,
+        db_session,
+        method: str,
+        route: str,
+        params: dict,
+    ):
+        """The same key succeeds against the printer that IS in its allowlist."""
+        printer_a = await printer_factory(name="ScopeCtrlA2", serial_number="SCOPECTRLA000002")
+
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ctrladmin2",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+        full_key = await self._make_scoped_key(db_session, printer_a.id, name=f"ctrl-allow-{route}")
+        headers = {"X-API-Key": full_key}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = MagicMock()
+            response = await getattr(async_client, method)(
+                f"/api/v1/printers/{printer_a.id}/{route}",
+                params=params,
+                headers=headers,
+            )
+
+        assert response.status_code == 200, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unrestricted_api_key_controls_any_printer(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """A key with no ``printer_ids`` allowlist (global key) is unaffected."""
+        printer = await printer_factory(name="ScopeCtrlUnrestricted", serial_number="SCOPECTRLU00001")
+
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ctrladmin3",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+        full_key = await self._make_scoped_key(db_session, None, name="ctrl-unrestricted")
+        headers = {"X-API-Key": full_key}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = MagicMock()
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/print/pause",
+                headers=headers,
+            )
+
+        assert response.status_code == 200, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwt_user_with_permission_unaffected_by_printer_scope(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """A normal JWT user (no ``printer_ids`` concept at all) holding
+        PRINTERS_CONTROL must be able to control any printer, exactly as
+        before — the printer_ids allowlist is an API-key-only concept.
+        """
+        printer = await printer_factory(name="ScopeCtrlJwt", serial_number="SCOPECTRLJWT0001")
+
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ctrljwtadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "ctrljwtadmin", "password": "AdminPass1!"},
+        )
+        assert login.status_code == 200, login.text
+        admin_token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = MagicMock()
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/print/pause",
+                headers=headers,
+            )
+
+        assert response.status_code == 200, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_control_route_unaffected_when_auth_disabled(self, async_client: AsyncClient, printer_factory):
+        """With auth disabled entirely, control routes behave exactly as
+        before — no API key, no printer_ids check, unconditional access
+        (matching the app's documented single-trust-domain mode).
+        """
+        printer = await printer_factory(name="ScopeCtrlAuthOff", serial_number="SCOPECTRLOFF0001")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = MagicMock()
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/print/pause")
+
+        assert response.status_code == 200, response.text

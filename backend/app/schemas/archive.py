@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Annotated
 
@@ -10,6 +11,33 @@ from backend.app.utils.filename import clean_display_name
 # it there instead, where the budget and the fallback are known.
 DisplayName = Annotated[str | None, BeforeValidator(clean_display_name)]
 
+# Matches a leading URI scheme (e.g. "javascript:", "data:", "http:") so a
+# genuinely scheme-less value like "printables.com/model/12345" can be told
+# apart from one that merely lacks the "//" (e.g. "javascript:alert(1)").
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+
+def normalize_link_scheme(v: str | None) -> str | None:
+    """Prepend https:// to a scheme-less link (#T-034).
+
+    Unlike ``external_link.py``'s validator, this never rejects a value --
+    external_url/makerworld_url are populated from third-party 3MF metadata
+    and GitHub backup restores as well as direct user edits, and a strict
+    reject would 422 payloads the API previously accepted. A value that
+    already carries some other scheme (including an unsafe one) is passed
+    through unchanged; the frontend is the actual guard against handing an
+    unsafe scheme to ``window.open``.
+    """
+    if not v:
+        return v
+    stripped = v.strip()
+    if not stripped or _SCHEME_RE.match(stripped):
+        return v
+    return f"https://{stripped}"
+
+
+NormalizedUrl = Annotated[str | None, BeforeValidator(normalize_link_scheme)]
+
 
 class ArchiveBase(BaseModel):
     print_name: DisplayName = None
@@ -20,7 +48,7 @@ class ArchiveBase(BaseModel):
     failure_reason: str | None = None
     quantity: int | None = None  # Number of items printed
     # User-defined link (Printables, Thingiverse, etc.)
-    external_url: str | None = None
+    external_url: NormalizedUrl = None
 
 
 class ArchiveUpdate(ArchiveBase):

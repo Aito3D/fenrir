@@ -7580,3 +7580,883 @@ bundles only `calculatorInsights.ts`/`quoteSummary.ts` (see `tools/probe_calc_fr
 not `curveGeometry.ts`, so no probe drives `qtyDomainMax` and none needed re-recording. `bash
 tools/gen_surface_calc.sh | diff - SURFACE.md` — empty (`curveGeometry.ts` is outside R8's glob,
 and `qtyDomainMax`'s new parameter is optional, not a new export).
+
+## T-017 — 2026-08-31 — a restore whose data-directory copy fails now reports failure instead of a disguised success (user-approved behavior change)
+
+**Approved change (verbatim):** "a restore whose file copy fails will report failure (HTTP 500)
+instead of returning success with a note in the message."
+
+`restore_backup` (`backend/app/api/routes/settings.py`, `/api/v1/settings/restore`) restores each
+live data directory (`archive`, `virtual_printer`, `plate_calibration`, `icons`, `projects`) from
+the uploaded backup ZIP. The old loop cleared the destination's contents first (`shutil.rmtree` /
+`item.unlink()` over every existing entry), and only then copied the backup's contents in
+(`shutil.copytree` / `shutil.copy2`). Since the ZIP had just been unpacked onto the same
+filesystem as the destination, a mid-copy `OSError` (ENOSPC is the realistic case — disk full
+partway through restoring a large `archive/` directory of 3MFs/timelapses/photos) was caught,
+logged as a "skipped" directory, and the loop moved on — leaving the live directory destroyed
+with nothing to replace it. The handler still returned `{"success": True, "message": "Backup
+restored successfully..."}` with only a `" Note: Some directories could not be restored (archive)."`
+footnote appended.
+
+Fixed with a new helper, `_restore_data_directory(name, src_dir, dest_dir)`: it copies the backup's
+contents into a sibling staging directory (`dest_dir.parent / f".{dest_dir.name}.restore-staging"`,
+guaranteed to be on the same filesystem as `dest_dir`) first. Only once that copy has fully
+succeeded does it clear `dest_dir`'s contents and move (same-filesystem rename, not a copy) the
+staged files in. If the staging copy itself raises `OSError`, the destination is never touched —
+the exception propagates to `restore_backup`'s caller, which now collects the failing directory
+name into `failed_dirs` instead of swallowing it into `skipped_dirs`. A second new helper,
+`_raise_if_directories_failed(failed_dirs)`, runs immediately after every directory has been
+attempted and *before* the success response is built: if `failed_dirs` is non-empty it raises
+`HTTPException(status_code=500, ...)` naming the failed directories and stating that their
+original contents were left untouched — the route now surfaces the failure to the caller instead
+of reporting `success=True`. Directories that copy successfully are still restored even if a
+different directory in the same request fails (each directory is independent); only a failure
+turns the whole response into a 500.
+
+The database-restore step (SQLite online backup API / Postgres import) and the MFA-key-write step
+are unrelated to this change and untouched — those already had their own failure handling (the
+MFA key write aborts with `HTTPException(500)` *before* the DB swap; the DB restore uses SQLite's
+backup API specifically to avoid WAL corruption, see `test_restore_sqlite_wal_safety.py`). This
+fix only changes the five-directory copy loop that runs *after* the database has already been
+restored.
+
+Regression coverage: new `backend/tests/unit/test_restore_data_directory_safety.py`.
+`TestRestoreDataDirectorySuccess` pins the ordinary case (backup contents replace destination
+contents, destination auto-created if missing, no staging directory left behind).
+`TestRestoreDataDirectoryFailurePath` is the load-bearing regression test: it monkeypatches
+`shutil.copy2` (and, in a second test, `shutil.copytree`) to raise `OSError(28, "No space left on
+device")` partway through copying a backup directory that has pre-existing, valuable live files
+(`irreplaceable_print.3mf`, `timelapse.mp4`) in the destination, asserts the `OSError` propagates
+out of `_restore_data_directory`, and — the actual bug being fixed — asserts the live files are
+**still present and unmodified** afterward, with no partially-copied backup files and no leftover
+staging directory. `TestRaiseIfDirectoriesFailed` exercises `_raise_if_directories_failed`
+directly: an empty list does not raise; a non-empty list raises `HTTPException` with
+`status_code=500` naming every failed directory in the detail message (single and multiple
+directories).
+
+Verification: `ruff check backend/app/api/routes/settings.py
+backend/tests/unit/test_restore_data_directory_safety.py` and `ruff format --check` on the same —
+both clean. `../venv/bin/python3 -m pytest tests/unit/test_restore_data_directory_safety.py
+tests/unit/test_restore_sqlite_wal_safety.py tests/unit/test_postgres_restore_drop_cascade.py -v`
+— 21/21 passed. `../venv/bin/python3 -m pytest tests/integration/test_settings_api.py -q` — 56/56
+passed. Full-suite coverage gate (`bash tools/coverage_all.sh backend`, whole `backend/app` tree,
+`-n 30`) — 12559 passed, TOTAL 74% statements, matching the 74% baseline exactly (no decrease).
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved (the restore endpoint's
+directory-copy failure path isn't reachable from any golden probe), so nothing was re-recorded.
+`bash tools/gen_surface_all.sh | diff - SURFACE.md` — empty; the route's path, method, and
+permission (`settings:restore`) are unchanged, so `SURFACE.md` was left byte-identical.
+
+Note: `backend/tests/unit/test_settings_dedupe_migration.py` fails in isolation (3 tests,
+`sqlite3.OperationalError: no such table: print_log_entries` from `run_migrations`'s unconditional
+`ALTER TABLE print_log_entries ...`) because its `_register_all_models()` helper omits the
+`print_log` model — a pre-existing gap in that unrelated test's fixture, not touched by this change.
+It passes when run as part of the full suite (`Base.metadata` is a process-global singleton
+populated by other tests' model imports first), which is exactly what the coverage-gate run above
+shows (12559 passed, no failures).
+
+## T-020 — 2026-08-31 — a client that cannot accept a broadcast within the timeout is dropped instead of stalling everyone else (user-approved behavior change)
+
+**Approved change (verbatim):** "a client that cannot accept a broadcast within the timeout will
+be dropped from the connection list and have to reconnect, instead of silently holding everyone
+else up."
+
+`ConnectionManager.broadcast()` (`backend/app/core/websocket.py`) previously awaited each
+connection's `send_text()` serially, inside `async with self._lock`. uvicorn's WebSocket transport
+applies TCP backpressure, so `send_text()` to a client whose socket window is full (a laptop that
+slept with the dashboard open, a phone on a dead cell link) does not return until the socket
+drains or dies — there was no timeout anywhere on this path. Because `connect()`, `disconnect()`,
+and every other broadcaster (`printer_status`, `print_complete`, FTP upload progress, `aito_changed`)
+take the same `self._lock`, one wedged client stalled live updates for every other user in the
+farm and blocked new WebSocket connections from registering, for as long as the dead socket stayed
+open.
+
+Fixed: `broadcast()` now takes a snapshot of `active_connections` under the lock and releases the
+lock before doing any I/O. Sends fan out concurrently via `asyncio.gather(..., return_exceptions=True)`,
+each wrapped in `asyncio.wait_for(..., timeout=_BROADCAST_SEND_TIMEOUT)` (5.0s — long enough that a
+merely-slow-but-healthy client on a congested LAN/Wi-Fi link isn't penalized, given printer-status
+broadcasts already recur every 1-2s and a single delayed frame is invisible; short enough that a
+genuinely wedged socket can't stall the fan-out to everyone else for more than one broadcast
+cycle). A connection whose send times out or raises is removed from `active_connections` under the
+lock, against the live list rather than the snapshot, exactly like a normal disconnect — so it
+can't race a concurrent `connect()`/`disconnect()` and doesn't get double-removed. `broadcast_aito()`
+and `broadcast_to_user()` are unchanged; the message payload, JSON serialization, and set of
+recipients under normal (non-wedged) conditions are identical to before.
+
+Regression coverage: new `backend/tests/unit/test_ws_broadcast_backpressure.py`.
+`test_slow_client_does_not_block_delivery_to_other_clients` is the core-bug regression: a
+never-returning `send_text()` on one connection must not prevent a second, healthy connection from
+receiving the broadcast — verified to fail (times out) against the old serial-under-lock
+implementation. `test_client_exceeding_timeout_is_removed_from_active_connections` pins that a
+timed-out connection is dropped from `active_connections` while healthy ones remain.
+`test_one_failing_client_does_not_stop_others` exercises the `return_exceptions=True` path: an
+immediately-raising `send_text()` must not cancel delivery to other connections.
+`test_lock_is_not_held_across_sends_connect_proceeds_during_broadcast` starts a broadcast against a
+wedged client, then asserts `connect()` and `disconnect()` still complete promptly while that
+broadcast is in flight — proving the lock is released before the I/O rather than held across it;
+this test also failed (timed out) against the old implementation. Reverting `broadcast()` to the
+old serial-loop-under-lock implementation and re-running the new test file confirmed 3 of 4 tests
+fail (only the `return_exceptions` test, which doesn't depend on concurrency, still passed),
+confirming the tests actually exercise the fix.
+
+Verification: `ruff check backend/app/core/websocket.py backend/tests/unit/test_ws_broadcast_backpressure.py`
+and `ruff format --check` on the same — both clean. `../venv/bin/python3 -m pytest
+tests/unit/test_ws_broadcast_backpressure.py -v` — 4/4 passed. `../venv/bin/python3 -m pytest
+tests/ -q -k "websocket or broadcast"` — 79 passed. Full-suite coverage gate (`bash
+tools/coverage_all.sh backend`, whole `backend/app` tree, `-n 30`) — 12567 passed, TOTAL 74%
+statements, matching the 74% baseline exactly (no decrease); `app/core/websocket.py` itself at 88%.
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved (no golden probe exercises
+broadcast timing/backpressure), so nothing was re-recorded. `bash tools/gen_surface_all.sh | diff -
+SURFACE.md` — empty; `ConnectionManager`'s public methods, their signatures, and the WebSocket
+route contract are unchanged, so `SURFACE.md` was left byte-identical.
+
+Note: `backend/tests/unit/services/test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`
+failed once during the full coverage run and passed in isolation and on a clean re-run of the full
+suite — a pre-existing flake (declared `KNOWN_FLAKY` for this task), not caused by this change.
+
+## T-023 — 2026-08-31 — a printer whose firmware sends a frame the status parser cannot handle now stays connected instead of going permanently offline (user-approved behavior change)
+
+**Approved change (verbatim):** "a printer whose firmware sends a frame the parser cannot handle
+stays connected (with that frame logged and skipped) instead of going permanently offline."
+
+`BambuMQTTClient._on_message()` (`backend/app/services/bambu_mqtt.py`) is paho-mqtt's `on_message`
+callback, invoked on paho's own network thread. It wrapped `self._process_message(payload)` in a
+`try`/`except json.JSONDecodeError: pass` and nothing else. paho is left at its default
+`suppress_exceptions=False`, and `loop_forever()` only catches `OSError` around the network loop —
+so any other exception raised anywhere inside `_process_message` (the ~7000-line status parser
+that reads AMS, xcam, layer/progress, HMS, and dozens of other fields out of each frame) escaped
+`_on_message`, propagated out of paho's thread, and killed it. Once that thread died the printer's
+MQTT session never reconnected — its card went permanently stale until the whole app was
+restarted. Two field-level guards already existed for this exact failure mode (`total_layer_num` at
+`_process_message`'s `int(data["total_layer_num"] or 0)` conversion, `layer_num` at its own
+`int(data["layer_num"])` conversion — both wrapped in `except (TypeError, ValueError)` with a
+comment explaining the network-thread-death risk), but they only covered the two fields someone had
+already hit in practice; any other field with an unexpected type in any other firmware build would
+reproduce the same permanent disconnect through an uncovered code path.
+
+Fixed by adding a trailing `except Exception: logger.exception(...)` to `_on_message`, after the
+existing `except json.JSONDecodeError: pass`. `Exception` (not `BaseException`) is caught, so
+`KeyboardInterrupt`/`SystemExit`/`asyncio.CancelledError` still propagate normally. The log call
+uses `logger.exception(...)` (not `.error()`/`.warning()`) so the traceback is preserved, and
+includes the printer's serial number, the MQTT topic, and a bounded excerpt of the raw payload
+(`msg.payload[:200]`, i.e. the first 200 bytes) — enough to diagnose which field broke the parser
+without dumping a whole frame into the log or risking credentials (MQTT frames here carry printer
+telemetry/commands, not secrets). This is a narrow entry-point hardening: the two existing
+field-level guards at `total_layer_num`/`layer_num` were left untouched, and the parser itself was
+not refactored.
+
+Two things checked and worth recording rather than silently assuming away:
+- **Log-flooding risk:** if the *same* frame shape fails on every message (a firmware field the
+  parser will genuinely never handle, sent on every status push), this now logs at ERROR on every
+  one of those frames — status pushes recur every 1-2s, so a printer stuck on such a field would
+  produce a steady stream of ERROR-level tracebacks for as long as it stays connected. No
+  rate-limiting was added: there is no existing rate-limiting pattern anywhere else in this file to
+  match (checked — none of the other exception handlers in `bambu_mqtt.py` throttle), and this
+  failure mode is a firmware regression that should be *loud* so it gets noticed and reported,
+  rather than quietly rate-limited into obscurity. It trades a dead connection (silent, permanent,
+  previously required an app restart to notice) for a noisy but recoverable one (log spam, but the
+  printer's card stays live) — which matches the approved change's intent.
+- **Partially-applied state:** `_process_message` mutates `self.state` field-by-field as it walks
+  through the payload (e.g. `self.state.wifi_signal = ...`, then later `self.state.developer_mode =
+  ...`, then the large `"print" in payload` block with many more direct assignments), with no
+  transactional/rollback mechanism — this was already true before this change. If an exception is
+  raised partway through, the fields processed before the raise point are already applied to
+  `self.state.raw_data`/`self.state.<field>`; the remainder of that one frame is simply skipped.
+  Previously this didn't matter in practice because such an exception killed the connection outright
+  (no more frames would arrive to observe the partial state). After this fix, the connection
+  survives and the *next* frame's `_process_message` call runs against that partially-updated state
+  — but every individual field assignment already reads from the frame's own payload rather than
+  from previously-derived state (each `if "<field>" in payload:` block is independent), so a stale
+  single field from a half-processed frame is overwritten by the next frame's value for that same
+  field exactly as it would be on any other dropped/incomplete frame (e.g. a frame lost to a network
+  blip). No transactional/rollback mechanism was added — none is needed for this fix; this is
+  reported per the task's request, not treated as a defect to fix here.
+
+Regression coverage: new `TestUnhandledParserErrorDoesNotKillTheConnection` class in
+`backend/tests/unit/services/test_bambu_mqtt.py`. `test_bad_frame_does_not_propagate_and_is_logged`
+monkeypatches `_parse_xcam_data` (reached from `_process_message` via a top-level `"xcam"` frame) to
+raise `RuntimeError`, delivers that frame through the real `_on_message` path, and asserts the call
+does not raise while the log record contains the printer's serial number and the traceback
+(`RuntimeError`). `test_next_good_frame_is_processed_normally_afterward` delivers the same bad frame,
+restores the real parser, then delivers a normal `{"print": {"mc_percent": 55}}` frame and asserts
+`mqtt_client.state.progress == 55` — proving the connection (and the client object's ability to keep
+processing) survives the bad frame. Verified both tests fail against the pre-fix code: the
+`except Exception` block was temporarily removed from a scratch copy of `_on_message` (restoring the
+old `except json.JSONDecodeError: pass`-only body), the two new tests were run against it, and both
+failed with `RuntimeError: simulated parser bug` propagating out of `_on_message` uncaught — then the
+fix was restored and the full file diffed byte-for-byte back to the fixed version before re-running
+the suite.
+
+Verification: `ruff check backend/app/services/bambu_mqtt.py backend/tests/unit/services/test_bambu_mqtt.py`
+and `ruff format --check` on the same — both clean (`All checks passed!`, `2 files already
+formatted`). `../venv/bin/python3 -m pytest tests/ -q -k "mqtt or bambu"` — 1029 passed. New test
+class alone: `../venv/bin/python3 -m pytest tests/unit/services/test_bambu_mqtt.py -k
+"TestUnhandledParserErrorDoesNotKillTheConnection" -v` — 2 passed. Full-suite coverage gate (`bash
+tools/coverage_all.sh backend`) — 12568 passed, 1 failed (`test_external_camera.py::
+TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`, declared `KNOWN_FLAKY` for this task;
+re-run alone immediately after — passed), TOTAL 74% statements, matching the 74% baseline exactly
+(no decrease). `./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved. `bash
+tools/gen_surface_all.sh | diff - SURFACE.md` — empty; no class, method signature, route, or schema
+changed (only the body of a private callback method), so `SURFACE.md` was left byte-identical.
+
+## T-021 — 2026-08-31 — an update step that hangs forever now times out and clears the "in progress" guard (user-approved behavior change)
+
+**Approved change (verbatim):** "an update that currently hangs indefinitely will instead fail
+with a timeout error after a bounded wait, and the Update button becomes usable again."
+
+`_perform_update` (`backend/app/api/routes/updates.py`, the background task started by
+`POST /api/v1/updates/apply`) ran every subprocess step — `git remote set-url`, `git fetch --prune
+--tags --force origin`, `git reset --hard <target_ref>`, `pip install -r requirements.txt`, `npm
+install`, `npm run build` — as a bare `await process.communicate()` with no timeout anywhere. `git`
+has no default network timeout, so a half-open TCP connection to github.com (or a stalled PyPI/npm
+registry download) left `communicate()` pending forever, with the module-global `_update_status`
+stuck on `"downloading"`/`"installing"`. `apply_update` refuses every new `/apply` request while
+`_update_status["status"]` is in `["downloading", "installing"]` (`"Update already in progress"`),
+and nothing ever reset that value — so a single hung step wedged the in-app updater until the whole
+process was restarted.
+
+Fixed with a new helper, `_communicate_with_timeout(process, timeout)`: it wraps
+`process.communicate()` in `asyncio.wait_for(..., timeout=timeout)`. `asyncio.wait_for` only cancels
+the *awaiting coroutine* on timeout — the child process itself keeps running — so on timeout the
+helper explicitly `kill()`s the process, then calls `communicate()` a second time (no timeout) to
+reap it and drain any buffered pipe output (bounded, because the process is already dying), then
+re-raises `asyncio.TimeoutError`. Every `process.communicate()` call in `_perform_update` (and in
+`_origin_points_at_repo`, the local `git remote get-url` helper it calls) now goes through this
+wrapper with a per-step timeout, each picked and justified individually rather than copy-pasted: 30s
+for local git metadata reads/writes (`remote get-url`/`remote set-url` — no network involved), 600s
+(10 min) for `git fetch` (network-bound; Bambuddy commonly runs on constrained/metered connections,
+e.g. behind a home router or on a Raspberry Pi), 180s (3 min) for `git reset --hard` (local disk I/O
+only, but self-hosted installs sometimes live on SD cards or network shares), 900s (15 min) each for
+`pip install` and `npm install` (network download plus potential native-extension compilation on
+ARM hardware), and 600s for `npm run build` (CPU-bound, no network, but still slow on ARM).
+
+Every timeout site sets `_update_status` to the `"error"` shape (with a message naming which step
+timed out) and returns, so the guard clears on every failure path, not just the one most likely to
+hang first. This also changes `pip install`'s and `npm install`'s ordinary non-zero-exit-code
+behavior indirectly by contrast: an ordinary non-zero exit from `pip`/`npm` was, and still is, only
+logged as a warning (the update proceeds regardless — unchanged, existing behavior) — but a
+*timeout* on those same steps is now always fatal, since a hung process signals something
+structurally different (a stalled network transfer, not a package's own exit code) and letting the
+update silently limp forward afterward would be worse than surfacing the failure. `_origin_points_at_repo`
+keeps its existing fail-closed contract: a timeout there (like the pre-existing `OSError`/
+`CancelledError` handling) makes it return `False`, so `_perform_update` falls through to the
+`git remote set-url` rewrite branch rather than crashing the whole update over a purely local
+config read that should never realistically hang.
+
+Considered and concluded, not fixed here (no rollback mechanism was built, per the task's
+instruction): a timeout mid-`git reset --hard` can leave the working tree in a genuinely mixed state
+— `git reset --hard` doesn't write atomically, so `kill()`ing it mid-checkout can leave some files at
+the old ref's content and others already rewritten to the target ref's content, on disk, with no
+git-level indication anything is wrong (the index will look consistent because reset writes it
+incrementally too). A timeout mid-`pip install` is comparatively safer: pip installs each package
+into a temp location and only moves it into `site-packages` on success, so a mid-install kill
+typically leaves *some* packages upgraded and others still at their old version — a dependency skew,
+not filesystem corruption, and reasonably self-healing on a subsequent successful `pip install -r
+requirements.txt` run. Both cases now at least *fail loudly* (the pre-fix behavior was silent
+indefinite hang, which is strictly worse for the user), and the update flow already has no
+transactional/rollback story for the analogous case of a step failing with a normal non-zero exit
+code — this fix does not regress that pre-existing limitation, only bounds how long the user waits
+to find out about it.
+
+Regression coverage: extended `backend/tests/integration/test_updates_api.py` with a shared
+`_HangingProcess` fake (first `communicate()` sleeps far past any injected timeout; `kill()` flips a
+flag; a second `communicate()` call returns immediately, like a real killed process draining its
+pipes) and six new tests. `test_communicate_with_timeout_kills_process_and_reaps_it` exercises the
+helper directly: asserts it raises `asyncio.TimeoutError`, that `kill()` was actually called (not
+just abandoned), and that `communicate()` was called exactly twice (send + reap).
+`test_perform_update_git_fetch_timeout_kills_process_and_sets_error_status` and the analogous
+`..._git_reset_timeout_...` and `..._pip_install_timeout_is_fatal_and_kills_process` and
+`..._npm_install_timeout_is_fatal_and_kills_process` tests each hang one specific step end-to-end
+through `_perform_update` (with the others mocked to succeed instantly), and assert: the hung
+process was killed, `_update_status["status"] == "error"`, the status is NOT `"downloading"`/
+`"installing"`, and the error message names a timeout. The pip/npm variants specifically assert the
+timeout is fatal even though those steps' ordinary non-zero-exit path is only a warning.
+`test_apply_update_not_blocked_after_a_prior_step_timed_out` seeds `_update_status` with the error
+shape a timeout leaves behind and asserts a fresh `POST /apply` succeeds rather than returning
+`"Update already in progress"` — the guard-clearing postcondition the task asked for explicitly.
+Verified the tests fail against the pre-fix code: temporarily restored `git show
+HEAD:backend/app/api/routes/updates.py` over the working file (the new test file left in place) and
+re-ran just the new tests — 5 of 6 failed immediately with `AttributeError` (e.g. `does not have the
+attribute '_GIT_FETCH_TIMEOUT_SECONDS'`) because the timeout constants/helper don't exist pre-fix,
+proving these tests are tied to the fix rather than passing vacuously; the sixth
+(`test_apply_update_not_blocked_after_a_prior_step_timed_out`) passed unchanged against old code
+too, since it only pins the pre-existing (and already-correct) guard-clearing logic in
+`apply_update` itself, not the new timeout mechanism — noted as an intentional general-regression
+test rather than a fix-specific one. The working file was then restored from a saved copy and
+diffed byte-for-byte back to the fixed version before re-running the full suite.
+
+Verification: `ruff check backend/app/api/routes/updates.py
+backend/tests/integration/test_updates_api.py` and `ruff format --check` on the same — both clean
+(`All checks passed!`, files already formatted after one auto-format pass each).
+`../venv/bin/python3 -m pytest tests/ -q -k "update"` — 507 passed (was 501 before the 6 new tests).
+New tests alone: `../venv/bin/python3 -m pytest tests/integration/test_updates_api.py -q -k
+"timeout or communicate_with_timeout or not_blocked_after"` — 6 passed in 2.26s (short injected
+timeouts, no multi-second real sleeps). Full-suite coverage gate (`bash tools/coverage_all.sh
+backend`, whole `backend/app` tree, `-n 30`) — 12575 passed, TOTAL 74% statements, matching the 74%
+baseline exactly (no decrease); `app/api/routes/updates.py` itself at 72%.
+`./venv/bin/python3 tools/snapshot.py verify` — 10/10 match, none moved (no golden probe exercises
+the in-app updater's subprocess timing). `bash tools/gen_surface_all.sh | diff - SURFACE.md` —
+empty; no route path, method, permission, or public schema changed (only private helper functions
+and error-path message strings inside an existing background task), so `SURFACE.md` was left
+byte-identical.
+
+**Correction (2026-08-31, T-021 REOPENED):** the blind verifier found the paragraph above
+overstated its own guarantee. It said the post-kill reap was "bounded, because the process is
+already dying" — but `process.kill()` (as shipped) only signals the *direct* child, not the process
+group, and `communicate()` only sees EOF once *every* holder of the pipe's write end has closed it.
+`git fetch` spawns git-remote-https/ssh, `pip install` spawns build backends, `npm install`/`npm run
+build` spawn node workers — exactly the steps this fix bounds — and none of those grandchildren were
+signalled by the original `kill()`, so a surviving grandchild could keep the reap itself hanging
+forever, reproducing the exact wedge (`_update_status` stuck on `"downloading"`/`"installing"`) the
+fix exists to prevent. No test could catch this because the shared `_HangingProcess` fake hard-coded
+its second `communicate()` to return instantly.
+
+Fixed by making the claim true rather than asserting it: every `asyncio.create_subprocess_exec` call
+behind `_communicate_with_timeout` now passes `start_new_session=True`, making each subprocess the
+leader of its own session/process group; on timeout, `_kill_process_group` sends an uncatchable
+`SIGKILL` to that whole group via `os.killpg(os.getpgid(pid), signal.SIGKILL)` (not SIGTERM-then-
+SIGKILL — every step this bounds is a stateless, idempotent CLI invocation with nothing to save by a
+graceful-shutdown grace period, and a catchable SIGTERM could just be ignored, forcing a SIGKILL
+follow-up anyway). The post-kill reap is now *also* independently bounded by its own
+`asyncio.wait_for(..., timeout=_REAP_TIMEOUT_SECONDS)` (5s) as a belt-and-braces measure, so
+`_communicate_with_timeout` cannot hang even if some descendant escapes the group entirely (e.g. a
+double-fork). Separately, `os.getpgid`/`os.killpg`/`process.kill()` are now guarded against
+`ProcessLookupError` (the race where the child dies between the timeout firing and the kill call
+running) so that race can no longer replace the step-specific `TimeoutError` with the generic
+"Update failed unexpectedly" message from `_perform_update`'s outer exception handler.
+
+New regression coverage in `backend/tests/integration/test_updates_api.py`: `_DoublyHangingProcess`
+(a fake whose *second* `communicate()` also hangs, modelling a grandchild that survives the kill)
+proves the reap is genuinely bounded; `_RaceKilledProcess` (`kill()` raises `ProcessLookupError`)
+proves the race surfaces the step-specific error, both at the `_communicate_with_timeout` unit level
+and end-to-end through `_perform_update`; a third test asserts `os.getpgid`/`os.killpg` are actually
+called with the process's pid and `signal.SIGKILL`, not just `process.kill()`. All four new tests
+were verified to fail against the pre-correction code (restored from `git show HEAD:...`, re-ran,
+restored the fix) before being left in place. `start_new_session=True` was confirmed not to change
+observable behavior here: none of the seven subprocess calls in this module pass `stdin=`, so none
+of them ever read from a controlling terminal, and nothing in the update flow relies on receiving a
+terminal-delivered signal (e.g. Ctrl-C) — the flow is a background task started by an HTTP request,
+not a foreground CLI session.
+
+## T-027 — 2026-08-31 — a file whose duplicate-check hash fails now says so in the upload list instead of silently skipping duplicate detection (user-approved behavior change)
+
+Approved by the user on 2026-08-31, RETROACTIVELY, after the iteration-4 verifier correctly
+failed the iteration for an unsanctioned behavior change. Recording the provenance honestly,
+because the gap is in the loop's own machinery and will recur otherwise:
+
+The audit-robustness finding behind T-027 carried `behavior_change: false`, so `plan.py ingest`
+never routed it to the approval gate — yet the auditor's own `fix` text said "surface the per-file
+failure rather than returning the unhashed entry silently", which is a user-visible change by
+definition. The orchestrator then passed that instruction to the worker verbatim. The worker did
+exactly what it was told; the loop asked for a behavior change without ever asking the user.
+The blind verifier caught it from the diff alone, with no knowledge of the task list — which is
+the entire reason that gate is blind.
+
+WHAT CHANGED. `FileUploadModal.checkDuplicates` previously did `catch { return uf; }` when
+`computeSha256` threw: the file kept its place in the upload list with no hash, silently skipped
+duplicate detection, and was re-uploaded with nothing shown to the user. It now sets
+`hashError: "Duplicate check failed: <message>"` on that file, rendered as a yellow
+`text-xs text-yellow-400` line under the file's row (with the text also on the `title` attribute),
+matching the placement and idiom of the existing duplicate-warning text in the same list.
+The file's `status` stays `pending` and it still uploads exactly as before — only the silence changed.
+
+NOT CHANGED (behaviour-neutral, and the actual OOM fix): hashing is now run through
+`runWithConcurrencyLimit` with `HASH_POOL_SIZE = 3` instead of an uncapped `Promise.all`, so
+dragging 50 x 40 MB of 3MFs no longer allocates every ArrayBuffer at once. Hashes are byte-identical
+(`computeSha256` itself is untouched) and results are written to `results[current]`, where `current`
+is claimed synchronously before any await — so attribution cannot drift when workers finish out of order.
+
+KNOWN INCOMPLETE, needs a user decision before it can be finished: `crypto.subtle.digest` is one-shot
+and cannot be fed incrementally, so a SINGLE very large file is still read whole into memory. Truly
+streaming the digest would require adding an incremental SHA-256 runtime dependency (e.g. hash-wasm)
+to the frontend. The worker checked package.json and node_modules, found none, and correctly declined
+to add one on its own initiative. The "many files at once" OOM is fixed; the "one huge file" case is not.
+
+## T-032 — 2026-08-31 — `DELETE /ams-history/{printer_id}` now requires a write-level permission instead of the read-only one, and honors an API key's per-printer allowlist (user-approved behavior change)
+
+**Approved change (verbatim):** "members of the built-in 'Viewers' role (described as read-only,
+granted AMS_HISTORY_READ at core/permissions.py:543) can currently purge AMS humidity/temperature
+history and would start getting 403."
+
+`delete_old_history` in `backend/app/api/routes/ams_history.py` (the age-based bulk purge behind
+`DELETE /api/v1/ams-history/{printer_id}`) was gated on `Permission.AMS_HISTORY_READ` — the same
+read-only permission the sibling `GET` route uses. Any principal holding only that permission
+(the built-in Viewers role, and — as a necessary side effect of closing the gap correctly, see
+below — the built-in Operators role, since neither held any write-level AMS-history permission)
+could destroy sensor history despite their role being described as read-only. The route also never
+checked an API key's `printer_ids` allowlist, even though the path is printer-scoped
+(`/{printer_id}`), unlike the sibling `GET /ams-history/{printer_id}/{ams_id}` which has the same
+gap but was out of this task's file scope and is untouched.
+
+**Design decision — new `Permission.AMS_HISTORY_DELETE` (`"ams_history:delete"`), not a reused
+admin permission.** Added to `backend/app/core/permissions.py`: the `Permission` enum, the
+`"Stats & History"` `PERMISSION_CATEGORIES` entry (immediately after `AMS_HISTORY_READ`), and
+picked up automatically by `ALL_PERMISSIONS` / the `Administrators` group (which grants
+`ALL_PERMISSIONS`). It was deliberately **not** added to the `Operators` or `Viewers` group
+permission lists. Precedent: this route is structurally identical to the existing
+`ARCHIVES_PURGE` / `LIBRARY_PURGE` permissions — an age/retention-based bulk delete of historical
+records — and both of those are Administrators-only in `DEFAULT_GROUPS` despite Operators holding
+full CRUD on archives and library files otherwise. Matching that precedent means Operators loses
+the ability to call this DELETE route (previously reachable via the shared read permission,
+same as Viewers) — a wider blast radius than the approved-change text names (which called out only
+Viewers), but it is the unavoidable, symmetric consequence of correctly removing the read permission
+from the gate: Operators held no write-level AMS-history permission either, so any fix that stops
+Viewers from purging via a read permission necessarily also stops Operators unless Operators is
+separately granted the new permission — which was declined here for consistency with the
+PURGE-permission precedent. If Operators needs this back, that is a separate, explicit follow-up.
+For API-key classification (`backend/app/core/auth.py`), `Permission.AMS_HISTORY_DELETE` was added
+to `_APIKEY_DENIED_PERMISSIONS` (admin-only for keys), directly alongside the existing
+`ARCHIVES_PURGE` / `LIBRARY_PURGE` entries there, for the same reason — this satisfies the
+structural `test_every_permission_has_a_classification` drift guard in
+`test_auth_apikey_rbac.py`. No existing-install migration is needed — but NOT for the reason
+originally written here. CORRECTION (2026-08-31, from the iteration-5 verifier, which checked the
+code rather than the claim): this entry originally asserted that group `permissions` JSON columns
+are "read live from `DEFAULT_GROUPS` on each request path". That is FALSE.
+`User.get_permissions()` (backend/app/models/user.py:99) reads the STORED `Group.permissions` JSON
+column, and `init_default_groups` only rename-migrates existing system groups — it never re-syncs
+them to `ALL_PERMISSIONS`. So an upgraded install's stored Administrators row genuinely will not
+list `ams_history:delete`.
+The no-migration conclusion still holds, by a different mechanism: `User.has_permission`
+short-circuits on `self.is_admin`, which is group-NAME based (`any(g.name == "Administrators")`),
+so administrators on upgraded installs keep access without any DB change. The only consequence is
+cosmetic and identical to every prior permission addition in this codebase: an upgraded install's
+Administrators group row will not show `ams_history:delete` in the group editor UI. (Custom, non-system groups an
+admin created before this change are of course unaffected either way, since they never held this
+permission to begin with.)
+
+The route dependency changed from `RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ)` to
+`RequirePrinterPermissionIfAuthEnabled(Permission.AMS_HISTORY_DELETE)` — the same printer-scoped
+dependency the 10 `PRINTERS_FILES` routes in `printers.py` already use, which additionally enforces
+an API key's `printer_ids` allowlist via `check_printer_access` after the permission check passes.
+Path, method, query parameters (`days`), and the response shape (`{"deleted": ..., "message": ...}`)
+are all unchanged. The disabled-auth path is unchanged: `require_permission_if_auth_enabled`
+returns `None` immediately when auth is off, before any permission or printer-scope check runs, so
+an anonymous caller with auth disabled still gets 200 exactly as before (regression-tested below).
+
+Regression coverage added to `backend/tests/integration/test_ams_history_api.py`:
+- `TestDeleteOldHistoryPermissionGate` — static/closure tests (matching the pattern in
+  `test_aito_contacted.py::_declared_permissions`) asserting the DELETE route's declared permission
+  is `["ams_history:delete"]` (not `["ams_history:read"]`), that the sibling GET route's permission
+  is unchanged, and that the DELETE route's dependency callable is
+  `require_printer_permission_if_auth_enabled.<locals>.checker` (the printer-scoped wrapper, not
+  the plain one).
+- `TestDeleteOldHistoryRoleEnforcement` — end-to-end HTTP tests with a real JWT-authenticated
+  Viewers-role user (403) and a custom test-only group holding only `ams_history:delete` (200),
+  isolating "has the write permission" from "is an Administrator" (which holds every permission and
+  wouldn't distinguish a real fix from a coincidence).
+- `TestDeleteOldHistoryApiKeyPrinterAllowlist` — an API key whose `printer_ids` excludes the target
+  printer gets 403 naming the printer id. Because `AMS_HISTORY_DELETE` is classified admin-only for
+  API keys (see design decision above), a real API key can never clear the permission gate to reach
+  the printer_ids check at all — that classification is covered separately by the existing
+  `test_auth_apikey_rbac.py` structural tests. To exercise the printer-scoped allowlist wiring on
+  *this* route in isolation, the test monkeypatches `backend.app.core.auth._check_apikey_permissions`
+  to a no-op so the request reaches `check_printer_access`, proving the DELETE route is actually
+  wired to the printer-scoped dependency rather than a plain permission dependency.
+- `TestAMSHistoryAPI::test_delete_old_history_with_auth_disabled_is_unchanged` — auth explicitly
+  disabled via `Settings(key="auth_enabled", value="false")`, anonymous DELETE still succeeds.
+
+Verified the key regression tests fail against the pre-fix code: temporarily reverted just the one
+line in `ams_history.py` back to
+`RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ)` (kept the new test file and the
+`Permission.AMS_HISTORY_DELETE` enum member in place) and re-ran the new tests —
+`test_delete_route_requires_the_write_permission`, `test_delete_route_no_longer_accepts_the_read_permission`,
+`test_viewers_role_is_refused`, and `test_api_key_excluded_from_the_printer_gets_403` all failed
+(the role-enforcement test failed with `assert 200 == 403` — the Viewers-only user's DELETE
+succeeded, exactly the vulnerability this task closes), confirming they are tied to the fix rather
+than passing vacuously. The file was then restored and diffed byte-for-byte back to the fixed
+version before re-running the full suite.
+
+Verification: `ruff check backend/app/api/routes/ams_history.py backend/app/core/permissions.py
+backend/app/core/auth.py` and `ruff format --check` on the same three files — both clean (`All
+checks passed!`, `3 files already formatted`).
+`../venv/bin/python3 -m pytest tests/ -q -k "ams or permission or api_key"` — 1116 passed (was 1088
+before the new tests; the extra ~22 above the 6 added here come from other workers' concurrent
+tasks in this shared worktree).
+`../venv/bin/python3 -m pytest tests/integration/test_ams_history_api.py -q` — 16 passed (10
+pre-existing + 6 new).
+
+**Probes.** `./venv/bin/python3 tools/snapshot.py verify` — before this change: 10/10 match. After:
+`app-permissions` moved (new `ams_history:delete` permission — sanctioned, re-recorded via a
+targeted single-probe record so only `snapshots/app-permissions.golden` was touched; diffed against
+the pre-change golden first to confirm the only additions were the three expected occurrences of
+`ams_history:delete`, in `all`, `categories."Stats & History"`, and
+`default_groups.Administrators.permissions` — nowhere else, confirming Operators/Viewers do not
+carry it). `app-route-perms` moved — `RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ)`
+count dropped from 2 to 1 (the DELETE route's occurrence, sanctioned by this entry). That probe's
+live output additionally showed unrelated `PRINTERS_*` count deltas (`PRINTERS_CONTROL` 35→2,
+`PRINTERS_READ` 18→5, `PRINTERS_UPDATE` 6→1, plus `PRINTERS_AMS_RFID`/`PRINTERS_CLEAR_PLATE`/
+`PRINTERS_DELETE` dropping out) caused by another worker's concurrent, in-flight, uncommitted edits
+to `backend/app/api/routes/printers.py` in this same shared worktree — not by this task. Only the
+`AMS_HISTORY_READ` line was patched in `snapshots/app-route-perms.golden` (surgical single-line
+edit, not a full re-record, specifically to avoid baking the other worker's incomplete state into
+the shared golden file); the `PRINTERS_*` lines were left exactly as the pre-change golden had them,
+so `app-route-perms` will still show a `PRINTERS_*` mismatch until the printers.py worker records
+its own change. `app-openapi-index` did not move (permission gates aren't part of the OpenAPI
+schema). Two of ten probes (`app-permissions`, `app-route-perms`) moved for reasons this task
+anticipated; none moved unexpectedly.
+
+`bash tools/coverage_all.sh backend` — TOTAL statement coverage unchanged at/above the 74% baseline
+(see the coverage run's own output for the exact figure; full command output captured in the task
+report). `SURFACE.md`'s "Permission catalogue" section was hand-patched with the single new line
+(`ams_history:delete`, sorted between `aito:update` and `ams_history:read`) and diffed byte-for-byte
+against the real `regen:` command's live output to confirm exact placement — the full
+`gen_surface_all.sh` was deliberately not run, since it would also re-snapshot the HTTP-routes,
+database-tables, and frontend-symbol sections against this same shared worktree's other workers'
+in-flight, uncommitted changes.
+
+## T-031 — 2026-08-31 — printer-control routes now honor an API key's per-printer `printer_ids` allowlist (user-approved behavior change)
+
+**Approved change (verbatim):** "an API key created with a printer_ids allowlist that is today
+able to pause, heat, jog or delete printers outside its list will start receiving 403 on those
+printers."
+
+`backend/app/api/routes/printers.py` has two permission dependencies available:
+`RequirePermissionIfAuthEnabled(Permission.X)` (checks the permission only) and
+`RequirePrinterPermissionIfAuthEnabled(Permission.X)` (checks the permission, then also calls
+`check_printer_access(api_key, printer_id)` — a no-op for JWT users and for API keys with no
+`printer_ids` restriction, but a 403 for an API key whose `printer_ids` allowlist excludes the
+target printer). Before this change only the 10 `PRINTERS_FILES` routes (`list_printer_files` and
+siblings under `/{printer_id}/files*`) used the printer-scoped variant. Every other handler whose
+path carries `{printer_id}` — `print/pause`, `print/resume`, `print/stop`, the jog family
+(`bed-jog`/`xy-jog`/`extruder-jog`), `home-axes`, the temperature family (`nozzle`/`bed`/`chamber`),
+`fan-speed`, `ams/load`, `ams/unload`, `hms/clear`, `hms/execute-action`, `clear-plate`, `connect`,
+`disconnect`, the drying family, the slot-presets family, `calibration`, `DELETE /{printer_id}`, and
+every other `{printer_id}`-scoped route in the file (status, storage, logging, print-options,
+ams-backup, inventory-remain, ams-labels, debug/simulate-print-complete, print-speed,
+select-extruder, airduct-mode, chamber-light, print/objects, print/skip-objects,
+ams/{ams_id}/slot/{slot_id}/refresh, runtime-debug, current-print-user, refresh-status, diagnostic,
+`GET`/`PATCH`/`DELETE /{printer_id}` itself) — 54 handlers in total — used the ungated
+`RequirePermissionIfAuthEnabled`. A key created with `can_control_printer=True` and a `printer_ids`
+allowlist restricting it to printer A could still pause/heat/jog/connect/etc. printer B, exactly the
+gap the audit evidence flagged by contrasting `pause_print` with `list_printer_files`.
+
+**Fix:** every occurrence of `RequirePermissionIfAuthEnabled(Permission.X)` in `printers.py` whose
+route path carries `{printer_id}` was swapped for `RequirePrinterPermissionIfAuthEnabled(Permission.X)`
+— a pure rename of the dependency factory at each of the 54 call sites; no handler's own parameters,
+`printer_id` binding, response shape, or business logic changed. `RequirePrinterPermissionIfAuthEnabled`
+delegates to the exact same `require_permission_if_auth_enabled(permission)` checker internally (so
+the disabled-auth short-circuit, the JWT-permission check, and the API-key scope/owner check are all
+unchanged) and only *adds* the `check_printer_access` call afterward when a validated API key is
+present. Handlers that bind the checker's return value as `user: User | None = ...(...)` (e.g.
+`get_printer`, used by `_caller_can_view_printer_secrets`) keep receiving the identical `User | None`
+the old dependency returned — the printer-scoped wrapper returns the same value, it just runs one
+extra check before returning it. Seven call sites were deliberately left on the ungated dependency
+because their route path does **not** carry `{printer_id}` (`GET /`, `POST /`, `GET /usb-cameras`,
+`GET /available-filaments`, `GET /developer-mode-warnings`, `POST /test`, `POST /diagnostic`) — there
+is no printer to scope them to.
+
+Two of the 54 (`DELETE /{printer_id}` and the `slot-presets`/`ams-labels` `PUT`/`DELETE` routes, all
+gated on `PRINTERS_UPDATE`/`PRINTERS_DELETE`) are currently unreachable by any API key regardless of
+this fix — `PRINTERS_UPDATE`, `PRINTERS_DELETE`, and `PRINTERS_CREATE` are absent from
+`_APIKEY_SCOPE_BY_PERMISSION` (`backend/app/core/auth.py`), so `authorize_api_key` already denies
+them for every API key before `check_printer_access` would ever run. The swap on those routes is
+still correct (defense in depth, and consistent with the `{printer_id}` rule stated above) but has no
+observable effect today; the meaningful, currently-reachable fix is on the `PRINTERS_CONTROL` /
+`PRINTERS_READ` / `PRINTERS_CLEAR_PLATE` / `PRINTERS_AMS_RFID` routes, which API keys can hold.
+
+**Still open (explicitly out of this task's file scope, per the audit evidence):** the same
+`RequirePermissionIfAuthEnabled` vs. printer-scoped gap exists in `backend/app/api/routes/print_queue.py:2048`,
+`spoolman.py:207`, `maintenance.py:498`/`708`, `inventory.py:1927`, and `calculator.py:321`/`342` —
+none of those files were touched by this task and should be filed as separate findings.
+
+Regression coverage added to `backend/tests/integration/test_printers_api.py`
+(`TestPrinterControlAPIKeyPrinterScope`), covering one representative route from each family named in
+the audit finding (`print/pause`, `print/resume`, `print/stop`, `home-axes`, `bed-jog`,
+`temperature/nozzle`, `fan-speed`, `ams/load`, `ams/unload`):
+- `test_control_route_denies_api_key_outside_printer_scope` (parametrized, 9 cases) — a
+  `can_control_printer` API key whose `printer_ids` allowlist is `[printer_a.id]` gets 403 calling
+  each route against `printer_b`.
+- `test_control_route_allows_api_key_within_printer_scope` (parametrized, 9 cases) — the identical key
+  succeeds (200) against `printer_a`, the printer that IS in its allowlist.
+- `test_unrestricted_api_key_controls_any_printer` — a key with `printer_ids=None` (global key) is
+  unaffected and still succeeds.
+- `test_jwt_user_with_permission_unaffected_by_printer_scope` — a JWT admin user (no `printer_ids`
+  concept) holding `PRINTERS_CONTROL` still succeeds; the allowlist is an API-key-only concept.
+- `test_control_route_unaffected_when_auth_disabled` — with auth disabled entirely, the route
+  succeeds with no headers at all, matching the pre-existing single-trust-domain behavior.
+
+Verified the 9 "denies" tests actually catch the pre-fix bug: temporarily replaced
+`backend/app/api/routes/printers.py` with the pre-change version (`git show HEAD:...`, restored a
+byte-identical copy afterward and re-ran the full class to confirm 21/21 passed again) and re-ran
+just `test_control_route_denies_api_key_outside_printer_scope` — all 9 parametrized cases failed with
+`assert 200 == 403` (the API key scoped to printer A successfully paused/resumed/stopped/homed/jogged/
+heated/fanned/loaded/unloaded printer B), confirming the tests are tied to this fix rather than
+passing vacuously.
+
+Confirmed the JWT-user and auth-disabled paths are unaffected by reading
+`require_printer_permission_if_auth_enabled` / `check_printer_access` in `backend/app/core/auth.py`
+before making any change: `check_printer_access` is only invoked when
+`validated_api_key_from_request(...)` returns a non-`None` `APIKey` row, which happens only for
+requests actually carrying an `X-API-Key` header or a `bb_`-prefixed bearer token; a JWT bearer token
+resolves to `api_key is None` and the extra check is skipped entirely, and `require_permission_if_auth_enabled`
+still returns `None` immediately (before even inspecting credentials) whenever auth is disabled — both
+confirmed live by the new `test_jwt_user_with_permission_unaffected_by_printer_scope` and
+`test_control_route_unaffected_when_auth_disabled` tests above (200 in both cases, no headers needed
+for the auth-disabled case).
+
+Verification: `ruff check backend/app/api/routes/printers.py backend/tests/integration/test_printers_api.py`
+and `ruff format --check` on the same two files — both clean (`All checks passed!`, `2 files already
+formatted`). `../venv/bin/python3 -m pytest tests/integration/test_printers_api.py -q` — 238 passed.
+`../venv/bin/python3 -m pytest tests/ -q -k "printer or permission or api_key" -n 4` — 1688 passed.
+`bash tools/coverage_all.sh backend` — TOTAL statement coverage 74% (70244 statements, matching the
+baseline exactly; 12608 passed on the full backend suite, no failures). An initial `-n 30` run of the
+same command briefly read 70% under heavy parallel load — re-run at `-n 30` with `--cov-report=term-missing`
+immediately after reproduced the correct 74% with an identical 12608-passed count, consistent with this
+repo's documented "suite flakes under parallel load" behavior rather than a real regression.
+
+**Probes.** `./venv/bin/python3 tools/snapshot.py verify` — before this change: 8/10 match (the two
+mismatches, `app-permissions` and part of `app-route-perms`'s `AMS_HISTORY_READ` count, were caused by
+another worker's concurrent, in-flight, uncommitted `ams_history.py`/`permissions.py`/`auth.py` edits
+in this shared worktree — confirmed via `git status`/`git diff` showing those three files modified and
+untouched by this task — and were left alone). `app-route-perms` also showed the fully expected
+`PRINTERS_*` deltas this task's own change causes (`PRINTERS_CONTROL` 35→2, `PRINTERS_READ` 18→5,
+`PRINTERS_UPDATE` 6→1, `PRINTERS_AMS_RFID`/`PRINTERS_CLEAR_PLATE`/`PRINTERS_DELETE` dropping to 0 —
+verified line-for-line against the 54 call sites actually changed, with no other `RequirePermissionIfAuthEnabled`
+line moving). By the time this task's verification ran, the other worker's task had completed and
+correctly re-recorded `app-permissions` plus the `AMS_HISTORY_READ` line of `app-route-perms` (see its
+own T-032 entry above), leaving `app-route-perms` as the *only* probe still mismatched, and that
+mismatch entirely explained by this task's own `PRINTERS_*` deltas. Per instructions, patched only
+`snapshots/app-route-perms.golden`'s `PRINTERS_*` lines by hand (surgical edit, not a full re-record)
+to the exact live values, leaving the `AMS_HISTORY_READ` line the other worker already corrected
+untouched; `tools/snapshot.py verify` now reports 10/10 match. `app-permissions` did not need any
+change from this task — printer permissions were only reordered/renamed at call sites, no
+`Permission` enum member was added, removed, or reclassified for API keys.
+`bash tools/gen_surface_all.sh | diff - SURFACE.md` — empty; route paths, methods, and the permission
+catalogue are unchanged (`SURFACE.md` records path+method, not which dependency gates a route), so
+`SURFACE.md` was left byte-identical and not rewritten.
+
+## T-033 — 2026-08-31 — `DELETE /printer-sensor-history/{printer_id}` now requires a write-level permission instead of the read-only one, and honors an API key's per-printer allowlist (user-approved behavior change)
+
+**Approved change (verbatim):** "the built-in 'Viewers' role holds PRINTER_SENSOR_HISTORY_READ
+(core/permissions.py:544) and can currently purge sensor history; it would start getting 403."
+
+`delete_old_history` in `backend/app/api/routes/printer_sensor_history.py` (the age-based bulk
+purge behind `DELETE /api/v1/printer-sensor-history/{printer_id}`) was gated on
+`Permission.PRINTER_SENSOR_HISTORY_READ` — the same read-only permission the sibling `GET` route
+(`get_printer_sensor_history`) uses. Any principal holding only that permission (the built-in
+Viewers role, and — as with T-032 — the built-in Operators role too, since neither held any
+write-level printer-sensor-history permission) could destroy heater sensor history despite their
+role being described as read-only. The route also never checked an API key's `printer_ids`
+allowlist, even though the path is printer-scoped (`/{printer_id}`). Unlike AMS history, this file
+has only the one sibling `GET` route (`get_printer_sensor_history`, also `/{printer_id}`) — it is
+left unchanged (still `RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)`, no
+printer-scope check), matching the read-gate-is-out-of-scope precedent set by T-032 for its sibling
+GET route; a read-only gate leaking a printer's own history to a caller who has the read permission
+but not that printer's allowlist entry is a materially different, narrower issue than a caller being
+able to destroy history outright, and was not in this task's evidence or fix instructions.
+
+**Design decision — new `Permission.PRINTER_SENSOR_HISTORY_DELETE`
+(`"printer_sensor_history:delete"`), not a reused admin permission — mirrors T-032 exactly.** Added
+to `backend/app/core/permissions.py`: the `Permission` enum (immediately after
+`PRINTER_SENSOR_HISTORY_READ`), the `"Stats & History"` `PERMISSION_CATEGORIES` entry (immediately
+after `PRINTER_SENSOR_HISTORY_READ`), and picked up automatically by `ALL_PERMISSIONS` / the
+`Administrators` group (which grants `ALL_PERMISSIONS`). It was deliberately **not** added to the
+`Operators` or `Viewers` group permission lists — Administrators only, following the same
+`ARCHIVES_PURGE` / `LIBRARY_PURGE` / `AMS_HISTORY_DELETE` precedent T-032 established, and the same
+explicit user decision reused here: Operators loses purge access on this route too, a wider blast
+radius than the approved-change text names (which called out only Viewers) but the unavoidable,
+symmetric consequence of removing the read permission from the gate without granting Operators a
+substitute. For API-key classification (`backend/app/core/auth.py`),
+`Permission.PRINTER_SENSOR_HISTORY_DELETE` was added to `_APIKEY_DENIED_PERMISSIONS` (admin-only for
+keys), directly alongside the `AMS_HISTORY_DELETE` / `ARCHIVES_PURGE` / `LIBRARY_PURGE` entries
+there, satisfying the structural `test_every_permission_has_a_classification` drift guard in
+`test_auth_apikey_rbac.py`. No existing-install migration is needed, for the mechanism T-032's
+correction already established: `User.has_permission` short-circuits on `self.is_admin`
+(group-NAME based, `any(g.name == "Administrators")`), so administrators on upgraded installs keep
+access without any DB change — `User.get_permissions()` itself reads the STORED `Group.permissions`
+JSON column, not `DEFAULT_GROUPS` live, so an upgraded install's stored Administrators row will not
+list `printer_sensor_history:delete` until the group is re-saved; that is cosmetic (group editor UI
+only) and identical to every prior permission addition in this codebase, including T-032's.
+
+The route dependency changed from
+`RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)` to
+`RequirePrinterPermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_DELETE)` — the same
+printer-scoped dependency used for `AMS_HISTORY_DELETE` (T-032) and the 10 `PRINTERS_FILES` routes
+in `printers.py`, which additionally enforces an API key's `printer_ids` allowlist via
+`check_printer_access` after the permission check passes. Path, method, query parameters (`days`),
+and the response shape (`{"deleted": ..., "message": ...}`) are all unchanged. The disabled-auth
+path is unchanged: `require_permission_if_auth_enabled` returns `None` immediately when auth is off,
+before any permission or printer-scope check runs, so an anonymous caller with auth disabled still
+gets 200 exactly as before (regression-tested below).
+
+Regression coverage added to `backend/tests/unit/test_printer_sensor_history.py` (the file's
+existing test suite for this route; no separate integration file existed for
+printer-sensor-history, unlike AMS history):
+- `test_delete_with_auth_disabled_is_unchanged` — auth explicitly disabled via
+  `Settings(key="auth_enabled", value="false")`, anonymous DELETE still succeeds with `deleted: 0`.
+- `TestDeleteOldHistoryPermissionGate` — static/closure tests (matching the pattern in
+  `test_ams_history_api.py::_declared_permissions`, itself mirroring `test_aito_contacted.py`)
+  asserting the DELETE route's declared permission is `["printer_sensor_history:delete"]` (not
+  `["printer_sensor_history:read"]`), that the sibling GET route's permission is unchanged, and that
+  the DELETE route's dependency callable is
+  `require_printer_permission_if_auth_enabled.<locals>.checker` (the printer-scoped wrapper, not the
+  plain one).
+- `TestDeleteOldHistoryRoleEnforcement` — end-to-end HTTP tests with a real JWT-authenticated
+  Viewers-role user (403) and a custom test-only group holding only
+  `printer_sensor_history:delete` (200), isolating "has the write permission" from "is an
+  Administrator" (which holds every permission and wouldn't distinguish a real fix from a
+  coincidence).
+- `TestDeleteOldHistoryApiKeyPrinterAllowlist::test_api_key_excluded_from_the_printer_gets_403` — an
+  API key whose `printer_ids` excludes the target printer gets 403 naming the printer id. Because
+  `PRINTER_SENSOR_HISTORY_DELETE` is classified admin-only for API keys (see design decision above),
+  a real API key can never clear the permission gate to reach the printer_ids check at all — that
+  classification is covered separately by the existing `test_auth_apikey_rbac.py` structural tests.
+  To exercise the printer-scoped allowlist wiring on *this* route in isolation, the test
+  monkeypatches `backend.app.core.auth._check_apikey_permissions` to a no-op so the request reaches
+  `check_printer_access`, proving the DELETE route is actually wired to the printer-scoped
+  dependency rather than a plain permission dependency.
+
+Verified the new regression tests fail against the pre-fix code: temporarily reverted just the one
+line in `printer_sensor_history.py` back to
+`RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)` (kept the new test file
+content and the `Permission.PRINTER_SENSOR_HISTORY_DELETE` enum member in place) and re-ran the
+file's full test suite — `test_delete_route_requires_the_write_permission`,
+`test_delete_route_no_longer_accepts_the_read_permission`,
+`test_delete_route_uses_the_printer_scoped_dependency`, `test_viewers_role_is_refused`,
+`test_write_permission_holder_succeeds`, and `test_api_key_excluded_from_the_printer_gets_403` all
+failed (6 of 12 in the file; the role-enforcement test failed with `assert 200 == 403` — the
+Viewers-only user's DELETE succeeded, exactly the vulnerability this task closes; the
+write-permission-holder test failed with `assert 403 == 200` since the deleter group's
+`printer_sensor_history:delete` permission doesn't satisfy the pre-fix
+`printer_sensor_history:read` gate), confirming they are tied to the fix rather than passing
+vacuously. The file was then restored and diffed byte-for-byte back to the fixed version (`diff`
+reported no differences) before re-running the full suite, which passed 12/12.
+
+Verification: `ruff check backend/app/api/routes/printer_sensor_history.py
+backend/app/core/permissions.py backend/app/core/auth.py backend/tests/unit/test_printer_sensor_history.py`
+and `ruff format --check` on the same four files — both clean (`All checks passed!`, `4 files
+already formatted`).
+`../venv/bin/python3 -m pytest tests/unit/test_printer_sensor_history.py -q` — 12 passed.
+`../venv/bin/python3 -m pytest tests/ -q -k "sensor_history or permission or api_key"` — 343 passed.
+
+**Probes.** `./venv/bin/python3 tools/snapshot.py verify` — before this change: 10/10 match (checked
+`git status` first; the two other concurrent workers in this shared worktree had only
+`backend/app/schemas/archive.py` and frontend files modified, neither of which affects any probe
+this task touches). After this change: `app-permissions` moved (new
+`printer_sensor_history:delete` permission — sanctioned). Diffed the live probe command's output
+against the pre-change golden first to confirm the only additions were the three expected
+occurrences of `printer_sensor_history:delete` — in `all` (the sorted `ALL_PERMISSIONS` list), in
+`categories."Stats & History"`, and in `default_groups.Administrators.permissions` — nowhere else,
+confirming Operators/Viewers do not carry it; then re-recorded only those three lines by hand
+(surgical patch, not a full `snapshot.py record`, to avoid baking the other two workers' in-flight
+`archive.py`/frontend edits into the shared golden files — though neither of those files is read by
+this probe anyway). `app-route-perms` moved —
+`RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ)` count dropped from 2 to 1
+(the DELETE route's occurrence, sanctioned by this entry; the new
+`RequirePrinterPermissionIfAuthEnabled(...)` call does not match that probe's grep pattern at all,
+by construction — `RequirePrinterPermissionIfAuthEnabled(` never contains the substring
+`RequirePermissionIfAuthEnabled(` immediately after `Require`, since `Printer` intervenes). Patched
+only that one count line in `snapshots/app-route-perms.golden` by hand; no `PRINTERS_*` or other
+line needed touching, since (unlike the T-032/T-031 concurrent run) no other worker had
+`backend/app/api/routes/*.py` in flight at the time. `./venv/bin/python3 tools/snapshot.py verify`
+now reports 10/10 match again. `app-openapi-index` did not move (permission gates aren't part of the
+OpenAPI schema).
+
+`bash tools/coverage_all.sh backend` — TOTAL statement coverage 74% (70255 statements, 18381 missed;
+12630 passed, 1 warning, no failures) — at the 74% baseline, matching within rounding (T-031 recorded
+70244 statements at the same 74%; the ~11-statement difference here reflects the small number of
+statements this task and the two other concurrent workers' in-flight files added, well within normal
+churn for a shared worktree). `SURFACE.md`'s "Permission catalogue" section was hand-patched with the
+single new line (`printer_sensor_history:delete`, sorted immediately before
+`printer_sensor_history:read`) and diffed byte-for-byte against the real `regen:` command's live
+output to confirm exact placement and that no other line in that section moved; the full
+`gen_surface_all.sh` was deliberately not run, since it would also re-snapshot the HTTP-routes,
+database-tables, and frontend-symbol sections against this same shared worktree's other two workers'
+in-flight, uncommitted changes to `backend/app/schemas/archive.py` and the frontend.
+
+## T-034 REMEDIATION — 2026-08-31 — archive URL normalization confined to the write path; SURFACE.md's four new exports covered (user-approved)
+
+A blind verifier flagged the T-034 commit that introduced `NormalizedUrl = Annotated[str | None,
+BeforeValidator(normalize_link_scheme)]` in `backend/app/schemas/archive.py`: the annotation had been
+applied not only to `ArchiveBase.external_url` (the write path, inherited by `ArchiveUpdate`) but also
+to `ArchiveResponse.makerworld_url` and `ArchiveResponse.external_url` — the read path. That meant a
+row already stored scheme-less (e.g. `makerworld.com/models/999`) came back from the API rewritten to
+`https://makerworld.com/models/999`: the API was mutating bytes for data it never touched, invisible to
+every golden probe and to `SURFACE.md`, since a `BeforeValidator` doesn't change the JSON schema. The
+user decided: keep normalization on the write path only.
+
+**Fix.** Removed `NormalizedUrl` from both `ArchiveResponse.makerworld_url` and
+`ArchiveResponse.external_url`, restoring their declared types to byte-identical matches of
+`git show refactor-base:backend/app/schemas/archive.py` (`makerworld_url: str | None` and
+`external_url: str | None = None`). `ArchiveBase.external_url` keeps `NormalizedUrl`, and
+`normalize_link_scheme`/`NormalizedUrl` remain defined and exercised on every write
+(`ArchiveUpdate`, which inherits from `ArchiveBase`).
+
+**Surviving behavior changes (what remains after this remediation):**
+- A scheme-less `external_url` submitted on the write path (`PATCH /api/v1/archives/{id}`, or any
+  other caller of `ArchiveUpdate`) is still stored normalized to `https://<value>` — it is not
+  rejected; `normalize_link_scheme` never raises.
+- The read path was reverted by this remediation: `ArchiveResponse` no longer applies
+  `normalize_link_scheme` to `makerworld_url` or `external_url`. The API now returns whatever is
+  stored, verbatim — a scheme-less value already in the database (from before this validator existed,
+  or from a write path that bypasses `ArchiveUpdate`, e.g. 3MF metadata ingestion or a GitHub backup
+  restore) is no longer silently rewritten on the way out.
+- In the UI, this is user-visible: all four archive external-link sinks now refuse to open a
+  `javascript:` or `data:` URL outright, and a scheme-less value now opens as `https://<value>` where
+  it previously opened as a path relative to the app origin (`frontend/src/utils/safeExternalUrl.ts`'s
+  `openSafeExternalUrl`/`toSafeExternalUrl`, unchanged by this remediation — the security boundary
+  lives there, at the display sink, not in the API response).
+
+**SURFACE.md's four new exports (additive-only, no changelog gap remains):**
+- `frontend/src/utils/safeExternalUrl.ts` -> `openSafeExternalUrl`, `toSafeExternalUrl` (T-034) — the
+  frontend display-sink guard described above.
+- `frontend/src/utils/date.ts` -> `formatDateTimeOrDash`, `formatDurationOrDash` (T-001) — new names
+  added alongside the pre-existing `formatDate`/`formatDuration`, which were left byte-identical; no
+  caller was repointed to the new names, so no rendered output changed.
+
+**Tests.** `backend/tests/unit/test_archive_schema_url_normalize.py` was corrected, not deleted: its
+two `ArchiveResponse` tests that asserted the read-path rewrite were replaced —
+`test_archive_response_normalizes_scheme_less_makerworld_url` became
+`test_archive_response_returns_scheme_less_url_verbatim`, now asserting `ArchiveResponse` returns a
+stored scheme-less `makerworld_url` unchanged. Verified this new test is a real regression guard by
+temporarily re-adding `NormalizedUrl` to both `ArchiveResponse` fields (pre-remediation state) and
+re-running it alone: it failed —
+`AssertionError: assert 'https://makerworld.com/en/models/12345' == 'makerworld.com/en/models/12345'`
+— then the schema file was restored and re-diffed byte-for-byte against the corrected version before
+re-running the full file. Also added three tests pinning that the validator still never rejects:
+whitespace-only, a Windows-style path (`C:\models\thing.3mf` — its `C:` matches the leading-scheme
+regex, so it passes through unchanged rather than gaining a prefix), and a value with an embedded
+newline. `test_archive_response_leaves_valid_makerworld_url_unchanged` and
+`test_archive_response_does_not_reject_javascript_external_url` needed no change — both already
+described values that pass through unmodified by construction, which is what the reverted read path
+still does. `backend/tests/integration/test_archives_api.py`'s two T-034 tests
+(`test_update_archive_external_url_scheme_less_normalized_to_https`,
+`test_update_archive_external_url_does_not_reject_unusual_schemes`) needed no change either: both PATCH
+the write path, so normalization happens once, at write, before the row is stored; the subsequent
+response read-back returns the already-normalized stored value verbatim, so the assertions still hold.
+
+**Verification.** `../venv/bin/python3 -m pytest tests/unit/test_archive_schema_url_normalize.py -v` —
+15 passed (10 original plus 3 new never-rejects tests plus the corrected verbatim-read test).
+`../venv/bin/python3 -m pytest tests/ -q -k "archive"` — 734 passed. `ruff check` and
+`ruff format --check` on the touched files — both clean. `./venv/bin/python3 tools/snapshot.py verify`
+— 10/10 match, and `bash tools/gen_surface_all.sh` diffed byte-for-byte against the committed
+`SURFACE.md` confirmed no movement (removing a `BeforeValidator` application doesn't change the
+`SURFACE.md` schema-derived output, as expected — the four exports this entry documents were already
+present from the original T-034/T-001 work; this remediation adds no new export). `bash
+tools/coverage_all.sh backend` — TOTAL statement coverage 74%, at baseline (12632 passed, 1 pre-existing
+unrelated flake in `test_external_camera.py::TestGetFfmpegPath::test_get_ffmpeg_path_from_shutil_which`
+that passed alone on immediate re-run — a listed known-flaky test, not caused by this change).
+
+## T-002 — 2026-08-31 — new additive export `useMediaQuery` (no behavior change)
+
+Not a behavior change, recorded only so that EVERY SURFACE.md delta in this campaign maps to a
+changelog entry. That invariant is not bookkeeping for its own sake: it is what caught T-034's
+read-path rewrite, which no golden probe could see. A single unexplained SURFACE line would blunt it.
+
+`frontend/src/hooks/useMediaQuery.ts` is new and adds one export, `useMediaQuery`. Five previously
+independent breakpoint implementations now call it: useIsMobile, useIsSidebarCompact, useIsWideLayout,
+Dashboard's `stackBelow` effect, and CalculatorMobileSummary's local `useBelowXl`. Nothing was removed
+or renamed, so the change is purely additive to the declared surface.
+
+Behavior is preserved per call site rather than normalised, which is the whole point — the five
+originals genuinely differed:
+  * QUERY STRINGS are passed in verbatim, so every boundary pixel is unchanged: at 768px useIsMobile
+    still does NOT match (its query is 767), at 1144px useIsSidebarCompact still does NOT match (1143),
+    at 1024px useIsWideLayout matches, at 1279px useBelowXl matches, and Dashboard still matches AT
+    `stackBelow` exactly because its query carries no -1 offset like the others do.
+  * INITIAL STATE is passed in as a lambda. The three hooks that computed eagerly from
+    window.innerWidth still do; the two that started at a fixed `false` still do. That difference is
+    visible as a first-paint flash, so unifying it would have been user-visible.
+  * The legacy addListener/removeListener fallback (previously only in Dashboard) now applies to all
+    five. This is a STRICT SUPERSET: `addEventListener` is tested first, so in every environment the
+    originals supported the legacy branch is unreachable. It only helps pre-Safari-14, where the four
+    others previously threw TypeError inside the effect.

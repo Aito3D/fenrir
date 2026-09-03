@@ -23,6 +23,41 @@ async function computeSha256(file: File): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// crypto.subtle.digest is one-shot (it takes a single buffer, not a stream),
+// so we can't avoid materializing each file into memory here. What we CAN
+// bound is how many files are materialized/hashed *at once* — that's what
+// actually caused the OOM (fanning every file out via Promise.all). A pool
+// of 3 caps peak memory at ~3 files' worth of ArrayBuffers while still
+// overlapping I/O + hashing across files for reasonable throughput; low
+// enough to avoid the pathological "50 x 40MB simultaneously" case, high
+// enough that small/typical batches aren't serialized for no reason.
+const HASH_POOL_SIZE = 3;
+
+/**
+ * Runs `worker` over `items` with at most `poolSize` concurrent invocations,
+ * returning results in the same order as `items` regardless of completion
+ * order.
+ */
+async function runWithConcurrencyLimit<T, R>(
+  items: T[],
+  poolSize: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runNext(): Promise<void> {
+    const current = nextIndex++;
+    if (current >= items.length) return;
+    results[current] = await worker(items[current], current);
+    await runNext();
+  }
+
+  const workers = Array.from({ length: Math.min(poolSize, items.length) }, () => runNext());
+  await Promise.all(workers);
+  return results;
+}
+
 interface UploadFile {
   file: File;
   status: 'pending' | 'checking' | 'uploading' | 'success' | 'error' | 'skipped';
@@ -31,6 +66,7 @@ interface UploadFile {
   is3mf?: boolean;
   extractedCount?: number;
   hash?: string;
+  hashError?: string;
   duplicateInfo?: DuplicateCheckItem;
   uploadAnyway?: boolean;
 }
@@ -160,17 +196,24 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
 
     setIsChecking(true);
 
-    // Compute hashes for all non-zip files in parallel
-    const withHashes = await Promise.all(
-      checkable.map(async (uf) => {
-        try {
-          const hash = await computeSha256(uf.file);
-          return { ...uf, hash };
-        } catch {
-          return uf;
-        }
-      }),
-    );
+    // Compute hashes for all non-zip files, bounded to HASH_POOL_SIZE concurrent
+    // reads so a large batch of files can't all be materialized into memory at
+    // once (see HASH_POOL_SIZE comment above). Order is preserved regardless of
+    // completion order.
+    const withHashes = await runWithConcurrencyLimit(checkable, HASH_POOL_SIZE, async (uf) => {
+      try {
+        const hash = await computeSha256(uf.file);
+        return { ...uf, hash };
+      } catch (err) {
+        // Surface the failure instead of silently uploading without a duplicate
+        // check: the file still proceeds (status stays 'pending'), but the user
+        // sees why it wasn't checked for duplicates.
+        return {
+          ...uf,
+          hashError: `Duplicate check failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        };
+      }
+    });
 
     // Check hashes against backend
     const hashes = withHashes.map((f) => f.hash).filter((h): h is string => !!h);
@@ -433,6 +476,12 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
                             {t('fileManager.skipDuplicate', 'Skip')}
                           </button>
                         )}
+                      </p>
+                    )}
+                    {/* Duplicate-check hashing failure (file still proceeds to upload) */}
+                    {uploadFile.hashError && uploadFile.status === 'pending' && (
+                      <p className="text-xs text-yellow-400 mt-0.5" title={uploadFile.hashError}>
+                        {uploadFile.hashError}
                       </p>
                     )}
                     {/* Upload errors */}

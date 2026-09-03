@@ -2,24 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate } from '../utils/date';
+import { formatDurationOrDash, formatDateTimeOrDash } from '../utils/date';
 
 interface PrintLogTableProps {
   archiveId: number;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds || seconds <= 0) return '—';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
-function formatDate(isoString: string | null): string {
-  if (!isoString) return '—';
-  const d = parseUTCDate(isoString);
-  return d ? d.toLocaleString() : '—';
 }
 
 export function PrintLogTable({ archiveId }: PrintLogTableProps) {
@@ -72,7 +58,7 @@ export function PrintLogTable({ archiveId }: PrintLogTableProps) {
                 className="border-b border-bambu-dark-tertiary/40 last:border-0"
               >
                 <td className="py-1.5 pr-2 text-bambu-gray-light">
-                  {formatDate(run.started_at || run.created_at)}
+                  {formatDateTimeOrDash(run.started_at || run.created_at)}
                 </td>
                 <td className={`py-1.5 pr-2 font-medium ${statusClass}`}>
                   {t(`archives.runLog.status.${run.status}`, { defaultValue: run.status })}
@@ -83,7 +69,7 @@ export function PrintLogTable({ archiveId }: PrintLogTableProps) {
                   )}
                 </td>
                 <td className="py-1.5 pr-2 text-right text-bambu-gray-light">
-                  {formatDuration(run.duration_seconds)}
+                  {formatDurationOrDash(run.duration_seconds)}
                 </td>
                 <td className="py-1.5 pr-2 text-right text-bambu-gray-light">
                   {run.filament_used_grams != null

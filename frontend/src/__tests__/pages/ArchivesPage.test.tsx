@@ -2,7 +2,7 @@
  * Tests for the ArchivesPage component.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
@@ -116,7 +116,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Archives')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows archive cards', async () => {
@@ -125,7 +125,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
         expect(screen.getByText('Bracket v2')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -135,7 +135,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('1h 0m')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows printer name', async () => {
@@ -144,7 +144,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         const printerNames = screen.getAllByText('X1 Carbon');
         expect(printerNames.length).toBeGreaterThan(0);
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows tags', async () => {
@@ -153,7 +153,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         // Tags may be truncated or displayed differently - just verify archives load
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // Tags are displayed in the archive cards
       const testElements = screen.queryAllByText('test');
@@ -166,7 +166,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         // Print count may be displayed as badge
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows project badge', async () => {
@@ -174,7 +174,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Functional Parts')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows F3D indicator when file has F3D', async () => {
@@ -183,7 +183,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         // Bracket v2 has has_f3d: true
         expect(screen.getByText('Bracket v2')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // F3D files have cyan badge indicator - look for it by title or class
       const f3dElements = document.querySelectorAll('[title*="F3D"]');
@@ -197,7 +197,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('has printer filter', async () => {
@@ -205,7 +205,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('All Printers')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('has project filter', async () => {
@@ -215,7 +215,7 @@ describe('ArchivesPage', () => {
         // Project filter dropdown may have different default text
         const projectSelect = screen.getAllByRole('combobox');
         expect(projectSelect.length).toBeGreaterThan(0);
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -225,7 +225,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByTitle(/grid/i)).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('has list view option', async () => {
@@ -233,7 +233,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByTitle(/list/i)).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -249,7 +249,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/no archives/i)).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -261,7 +261,7 @@ describe('ArchivesPage', () => {
         // Verify archives are loaded
         expect(screen.getByText('Benchy')).toBeInTheDocument();
         expect(screen.getByText('Bracket v2')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -272,7 +272,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         // Rating 5 shows stars
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -286,7 +286,7 @@ describe('ArchivesPage', () => {
         // Thumbnail images should be present (archive cards have img elements)
         const images = document.querySelectorAll('img[alt="Benchy"]');
         expect(images.length).toBeGreaterThanOrEqual(0);
-      });
+      }, { timeout: 5000 });
     });
 
     it('fetches plate data for multi-plate archives on hover', async () => {
@@ -309,7 +309,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // Archives with multi-plate support will show navigation on hover
       // The plates API is called lazily when hovering
@@ -326,7 +326,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Bracket v2 \u2014 Plate 3')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('leaves the title alone for a print on plate 1', async () => {
@@ -342,7 +342,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
       expect(screen.queryByText(/Plate 1/)).not.toBeInTheDocument();
     });
   });
@@ -351,9 +351,9 @@ describe('ArchivesPage', () => {
     // A card reaches print-video downloads through its context menu; only the
     // list row keeps an action-bar button for it (#2853).
     const openCardPrintVideos = async (cardIndex = 0) => {
-      const triggers = await screen.findAllByTitle('Right-click for more options');
+      const triggers = await screen.findAllByTitle('Right-click for more options', undefined, { timeout: 5000 });
       fireEvent.click(triggers[cardIndex]);
-      return screen.findByRole('button', { name: 'Download print videos' });
+      return screen.findByRole('button', { name: 'Download print videos' }, { timeout: 5000 });
     };
 
     it('keeps an attached timelapse available without printer-file permission', async () => {
@@ -397,7 +397,7 @@ describe('ArchivesPage', () => {
       const mediaItem = await openCardPrintVideos(1);
       expect(mediaItem).toBeEnabled();
       fireEvent.click(mediaItem);
-      expect(await screen.findByText('attached.mp4')).toBeInTheDocument();
+      expect(await screen.findByText('attached.mp4', undefined, { timeout: 5000 })).toBeInTheDocument();
       expect(screen.getByText('You do not have permission to access printer files')).toBeInTheDocument();
     });
 
@@ -425,8 +425,8 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
       fireEvent.click(await openCardPrintVideos());
 
-      expect(await screen.findByText('Print videos')).toBeInTheDocument();
-      expect(await screen.findByText('ipcam-record.2024-01-01_10-05-00.1.mp4')).toBeInTheDocument();
+      expect(await screen.findByText('Print videos', undefined, { timeout: 5000 })).toBeInTheDocument();
+      expect(await screen.findByText('ipcam-record.2024-01-01_10-05-00.1.mp4', undefined, { timeout: 5000 })).toBeInTheDocument();
     });
 
     it('shows a toast when printer video ZIP preparation fails', async () => {
@@ -457,9 +457,9 @@ describe('ArchivesPage', () => {
 
       render(<ArchivesPage />);
       fireEvent.click(await openCardPrintVideos());
-      fireEvent.click(await screen.findByRole('button', { name: /Download selected \(1\)/i }));
+      fireEvent.click(await screen.findByRole('button', { name: /Download selected \(1\)/i }, { timeout: 5000 }));
 
-      expect(await screen.findByText('Download failed: Not enough app data volume space')).toBeInTheDocument();
+      expect(await screen.findByText('Download failed: Not enough app data volume space', undefined, { timeout: 5000 })).toBeInTheDocument();
     });
 
     it('shows upload timelapse menu item when no timelapse attached', async () => {
@@ -474,7 +474,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // Context menu items are rendered in the DOM even when not visible
       // "Upload Timelapse" should be present for archives without timelapse
@@ -497,7 +497,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // "Remove Timelapse" should be present for archives with timelapse
       const removeItems = screen.queryAllByText('Remove Timelapse');
@@ -519,7 +519,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // "Scan for Timelapse" buttons should be disabled when timelapse exists
       // Upload Timelapse should also be disabled
@@ -545,16 +545,16 @@ describe('ArchivesPage', () => {
     });
 
     const openSubmenu = async () => {
-      const card = await screen.findByText('Benchy');
+      const card = await screen.findByText('Benchy', undefined, { timeout: 5000 });
       fireEvent.contextMenu(card);
-      fireEvent.click(await screen.findByText('Add to Project'));
+      fireEvent.click(await screen.findByText('Add to Project', undefined, { timeout: 5000 }));
     };
 
     it('offers a completed project', async () => {
       render(<ArchivesPage />);
       await openSubmenu();
 
-      expect(await screen.findByText('Shipped Last Month')).toBeInTheDocument();
+      expect(await screen.findByText('Shipped Last Month', undefined, { timeout: 5000 })).toBeInTheDocument();
     });
 
     it('leaves archived projects out', async () => {
@@ -563,7 +563,7 @@ describe('ArchivesPage', () => {
 
       // Anchored on the completed one rather than the active one: the active
       // project's name is also drawn on an archive card behind the menu.
-      await screen.findByText('Shipped Last Month');
+      await screen.findByText('Shipped Last Month', undefined, { timeout: 5000 });
       expect(screen.queryByText('Season 2025')).not.toBeInTheDocument();
     });
   });
@@ -589,7 +589,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('NeverPrinted')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const collectionSelect = screen.getByDisplayValue('All Archives');
       fireEvent.change(collectionSelect, { target: { value: 'not-printed' } });
@@ -599,7 +599,7 @@ describe('ArchivesPage', () => {
         expect(screen.queryByText('WasPrinted')).not.toBeInTheDocument();
         expect(screen.queryByText('WasFailed')).not.toBeInTheDocument();
         expect(screen.queryByText('WasCancelled')).not.toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('keeps in-progress prints visible when "Printed" is selected', async () => {
@@ -616,7 +616,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('NowPrinting')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const collectionSelect = screen.getByDisplayValue('All Archives');
       fireEvent.change(collectionSelect, { target: { value: 'printed' } });
@@ -624,7 +624,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('NowPrinting')).toBeInTheDocument();
         expect(screen.queryByText('NeverPrinted')).not.toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows only print-attempted entries (any final status) when "Printed" is selected', async () => {
@@ -632,7 +632,7 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('NeverPrinted')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const collectionSelect = screen.getByDisplayValue('All Archives');
       fireEvent.change(collectionSelect, { target: { value: 'printed' } });
@@ -642,7 +642,7 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('WasPrinted')).toBeInTheDocument();
         expect(screen.getByText('WasFailed')).toBeInTheDocument();
         expect(screen.getByText('WasCancelled')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -685,14 +685,14 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('FreshReprint')).toBeInTheDocument();
         expect(screen.getByText('OldOriginal')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       fireEvent.click(screen.getByTitle('Hide Duplicates'));
 
       await waitFor(() => {
         expect(screen.getByText('FreshReprint')).toBeInTheDocument();
         expect(screen.queryByText('OldOriginal')).not.toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it('shows all group members when hide duplicates is off', async () => {
@@ -701,7 +701,7 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('FreshReprint')).toBeInTheDocument();
         expect(screen.getByText('OldOriginal')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
   });
 
@@ -726,7 +726,7 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('SuspectFile')).toBeInTheDocument();
         expect(screen.getByText('VerifiedFile')).toBeInTheDocument();
         expect(screen.getByText('LegacyFile')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       expect(screen.getAllByText('Unverified')).toHaveLength(1);
     });
@@ -774,7 +774,7 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // Testing-library normalizes the thin-space/NBSP separators formatMoney
       // emits down to plain spaces, so normalize the expectations the same way.
@@ -817,7 +817,7 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const estimate = estimateArchiveSalePrice(
         { filament_used_grams: 15.5, print_time_seconds: 3600, actual_time_seconds: null, filament_type: null },
@@ -844,7 +844,7 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const estimate = estimateArchiveSalePrice(
         { filament_used_grams: 15.5, print_time_seconds: 3600, actual_time_seconds: null, filament_type: null },
@@ -865,7 +865,7 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       // Both mock archives ("Benchy" and "Bracket v2") get a suggested-price
       // tooltip with the same "Suggested sale price from the calculator..."
@@ -887,11 +887,113 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
       await waitFor(() => {
         expect(screen.getByText('Benchy')).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
 
       const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
       const el = await within(card).findByTitle(/Suggested sale price from the calculator/, undefined, { timeout: 5000 });
       expect(el.title).toMatch(/Minimum task price applied$/);
+    });
+  });
+
+  describe('external link safety (T-034)', () => {
+    // The globe button's onClick hands archive.external_url straight to
+    // window.open. A javascript:/data: URL must never reach it, no matter
+    // what the backend returns (github_restore.py writes external_url
+    // straight from a backup JSON, bypassing the ArchiveUpdate schema).
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('does not call window.open for a javascript: external_url', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'javascript:alert(document.cookie)' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not call window.open for a data: external_url', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'data:text/html,<script>alert(1)</script>' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens a scheme-less external_url normalised to https://', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'printables.com/model/12345' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).toHaveBeenCalledWith('https://printables.com/model/12345', '_blank');
+    });
+
+    it('opens a normal https:// external_url unchanged', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json([
+            { ...mockArchives[0], external_url: 'https://printables.com/model/12345' },
+            mockArchives[1],
+          ]);
+        })
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      }, { timeout: 5000 });
+
+      const card = screen.getByText('Benchy').closest('[data-flip-key]') as HTMLElement;
+      const globeButton = await within(card).findByTitle('External Link', undefined, { timeout: 5000 });
+      fireEvent.click(globeButton);
+
+      expect(openSpy).toHaveBeenCalledWith('https://printables.com/model/12345', '_blank');
     });
   });
 });

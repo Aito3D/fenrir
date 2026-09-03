@@ -1,0 +1,82 @@
+### exit: 0
+### stdout:
+{
+ "en_key_count": 7152,
+ "locales": {
+  "de": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "es": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "fr": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "it": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "ja": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "ko": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "ptBR": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "ru": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "tr": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "uk": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "zhCN": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  },
+  "zhTW": {
+   "key_count": 7152,
+   "missing_vs_en": [],
+   "extra_vs_en": [],
+   "placeholder_mismatch_vs_en": []
+  }
+ }
+}
+
+### stderr:
+

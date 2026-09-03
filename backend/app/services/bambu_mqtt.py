@@ -1842,6 +1842,22 @@ class BambuMQTTClient:
             self._process_message(payload)
         except json.JSONDecodeError:
             pass  # Ignore non-JSON MQTT messages (e.g. binary or malformed payloads)
+        except Exception:
+            # This callback runs on paho's network thread with
+            # suppress_exceptions=False, and loop_forever() only catches
+            # OSError -- so anything else raised anywhere in this method
+            # (including deep inside the status parser below) would otherwise
+            # kill the network thread and leave this printer's MQTT session
+            # permanently disconnected until the whole app restarts (T-023).
+            # Drop the one bad frame instead: it's logged (with a bounded
+            # excerpt, no full payload dump) and the next frame is processed
+            # normally.
+            logger.exception(
+                "[%s] Unhandled error processing MQTT message (topic=%s, payload=%r)",
+                self.serial_number,
+                msg.topic,
+                msg.payload[:200],
+            )
 
     def _handle_request_message(self, data: dict) -> None:
         """Intercept print commands on the request topic to capture ams_mapping."""

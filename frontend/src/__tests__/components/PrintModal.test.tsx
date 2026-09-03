@@ -6,9 +6,9 @@
  * - 'edit-queue-item': Edit existing queue item (single printer)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import type React from 'react';
-import { screen, waitFor, fireEvent, render as rtlRender } from '@testing-library/react';
+import { configure, screen, waitFor, fireEvent, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
@@ -20,6 +20,25 @@ import { ToastProvider } from '../../contexts/ToastContext';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import type { PrintQueueItem } from '../../api/client';
+
+// This file is the single worst load-flake in the suite (PrintModal is a
+// large, action-heavy component whose tests chain several waitFor()s per
+// case: printer/plate fetch -> click -> submit -> queue POST). RTL's
+// waitFor/findBy* default to a 1s asyncUtilTimeout
+// (@testing-library/dom's default, never overridden repo-wide) which is
+// comfortably enough when this file runs alone but gets blown through
+// under full-suite CPU contention (heavy neighbor files starve this
+// worker). Raise it for every waitFor/findBy* in this file only, the same
+// way CalculatorPage.test.tsx already does, rather than touching the
+// shared setup.ts (which would slow down genuine failures across the
+// entire suite) or hand-annotating each of the ~57 call sites (silently
+// regresses the moment someone adds a new bare waitFor here). 8000ms
+// leaves headroom under vitest's 10s per-test timeout while giving 60%
+// more budget than the 5000ms that was already observed to fail at
+// 5162ms under load in ArchivesPage.test.tsx. Restored afterAll so it
+// can't leak into whatever file this worker runs next.
+beforeAll(() => configure({ asyncUtilTimeout: 8000 }));
+afterAll(() => configure({ asyncUtilTimeout: 1000 }));
 
 const mockPrinters = [
   { id: 1, name: 'X1 Carbon', model: 'X1C', ip_address: '192.168.1.100', enabled: true, is_active: true },
@@ -1044,17 +1063,19 @@ describe('PrintModal', () => {
       const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
       await user.click(submitButton);
 
-      // Generous timeout: the submit fires one sequential POST per plate and
-      // this assertion has flaked at waitFor's 1s default under parallel
-      // full-suite CPU load (heavy neighbor files starve this worker).
+      // The submit fires one sequential POST per plate and this assertion
+      // has flaked under parallel full-suite CPU load (heavy neighbor
+      // files starve this worker); relies on the file-wide 8000ms
+      // asyncUtilTimeout set above.
       await waitFor(() => {
         expect(queueRequests.length).toBe(2);
-      }, { timeout: 5000 });
+      });
 
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
-      // 15s test budget: the 5s waitFor guard above cannot fit inside
-      // vitest's 5s default testTimeout once render + clicks are counted.
+      // 15s test budget: gives headroom above the file's 8s waitFor guard,
+      // plus render + click overhead, beyond vitest's 10s default
+      // testTimeout — this test opts into a larger one explicitly.
     }, 15000);
 
     it('creates one queue item per plate when submitting with select-all', async () => {
@@ -1097,7 +1118,7 @@ describe('PrintModal', () => {
       // Same load-flake guard as the subset-of-plates test above.
       await waitFor(() => {
         expect(queueRequests.length).toBe(3);
-      }, { timeout: 5000 });
+      });
 
       // Verify each request has the correct plate_id
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);

@@ -4,26 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { X, History, Loader2, Clock, ExternalLink, ChevronRight, FilePlus2 } from 'lucide-react';
 import { api, type LibraryFileHistoryEvent } from '../api/client';
-import { parseUTCDate } from '../utils/date';
+import { formatDurationOrDash, formatDateTimeOrDash } from '../utils/date';
 
 interface FileHistoryModalProps {
   fileId: number;
   filename: string;
   onClose: () => void;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds || seconds <= 0) return '—';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
-function formatDate(isoString: string | null): string {
-  if (!isoString) return '—';
-  const d = parseUTCDate(isoString);
-  return d ? d.toLocaleString() : '—';
 }
 
 function eventDotClass(event: LibraryFileHistoryEvent): string {
@@ -130,7 +116,7 @@ export function FileHistoryModal({ fileId, filename, onClose }: FileHistoryModal
             {data.last_printed_at && (
               <span className="text-bambu-gray">
                 {t('fileManager.fileHistory.stats.lastPrinted')}{' '}
-                <span className="text-white font-medium">{formatDate(data.last_printed_at)}</span>
+                <span className="text-white font-medium">{formatDateTimeOrDash(data.last_printed_at)}</span>
               </span>
             )}
           </div>
@@ -177,12 +163,12 @@ export function FileHistoryModal({ fileId, filename, onClose }: FileHistoryModal
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className={`text-sm font-medium ${eventStatusClass(event)}`}>{statusLabel(event)}</span>
-                          <span className="text-xs text-bambu-gray-light">{formatDate(event.event_at)}</span>
+                          <span className="text-xs text-bambu-gray-light">{formatDateTimeOrDash(event.event_at)}</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2 text-xs text-bambu-gray">
                           {event.printer_name && <span className="truncate">{event.printer_name}</span>}
                           {event.type === 'print' && event.duration_seconds != null && (
-                            <span>{formatDuration(event.duration_seconds)}</span>
+                            <span>{formatDurationOrDash(event.duration_seconds)}</span>
                           )}
                           {event.filament_used_grams != null && <span>{event.filament_used_grams.toFixed(1)} g</span>}
                           {event.created_by_username && (
@@ -225,7 +211,7 @@ export function FileHistoryModal({ fileId, filename, onClose }: FileHistoryModal
                       <span className="text-sm font-medium text-white">
                         {t('fileManager.fileHistory.addedToLibrary')}
                       </span>
-                      <span className="text-xs text-bambu-gray-light">{formatDate(data.added_at)}</span>
+                      <span className="text-xs text-bambu-gray-light">{formatDateTimeOrDash(data.added_at)}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-2 text-xs text-bambu-gray">
                       {data.added_by_username && (

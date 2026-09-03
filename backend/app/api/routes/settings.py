@@ -1,6 +1,7 @@
-import io
+import asyncio
 import logging
 import os
+import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -812,16 +813,24 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             ("projects", base_dir / "projects"),
         ]
 
-        for name, src_dir in dirs_to_backup:
-            if src_dir.exists() and any(src_dir.iterdir()):
-                try:
-                    shutil.copytree(
-                        src_dir, temp_path / name
-                    )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
-                except shutil.Error as e:
-                    logger.warning("Some files in %s could not be copied: %s", name, e)
-                except PermissionError as e:
-                    logger.warning("Permission denied copying %s: %s", name, e)
+        def _copy_backup_dirs() -> None:
+            # T-018: shutil.copytree over the archive/timelapse/photo tree can
+            # take minutes for a large install; running it inline on the
+            # event loop would freeze the whole FastAPI process (no request
+            # served, no MQTT/WebSocket keepalives) for the duration. Run it
+            # in a worker thread via asyncio.to_thread below instead.
+            for name, src_dir in dirs_to_backup:
+                if src_dir.exists() and any(src_dir.iterdir()):
+                    try:
+                        shutil.copytree(
+                            src_dir, temp_path / name
+                        )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
+                    except shutil.Error as e:
+                        logger.warning("Some files in %s could not be copied: %s", name, e)
+                    except PermissionError as e:
+                        logger.warning("Permission denied copying %s: %s", name, e)
+
+        await asyncio.to_thread(_copy_backup_dirs)
 
         # Include the MFA encryption key as a ZIP top-level entry alongside
         # bambuddy.db. Without it, encrypted client_secret / TOTP secret rows
@@ -851,11 +860,16 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             os.close(fd)
             zip_file = Path(tmp)
 
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in temp_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(temp_path)
-                    zf.write(file_path, arcname)
+        def _build_zip() -> None:
+            # T-018: ZIP_DEFLATED compression over the same tree is equally
+            # blocking; see _copy_backup_dirs above.
+            with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file_path in temp_path.rglob("*"):
+                    if file_path.is_file():
+                        arcname = file_path.relative_to(temp_path)
+                        zf.write(file_path, arcname)
+
+        await asyncio.to_thread(_build_zip)
 
     return zip_file, filename
 
@@ -1123,6 +1137,77 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
         await pg_engine.dispose()
 
 
+def _restore_data_directory(name: str, src_dir: Path, dest_dir: Path) -> None:
+    """Restore one data directory (archive, icons, ...) from a backup.
+
+    T-017 fix: the previous implementation cleared ``dest_dir`` *before*
+    copying the replacement in, so a mid-copy failure (ENOSPC is the
+    realistic case — the backup ZIP was just unpacked onto the same
+    filesystem) left the live directory (e.g. the entire print archive)
+    partially or fully deleted with nothing to restore it. This copies
+    the backup contents into a sibling staging directory first; only
+    once that copy has fully succeeded do we clear the destination and
+    move the staged files in (a same-filesystem rename, not a copy).
+    If the staging copy raises OSError, the destination is never
+    touched and the exception propagates to the caller so the restore
+    is reported as failed rather than a false success.
+    """
+    stage_dir = dest_dir.parent / f".{dest_dir.name}.restore-staging"
+    if stage_dir.exists():
+        # Leftover from a previous failed restore attempt.
+        shutil.rmtree(stage_dir, ignore_errors=True)
+    stage_dir.mkdir(parents=True)
+    try:
+        for item in src_dir.iterdir():
+            stage_item = stage_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, stage_item)
+            else:
+                shutil.copy2(item, stage_item)
+
+        # Staging copy succeeded — now it's safe to clear the destination
+        # and move the staged files in.
+        if dest_dir.exists():
+            for item in dest_dir.iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except OSError as e:
+                    logger.warning("Could not delete %s: %s", item, e)
+        else:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in stage_dir.iterdir():
+            shutil.move(str(item), str(dest_dir / item.name))
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+
+
+def _raise_if_directories_failed(failed_dirs: list[str]) -> None:
+    """Turn a non-empty ``failed_dirs`` list into a failed restore response.
+
+    T-017 fix: the previous restore_backup implementation collected these
+    names as "skipped_dirs" and still returned ``{"success": True, ...}``
+    with a footnote mentioning them — even though the directory copy had
+    failed. Any caller of this must run it *before* building the success
+    response, so a copy failure is reported as HTTP 500 rather than a
+    disguised success.
+    """
+    if not failed_dirs:
+        return
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            "Restore partially failed: the database was restored, but these "
+            f"data directories could not be restored ({', '.join(failed_dirs)}). "
+            "Their original contents were left untouched (not deleted). Check "
+            "server logs (disk space is the likely cause) and retry."
+        ),
+    )
+
+
 @router.post("/restore")
 async def restore_backup(
     file: UploadFile = File(...),
@@ -1134,7 +1219,6 @@ async def restore_backup(
     Replaces the database and all data directories from the backup ZIP.
     Requires a restart after restore.
     """
-    import shutil
     import tempfile
 
     from fastapi import HTTPException
@@ -1148,32 +1232,46 @@ async def restore_backup(
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        # 1. Read and extract ZIP
-        content = await file.read()
-
         # Check if it's a valid ZIP
         if not file.filename or not file.filename.endswith(".zip"):
             raise HTTPException(400, "Invalid backup file: must be a .zip file")
 
+        # 1. Stream the upload to a temp file instead of buffering the whole
+        # backup in memory (T-019). The backup ZIP is a full snapshot of the
+        # archive/timelapse tree, so multi-GB is the normal case: holding the
+        # compressed bytes, an io.BytesIO view of them, and the decompressed
+        # tree on disk all at once is exactly what OOM-kills the process
+        # mid-restore, after destination directories may already be staged.
+        upload_fd, upload_tmp_name = tempfile.mkstemp(suffix=".zip")
+        upload_zip_path = Path(upload_tmp_name)
         try:
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
-                for name in zf.namelist():
-                    # Reject path-traversal payloads: any entry whose resolved
-                    # path escapes temp_path would allow writing arbitrary files
-                    # on the host (ZipSlip / CVE-2006-5456).
-                    dest = (
-                        temp_path / name
-                    ).resolve()  # SEC-PATH-OK: is_relative_to containment check below before extractall
-                    # is_relative_to (Python 3.9+) covers both relative
-                    # path-traversal (../etc/passwd) and absolute-path overrides
-                    # (/etc/passwd) — str.startswith was vulnerable to
-                    # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
-                    # a /tmp/abc prefix check).
-                    if not dest.is_relative_to(temp_path.resolve()):
-                        raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
-                zf.extractall(temp_path)
-        except zipfile.BadZipFile:
-            raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+            with os.fdopen(upload_fd, "wb") as upload_out:
+                await asyncio.to_thread(shutil.copyfileobj, file.file, upload_out)
+
+            try:
+                with zipfile.ZipFile(upload_zip_path, "r") as zf:
+                    for name in zf.namelist():
+                        # Reject path-traversal payloads: any entry whose resolved
+                        # path escapes temp_path would allow writing arbitrary files
+                        # on the host (ZipSlip / CVE-2006-5456).
+                        dest = (
+                            temp_path / name
+                        ).resolve()  # SEC-PATH-OK: is_relative_to containment check below before extractall
+                        # is_relative_to (Python 3.9+) covers both relative
+                        # path-traversal (../etc/passwd) and absolute-path overrides
+                        # (/etc/passwd) — str.startswith was vulnerable to
+                        # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
+                        # a /tmp/abc prefix check).
+                        if not dest.is_relative_to(temp_path.resolve()):
+                            raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
+                    # T-018: extractall over a multi-GB archive is blocking
+                    # disk I/O; keep it off the event loop like the rest of
+                    # restore's heavy steps.
+                    await asyncio.to_thread(zf.extractall, temp_path)
+            except zipfile.BadZipFile:
+                raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+        finally:
+            upload_zip_path.unlink(missing_ok=True)
 
         # 2. Validate backup
         backup_db = temp_path / "bambuddy.db"
@@ -1181,8 +1279,6 @@ async def restore_backup(
             raise HTTPException(400, "Invalid backup: missing bambuddy.db")
 
         try:
-            import asyncio
-
             # 3. Stop virtual printer if running (releases file locks)
             try:
                 if virtual_printer_manager.is_enabled:
@@ -1298,15 +1394,21 @@ async def restore_backup(
                 # can't corrupt the restored state.
                 import sqlite3
 
-                src_conn = sqlite3.connect(str(backup_db))
-                try:
-                    dst_conn = sqlite3.connect(str(db_path))
+                def _sqlite_backup() -> None:
+                    # T-018: src_conn.backup() copies the database page by
+                    # page and can take a while for a large install; run it
+                    # off the event loop like the rest of restore's I/O.
+                    src_conn = sqlite3.connect(str(backup_db))
                     try:
-                        src_conn.backup(dst_conn)
+                        dst_conn = sqlite3.connect(str(db_path))
+                        try:
+                            src_conn.backup(dst_conn)
+                        finally:
+                            dst_conn.close()
                     finally:
-                        dst_conn.close()
-                finally:
-                    src_conn.close()
+                        src_conn.close()
+
+                await asyncio.to_thread(_sqlite_backup)
             else:
                 # Import SQLite backup into PostgreSQL
                 logger.info("Importing SQLite backup into PostgreSQL...")
@@ -1322,36 +1424,37 @@ async def restore_backup(
                 ("projects", base_dir / "projects"),
             ]
 
-            skipped_dirs = []
-            for name, dest_dir in dirs_to_restore:
-                src_dir = (
-                    temp_path / name
-                )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
-                if src_dir.exists():
-                    logger.info("Restoring %s directory...", name)
-                    try:
-                        # Clear destination contents (not the dir itself - may be Docker mount)
-                        if dest_dir.exists():
-                            for item in dest_dir.iterdir():
-                                try:
-                                    if item.is_dir():
-                                        shutil.rmtree(item)
-                                    else:
-                                        item.unlink()
-                                except OSError as e:
-                                    logger.warning("Could not delete %s: %s", item, e)
-                        else:
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                        # Copy contents from backup
-                        for item in src_dir.iterdir():
-                            dest_item = dest_dir / item.name
-                            if item.is_dir():
-                                shutil.copytree(item, dest_item)
-                            else:
-                                shutil.copy2(item, dest_item)
-                    except OSError as e:
-                        logger.warning("Could not restore %s directory: %s", name, e)
-                        skipped_dirs.append(name)
+            # T-017: a directory whose staging copy fails is left with its
+            # live contents untouched (see _restore_data_directory) — it is
+            # NOT deleted then silently skipped. We still attempt every
+            # directory so the ones that succeed are restored, but any
+            # failure turns the whole request into an HTTP 500 below
+            # instead of a success=True response with a footnote.
+            def _restore_all_dirs() -> list[str]:
+                # T-018: shutil.copytree (via _restore_data_directory) over
+                # the archive/timelapse/photo tree is blocking disk I/O that
+                # can take minutes; run the whole loop in a worker thread
+                # instead of freezing the event loop.
+                failed = []
+                for name, dest_dir in dirs_to_restore:
+                    src_dir = (
+                        temp_path / name
+                    )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
+                    if src_dir.exists():
+                        logger.info("Restoring %s directory...", name)
+                        try:
+                            _restore_data_directory(name, src_dir, dest_dir)
+                        except OSError as e:
+                            logger.error(
+                                "Could not restore %s directory: %s — destination left untouched.",
+                                name,
+                                e,
+                                exc_info=True,
+                            )
+                            failed.append(name)
+                return failed
+
+            failed_dirs = await asyncio.to_thread(_restore_all_dirs)
 
             # 7. Reset the encryption singleton so the migration that runs
             # inside init_db() picks up the restored key file (if a new one
@@ -1369,13 +1472,16 @@ async def restore_backup(
             await reinitialize_database()
             await init_db()
 
+            # T-017: the database has already been restored at this point,
+            # but any directory in failed_dirs was left untouched (not
+            # deleted) because its staging copy failed — this must run
+            # before the success response below is built.
+            _raise_if_directories_failed(failed_dirs)
+
             logger.info("Restore complete - restart required")
-            message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."
-            if skipped_dirs:
-                message += f" Note: Some directories could not be restored ({', '.join(skipped_dirs)})."
             return {
                 "success": True,
-                "message": message,
+                "message": "Backup restored successfully. Please restart Bambuddy for changes to take effect.",
             }
 
         except HTTPException:

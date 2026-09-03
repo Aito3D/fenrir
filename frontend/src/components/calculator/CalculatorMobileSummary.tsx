@@ -1,21 +1,12 @@
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { Money } from './shared';
 import { formatPct, type PricingResult } from '../../utils/pricing';
 
 /** True below the xl breakpoint (where the results column stacks under the
  *  inputs and the total scrolls out of view). */
 function useBelowXl(): boolean {
-  const [below, setBelow] = useState(false);
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(max-width: 1279px)');
-    setBelow(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setBelow(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return below;
+  return useMediaQuery('(max-width: 1279px)');
 }
 
 /** Sticky bottom bar with the headline price, shown while the single-column

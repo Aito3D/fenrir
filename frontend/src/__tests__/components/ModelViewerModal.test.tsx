@@ -526,6 +526,16 @@ describe('ModelViewerModal', () => {
         }),
         http.get('/api/v1/library/files/:id/plates', () => {
           return HttpResponse.json(mockSinglePlateResponse);
+        }),
+        // No default handler exists for this endpoint (nothing else in the
+        // suite exercises the full click-through flow), so without a mock the
+        // request escapes MSW's `onUnhandledRequest: 'bypass'` and hits
+        // whatever happens to be listening on localhost -- an ambient dev
+        // server in some environments. That made this test's pass/fail
+        // depend on a real, uncontrolled network round-trip instead of the
+        // component's own behavior.
+        http.post('/api/v1/library/files/:id/slicer-token', () => {
+          return HttpResponse.json({ token: 'test-slicer-token' });
         })
       );
 

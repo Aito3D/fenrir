@@ -7963,3 +7963,73 @@ class TestAmsFilamentSettingRefusalLogging:
 
         assert self._refusals(caplog) == []
         assert "extrusion_cali_sel" not in caplog.text
+
+
+class TestUnhandledParserErrorDoesNotKillTheConnection:
+    """T-023: `_on_message` used to catch only `json.JSONDecodeError`. paho
+    runs the callback with `suppress_exceptions=False` and `loop_forever()`
+    only catches `OSError`, so any *other* exception raised anywhere while
+    processing a frame (including deep inside the status parser) escaped to
+    the network thread, killed it, and left the printer's MQTT session
+    disconnected until the whole app was restarted.
+
+    These tests only pass against the fixed `_on_message`, which wraps
+    `_process_message` in a trailing `except Exception: logger.exception(...)`
+    -- against the old `except json.JSONDecodeError: pass`-only version, the
+    first test's `_deliver` call raises `RuntimeError` out of `_on_message`
+    instead of being swallowed and logged.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        return client
+
+    @staticmethod
+    def _deliver(client, payload):
+        class _Msg:
+            pass
+
+        msg = _Msg()
+        msg.topic = client.topic_subscribe
+        msg.payload = json.dumps(payload).encode()
+        client._on_message(None, None, msg)
+
+    def test_bad_frame_does_not_propagate_and_is_logged(self, mqtt_client, monkeypatch, caplog):
+        """A frame that trips a bug deep inside the parser (simulated here via
+        the xcam sub-parser) must not raise out of `_on_message`, and the
+        failure must be logged with a traceback rather than silently dropped."""
+
+        def _boom(self, xcam_data):
+            raise RuntimeError("simulated parser bug")
+
+        monkeypatch.setattr(type(mqtt_client), "_parse_xcam_data", _boom)
+        caplog.set_level(logging.ERROR, logger="backend.app.services.bambu_mqtt")
+
+        self._deliver(mqtt_client, {"xcam": {"some": "unexpected_field"}})  # must not raise
+
+        assert "Unhandled error processing MQTT message" in caplog.text
+        assert "TEST123" in caplog.text
+        assert "RuntimeError" in caplog.text  # traceback preserved (logger.exception)
+
+    def test_next_good_frame_is_processed_normally_afterward(self, mqtt_client, monkeypatch, caplog):
+        """Proves the connection survives: after a bad frame, a subsequent
+        good frame is still applied to state as normal."""
+
+        def _boom(self, xcam_data):
+            raise RuntimeError("simulated parser bug")
+
+        monkeypatch.setattr(type(mqtt_client), "_parse_xcam_data", _boom)
+        caplog.set_level(logging.ERROR, logger="backend.app.services.bambu_mqtt")
+        self._deliver(mqtt_client, {"xcam": {"some": "unexpected_field"}})
+
+        monkeypatch.undo()  # restore the real _parse_xcam_data for the next frame
+        self._deliver(mqtt_client, {"print": {"mc_percent": 55}})
+
+        assert mqtt_client.state.progress == 55
