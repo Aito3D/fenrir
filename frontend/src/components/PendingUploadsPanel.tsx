@@ -263,18 +263,11 @@ export function PendingUploadsPanel() {
     },
   });
 
-  if (uploadsLoading) {
-    return (
-      <Card>
-        <CardContent className="py-8 flex justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!uploads || uploads.length === 0) {
-    return null; // Don't render if no pending uploads
+  // No spinner while loading: this panel sits above the archives grid, and a
+  // placeholder card there fights the page's own skeletons — then vanishes in
+  // the common zero-pending case. Render nothing until there is something.
+  if (uploadsLoading || !uploads || uploads.length === 0) {
+    return null;
   }
 
   return (

@@ -75,4 +75,21 @@ describe('PendingUploadsPanel — display_name', () => {
     const nameEl = await findByText('My Resolved Name');
     expect(nameEl.getAttribute('title')).toBe('Plate_1.gcode.3mf');
   });
+
+  it('renders nothing while the pending-uploads query is loading', () => {
+    // The panel is secondary content polled every 10s; on the Archives page's
+    // first paint it sits directly above the skeleton grid. Rendering its own
+    // spinner card there collides with the skeletons and — in the common case
+    // of zero pending uploads — flashes a card that immediately vanishes.
+    // While loading it must render nothing and simply appear when data lands.
+    server.use(
+      http.get('/api/v1/pending-uploads/', () => new Promise<never>(() => {})),
+    );
+
+    // The render wrapper mounts a toast viewport, so assert on the panel's
+    // own output: no spinner and no Card (.rounded-xl) while in flight.
+    const { container } = render(<PendingUploadsPanel />);
+    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(container.querySelector('.rounded-xl')).toBeNull();
+  });
 });
