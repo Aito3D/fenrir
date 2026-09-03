@@ -1,0 +1,114 @@
+{
+ "findings": [
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/TwoFactorSettings.tsx",
+   "line": 1,
+   "title": "TwoFactorSettings has zero test coverage (2FA enable/disable, backup codes)",
+   "evidence": "frontend/coverage/coverage-final.json: src/components/TwoFactorSettings.tsx 0/128 statements covered (0.0%) | rg -l 'TwoFactorSettings' frontend/src/__tests__ -> no matches",
+   "fix": "add frontend/src/__tests__/components/TwoFactorSettings.test.tsx covering: enabling TOTP (QR/secret display), verifying a code, disabling 2FA, regenerating/viewing backup codes, and the invalid-code error path",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/pages/UsersPage.tsx",
+   "line": 1,
+   "title": "UsersPage has zero test coverage (user create/edit/delete, role & password changes)",
+   "evidence": "frontend/coverage/coverage-final.json: src/pages/UsersPage.tsx 0/168 statements covered (0.0%) | rg -l 'UsersPage' frontend/src/__tests__ -> no matches",
+   "fix": "add frontend/src/__tests__/pages/UsersPage.test.tsx covering: create user (local + LDAP tab), edit role/permissions, password change, and delete-user confirm flow",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/pages/SetupPage.tsx",
+   "line": 1,
+   "title": "SetupPage (initial admin creation / enabling auth) has zero test coverage",
+   "evidence": "frontend/coverage/coverage-final.json: src/pages/SetupPage.tsx 0/40 statements covered (0.0%) | rg -l 'SetupPage' frontend/src/__tests__ -> no matches",
+   "fix": "add frontend/src/__tests__/pages/SetupPage.test.tsx covering: enabling auth with a new admin account, submitting with auth disabled, and the admin-already-exists success path (data.admin_created false)",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/CreateUserAdvancedAuthModal.tsx",
+   "line": 1,
+   "title": "CreateUserAdvancedAuthModal (LDAP/OIDC-aware user creation) has zero test coverage",
+   "evidence": "frontend/coverage/coverage-final.json: src/components/CreateUserAdvancedAuthModal.tsx 0/21 statements covered (0.0%) | rg -l 'CreateUserAdvancedAuthModal' frontend/src/__tests__ -> no matches",
+   "fix": "add frontend/src/__tests__/components/CreateUserAdvancedAuthModal.test.tsx covering the local-vs-external auth source toggle and submit payload shape",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/pages/FinancePage.tsx",
+   "line": 1,
+   "title": "FinancePage (wallet transaction edit/delete, budget parsing) has zero test coverage",
+   "evidence": "frontend/coverage/coverage-final.json: src/pages/FinancePage.tsx 0/440 statements covered (0.0%) | rg -l 'FinancePage' frontend/src/__tests__ -> no matches; parsePrintChargeDescription()/parseBudgetValue() (money parsing helpers, lines ~22-50) are never exercised by any test",
+   "fix": "add frontend/src/__tests__/pages/FinancePage.test.tsx covering: editing a wallet transaction amount, deleting a transaction, budget value parsing/validation, and the partial-print charge description parsing ([aborted:...]/[failed:...]/[cancelled:...] tags)",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "flaky-test",
+   "file": "frontend/src/__tests__/components/PrintModal.test.tsx",
+   "line": 131,
+   "title": "PrintModal.test.tsx: 57 of ~59 waitFor() calls rely on the default 1000ms testing-library timeout",
+   "evidence": "rg -n 'await waitFor' frontend/src/__tests__/components/PrintModal.test.tsx -> 57 calls with no {timeout} option; the 2 calls that were fixed (lines 1050-1052, 1098) carry the comment \"this assertion has flaked at waitFor's 1s default under parallel full-suite CPU load (heavy neighbor files starve this worker)\" but the fix was applied to only those 2 of 59 call sites in the same file",
+   "fix": "in frontend/src/__tests__/components/PrintModal.test.tsx, either raise the global asyncUtilTimeout via a testing-library configure() call in frontend/src/__tests__/setup.ts, or add {timeout: 5000} to all remaining waitFor() calls in this file to match the pattern already used at lines 1050 and 1098",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "flaky-test",
+   "file": "frontend/src/__tests__/components/ModelViewerModal.test.tsx",
+   "line": 123,
+   "title": "ModelViewerModal.test.tsx: every waitFor() call uses the default 1000ms timeout, same starvation pattern as PrintModal",
+   "evidence": "rg -n 'await waitFor' frontend/src/__tests__/components/ModelViewerModal.test.tsx -> 34 calls, none with a {timeout} override; file is on the KNOWN_FLAKY list",
+   "fix": "in frontend/src/__tests__/components/ModelViewerModal.test.tsx, add {timeout: 5000} to the waitFor() calls (or raise testing-library's global asyncUtilTimeout in frontend/src/__tests__/setup.ts) to stop them tripping under parallel/coverage CPU load",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "flaky-test",
+   "file": "frontend/src/__tests__/pages/ArchivesPage.test.tsx",
+   "line": 117,
+   "title": "ArchivesPage.test.tsx: most waitFor() calls still use the default 1000ms timeout despite 4 call sites already bumped to 5000ms",
+   "evidence": "rg -n 'await waitFor' frontend/src/__tests__/pages/ArchivesPage.test.tsx -> 40 calls; only 4 have an explicit {timeout: 5000} (lines 793, 834, 875, 893) added after observed flakes -- the other 36 are unguarded; file is on the KNOWN_FLAKY list (excluding the separately-tracked known_broken ZIP-prep-fails test)",
+   "fix": "in frontend/src/__tests__/pages/ArchivesPage.test.tsx, extend the same {timeout: 5000} treatment (already used at lines 793/834/875/893) to the remaining unguarded waitFor() calls",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "flaky-test",
+   "file": "frontend/src/__tests__/pages/StatsPageUserFilter1894.test.tsx",
+   "line": 51,
+   "title": "StatsPageUserFilter1894.test.tsx: both waitFor() assertions use the default 1000ms timeout against a heavy multi-widget StatsPage render",
+   "evidence": "frontend/src/__tests__/pages/StatsPageUserFilter1894.test.tsx lines 51-53 and 68-70: await waitFor(() => { expect(screen.getByText('All Users')).toBeInTheDocument(); }); with no {timeout} option, waiting on StatsPage (which fires many widget queries) to settle; file is on the KNOWN_FLAKY list",
+   "fix": "in frontend/src/__tests__/pages/StatsPageUserFilter1894.test.tsx, add {timeout: 5000} to both waitFor() calls (lines 51 and 68)",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "flaky-test",
+   "file": "backend/app/services/camera.py",
+   "line": 98,
+   "title": "get_ffmpeg_path() memoizes into a module-level global, making test_get_ffmpeg_path_from_shutil_which order-dependent",
+   "evidence": "backend/app/services/camera.py:98-127 get_ffmpeg_path() reads/writes a module-level `global _ffmpeg_path` cache and returns the cached value on any call after the first (line 106-107: if _ffmpeg_path is not None: return _ffmpeg_path); backend/tests/unit/services/test_external_camera.py:254-260 patches shutil.which and asserts the mocked value is returned, but never resets _ffmpeg_path to None first -- if any earlier test in the same worker process already populated the cache with the real system ffmpeg path (or None), this test reads the stale cached value instead of the mock and fails; passes in isolation because nothing has populated the cache yet",
+   "fix": "in backend/tests/unit/services/test_external_camera.py, add monkeypatch.setattr('backend.app.services.camera._ffmpeg_path', None) (or an autouse fixture resetting the module global) before patching shutil.which in TestGetFfmpegPath, so the test no longer depends on execution order",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "flaky-test",
+   "file": "backend/tests/integration/test_library_slice_api.py",
+   "line": 83,
+   "title": "_wait_for_job() polls on a wall-clock deadline, making cross-class-arrange test flaky under CPU-starved parallel runs",
+   "evidence": "backend/tests/integration/test_library_slice_api.py:83-98 _wait_for_job loops `while asyncio.get_event_loop().time() < deadline: ... await asyncio.sleep(0.05)` against a real timeout budget; test_cross_class_arrange_survives_user_leaving_the_box_unticked (line 1198) calls it with timeout=15.0 (line 1261, already raised above the 5.0s default) yet still fails under -n 30 parallel load per KNOWN_FLAKY -- the assumption that the dispatcher's asyncio task gets scheduled within the wall-clock window doesn't hold when 30 workers contend for CPU",
+   "fix": "in backend/tests/integration/test_library_slice_api.py, either poll on task-completion via an event/future the dispatcher signals instead of a wall-clock deadline, or make the slice dispatcher advance under a controllable/injectable clock so the test doesn't depend on real scheduling latency under load",
+   "behavior_change": false
+  }
+ ]
+}

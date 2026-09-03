@@ -1,0 +1,143 @@
+{
+ "findings": [
+  {
+   "severity": "critical",
+   "category": "partial-failure",
+   "file": "backend/app/api/routes/settings.py",
+   "line": 1334,
+   "title": "restore_backup() deletes the live data directories before copying, then reports success when the copy fails",
+   "evidence": "The restore loop clears the destination first -- `for item in dest_dir.iterdir(): ... shutil.rmtree(item)` / `item.unlink()` -- and only then runs `shutil.copytree(item, dest_item)` (line 1345). The copy is wrapped in `except OSError as e: logger.warning(\"Could not restore %s directory: %s\", name, e); skipped_dirs.append(name)` (line 1348), and the handler still returns {\"success\": True, \"message\": \"Backup restored successfully...\"} with only a \" Note: Some directories could not be restored (archive).\" appended. The ZIP has already been unpacked into a TemporaryDirectory on the same filesystem, so ENOSPC part-way through copying archive/ is the likely case, not the exotic one: the user's entire print archive (3MFs, timelapses, photos) has been erased, the replacement is half-written, and the UI says the restore succeeded.",
+   "fix": "Copy into a sibling staging directory and swap it in only after the copy completes, or snapshot the destination before deleting so a failed copy can be undone; on any copy failure return a 500 rather than success=True.",
+   "behavior_change": true,
+   "behavior_change_note": "a restore whose file copy fails will report failure (HTTP 500) instead of returning success with a note in the message."
+  },
+  {
+   "severity": "high",
+   "category": "concurrency",
+   "file": "backend/app/api/routes/settings.py",
+   "line": 814,
+   "title": "create_backup_zip() runs copytree and ZIP compression synchronously on the event loop",
+   "evidence": "create_backup_zip is `async def` but every heavy step is blocking sync I/O with no await: shutil.copytree(src_dir, temp_path / name) (line 814) over base_dir/archive -- every archived 3MF, timelapse and photo, routinely gigabytes -- followed by `with zipfile.ZipFile(zip_file, \"w\", zipfile.ZIP_DEFLATED) as zf: for file_path in temp_path.rglob(\"*\"): ... zf.write(file_path, arcname)` (line 849). Nothing yields for the minutes this takes. The scheduled 03:00 local backup (local_backup.run_backup) and the /settings/backup download both call it, so the whole FastAPI process freezes for the duration: no HTTP request is served, MQTT status callbacks queued onto the loop don't run, and WebSocket clients miss their keepalives and reconnect-storm when the loop finally resumes. services/printer_media.py already wraps the same kind of work in asyncio.to_thread, so this is inconsistent with house style, not an accepted trade-off.",
+   "fix": "Move the copytree + zip body into asyncio.to_thread (as printer_media.py does for shutil.rmtree); restore_backup's zf.extractall / src_conn.backup / copytree block in the same file needs the same treatment.",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "unbounded-growth",
+   "file": "backend/app/api/routes/settings.py",
+   "line": 1148,
+   "title": "restore_backup() loads the entire uploaded backup ZIP into memory",
+   "evidence": "`content = await file.read()` followed by `with zipfile.ZipFile(io.BytesIO(content), \"r\") as zf: ... zf.extractall(temp_path)`. The backup ZIP is a full snapshot of the archive/timelapse tree, so it is exactly as large as the data it protects -- multi-GB is the normal case, not the edge case. Restoring one holds the compressed bytes in content, the BytesIO view, and the decompressed tree on disk simultaneously; in a memory-capped container the process is OOM-killed mid-restore, which is precisely when the destination directories have already been cleared.",
+   "fix": "Stream the UploadFile to a temp file in chunks (shutil.copyfileobj(file.file, tmp)) and open the ZipFile from that path instead of BytesIO.",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "concurrency",
+   "file": "backend/app/core/websocket.py",
+   "line": 52,
+   "title": "ConnectionManager.broadcast() awaits every client send serially while holding the shared lock",
+   "evidence": "`async with self._lock: for connection in self.active_connections: try: await connection.send_text(data)`. uvicorn's websocket transport applies backpressure, so send_text to a client whose TCP window is full (a laptop that slept with the dashboard open, a phone on a dead cell link) does not return until the socket drains or dies. Every other broadcaster -- printer_status, print_complete, FTP upload progress, aito_changed -- plus connect() and disconnect() all take this same self._lock, so one wedged viewer stalls live updates for every other user in the farm and blocks new WebSocket connections from being registered. There is no send timeout anywhere on this path.",
+   "fix": "Fan out with asyncio.gather(..., return_exceptions=True) under an asyncio.wait_for per send, and take a snapshot of active_connections under the lock rather than holding it across the I/O.",
+   "behavior_change": true,
+   "behavior_change_note": "a client that cannot accept a broadcast within the timeout will be dropped from the connection list and have to reconnect, instead of silently holding everyone else up."
+  },
+  {
+   "severity": "high",
+   "category": "missing-timeout",
+   "file": "backend/app/api/routes/updates.py",
+   "line": 683,
+   "title": "_perform_update() runs git/pip/npm with no timeout and permanently wedges the updater when one hangs",
+   "evidence": "Every step is `await process.communicate()` with no asyncio.wait_for -- git fetch --prune --tags --force origin (line 790), git reset --hard (line 826), pip install -r requirements.txt (line 862), npm install (line 887). git has no default network timeout, so a half-open TCP connection to github.com leaves communicate() pending forever with _update_status['status'] stuck on 'downloading'. apply_update gates on exactly that value (line 933) and nothing ever resets it -- so the user's progress bar sits at 20% and every retry is refused until the process is restarted.",
+   "fix": "Wrap each process.communicate() in asyncio.wait_for, kill the process on timeout, and set _update_status to the error shape so the guard clears.",
+   "behavior_change": true,
+   "behavior_change_note": "an update that currently hangs indefinitely will instead fail with a timeout error after a bounded wait, and the Update button becomes usable again."
+  },
+  {
+   "severity": "medium",
+   "category": "concurrency",
+   "file": "backend/app/api/routes/updates.py",
+   "line": 925,
+   "title": "apply_update() checks the in-progress guard, then awaits, then sets it -- two concurrent requests both start an update",
+   "evidence": "The guard `if _update_status['status'] in ['downloading', 'installing']` runs at line 933, but `target_ref = await _discover_target_release(db)` (line 988) yields to the loop before _update_status is finally assigned at line 995. Two admins (or a double-clicked button) landing inside that GitHub round-trip both pass the guard and both background_tasks.add_task(_perform_update, target_ref). Two git fetch + git reset --hard + pip install runs then execute concurrently in the same working tree: one aborts on index.lock, and pip installing over itself can leave a half-written site-packages, so the app fails to import on restart.",
+   "fix": "Set _update_status to the in-progress shape synchronously right after the guard (before any await), or hold an asyncio.Lock across the check-and-set.",
+   "behavior_change": true,
+   "behavior_change_note": "a second /apply issued while an update is starting now reliably returns 'Update already in progress' instead of sometimes starting a second update."
+  },
+  {
+   "severity": "high",
+   "category": "error-handling",
+   "file": "backend/app/services/bambu_mqtt.py",
+   "line": 1843,
+   "title": "_on_message() catches only JSONDecodeError, so any parser error kills the paho network thread",
+   "evidence": "`self._process_message(payload)` (line 1842) is followed by `except json.JSONDecodeError: pass` and nothing else. paho is left at suppress_exceptions = False, so anything else raised inside the ~7000-line status parser is re-raised by _handle_on_message on the network thread; loop_forever catches only OSError, so the thread dies and that printer's MQTT session never reconnects -- its card goes permanently stale until the whole app is restarted. The code already knows this: two field parsers at lines 3796 and 3812 carry comments saying an escaping exception 'takes the printer connection down over one unusable field', but they patch two fields rather than the entry point, so the next firmware that ships an unexpected type in any other field reproduces it.",
+   "fix": "Add a trailing `except Exception: logger.exception(...)` to _on_message so one bad frame is dropped rather than taken out on the connection.",
+   "behavior_change": true,
+   "behavior_change_note": "a printer whose firmware sends a frame the parser cannot handle stays connected (with that frame logged and skipped) instead of going permanently offline."
+  },
+  {
+   "severity": "medium",
+   "category": "unbounded-growth",
+   "file": "backend/app/services/external_camera.py",
+   "line": 882,
+   "title": "_stream_mjpeg() grows its frame buffer without a cap when no JPEG end marker arrives",
+   "evidence": "Inside `async for chunk in response.content.iter_chunked(8192)` the inner loop does end_idx = buffer.find(jpeg_end, 2) / `if end_idx == -1: break` (line 901), falling back to the outer loop which appends the next chunk. Once a \\xff\\xd8 has been seen and no \\xff\\xd9 ever follows -- a user-configured URL that returns an HTML error page, a non-MJPEG content type, or a camera emitting a corrupt frame -- nothing ever trims the buffer and it grows for as long as the stream is open (ClientTimeout(total=None), so indefinitely), until the server is OOM-killed. _capture_mjpeg_frame two functions above already guards this exact case with `if len(buffer) > 5 * 1024 * 1024:` (line 484); the streaming path was never given the same cap.",
+   "fix": "Apply the same 5 MB ceiling used in _capture_mjpeg_frame: bail out of the stream (or reset the buffer) once it exceeds the limit without yielding a frame.",
+   "behavior_change": true,
+   "behavior_change_note": "an external camera URL that never emits a complete JPEG will end its stream with an error instead of appearing to stay connected."
+  },
+  {
+   "severity": "medium",
+   "category": "concurrency",
+   "file": "backend/app/api/routes/archives.py",
+   "line": 3119,
+   "title": "process_timelapse() writes to temp paths keyed only on archive_id, so concurrent requests clobber each other",
+   "evidence": "audio_temp_path = Path(tempfile.gettempdir()) / f'audio_{archive_id}{suffix}' and temp_output = Path(tempfile.gettempdir()) / f'processed_{archive_id}.mp4' (line 3128) are fixed, predictable names with no per-request component. Two requests for the same archive (a double-clicked Save, or two operators editing the same timelapse) both write processed_<id>.mp4: one ffmpeg re-encode writes into the file the other is about to shutil.move(str(output_path), str(timelapse_path)) (line 3153) over the original, so save_mode='replace' can overwrite the archived timelapse with a truncated file. The finally block also unlinks audio_temp_path while the other request's ffmpeg may still be reading it. On the success is False path temp_output is never removed either, so /tmp accumulates whole mp4s.",
+   "fix": "Allocate both paths inside a per-request tempfile.TemporaryDirectory() so each invocation gets its own names and cleanup is automatic.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "partial-failure",
+   "file": "backend/app/services/smart_plug_manager.py",
+   "line": 623,
+   "title": "_temp_based_off() and _delayed_off() leave auto_off_pending set when the turn-off does not happen",
+   "evidence": "_schedule_temp_based_off marks the row pending up front (spawn_background_task(self._mark_auto_off_pending(plug.id, True), ...), line 494), but _temp_based_off only clears it via _mark_auto_off_executed on `if success:`. When the poll loop times out it does logger.warning('Temperature-based turn-off timed out for plug %s after %ss', plug_id, max_wait) (line 623) and returns with the flag still True; likewise when service.turn_off(plug_info) returns False (plug briefly unreachable -- tasmota/rest turn_off return False rather than raising). The plug is never powered down, no retry is scheduled, and the UI keeps showing 'auto-off pending' forever, so an operator relying on auto-off leaves a printer energised overnight with the dashboard claiming a shutdown is queued.",
+   "fix": "Clear the pending flag (and log at error level) on both the timeout path and the success is False path, mirroring the is_print_active skip path which already calls _mark_auto_off_pending(plug_id, False).",
+   "behavior_change": true,
+   "behavior_change_note": "a plug whose auto-off failed or timed out will stop showing 'auto-off pending' in the UI and will surface an error instead."
+  },
+  {
+   "severity": "high",
+   "category": "unbounded-growth",
+   "file": "frontend/src/components/FileUploadModal.tsx",
+   "line": 164,
+   "title": "computeSha256 is fanned out with Promise.all, reading every selected file into memory at once",
+   "evidence": "`const withHashes = await Promise.all(checkable.map(async (uf) => { try { const hash = await computeSha256(uf.file); ... } catch { return uf; } }))` and computeSha256 starts with `const buffer = await file.arrayBuffer()` (line 20) -- the whole file, plus a second copy inside crypto.subtle.digest. There is no concurrency cap, so dragging a folder of 3MFs into the library upload modal allocates every file simultaneously: 50 x 40 MB is ~4 GB of live ArrayBuffers and the tab is killed by the browser. If it survives, the per-file `catch { return uf; }` swallows the RangeError, so the affected files silently skip duplicate detection and get re-uploaded with no message.",
+   "fix": "Hash with a bounded worker pool (2-4 at a time) and stream each file through the digest in slices instead of one arrayBuffer(); surface the per-file failure rather than returning the unhashed entry silently.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "missing-timeout",
+   "file": "frontend/src/api/client.ts",
+   "line": 128,
+   "title": "request() issues every API call with no AbortSignal, so a stalled backend hangs the UI forever",
+   "evidence": "`const response = await fetch(API_BASE + endpoint, { ...options, cache: 'no-store', credentials: 'include', headers });` -- no signal, no timeout, and this is the shared helper behind essentially every call in the client. When the backend event loop is blocked (see create_backup_zip) or a reverse proxy silently drops the connection, the promise never settles: React Query never fires onError or its retry, mutation buttons stay in their disabled spinner state, and the user's only recourse is a page reload.",
+   "fix": "Give request() a default signal: AbortSignal.timeout(...) (merged with any caller-supplied signal), with an opt-out or a longer value for the known long-running endpoints (backup, restore, timelapse process, slicing).",
+   "behavior_change": true,
+   "behavior_change_note": "requests that currently hang indefinitely will reject with a timeout error, so users see an error toast instead of a permanent spinner."
+  },
+  {
+   "severity": "low",
+   "category": "error-handling",
+   "file": "backend/app/core/database.py",
+   "line": 1583,
+   "title": "_safe_execute() swallows 'no such column' for every statement, not just RENAME COLUMN",
+   "evidence": "`if (not any(k in msg for k in ('already exists', 'duplicate key', 'duplicate column name', 'no such column')) and not column_not_exists): ... raise`. The PostgreSQL equivalent is correctly narrowed -- column_not_exists = 'rename column' in sql.lower() and ... -- but the SQLite 'no such column' key is not gated on the statement kind. A CREATE INDEX ... ON t(col) naming a column that a prior migration failed to add raises 'no such column' on SQLite and is silently swallowed, so the index is permanently absent (the query it was meant to serve degrades under load) while the same DDL on Postgres aborts startup loudly. The docstring claims 'Any other error is logged and re-raised', which is not what the code does.",
+   "fix": "Gate 'no such column' on 'rename column' in sql.lower() the same way column_not_exists already is.",
+   "behavior_change": true,
+   "behavior_change_note": "a migration statement that references a genuinely missing column on SQLite will now abort startup instead of being silently skipped."
+  }
+ ]
+}

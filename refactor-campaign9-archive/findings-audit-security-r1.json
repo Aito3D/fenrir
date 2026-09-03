@@ -1,0 +1,101 @@
+{
+ "findings": [
+  {
+   "severity": "high",
+   "category": "authorization",
+   "file": "backend/app/api/routes/printers.py",
+   "line": 3356,
+   "title": "printer-control routes skip the API key printer_ids allowlist in pause_print and siblings",
+   "evidence": "@router.post('/{printer_id}/print/pause') async def pause_print(printer_id: int, _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL), | contrast list_printer_files:1580 `_=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES)` | check_printer_access() at core/auth.py:1606 is reached only via require_printer_permission_if_auth_enabled (core/auth.py:1683), which appears in printers.py on the 10 PRINTERS_FILES routes only",
+   "fix": "swap RequirePermissionIfAuthEnabled for RequirePrinterPermissionIfAuthEnabled on every handler whose path carries {printer_id} (print/pause, print/resume, print/stop, temperature/*, fan-speed, *-jog, home-axes, ams/load, ams/unload, hms/*, clear-plate, connect, disconnect, drying/*, slot-presets/*, calibration, DELETE /{printer_id}); the same gap exists in print_queue.py:2048, spoolman.py:207, maintenance.py:498/708, inventory.py:1927 and calculator.py:321/342",
+   "behavior_change": true,
+   "behavior_change_note": "an API key created with a printer_ids allowlist that is today able to pause, heat, jog or delete printers outside its list will start receiving 403 on those printers."
+  },
+  {
+   "severity": "high",
+   "category": "authorization",
+   "file": "backend/app/api/routes/ams_history.py",
+   "line": 103,
+   "title": "delete_old_history destroys AMS sensor history behind a read-only permission",
+   "evidence": "@router.delete('/{printer_id}') async def delete_old_history(... _: User | None = RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),",
+   "fix": "gate the DELETE on a write-level permission -- core/permissions.py defines only AMS_HISTORY_READ, so either add an AMS_HISTORY_DELETE permission or reuse an existing admin-level one, and remove the read permission from the gate; also add the per-printer allowlist check since the path is printer-scoped",
+   "behavior_change": true,
+   "behavior_change_note": "members of the built-in 'Viewers' role (described as read-only, granted AMS_HISTORY_READ at core/permissions.py:543) can currently purge AMS humidity/temperature history and would start getting 403."
+  },
+  {
+   "severity": "high",
+   "category": "authorization",
+   "file": "backend/app/api/routes/printer_sensor_history.py",
+   "line": 110,
+   "title": "delete_old_history destroys printer sensor history behind a read-only permission",
+   "evidence": "@router.delete('/{printer_id}') async def delete_old_history(... _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ),",
+   "fix": "gate the DELETE on a write-level permission rather than PRINTER_SENSOR_HISTORY_READ (core/permissions.py:136 defines only the read variant, so a new permission or an existing admin one is needed), and add the per-printer allowlist check",
+   "behavior_change": true,
+   "behavior_change_note": "the built-in 'Viewers' role holds PRINTER_SENSOR_HISTORY_READ (core/permissions.py:544) and can currently purge sensor history; it would start getting 403."
+  },
+  {
+   "severity": "high",
+   "category": "xss",
+   "file": "frontend/src/pages/ArchivesPage.tsx",
+   "line": 2509,
+   "title": "window.open on unvalidated archive.external_url in the archive card globe button",
+   "evidence": "onClick={() => window.open((archive.external_url || archive.makerworld_url)!, '_blank')} | backend/app/schemas/archive.py:23 and :102 declare `external_url: str | None = None` with no field_validator, unlike backend/app/schemas/external_link.py:16 which enforces `if not v.startswith(('http://', 'https://')): raise ValueError`",
+   "fix": "add a scheme field_validator to external_url and makerworld_url in backend/app/schemas/archive.py mirroring external_link.py, and re-check the scheme in the frontend before window.open (ArchivesPage.tsx lines 629, 1466, 2115 and 2509 all share the sink); normalise a scheme-less value to https:// rather than dropping it",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "authorization",
+   "file": "backend/app/api/routes/camera.py",
+   "line": 3300,
+   "title": "plate-detection calibration mutations gated on CAMERA_VIEW in delete_reference and siblings",
+   "evidence": "@router.delete('/{printer_id}/camera/plate-detection/references/{index}') async def delete_reference(... _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),",
+   "fix": "gate calibrate_plate_detection (line 3051), delete_plate_calibration (3125), update_reference_label (3274) and delete_reference (3300) on a write-level printer permission (e.g. PRINTERS_UPDATE) instead of CAMERA_VIEW, and use RequirePrinterPermissionIfAuthEnabled so the API-key printer allowlist applies",
+   "behavior_change": true,
+   "behavior_change_note": "the built-in 'Viewers' role holds CAMERA_VIEW and can today delete a printer's empty-plate reference images -- disabling the occupied-bed safety check -- and would start getting 403."
+  },
+  {
+   "severity": "medium",
+   "category": "authorization",
+   "file": "backend/app/api/routes/bug_report.py",
+   "line": 73,
+   "title": "stop_logging flips the persisted debug setting and runtime log level under SETTINGS_READ",
+   "evidence": "@router.post('/stop-logging', response_model=StopLoggingResponse) async def stop_logging(was_debug: bool = Query(default=False), _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ), | its counterpart start_logging (line 50) uses Permission.SETTINGS_UPDATE",
+   "fix": "require SETTINGS_UPDATE on stop-logging to match start-logging, since it calls _set_debug_setting(db, False) and _apply_log_level(False) on the whole process",
+   "behavior_change": true,
+   "behavior_change_note": "a SETTINGS_READ-only principal (the built-in 'Viewers' role) can currently turn the server's debug logging off and would start getting 403."
+  },
+  {
+   "severity": "medium",
+   "category": "authorization",
+   "file": "backend/app/api/routes/bug_report.py",
+   "line": 90,
+   "title": "submit_bug_report ships install support info off-box under SETTINGS_READ",
+   "evidence": "@router.post('/submit', response_model=BugReportResponse) async def submit_bug_report(report: BugReportRequest, _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ), | services/bug_report.py:1 'posts to the bambuddy.cool relay which holds the GitHub PAT'",
+   "fix": "require SETTINGS_UPDATE (or a dedicated support/bug-report permission) for the endpoint that forwards _collect_support_info() to the external relay",
+   "behavior_change": true,
+   "behavior_change_note": "a read-only 'Viewers' account can currently publish this install's support bundle to the external relay and would start getting 403; the feature only functions when BUG_REPORT_RELAY_URL is configured."
+  },
+  {
+   "severity": "medium",
+   "category": "authorization",
+   "file": "backend/app/core/auth.py",
+   "line": 843,
+   "title": "verify_camera_stream_token is an unscoped capability accepted by 20 non-camera endpoints",
+   "evidence": "async def verify_camera_stream_token(token: str) -> bool: 'Verify a camera stream token is valid (reusable -- does not consume it).' | the token is minted by camera.py:2280 create_stream_token behind Permission.CAMERA_VIEW alone and carries no printer_id and no resource binding | RequireCameraStreamTokenIfAuthEnabled additionally gates archives.py (8 sites incl. /timelapse, /photos/, /project-image/), library.py (3), print_log.py, projects.py, printers.py /cover and external_links.py",
+   "fix": "bind the token to the resource class it was minted for (mirroring create_slicer_download_token's nonce=f'{resource_type}:{resource_id}' at core/auth.py:694) so an archive/library/project media endpoint requires a token issued for that domain, and check the API key's printer_ids when the token is minted for a printer camera",
+   "behavior_change": true,
+   "behavior_change_note": "an integration (Home Assistant, OBS, kiosk) that today reuses one camera-stream or long-lived STREAM_SCOPES token to fetch archive thumbnails, timelapses and project images would need a separately scoped token for those."
+  },
+  {
+   "severity": "medium",
+   "category": "deserialization",
+   "file": "backend/app/services/filament_requirements.py",
+   "line": 56,
+   "title": "extract_filament_requirements parses uploaded 3MF XML with stdlib ElementTree instead of defusedxml",
+   "evidence": "import xml.etree.ElementTree as ET | root = ET.fromstring(content)  # noqa: S314  # nosec B314 | semgrep:python.lang.security.use-defused-xml.use-defused-xml | every other 3MF parse site uses defusedxml (utils/threemf_tools.py:23, api/routes/library.py:2968, api/routes/archives.py:3390, api/routes/printers.py:1700, api/routes/print_queue.py:9, services/slice_preview.py:39)",
+   "fix": "import defusedxml.ElementTree as ET here as the rest of the codebase does, so a DTD in Metadata/slice_info.config raises EntitiesForbidden instead of expanding; backend/app/services/virtual_printer/manager.py:1253 has the identical inline stdlib import and should change with it",
+   "behavior_change": false
+  }
+ ]
+}
