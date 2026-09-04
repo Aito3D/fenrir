@@ -1587,6 +1587,110 @@ async def test_upstream_failures_escalate_to_error_after_the_limit(db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_500_still_increments_failures_unlike_a_429(db_session):
+    """Contrast with the 429 tests below: a genuine outage (any non-429
+    upstream error) keeps spending SYNC_FAILURE_LIMIT's retry budget exactly
+    as it did before T-009 -- only the 429 case was carved out into a
+    deferral."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(503, json={"message": "down"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_failures == 1
+    assert project.quote_sync_error == "Zoho Books error (HTTP 503)"
+
+
+@pytest.mark.asyncio
+async def test_429_defers_a_pending_project_without_touching_failures_or_error(db_session):
+    """T-009: a rate limit is not evidence anything is wrong with the
+    project. Unlike the 500/503 case just above, it must leave
+    quote_sync_failures and quote_sync_error exactly as they were and stay
+    'pending' -- no card-visible error, no spent retry budget."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_429_on_first_of_three_selected_projects_stops_the_tick(db_session):
+    """The bug T-009 fixes: without the break, a 429 on the first project of
+    a tick was followed by one more throttled request per remaining project,
+    deepening the throttle. The other two projects here must never be
+    attempted at all this tick -- left exactly as the sweep found them, to
+    retry next tick."""
+    projects = []
+    for i in range(3):
+        project = AitoProject(
+            description=f"Piece {i}",
+            board_column="devis",
+            position=i,
+            client_id="C1",
+            client_name="Client",
+            quote_sync_state="pending",
+        )
+        db_session.add(project)
+        await db_session.flush()
+        db_session.add(AitoTask(project_id=project.id, position=0, title="Piece", scan_cost=5000))
+        projects.append(project)
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        calls.append(request.url.path)
+        return httpx.Response(429, json={"message": "Rate limited"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    assert len(calls) == 1  # only the first project's request ever reached Books
+
+    for project in projects:
+        await db_session.refresh(project)
+        assert project.quote_sync_state == "pending"
+        assert project.quote_sync_failures == 0
+        assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
 async def test_an_errored_project_with_no_quote_id_is_reselected_and_retried(db_session):
     """T-008: a project whose very first push (the CREATE) never succeeded
     has no quote_id, so once it escalates to 'error' after SYNC_FAILURE_LIMIT

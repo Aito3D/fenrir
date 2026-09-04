@@ -11,6 +11,7 @@ from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
@@ -191,6 +192,59 @@ async def test_request_500_raises_upstream_error(async_client, db_session):
     zoho_service.transport = _transport(handler)
     with pytest.raises(ZohoUpstreamError):
         await zoho_service._request(db_session, "GET", "/contacts")
+
+
+@pytest.mark.asyncio
+async def test_request_429_raises_rate_limited_with_seconds_retry_after(async_client, db_session):
+    """A 429 raises the dedicated subclass, not the generic ZohoUpstreamError,
+    with retry_after parsed from a numeric Retry-After header (seconds)."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoRateLimited) as exc:
+        await zoho_service._request(db_session, "GET", "/contacts")
+    # Still catchable by every existing generic handler.
+    assert isinstance(exc.value, ZohoUpstreamError)
+    assert exc.value.retry_after == 30.0
+    assert str(exc.value) == "Zoho Books error (HTTP 429)"
+
+
+@pytest.mark.asyncio
+async def test_request_429_parses_an_http_date_retry_after(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(
+            429, json={"message": "Rate limited"}, headers={"Retry-After": "Wed, 01 Jan 2100 00:00:00 GMT"}
+        )
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoRateLimited) as exc:
+        await zoho_service._request(db_session, "GET", "/contacts")
+    assert exc.value.retry_after is not None
+    assert exc.value.retry_after > 0
+
+
+@pytest.mark.asyncio
+async def test_request_429_without_retry_after_header_leaves_it_none(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoRateLimited) as exc:
+        await zoho_service._request(db_session, "GET", "/contacts")
+    assert exc.value.retry_after is None
 
 
 @pytest.mark.asyncio

@@ -1134,7 +1134,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def sync_interval_seconds(db: AsyncSession) -> int:
 1 async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
 1 async def sync_personal_wallet_balance(db: AsyncSession, wallet: UserWallet) -> float:
-1 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
+1 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
 1 async def test_camera_connection(
 1 async def test_connection(url: str, camera_type: str) -> dict:
 1 async def upload_file_async(
@@ -1301,6 +1301,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class ZohoFilamentRefreshBusyError(RuntimeError):
 1 class ZohoNotConfiguredError(Exception):
 1 class ZohoNotFound(ZohoUpstreamError):
+1 class ZohoRateLimited(ZohoUpstreamError):
 1 class ZohoRequestRejected(ZohoUpstreamError):
 1 class ZohoService:
 1 class ZohoUpstreamError(Exception):

@@ -6,8 +6,11 @@ Everything runs through the singleton's ``transport`` seam
 (``httpx.MockTransport``) — no ``unittest.mock`` on httpx, and no class-level
 monkeypatching (see the instance-shadow warning in test_aito_quote_email.py).
 These tests PIN current behaviour; where the behaviour is arguably a product
-bug (a 429 spending the sync retry budget, for instance) the test says so in
-its docstring rather than silently encoding an opinion.
+bug the test says so in its docstring rather than silently encoding an
+opinion. (A 429 used to be one such gap — it spent the sync retry budget like
+an outage; T-009 gave it its own ``ZohoRateLimited`` subclass and a deferral
+path in ``sync_project`` instead. This module still pins the client-level
+mapping; the deferral itself is covered in test_aito_quote_sync.py.)
 """
 
 import json
@@ -18,6 +21,7 @@ import pytest
 from backend.app.api.routes.settings import set_setting
 from backend.app.services.zoho import (
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
@@ -116,10 +120,12 @@ async def test_network_error_is_not_a_rejection_or_not_found(db_session):
 
 
 @pytest.mark.asyncio
-async def test_429_maps_to_generic_upstream_error_without_retry(db_session):
-    """A rate limit is a plain ZohoUpstreamError — no Retry-After handling, no
-    retry, and (pinned, arguably a product gap) nothing distinguishes it from
-    an outage: through the sync worker it spends the same failure budget."""
+async def test_429_maps_to_rate_limited_without_a_client_side_retry(db_session):
+    """A rate limit raises the dedicated ZohoRateLimited subclass (still a
+    ZohoUpstreamError for any handler that only knows the base class) with no
+    client-side retry of its own — see test_aito_quote_sync.py for how the
+    sync worker turns this into a deferral instead of spending its failure
+    budget."""
     await _configure(db_session)
     calls: list[str] = []
 
@@ -130,10 +136,12 @@ async def test_429_maps_to_generic_upstream_error_without_retry(db_session):
         return httpx.Response(429, json={"message": "Rate limited"})
 
     zoho_service.transport = httpx.MockTransport(handler)
-    with pytest.raises(ZohoUpstreamError) as excinfo:
+    with pytest.raises(ZohoRateLimited) as excinfo:
         await zoho_service.get_estimate(db_session, "E1")
+    assert isinstance(excinfo.value, ZohoUpstreamError)
     assert str(excinfo.value) == "Zoho Books error (HTTP 429)"
     assert not isinstance(excinfo.value, (ZohoRequestRejected, ZohoNotFound))
+    assert excinfo.value.retry_after is None  # no Retry-After header on this response
     assert len(calls) == 1  # a 429 is not a 401: no second attempt
 
 

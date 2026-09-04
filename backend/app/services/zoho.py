@@ -11,6 +11,7 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote as urlquote, urlparse
 
 import httpx
@@ -88,6 +89,54 @@ class ZohoAmbiguousReferenceError(ZohoUpstreamError):
     sync worker catches it by name first to fail closed — record the
     ambiguity and stop, never guess.
     """
+
+
+class ZohoRateLimited(ZohoUpstreamError):
+    """Zoho Books is throttling us (HTTP 429).
+
+    A subclass of ZohoUpstreamError so every existing handler that only knows
+    the base class — every route in api/routes/zoho.py and api/routes/aito.py,
+    the generic ``except (ZohoNotConfiguredError, ZohoUpstreamError)`` sites,
+    the docstring/comment example in this module — still catches it and
+    behaves exactly as before (a 502 to the browser, etc). ``sync_project``
+    (aito_quote_sync.py) catches it by name first instead: unlike an outage,
+    retrying the identical request will simply work once the window clears,
+    so a 429 must not spend a slot of the sync worker's failure budget the
+    way a generic ZohoUpstreamError does — see that handler for the deferral.
+
+    ``retry_after`` is the ``Retry-After`` header, in seconds, when Books
+    sends one and it parses; otherwise None. Not currently acted on beyond
+    being available to a caller that wants it — the sync worker's own
+    response is "stop attempting the rest of this tick", not a timed wait.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """``Retry-After`` per RFC 9110: either a whole number of seconds, or an
+    HTTP-date. Returns seconds either way (the date form as seconds from
+    now, floored at 0), or None if the header is missing or neither form
+    parses — callers must treat that the same as "no hint", never raise.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
 def _normalize_reference_number(value: str | None) -> str:
@@ -291,6 +340,11 @@ class ZohoService:
             raise ZohoNotFound(payload.get("message") or "Not found in Zoho Books")
         if response.status_code == 400:
             raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
+        if response.status_code == 429:
+            raise ZohoRateLimited(
+                f"Zoho Books error (HTTP {response.status_code})",
+                retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+            )
         if response.status_code >= 400:
             raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
 

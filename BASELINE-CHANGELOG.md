@@ -8714,3 +8714,263 @@ the extraction).
 The user reviewed the flag and explicitly approved it on 2026-09-03. Observable change (quoted
 verbatim as approved): "adds one line to SURFACE.md's exported-symbols section. Runtime behavior is
 unchanged (verifier-confirmed)."
+
+## T-009 — 2026-09-03 — user-approved behavior change
+
+`ZohoService._raise_for_status` mapped every HTTP status `>= 400` that was not 400 or 404 —
+including 429 — to a plain `ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")`,
+with `Retry-After` never read. `aito_quote_sync.sync_project`'s `except ZohoUpstreamError` handler
+increments `project.quote_sync_failures` and, once it reaches `SYNC_FAILURE_LIMIT` (5), escalates
+the project to `quote_sync_state = "error"` with the message stamped on the card. Because a 429
+was indistinguishable from a genuine outage, throttling spent the same five-attempt retry budget
+an outage does, and `run_sync_once`'s per-tick loop (`for project_id in project_ids: ...
+await sync_project(...)`) had no circuit breaker: the first 429 of a tick was followed by one more
+throttled request per remaining selected project, deepening the throttle instead of backing off.
+After five ticks every quoted card on the board could simultaneously read "Zoho Books error (HTTP
+429)" and stop pushing line items until a successful read happened to land.
+
+Fixed with the approved scope, implemented exactly:
+1. A dedicated `ZohoRateLimited(ZohoUpstreamError)` subclass in `services/zoho.py`, raised by
+   `_raise_for_status` on `response.status_code == 429` (checked before the generic `>= 400`
+   branch, after the existing 404/400 checks). It carries `retry_after: float | None`, parsed by a
+   new `_parse_retry_after` helper from the `Retry-After` header — a bare number of seconds, or an
+   RFC 9110 HTTP-date converted to seconds-from-now via `email.utils.parsedate_to_datetime` (naive
+   dates treated as UTC, negative results floored at 0); `None` when the header is absent or
+   neither form parses. Being a subclass of `ZohoUpstreamError`, it is transparently caught by
+   every existing `except ZohoUpstreamError` (and `except (..., ZohoUpstreamError)`) handler that
+   does not name it specifically — their behavior is unchanged.
+2. `aito_quote_sync.sync_project` gained an `except ZohoRateLimited as e:` clause, placed before
+   the existing `except ZohoUpstreamError as e:` clause (exception ordering — a subclass must be
+   caught first). It mirrors the existing `ShippingCatalogueUnavailable` deferral: the project's
+   `quote_sync_state`, `quote_sync_error`, and `quote_sync_failures` are left completely untouched
+   (no failure spent, no card-visible error), a `logger.warning` fires once per distinct message
+   via the same process-local `_deferred_reasons` dict `ShippingCatalogueUnavailable` already uses
+   for log-spam suppression, and the function returns `True` — sync_project's signature widened
+   from `-> None` to `-> bool | None` to carry that signal; every other path is an unchanged bare
+   `return` (`None`, falsy).
+3. `run_sync_once`'s per-project loop captures that return value (`rate_limited = await
+   sync_project(db, project)`) and, immediately after the existing per-project commit/rollback and
+   `_apply_rules`/broadcast block (so the rate-limited project's own commit and broadcast still
+   run exactly as before), `break`s out of the loop if it is truthy. The remaining selected ids for
+   that tick are never fetched or attempted, are not counted in the returned `attempted` total
+   beyond the one project that saw the 429, and stay in whatever state the sweep found them —
+   picked up again next tick's SELECT with no special marking needed.
+
+Changed: `backend/app/services/zoho.py` (new `ZohoRateLimited` class + `_parse_retry_after` helper
++ the 429 branch in `_raise_for_status`; new `from email.utils import parsedate_to_datetime`
+import) and `backend/app/services/aito_quote_sync.py` (`ZohoRateLimited` import; `sync_project`'s
+return-type annotation and docstring; the new `except ZohoRateLimited` clause; `run_sync_once`'s
+loop capturing the return value and breaking on it). No route, schema, settings, or DDL changed.
+
+Consumer enumeration — every `except ZohoUpstreamError` (or a tuple naming it) site, confirming
+each keeps its current behavior because `ZohoRateLimited` is still an instance of the base class:
+- `backend/app/api/routes/zoho.py` lines 73, 94, 182, 223, 308, 323, 334 (`except ZohoUpstreamError
+  as e:`) — every Books-proxy route (contact search/create, estimate lookup, PDF, email content/
+  send, invoice PDF/email/send) still maps a 429 to its existing `HTTPException(502, ...)` (or
+  whatever status that handler already used), message unchanged (`str(e)` is still `"Zoho Books
+  error (HTTP 429)"`).
+- `backend/app/api/routes/aito.py` lines 1225, 1297, 1344, 1455, 1515, 1591, 1669, 1757 (`except
+  (ZohoNotConfiguredError, ZohoUpstreamError) as e:`, one with `SQLAlchemyError` added) — every
+  Aito route that talks to Books directly (search contacts, create/update contact, quote preview,
+  quote pdf, email content/send, invoice content/send) is unaffected; a 429 there still surfaces as
+  whatever generic error response that handler already returns. None of these routes go through
+  `sync_project`/`run_sync_once`, so the deferral semantics do not apply to them, by design (scope
+  is the sync worker only).
+- `backend/app/services/zoho.py` line 647 (`except (ZohoNotConfiguredError, ZohoUpstreamError) as
+  e:`, inside the shipping-catalogue refresh) — unaffected; a 429 mid-refresh still falls back to
+  serving the stale cache exactly as any other `ZohoUpstreamError` does (`test_failed_refresh_
+  serves_the_stale_cache_unchanged` in `test_zoho_transport_failures.py` still passes unmodified).
+- `backend/app/services/aito_quote_sync.py` line 1497 (renumbered; the pre-existing `except
+  ZohoUpstreamError as e:` handler that increments `quote_sync_failures`) — now only reached for a
+  NON-429 upstream error (400/404/ambiguous-reference are already carved out by their own more
+  specific handlers above it, and 429 is now carved out by the new clause added directly before
+  it), so its escalation behavior for genuine outages (500/503/network errors/etc.) is completely
+  unchanged — see `test_a_500_still_increments_failures_unlike_a_429` and the pre-existing
+  `test_upstream_failures_escalate_to_error_after_the_limit`.
+
+Every caller of `_raise_for_status` — `_request` (the shared JSON path, used by nearly every
+`ZohoService` method) and the two hand-rolled binary paths (`get_estimate_pdf`, `get_invoice_pdf`)
+— now raises `ZohoRateLimited` instead of `ZohoUpstreamError` specifically for a 429 response;
+every other status code they can produce (400, 404, everything else `>= 400`) is unchanged.
+
+Tests added:
+- `backend/tests/unit/services/test_zoho_service.py` —
+  `test_request_429_raises_rate_limited_with_seconds_retry_after` (raises `ZohoRateLimited`, is
+  still an instance of `ZohoUpstreamError`, `retry_after == 30.0` from a numeric header, message
+  unchanged); `test_request_429_parses_an_http_date_retry_after` (an HTTP-date `Retry-After`
+  parses to a positive `retry_after`); `test_request_429_without_retry_after_header_leaves_it_none`
+  (no header -> `retry_after is None`).
+- `backend/tests/unit/services/test_zoho_transport_failures.py` — the existing
+  `test_429_maps_to_generic_upstream_error_without_retry` asserted the OLD behavior (plain
+  `ZohoUpstreamError`, no `retry_after` concept, module docstring calling the gap out as "arguably
+  a product bug"). Renamed to `test_429_maps_to_rate_limited_without_a_client_side_retry` and
+  updated to assert `ZohoRateLimited` (still `isinstance(..., ZohoUpstreamError)`),
+  `retry_after is None` for a header-less response, and the message and no-client-retry pin kept
+  exactly as before; the module docstring's aside about the "product bug" was updated to point at
+  this task and at `test_aito_quote_sync.py` for the deferral coverage, rather than silently
+  encoding the old opinion as still current.
+- `backend/tests/unit/test_aito_quote_sync.py` —
+  `test_a_500_still_increments_failures_unlike_a_429` (a genuine 503 on a swept project still
+  increments `quote_sync_failures` to 1 and stamps `quote_sync_error`, contrasting directly with
+  the 429 case below); `test_429_defers_a_pending_project_without_touching_failures_or_error` (a
+  single fresh pending project hit with 429 on its `find_estimate_by_reference` search: `run_
+  sync_once` still reports `attempted == 1`, but the project stays `'pending'` with
+  `quote_sync_failures == 0` and `quote_sync_error is None`); `test_429_on_first_of_three_selected_
+  projects_stops_the_tick` (three pending projects, all Books calls answer 429: `run_sync_once`
+  returns `1`, exactly one request ever reaches the mock transport — proving the second and third
+  projects are never attempted — and all three projects, including the untouched two, are still
+  `'pending'` with failures/error untouched).
+- `backend/tests/unit/test_aito_quote_e2e.py` — the existing end-to-end
+  `test_429s_escalate_after_the_limit_and_one_healthy_read_recovers` pinned the OLD behavior
+  explicitly (its own docstring: "every rate-limited tick spends one unit of the failure budget...
+  the escalation to 'error' emits exactly ONE sync.failed event"), asserting `quote_sync_failures
+  == tick` per iteration up to `SYNC_FAILURE_LIMIT`, then `quote_sync_state == "error"` with a
+  `sync.failed` event recorded. Renamed to `test_429s_defer_indefinitely_without_escalating_or_
+  spending_the_failure_budget` and rewritten to run `SYNC_FAILURE_LIMIT + 2` ticks (well past the
+  old escalation threshold) asserting `quote_sync_failures == 0`, `quote_sync_state == "idle"`
+  (its pre-existing swept state — a project that is not `'pending'` never becomes `'pending'` from
+  a deferral, it simply stays wherever the sweep found it), and `quote_sync_error is None` on
+  every tick, with zero `sync.failed` events ever recorded; the final "Books answers again" section
+  (a healthy read landing after the outage) is kept, now asserting it finds nothing to recover
+  from rather than walking the project back from `'error'`.
+
+Every other test file referencing `ZohoUpstreamError`, `_raise_for_status`, `sync_project`, or
+`run_sync_once` was run and passes unmodified: `test_aito_close_sync.py`,
+`test_aito_invoice_email.py`, `test_aito_invoice.py`, `test_aito_quote_email.py`,
+`test_aito_quote_protection.py`, `test_aito_quote_sync_interval.py`, `test_aito_routes.py`,
+`test_aito_sync_events.py`, `test_aito_unmanaged_backfill_migration.py` — none of them exercise a
+429 response, so none needed changes. A broader sweep of the remaining Zoho-adjacent test files
+(`test_zoho_routes.py`, `test_zoho_estimate_routes.py`, `test_zoho_settings.py`,
+`test_aito_zoho_comments.py`, `test_zoho_estimate_email.py`, `test_zoho_invoice_email.py`) was also
+run as a safety net and all pass unmodified.
+
+SURFACE.md gained exactly two lines, both expected consequences of the approved scope — the new
+subclass, and `sync_project`'s widened return-type annotation (the mechanism item (c) of the scope
+requires to signal a deferral from `sync_project` up to `run_sync_once`):
+
+    1 class ZohoRateLimited(ZohoUpstreamError):
+
+and (replacing the prior line for the same def):
+
+    1 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
+
+`bash tools/gen_surface_all.sh | diff - SURFACE.md` showed only those two lines before
+regenerating; `git diff SURFACE.md` after regenerating confirms nothing else changed.
+`./venv/bin/python3 tools/snapshot.py verify`: 10/10 probes match — no route, schema, permission,
+or DDL change, as expected.
+
+Observable change (quoted verbatim from the approved task): "a rate-limited board would stop
+showing 'Zoho Books error (HTTP 429)' on its cards and would stop escalating to the 'error' state,
+staying 'pending' until the throttle clears."
+
+`ruff check backend/` / `ruff format --check backend/`: clean on the changed files. `pytest
+tests/unit/services/test_zoho_service.py tests/unit/test_aito_quote_sync.py -q`: 159 passed (48 +
+111). Full sweep — `pytest tests/unit/services/test_zoho_service.py
+tests/unit/services/test_zoho_transport_failures.py tests/unit/test_aito_close_sync.py
+tests/unit/test_aito_invoice_email.py tests/unit/test_aito_invoice.py
+tests/unit/test_aito_quote_e2e.py tests/unit/test_aito_quote_email.py
+tests/unit/test_aito_quote_protection.py tests/unit/test_aito_quote_sync_interval.py
+tests/unit/test_aito_quote_sync.py tests/unit/test_aito_routes.py
+tests/unit/test_aito_sync_events.py tests/unit/test_aito_unmanaged_backfill_migration.py -q`: 571
+passed.
+
+## T-004 — 2026-09-03 — dead aito.lock* i18n keys removed (user-approved golden re-record, no user-visible change)
+
+Audit `audit-cleanliness` found four Aito i18n keys — `lockQuote`, `lockWaiting`, `lockDeclined`,
+`lockSteps` (`frontend/src/i18n/locales/en.ts:164-167`, fully translated in all 13 locales) — that
+are never read anywhere in the frontend. `schemas/aito.py`'s `AitoProjectResponse.move_lock`
+docstring claims "the frontend renders its lock badge... from this and nothing else," but the
+actual frontend (`BoardColumn.tsx`, `DoneGrid.tsx`, `ProjectDoneAction.tsx`,
+`useColumnMoveMutation.ts`) only ever checks `project.move_lock === null` — it never branches on
+the specific reason (`'quote'|'waiting'|'declined'|'steps'`) to look up per-reason copy. Re-verified
+before deleting: `rg -n "lockQuote|lockWaiting|lockDeclined|lockSteps" frontend/src -g '*.ts' -g
+'*.tsx' -g '!frontend/src/i18n/locales/*'` returned zero matches; a further search for dynamic
+lookups (`` aito.lock${...} ``, `'aito.lock' +`, `` `aito.lock ``) also returned zero matches; and
+`frontend/src/__tests__` has no test asserting on any of the four keys. The plan called for removal
+(wiring an unused reason into a new lock badge would be a feature, not a refactor).
+
+Removed the four `lock*` key/value lines from all 13 locale files under
+`frontend/src/i18n/locales/`: `de.ts`, `en.ts`, `es.ts`, `fr.ts`, `it.ts`, `ja.ts`, `ko.ts`,
+`pt-BR.ts`, `ru.ts`, `tr.ts`, `uk.ts`, `zh-CN.ts`, `zh-TW.ts` — 4 lines each, 52 lines total, no
+other line touched (`git diff --stat` confirms `13 files changed, 52 deletions(-)`, zero
+insertions). No component, hook, or test file was touched — nothing renders these keys, so there is
+no user-visible string change anywhere.
+
+`fe-i18n-parity` is a golden probe that records `en_key_count` and each locale's `key_count` (plus
+`missing_vs_en`/`extra_vs_en`/`placeholder_mismatch_vs_en`, which assert full key-set parity across
+locales). Deleting four keys from all 13 files legitimately drops every count by exactly 4 — this is
+the sanctioned exception approved by the user on 2026-09-03 for T-004 and T-005.
+`./venv/bin/python3 tools/snapshot.py verify` showed exactly one mismatch, `fe-i18n-parity`, and the
+diff was exclusively key-count lines:
+
+    en_key_count: 7171 → 7167
+    de/es/fr/it/ja/ko/ptBR/ru/tr/uk/zhCN/zhTW key_count: 7171 → 7167 (each)
+
+`missing_vs_en`, `extra_vs_en`, and `placeholder_mismatch_vs_en` stayed `[]` for every locale both
+before and after (confirmed by running `node tools/probe_i18n_parity.cjs` directly and diffing its
+full, untruncated output against the prior golden). `tools/snapshot.py` has no per-probe record
+option (`record -h` only takes no arguments), so the full `record` was run;
+`git diff --stat -- snapshots/` confirmed only `snapshots/fe-i18n-parity.golden` changed (13
+locales × 2 lines = 26 changed lines), and a follow-up `snapshot.py verify` now shows 10/10 probes
+matching. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: empty (i18n locale keys are not part
+of the surface). `PROBES.json` and `tools/` were not touched.
+
+`cd frontend && npx tsc -b --noEmit`: clean. `npm run lint`: clean. `npx vitest run
+src/__tests__/i18n`: 2 files, 26 tests passed (locale parity + parity-script coverage). `npx vitest
+run src/__tests__/components/AitoCardView.test.tsx`: 70 passed — confirms Aito card rendering is
+unaffected.
+
+## T-005 — 2026-09-03 — dead calculator settings-panel i18n keys removed (user-approved golden re-record, no user-visible change)
+
+Audit `audit-cleanliness` found fifteen i18n keys under the `calculator` namespace
+(`frontend/src/i18n/locales/en.ts`, fully translated in all 13 locales) that are the remains of
+the pre-hyperbolic-margin tabbed settings UI (Defaults / Pricing / Margin curve tabs), replaced by
+the current single-panel `CalculatorSettingsPanel.tsx` on 2026-08-27: `printingTimeMin`,
+`defaultsHint`, `bulkTitle`, `tabDefaults`, `tabMarginCurve`, `saveMarginCurve`,
+`marginCurveSaved`, `globalMarkup`, `defaultsSaved`, `saveDefaults`, `tabPricing`, `pricingHint`,
+`marginTitle`, `savePricing`, `pricingSaved`. Re-verified each key independently before deleting:
+`rg -n "\bkey\b" frontend/src -g '*.ts' -g '*.tsx' -g '!frontend/src/i18n/locales/*'` returned zero
+hits for all fifteen; a further search for dynamic lookups (`` calculator.${...} ``,
+`` `calculator. ``) found only `calculator.realityCheck.${base}` / `${base}Scoped`, which do not
+touch any of these keys; and `frontend/src/__tests__` has no test asserting on any of them.
+`bulkTitle` needed extra care — it appears three times as an object key across all locales, but
+the other two hits are `inventory.labels.bulkTitle` (`InventoryPage.tsx:1363`) and
+`fileManager.tags.bulkTitle` (`BulkTagsPickerModal.tsx:227`), both unrelated namespaces still in
+active use; only `calculator.bulkTitle` was deleted. `unsavedChanges` (`unsavedChanges_one` /
+`unsavedChanges_other`) in the same block IS still used
+(`CalculatorSettingsPanel.tsx:390`, `t('calculator.unsavedChanges', { count: dirtyKeys.length })`)
+and was kept, along with every other key in the namespace (`ratesTitle`, `provisionsTitle`,
+`filamentSettings`, `marginCurvesTitle`, `saveSettings`, `discardChanges`, `settingsSaved`, etc. —
+all confirmed used at `CalculatorSettingsPanel.tsx:331-399`).
+
+Removed the fifteen key/value lines from all 13 locale files under
+`frontend/src/i18n/locales/`: `de.ts`, `en.ts`, `es.ts`, `fr.ts`, `it.ts`, `ja.ts`, `ko.ts`,
+`pt-BR.ts`, `ru.ts`, `tr.ts`, `uk.ts`, `zh-CN.ts`, `zh-TW.ts` — 15 lines each, 195 lines total, no
+other line touched (`git diff --stat` confirms `13 files changed, 195 deletions(-)`, zero
+insertions). No component, hook, or test file was touched — none of the fifteen keys were ever
+read, so there is no user-visible string change anywhere.
+
+`fe-i18n-parity` is a golden probe that records `en_key_count` and each locale's `key_count` (plus
+`missing_vs_en`/`extra_vs_en`/`placeholder_mismatch_vs_en`, which assert full key-set parity across
+locales). Deleting fifteen keys from all 13 files legitimately drops every count by exactly 15 —
+this is the sanctioned exception approved by the user on 2026-09-03 for T-004 and T-005.
+`./venv/bin/python3 tools/snapshot.py verify` showed exactly one mismatch, `fe-i18n-parity`, and
+the diff was exclusively key-count lines:
+
+    en_key_count: 7167 → 7152
+    de/es/fr/it/ja/ko/ptBR/ru/tr/uk/zhCN/zhTW key_count: 7167 → 7152 (each)
+
+`missing_vs_en`, `extra_vs_en`, and `placeholder_mismatch_vs_en` stayed `[]` for every locale both
+before and after (confirmed against the golden diff, which showed no lines other than the
+key-count pairs). `./venv/bin/python3 tools/snapshot.py record` was then run;
+`git diff --stat -- snapshots/` confirmed only `snapshots/fe-i18n-parity.golden` changed (13
+locales × 2 lines = 26 changed lines), and a follow-up `snapshot.py verify` now shows 10/10 probes
+matching. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: empty (i18n locale keys are not
+part of the surface). `PROBES.json` and `tools/` were not touched.
+
+`cd frontend && npx tsc -b --noEmit`: clean. `npm run lint`: clean. `npx vitest run
+src/__tests__/i18n`: 2 files, 26 tests passed (locale parity + parity-script coverage). `npx
+vitest run src/__tests__/components/CalculatorSettingsPanel.test.tsx`: 33 passed. `npx vitest run
+src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx`: 6 passed. `npx vitest run
+src/__tests__/pages/CalculatorPage.test.tsx`: 49 passed — confirms calculator settings rendering
+is unaffected.

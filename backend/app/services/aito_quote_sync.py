@@ -48,6 +48,7 @@ from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
@@ -1177,8 +1178,16 @@ async def _terminal_error(
         )
 
 
-async def sync_project(db: AsyncSession, project: AitoProject) -> None:
-    """One project's whole state machine. Never raises: every outcome is a state."""
+async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
+    """One project's whole state machine. Never raises: every outcome is a state.
+
+    Returns True only when the failure just handled was a Zoho rate limit
+    (HTTP 429, see the ``ZohoRateLimited`` handler below) — ``run_sync_once``
+    uses that to stop attempting the rest of this tick's projects instead of
+    deepening the throttle one call at a time. Every other outcome, success
+    or otherwise, returns None (falsy), same as before this return value
+    existed.
+    """
     # Captured before anything below can touch the row, and read from these
     # locals everywhere a terminal branch or the comment-mirror recovery code
     # needs "was this already the state before this attempt" -- never by
@@ -1485,6 +1494,26 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             already_in_error,
             previous_sync_error,
         )
+    except ZohoRateLimited as e:
+        # Books is throttling this org (HTTP 429). Like
+        # ShippingCatalogueUnavailable above, this is not evidence anything
+        # is wrong with the project or its data -- retrying the identical
+        # request will simply work once the window clears -- so it must not
+        # spend a slot of SYNC_FAILURE_LIMIT's retry budget the way the plain
+        # ZohoUpstreamError handler just below does. Stay `pending`, leave
+        # quote_sync_error and quote_sync_failures exactly as they were, and
+        # tell run_sync_once (via the return value) to stop attempting the
+        # rest of this tick's projects rather than turning one throttled call
+        # into one-per-remaining-card, deepening it further.
+        #
+        # Reuses _deferred_reasons the same way the ShippingCatalogueUnavailable
+        # handler does: log-spam suppression only, no DB write, so a
+        # sustained throttle logs once per process instead of once per tick.
+        message = str(e)
+        if _deferred_reasons.get(project_id) != message:
+            logger.warning("Aito project %s deferred (Zoho Books rate limit): %s", project_id, e)
+            _deferred_reasons[project_id] = message
+        return True
     except ZohoUpstreamError as e:
         # Below the limit, this is a plain in-memory write, no flush -- so
         # there is nothing here for a poisoned session to break, and no
@@ -1664,7 +1693,7 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             # wake path promises never to spend.
             continue
         attempted += 1
-        await sync_project(db, project)
+        rate_limited = await sync_project(db, project)
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
         # would still make every project's durability depend on none of its
@@ -1738,6 +1767,16 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
         except Exception:
             await db.rollback()
             logger.exception("Aito quote sync failed to commit project %s", project_id)
+        if rate_limited:
+            # sync_project just deferred this project on a 429 rather than
+            # failing it (see its own ZohoRateLimited handler above); its
+            # commit/broadcast for THIS project already ran normally. Every
+            # other id still in project_ids would spend another request on an
+            # org Books just told us to back off from, deepening the
+            # throttle instead of clearing it. Stop here — they stay exactly
+            # where the sweep found them (still selected next tick) and are
+            # not counted in `attempted` below beyond this one.
+            break
     return attempted
 
 
