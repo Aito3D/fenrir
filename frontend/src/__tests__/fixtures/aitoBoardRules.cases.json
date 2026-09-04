@@ -8925,6 +8925,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [],
           "title": ""
         }
@@ -8936,6 +8937,7 @@
           "impression_cost": null,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -8962,6 +8964,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan"
           ],
@@ -8975,6 +8978,7 @@
           "impression_cost": null,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9001,6 +9005,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [
             "impression"
           ],
@@ -9014,6 +9019,7 @@
           "impression_cost": 5.0,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9047,6 +9053,7 @@
             "scan",
             "modelisation"
           ],
+          "rush": false,
           "services": [
             "scan",
             "modelisation",
@@ -9063,6 +9070,7 @@
           "impression_cost": 30.0,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": 20.0,
           "modelisation_discount_pct": null,
           "modelisation_done": true,
@@ -9091,6 +9099,7 @@
           "done": [
             "scan"
           ],
+          "rush": false,
           "services": [
             "scan"
           ],
@@ -9098,6 +9107,7 @@
         },
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan"
           ],
@@ -9111,6 +9121,7 @@
           "impression_cost": null,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9126,6 +9137,7 @@
           "impression_cost": null,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9154,6 +9166,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan",
             "modelisation"
@@ -9168,6 +9181,7 @@
           "impression_cost": null,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": 0.2,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9196,6 +9210,7 @@
             "scan",
             "impression"
           ],
+          "rush": false,
           "services": [
             "scan",
             "impression"
@@ -9210,6 +9225,7 @@
           "impression_cost": 2.0,
           "impression_discount_pct": null,
           "impression_done": true,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9238,6 +9254,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan",
             "impression"
@@ -9252,6 +9269,7 @@
           "impression_cost": 1000.0,
           "impression_discount_pct": 10.0,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9280,6 +9298,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan",
             "usinage"
@@ -9294,6 +9313,7 @@
           "impression_cost": null,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9326,6 +9346,7 @@
       "steps_by_task": [
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan",
             "modelisation",
@@ -9342,6 +9363,7 @@
           "impression_cost": 100.0,
           "impression_discount_pct": 10.0,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": 100.0,
           "modelisation_discount_pct": 25.0,
           "modelisation_done": false,
@@ -9355,6 +9377,88 @@
         }
       ],
       "total": 310.0
+    },
+    {
+      "count": 1,
+      "name": "a rushed print step is flagged on its task",
+      "pending": [
+        "impression"
+      ],
+      "services": [
+        "impression"
+      ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "rush": true,
+          "services": [
+            "impression"
+          ],
+          "title": "Urgent"
+        }
+      ],
+      "steps_done": 0,
+      "steps_total": 1,
+      "tasks": [
+        {
+          "impression_cost": 1250.0,
+          "impression_discount_pct": null,
+          "impression_done": false,
+          "impression_rush": true,
+          "modelisation_cost": null,
+          "modelisation_discount_pct": null,
+          "modelisation_done": false,
+          "scan_cost": null,
+          "scan_discount_pct": null,
+          "scan_done": false,
+          "title": "Urgent",
+          "usinage_cost": null,
+          "usinage_discount_pct": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 1250.0
+    },
+    {
+      "count": 1,
+      "name": "a rush flag without a print step marks nothing",
+      "pending": [
+        "scan"
+      ],
+      "services": [
+        "scan"
+      ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "rush": false,
+          "services": [
+            "scan"
+          ],
+          "title": ""
+        }
+      ],
+      "steps_done": 0,
+      "steps_total": 1,
+      "tasks": [
+        {
+          "impression_cost": null,
+          "impression_discount_pct": null,
+          "impression_done": false,
+          "impression_rush": true,
+          "modelisation_cost": null,
+          "modelisation_discount_pct": null,
+          "modelisation_done": false,
+          "scan_cost": 500.0,
+          "scan_discount_pct": null,
+          "scan_done": false,
+          "title": "",
+          "usinage_cost": null,
+          "usinage_discount_pct": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 500.0
     },
     {
       "count": 3,
@@ -9377,6 +9481,7 @@
             "scan",
             "modelisation"
           ],
+          "rush": false,
           "services": [
             "scan",
             "modelisation",
@@ -9388,6 +9493,7 @@
           "done": [
             "impression"
           ],
+          "rush": false,
           "services": [
             "scan",
             "impression",
@@ -9397,6 +9503,7 @@
         },
         {
           "done": [],
+          "rush": false,
           "services": [
             "scan",
             "modelisation",
@@ -9413,6 +9520,7 @@
           "impression_cost": 3.0,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": 2.0,
           "modelisation_discount_pct": null,
           "modelisation_done": true,
@@ -9428,6 +9536,7 @@
           "impression_cost": 4.0,
           "impression_discount_pct": null,
           "impression_done": true,
+          "impression_rush": false,
           "modelisation_cost": null,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
@@ -9443,6 +9552,7 @@
           "impression_cost": 8.0,
           "impression_discount_pct": null,
           "impression_done": false,
+          "impression_rush": false,
           "modelisation_cost": 7.0,
           "modelisation_discount_pct": null,
           "modelisation_done": false,
