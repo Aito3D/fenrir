@@ -72,7 +72,8 @@ async function printAndRead(print = vi.fn()): Promise<string> {
   });
   expect((iframe as unknown as HTMLIFrameElement).src).toContain('blob:label');
   fireEvent.load(iframe as unknown as HTMLIFrameElement);
-  expect(print).toHaveBeenCalledTimes(1);
+  // Printing waits on the document's fonts, so it lands a microtask later.
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
   expect(printed).not.toBeNull();
   expect((printed as unknown as Blob).type).toBe('text/html');
   return readBlob(printed as unknown as Blob);
@@ -146,6 +147,47 @@ describe('ShippingLabelButton', () => {
     expect(iframe.style.height).toBe('297mm');
     expect(iframe.style.visibility).toBe('hidden');
     expect(parseInt(iframe.style.left, 10)).toBeLessThan(0);
+  });
+
+  it('waits for the label document\'s fonts before printing', async () => {
+    // `load` fires before a web font has arrived; printing then snapshots
+    // the block period and the label comes out with no text at all.
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue(SERVICES);
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:label');
+    globalThis.URL.revokeObjectURL = vi.fn();
+    const print = vi.fn();
+    let fontsLoaded: () => void = () => {};
+    const ready = new Promise<void>((resolve) => {
+      fontsLoaded = resolve;
+    });
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue({
+      focus: () => {},
+      print,
+    } as unknown as Window);
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentDocument', 'get').mockReturnValue({
+      fonts: { ready },
+    } as unknown as Document);
+    const user = userEvent.setup();
+
+    render(<ShippingLabelButton project={shipped} />);
+    await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: /print shipping label/i }));
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector('iframe');
+      expect(iframe).not.toBeNull();
+    });
+    fireEvent.load(iframe as unknown as HTMLIFrameElement);
+
+    // Fonts still loading: no print yet, and the button still reads busy.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(print).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /print shipping label/i })).toBeDisabled();
+
+    fontsLoaded();
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: /print shipping label/i })).toBeEnabled());
   });
 
   it('is an icon-only header cell that keeps its accessible name', () => {

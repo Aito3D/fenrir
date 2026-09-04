@@ -111,6 +111,9 @@ describe('buildShippingLabelHtml', () => {
 
   it('loads Inter from the logo origin, and silently skips the fonts when the logo has none', () => {
     expect(html).toContain("src:url('https://app.example/fonts/inter-latin.woff2')");
+    // Without `swap`, Chrome hides text for up to 3s while the font loads —
+    // and a print snapshot taken inside that window is a label with no words.
+    expect(html.match(/font-display:swap/g)).toHaveLength(2);
     // A data: URL is a valid URL with no origin to resolve `/fonts/` against;
     // a relative path has no origin at all. Neither may throw — the label is
     // still complete in the system font.

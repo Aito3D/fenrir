@@ -85,7 +85,11 @@ function fontFaceCss(logoUrl: string): string {
   // only throws when `/fonts/…` is resolved against it (it has no origin).
   try {
     const face = (file: string, range: string) =>
-      `@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;src:url('${new URL(`/fonts/${file}`, logoUrl).href}') format('woff2');unicode-range:${range};}`;
+      // `swap`, and not the default: without it Chrome hides text for up to
+      // 3s while the font arrives, and a print snapshot taken inside that
+      // window is a label with every word missing. The printing hook also
+      // waits on `document.fonts.ready`; this is the belt to that brace.
+      `@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url('${new URL(`/fonts/${file}`, logoUrl).href}') format('woff2');unicode-range:${range};}`;
     return (
       face('inter-latin.woff2', 'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F') +
       face('inter-latin-ext.woff2', 'U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F')

@@ -187,14 +187,27 @@ export function usePrintBlob({
         settled = true;
         window.clearTimeout(timer);
         timeoutRef.current = null;
-        try {
-          element.contentWindow?.focus();
-          element.contentWindow?.print();
-          cleanup(element, objectUrl);
-          setBusy(false);
-        } catch {
-          openInTab(objectUrl, element);
-        }
+        // `load` fires before a web font the document references has
+        // arrived, and printing then snapshots the font's block period —
+        // the shipping label came out with every word missing. Wait for the
+        // document's fonts first. A PDF has no document to ask (the viewer
+        // plugin owns the frame, `contentDocument` is null or has no
+        // `fonts`), so that path resolves immediately, as before.
+        const fontsReady: Promise<unknown> = element.contentDocument?.fonts?.ready ?? Promise.resolve();
+        fontsReady.then(
+          () => {
+            if (!mountedRef.current) return;
+            try {
+              element.contentWindow?.focus();
+              element.contentWindow?.print();
+              cleanup(element, objectUrl);
+              setBusy(false);
+            } catch {
+              openInTab(objectUrl, element);
+            }
+          },
+          () => openInTab(objectUrl, element),
+        );
       };
 
       element.src = objectUrl;
