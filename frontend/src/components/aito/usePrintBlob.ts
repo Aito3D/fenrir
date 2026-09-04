@@ -153,11 +153,21 @@ export function usePrintBlob({
       url = URL.createObjectURL(blob);
       pendingUrlRef.current = url;
       frame = document.createElement('iframe');
+      // Out of sight by POSITION, not by size. Chrome scales an iframe print
+      // to fit the frame's own viewport, so the 0×0 frame this used to be
+      // printed an HTML document at a sixth of its size in the corner of an
+      // otherwise blank page (a PDF never showed it: the viewer plugin lays
+      // out from the page size). One A4 sheet offscreen gives the document
+      // a real viewport to lay out against and costs nothing visible.
       frame.style.position = 'fixed';
-      frame.style.width = '0';
-      frame.style.height = '0';
+      frame.style.left = '-300mm';
+      frame.style.top = '0';
+      frame.style.width = '210mm';
+      frame.style.height = '297mm';
       frame.style.border = '0';
       frame.style.visibility = 'hidden';
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
       frameRef.current = frame;
 
       const objectUrl = url;

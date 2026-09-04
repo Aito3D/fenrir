@@ -130,6 +130,24 @@ describe('ShippingLabelButton', () => {
     expect(api.getAitoInvoice).not.toHaveBeenCalled();
   });
 
+  it('prints from a hidden iframe the size of a page, not a 0×0 one', async () => {
+    // Chrome scales an iframe print to fit the frame's own viewport, so a
+    // 0×0 frame printed the label at a sixth of its size in the top-left
+    // corner of an otherwise blank A4. The frame stays out of sight by
+    // position, not by size.
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue(SERVICES);
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    render(<ShippingLabelButton project={shipped} />);
+    await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
+
+    await printAndRead();
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement;
+    expect(iframe.style.width).toBe('210mm');
+    expect(iframe.style.height).toBe('297mm');
+    expect(iframe.style.visibility).toBe('hidden');
+    expect(parseInt(iframe.style.left, 10)).toBeLessThan(0);
+  });
+
   it('is an icon-only header cell that keeps its accessible name', () => {
     vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue(SERVICES);
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
