@@ -379,7 +379,17 @@ export function ImpressionFields({
           {noteField}
         </div>
 
-        <GridRow side="price" row={5} label={t('aito.computedPrice')}>
+        <GridRow side="price" row={5} htmlFor={`${reactId}-rush`} label={t('aito.rush')}>
+          <input
+            id={`${reactId}-rush`}
+            type="checkbox"
+            checked={value.rush}
+            onChange={(e) => handleChange({ ...value, rush: e.target.checked })}
+            className="h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+          />
+        </GridRow>
+
+        <GridRow side="price" row={6} label={t('aito.computedPrice')}>
           {computedUnit === null ? (
             // An em dash, not a sentence: the row already says whose price
             // this is, and "Not computable" only ever prompted "computable by
