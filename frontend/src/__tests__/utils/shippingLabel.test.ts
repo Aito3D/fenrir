@@ -121,14 +121,15 @@ describe('buildShippingLabelHtml', () => {
     expect(buildShippingLabelHtml(label, 'aito3d.png')).not.toContain('@font-face');
   });
 
-  it('frames the label with Tahitian tatau motifs, each drawn once and repeated', () => {
-    // Four motifs in the vertical band — enata, niho mano, the ocean curl,
-    // tao spearheads — plus the two horizontal strips. Pinned by id so a
-    // redesign that drops one is a deliberate edit here too.
-    for (const motif of ['tatau-enata', 'tatau-niho', 'tatau-moana', 'tatau-tao', 'strip-niho', 'strip-moana']) {
+  it('frames the label with two Tahitian tatau strips and no side band', () => {
+    // Niho mano under the header, the Mā'ohi band of spearheads and fish
+    // scales above the thank-you line. Pinned by id so a redesign that drops
+    // one is a deliberate edit here too. The vertical band down the left
+    // edge was removed on request.
+    for (const motif of ['strip-niho', 'strip-maohi']) {
       expect(html).toContain(`id="${motif}"`);
     }
-    expect(html).toContain('class="tatau"');
+    expect(html).not.toContain('class="tatau"');
   });
 
   it('omits the reference row rather than printing an empty one', () => {

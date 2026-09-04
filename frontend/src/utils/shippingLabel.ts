@@ -99,49 +99,6 @@ function fontFaceCss(logoUrl: string): string {
   }
 }
 
-/** One enata — the human figure of Polynesian tatau, arms raised: family,
- *  the people the parcel is going to. Drawn once, placed twice. */
-const ENATA = `<g id="tatau-enata">
-    <circle cx="0" cy="3" r="2.7"/>
-    <path d="M-6 2.5 0 8.5 6 2.5" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="-1.3" y="7" width="2.6" height="9"/>
-    <path d="M-5.5 22 0 15.5 5.5 22" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>`;
-
-/** The tatau band down the label's left edge — four Tahitian motifs stacked
- *  and repeated, 8mm wide (30.24 CSS px), rules between them the way a
- *  tattooed band is sectioned on the arm:
- *    enata      — two human figures, family and ancestors;
- *    niho mano  — interlocking shark teeth, protection on the crossing;
- *    moana      — the rolling ocean curl the parcel crosses, spray above it;
- *    tao        — spearheads, strength and direction.
- *  Solid black with white negative space, so it prints identically on a
- *  laser, an inkjet or a photocopier. */
-const TATAU_BAND = `<svg class="tatau" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    ${ENATA}
-    <pattern id="tatau" width="30.24" height="130" patternUnits="userSpaceOnUse">
-      <rect x="0" y="0" width="30.24" height="1.4"/>
-      <use href="#tatau-enata" x="8.6" y="4"/><use href="#tatau-enata" x="21.6" y="4"/>
-      <rect x="0" y="31" width="30.24" height="1.4"/>
-      <g id="tatau-niho"><path d="M0 34 13 41.5 0 49ZM0 49 13 56.5 0 64ZM30.24 34 17.24 41.5 30.24 49ZM30.24 49 17.24 56.5 30.24 64Z"/></g>
-      <rect x="0" y="64" width="30.24" height="1.4"/>
-      <g id="tatau-moana">
-        <path d="M2 75 6 68 10 75ZM11 75 15 68 19 75ZM20 75 24 68 28 75Z"/>
-        <path d="M3 93A12 12 0 0 1 27 93A6 6 0 0 0 15 93A3 3 0 0 1 21 93" fill="none" stroke="#111" stroke-width="2.6" stroke-linecap="round"/>
-      </g>
-      <rect x="0" y="96" width="30.24" height="1.4"/>
-      <g id="tatau-tao">
-        <path d="M0 127 5 99 10 127ZM10 127 15 99 20 127ZM20 127 25 99 30.24 127Z"/>
-        <path d="M3.2 126 5 114 6.8 126ZM13.2 126 15 114 16.8 126ZM23.2 126 25 114 26.8 126Z" fill="#fff"/>
-      </g>
-      <rect x="0" y="128.6" width="30.24" height="1.4"/>
-    </pattern>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#tatau)"/>
-  <rect x="0" y="0" width="1.2" height="100%"/><rect x="29.04" y="0" width="1.2" height="100%"/>
-</svg>`;
-
 /** Under the header: a run of niho mano, teeth down, over a hairline. */
 const NIHO_STRIP = `<svg class="strip head" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <defs><pattern id="strip-niho" width="20" height="11.34" patternUnits="userSpaceOnUse">
@@ -151,13 +108,20 @@ const NIHO_STRIP = `<svg class="strip head" aria-hidden="true" xmlns="http://www
   <rect width="100%" height="100%" fill="url(#strip-niho)"/>
 </svg>`;
 
-/** Above the thank-you line: moana, the ocean curl, rolling the same way
- *  the parcel travels. */
-const MOANA_STRIP = `<svg class="strip foot" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs><pattern id="strip-moana" width="22" height="11.34" patternUnits="userSpaceOnUse">
-    <path d="M1 10.5A9.5 9.5 0 0 1 20 10.5A4.75 4.75 0 0 0 10.5 10.5A2.3 2.3 0 0 1 15.1 10.5" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+/** Above the thank-you line: a Mā'ohi band — solid black ground with the
+ *  motifs reversed out in white, the way Tahitian (as opposed to Marquesan)
+ *  work reads: a tao spearhead, then an unaunahi fish-scale half-disc, each
+ *  carrying a smaller black echo of itself. Deliberately the opposite
+ *  polarity of the header strip so the two frame rather than repeat. */
+const MAOHI_STRIP = `<svg class="strip foot" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs><pattern id="strip-maohi" width="26" height="13.2" patternUnits="userSpaceOnUse">
+    <rect width="26" height="13.2"/>
+    <path d="M1.5 12 7 1.4 12.5 12Z" fill="#fff"/>
+    <path d="M5.4 11 7 6.2 8.6 11Z"/>
+    <path d="M13 12A6 6 0 0 1 25 12Z" fill="#fff"/>
+    <path d="M16.4 12A2.6 2.6 0 0 1 21.6 12Z"/>
   </pattern></defs>
-  <rect width="100%" height="100%" fill="url(#strip-moana)"/>
+  <rect width="100%" height="100%" fill="url(#strip-maohi)"/>
 </svg>`;
 
 /** Scissors for the fold line. Drawn rather than the ✂ glyph: not every
@@ -213,10 +177,9 @@ body {
 }
 .label {
   position: relative; width: 210mm; height: 148.5mm;
-  padding: 11mm 12mm 9mm 24mm; overflow: hidden;
+  padding: 11mm 12mm 9mm 12mm; overflow: hidden;
   display: flex; flex-direction: column;
 }
-.tatau { position: absolute; left: 9mm; top: 10mm; width: 8mm; height: 128.5mm; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; }
 .logo { height: 9mm; width: auto; display: block; }
 .head-right { text-align: right; }
@@ -255,7 +218,6 @@ body {
 </head>
 <body>
 <div class="label">
-  ${TATAU_BAND}
   <header class="head">
     <img class="logo" src="${e(logoUrl)}" alt="Aito3D">
     <div class="head-right">
@@ -289,7 +251,7 @@ body {
       <div class="fragile">Fragile</div>
     </section>
   </main>
-  ${MOANA_STRIP}
+  ${MAOHI_STRIP}
   <footer class="thanks">
     <div><b>Māuruuru roa !</b> Merci pour votre confiance, prenez soin de vos pièces et à très bientôt.</div>
     <span>— l'équipe Aito3D</span>
