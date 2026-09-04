@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, act, waitFor, within, render as rtlRender } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within, cleanup, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
@@ -2870,6 +2870,17 @@ describe('ProjectDetailPanel — the header pill follows the project', () => {
     show({ column: 'print', move_lock: 'steps' });
     expect(screen.getByTestId('flag-control')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('offers the due-date control on live and finished cards alike, but not in Done', () => {
+    show({ column: 'print', move_lock: 'steps' });
+    expect(screen.getByTestId('due-date-control')).toBeInTheDocument();
+    cleanup();
+    show({ column: 'finish', move_lock: null, client_contacted_at: null });
+    expect(screen.getByTestId('due-date-control')).toBeInTheDocument();
+    cleanup();
+    show({ column: 'done', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' });
+    expect(screen.queryByTestId('due-date-control')).not.toBeInTheDocument();
   });
 
   it('offers the contact control instead once the project is finished', () => {

@@ -31,6 +31,7 @@ import { TaskEditor } from './TaskEditor';
 import { ContactedControl } from './ContactedControl';
 import { SmsPickupButton } from './SmsPickupButton';
 import { FlagControl } from './FlagControl';
+import { DueDateControl } from './DueDateControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -430,6 +431,10 @@ function PanelHeader({
               or island label squeezes "Marquer urgent" out of shape. */}
           {canUpdate && (
             <span className="flex-shrink-0 flex items-center gap-1.5">
+              {/* The promise sits beside the flag on every live card and stays
+                  editable in Finish (a late pickup is still a fact worth
+                  correcting). Done is an archive: nothing there is scheduled. */}
+              {project.column !== 'done' && <DueDateControl project={project} />}
               {/* One slot, two controls, chosen by whether the work is over.
                   A finished project has no use for a production flag — see
                   `isFinished` — so showing the flag editor there would be
