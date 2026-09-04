@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { replaceProject } from '../utils/aitoOptimistic';
 
 /** Email this project's quote, then adopt whatever the server did to the card.
  *
@@ -20,9 +21,7 @@ export function useSendQuoteMutation(project: AitoProject, onDone: () => void) {
   return useMutation({
     mutationFn: (to: string) => api.sendAitoQuoteEmail(project.id, { to }),
     onSuccess: (result, to) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
-      );
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, result.project));
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
       // `marked_sent === false` (not `null`, not `true`) is the one case
       // where the move was actually attempted and failed after the email

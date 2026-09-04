@@ -1817,6 +1817,7 @@ export function readGridSize
 export function readMaterialFilter
 export function realityCheckImpact
 export function registerPresenceSender
+export function replaceProject
 export function resolveDesktopSlicer
 export function resolveDryingPresetKey
 export function resolveInteropDefault

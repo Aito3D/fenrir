@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
 import { api, type AitoFlag, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { replaceProject } from '../utils/aitoOptimistic';
 
 /** Set a project's board flag, or clear it.
  *
@@ -23,9 +24,7 @@ export function useFlagMutation(project: AitoProject) {
     onSuccess: (row) => {
       // The server's row over the prediction, like every sibling writer: it
       // carries the real `updated_at` and the recomputed derived fields.
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === row.id ? row : p)) ?? prev,
-      );
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, row));
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
     onError: () => showToast(t('aito.flagFailed'), 'error'),

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
-import { applyColumnMove } from '../utils/aitoOptimistic';
+import { applyColumnMove, replaceProject } from '../utils/aitoOptimistic';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useCelebration } from '../components/aito/celebration/context';
@@ -62,9 +62,7 @@ export function useColumnMoveMutation(
       // The server's own row over the prediction — it carries the recomputed
       // `move_lock` and the real `updated_at`, which is what the done grid
       // sorts on.
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === row.id ? row : p)) ?? prev,
-      );
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, row));
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
     onError: () => showToast(t('aito.moveFailed'), 'error'),

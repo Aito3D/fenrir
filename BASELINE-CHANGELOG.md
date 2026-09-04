@@ -8667,3 +8667,50 @@ regardless of intent — a case where a cost value the system now returns/pushes
 from before, for the class of requests that race a live round trip. The user reviewed the flag and
 explicitly approved it after the fact on 2026-09-03; this entry documents that approval and is the
 canonical record of the change for future audits.
+
+## T-002 — 2026-09-03 — new utils export replaceProject (user-approved surface change, no runtime change)
+
+Commit 0445d4759 added `export function replaceProject(projects: AitoProject[] | undefined, updated:
+AitoProject): AitoProject[] | undefined` to `frontend/src/utils/aitoOptimistic.ts` and switched seven
+call sites onto it, replacing seven byte-identical inline `queryClient.setQueryData<AitoProject[]>(['aito-projects'],
+(prev) => prev?.map((p) => (p.id === X.id ? X : p)) ?? prev)` callbacks in their `onSuccess` handlers
+with `queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, X))`.
+The helper's body, `projects?.map((p) => (p.id === updated.id ? updated : p)) ?? projects`, is a
+verbatim extraction of what every one of those seven call sites was already doing inline — same
+undefined-stays-undefined short-circuit, same match-by-id replace, same fall-through leaving an
+unmatched id untouched rather than appending it.
+
+Consumer enumeration (`git show 0445d4759 --stat`; grepped `replaceProject` across `frontend/src`):
+`frontend/src/hooks/useSendQuoteMutation.ts`, `useQuoteStatusMutation.ts`, `useContactedMutation.ts`,
+`useFlagMutation.ts`, `useColumnMoveMutation.ts`, `frontend/src/components/aito/useProjectPatchMutation.ts`,
+and `frontend/src/components/aito/TrashGrid.tsx` — one call site each, all in a mutation's `onSuccess`,
+all replacing the exact inline form above with a call to the new helper. `frontend/src/hooks/useAitoPageMutations.ts`'s
+two placeholder-swap sites (`prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev`, the
+create and import mutations) were deliberately left alone: they match by `placeholder.id`, a
+negative client-generated id, and replace it with a differently-id'd server row (`created`) — an
+insert-via-replace on a temporary key, not the same operation `replaceProject` performs, and folding
+it in would have obscured that distinction rather than clarified it.
+
+Tests pinning the helper's semantics: a new `describe('replaceProject', ...)` block in
+`frontend/src/__tests__/utils/aitoOptimistic.test.ts` — cache-miss `undefined` stays `undefined`
+rather than fabricating a one-card board; a matching id is replaced; an unknown id is a no-op and is
+not appended; every other project in the list is left untouched BY REFERENCE (`toBe`, not `toEqual`),
+pinning that the map allocates a new array but does not clone unrelated rows.
+
+The auditor filed this as a plain cleanliness refactor — a pure extraction of a pattern repeated
+seven times, no behavioral intent. The blind verifier flagged it anyway because the surface generator
+scrapes every `export function` out of `frontend/src/utils/*.ts`, and `replaceProject` is a new one;
+per the loop's rule that any SURFACE.md delta needs a disclosed and approved entry regardless of
+where the export came from, this counted as undisclosed until now. Regenerating via
+`bash tools/gen_surface_all.sh` produces exactly one added line, in the "Frontend exported symbols —
+utils + hooks" section:
+
+    export function replaceProject
+
+`tools/snapshot.py verify` shows 10/10 probes matching, unaffected by this change (no probe touches
+`aitoOptimistic.ts` or any of the seven call sites' cache-write shape, which is unchanged from before
+the extraction).
+
+The user reviewed the flag and explicitly approved it on 2026-09-03. Observable change (quoted
+verbatim as approved): "adds one line to SURFACE.md's exported-symbols section. Runtime behavior is
+unchanged (verifier-confirmed)."

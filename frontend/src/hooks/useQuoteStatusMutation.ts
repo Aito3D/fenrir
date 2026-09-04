@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
-import { applyQuoteStatus } from '../utils/aitoOptimistic';
+import { applyQuoteStatus, replaceProject } from '../utils/aitoOptimistic';
 import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
@@ -48,9 +48,7 @@ export function useQuoteStatusMutation(
     transform: (previous, status) => applyQuoteStatus(previous, project.id, status),
     flashId: () => project.id,
     onSuccess: (result, status) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
-      );
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, result.project));
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
       // A repeat of a decision someone already applied: the board row above is
       // fresh, but there is nothing to announce and no Zoho push happened.
