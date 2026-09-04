@@ -1,4 +1,5 @@
 import type { AitoColumnId, AitoFlag, AitoProject } from '../api/client';
+import { localDateKey } from './date';
 
 export type ColumnId = AitoColumnId;
 export type Board = Record<ColumnId, AitoProject[]>;
@@ -62,8 +63,16 @@ export function flagRank(flag: AitoFlag | null): number {
   return flag === null ? UNFLAGGED_RANK : (FLAG_RANK[flag] ?? UNFLAGGED_RANK);
 }
 
+/** 0 when the promise is broken, else 1. Strictly before `today`, and never
+ *  in a finished column — the card paints no badge there either. Mirrors
+ *  `_overdue_rank` in routes/aito.py. */
+export function overdueRank(project: Pick<AitoProject, 'due_date' | 'column'>, today: string): 0 | 1 {
+  if (!project.due_date || isFinished(project.column)) return 1;
+  return project.due_date < today ? 0 : 1;
+}
+
 /** Group the flat server list into drag-friendly columns, ordered by position. */
-export function buildBoard(projects: AitoProject[]): Board {
+export function buildBoard(projects: AitoProject[], today: string = localDateKey(new Date())): Board {
   const board = emptyBoard();
   for (const project of projects) {
     if (COLUMN_IDS.includes(project.column)) board[project.column].push(project);
@@ -75,9 +84,11 @@ export function buildBoard(projects: AitoProject[]): Board {
   // until the next server round-trip if this only trusted `position`.
   // NOTE the direction: this is ASCENDING (a - b, rank 0 first), where the
   // old "flagged at all" comparator was descending. Flipping it inverts the
-  // whole board.
+  // whole board. Overdue outranks the flag tier, same as list_projects.
   for (const col of COLUMN_IDS) {
-    board[col].sort((a, b) => flagRank(a.flag) - flagRank(b.flag) || a.position - b.position);
+    board[col].sort(
+      (a, b) => overdueRank(a, today) - overdueRank(b, today) || flagRank(a.flag) - flagRank(b.flag) || a.position - b.position,
+    );
   }
   return board;
 }

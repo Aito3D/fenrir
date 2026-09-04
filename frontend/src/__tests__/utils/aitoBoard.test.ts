@@ -6,6 +6,7 @@ import {
   emptyBoard,
   findColumn,
   flagRank,
+  overdueRank,
   toOptimisticProjects,
 } from '../../utils/aitoBoard';
 import type { AitoFlag, AitoProject } from '../../api/client';
@@ -228,5 +229,33 @@ describe('toOptimisticProjects', () => {
       expect.objectContaining({ id: 2, column: 'devis', position: 1 }),
       expect.objectContaining({ id: 3, column: 'print', position: 0 }),
     ]);
+  });
+});
+
+describe('overdue ordering', () => {
+  const today = '2026-09-10';
+  const due = (id: number, position: number, due_date: string | null, flag: AitoFlag | null = null) => ({
+    ...card(id, 'devis', position),
+    due_date,
+    flag,
+  });
+
+  it('ranks strictly-before-today as overdue, today and null as not', () => {
+    expect(overdueRank(due(1, 0, '2026-09-09'), today)).toBe(0);
+    expect(overdueRank(due(1, 0, '2026-09-10'), today)).toBe(1);
+    expect(overdueRank(due(1, 0, null), today)).toBe(1);
+  });
+
+  it('never ranks a finished card as overdue', () => {
+    expect(overdueRank({ ...due(1, 0, '2020-01-01'), column: 'finish' }, today)).toBe(1);
+    expect(overdueRank({ ...due(1, 0, '2020-01-01'), column: 'done' }, today)).toBe(1);
+  });
+
+  it('puts overdue above urgent, then flag rank, then position', () => {
+    const board = buildBoard(
+      [due(1, 0, null, 'urgent'), due(2, 1, '2026-09-01'), due(3, 2, '2026-09-05', 'pause'), due(4, 3, null)],
+      today,
+    );
+    expect(board.devis.map((p) => p.id)).toEqual([2, 3, 1, 4]);
   });
 });
