@@ -15,7 +15,17 @@ export function DueDateControl({ project }: { project: AitoProject }) {
   const mutation = useDueDateMutation(project);
   const current = project.due_date ?? null;
 
+  /** A native date input fires `change` for EVERY intermediate value a typed
+   *  year passes through: typing "2026" over an otherwise complete date emits
+   *  0002-09-12, 0020-09-12, 0202-09-12 and only then 2026-09-12. Committing
+   *  those would be four PATCHes, four `project.due.set` story events and
+   *  three renders of a card promised in antiquity, i.e. overdue.
+   *
+   *  A year below 2000 is therefore a keystroke, not a promise, and is
+   *  dropped. `min` below tells the browser's own picker the same, so the two
+   *  agree about what is selectable. Clearing (null) always commits. */
   const commit = (next: string | null) => {
+    if (next !== null && Number(next.slice(0, 4)) < 2000) return;
     if (next === current) return;
     mutation.mutate(next);
   };
@@ -32,6 +42,7 @@ export function DueDateControl({ project }: { project: AitoProject }) {
         <input
           id={id}
           type="date"
+          min="2000-01-01"
           value={current ?? ''}
           onChange={(e) => commit(e.target.value || null)}
           className={`bg-transparent text-xs text-white tabular-nums ${focusRingCls}`}

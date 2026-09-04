@@ -79,10 +79,28 @@ describe('DueDateControl', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, null));
   });
 
-  it('does not call the API when the picker is emptied to the same null', () => {
+  it('does not call the API when the picker is re-picked to the stored date', async () => {
     const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue(baseProject);
-    render(<DueDateControl project={baseProject} />);
-    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: '' } });
+    render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: '2026-09-12' } });
+    // A negative needs a beat: the mutation's own onMutate awaits
+    // cancelQueries, so an inline assertion would pass even if the call HAD
+    // been made. One macrotask is past that microtask chain.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('ignores the part-typed years a date input emits while a year is typed', async () => {
+    // Typing "2026" into the year field emits a change per digit, each one a
+    // syntactically valid date. Only the last is a promise; the rest would be
+    // three extra PATCHes, three story events and a card drawn overdue.
+    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: '2026-09-12' });
+    render(<DueDateControl project={baseProject} />);
+    const input = screen.getByLabelText(/promised date/i);
+    for (const value of ['0002-09-12', '0020-09-12', '0202-09-12', '2026-09-12']) {
+      fireEvent.change(input, { target: { value } });
+    }
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, '2026-09-12'));
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
