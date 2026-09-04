@@ -594,6 +594,34 @@ describe('NewProjectDrawer', () => {
       expect.objectContaining({ id: DEFAULT_ID, isDefault: true }),
       [expect.objectContaining({ scanCost: 10 })],
       null,
+      null,
+    );
+  });
+
+  it('passes the promised date to onCreate and persists it with the draft', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    await user.click(clientHeader());
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+    await waitFor(() => expect(screen.getByLabelText('Project summary')).toHaveValue('Résumé IA.'));
+
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: '2026-09-20' } });
+    await waitFor(() =>
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'aito.newProjectDraft.v1',
+        expect.stringContaining('"dueDate":"2026-09-20"'),
+      ),
+    );
+    await user.click(createButton());
+    expect(onCreate).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.objectContaining({ id: DEFAULT_ID }),
+      expect.any(Array),
+      null,
+      '2026-09-20',
     );
   });
 
@@ -687,6 +715,7 @@ describe('NewProjectDrawer', () => {
       expect.any(Object),
       expect.any(Array),
       expect.objectContaining({ island: 'rangiroa', service: 'tuamotu', price: 3200 }),
+      null,
     );
   });
 
@@ -807,6 +836,7 @@ describe('NewProjectDrawer', () => {
       expect.any(String),
       expect.objectContaining({ socialNetwork: 'instagram', socialHandle: 'moana.3d' }),
       expect.any(Array),
+      null,
       null,
     );
   });

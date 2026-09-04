@@ -17,6 +17,9 @@ export interface PersistedDraft {
   /** Optional so a blob written before shipping existed still reads: the key
    *  is simply absent and reads as undefined. No storage version bump. */
   shipping?: ShippingDraft | null;
+  /** ISO `YYYY-MM-DD` or '' for none. Optional for the same reason shipping
+   *  is: an older blob simply lacks the key. */
+  dueDate?: string;
 }
 
 // Bumped by every external clear so a live hook instance's debounced write

@@ -232,6 +232,7 @@ describe('createMutation — onError', () => {
         draft: defaultClientDraft('walkin', 'Walk-in'),
         tasks: [],
         shipping: null,
+        dueDate: null,
         placeholder,
       });
     });
@@ -245,6 +246,48 @@ describe('createMutation — onError', () => {
       client.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === placeholder.id),
     ).toBe(false);
     expect(await screen.findByText('Could not create the project. Please try again.')).toBeInTheDocument();
+  });
+});
+
+describe('createMutation — promised date', () => {
+  beforeEach(() => __resetBoardSync());
+
+  it('forwards the promised date in the create POST body', async () => {
+    const spy = vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 99 } as AitoProject);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], []);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+
+    const placeholder = placeholderProject({
+      description: 'New card',
+      client_id: null,
+      client_name: 'Walk-in',
+      client_phone: null,
+      client_email: null,
+      client_is_company: false,
+      due_date: '2026-09-20',
+    });
+
+    act(() => {
+      result.current.createMutation.mutate({
+        description: 'New card',
+        draft: defaultClientDraft('walkin', 'Walk-in'),
+        tasks: [],
+        shipping: null,
+        dueDate: '2026-09-20',
+        placeholder,
+      });
+    });
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ due_date: '2026-09-20' }));
   });
 });
 
