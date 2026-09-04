@@ -62,11 +62,13 @@ logger = logging.getLogger(__name__)
 #
 # It does NOT stop the project being polled, and never claim it does: the sweep
 # deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
-# which excludes only 'unmanaged', 'locked', and a TERMINAL card — archived
-# (board_column 'done') or a settled-the-other-way quote (quote_status
-# 'declined'/'expired'), see T-010 — for a project that HAS a quote_id — and,
-# separately, also selects a quote_id-less 'error' project, the failed-CREATE
-# case below), so a still-active, non-terminal escalated project is still
+# which excludes only 'unmanaged', 'locked', and a CONFIRMED-TERMINAL card —
+# archived (board_column 'done') or a settled-the-other-way quote
+# (quote_status 'declined'/'expired'), AND directly observed to agree with
+# Books (quote_status_confirmed), see T-010/T-026 — for a project that HAS a
+# quote_id — and, separately, also selects a quote_id-less 'error' project,
+# the failed-CREATE case below), so a still-active, non-terminal (or
+# terminal-but-unconfirmed) escalated project is still
 # re-read every tick — and that read is exactly what lets sync_project's
 # recovery branch bring it back to 'idle' once Books answers again. What the
 # limit ends is the retrying of the PUSH, and it surfaces the failure on the
@@ -428,6 +430,15 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
         # records that case as a conflict for a human. Keeping ours simply
         # leaves it for the next sweep to see.
         adopt_quote_status(project, remote_status)
+    if remote_status is not None and project.quote_status == remote_status:
+        # T-026: Books' own report, taken from the same push response, just
+        # matched what the card now holds locally — a direct observation of
+        # agreement. Guards the case where `adopt_quote_status` itself
+        # refused an unrecognised status (see its own docstring): that leaves
+        # `project.quote_status` unequal to `remote_status`, correctly not
+        # confirmed. Gates run_sync_once/_still_selected's terminal-card
+        # exclusion — see AitoProject.quote_status_confirmed's own docstring.
+        project.quote_status_confirmed = True
     _clear_block(project)
     if estimate.get("last_modified_time") is not None:
         project.quote_synced_at = estimate["last_modified_time"]
@@ -730,6 +741,13 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     if zoho_status == local:
         # Genuine agreement: whatever was blocking, is not any more.
         _clear_block(project)
+        # T-026: a direct observation that Books agrees with the CURRENT
+        # local status — set on every tick this holds, not just the first,
+        # so a card that later drifts back into agreement (e.g. a conflict
+        # resolved by a human) is confirmed again. Gates
+        # run_sync_once/_still_selected's terminal-card exclusion — see
+        # AitoProject.quote_status_confirmed's own docstring.
+        project.quote_status_confirmed = True
 
         # Steady state IS agreement, so recording this unconditionally fired
         # on every quoted project on every tick forever -- at the 300s default
@@ -850,6 +868,14 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
                 detail={"ours": project.quote_status, "theirs": project.quote_status_remote},
             )
             return
+        # T-026: the push above returned without raising — Books just
+        # accepted OUR decision, a direct observation of agreement. Gates
+        # run_sync_once/_still_selected's terminal-card exclusion — see
+        # AitoProject.quote_status_confirmed's own docstring. This is the
+        # retry this whole task exists to unlock: a decline pushed while
+        # Books was unreachable stays unconfirmed (and so stays selected by
+        # the sweep) until a tick like this one lands the push for real.
+        project.quote_status_confirmed = True
         _clear_block(project)
         return
 
@@ -858,6 +884,16 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     # ACCEPTANCE is the same news the panel's Accept button delivers, so it
     # stamps quote_accepted_at through the shared helper.
     adopt_quote_status(project, zoho_status)
+    if project.quote_status == zoho_status:
+        # T-026: `adopt_quote_status` can itself refuse an unrecognised
+        # remote status (see its own docstring), leaving `project.quote_status`
+        # unchanged and unequal to `zoho_status` — that is NOT an observed
+        # agreement, so it must not confirm. When it succeeds, this is a
+        # direct copy of Books' own value: as much an observation of
+        # agreement as the branch above. Gates run_sync_once/_still_selected's
+        # terminal-card exclusion — see AitoProject.quote_status_confirmed's
+        # own docstring.
+        project.quote_status_confirmed = True
     _clear_block(project)
 
 
@@ -1604,14 +1640,24 @@ def _still_selected(project: AitoProject) -> bool:
     if project.quote_id is not None:
         # 'pending' omitted here (unlike the SQL mirror's not_in): the early
         # return above already handles it, so this branch never sees it.
-        # T-010: mirrors the SQL mirror's terminal-card exclusion — an
-        # archived (board_column 'done') or settled-the-other-way
-        # (quote_status 'declined'/'expired') card is not re-attempted even
-        # if it was selected a moment earlier and moved into one of those
-        # states before this row was re-fetched.
-        if project.board_column == "done" or project.quote_status in ("declined", "expired"):
+        # Checked BEFORE the terminal-and-confirmed check below: an
+        # 'unmanaged'/'locked' card must never be re-selected regardless of
+        # how its terminal/confirmed columns happen to read, matching the
+        # SQL mirror's flat AND (order there does not matter, but it does
+        # here since this is a sequence of early returns).
+        if project.quote_sync_state in ("unmanaged", "locked"):
             return False
-        return project.quote_sync_state not in ("unmanaged", "locked")
+        # T-010, gated by T-026: an archived (board_column 'done') or
+        # settled-the-other-way (quote_status 'declined'/'expired') card is
+        # not re-attempted, but ONLY once Books has been directly OBSERVED to
+        # agree (`quote_status_confirmed`) — see
+        # AitoProject.quote_status_confirmed's own docstring. A terminal card
+        # that is NOT yet confirmed (e.g. a decline pushed while Books was
+        # unreachable) stays selected so the sweep keeps retrying the push.
+        return not (
+            (project.board_column == "done" or project.quote_status in ("declined", "expired"))
+            and project.quote_status_confirmed
+        )
     # No quote_id: only 'error' (a failed CREATE — see T-008 and
     # run_sync_once's own second SELECT clause) is swept back in. 'idle' with
     # no quote_id is a trashed-before-first-tick project (see sync_project's
@@ -1624,15 +1670,24 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     """Drain every pending project, and reconcile the status of every other
     non-terminal managed quote. Returns how many were actually attempted.
 
-    "Non-terminal" (T-010): the reconcile half skips a card that is archived
-    (``board_column == "done"``) or whose quote is settled the other way
-    (``quote_status`` 'declined'/'expired') — those no longer change on
-    Books' side in any way that matters to the board, so reconciling them
-    forever would only grow with board HISTORY, not with active workload. A
-    change made directly in Zoho Books on one of those cards after it goes
-    terminal is not reflected back automatically. An explicit edit still
-    flips a terminal card back to 'pending' via the PENDING branch below
-    (untouched by this exclusion) and syncs it exactly once, as before.
+    "Non-terminal" (T-010, gated by T-026): the reconcile half skips a card
+    that is archived (``board_column == "done"``) or whose quote is settled
+    the other way (``quote_status`` 'declined'/'expired') — those no longer
+    change on Books' side in any way that matters to the board, so
+    reconciling them forever would only grow with board HISTORY, not with
+    active workload. A change made directly in Zoho Books on one of those
+    cards after it goes terminal is not reflected back automatically. An
+    explicit edit still flips a terminal card back to 'pending' via the
+    PENDING branch below (untouched by this exclusion) and syncs it exactly
+    once, as before.
+
+    The exclusion only applies once ``quote_status_confirmed`` is also True —
+    i.e. once Books has been directly OBSERVED to agree with the card's
+    current status, not merely assumed to (see
+    ``AitoProject.quote_status_confirmed``'s own docstring). A card whose
+    decision was written locally but never confirmed by Books (e.g. a
+    decline pushed while Books was unreachable) looks terminal but stays
+    selected, so the sweep keeps retrying the push until it lands.
 
     ``pending_only`` is the wake path (see ``request_immediate_sync``): it
     skips the reconcile half entirely so a wake costs no Books calls beyond
@@ -1658,18 +1713,39 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
                 # invoiced or tax-unsafe estimate, where a status
                 # write is no safer than a line-item write.
                 AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
-                # T-010: a TERMINAL card — archived (board_column 'done') or a
-                # quote Books itself considers settled the other way
-                # (quote_status 'declined'/'expired') — costs one Books call
-                # per tick forever otherwise, growing per-tick load with board
-                # HISTORY rather than active workload (see the module's own
-                # comment on SYNC_FAILURE_LIMIT). Excluding it here is a pure
+                # T-010, gated by T-026: a TERMINAL card — archived
+                # (board_column 'done') or a quote Books itself considers
+                # settled the other way (quote_status 'declined'/'expired') —
+                # costs one Books call per tick forever otherwise, growing
+                # per-tick load with board HISTORY rather than active
+                # workload (see the module's own comment on
+                # SYNC_FAILURE_LIMIT). Excluding it here is a pure
                 # reconcile-skip: it is not written to, not escalated, not
                 # touched at all. The PENDING branch above is untouched — an
                 # explicit edit still flips a terminal card to 'pending' and
                 # is synced exactly once, same as before.
-                AitoProject.board_column != "done",
-                or_(AitoProject.quote_status.is_(None), AitoProject.quote_status.not_in(("declined", "expired"))),
+                #
+                # T-026: that exclusion is now gated on quote_status_confirmed
+                # — a card is only dropped once Books has been directly
+                # OBSERVED to agree, never merely because a local write made
+                # it LOOK terminal (see AitoProject.quote_status_confirmed's
+                # own docstring, and reconcile_quote_status's confirm sites).
+                # Without this, a decline written locally while Books was
+                # unreachable (quote_status='declined', push best-effort and
+                # failed) matched both this exclusion and the SQL's
+                # board_column check the instant it was written, and Books —
+                # still holding 'sent' — never received the retry that would
+                # have settled it.
+                or_(
+                    AitoProject.quote_status_confirmed.is_(False),
+                    and_(
+                        AitoProject.board_column != "done",
+                        or_(
+                            AitoProject.quote_status.is_(None),
+                            AitoProject.quote_status.not_in(("declined", "expired")),
+                        ),
+                    ),
+                ),
             ),
             and_(
                 AitoProject.status == "active",

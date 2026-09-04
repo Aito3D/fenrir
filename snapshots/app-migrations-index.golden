@@ -237,6 +237,7 @@
    235	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
    236	# Migration: repair the tare of spools the RFID auto-add gave the wrong
    237	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+   238	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 

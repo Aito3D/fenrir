@@ -167,6 +167,9 @@ async def test_pending_project_without_a_quote_gets_one_created(db_session):
     assert project.quote_synced_at == "2026-07-29T10:00:00-1000"
     assert project.quote_sync_state == "idle"
     assert project.quote_url.startswith("https://books.")
+    # T-026: _apply_estimate's copy-back guard just adopted Books' own status
+    # from this same push response — a direct observation of agreement.
+    assert project.quote_status_confirmed is True
 
     post = next(entry for entry in seen if entry[0] == "POST")
     assert post[2]["customer_id"] == "C1"
@@ -3422,6 +3425,9 @@ async def test_an_undecided_board_adopts_books_status(db_session):
     await db_session.refresh(project)
     assert project.quote_status == "viewed"
     assert not any(entry[0] == "POST" for entry in seen)
+    # T-026: this IS a direct observation of agreement — the value just
+    # adopted is Books' own, from this same read.
+    assert project.quote_status_confirmed is True
 
 
 @pytest.mark.asyncio
@@ -3597,11 +3603,16 @@ async def test_a_done_column_quoted_project_is_not_selected_by_the_sweep(db_sess
     this fix the reconcile branch kept polling it forever, one GET
     /estimates/{id} per tick for the rest of the install's life, with no
     action a human could take on the card to stop it short of trashing it.
-    A 'done' card must simply drop out of the swept set."""
+    A 'done' card must simply drop out of the swept set — but (T-026) only
+    once Books has been directly OBSERVED to agree
+    (``quote_status_confirmed``); this fixture models that observation
+    explicitly, since the exclusion is what is under test here, not how a
+    card gets confirmed (see the T-026 tests below for that)."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
     project.board_column = "done"
+    project.quote_status_confirmed = True
     await db_session.commit()
     await _configure_zoho(db_session)
 
@@ -3619,16 +3630,21 @@ async def test_a_done_column_quoted_project_is_not_selected_by_the_sweep(db_sess
 
 
 @pytest.mark.asyncio
-async def test_a_declined_quote_is_not_selected_by_the_sweep(db_session):
-    """T-010: a quote Books itself already settled the other way
-    (``quote_status`` 'declined') is equally terminal — nothing about
+async def test_a_confirmed_declined_quote_is_not_selected_by_the_sweep(db_session):
+    """T-010, gated by T-026: a quote Books itself already settled the other
+    way (``quote_status`` 'declined') is equally terminal — nothing about
     reconciling it further changes anything a human would act on, so it is
     excluded the same way an archived 'done' card is, independent of which
-    board column it happens to still sit in."""
+    board column it happens to still sit in — but only once
+    ``quote_status_confirmed`` is True, i.e. Books has been directly
+    OBSERVED to agree with the decline (not merely assumed to, from a local
+    write alone — see ``test_an_unconfirmed_decline_is_still_selected_by_the_sweep``
+    for the case this guards against)."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "declined"
     project.quote_sync_state = "idle"
     project.board_column = "waiting"
+    project.quote_status_confirmed = True
     await db_session.commit()
     await _configure_zoho(db_session)
 
@@ -3641,6 +3657,87 @@ async def test_a_declined_quote_is_not_selected_by_the_sweep(db_session):
     await db_session.refresh(project)
     assert project.quote_sync_state == "idle"
     assert project.quote_status == "declined"
+
+
+@pytest.mark.asyncio
+async def test_an_unconfirmed_decline_is_still_selected_by_the_sweep(db_session):
+    """T-026: a decline written locally (``quote_status`` 'declined',
+    ``board_column`` 'done' — both T-010 terminal conditions — via
+    ``set_quote_status``) while Books was unreachable leaves
+    ``quote_status_confirmed`` False. Unlike the confirmed case above, this
+    card must NOT drop out of the swept set: Books is still stuck at its old
+    status ('sent'), and only the reconcile sweep's ``ours_decided`` push
+    retries the decision. This tick observes Books still disagreeing
+    ('sent'), so ``advance_estimate_status`` is retried (the POST below),
+    and once it succeeds ``quote_status_confirmed`` flips True — excluding
+    the card from then on, proving the retry is not permanent."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "declined"
+    project.quote_sync_state = "idle"
+    project.board_column = "done"
+    project.quote_status_confirmed = False
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    assert _still_selected(project) is True
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "sent"},
+                },
+                ("POST", "/estimates/E1/status/declined"): {"code": 0},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    assert any(entry[0] == "POST" and entry[1].endswith("/status/declined") for entry in seen)
+    await db_session.refresh(project)
+    assert project.quote_status == "declined"
+    assert project.quote_status_confirmed is True
+
+    # Now that Books has confirmed the decline, the card drops out of the
+    # swept set exactly like the already-confirmed case above.
+    assert _still_selected(project) is False
+    seen.clear()
+    assert await run_sync_once(db_session) == 0
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_locked_terminal_unconfirmed_card_is_not_selected(db_session):
+    """T-026 ordering note: ``_still_selected`` checks
+    ``quote_sync_state in ("unmanaged", "locked")`` BEFORE the
+    terminal-and-confirmed check, so a 'locked' card that ALSO looks
+    terminal-but-unconfirmed (e.g. a declined quote that was later invoiced,
+    or simply never got confirmed before Books locked it) does not poll
+    forever waiting for a confirmation that will never arrive — 'locked'
+    projects are never pushed to again. The SQL mirror in ``run_sync_once``
+    behaves the same way for a different reason: its predicate is a flat
+    ``AND``, so ``quote_sync_state.not_in(("pending", "unmanaged", "locked"))``
+    excludes the row regardless of the confirmed-or-terminal ``OR`` clause's
+    own value."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "declined"
+    project.quote_sync_state = "locked"
+    project.board_column = "done"
+    project.quote_status_confirmed = False
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    assert _still_selected(project) is False
+
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}))
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 0
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
 
 
 @pytest.mark.asyncio
@@ -3667,6 +3764,10 @@ async def test_an_active_non_terminal_quoted_project_is_still_selected_by_the_sw
 
     assert await run_sync_once(db_session) == 1
     assert any(entry[1].endswith("/estimates/E1") for entry in seen)
+    # T-026: Books' status ("sent") just matched ours — a direct observation
+    # of agreement, even though nothing here is terminal yet.
+    await db_session.refresh(project)
+    assert project.quote_status_confirmed is True
 
 
 @pytest.mark.asyncio

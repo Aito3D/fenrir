@@ -9220,3 +9220,313 @@ tests/unit/services/test_zoho_service.py tests/unit/test_aito_quote_sync.py -q`:
 tests/unit/test_aito_quote_sync.py tests/unit/services/test_zoho_transport_failures.py
 tests/unit/test_zoho_estimate_routes.py tests/unit/test_aito_version.py
 tests/unit/test_aito_shipping_routes.py -q`: 240 passed.
+
+## T-026 — 2026-09-03 — user-approved behavior change
+
+A consequence of T-010 (above, same day): T-010's reconcile-sweep terminal-card exclusion — drop a
+card once `board_column == "done"` or `quote_status` is `"declined"`/`"expired"` — is reachable from
+a purely LOCAL write, not only from Books genuinely settling a quote. `routes/aito.py`'s
+`set_quote_status` writes the decision to `project.quote_status` FIRST, unconditionally, and pushes
+to Books only best-effort (`except Exception: ... zoho_synced = False`); `_apply_rules` then moves a
+declined card straight to `board_column = "done"`. The instant an operator declines a quote while
+Books is unreachable, the row matches BOTH T-010 exclusions in the very same commit — Books is left
+holding its old status (e.g. `"sent"`, still live and acceptable by the client online) while the
+board says `"declined"`, and nothing ever selects the project again to retry the push:
+`reconcile_quote_status`'s `if ours_decided:` branch — the ONLY code that retries
+`advance_estimate_status` for a decision Books has not got — is never reached, because the reconcile
+sweep no longer selects the row at all. The operator's only signal was a one-off "Saved locally —
+Zoho was not updated" toast; clicking Decline again hits `set_quote_status`'s
+`if payload.status == project.quote_status:` early return, which reports `no_op`/`zoho_synced=True`
+and makes no Zoho call — so nothing short of a schema change could ever re-arm the retry.
+
+Fixed with the approved design: a new internal column records whether Books has been DIRECTLY
+OBSERVED to agree with the project's current `quote_status`, and T-010's exclusion now only fires
+once that column is also true.
+
+**Column** (`backend/app/models/aito_project.py`, added directly after `quote_status_remote`):
+
+```python
+quote_status_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+```
+
+Internal only — never added to any Pydantic schema in `schemas/aito.py`, never serialised on any
+route response, confirmed by `app-openapi-index` staying byte-identical (see golden diffs below).
+
+**Migration** (`backend/app/core/database.py`, appended as the last statement in `run_migrations`,
+mirroring `quote_invoiced`'s own additive-boolean shape and the file's `is_sqlite()` default
+convention):
+
+```python
+# Migration: whether Books has been directly observed to agree with an
+# Aito project's current quote_status (2026-09-03). Gates the reconcile
+# sweep's terminal-card exclusion (T-010/T-026) — see
+# AitoProject.quote_status_confirmed's own docstring. Every pre-existing
+# row backfills to False/0, so an already-terminal card is swept once
+# more until confirmed; a one-shot cost, not a regression.
+_aito_quote_status_confirmed_default = "0" if is_sqlite() else "false"
+await _safe_execute(
+    conn,
+    "ALTER TABLE aito_projects ADD COLUMN quote_status_confirmed BOOLEAN NOT NULL DEFAULT "
+    f"{_aito_quote_status_confirmed_default}",
+)
+```
+
+Plain additive `ALTER TABLE`, no backfill DML — `_safe_execute` swallows "duplicate column" on every
+boot after the first, same idempotency mechanism every other column addition in this file relies on.
+Every pre-existing row (including one mid-decline the instant this boots) starts at `False`/`0`: an
+already-terminal-but-unconfirmed card is swept once more, which is exactly the retry this task exists
+to restore, and a card genuinely settled in agreement re-confirms itself on its very next reconcile
+tick (see the genuine-agreement branch below) — so the one-shot cost is one extra Books call per
+previously-terminal card, once, not an ongoing regression.
+
+**Reset site** — `set_quote_status` (`routes/aito.py`), alongside its existing
+`quote_status_block`/`quote_status_remote` reset, right after `adopt_quote_status` writes the new
+local decision:
+
+```python
+project.quote_status_block = None
+project.quote_status_remote = None
+project.quote_status_confirmed = False
+```
+
+A fresh local decision is, by definition, not yet confirmed — this is the ONLY explicit reset site;
+every other writer of `quote_status` either goes through a confirm site below in the same breath, or
+(the trash-decline / restore-from-trash direct assignments inside `_reconcile_status`, which
+deliberately bypass `adopt_quote_status` — see that function's own docstring) is reached only for a
+soft-deleted or just-restored project, which the reconcile sweep's `status == "active"` filter
+already excludes on its own; if such a row later becomes both active and terminal-looking again, its
+very next reconcile tick observes Books' own status matches (both sides were just told the same
+thing) and self-confirms via the genuine-agreement branch below — no separate reset was needed there.
+
+**Set-True sites** — every direct observation that Books agrees with the CURRENT local status:
+
+1. `set_quote_status` (`routes/aito.py`), only when its best-effort push SUCCEEDS:
+   ```python
+   await zoho_service.advance_estimate_status(db, project.quote_id, payload.status)
+   zoho_synced = True
+   project.quote_status_confirmed = True
+   ```
+   Persisted by `get_db`'s own implicit commit after the handler returns (no extra commit needed);
+   on failure the `except` branch is untouched and `project.quote_status_confirmed` stays `False`
+   from the reset above.
+
+2. `reconcile_quote_status`'s genuine-agreement branch (`aito_quote_sync.py`), `zoho_status == local`
+   — set on every tick this holds, not only the first, so a card that drifts back into agreement
+   (e.g. a conflict a human resolved) re-confirms:
+   ```python
+   if zoho_status == local:
+       _clear_block(project)
+       project.quote_status_confirmed = True
+       ...
+   ```
+
+3. `reconcile_quote_status`'s `ours_decided` successful-push branch — `advance_estimate_status`
+   returned without raising, i.e. Books just accepted OUR decision. This is the retry this whole task
+   exists to unlock:
+   ```python
+   await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
+   ... (ZohoRequestRejected handler unchanged, still leaves it unconfirmed) ...
+   project.quote_status_confirmed = True
+   _clear_block(project)
+   ```
+
+4. `reconcile_quote_status`'s undecided-adopt branch — copying Books' own value onto an undecided
+   local status, guarded against `adopt_quote_status`'s own refusal of an unrecognised remote status
+   (e.g. `"invoiced"`), which is NOT agreement and must not confirm:
+   ```python
+   adopt_quote_status(project, zoho_status)
+   if project.quote_status == zoho_status:
+       project.quote_status_confirmed = True
+   _clear_block(project)
+   ```
+
+5. `_apply_estimate`'s matching copy-back guard (`aito_quote_sync.py`, shared by both `_create_quote`
+   and `_update_quote`) — the same refusal-safe equality check, applied to the estimate returned by
+   the push itself:
+   ```python
+   if remote_status is not None and not (project.quote_status in _DECIDED and remote_status != project.quote_status):
+       adopt_quote_status(project, remote_status)
+   if remote_status is not None and project.quote_status == remote_status:
+       project.quote_status_confirmed = True
+   _clear_block(project)
+   ```
+   Covers three cases uniformly: remote already matched a DECIDED local status (no-op adopt, but
+   still a live observation) — confirms; remote differs from a DECIDED local status (guard skips the
+   adopt, decision kept) — does NOT confirm, since nothing was observed to agree; undecided local
+   adopts remote — confirms once the copy lands, refusal-safe the same way as site 4.
+
+**Predicate change, both places** (`aito_quote_sync.py`):
+
+`run_sync_once`'s reconcile `and_()` clause — the T-010 terminal-exclusion pair is now wrapped in an
+`or_()` with the confirmed check, so a row is excluded only when BOTH terminal AND confirmed:
+
+```python
+AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+or_(
+    AitoProject.quote_status_confirmed.is_(False),
+    and_(
+        AitoProject.board_column != "done",
+        or_(
+            AitoProject.quote_status.is_(None),
+            AitoProject.quote_status.not_in(("declined", "expired")),
+        ),
+    ),
+),
+```
+
+`_still_selected` gained the matching branch, reordered per this task's explicit instruction: the
+`quote_sync_state in ("unmanaged", "locked")` check runs BEFORE the terminal-and-confirmed check —
+the SQL's flat `AND` already behaves that way (the `not_in` term and the `or_` term are independent
+conjuncts), but `_still_selected` is a sequence of early returns, so the order has to be stated
+explicitly there or a locked terminal-but-unconfirmed card would poll forever waiting for a
+confirmation `quote_sync_state == "locked"` (a locked project is never pushed to again) guarantees
+will never arrive:
+
+```python
+if project.quote_sync_state in ("unmanaged", "locked"):
+    return False
+if (
+    project.board_column == "done" or project.quote_status in ("declined", "expired")
+) and project.quote_status_confirmed:
+    return False
+return True
+```
+(Ruff's SIM103 then collapsed the trailing two lines to `return not (...)`, same logic.) T-008's
+NULL-`quote_id` `"error"` branch (the third `or_` clause in `run_sync_once`, and the final
+`return project.quote_sync_state == "error"` in `_still_selected`) is untouched — neither reads
+`quote_status_confirmed`, and the task explicitly scoped this fix to leave it alone.
+
+**Consumer enumeration** — every reader of the two changed predicates, plus every direct writer of
+`quote_status`:
+
+- `run_sync_once` has exactly one production caller, `run_sync_loop` (T-010's own enumeration
+  already covers this — unchanged here). `_still_selected` remains private to this module, called
+  only from `run_sync_once`'s own per-iteration loop.
+- Every wake path (`request_debounced_sync`/`request_immediate_sync`) still resolves to
+  `run_sync_once(db, pending_only=True)`, which skips the reconcile half — and therefore both
+  predicates this task touches — entirely, regardless of `quote_status_confirmed`. None of those call
+  sites are affected either way, same as T-010 already established.
+- `_reconcile_status`'s trash-decline and restore-from-trash direct assignments (bypassing
+  `adopt_quote_status`, see that function's docstring) are unaffected: both are reached only through
+  `_update_quote`, itself only reached from the untouched PENDING branch, and only for a
+  soft-deleted or just-restored project — the reconcile branch's `status == "active"` filter means
+  neither predicate this task touches is even evaluated for those rows at the moment they run. See
+  the reset-site paragraph above for why no explicit `quote_status_confirmed` write was needed there.
+- `quote_status_confirmed` is read only by the two predicates above and written only by the five
+  sites enumerated — no route, no schema, no other service reads or writes it. The frontend never
+  sees this column (not on any response schema) and needed no change.
+- Every other reader of `quote_status`/`board_column` (`routes/aito.py`'s response serialization,
+  `_mark_pending_if_ours`, `move_project`, `set_quote_status`'s own conflict guards; the frontend's
+  `CardView.tsx`, `ProjectDetailPanel.tsx`, `QuotePrintButton.tsx`, `QuoteDownloadButton.tsx`,
+  `InvoiceCard.tsx`, `DoneGrid.tsx`, `aitoOptimistic.ts`) reads only the CURRENT stored value, same
+  as T-010 already established, and needed no change.
+
+**Goldens** — sanctioned re-record for exactly two probes, both quoted in full:
+
+`snapshots/app-ddl.golden`:
+```diff
+ 	quote_status_before_trash VARCHAR(30), 
+ 	quote_status_block VARCHAR(20), 
+ 	quote_status_remote VARCHAR(30), 
++	quote_status_confirmed BOOLEAN DEFAULT '0' NOT NULL, 
+ 	zoho_comments_watermark VARCHAR(30), 
+ 	zoho_comments_checked_at DATETIME, 
+```
+
+`snapshots/app-migrations-index.golden`:
+```diff
+    235	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+    236	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+    237	# Migration: drop the AMS slot markers an older Bambuddy wrote into
++   238	# Migration: whether Books has been directly observed to agree with an
+```
+
+`./venv/bin/python3 tools/snapshot.py verify` before recording showed exactly these two mismatches
+(`app-ddl`, `app-migrations-index`) and no others — `app-openapi-index` (confirming the column is
+never serialised on any schema/route), `app-permissions`, `app-settings` (confirming no persisted
+setting was added), `app-middleware-stack`, `app-route-perms`, `fe-router`, `fe-i18n-parity` and
+`fe-money-pure` all matched untouched. After recording, 10/10 probes match.
+
+`SURFACE.md` gained exactly one changed line, the `aito_projects` column count in the "Database
+tables" section (`bash tools/gen_surface_all.sh` regenerated it byte-identical otherwise — no new
+top-level `def`/`class`/export was added, since every changed function already existed):
+
+```diff
+-aito_projects 42
++aito_projects 43
+```
+
+**Tests** — new file `backend/tests/unit/test_aito_quote_status_confirmed_migration.py` (mirroring
+`test_aito_unmanaged_backfill_migration.py`'s fixture shape, but for a plain additive column with no
+backfill DML, matching `quote_invoiced`'s own migration shape): the column is added and defaults to
+`False`/`0` on the first-ever migration (schema built without it, then dropped and re-added by
+`run_migrations`); a second `run_migrations` call (an ordinary restart) is idempotent and does not
+disturb a row the application has since confirmed `True`; a freshly `create_all`'d row already
+defaults to unconfirmed via the ORM's own `server_default`.
+
+`backend/tests/unit/test_aito_quote_sync.py`:
+- `test_a_done_column_quoted_project_is_not_selected_by_the_sweep` (pre-existing, T-010) — updated to
+  set `quote_status_confirmed = True` explicitly, since the exclusion it asserts now requires it; its
+  docstring now says so and points at the tests below for how a card gets confirmed.
+- `test_a_declined_quote_is_not_selected_by_the_sweep` renamed to
+  `test_a_confirmed_declined_quote_is_not_selected_by_the_sweep` (per this task's explicit
+  instruction) and updated the same way — its fixture now models a CONFIRMED decline.
+- `test_an_unconfirmed_decline_is_still_selected_by_the_sweep` (new) — the defect's regression test:
+  a decline written locally (`quote_status = "declined"`, `board_column = "done"`, both T-010
+  terminal conditions) with `quote_status_confirmed = False` IS selected by the sweep
+  (`_still_selected` is `True`); the tick observes Books still at `"sent"`, retries
+  `advance_estimate_status` (asserted via the `POST .../status/declined` call), the push succeeds,
+  `quote_status_confirmed` flips `True`, and only THEN does `_still_selected` become `False` and a
+  following `run_sync_once` make zero Books calls — proving both halves of the fix (the unconfirmed
+  card is retried; the confirmed card is excluded) in one place.
+- `test_a_locked_terminal_unconfirmed_card_is_not_selected` (new) — the ordering note: a `"locked"` +
+  terminal + unconfirmed card is excluded because it is locked, not because it is confirmed, so it
+  does not poll forever waiting for a confirmation a locked project will never receive.
+- `test_an_undecided_board_adopts_books_status` (pre-existing) — extended with an assertion that
+  `quote_status_confirmed` is `True` after Books' own status is adopted (the undecided-adopt confirm
+  site).
+- `test_an_active_non_terminal_quoted_project_is_still_selected_by_the_sweep` (pre-existing) —
+  extended with an assertion that `quote_status_confirmed` is `True` after a tick where Books' status
+  already matched local (the genuine-agreement confirm site).
+- `test_pending_project_without_a_quote_gets_one_created` (pre-existing) — extended with an assertion
+  that `quote_status_confirmed` is `True` after a fresh CREATE adopts Books' own returned status (the
+  `_apply_estimate` copy-back confirm site).
+
+`backend/tests/unit/test_aito_routes.py`:
+- `test_a_linked_quote_is_pushed_to_zoho` (pre-existing) — extended (now takes `db_session`) with an
+  assertion that `quote_status_confirmed` is `True` after a successful push — the `set_quote_status`
+  success confirm site.
+- `test_a_zoho_failure_still_writes_locally` (pre-existing) — extended (now takes `db_session`) with
+  an assertion that `quote_status_confirmed` stays `False` after a failed push — the exact case the
+  reconcile sweep must keep retrying.
+
+No unrelated assertion was weakened or removed anywhere in this task.
+
+Swept by both symbol grep and field-name grep, per this task's explicit instruction — every test file
+referencing `run_sync_once`, `_still_selected`, `reconcile_quote_status`, `set_quote_status`,
+`quote_status`, or an `AitoProject(` constructor: `test_aito_board_migration.py`,
+`test_aito_board_rules.py`, `test_aito_board_summary.py`, `test_aito_broadcasts.py`,
+`test_aito_close_sync.py`, `test_aito_event_capture.py`, `test_aito_invoice_email.py`,
+`test_aito_invoiced_status_heal_migration.py`, `test_aito_permissions.py`,
+`test_aito_project_model.py`, `test_aito_quote_accepted_backfill_migration.py`,
+`test_aito_quote_e2e.py`, `test_aito_quote_email.py`, `test_aito_quote_import.py`,
+`test_aito_quote_protection.py`, `test_aito_quote_status_confirmed_migration.py`,
+`test_aito_quote_status_conflicts.py`, `test_aito_quote_status.py`,
+`test_aito_quote_sync_interval.py`, `test_aito_quote_sync.py`, `test_aito_quote_unaccept.py`,
+`test_aito_routes.py`, `test_aito_shipping_migration.py`, `test_aito_shipping_routes.py`,
+`test_aito_social_handle_migration.py`, `test_aito_sync_events.py`, `test_aito_version.py`,
+`test_aito_zoho_comments.py` — every `AitoProject(` constructor in every one of these files omits
+`quote_status_confirmed` and relies on the ORM's `default=False`/the column's `server_default="0"`,
+confirmed by running the full set: 749 passed (453 in the first targeted run of
+`test_aito_quote_sync.py` + `test_aito_routes.py` + `test_aito_permissions.py`, 296 in the remaining
+26 files). `ruff check backend/` / `ruff format --check backend/`: clean.
+
+Observable change, quoted verbatim from the approved task: "a Zoho estimate that stayed 'sent' after
+a failed decline would later flip to 'declined' on its own, and such cards would resume costing one
+Books call per tick until the decline is confirmed."
+
+Note: a first attempt at this task reported BLOCKED — no existing column could distinguish "Books
+confirmed this status" from "we merely wrote it locally" without a schema change, which needed
+explicit sign-off since it touches the frozen golden snapshots. The user approved the
+`quote_status_confirmed` column, its migration, and the two golden re-records on 2026-09-03, and this
+entry implements that approved design exactly.

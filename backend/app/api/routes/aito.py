@@ -2782,6 +2782,13 @@ async def set_quote_status(
     # blocked attempt — see the column comments on AitoProject.
     project.quote_status_block = None
     project.quote_status_remote = None
+    # T-026: a fresh local decision is, by definition, not yet observed to
+    # agree with Books — the push below is best-effort and may fail (Books
+    # unreachable), in which case this is the ONLY record that the local and
+    # remote statuses have diverged. Set True below only if the push actually
+    # succeeds. See AitoProject.quote_status_confirmed's own docstring for
+    # why this gates the reconcile sweep's terminal-card exclusion.
+    project.quote_status_confirmed = False
     summary = await _summary_for(db, project.id)
     await _apply_rules(db, project, summary, actor=_actor(current_user))
     await record(
@@ -2814,6 +2821,14 @@ async def set_quote_status(
             # that goes stale.
             await zoho_service.advance_estimate_status(db, project.quote_id, payload.status)
             zoho_synced = True
+            # T-026: a direct observation that Books now agrees with the
+            # decision just written above. Persisted by get_db's own implicit
+            # commit after this handler returns (see the rollback comment
+            # just below for the failure twin of that same mechanism) — no
+            # explicit commit needed here, and the response built above
+            # deliberately does not reflect it (this column is internal-only,
+            # never serialised on AitoQuoteStatusResponse).
+            project.quote_status_confirmed = True
         except Exception:
             logger.warning(
                 "Could not set Zoho estimate %s to %s for project %s",
