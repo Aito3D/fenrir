@@ -270,12 +270,23 @@ async def test_impression_rush_round_trips_and_defaults_false(async_client):
     assert cleared.json()["impression_rush"] is False
 
 
-def test_a_rushed_task_still_exports_one_impression_line_at_the_stored_rate():
-    """Pins the 'folded in' decision: the rush is already inside
-    `impression_cost`, so the Books line is the ordinary one — same item,
-    rate = cost / quantity, and no extra 'Urgence' line."""
-    from backend.app.services.aito_quote_export import build_line_items
+def test_export_has_no_rush_field_so_a_rushed_task_still_emits_one_ordinary_impression_line():
+    """Pins the 'folded in' decision from the export's side: there is nowhere
+    for an 'Urgence' line to come from, because `ExportTask` carries no rush
+    field at all. The surcharge is already inside `impression_cost` by the
+    time anything is exported, so the Books line is the ordinary one — same
+    item, rate = cost / quantity.
+
+    The dataclass assertion is the load-bearing half. Building a task without
+    the field and checking the output would pass identically whether the
+    field existed or not, which is exactly what an earlier version of this
+    test did.
+    """
+    from backend.app.services.aito_quote_export import ExportTask, build_line_items
     from backend.tests.unit.test_aito_quote_export import CATALOGUE, task
+
+    assert "impression_rush" not in ExportTask.__dataclass_fields__
+    assert not hasattr(ExportTask, "impression_rush")
 
     t = task(impression_cost=1800.0, impression_quantity=3)
     lines = build_line_items([t], [], CATALOGUE)
@@ -285,6 +296,31 @@ def test_a_rushed_task_still_exports_one_impression_line_at_the_stored_rate():
     assert impression[0]["quantity"] == 3
     # Exactly one priced line for a one-service task: nothing else rode along.
     assert [line for line in lines if "item_id" in line] == impression
+
+
+@pytest.mark.asyncio
+async def test_patching_impression_rush_to_null_leaves_the_stored_flag_alone(async_client):
+    """`impression_rush` is NOT NULL on the row but nullable on the update
+    schema — null is how a partial PATCH says "not sending this field", and
+    the frontend's diff-based saver omits nothing, it sends nulls. Writing
+    that null through would violate the column; the route drops the key
+    instead, so the stored flag survives untouched rather than 500ing."""
+    project_id = (await _create(async_client)).json()["id"]
+    task_id = (
+        await async_client.post(
+            f"/api/v1/aito/{project_id}/tasks", json={"impression_cost": 1250, "impression_rush": True}
+        )
+    ).json()["id"]
+
+    patched = await async_client.patch(
+        f"/api/v1/aito/tasks/{task_id}", json={"impression_rush": None, "title": "Toujours urgent"}
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["impression_rush"] is True
+    assert patched.json()["title"] == "Toujours urgent"
+
+    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert [t["impression_rush"] for t in listed.json() if t["id"] == task_id] == [True]
 
 
 @pytest.mark.asyncio

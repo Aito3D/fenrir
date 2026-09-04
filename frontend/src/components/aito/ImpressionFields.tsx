@@ -110,8 +110,8 @@ export interface ImpressionFieldsProps {
   discountField: React.ReactNode;
   /** The note affordance, same fragment contract as `costField`: a `<label>`
    *  and the button that reveals the textarea. It takes the price column's
-   *  fourth row, which is what keeps both columns at five rows and leaves no
-   *  half-empty one. The revealed textarea is NOT here — TaskStepFields
+   *  fourth row, above the rush checkbox (row 5) and the computed price
+   *  (row 6). The revealed textarea is NOT here — TaskStepFields
    *  renders it after this component, i.e. below the band, where a two-row
    *  field has the width it needs. */
   noteField: React.ReactNode;
