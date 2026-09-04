@@ -9103,3 +9103,120 @@ tools/gen_surface_all.sh | diff - SURFACE.md`: empty (no new top-level def — `
 
 Observable change (quoted verbatim from the approved task): "a status change made in Zoho Books on
 an archived or declined quote would no longer be reflected back onto the card automatically."
+
+## T-011 — 2026-09-03 — user-approved behavior change
+
+`ZohoService.get_shipping_catalogue` (`backend/app/services/zoho.py`) refreshed the 5 "Livraison
+Avion" items from Books' `/items` endpoint whenever its 24h cache (`zoho_shipping_catalogue_at`)
+was missing or stale, but recorded no memory of a FAILED refresh — the `zoho_shipping_catalogue_at`
+stamp was written only in the success `else:` branch, so a failed refresh left `fresh` False and
+every subsequent caller repeated the whole `/items` fetch. `aito_quote_sync.sync_project`'s
+`except ShippingCatalogueUnavailable` handler calls this with `refresh=True` once, as a best-effort
+warm-up, every time a project defers because its shipping service has not resolved yet — so while
+Books was down, every shipping-carrying deferring project cost one extra `/items` request every
+sync tick, on top of the per-project estimate reads, mirroring the exact gap
+`zoho_filaments.fetch_catalogue`'s pre-existing `_FAIL_COOLDOWN` was built to close on the sibling
+filament-catalogue path.
+
+Fixed with the approved scope, implemented exactly:
+1. A new process-local `_SHIPPING_FAIL_COOLDOWN = timedelta(seconds=30)` constant plus a
+   `_shipping_fail_at: datetime | None = None` module global in `services/zoho.py`, mirroring
+   `zoho_filaments._FAIL_COOLDOWN`'s shape and duration (same 30s window, same "process-local
+   timestamp, cleared on the next success" idea) — scaled down to this module's much simpler
+   single-item-list refresh: no lock, no generation counter, and no negative-cache exception
+   replay, because `get_shipping_catalogue` never raises in the first place (a failed refresh
+   already falls through to serving whatever is cached). Deliberately NOT a persisted setting —
+   a settings key would change the settings surface/golden (the `app-settings` probe), which is
+   out of the approved scope; a process-local global also means a restart clears it immediately
+   rather than have a stale memo outlive the failure it recorded.
+2. Inside the existing `if refresh and not fresh:` block, `get_shipping_catalogue` now captures
+   `now = datetime.now(timezone.utc)` and checks `_shipping_fail_at is not None and now -
+   _shipping_fail_at < _SHIPPING_FAIL_COOLDOWN` BEFORE calling `self.list_items(...)`. Within the
+   cooldown, the `/items` call is skipped entirely — the function short-circuits exactly as a
+   failed refresh already does today: nothing is logged, and whatever is cached (a stale catalogue,
+   or `{}` if nothing has ever resolved) is returned unchanged. Outside the cooldown (or with no
+   memo yet), the fetch proceeds as before: the `except (ZohoNotConfiguredError,
+   ZohoUpstreamError)` branch now also stamps `_shipping_fail_at = now`; the success `else:` branch
+   now also clears it (`_shipping_fail_at = None`) before writing the refreshed cache. No exception
+   type or return type changed — `get_shipping_catalogue` still never raises, and its return shape
+   (`dict[str, ShippingItem]`) is untouched.
+3. The cooldown gates every `refresh=True` caller uniformly, drawer-driven or not — there is no
+   bypass parameter, mirroring `zoho_filaments.fetch_catalogue`, which has no such bypass either
+   (its own pre-lock cold/warm fail-cooldown checks apply identically regardless of who is calling
+   or why).
+
+Changed: `backend/app/services/zoho.py` only (`_SHIPPING_FAIL_COOLDOWN` + `_shipping_fail_at`
+module globals; the cooldown gate and its two stamp/clear sites inside
+`get_shipping_catalogue`; docstring). No route, schema, settings, or DDL changed.
+
+Consumer enumeration — every caller of `get_shipping_catalogue`, confirming each keeps its current
+contract (never raises; returns the cache, refreshed or not) with the refresh simply skipped while
+the cooldown is fresh:
+- `backend/app/services/aito_quote_sync.py:1456` (`sync_project`'s `except
+  ShippingCatalogueUnavailable` handler, `refresh=True`) — the deferral path named in the task's
+  evidence. Its own docstring already frames this call as "best-effort" and wraps it in `except
+  Exception: pass`; a skipped `/items` request changes nothing about `sync_project`'s own behavior,
+  which was already tolerant of the warm-up doing nothing.
+- `backend/app/api/routes/aito.py:324` (`GET .../shipping/rates`, default `refresh=True`) — the
+  drawer's own rate-lookup endpoint. Within the cooldown it now answers from the cached rate
+  instead of re-hitting Books; this is the one route the "up to the cooldown window longer to
+  appear" observable change describes.
+- `backend/app/api/routes/aito.py:1085` (`refresh=True`, project-shipping resolution) — same
+  cache-or-refresh contract, unaffected in shape.
+- `backend/app/api/routes/aito.py:309` (`_shipping_names`, `refresh=False`) and
+  `backend/app/services/zoho.py:618` (`get_catalogue`'s own shipping read, `refresh=False`) — both
+  always answer from cache only and never reach the `if refresh and not fresh:` block the cooldown
+  lives in, so neither is affected at all.
+
+Tests added to `backend/tests/unit/services/test_zoho_service.py` (and one new autouse fixture in
+`backend/tests/conftest.py`):
+- `reset_shipping_catalogue_fail_cooldown` (new autouse fixture, `conftest.py`) — clears the
+  module-local `zoho._shipping_fail_at` before and after every test, the same "leak across
+  files/xdist workers" guard the existing `reset_auth_enabled_cache` fixture documents for its own
+  module global; without it a test that induces a failure in one file could silently suppress a
+  refresh a later, unrelated test expects to happen.
+- `test_get_shipping_catalogue_cooldown_skips_the_retry_immediately_after_a_failure` — a failed
+  refresh (warm, stale cache) followed by an immediate second call: the second call issues NO
+  second `/items` request (`boom_calls["n"]` stays `1`) and still serves the stale cache unchanged.
+- `test_get_shipping_catalogue_cooldown_skips_the_retry_on_a_cold_cache_too` — the cold-cache twin:
+  with nothing cached, the "unavailable" answer is `{}`, and a second immediate call still issues
+  no second request.
+- `test_get_shipping_catalogue_retries_after_the_failure_cooldown_elapses` — a scripted-clock test
+  (`_ScriptedClock`, mirroring `test_zoho_filaments_catalogue.py`'s own clock double for
+  `_FAIL_COOLDOWN`, extended with a `__getattr__` fallback to the real `datetime` class since this
+  module's freshness check also calls `datetime.fromisoformat`) proving a call within the 5s
+  (patched) cooldown short-circuits, while a call after it elapses attempts — and here, succeeds
+  at — a real refresh.
+- `test_get_shipping_catalogue_success_clears_the_cooldown` — a failed refresh stamps
+  `zoho._shipping_fail_at`; a later successful refresh (past the cooldown, so it is actually
+  attempted) clears it back to `None`, matching `zoho_filaments.fetch_catalogue`'s own
+  clear-on-success behavior.
+- `test_get_shipping_catalogue_survives_zoho_being_down` — the PRE-EXISTING test that asserted the
+  OLD always-retry behavior (`boom_calls["n"] == 2` after two immediate failed calls). Its docstring
+  now names the change explicitly and points at
+  `test_get_shipping_catalogue_cooldown_skips_the_retry_immediately_after_a_failure` above for the
+  new behavior; the test itself keeps only what it always meant to cover — a failed refresh must
+  not lose the cached ids — now asserting `boom_calls["n"] == 1` (a single failed attempt, no
+  retry assertion of any count baked in beyond that).
+
+Every other test file referencing `get_shipping_catalogue` or `ShippingCatalogueUnavailable` was
+run and passes unmodified: `test_zoho_estimate_routes.py`, `test_aito_version.py`,
+`test_aito_shipping_routes.py`, `test_aito_quote_sync.py`,
+`services/test_zoho_transport_failures.py` — none of them exercise a repeated failed refresh within
+the cooldown window, so none needed changes.
+
+SURFACE.md gained no lines — `_SHIPPING_FAIL_COOLDOWN` and `_shipping_fail_at` are module-level
+constants/globals, not a new top-level `def`/`class`, and `get_shipping_catalogue`'s signature and
+return type are unchanged. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: empty, as expected.
+`./venv/bin/python3 tools/snapshot.py verify`: 10/10 probes match, including `app-settings`
+unchanged — confirming no persisted setting was added, per the approved scope.
+
+Observable change (quoted verbatim from the approved task): "after a Books outage a newly-available
+shipping rate can take up to the cooldown window longer to appear in the create drawer."
+
+`ruff check backend/` / `ruff format --check backend/`: clean on the changed files. `pytest
+tests/unit/services/test_zoho_service.py tests/unit/test_aito_quote_sync.py -q`: 407 passed (52 +
+355). Full sweep — `pytest tests/unit/services/test_zoho_service.py
+tests/unit/test_aito_quote_sync.py tests/unit/services/test_zoho_transport_failures.py
+tests/unit/test_zoho_estimate_routes.py tests/unit/test_aito_version.py
+tests/unit/test_aito_shipping_routes.py -q`: 240 passed.

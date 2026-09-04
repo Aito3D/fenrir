@@ -2518,6 +2518,25 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
     maker = async_sessionmaker(test_engine, class_=TrackedSession, expire_on_commit=False)
     monkeypatch.setattr(aito_quote_sync, "async_session", maker)
 
+    # Deterministic completion signal, not a wall-clock poll: run_sync_once
+    # commits the drained project's row (and every side effect of it) before
+    # it returns, so wrapping it and setting an Event right after the ORIGINAL
+    # awaits it out is exactly "the drain this wake asked for has landed" --
+    # no race against how promptly the event loop gets scheduled under load.
+    # Gated on `pending_only` so it fires only for the WAKE drain below, never
+    # for run_sync_loop's own startup full pass (which runs first, before the
+    # project even exists, and would otherwise set the event too early).
+    original_run_sync_once = aito_quote_sync.run_sync_once
+    drain_completed = asyncio.Event()
+
+    async def _tracking_run_sync_once(db, pending_only=False):
+        result = await original_run_sync_once(db, pending_only=pending_only)
+        if pending_only:
+            drain_completed.set()
+        return result
+
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", _tracking_run_sync_once)
+
     await _configure_zoho(db_session)
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
@@ -2548,11 +2567,13 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
 
         aito_quote_sync.request_immediate_sync()
 
-        for _ in range(100):  # up to ~2s — far below the 300s tick
-            await asyncio.sleep(0.02)
-            await db_session.refresh(project)
-            if project.quote_id:
-                break
+        # 30s, not the 300s tick: this is a generous ceiling for the drain to
+        # land, not a budget the drain is expected to use — asserting via
+        # timeout (loud failure) rather than a fixed sleep count means CPU
+        # contention under a parallel test run can never turn a genuine
+        # drain into a false failure the way a wall-clock poll could.
+        await asyncio.wait_for(drain_completed.wait(), timeout=30)
+        await db_session.refresh(project)
         assert project.quote_id == "E1"
         assert project.quote_sync_state == "idle"
         # Condition-based, not a sleep: only cancel once every worker session
