@@ -442,4 +442,26 @@ describe('ShippingCard — Save', () => {
       }),
     );
   });
+
+  it('renders Edit and Remove as icon buttons that keep their accessible names', () => {
+    // The header of the panel's narrow column: three labelled text buttons
+    // wrapped onto two lines each. Icons only, names via aria-label.
+    render(<ShippingCard project={shipped} currency="XPF" />);
+    const edit = screen.getByRole('button', { name: /edit shipping/i });
+    const remove = screen.getByRole('button', { name: /remove shipping/i });
+    expect(edit).toHaveTextContent('');
+    expect(edit).toHaveAttribute('title', 'Edit shipping');
+    expect(remove).toHaveTextContent('');
+  });
+
+  it('offers the shipping label in the header only once the project is in Finish', () => {
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue({ services: [], catalogue_resolved: true });
+    const { unmount } = render(<ShippingCard project={{ ...shipped, column: 'finish' } as AitoProject} currency="XPF" />);
+    expect(screen.getByRole('button', { name: /print shipping label/i })).toBeInTheDocument();
+    unmount();
+
+    // Same shipment one column earlier: nothing to print yet.
+    render(<ShippingCard project={{ ...shipped, column: 'print' } as AitoProject} currency="XPF" />);
+    expect(screen.queryByRole('button', { name: /print shipping label/i })).not.toBeInTheDocument();
+  });
 });

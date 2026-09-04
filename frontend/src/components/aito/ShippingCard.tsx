@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Phone, Plane } from 'lucide-react';
+import { Pencil, Phone, Plane, Trash2 } from 'lucide-react';
 import { ShippingFields } from './ShippingFields';
 import { HoldButton } from './HoldButton';
+import { SHIPPING_HEADER_CELL, ShippingLabelButton } from './ShippingLabelButton';
 import { CopyableValue } from './ProjectDetailPanel';
 import { emptyShippingDraft, islandLabel, isShippingComplete, shippingPayload } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
@@ -225,14 +226,22 @@ export function ShippingCard({
         {/* Enlarged like the board glyph's own heading use, task-12-brief. */}
         <Plane className="h-[1.15rem] w-[1.15rem] text-sky-400" aria-hidden="true" />
         <span className="text-xs font-semibold uppercase tracking-wider text-sky-400">{t('aito.shippingTitle')}</span>
+        {/* Icons only, names on aria-label/title: this header sits in the
+            panel's narrow first column, where "Edit shipping" and "Remove
+            shipping" each wrapped onto two lines beside the title. The
+            printer joins them once the parcel can actually be labelled —
+            `ShippingLabelButton` renders nothing before Finish. */}
         {!editing && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-0.5">
+            <ShippingLabelButton project={project} />
             <button
               type="button"
               onClick={openEdit}
-              className={`rounded-md px-1.5 py-0.5 text-xs text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+              aria-label={t('aito.shippingEdit')}
+              title={t('aito.shippingEdit')}
+              className={SHIPPING_HEADER_CELL}
             >
-              {t('aito.shippingEdit')}
+              <Pencil className="h-3.5 w-3.5" />
             </button>
             <HoldButton
               onHold={remove}
@@ -242,9 +251,9 @@ export function ShippingCard({
               hint={t('aito.holdToConfirm')}
               progress="bar"
               barClassName="bg-red-400/25"
-              className="rounded-md px-1.5 py-0.5 text-xs text-bambu-gray hover:bg-red-400/10 hover:text-red-400 data-[holding=true]:text-red-400"
+              className="inline-flex items-center justify-center rounded-md p-1 text-bambu-gray hover:bg-red-400/10 hover:text-red-400 data-[holding=true]:text-red-400"
             >
-              {t('aito.shippingRemove')}
+              <Trash2 className="h-3.5 w-3.5" />
             </HoldButton>
           </div>
         )}

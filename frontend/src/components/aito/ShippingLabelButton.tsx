@@ -1,41 +1,38 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Plane } from 'lucide-react';
+import { Loader2, Printer } from 'lucide-react';
 import { api, type AitoProject } from '../../api/client';
 import { buildShippingLabelHtml, shippingLabelFor } from '../../utils/shippingLabel';
-import { focusRingCls } from '../formStyles';
 import { usePrintBlob } from './usePrintBlob';
+import { useAitoInvoice } from './useAitoInvoice';
 import aito3dLogo from '../../assets/aito3d_logo.png';
+
+/** Shared look of the Shipping card's header cells — Print, Edit, Remove —
+ *  so the three read as one row. Exported for the card's own two. */
+export const SHIPPING_HEADER_CELL =
+  'inline-flex items-center justify-center rounded-md p-1 text-bambu-gray transition-colors ' +
+  'motion-reduce:transition-none hover:bg-bambu-dark-tertiary hover:text-white ' +
+  'disabled:opacity-40 disabled:cursor-not-allowed ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40';
 
 /** Print the parcel's shipping label — half an A4, recipient and island in
  *  large type, the shop as sender.
  *
- *  Lives in the Invoice card because that is where the operator already is
- *  when the parcel is being closed: the job is finished, the invoice is
- *  raised, the label is the last thing to print. It renders nothing unless
- *  the project is in Finish AND carries shipping (`shippingLabelFor` owns
- *  both gates), so on the overwhelming majority of cards — collected in
- *  person, or not yet finished — the card is exactly as it was.
+ *  A cell in the Shipping card's header, beside Edit and Remove: the label
+ *  is a fact about the shipment, and the operator who is closing the box is
+ *  looking at the shipment card. Renders nothing unless the project is in
+ *  Finish AND carries shipping (`shippingLabelFor` owns both gates), so on a
+ *  shipment still in production the header is exactly as it was.
  *
- *  A labelled full-width row rather than a fourth cell in the card's icon
- *  group: that group is sized to the panel's 230.4px column and reads as one
- *  object, and an action that only appears on shipped, finished jobs should
- *  say what it is the one time it shows up.
+ *  The reference printed on the label is the invoice number when Books has
+ *  one (`useAitoInvoice`, the same cache entry the Invoice card reads, so
+ *  this costs no extra request), else the quote number, else nothing.
  *
  *  The document is built in the browser (`buildShippingLabelHtml`) — no
  *  endpoint, no Zoho — and printed through the same hidden-iframe machinery
  *  the PDF buttons use, so it inherits their popup and download fallbacks.
  */
-export function ShippingLabelButton({
-  project,
-  /** The number of the invoice the card is showing, printed as the parcel's
-   *  reference. Null when Books has not numbered it yet — the label then
-   *  simply omits the row. */
-  invoiceNumber,
-}: {
-  project: AitoProject;
-  invoiceNumber: string | null;
-}) {
+export function ShippingLabelButton({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const hasLabel = project.column === 'finish' && project.shipping_island !== null;
 
@@ -48,17 +45,19 @@ export function ShippingLabelButton({
     staleTime: 60 * 60_000,
     enabled: hasLabel,
   });
+  const invoiceQuery = useAitoInvoice(project, hasLabel);
+  const reference = invoiceQuery.data?.number || project.quote_number || null;
 
   const { print, busy } = usePrintBlob({
     failureMessage: t('aito.shippingLabelPrintFailed'),
-    downloadFilename: `etiquette${invoiceNumber ? `-${invoiceNumber}` : ''}.html`,
+    downloadFilename: `etiquette${reference ? `-${reference}` : ''}.html`,
   });
 
   if (!hasLabel) return null;
 
   const printLabel = () =>
     print(() => {
-      const label = shippingLabelFor(project, servicesQuery.data?.services ?? [], invoiceNumber);
+      const label = shippingLabelFor(project, servicesQuery.data?.services ?? [], reference);
       // Cannot be null past the render gate above; the throw lands on the
       // hook's failure toast rather than a silent no-op if that ever drifts.
       if (!label) throw new Error('no shipping label for this project');
@@ -68,15 +67,10 @@ export function ShippingLabelButton({
       return new Blob([buildShippingLabelHtml(label, logoUrl)], { type: 'text/html' });
     });
 
+  const label = t('aito.printShippingLabel');
   return (
-    <button
-      type="button"
-      onClick={printLabel}
-      disabled={busy}
-      className={`mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary py-[.45rem] text-xs font-medium text-bambu-gray-light transition-colors motion-reduce:transition-none hover:bg-bambu-dark-tertiary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed ${focusRingCls}`}
-    >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plane className="h-3.5 w-3.5 text-sky-400" />}
-      {t('aito.printShippingLabel')}
+    <button type="button" onClick={printLabel} disabled={busy} aria-label={label} title={label} className={SHIPPING_HEADER_CELL}>
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
     </button>
   );
 }
