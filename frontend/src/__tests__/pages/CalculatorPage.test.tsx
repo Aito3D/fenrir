@@ -11,7 +11,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { computePricing, CURVE_QUANTITIES, formatMoney } from '../../utils/pricing';
 import { buildQuoteSummary } from '../../utils/quoteSummary';
-import { DEFAULT_STATE, loadCalculatorState, num, splitDecimalHours } from '../../hooks/useCalculatorState';
+import { DEFAULT_STATE, num, splitDecimalHours } from '../../hooks/useCalculatorState';
 import { correctedTimeH } from '../../utils/calculatorInsights';
 // Pinned by name (not re-derived) so a wiring mistake in CalculatorQuantityCurve
 // or CalculatorDiscountTable — pointing at calculatorSettingsShared's
@@ -1573,11 +1573,14 @@ describe('CalculatorPage', () => {
     expect(await screen.findByText('Rush surcharge')).toBeInTheDocument();
   });
 
-  it('never restores the rush toggle from a stored state', () => {
+  it('never restores the rush toggle from a stored state', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json({ ...mockDefaults, rush_pct: 25 })));
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
-      key === 'calculator-state' ? JSON.stringify({ weight: '40', rush: true }) : null,
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2', rush: true }) : null,
     );
-    expect(loadCalculatorState().rush).toBe(false);
-    expect(loadCalculatorState().weight).toBe('40');
+    render(<CalculatorPage />);
+    await screen.findByText('Cost breakdown');
+    expect(screen.getByLabelText(/rush job/i)).not.toBeChecked();
+    expect(screen.queryByText('Rush surcharge')).not.toBeInTheDocument();
   });
 });
