@@ -1,0 +1,74 @@
+{
+  "findings": [
+    {
+      "severity": "medium",
+      "category": "coverage-gap",
+      "file": "backend/app/services/pushcut.py",
+      "line": 55,
+      "title": "send_sms_notification's httpx.HTTPError transport-failure branch has no test",
+      "evidence": "coverage: backend/app/services/pushcut.py 19 stmts, 2 missing, 91% -- missing lines 55-56 (`except httpx.HTTPError as e: raise PushcutUpstreamError(...)`). backend/tests/unit/test_aito_pickup_sms.py has test_pushcut_unconfigured_raises and test_pushcut_non_2xx_raises (a fake client returning status_code=404) but no test whose fake AsyncClient.post raises httpx.HTTPError/httpx.ConnectError -- the sibling service backend/app/services/openrouter.py has this exact case covered (backend/tests/unit/services/test_openrouter_proofread.py:112 `client, _ = build_client(raises=httpx.ConnectError(\"no route\"))`), so the pattern to mirror already exists in-repo.",
+      "fix": "in backend/tests/unit/test_aito_pickup_sms.py, add a test mirroring test_pushcut_non_2xx_raises but with a FakeClient.post that raises httpx.ConnectError (or httpx.HTTPError) instead of returning a response, and assert pytest.raises(pushcut_service.PushcutUpstreamError) with the exception chained via `from e`",
+      "behavior_change": false
+    },
+    {
+      "severity": "medium",
+      "category": "coverage-gap",
+      "file": "backend/app/services/aito_quote_sync.py",
+      "line": 1627,
+      "title": "run_sync_once's best-effort ws_manager.broadcast_aito failure during quote-sync is never exercised",
+      "evidence": "coverage: backend/app/services/aito_quote_sync.py 381 stmts, 17 missing, 95% -- missing lines include 1627-1628: `except Exception: logger.warning(\"aito_changed broadcast failed for quote-sync\", exc_info=True)`. backend/tests/unit/test_aito_quote_sync.py:176 test_quote_sync_aito_changed_goes_out_through_the_filtered_fan_out only exercises the success path (AsyncMock() with no side_effect). The identical failure shape IS tested for the routes/aito.py emitter in backend/tests/unit/test_aito_broadcasts.py:72 (`AsyncMock(side_effect=RuntimeError(\"ws down\"))`), so this sweep-loop emitter is the one broadcast site in the module left unguarded by a test.",
+      "fix": "in backend/tests/unit/test_aito_quote_sync.py, add a test that monkeypatches aito_quote_sync.ws_manager.broadcast_aito to an AsyncMock(side_effect=RuntimeError(\"ws down\")), runs run_sync_once against a pending project, and asserts it still returns normally (project reaches quote_sync_state == 'idle' / quote_id set) -- i.e. a broadcast failure must not abort the tick or leave the project's own state unwritten",
+      "behavior_change": false
+    },
+    {
+      "severity": "high",
+      "category": "coverage-gap",
+      "file": "backend/app/services/zoho.py",
+      "line": 763,
+      "title": "get_invoice_pdf's real implementation (and its route's three error branches) is never executed by any test",
+      "evidence": "coverage: backend/app/services/zoho.py missing lines include 771-780, the entire body of `async def get_invoice_pdf` (status>=400 mapping, non-JSON payload fallback, and the `%PDF-` sniff that raises ZohoUpstreamError). Every single caller across backend/tests/unit/test_aito_invoice.py (test_invoice_pdf_is_served_inline, test_invoice_pdf_prints_the_invoice_the_card_asked_for, test_invoice_pdf_refuses_an_id_that_is_not_this_projects, test_invoice_pdf_without_an_id_still_prints_the_newest, test_invoice_pdf_is_404_when_there_is_no_invoice, test_invoice_pdf_filename_survives_a_non_latin1_number) does `monkeypatch.setattr(zoho_service, \"get_invoice_pdf\", pdf)` with a hand-written fake, so the real method's status-code handling and PDF-signature check never run. Its structural twin `get_estimate_pdf` (docstring: \"Same shape and same reasoning as get_estimate_pdf above\") HAS 3 dedicated service-level tests in backend/tests/unit/services/test_zoho_service.py (test_get_estimate_pdf_returns_bytes, test_get_estimate_pdf_maps_not_found, test_get_estimate_pdf_rejects_a_200_that_is_not_a_pdf). Additionally coverage shows aito.py 1291, 1293, 1298-1299 missing -- the /invoice.pdf route's own project-404, no-quote-404 and 502-on-ZohoUpstreamError branches are untested (their /invoice counterparts ARE tested: test_missing_project_is_404, test_a_project_without_a_quote_never_calls_zoho, test_zoho_failure_is_502, all only hitting GET /invoice, never /invoice.pdf).",
+      "fix": "in backend/tests/unit/services/test_zoho_service.py, add get_invoice_pdf tests mirroring the three existing get_estimate_pdf ones (bytes-return over a mocked transport, 404 mapping via _raise_for_status, and rejection of a 200 whose body does not start with %PDF-). Separately, in backend/tests/unit/test_aito_invoice.py add GET /invoice.pdf variants of test_missing_project_is_404, test_a_project_without_a_quote_never_calls_zoho, and test_zoho_failure_is_502 (currently only covering /invoice)",
+      "behavior_change": false
+    },
+    {
+      "severity": "high",
+      "category": "coverage-gap",
+      "file": "frontend/src/hooks/useSendQuoteMutation.ts",
+      "line": 15,
+      "title": "useSendQuoteMutation has no test at all, including its silent marked_sent===false warning branch",
+      "evidence": "grep -rl useSendQuoteMutation frontend/src/__tests__ -> no matches (file is live production code, imported by frontend/src/components/aito/SendQuoteModal.tsx). The hook's onSuccess has a narrow, easy-to-invert branch: `if (result.marked_sent === false) { showToast(t('aito.quoteEmailedCardMoveFailed', ...), 'warning') } else { showToast(t('aito.quoteEmailed', ...), 'success') }` -- per its own comment this distinguishes 'the email sent but the card failed to move' from both an ordinary success and a null (\"no move needed\") result, and a refactor that collapsed the `=== false` check to a truthiness check would silently swallow the failure-warning case with nothing catching it.",
+      "fix": "add frontend/src/__tests__/hooks/useSendQuoteMutation.test.tsx covering: (1) success with marked_sent undefined/null shows the plain success toast and calls onDone, (2) marked_sent: false shows the warning toast (aito.quoteEmailedCardMoveFailed) and still calls onDone, (3) a rejected mutationFn shows the error toast and does NOT call onDone, and (4) onSuccess writes the returned project into the ['aito-projects'] query cache",
+      "behavior_change": false
+    },
+    {
+      "severity": "medium",
+      "category": "coverage-gap",
+      "file": "frontend/src/hooks/useQuotePendingPoll.ts",
+      "line": 37,
+      "title": "useQuotePendingPoll's deadline/matching-id state machine has no test",
+      "evidence": "grep -rl useQuotePendingPoll frontend/src/__tests__ -> no matches (file is live production code, wired into frontend/src/pages/AitoPage.tsx's board query). The returned refetchInterval callback is a pure, framework-free state machine over two refs (pollDeadlineRef, pollMatchingIdsRef) with several distinct branches never exercised by any test: the 5-minute QUOTE_POLL_MAX_MS budget expiring and returning false, a NEW matching id resetting an already-running deadline (hasNewMatch), the boardSync.isIdle() guard short-circuiting without touching either ref, and the zero-matches reset path.",
+      "fix": "add frontend/src/__tests__/hooks/useQuotePendingPoll.test.ts calling useQuotePendingPoll(fakeBoardSync) directly (no rendering needed) with a controllable Date.now (vi.useFakeTimers) and asserting: returns false when boardSync.isIdle() is false regardless of data; returns QUOTE_POLL_INTERVAL_MS while a pending/no-quote-number card exists; returns false once QUOTE_POLL_MAX_MS has elapsed with no new match; and a newly-appearing matching id resets the deadline so polling continues past where it would otherwise have expired",
+      "behavior_change": false
+    },
+    {
+      "severity": "high",
+      "category": "coverage-gap",
+      "file": "frontend/src/components/ZohoSettings.tsx",
+      "line": 73,
+      "title": "handleSave's secret-omission logic is never exercised -- the only test file never types into a field or clicks Save",
+      "evidence": "coverage: frontend ZohoSettings.tsx 51.89% stmts / 47.56% branch / 29.41% funcs, missing lines 93 (`saveMutation.mutate(payload)`), 107 (test-connection error toast) and 138-221 (every input's onChange handler). The only test file, frontend/src/__tests__/components/ZohoSettingsProbe.test.tsx, renders the component and clicks only the Test button to check a query-cache-key split -- it never fills in an input or clicks Save. handleSave's own comment states the invariant nothing currently checks: \"Only send fields that changed / are non-empty -- omitting empty secret fields keeps already-saved secrets from being wiped on save\" (lines 74-75); `if (clientSecret) payload.zoho_client_secret = clientSecret;` / `if (refreshToken) payload.zoho_refresh_token = refreshToken;` are the two lines a regression would most plausibly touch, and neither is covered.",
+      "fix": "add a new test (or extend ZohoSettingsProbe.test.tsx) that: (1) types into the Client ID field and clicks Save, asserting the PUT /api/v1/settings body includes zoho_client_id but omits zoho_client_secret/zoho_refresh_token when those fields were left blank; (2) types a value into the Client Secret field, clicks Save, and asserts the PUT body includes zoho_client_secret; (3) leaves every field unchanged, clicks Save, and asserts no PUT request is sent at all (the `Object.keys(payload).length === 0` short-circuit); (4) makes the Test-connection request reject and asserts the error toast fires",
+      "behavior_change": false
+    },
+    {
+      "severity": "medium",
+      "category": "flaky-test",
+      "file": "backend/tests/unit/test_aito_quote_sync.py",
+      "line": 2115,
+      "title": "test_wake_drains_a_pending_project_without_waiting_for_the_interval polls on wall-clock time and starves under parallel load",
+      "evidence": "backend/tests/unit/test_aito_quote_sync.py:2113-2119: `for _ in range(100):  # up to ~2s -- far below the 300s tick\\n    await asyncio.sleep(0.02)\\n    await db_session.refresh(project)\\n    if project.quote_id:\\n        break\\nassert project.quote_id == \\\"E1\\\"`. The 2-second wall-clock budget assumes the event loop gets scheduled promptly; under `pytest -n 30` (30 concurrent xdist worker processes contending for CPU, per the briefing's own known-flaky list for this exact test) the background run_sync_loop task, its MockTransport round trip and the test's own asyncio.sleep(0.02) polling can all be delayed past 2s of real time with no code defect involved -- a fixed-wall-clock poll racing OS scheduling under load, the flaky pattern this lens targets.",
+      "fix": "replace the fixed 100x0.02s poll with a deterministic completion signal instead of loosening the 2s budget: e.g. monkeypatch aito_quote_sync._apply_estimate (or wrap run_sync_once) to set an asyncio.Event once this project's push completes, then `await asyncio.wait_for(completed.wait(), timeout=30)` before asserting -- this removes the test's dependence on the poll interval keeping up with real wall-clock time while still failing loudly (via the timeout) if the drain genuinely never happens",
+      "behavior_change": false
+    }
+  ]
+}
