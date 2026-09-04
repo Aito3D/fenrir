@@ -50,6 +50,9 @@ export interface PricingDefaults {
   qty_k?: number;
   /** Pre-tax floor per task (app currency). */
   min_task_price?: number;
+  /** Rush surcharge percent on the pre-tax price, applied after the floor and
+   *  only when `PricingInputs.rush` is set. Optional: absent reads as 0. */
+  rush_pct?: number;
 }
 
 export interface PricingInputs {
@@ -70,6 +73,8 @@ export interface PricingInputs {
   post_fulfillment_min: number;
   stuff_amount: number;
   stuff_markup_pct: number;
+  /** The job is quoted at the rush rate. Optional: absent reads as false. */
+  rush?: boolean;
 }
 
 export interface PricingResult {
@@ -114,6 +119,7 @@ export interface PricingResult {
   floor_applied: boolean;
   margin_filament: number;
   margin_stuff: number;
+  margin_rush: number;
   marge: number;
   total_ht: number;
   total_ttc: number;
@@ -146,6 +152,7 @@ export const CURVE_DEFAULTS = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
+  rush_pct: 0,
 } as const;
 
 const curveParam = (d: PricingDefaults, key: keyof typeof CURVE_DEFAULTS): number => {
@@ -292,7 +299,13 @@ export function computePricing(
   const floor_shortfall = Math.max(0, min_task_price - pre_floor_ht * quantity);
   const floor_applied = floor_shortfall > 0;
   if (floor_applied) margin_global += floor_shortfall / quantity;
-  const marge = margin_global + margin_filament + margin_stuff;
+  // Rush: a percent of the pre-tax price AFTER the floor — the floor is the
+  // least the shop accepts for any task, and a rush is earned on top of it.
+  // Its own line, never folded into the curve, so the quantity discount
+  // cannot eat it and the breakdown can show what the rush earned.
+  const pre_rush_ht = total_cost + margin_global + margin_filament + margin_stuff;
+  const margin_rush = inputs.rush ? pre_rush_ht * (curveParam(defaults, 'rush_pct') / 100) : 0;
+  const marge = margin_global + margin_filament + margin_stuff + margin_rush;
 
   // Totals. Collected tax is not revenue, so the margin fraction is
   // expressed over the pre-tax price.
@@ -329,6 +342,7 @@ export function computePricing(
     floor_applied,
     margin_filament,
     margin_stuff,
+    margin_rush,
     marge,
     total_ht,
     total_ttc,
@@ -473,7 +487,7 @@ export function formatPct(fraction: number, decimals = 2): string {
 }
 
 export interface WaterfallStep {
-  key: 'filament' | 'printer' | 'energy' | 'provisions' | 'other' | 'labor' | 'marge' | 'tax';
+  key: 'filament' | 'printer' | 'energy' | 'provisions' | 'other' | 'labor' | 'marge' | 'rush' | 'tax';
   value: number;
   /** Running total AFTER this step — the last step's cumulative is total_ttc. */
   cumulative: number;
@@ -489,13 +503,14 @@ export const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
   other: 'calculator.splitAdsConsumables',
   labor: 'calculator.groupLabor',
   marge: 'calculator.marge',
+  rush: 'calculator.rush',
   tax: 'calculator.waterfall.tax',
 };
 
 /**
  * The price build-up as ordered waterfall steps: machine costs, provisions,
  * ads+consumables, labor, then margin and tax. The marge step is the combined
- * margin (global + filament + extras) — the split lives in the breakdown card.
+ * margin minus rush; rush is its own step, dropped when zero.
  * Zero/near-zero steps (0 <= value <= 0.005, rounding noise) are dropped. A
  * genuinely negative step — e.g. a negative combined marge from a legacy
  * filament row backfilled below cost — is kept as its own signed step rather
@@ -512,7 +527,8 @@ export function buildWaterfall(result: PricingResult): WaterfallStep[] {
     { key: 'provisions', value: result.prototype_cost + result.failures_cost },
     { key: 'other', value: result.ads_cost + result.consumables_flat + result.base_fee },
     { key: 'labor', value: result.labor_total },
-    { key: 'marge', value: result.marge },
+    { key: 'marge', value: result.marge - result.margin_rush },
+    { key: 'rush', value: result.margin_rush },
     { key: 'tax', value: result.total_ttc - result.total_ht },
   ];
   const steps: WaterfallStep[] = [];
