@@ -401,7 +401,7 @@ def _swept_project(**overrides) -> AitoProject:
 
 
 @pytest.mark.asyncio
-async def test_429s_defer_indefinitely_without_escalating_or_spending_the_failure_budget(db_session):
+async def test_429s_defer_indefinitely_without_escalating_or_spending_the_failure_budget(db_session, monkeypatch):
     """T-009: a 429 used to be pinned as indistinguishable from an outage --
     it spent one unit of the failure budget per tick and eventually
     escalated to 'error' with a "Zoho Books error (HTTP 429)" card message.
@@ -422,6 +422,30 @@ async def test_429s_defer_indefinitely_without_escalating_or_spending_the_failur
         return httpx.Response(429, json={"message": "Rate limited"})
 
     zoho_service.transport = httpx.MockTransport(rate_limited)
+
+    # T-028: run_sync_once now short-circuits for as long as a live 429's
+    # throttle window holds (aito_quote_sync._throttled_until) -- exactly
+    # what stops the debounced wake drain from deepening a live throttle,
+    # but not what this loop is probing: it wants every one of these ticks
+    # to actually reach Books, as if each ran on its own later tick once the
+    # (fallback, no Retry-After on this wire) window had already elapsed. A
+    # clock that jumps forward well past _RATE_LIMIT_FALLBACK_SECONDS on
+    # every read stands in for that. Rebinds aito_quote_sync's own `time`
+    # name only (never the shared, process-wide `time` module -- see
+    # test_aito_quote_sync.py's _FakeMonotonicClock docstring for why: it
+    # would also desync zoho.py's separate OAuth-token-cache clock and can
+    # wedge asyncio/httpx internals that lean on real wall-clock progress).
+    from backend.app.services import aito_quote_sync
+
+    class _AdvancingClock:
+        def __init__(self):
+            self._t = 0.0
+
+        def monotonic(self):
+            self._t += aito_quote_sync._RATE_LIMIT_FALLBACK_SECONDS * 2
+            return self._t
+
+    monkeypatch.setattr(aito_quote_sync, "time", _AdvancingClock())
 
     for _ in range(SYNC_FAILURE_LIMIT + 2):
         assert await run_sync_once(db_session) == 1

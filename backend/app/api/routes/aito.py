@@ -2629,12 +2629,23 @@ async def send_pickup_sms(
     user still has to tap accept there, and they record the contact by hand
     once it truly went out. The event is written all the same, because "we
     pushed an SMS to the phone at 14:02" is exactly what the timeline is for.
+
+    Mirrors send_invoice_email's guard on the record()+commit() pair: by the
+    time that runs, Pushcut has already pushed the notification to the
+    phone, so a SQLAlchemyError there (e.g. "database is locked" from the
+    aito_quote_sync worker writing the same SQLite file) must never 500 —
+    that would read as the send having failed and invite a duplicate tap
+    that pushes a second real SMS. project.id is read as a local (project_pk)
+    before this, not after: Session.rollback() expires every attribute on
+    project regardless of expire_on_commit, and reading one afterwards from
+    async code raises MissingGreenlet rather than lazily re-fetching.
     """
     project = await _get_active_project_or_404(db, project_id)
     await _finished_or_409(db, project)
     phone = (project.client_phone or "").strip()
     if not phone:
         raise HTTPException(status_code=409, detail="The project's client has no phone number")
+    project_pk = project.id
     try:
         await send_sms_notification(
             db,
@@ -2646,17 +2657,38 @@ async def send_pickup_sms(
         raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
     except PushcutUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
-    await record(
-        db,
-        project.id,
-        "project.sms.sent",
-        actor_class="user",
-        actor_name=_actor(current_user),
-        subject_type="project",
-        subject_id=project.id,
-        detail={"phone": phone},
-    )
-    await db.commit()
+    try:
+        await record(
+            db,
+            project_pk,
+            "project.sms.sent",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project_pk,
+            detail={"phone": phone},
+        )
+        await db.commit()
+    except SQLAlchemyError as e:
+        # The SMS is already on the phone through Pushcut, so nothing past
+        # this point may 500 — see the docstring. Logged loudly because this
+        # is the one path where a real send leaves no project.sms.sent row.
+        logger.error(
+            "Aito pickup SMS for project %s WAS SENT via Pushcut but recording the local "
+            "project.sms.sent event failed — no event exists for this send: %s",
+            project_id,
+            e,
+        )
+        # Guarded, not a bare `await db.rollback()`: if the rollback itself
+        # raises (SQLite lock, cancelled task, whatever), letting that
+        # propagate would 500 anyway and defeat the point of catching
+        # SQLAlchemyError above it. Swallowing it is safe — the only risk of
+        # an unrolled-back session is get_db's own trailing commit raising
+        # PendingRollbackError, which this already prevents.
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — see the comment above
+            pass
     return AitoPickupSmsResponse()
 
 

@@ -9530,3 +9530,275 @@ confirmed this status" from "we merely wrote it locally" without a schema change
 explicit sign-off since it touches the frozen golden snapshots. The user approved the
 `quote_status_confirmed` column, its migration, and the two golden re-records on 2026-09-03, and this
 entry implements that approved design exactly.
+
+## T-024 — 2026-09-03 — user-approved behavior change
+
+`_APIKEY_SCOPE_BY_PERMISSION` in `backend/app/core/auth.py` mapped `Permission.AITO_READ` to
+the `can_read_status` API-key scope flag — the same flag `PRINTERS_READ`, `SETTINGS_READ`,
+`STATS_READ`, and every other `*_READ` permission maps to, and which defaults to `True`
+(`models/api_key.py:32`, comment `# Query status`) on every newly-created key. Unlike its
+neighbouring read entries in the same map (`USERS_READ_SLIM` at auth.py:111-118,
+`SETTINGS_READ` at auth.py:120-122), `AITO_READ` carried no rationale comment explaining why
+it was safe for the default-on scope, and its own write-side siblings (`AITO_CREATE`,
+`AITO_UPDATE`, `AITO_DELETE`) are denied to API keys entirely (`_APIKEY_DENIED_PERMISSIONS`),
+so the read side looks like it was swept into the generic read bucket rather than classified
+on purpose. The Aito board response (`AitoProjectResponse`, `schemas/aito.py:520-540`)
+carries `client_name`, `client_phone`, `client_email`, and `quote_total` — client PII and
+pricing an operator did not necessarily intend every `can_read_status` key (kiosk displays,
+status dashboards) to be able to read.
+
+Fixed by removing `Permission.AITO_READ: "can_read_status"` from
+`_APIKEY_SCOPE_BY_PERMISSION` and adding `Permission.AITO_READ` to
+`_APIKEY_DENIED_PERMISSIONS` instead, next to `AITO_CREATE` / `AITO_UPDATE` / `AITO_DELETE`,
+with a rationale comment matching the shape the neighbouring entries carry: "the CRM board
+response carries client PII (name, phone, email) and quote totals. Unlike `SETTINGS_READ` /
+`USERS_READ_SLIM` above, no kiosk or automation depends on reading it via API key, so it
+stays user-token only rather than riding along on the `can_read_status` default-on scope."
+This is the first of the two options the finding offered (drop it from the allowlist, making
+it admin/user-token-only like the write side) — the alternative (a dedicated
+`can_read_aito`-style scope flag defaulting to `False`) was explicitly **not** chosen because
+it would add a new `api_keys` DDL column and move the `app-permissions` / `app-ddl` golden
+snapshots, which was out of scope for this task.
+
+Consumer enumeration — every route gated on `RequirePermissionIfAuthEnabled(Permission.AITO_READ)`
+in `backend/app/api/routes/aito.py`: `GET /api/v1/aito/` (list_projects), `GET
+/api/v1/aito/trash` (list_trash), `GET /api/v1/aito/shipping/services` (shipping catalogue),
+`GET /api/v1/aito/{project_id}/tasks` (list_tasks), `GET /api/v1/aito/{project_id}/events`
+(list_events), `GET /api/v1/aito/{project_id}/invoice` (invoice JSON), `GET
+/api/v1/aito/{project_id}/invoice.pdf`, `GET /api/v1/aito/{project_id}/invoice-email` (invoice
+email preview), `GET /api/v1/aito/{project_id}/quote.pdf`, and `GET
+/api/v1/aito/{project_id}/quote-email` (quote email preview). All ten now 403 for a caller
+authenticating solely via API key (`X-API-Key` / `Authorization: Bearer bb_...`), regardless
+of which scope flags that key holds — `AITO_READ` is unmapped in the allowlist, so
+`_check_apikey_permissions` fails closed for all of them. Real user tokens (JWT) holding
+`aito:read` are unaffected — the change is entirely on the API-key allowlist/denylist, not on
+`Permission.AITO_READ` itself or on how user-token requests are gated. No frontend or route
+change; `aito.py` is untouched.
+
+Tests, `backend/tests/unit/test_aito_permissions.py` (new fixture + cases, appended at the
+end of the file):
+- `t024_read_status_api_key` fixture — mints a real, persisted `APIKey` row with
+  `can_read_status=True` (the flag `AITO_READ` used to map to) and turns auth on, mirroring
+  `test_auth_apikey_rbac.py`'s `api_key_data` fixture.
+- `test_read_status_api_key_cannot_list_the_board` — that key now gets 403 on `GET
+  /api/v1/aito/` with the API-key denial message ("API keys cannot be used for administrative
+  operations"), not the JWT-gate's "Missing required permissions" message.
+- `test_read_status_api_key_cannot_read_project_events` — same key, same 403, on `GET
+  /api/v1/aito/{project_id}/events` (a second, path-parameterised Aito read route), using a
+  nonexistent project id — the permission gate runs before the id lookup (pinned by the
+  existing `test_permission_gate_rejects_a_nonexistent_id_and_an_invalid_body_before_either_is_reached`
+  in the same file), so a 403 here proves the gate fired, not a coincidental 404.
+- `test_aito_read_user_token_can_still_list_the_board` — the existing `aito_tokens` fixture's
+  `read_only` JWT (holding `aito:read` via a real `Group`) still gets 200 with an empty list on
+  `GET /api/v1/aito/`, proving the change is scoped to the API-key path only.
+
+The pre-existing generic invariant tests in
+`backend/tests/integration/test_auth_apikey_rbac.py` (`test_every_permission_has_a_classification`,
+`test_allowlist_and_denylist_are_disjoint`, `test_admin_permissions_are_denied_for_api_keys`,
+`test_operational_permissions_are_allowed_for_api_keys`) required no edits — they iterate
+`Permission` generically and `AITO_READ` is still classified exactly once (now in the
+denylist instead of the allowlist), so they continue to pass unchanged.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean on both touched
+files; `tests/unit/test_aito_permissions.py` (52 passed); `tests/integration/test_auth_apikey_rbac.py`
++ `tests/unit/test_aito_routes.py` + `tests/unit/test_ws_aito_read_filter.py` (378 passed);
+`tests/unit -k "api_key or apikey or auth or aito or permission"` (1236 passed, 8588
+deselected). `./venv/bin/python3 tools/snapshot.py verify` — 10/10 match (no `Permission`
+enum member added/removed, no route decorator text changed, so `app-permissions` and
+`app-route-perms` were unaffected). `bash tools/gen_surface_all.sh | diff - SURFACE.md` — empty.
+
+Observable change, quoted verbatim from the approved task: "any existing API key that today
+can GET /api/v1/aito/ (and /aito/{id}/tasks, /events, /trash, /invoice, the quote/invoice
+email previews and both PDF endpoints) would start receiving 403, so an integration or
+dashboard reading the Aito board by API key stops working until its key is re-scoped or
+switched to a user token."
+
+## T-027 — 2026-09-03 — user-approved behavior change
+
+`send_pickup_sms` (`backend/app/api/routes/aito.py`) called `await send_sms_notification(...)`
+— which pushes the pickup SMS to the operator's phone via Pushcut — followed unguarded by
+`await record(db, project.id, "project.sms.sent", ...)` and `await db.commit()`. By the time
+those run, the notification is already on the phone: an `SQLAlchemyError` on that flush/commit
+(e.g. "database is locked" from the `aito_quote_sync` worker writing the same SQLite file)
+propagated straight to a 500, the exact case `send_invoice_email` and `send_quote_email` each
+already guard against with their own `except SQLAlchemyError`. The operator would see a
+failure toast for an SMS that WAS pushed, tap Send again, and a second notification would land
+on the phone while the timeline recorded neither.
+
+Fixed by mirroring `send_invoice_email`'s guard: the `record()` + `db.commit()` pair is now
+wrapped in its own `try`/`except SQLAlchemyError`, which logs the failure loudly (this is the
+one path where a real send leaves no `project.sms.sent` row at all) and then rolls back inside
+its own guarded `try`/`except Exception: pass` — a bare `await db.rollback()` could itself
+raise and 500 anyway, defeating the point of catching `SQLAlchemyError` above it. The handler
+still returns `AitoPickupSmsResponse()` afterwards either way.
+
+`project.id` is read into a local (`project_pk`) BEFORE the guarded block, not after —
+`Session.rollback()` expires every attribute on `project` regardless of
+`expire_on_commit=False`, and reading an expired attribute from async code afterwards raises
+`MissingGreenlet` rather than lazily re-fetching, which is itself a `SQLAlchemyError` and would
+be silently swallowed by the very except-block meant to degrade gracefully. In this handler
+the response (`AitoPickupSmsResponse`, `schemas/aito.py:870-871`) carries only a static
+`sent: bool = True` with no field sourced from `project`, so the capture-before-rollback
+discipline has nothing further to protect in the return value itself — but `project_pk` is
+still captured up front, exactly as `send_invoice_email` captures `project_pk`/`quote_id`/
+`client_id`, so nothing after the guarded block ever touches `project` again.
+
+Consumer enumeration: `frontend/src/components/aito/SmsPickupModal.tsx`'s `send` mutation
+(`mutationFn: () => api.sendAitoPickupSms(...)`) only branches on the promise resolving vs.
+rejecting — `onSuccess` shows the `aito.smsSent` toast and invalidates the `aito-events` query
+so the open panel's timeline rail can't show a history missing what just happened; `onError`
+shows `aito.smsSendFailed`. Neither branch reads any field off the response body beyond the
+promise settling, and `SmsPickupButton.tsx` only renders the modal — it does not call the
+mutation itself. Both need no change: a request that now returns 200 instead of 500 already
+resolves the promise cleanly through the existing success path, and `invalidateQueries` on a
+timeline that in this one failure mode gained no new event is a normal, harmless refetch.
+
+Tests, `backend/tests/unit/test_aito_pickup_sms.py` (new test, mirroring the technique in
+`test_aito_invoice_email.py::test_a_record_commit_failure_after_a_real_send_does_not_500`):
+- `test_a_record_commit_failure_after_a_real_send_does_not_500` — monkeypatches
+  `AsyncSession.commit` to raise `SQLAlchemyError("database is locked")` on its first call only
+  (real commit on any later call), with Pushcut's `send_sms_notification` faked to succeed.
+  Asserts: the fake Pushcut relay was called exactly once (the failure is entirely on the local
+  side, after the real send already went out); the response is `200` with body `{"sent":
+  True}` (proving no `MissingGreenlet` leaked past the guarded rollback into a 500); and no
+  `project.sms.sent` event exists afterwards.
+- The pre-existing `test_send_records_the_event_but_never_the_contact` (happy path — the event
+  IS recorded when nothing fails) and `test_a_failed_relay_records_nothing` (a Pushcut failure
+  BEFORE the write still maps to its existing error status, 502, with nothing recorded) required
+  no changes and continue to pass unmodified, pinning both ends of the behavior this fix sits
+  between.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean on both touched
+files; `backend/tests/unit/test_aito_pickup_sms.py` + `test_aito_permissions.py` +
+`test_aito_routes.py` (363 passed). `./venv/bin/python3 tools/snapshot.py verify` — 10/10
+match (no route or schema change). `bash tools/gen_surface_all.sh | diff - SURFACE.md` —
+empty (no new top-level def in a `services/` file; routes are not scraped for defs).
+
+Observable change, quoted verbatim from the approved task: "a pickup-SMS request whose local
+event write fails would return success (with no project.sms.sent entry on the timeline)
+instead of the current 500 error toast."
+
+## T-028 — 2026-09-04 — user-approved behavior change
+
+`sync_project`'s (`backend/app/services/aito_quote_sync.py`) `except ZohoRateLimited` handler
+already deferred a rate-limited card without spending its failure budget (T-009) — but it did so
+for exactly one tick. `e.retry_after`, the parsed `Retry-After` header Books sends with a 429, was
+read only to decide the log message, then discarded; nothing remembered that Books had just asked
+for backoff. `run_sync_once` reselects every `pending` project on the very next call with no
+memory of the 429 at all, and it is called far more often than the 300s sweep interval suggests:
+every committed edit calls `request_debounced_sync`, which wakes `run_sync_loop` to run
+`run_sync_once(db, pending_only=True)` after `EDIT_DEBOUNCE_SECONDS` (10s) — so an operator editing
+a card for a couple of minutes while its org sat throttled re-hit Books roughly once every ten
+seconds, spending one request per wake on an org that had explicitly said back off, exactly the
+gap `zoho._shipping_fail_at` / `_SHIPPING_FAIL_COOLDOWN` (T-011, same day) was built to close on
+the sibling shipping-catalogue path.
+
+Fixed by giving the loop the same process-local memo shape: a module-level `_throttled_until:
+float | None = None` in `aito_quote_sync.py`, set by the `ZohoRateLimited` handler in
+`sync_project` and read by `run_sync_once`.
+- Two new module constants: `_RATE_LIMIT_FALLBACK_SECONDS = 60.0` (used when Books sends no
+  `Retry-After`, or the header is present but not a finite, non-negative number) and
+  `_RATE_LIMIT_MAX_RETRY_SECONDS = 15 * 60.0` (a hard cap on any `Retry-After` value, however
+  large, so a malformed-but-parseable or simply huge header cannot freeze the loop indefinitely).
+- In the `ZohoRateLimited` handler, `e.retry_after` is honoured only when it is `not None` and
+  `math.isfinite(retry_after) and retry_after >= 0`; an `inf`, `nan`, or negative value (T-025,
+  triaged — `_parse_retry_after` hands those back rather than rejecting them) falls back to
+  `_RATE_LIMIT_FALLBACK_SECONDS` exactly like a missing header, since trusting `inf` would defer
+  forever, a negative value would defer for zero time, and `nan` would break the comparison
+  outright. The window (`min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)` or the fallback) is
+  added to `time.monotonic()` and stamped into `_throttled_until` at the end of the handler,
+  after the existing `_deferred_reasons` bookkeeping.
+- `run_sync_once` gained a new early return at its very top: `if _throttled_until is not None and
+  time.monotonic() < _throttled_until: return 0` — before the `AitoProject.quote_sync_state ==
+  "pending"` SELECT is even built, so a call inside the window issues no DB query and no Zoho call
+  at all, for both the periodic full sweep (`pending_only=False`) and the debounced wake drain
+  (`pending_only=True`).
+- `_throttled_until` is cleared (`= None`) at both places in `sync_project` that represent "a call
+  to Books just succeeded": the reconcile branch right after a successful `get_estimate` read, and
+  the end of the main try block after a successful create/update round trip — mirroring
+  `zoho._shipping_fail_at` being cleared on the sibling catalogue path's own next success.
+- The clock is read via the module's own `time` name (`time.monotonic()`), not imported as
+  `from time import monotonic` — deliberately, so a test can `monkeypatch.setattr(aito_quote_sync,
+  "time", ...)` to substitute a scripted/advancing clock double without touching the real,
+  process-wide `time` module, which `zoho.py`'s separate OAuth-token-cache clock also reads and
+  which real asyncio/httpx internals lean on for wall-clock progress.
+
+Card-visible state is untouched: `quote_sync_state`, `quote_sync_error`, and
+`quote_sync_failures` are exactly what `sync_project`'s `ZohoRateLimited` handler already set
+before this change (`pending`, no error, no budget spent) — the new early return in
+`run_sync_once` sits entirely outside `sync_project` and never touches a project row. A throttled
+tick or wake simply does nothing rather than reselecting and re-deferring the same row.
+
+Consumer enumeration — every path that reads (or does not read) `run_sync_once`'s return value or
+otherwise observes this change:
+- `run_sync_loop` (same file) calls `await run_sync_once(db)` on its fixed interval and `await
+  run_sync_once(db, pending_only=True)` on a wake, in both cases discarding the returned int —
+  neither call site branches on it. The observable effect of the throttle is entirely about WHEN a
+  Books request happens, not any return-value plumbing.
+- `request_debounced_sync` / `request_immediate_sync` (same file) — called from
+  `routes/aito.py`'s task/project write handlers and from `sync_project_now` (the close-sync
+  route, `POST /{project_id}/sync`) — only set the module-local wake `Event` and (for the
+  debounced path) the fixed edit window; neither calls `run_sync_once` itself or reads its return
+  value. They are unaffected by this change; what changes is what the loop they wake does once it
+  runs.
+- `sync_project_now` (`routes/aito.py`, the close-sync route) marks the project pending, commits,
+  and calls `request_immediate_sync()` — it returns `AitoProjectResponse` built from the
+  just-committed DB row via `_project_response`, before the worker loop (and therefore before
+  `run_sync_once` or the throttle guard) ever runs. Its response body is unaffected; only the
+  async push that follows may now be skipped until the window clears.
+- No other route calls `run_sync_once`, `sync_project`, or reads `_throttled_until` — grepped
+  `backend/app/api/routes/` for `run_sync_once` and `sync_project` with no other hits. No HTTP
+  response body, status code, or schema changed by this commit.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py` (a new `_FakeMonotonicClock` test
+double, mirroring `test_zoho_service.py`'s `_ScriptedClock`, plus three new test functions — one
+parametrized four ways, six test cases total):
+- `test_429_with_retry_after_short_circuits_the_wake_drain_until_it_elapses` — a 429 with
+  `Retry-After: 30` stamps `_throttled_until`; an immediate `run_sync_once(pending_only=True)`
+  attempts nothing and spends no Books request (0 returned, call count unchanged, project stays
+  `pending` with no error/failures); once the fake clock reports past the window, the same drain
+  proceeds normally, succeeds, and clears `_throttled_until` back to `None`.
+- `test_429_without_retry_after_uses_the_fallback_window` — a 429 with no `Retry-After` header
+  stamps `_throttled_until` from `_RATE_LIMIT_FALLBACK_SECONDS`, not left undeferred.
+- `test_429_retry_after_is_bounded_or_falls_back_on_a_bad_value` (parametrized over `"999999"`,
+  `"inf"`, `"nan"`, `"-5"`) — a huge-but-finite header is capped at
+  `_RATE_LIMIT_MAX_RETRY_SECONDS`; a non-finite or negative header falls back to
+  `_RATE_LIMIT_FALLBACK_SECONDS` instead of deferring forever, not at all, or raising on the
+  comparison.
+
+A new autouse fixture, `reset_aito_quote_sync_rate_limit_throttle` in `backend/tests/conftest.py`,
+clears `aito_quote_sync._throttled_until` before and after every test — mirroring
+`reset_shipping_catalogue_fail_cooldown`'s own rationale (T-011, same day): left alone, a 429
+induced by one test would silently skip `run_sync_once` work a later, unrelated test in the same
+process/xdist worker expects to happen.
+
+The pre-existing e2e test `test_429s_defer_indefinitely_without_escalating_or_spending_the_failure_budget`
+(`backend/tests/unit/test_aito_quote_e2e.py`) drives `SYNC_FAILURE_LIMIT + 2` consecutive calls to
+`run_sync_once` and asserts every single one attempts the project (`== 1`, not `0`) with no
+escalation to `error` and no failure-budget spend — behavior this change would otherwise break,
+since without advancing the clock every call after the first would now hit the new early return
+and vacuously return `0` for the wrong reason (throttled, not merely deferred). It was rewired to
+`monkeypatch.setattr(aito_quote_sync, "time", ...)` an `_AdvancingClock` double that jumps forward
+by `2 * _RATE_LIMIT_FALLBACK_SECONDS` on every `monotonic()` read, so each loop iteration lands
+after the previous 429's window has already elapsed — standing in for each tick running on its own
+later real tick once the window had cleared. The test's own assertions (`== 1` every iteration, no
+escalation, no budget spent) were preserved verbatim; only the clock feeding the throttle guard
+changed.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean on all four touched
+files. `./venv/bin/python3 -m pytest backend/tests/unit/test_aito_quote_sync.py
+backend/tests/unit/test_aito_quote_e2e.py backend/tests/conftest.py -q` (targeted); no schema,
+route, or DDL change, so no snapshot probe is affected.
+
+Observable change, quoted verbatim from the approved task: "after a Zoho 429, the sync loop skips
+every card for min(Retry-After, 15 min) or 60 s if no header, instead of retrying each tick and
+wake. Cards stay 'pending' with no error; they drain on the first tick after the window."
+
+This was originally landed in commit ed8031a54 as `refactor(loop-8): T-028 honour Retry-After with
+a process-local throttle window for the quote-sync loop`, filed by the auditor as a hardening fix
+restoring the intended shape of T-009's existing 429 deferral (no behavior-change disclosure). The
+blind verifier flagged the sync-timing change as undisclosed regardless of intent — after a 429,
+every card now sits pending un-attempted for the throttle window instead of being reselected and
+re-attempted on each subsequent tick/wake, a genuine change in when a card is retried. The user
+reviewed the flag and explicitly approved it on 2026-09-04; this entry documents that approval and
+is the canonical record of the change for future audits.

@@ -122,7 +122,6 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     Permission.SETTINGS_READ: "can_read_status",
     Permission.MAKERWORLD_VIEW: "can_read_status",
     Permission.CALCULATOR_READ: "can_read_status",
-    Permission.AITO_READ: "can_read_status",
     # Pipeline definitions and run history are configuration + status: listing
     # pipelines, reading a run, and the (write-free) POST check-eligibility
     # pre-flight. Authoring stays admin-only under PIPELINES_WRITE.
@@ -332,6 +331,12 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.AITO_CREATE,
         Permission.AITO_UPDATE,
         Permission.AITO_DELETE,
+        # AITO_READ (T-024) — the CRM board response carries client PII
+        # (name, phone, email) and quote totals. Unlike SETTINGS_READ /
+        # USERS_READ_SLIM above, no kiosk or automation depends on reading
+        # it via API key, so it stays user-token only rather than riding
+        # along on the can_read_status default-on scope.
+        Permission.AITO_READ,
     }
 )
 

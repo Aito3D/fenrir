@@ -268,3 +268,62 @@ async def test_proofread_field_makes_no_outbound_call_when_rejected(async_client
     )
     assert r.status_code == 403
     assert calls == []
+
+
+# --------------------------------------------- T-024: AITO_READ is user-token only
+
+
+@pytest.fixture
+async def t024_read_status_api_key(async_client, db_session):
+    """A real, persisted API key with `can_read_status=True` — the flag every
+    other read permission maps to (PRINTERS_READ, SETTINGS_READ, ...). Also
+    turns auth on, same as `aito_tokens` above."""
+    from backend.app.core.auth import generate_api_key
+    from backend.app.models.api_key import APIKey
+    from backend.app.models.settings import Settings
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+
+    full_key, key_hash, key_prefix = generate_api_key()
+    db_session.add(
+        APIKey(
+            name="t024-read-status",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            can_read_status=True,
+            enabled=True,
+        )
+    )
+    await db_session.commit()
+    return full_key
+
+
+@pytest.mark.asyncio
+async def test_read_status_api_key_cannot_list_the_board(async_client, t024_read_status_api_key):
+    """T-024: an API key holding only `can_read_status` (the flag it used to
+    map to) must now be refused GET /api/v1/aito/ — the board carries client
+    PII and quote totals, so it is no longer on the default API-key scope."""
+    r = await async_client.get("/api/v1/aito/", headers={"X-API-Key": t024_read_status_api_key})
+    assert r.status_code == 403
+    assert "administrative operations" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_read_status_api_key_cannot_read_project_events(async_client, t024_read_status_api_key):
+    """T-024, second Aito read route: /{project_id}/events is refused the
+    same way — the permission gate runs before the (nonexistent) id is
+    looked up, per
+    test_permission_gate_rejects_a_nonexistent_id_and_an_invalid_body_before_either_is_reached
+    above, so a missing id still proves the 403 comes from the gate."""
+    r = await async_client.get(f"/api/v1/aito/{_MISSING_ID}/events", headers={"X-API-Key": t024_read_status_api_key})
+    assert r.status_code == 403
+    assert "administrative operations" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_aito_read_user_token_can_still_list_the_board(async_client, aito_tokens):
+    """T-024 is scoped to the API-key allowlist only — a genuine user token
+    holding `aito:read` is unaffected and still gets 200."""
+    r = await async_client.get("/api/v1/aito/", headers={"Authorization": f"Bearer {aito_tokens['read_only']}"})
+    assert r.status_code == 200
+    assert r.json() == []

@@ -19,6 +19,7 @@ Phase 2 poller.
 
 import asyncio
 import logging
+import math
 import time
 from datetime import datetime
 
@@ -104,6 +105,38 @@ _DECIDED = frozenset({"accepted", "declined"})
 # row: the project stays `pending` with a clean error field, exactly as it
 # was before this handler ran.
 _deferred_reasons: dict[int, str] = {}
+
+# T-028: how long ``run_sync_once`` short-circuits after Books returns a 429
+# (see the ``ZohoRateLimited`` handler in ``sync_project`` below), so the
+# wake drain (``request_debounced_sync`` -> ``run_sync_once(pending_only=True)``
+# every ``EDIT_DEBOUNCE_SECONDS``) does not spend one more request on an org
+# that just asked for backoff every time an operator keeps editing the board.
+# Used only when ``ZohoRateLimited.retry_after`` is missing or not a finite,
+# non-negative number (Books sent no ``Retry-After``, or T-025's malformed
+# header case). 60s: comfortably above ``EDIT_DEBOUNCE_SECONDS`` (10s), so a
+# burst of edits made while still throttled collapses into the one drain that
+# runs once the window clears, the same way the debounce window itself already
+# collapses a burst — and short enough that a real throttle clears within a
+# tick or two rather than leaving a card looking stuck.
+_RATE_LIMIT_FALLBACK_SECONDS = 60.0
+
+# T-025 (triaged): an ``inf``/``nan``/negative ``Retry-After`` must not be
+# honoured as-is (it would defer forever or not at all); such a value falls
+# back to ``_RATE_LIMIT_FALLBACK_SECONDS`` above instead (see the handler).
+# A very large but finite value is still capped here rather than trusted
+# outright, so a malformed-but-parseable header (or a legitimate but huge
+# one) cannot freeze the loop for longer than this.
+_RATE_LIMIT_MAX_RETRY_SECONDS = 15 * 60.0
+
+# Process-local "do not attempt a sync before this ``time.monotonic()``
+# instant" set by the ``ZohoRateLimited`` handler in ``sync_project`` and
+# read by ``run_sync_once``. Mirrors ``zoho._shipping_fail_at`` /
+# ``_SHIPPING_FAIL_COOLDOWN``'s shape (a process-local memo, cleared on the
+# next success, never persisted — a restart should not inherit a stale
+# throttle), in ``time.monotonic()`` terms rather than wall-clock because
+# this module's other process-local timer (``_debounce_deadline`` below)
+# already uses that clock. ``None`` means "not throttled".
+_throttled_until: float | None = None
 
 # Project id -> how many times an edit in routes/aito.py has actually landed
 # (committed) for this project, in THIS process. Bumped by
@@ -1226,6 +1259,7 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
     or otherwise, returns None (falsy), same as before this return value
     existed.
     """
+    global _throttled_until
     # Captured before anything below can touch the row, and read from these
     # locals everywhere a terminal branch or the comment-mirror recovery code
     # needs "was this already the state before this attempt" -- never by
@@ -1265,6 +1299,11 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
         # exactly like a fresh 'pending' project with no quote yet.
         if project.quote_sync_state != "pending" and project.quote_id is not None:
             estimate = await zoho_service.get_estimate(db, project.quote_id)
+            # T-028: a read that reaches this point succeeded — Books is
+            # reachable, so any throttle recorded by a past ZohoRateLimited is
+            # stale. Same "a successful call clears the memo" shape as
+            # zoho._shipping_fail_at being cleared on a successful refresh.
+            _throttled_until = None
             if _is_locked(estimate):
                 # Re-checked here from the estimate already in hand, not
                 # trusted from whatever quote_sync_state this project last
@@ -1452,6 +1491,9 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
         # same reason logs afresh rather than staying suppressed forever by a
         # dict entry from before whatever changed.
         _deferred_reasons.pop(project_id, None)
+        # T-028: same "reached without a 429" signal as the reconcile branch's
+        # own clear above.
+        _throttled_until = None
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
@@ -1551,6 +1593,28 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
         if _deferred_reasons.get(project_id) != message:
             logger.warning("Aito project %s deferred (Zoho Books rate limit): %s", project_id, e)
             _deferred_reasons[project_id] = message
+        # T-028: remember when it is safe to try Books again, so run_sync_once
+        # (both the periodic sweep and the debounced wake drain) can skip
+        # straight past every still-throttled tick instead of spending one
+        # more request on an org that just said back off — see
+        # ``_throttled_until``'s own module-level comment for why this is
+        # process-local and shaped like ``zoho._shipping_fail_at``.
+        #
+        # ``e.retry_after`` is honoured only when it is a genuine, usable
+        # hint: not None, and a finite, non-negative number — ``inf``/``nan``/
+        # negative (T-025, triaged) fall back to the fixed window exactly
+        # like "no header at all" rather than being trusted at face value,
+        # which for a negative or NaN value would defer for zero time (no
+        # protection) or crash the comparison below, and for `inf` would
+        # defer forever. A large-but-finite value is still capped at
+        # _RATE_LIMIT_MAX_RETRY_SECONDS so a malformed (or simply huge)
+        # Retry-After cannot freeze the loop for longer than that.
+        retry_after = e.retry_after
+        if retry_after is not None and math.isfinite(retry_after) and retry_after >= 0:
+            window = min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)
+        else:
+            window = _RATE_LIMIT_FALLBACK_SECONDS
+        _throttled_until = time.monotonic() + window
         return True
     except ZohoUpstreamError as e:
         # Below the limit, this is a plain in-memory write, no flush -- so
@@ -1774,7 +1838,20 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     Active and soft-deleted alike: a trashed project still owes Books a status
     change. Serial by design — the board holds a handful of cards, and one
     request at a time keeps the failure accounting above trivial.
+
+    T-028: returns 0 without selecting or touching a single project — no
+    Zoho call, and (unlike the mid-batch ``break`` below) not even the DB
+    SELECT that picks candidates — while a previous tick's ``ZohoRateLimited``
+    has this process still inside its throttle window. This is what keeps the
+    wake drain (``pending_only=True``, fired by every committed edit) from
+    re-hitting a throttled org every ``EDIT_DEBOUNCE_SECONDS``: the project(s)
+    involved stay exactly as ``sync_project``'s own handler left them —
+    `pending`, no error, no failure count — and are attempted again on the
+    first tick or wake after the window clears, same as if this call had
+    simply not happened.
     """
+    if _throttled_until is not None and time.monotonic() < _throttled_until:
+        return 0
     selected = AitoProject.quote_sync_state == "pending"
     if not pending_only:
         # See _sweep_predicate's own docstring for why this is a function

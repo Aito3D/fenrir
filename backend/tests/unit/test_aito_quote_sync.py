@@ -1753,6 +1753,185 @@ async def test_429_on_first_of_three_selected_projects_stops_the_tick(db_session
         assert project.quote_sync_error is None
 
 
+class _FakeMonotonicClock:
+    """Stands in for ``aito_quote_sync``'s ``time`` name, handing back a
+    scripted sequence of ``monotonic()`` values -- the same approach
+    ``test_zoho_service.py``'s ``_ScriptedClock`` uses for ``zoho.datetime``.
+
+    Rebinds the MODULE-LEVEL ``time`` name inside ``aito_quote_sync`` itself
+    (``monkeypatch.setattr(aito_quote_sync, "time", ...)``), not
+    ``time.monotonic`` on the real, process-wide ``time`` module: that module
+    is a single shared object, and ``zoho.py``'s own OAuth token cache
+    (``self._expires_at``, compared against ``time.monotonic()``) reads the
+    very same name -- mutating it globally desyncs a scripted call count from
+    what the test controls (Books' access-token check/set costs its own
+    ``monotonic()`` reads on every request) and, worse, an exhausted or
+    frozen global clock can wedge asyncio/httpx internals that also lean on
+    real wall-clock progress, hanging the test in teardown rather than
+    failing it. Once the script is down to its last value, every further
+    call repeats it, exactly like ``_ScriptedClock``.
+    """
+
+    def __init__(self, values):
+        self._values = list(values)
+
+    def monotonic(self):
+        return self._values.pop(0) if len(self._values) > 1 else self._values[0]
+
+
+@pytest.mark.asyncio
+async def test_429_with_retry_after_short_circuits_the_wake_drain_until_it_elapses(db_session, monkeypatch):
+    """T-028: a 429's ``Retry-After`` must stop the debounced wake drain
+    (``request_debounced_sync`` -> ``run_sync_once(pending_only=True)``, fired
+    on every committed edit) from re-hitting the same throttled org before
+    the window Books asked for has actually passed. An immediate second call
+    attempts nothing and spends no Books request; once the clock passes the
+    window, the same project is drained normally and the throttle clears."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+
+    calls: list[str] = []
+
+    def rate_limited(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        calls.append(request.url.path)
+        return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+
+    zoho_service.transport = httpx.MockTransport(rate_limited)
+    zoho_service.invalidate_token()
+
+    # First value is read (possibly more than once -- see
+    # _FakeMonotonicClock's own docstring for why zoho.py's OAuth token cache
+    # shares this same clock) while the 429 handler stamps the throttle; the
+    # last is what run_sync_once's own guard reads on the immediate wake
+    # drain right after.
+    monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([100.0, 105.0]))
+
+    assert await run_sync_once(db_session) == 1
+    assert len(calls) == 1
+    assert aito_quote_sync._throttled_until == 130.0  # 100.0 + Retry-After: 30
+
+    # The wake drain, fired immediately by an operator's next edit: still
+    # inside the 30s window, so it must attempt nothing and touch Books not
+    # at all.
+    assert await run_sync_once(db_session, pending_only=True) == 0
+    assert len(calls) == 1
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+    # The window has elapsed: the same drain now proceeds normally and a
+    # successful sync clears the throttle memo.
+    monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([131.0]))
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session, pending_only=True) == 1
+    assert any(entry[0] == "PUT" for entry in seen)
+    assert aito_quote_sync._throttled_until is None
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_429_without_retry_after_uses_the_fallback_window(db_session, monkeypatch):
+    """T-028: Books does not always send a ``Retry-After`` header. Absent one,
+    the throttle must still use a bounded fallback window rather than not
+    deferring at all."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+
+    def rate_limited(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"})  # no Retry-After header
+
+    zoho_service.transport = httpx.MockTransport(rate_limited)
+    zoho_service.invalidate_token()
+    monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([100.0]))
+
+    assert await run_sync_once(db_session) == 1
+    assert aito_quote_sync._throttled_until == 100.0 + aito_quote_sync._RATE_LIMIT_FALLBACK_SECONDS
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("header_value", ["999999", "inf", "nan", "-5"])
+async def test_429_retry_after_is_bounded_or_falls_back_on_a_bad_value(db_session, monkeypatch, header_value):
+    """T-028/T-025 (triaged): a huge-but-finite ``Retry-After`` must be capped
+    rather than trusted outright, and a non-finite or negative one (which
+    ``_parse_retry_after`` happily hands back as ``float("inf")``/``"nan"``/a
+    negative number -- it only rejects a value that fails ``float()``
+    entirely) must fall back to the fixed window instead of deferring
+    forever, not at all, or blowing up the comparison against it."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+
+    def rate_limited(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": header_value})
+
+    zoho_service.transport = httpx.MockTransport(rate_limited)
+    zoho_service.invalidate_token()
+    monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([100.0]))
+
+    assert await run_sync_once(db_session) == 1
+
+    if header_value == "999999":
+        expected_window = aito_quote_sync._RATE_LIMIT_MAX_RETRY_SECONDS
+    else:
+        expected_window = aito_quote_sync._RATE_LIMIT_FALLBACK_SECONDS
+    assert aito_quote_sync._throttled_until == 100.0 + expected_window
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
 @pytest.mark.asyncio
 async def test_an_errored_project_with_no_quote_id_is_reselected_and_retried(db_session):
     """T-008: a project whose very first push (the CREATE) never succeeded

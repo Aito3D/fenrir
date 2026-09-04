@@ -18,6 +18,8 @@ import json
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.settings import Settings
@@ -234,6 +236,63 @@ async def test_a_failed_relay_records_nothing(async_client, monkeypatch, db_sess
 
     _patch_send_sms(monkeypatch, fake)
     await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    kinds = (
+        (await db_session.execute(select(AitoEvent.kind).where(AitoEvent.project_id == project["id"]))).scalars().all()
+    )
+    assert "project.sms.sent" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_a_record_commit_failure_after_a_real_send_does_not_500(async_client, monkeypatch, db_session):
+    """The MissingGreenlet hazard send_invoice_email's tests pin, reached
+    from the pickup-SMS relay: the handler's own record()+commit() pair
+    failing AFTER Pushcut has already pushed the notification to the phone
+    must not 500 — that would read as the send having failed and invite a
+    duplicate tap that pushes a second real SMS.
+
+    Faking AsyncSession.commit at the class level (only for its first call
+    within this test) reproduces "the local commit hit a lock" without
+    needing an actual second connection to contend for one.
+    """
+    project = await _create_finished(async_client)
+    seen = {}
+
+    async def fake(db, *, phone, text, title):
+        seen.update(phone=phone, text=text, title=title)
+
+    _patch_send_sms(monkeypatch, fake)
+
+    real_commit = AsyncSession.commit
+    calls = {"n": 0}
+
+    async def flaky_commit(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise SQLAlchemyError("database is locked")
+        return await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+    r = await async_client.post(
+        f"/api/v1/aito/{project['id']}/pickup-sms",
+        json={"message": "Ia Ora na, c'est prêt. Aito3D"},
+    )
+
+    # Pushcut was called exactly once — the failure is entirely on the local
+    # side, after the real send already went out.
+    assert seen == {
+        "phone": "87 12 34 56",
+        "text": "Ia Ora na, c'est prêt. Aito3D",
+        "title": "SMS — ACME",
+    }
+    # Still 200 with the normal response body, not a 500 — reading it at all
+    # proves no MissingGreenlet leaked past the guarded rollback.
+    assert r.status_code == 200
+    assert r.json() == {"sent": True}
+    # The commit that would have persisted project.sms.sent failed and was
+    # rolled back — the SMS went out for real, but there is deliberately no
+    # local record of it. See send_pickup_sms's docstring for why a 500 here
+    # (inviting a retry that pushes a second real SMS) is worse.
     kinds = (
         (await db_session.execute(select(AitoEvent.kind).where(AitoEvent.project_id == project["id"]))).scalars().all()
     )
