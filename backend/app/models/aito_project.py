@@ -99,6 +99,12 @@ class AitoProject(Base):
     # silently dropping it would make the board lie in the one direction that
     # costs money.
     flag: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # The day promised to the client, as an ISO calendar date string
+    # (`YYYY-MM-DD`, same representation as `quote_date`). NULL means no
+    # promise. A local scheduling fact with no Zoho mirror: like `flag` it is
+    # NOT in VERSIONED_FIELDS and is written by its own route, never through
+    # `update_project`, so setting it queues no quote push.
+    due_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # When the client was told the job is ready to collect (or that it has
     # shipped). NULL means nobody has told them yet, which is why this is a
     # timestamp and not a boolean: the card shows how long they have been

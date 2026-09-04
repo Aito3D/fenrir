@@ -4726,6 +4726,10 @@ async def run_migrations(conn):
     ):
         await _safe_execute(conn, f"ALTER TABLE calculator_defaults ADD COLUMN {column} FLOAT DEFAULT {default}")
 
+    # Migration: rush surcharge percent (2026-09-04). Default 0 so the new
+    # toggle is a no-op until the shop sets a rate.
+    await _safe_execute(conn, "ALTER TABLE calculator_defaults ADD COLUMN rush_pct FLOAT DEFAULT 0")
+
     # Migration: calculator filament profiles split the single free-text name
     # into brand + material (searchable dropdowns in the UI); name stays as the
     # derived display label. Backfill copies the legacy name into material so
@@ -5106,6 +5110,12 @@ async def run_migrations(conn):
     # and a date. The gate only fires on the Finish -> Done transition, so a
     # legacy Done card stays draggable back to Finish either way.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_contacted_at DATETIME")
+
+    # Migration: promised delivery date and per-task rush flag (2026-09-04).
+    # Both nullable/defaulted, so no backfill: an existing card promised
+    # nothing and an existing print step was not rushed.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN due_date VARCHAR(10)")
+    await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN impression_rush BOOLEAN NOT NULL DEFAULT 0")
 
     await _backfill_aito_events(conn)
 
