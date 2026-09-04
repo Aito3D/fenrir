@@ -1,4 +1,5 @@
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
+import { localDateKey } from '../utils/date';
 
 const API_BASE = '/api/v1';
 
@@ -3945,6 +3946,7 @@ export interface CalculatorDefaults {
   qty_min_factor: number;
   qty_k: number;
   min_task_price: number;
+  rush_pct: number;
   updated_at: string;
 }
 
@@ -4032,6 +4034,9 @@ export interface AitoTaskSteps {
    *  than this bundle omits it, and the card must degrade to the fallback
    *  name rather than throw (same posture as `task_steps ?? []`). */
   title?: string;
+  /** The task's print step is quoted at the rush rate. Optional: an older
+   *  server omits it and the card simply draws no glyph. */
+  rush?: boolean;
 }
 
 export type AitoFlag = 'urgent' | 'sav' | 'pause';
@@ -4104,6 +4109,9 @@ export interface AitoProject {
    *  Cleared automatically when work reappears and the rules send the card
    *  back to a production column. */
   client_contacted_at: string | null;
+  /** ISO `YYYY-MM-DD` promised to the client, or null. Set through its own
+   *  route (`setAitoProjectDueDate`), never the generic PATCH. */
+  due_date: string | null;
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;
@@ -4284,6 +4292,7 @@ export interface AitoTask {
   impression_color: string | null;
   impression_cost: number | null;
   impression_discount_pct: number | null;
+  impression_rush: boolean;
   /** Per-service unit count. `null` reads as 1. */
   scan_quantity: number | null;
   modelisation_quantity: number | null;
@@ -4312,11 +4321,13 @@ export type AitoTaskCreate = Omit<
   | 'modelisation_done'
   | 'impression_done'
   | 'usinage_done'
+  | 'impression_rush'
 > & {
   scan_done?: boolean;
   modelisation_done?: boolean;
   impression_done?: boolean;
   usinage_done?: boolean;
+  impression_rush?: boolean;
 };
 export type AitoTaskUpdate = Partial<AitoTaskCreate>;
 
@@ -7582,6 +7593,7 @@ export const api = {
     quote_url?: string | null;
     quote_salesperson?: string | null;
     quote_status?: string | null;
+    due_date?: string | null;
     shipping_island?: string | null;
     shipping_first_name?: string | null;
     shipping_last_name?: string | null;
@@ -7633,10 +7645,17 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ task_ids: taskIds }),
     }),
+  /** `position` is an index into the order the operator SAW, and that order
+   *  puts overdue cards first — which means it depends on which day it is
+   *  where THEY are. The server would otherwise re-sort the destination with
+   *  the container's date (TZ=Europe/Berlin against a shop in UTC-10), and
+   *  for the hours the two disagree every drop into a column holding a card
+   *  due on the boundary lands one slot off. So the browser's own calendar
+   *  date rides along with the drag. */
   moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
     request<AitoProject>(`/aito/${id}/move`, {
       method: 'PATCH',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, today: localDateKey(new Date()) }),
     }),
   setAitoQuoteStatus: (id: number, data: { status: 'sent' | 'accepted' | 'declined' }) =>
     // `no_op` is true when the request repeated a decision already applied —
@@ -7732,6 +7751,13 @@ export const api = {
     request<AitoProject>(`/aito/${id}/flag`, {
       method: 'PATCH',
       body: JSON.stringify({ flag }),
+    }),
+  /** Its own endpoint for the same reason the flag has one — see
+   *  routes/aito.py:set_project_due_date. `null` clears the promise. */
+  setAitoProjectDueDate: (id: number, dueDate: string | null) =>
+    request<AitoProject>(`/aito/${id}/due-date`, {
+      method: 'PATCH',
+      body: JSON.stringify({ due_date: dueDate }),
     }),
   /** Record — or take back — the fact that the client has been told the job is
    *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to

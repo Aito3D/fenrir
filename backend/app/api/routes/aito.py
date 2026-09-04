@@ -20,6 +20,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
     AitoContactedUpdate,
+    AitoDueDateUpdate,
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
@@ -158,6 +159,37 @@ def _flag_rank(flag: str | None) -> int:
     unflagged rather than raising: this runs on a drag, and a row written by
     a newer version of the app must not make the board un-draggable."""
     return _UNFLAGGED_RANK if flag is None else _FLAG_RANK.get(flag, _UNFLAGGED_RANK)
+
+
+def _today_iso() -> str:
+    """Today's calendar date on the server, ISO. A function (not a constant)
+    so tests can pin it and so a long-running process never freezes 'today'."""
+    return datetime.now().date().isoformat()
+
+
+def _overdue_rank(due_date: str | None, column: str, today: str) -> int:
+    """0 when the promise is already broken, else 1. Strictly before today —
+    a card due today is not late — and never in a finished column, where
+    the card paints no badge either. Mirrors `overdueRank` in
+    frontend/src/utils/aitoBoard.ts."""
+    if due_date is None or column in _FINISHED_COLUMNS:
+        return 1
+    return 0 if due_date < today else 1
+
+
+def _overdue_order(today: str):
+    """SQL twin of `_overdue_rank`. Built per request because `today` moves."""
+    return case(
+        (
+            and_(
+                AitoProject.due_date.is_not(None),
+                AitoProject.due_date < today,
+                AitoProject.board_column.not_in(_FINISHED_COLUMNS),
+            ),
+            0,
+        ),
+        else_=1,
+    )
 
 
 # NULL compares as NULL (never True) in SQL, so an unflagged row falls
@@ -376,6 +408,7 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # Nullable like `flag`, and for the same reason needs no coercion: an
         # unflushed in-memory row reads None, which IS "nobody told them yet".
         client_contacted_at=p.client_contacted_at,
+        due_date=p.due_date,
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.
         version=p.version or 0,
@@ -389,7 +422,9 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         steps_total=summary.steps_total,
         steps_done=summary.steps_done,
         task_steps=[
-            AitoTaskStepsResponse(services=list(steps.services), done=list(steps.done), title=steps.title)
+            AitoTaskStepsResponse(
+                services=list(steps.services), done=list(steps.done), title=steps.title, rush=steps.rush
+            )
             for steps in summary.steps_by_task
         ],
         move_lock=lock,
@@ -445,6 +480,7 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
         impression_color=t.impression_color,
         impression_cost=t.impression_cost,
         impression_discount_pct=t.impression_discount_pct,
+        impression_rush=t.impression_rush,
         scan_quantity=t.scan_quantity,
         modelisation_quantity=t.modelisation_quantity,
         usinage_quantity=t.usinage_quantity,
@@ -837,7 +873,9 @@ async def list_projects(
         # snaps back below one, on the next fetch. Rewriting `position` on
         # flag would "fix" that by destroying the operator's ordering
         # irreversibly, which is worse.
-        .order_by(AitoProject.board_column, _FLAG_ORDER, AitoProject.position, AitoProject.id)
+        .order_by(
+            AitoProject.board_column, _overdue_order(_today_iso()), _FLAG_ORDER, AitoProject.position, AitoProject.id
+        )
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
@@ -930,6 +968,7 @@ async def create_project(
         quote_total=payload.quote_total,
         quote_url=payload.quote_url,
         quote_salesperson=payload.quote_salesperson,
+        due_date=payload.due_date.isoformat() if payload.due_date else None,
         quote_status=payload.quote_status,
         # None when auth is disabled, and for API-key requests — the dependency
         # returns None for both rather than a synthetic user.
@@ -980,6 +1019,17 @@ async def create_project(
             subject_id=project.id,
             detail={"imported_from": project.quote_number} if project.quote_number else None,
         )
+        if project.due_date:
+            await record(
+                db,
+                project.id,
+                "project.due.set",
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project.id,
+                changes=[{"field": "due_date", "from": None, "to": project.due_date}],
+            )
         if payload.quote_status in ("accepted", "declined"):
             # Only reachable with a quote_id (the schema's
             # _decided_status_needs_a_quote_id validator gates the other
@@ -1990,6 +2040,9 @@ async def update_task(
     """
     task = await _get_task_or_404(db, task_id)
     fields = payload.model_dump(exclude_unset=True)
+    # A null rush is "leave alone", never "clear": the column is NOT NULL.
+    if fields.get("impression_rush", False) is None:
+        fields.pop("impression_rush")
 
     # Loaded before the write, not after: the guard needs the parent's quote
     # status, and one load then serves the pending mark and _apply_rules too.
@@ -2252,7 +2305,12 @@ async def move_project(
     # lands N slots off, and some slots become unreachable. Python's sort is
     # stable, so `position, id` order still holds inside each of the three
     # tiers.
-    destination.sort(key=lambda row: _flag_rank(row.flag))
+    # Overdue outranks the flag tier — same order as list_projects. The
+    # client's own date wins when it sends one: `position` is an index into
+    # the order the operator SAW, and that order was computed in their
+    # timezone, not the container's. See AitoProjectMove.today.
+    today = payload.today.isoformat() if payload.today else _today_iso()
+    destination.sort(key=lambda row: (_overdue_rank(row.due_date, payload.column, today), _flag_rank(row.flag)))
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
     project.board_column = payload.column
@@ -2496,6 +2554,46 @@ async def set_project_flag(
             )
         await db.commit()
         await _broadcast_changed("flag", project.id, _actor(current_user))
+        await db.refresh(project)
+
+    return await _project_response(db, project)
+
+
+@router.patch("/{project_id}/due-date", response_model=AitoProjectResponse)
+async def set_project_due_date(
+    project_id: int,
+    payload: AitoDueDateUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Set or clear the day promised to the client.
+
+    Its own route for exactly the reason `set_project_flag` is: `update_project`
+    ends with an unconditional `_mark_pending_if_ours`, and Zoho has no field
+    for this date, so routing it through there would queue an empty push and
+    churn `quote_sync_state` on locked quotes. Not a VERSIONED_FIELDS member
+    either — last write wins and the board broadcast shows the loser.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    new_value = payload.due_date.isoformat() if payload.due_date else None
+
+    if project.due_date != new_value:
+        previous = project.due_date
+        project.due_date = new_value
+        # One decision, one row: changing a date is a `set` carrying both
+        # sides, never a clear followed by a set.
+        await record(
+            db,
+            project.id,
+            "project.due.set" if new_value else "project.due.cleared",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "due_date", "from": previous, "to": new_value}],
+        )
+        await db.commit()
+        await _broadcast_changed("due_date", project.id, _actor(current_user))
         await db.refresh(project)
 
     return await _project_response(db, project)

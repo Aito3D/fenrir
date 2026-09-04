@@ -1,7 +1,7 @@
 """Pydantic DTOs for the Aito production board."""
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -201,6 +201,9 @@ class AitoTaskBase(BaseModel):
     impression_cost: float | None = Field(default=None, ge=0)
     # gt=0: a 0% discount is expressed as null, never stored — see the model.
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100)
+    # Quoted at the rush rate. Plain bool with a default, on the base class:
+    # a response must read it back and a create may omit it (False).
+    impression_rush: bool = False
     # ge=1: there is no zero-unit line. None reads as 1.
     scan_quantity: int | None = Field(default=None, ge=1)
     modelisation_quantity: int | None = Field(default=None, ge=1)
@@ -258,6 +261,8 @@ class AitoTaskUpdate(AitoTaskBase):
     impression_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
+    # `None` = leave alone, matching every other field's exclude_unset read.
+    impression_rush: bool | None = None
 
 
 class AitoTaskResponse(AitoTaskBase):
@@ -298,6 +303,9 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     quote_total: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     quote_url: str | None = Field(default=None, max_length=300)
     quote_salesperson: str | None = Field(default=None, max_length=200)
+    # The promised delivery day. Parsed as a real calendar date and stored as
+    # its ISO string; any past date is accepted.
+    due_date: date | None = None
     # Restricted to the Zoho vocabulary — an import usually carries one of
     # these (it is read straight off the Books estimate), and a hand-made
     # card only ever sends 'sent'/'accepted'/'declined' through the dedicated
@@ -423,6 +431,15 @@ class AitoProjectImport(BaseModel):
 class AitoProjectMove(BaseModel):
     column: AitoColumn
     position: int = Field(ge=0)
+    # The CLIENT's local calendar date, so the destination is re-sorted with
+    # the same "today" the board the operator dragged on was sorted with.
+    # Overdue cards sort first, and which cards are overdue depends on whose
+    # midnight you ask: the container runs TZ=Europe/Berlin while the shop is
+    # in UTC-10, so for eleven hours a day the two disagree and every drop
+    # into a column holding a card due on the boundary lands one slot off.
+    # None falls back to the server's date — an older bundle, an API key or a
+    # script that sends no date is no worse off than before.
+    today: date | None = None
 
 
 class AitoTaskReorder(BaseModel):
@@ -490,6 +507,13 @@ class AitoFlagUpdate(BaseModel):
     flag: AitoFlag | None
 
 
+class AitoDueDateUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/due-date. One required field, same shape as
+    AitoFlagUpdate: `None` clears the promise, it is not "leave alone"."""
+
+    due_date: date | None
+
+
 class AitoContactedUpdate(BaseModel):
     """Body of PATCH /aito/{id}/contacted.
 
@@ -515,6 +539,9 @@ class AitoTaskStepsResponse(BaseModel):
     services: list[str]
     done: list[str]
     title: str = ""
+    # True when the task carries a print step quoted at the rush rate. The
+    # card draws a glyph on that row; nothing else reads it.
+    rush: bool = False
 
 
 class AitoProjectResponse(BaseModel):
@@ -561,6 +588,9 @@ class AitoProjectResponse(BaseModel):
     # refuses Finish -> Done. The board card reads it to know whether to show
     # the "call the client" state or the ordinary Done button.
     client_contacted_at: datetime | None
+    # ISO `YYYY-MM-DD` promised to the client, or null. Local only — see the
+    # column comment on AitoProject.due_date.
+    due_date: str | None
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when
     # it was recorded — 'conflict' (both sides decided and differ) or

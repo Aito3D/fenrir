@@ -44,6 +44,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_invoiced: false,
   flag: null,
   client_contacted_at: null,
+  due_date: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -318,7 +319,9 @@ describe('applyTaskSummary', () => {
         },
       ]),
     );
-    expect(find(after, 1).task_steps).toEqual([{ services: ['scan', 'impression'], done: ['scan'], title: '' }]);
+    expect(find(after, 1).task_steps).toEqual([
+      { services: ['scan', 'impression'], done: ['scan'], title: '', rush: false },
+    ]);
   });
 });
 

@@ -20,10 +20,12 @@ export function CalculatorBreakdownCard({
   const { t } = useTranslation();
   const waterfall = useMemo(() => buildWaterfall(result), [result]);
 
+  type BreakdownLine = [string, number, string?, string?];
+
   const groups: Array<{
     labelKey: string;
     color: string;
-    lines: Array<[string, number, string?, string?]>;
+    lines: BreakdownLine[];
   }> = [
     {
       labelKey: 'calculator.groupMachine',
@@ -74,6 +76,7 @@ export function CalculatorBreakdownCard({
         ],
         ['calculator.marginFilament', result.margin_filament],
         ['calculator.marginStuff', result.margin_stuff],
+        ...(result.margin_rush > 0.005 ? [['calculator.rush', result.margin_rush] as BreakdownLine] : []),
       ],
     },
   ];

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent, act, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -34,6 +34,7 @@ const project: AitoProject = {
   quote_invoiced: false,
   flag: null,
   client_contacted_at: null,
+  due_date: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -466,6 +467,41 @@ describe('CardView', () => {
   it('names the pause flag for assistive tech', () => {
     render(<CardView project={{ ...project, flag: 'pause' }} onExpand={vi.fn()} />);
     expect(screen.getByTestId('aito-card-flag')).toHaveTextContent('Paused');
+  });
+
+  describe('due date badge', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 10, 12, 0, 0)); // local 2026-09-10
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('is absent without a date', () => {
+      renderCard({ due_date: null });
+      expect(screen.queryByTestId('aito-card-due')).not.toBeInTheDocument();
+    });
+
+    it('shows the short date, coloured by proximity', () => {
+      renderCard({ due_date: '2026-09-20' });
+      expect(screen.getByTestId('aito-card-due').className).toContain('text-bambu-gray');
+      expect(screen.getByTestId('aito-card-due')).toHaveTextContent(/20/);
+    });
+
+    it('turns amber within three days, orange today, red past', () => {
+      renderCard({ due_date: '2026-09-12' });
+      expect(screen.getByTestId('aito-card-due').className).toContain('text-amber-400');
+      cleanup();
+      renderCard({ due_date: '2026-09-10' });
+      expect(screen.getByTestId('aito-card-due').className).toContain('text-orange-500');
+      cleanup();
+      renderCard({ due_date: '2026-09-01' });
+      expect(screen.getByTestId('aito-card-due').className).toContain('text-red-400');
+    });
+
+    it('paints nothing on a finished card', () => {
+      renderCard({ due_date: '2026-09-01', column: 'finish', move_lock: null });
+      expect(screen.queryByTestId('aito-card-due')).not.toBeInTheDocument();
+    });
   });
 });
 

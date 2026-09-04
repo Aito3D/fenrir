@@ -96,6 +96,12 @@ export interface TaskLike {
   modelisationDiscountPct?: number | null;
   impressionDiscountPct?: number | null;
   usinageDiscountPct?: number | null;
+  /** The print step's rush flag, nested exactly as `TaskDraft.impression`
+   *  nests it so a draft satisfies this structurally with no adapter.
+   *  Optional — absent reads as not rushed, which keeps every existing
+   *  cost/done literal in the suite compiling. Mirrors the `impression_rush`
+   *  attribute `summarise` duck-types off an AitoTask. */
+  impression?: { rush: boolean };
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -214,6 +220,10 @@ export interface TaskSteps {
   services: ServiceId[];
   done: ServiceId[];
   title: string;
+  /** True only when the task HAS a print step AND it is rushed — a rush flag
+   *  on a scan-only task marks nothing. Same rule as `TaskSteps.rush` in the
+   *  Python, and pinned by the same fixture. */
+  rush: boolean;
 }
 
 export interface TaskSummary {
@@ -261,7 +271,12 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
         unticked.add(service);
       }
     }
-    stepsByTask.push({ services: taskServices, done: taskDone, title: task.title ?? '' });
+    stepsByTask.push({
+      services: taskServices,
+      done: taskDone,
+      title: task.title ?? '',
+      rush: !!task.impression?.rush && taskServices.includes('impression'),
+    });
   }
 
   return {

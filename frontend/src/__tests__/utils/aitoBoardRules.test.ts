@@ -21,7 +21,7 @@ interface SummariseCase {
   pending: string[];
   steps_total: number;
   steps_done: number;
-  steps_by_task: { services: string[]; done: string[]; title: string }[];
+  steps_by_task: { services: string[]; done: string[]; title: string; rush: boolean }[];
 }
 
 const SERVICE_IDS: ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage'];
@@ -44,6 +44,11 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
       usinage: row.usinage_done === true,
     },
     title: row.title as string,
+    // The wire keeps rush flat (`impression_rush`) because that is how it
+    // sits on an AitoTask row; the mirror reads it off the nested impression
+    // draft, which is how it sits on a TaskDraft. This is the one place the
+    // two shapes meet.
+    impression: { rush: row.impression_rush === true },
   };
 }
 
@@ -55,7 +60,7 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(12);
+    expect(summariseCases).toHaveLength(14);
   });
 
   it('stages every service exactly once', () => {
@@ -118,6 +123,27 @@ const bare = (over: Partial<TaskLike> = {}): TaskLike => ({
   usinageCost: null,
   done: { scan: false, modelisation: false, impression: false, usinage: false },
   ...over,
+});
+
+describe('the rush flag on a task row', () => {
+  // The mirror is what the panel's optimistic writes rebuild `task_steps`
+  // from (projectOntoBoard in hooks/useProjectTasks.ts, placeholderProject in
+  // utils/aitoOptimistic.ts). Dropping rush here meant ticking Rush showed no
+  // bolt on the card until the close-time refetch, and editing any other
+  // field wiped the bolts a refetch had put there.
+  it('marks a rushed print step', () => {
+    const summary = summariseTasks([bare({ impressionCost: 1250, impression: { rush: true } })]);
+    expect(summary.stepsByTask[0].rush).toBe(true);
+  });
+
+  it('marks nothing when the rushed task has no print step', () => {
+    const summary = summariseTasks([bare({ scanCost: 500, impression: { rush: true } })]);
+    expect(summary.stepsByTask[0].rush).toBe(false);
+  });
+
+  it('is false for a task that says nothing about rush', () => {
+    expect(summariseTasks([bare({ impressionCost: 1250 })]).stepsByTask[0].rush).toBe(false);
+  });
 });
 
 describe('netCost', () => {

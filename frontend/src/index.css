@@ -359,9 +359,11 @@ html {
   .impression-grid {
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) 1px minmax(0, auto) minmax(0, 1fr);
     /* One source of truth for the row count: the rule's `grid-row: 1 / -1`
-       below spans to the last line of this EXPLICIT grid, so adding a part
-       row here is the only change a sixth row requires. */
-    grid-template-rows: repeat(5, auto);
+       below spans to the last line of this EXPLICIT grid, so bumping this
+       number is the only change a new part OR price row requires. Six rows:
+       the rush toggle occupies row 5, and the computed-price readout moved
+       to row 6 to make room for it (see ImpressionFields' price column). */
+    grid-template-rows: repeat(6, auto);
     column-gap: 0.7rem;
   }
   /* `--ip-row` is set inline, per row, by ImpressionFields. The assignment

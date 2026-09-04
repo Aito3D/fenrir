@@ -13,7 +13,7 @@ import { NewContactForm } from './NewContactForm';
 import { TaskEditor } from './TaskEditor';
 import { AITO_SERVICE_LABEL_KEYS } from './services';
 import { Money } from '../calculator/shared';
-import { focusRingCls, labelCls } from '../formStyles';
+import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
@@ -37,7 +37,13 @@ import type { TaskDraft } from '../../utils/taskDraft';
 
 export interface NewProjectDrawerProps {
   onClose: () => void;
-  onCreate: (description: string, draft: ClientDraft, tasks: TaskDraft[], shipping: ShippingDraft | null) => void;
+  onCreate: (
+    description: string,
+    draft: ClientDraft,
+    tasks: TaskDraft[],
+    shipping: ShippingDraft | null,
+    dueDate: string | null,
+  ) => void;
 }
 
 type SectionId = 'work' | 'client';
@@ -150,6 +156,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const summarySignatureRef = useRef(persistence.initial?.summarySignature ?? '');
   const [generateNonce, setGenerateNonce] = useState(0);
   const [shipping, setShipping] = useState<ShippingDraft | null>(() => persistence.initial?.shipping ?? null);
+  const [dueDate, setDueDate] = useState<string>(() => persistence.initial?.dueDate ?? '');
   const [openSections, setOpenSections] = useState<Set<SectionId>>(() => new Set<SectionId>(['work']));
   const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(() => new Set());
   const [clientRevealed, setClientRevealed] = useState(false);
@@ -225,9 +232,10 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       summaryEdited,
       summarySignature: summarySignatureRef.current,
       shipping,
+      dueDate,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, draft, summaryText, summaryEdited, shipping, generateNonce]);
+  }, [tasks, draft, summaryText, summaryEdited, shipping, dueDate, generateNonce]);
 
   const toggleSection = (id: SectionId) =>
     setOpenSections((current) => {
@@ -271,6 +279,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setClientRevealed(false);
     setCreatingClient(false);
     setShipping(null);
+    setDueDate('');
   };
 
   const taskName = (task: TaskDraft, index: number) => task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
@@ -351,7 +360,13 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     // the panel showing a fallback enumeration, and even that is rebuilt here
     // rather than trusting the panel to have run at all.
     const serviceLabel = (id: string) => t(AITO_SERVICE_LABEL_KEYS[id] ?? id);
-    onCreate(summaryText.trim() || buildFallbackSummary(tasks, serviceLabel), draft, tasks, revealedShipping);
+    onCreate(
+      summaryText.trim() || buildFallbackSummary(tasks, serviceLabel),
+      draft,
+      tasks,
+      revealedShipping,
+      dueDate || null,
+    );
   };
 
   const onClientCreated = (contact: ZohoContact, social: { network: SocialNetwork | null; handle: string }) => {
@@ -476,6 +491,18 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                     shipping={shipping}
                     onShippingChange={setShipping}
                   />
+                  <div className="mt-3">
+                    <label htmlFor="new-project-due-date" className={labelCls}>
+                      {t('aito.dueDate')}
+                    </label>
+                    <input
+                      id="new-project-due-date"
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
                   {/* Soft, never blocking: one channel is enough to create the
                       project, but the missing one has a real consequence. */}
                   {phone !== '' && email === '' && (

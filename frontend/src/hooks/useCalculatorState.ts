@@ -51,6 +51,8 @@ export interface CalcState {
   /** True when the time fields came from a slicer estimate (prefill), so the
       time-accuracy correction chip is relevant. Cleared on manual edits. */
   timeFromEstimate: boolean;
+  /** Quote at the rush rate. Session-only, never persisted. */
+  rush: boolean;
 }
 
 export const DEFAULT_STATE: CalcState = {
@@ -82,6 +84,7 @@ export const DEFAULT_STATE: CalcState = {
   dailyHoursOverride: '',
   dismissedChecks: [],
   timeFromEstimate: false,
+  rush: false,
 };
 
 /** Parse a numeric input string, falling back when empty, missing or invalid.
@@ -107,7 +110,20 @@ export function splitDecimalHours(value: number): { timeD: string; timeH: string
   };
 }
 
-function loadState(): CalcState {
+/**
+ * Read the persisted calculator state.
+ *
+ * `rush` is session-only by design: a *fresh calculator visit* must never
+ * come back rushed, so the hook's own mount path calls this with the
+ * default (`forgetRush = true`) and it forces `rush` back to `false`. But
+ * the calculator→quote hop is a same-session handoff, not a fresh visit —
+ * `CalculatorPage` flushes the live `rush` flag via
+ * `persistCalculatorStateNow` right before navigating, and the quote page
+ * (`loadCalculatorState`, below) needs to read that flag back exactly as
+ * written so the printed price stays rushed. Pass `forgetRush = false` for
+ * that path.
+ */
+function loadState(forgetRush = true): CalcState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_STATE;
@@ -123,6 +139,7 @@ function loadState(): CalcState {
       }
     }
     delete (state as unknown as Record<string, unknown>).time;
+    if (forgetRush) state.rush = false; // deliberately not remembered between visits
     return state;
   } catch {
     return DEFAULT_STATE;
@@ -246,9 +263,13 @@ export function useCalculatorState() {
   return { state, set, reset, errors, tab, setTab };
 }
 
-/** Read the persisted calculator state without mounting the hook (quote page). */
+/** Read the persisted calculator state without mounting the hook (quote page).
+ *  Unlike the hook's own mount path, this reads `rush` as-is: the quote page
+ *  is a same-session handoff from the calculator (which just flushed the
+ *  live `rush` flag via `persistCalculatorStateNow`), not a fresh visit, so
+ *  the rushed price must survive the hop. */
 export function loadCalculatorState(): CalcState {
-  return loadState();
+  return loadState(false);
 }
 
 /** Synchronous persist for navigation flows that outrun the 500ms debounce. */
@@ -325,5 +346,6 @@ export function buildPricingInputs(state: CalcState, defaults: { stuff_markup_pc
     post_fulfillment_min: Math.max(0, num(state.postFulfillment)),
     stuff_amount: Math.max(0, num(state.stuffAmount)),
     stuff_markup_pct: Math.max(0, num(state.stuffMarkup, defaults.stuff_markup_pct)),
+    rush: state.rush,
   };
 }

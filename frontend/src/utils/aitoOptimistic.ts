@@ -373,6 +373,7 @@ export function placeholderProject(fields: {
   quote_number?: string | null;
   quote_total?: number | null;
   quote_status?: string | null;
+  due_date?: string | null;
   tasks?: readonly TaskLike[];
 }): AitoProject {
   const quoteStatus = fields.quote_status ?? null;
@@ -408,6 +409,7 @@ export function placeholderProject(fields: {
     // A brand-new card is nowhere near Finish, so nobody has been told
     // anything about it yet.
     client_contacted_at: null,
+    due_date: fields.due_date ?? null,
     quote_sync_error: null,
     quote_status_block: null,
     quote_status_remote: null,

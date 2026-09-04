@@ -6,7 +6,7 @@
  *  and trashed cards are exempt: a finished or discarded job is not late.
  */
 
-import { parseUTCDateStrict } from './date';
+import { parseLocalDateKey, parseUTCDateStrict } from './date';
 
 const DAY_MS = 86_400_000;
 
@@ -87,4 +87,36 @@ export function ageAnchor(project: {
     if (at) return { anchor: 'accepted', raw: project.quote_accepted_at, at };
   }
   return { anchor: 'created', raw: project.created_at, at: parseUTCDateStrict(project.created_at) };
+}
+
+/** How close the promised day is. Computed on calendar dates, not
+ *  milliseconds, so a card due tomorrow reads the same at 09:00 and 23:00.
+ *  `today` is an ISO `YYYY-MM-DD` — pass `localDateKey(new Date())`. */
+export type DueLevel = 'none' | 'far' | 'soon' | 'today' | 'past';
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function dueDateLevel(dueDate: string | null, today: string): DueLevel {
+  if (!dueDate || !ISO_DATE.test(dueDate)) return 'none';
+  const days = Math.round((parseLocalDateKey(dueDate).getTime() - parseLocalDateKey(today).getTime()) / DAY_MS);
+  if (Number.isNaN(days)) return 'none';
+  if (days < 0) return 'past';
+  if (days === 0) return 'today';
+  if (days <= 3) return 'soon';
+  return 'far';
+}
+
+/** Complete class strings per level — Tailwind cannot see fragments. Reuses
+ *  the aging ramp's colours so the board keeps one vocabulary; `past` adds
+ *  weight the way the ramp's final alarm does. */
+const DUE_CLS: Record<DueLevel, string> = {
+  none: '',
+  far: 'text-bambu-gray',
+  soon: 'text-amber-400',
+  today: 'text-orange-500',
+  past: 'text-red-400 font-medium',
+};
+
+export function dueDateCls(level: DueLevel): string {
+  return DUE_CLS[level];
 }

@@ -250,8 +250,18 @@ describe('AitoPage — cross-column drag lock (over a card, not just an empty co
     expect(within(quoteColumn).getByText('Support GoPro')).toBeInTheDocument();
     expect(within(quoteColumn).getByText('Coque manette')).toBeInTheDocument();
 
-    // And the new priority reached the server.
-    expect(moveRequestBody).toEqual({ id: '12', body: { column: 'devis', position: 1 } });
+    // And the new priority reached the server — along with the BROWSER's
+    // calendar date, which the destination re-sort needs: `position` indexes
+    // the order the operator saw, and that order puts overdue cards first,
+    // which depends on which day it is where they are and not on the
+    // container's timezone. Spelled out rather than imported from
+    // `localDateKey` so this stays an independent statement of "local, not
+    // UTC" — the exact distinction the field exists for.
+    const now = new Date();
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+      now.getDate(),
+    ).padStart(2, '0')}`;
+    expect(moveRequestBody).toEqual({ id: '12', body: { column: 'devis', position: 1, today: localToday } });
   });
 
   it('does not PATCH a move when a locked card is dropped onto a card in a disallowed column, even without a prior dragOver', async () => {

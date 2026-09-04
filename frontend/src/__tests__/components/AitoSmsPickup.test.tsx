@@ -13,6 +13,7 @@ const project = {
   client_name: 'ACME',
   client_phone: '87 12 34 56',
   client_contacted_at: null,
+  due_date: null,
 } as unknown as AitoProject;
 
 const DRAFT = {

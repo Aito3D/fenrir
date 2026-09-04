@@ -297,7 +297,19 @@ async def test_a_sale_price_far_above_cost_backfills_a_margin_past_1000(raw_conn
 async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
     """Pre-migration table (no curve columns) gets them added back with the
     documented defaults, and re-running the migration is a no-op."""
-    for column in ("margin_min_mult", "margin_max_mult", "margin_k", "qty_min_factor", "qty_k", "min_task_price"):
+    # rush_pct (2026-09-04 rush surcharge column) is dropped alongside the
+    # curve columns: it's a later migration-added column that follows the
+    # same "ALTER TABLE ... FLOAT DEFAULT ..." pattern and is likewise
+    # NOT NULL with no DB-level default.
+    for column in (
+        "margin_min_mult",
+        "margin_max_mult",
+        "margin_k",
+        "qty_min_factor",
+        "qty_k",
+        "min_task_price",
+        "rush_pct",
+    ):
         await raw_conn.execute(text(f"ALTER TABLE calculator_defaults DROP COLUMN {column}"))
     # Every other column on this table is NOT NULL with no DB-level default, so
     # a bare "(id) VALUES (1)" insert violates those constraints; INSERT OR
@@ -318,11 +330,11 @@ async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
     row = (
         await raw_conn.execute(
             text(
-                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price "
-                "FROM calculator_defaults WHERE id = 1"
+                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price, "
+                "rush_pct FROM calculator_defaults WHERE id = 1"
             )
         )
     ).one()
-    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0)
+    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0, 0.0)
 
     await run_migrations(raw_conn)  # idempotent

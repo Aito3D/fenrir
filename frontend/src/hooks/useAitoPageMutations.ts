@@ -80,9 +80,16 @@ export function useAitoPageMutations() {
 
   const createMutation = useOptimisticBoardMutation<
     AitoProject,
-    { description: string; draft: ClientDraft; tasks: TaskDraft[]; shipping: ShippingDraft | null; placeholder: AitoProject }
+    {
+      description: string;
+      draft: ClientDraft;
+      tasks: TaskDraft[];
+      shipping: ShippingDraft | null;
+      dueDate: string | null;
+      placeholder: AitoProject;
+    }
   >({
-    mutationFn: ({ description, draft, tasks, shipping }) =>
+    mutationFn: ({ description, draft, tasks, shipping, dueDate }) =>
       api.createAitoProject({
         description,
         client_id: draft.id,
@@ -94,6 +101,7 @@ export function useAitoPageMutations() {
         // and a network with no handle clears the pair.
         client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
         client_social_handle: draft.socialHandle.trim() || null,
+        due_date: dueDate,
         tasks: tasks.map(taskDraftToTaskCreate),
         ...(shipping ? shippingPayload(shipping) : {}),
       }),

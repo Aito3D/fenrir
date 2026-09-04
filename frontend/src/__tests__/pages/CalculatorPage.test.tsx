@@ -66,6 +66,7 @@ const mockDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
+  rush_pct: 0,
   failure_rate_pct: 30,
   prototype_rate_pct: 30,
   ads_rate_pct: 5,
@@ -153,6 +154,7 @@ const referencePricingDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
+  rush_pct: 0,
   failure_rate_pct: 30,
   prototype_rate_pct: 30,
   ads_rate_pct: 5,
@@ -1556,5 +1558,29 @@ describe('CalculatorPage', () => {
 
       expect(window.location.pathname).toBe('/calculator/quote');
     });
+  });
+
+  it('rush toggle adds a rush row to the breakdown', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json({ ...mockDefaults, rush_pct: 25 })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    render(<CalculatorPage />);
+    await screen.findByText('Cost breakdown');
+    expect(screen.queryByText('Rush surcharge')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/rush job/i));
+    expect(await screen.findByText('Rush surcharge')).toBeInTheDocument();
+  });
+
+  it('never restores the rush toggle from a stored state', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json({ ...mockDefaults, rush_pct: 25 })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2', rush: true }) : null,
+    );
+    render(<CalculatorPage />);
+    await screen.findByText('Cost breakdown');
+    expect(screen.getByLabelText(/rush job/i)).not.toBeChecked();
+    expect(screen.queryByText('Rush surcharge')).not.toBeInTheDocument();
   });
 });

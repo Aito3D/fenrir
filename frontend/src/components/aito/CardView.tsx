@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, Eye, GripVertical, Lock, User } from 'lucide-react';
+import { DueDateBadge } from './DueDateBadge';
 import { TaskMiniRows } from './TaskMiniRows';
 import type { AitoFlag, AitoProject } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -336,6 +337,7 @@ export function CardView({
               already lands, and an aging job is exactly the fact that belongs
               beside the name, not buried under a description. Heat ramp with
               age — see utils/aitoAging. */}
+          <DueDateBadge dueDate={project.due_date ?? null} column={project.column} />
           <span
             data-testid="aito-card-elapsed"
             title={dateTitle}

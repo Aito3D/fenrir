@@ -11,6 +11,7 @@
     "column": "devis",
     "created_by": null,
     "description": "zero cost",
+    "due_date": null,
     "flag": null,
     "id": 2,
     "move_lock": "quote",
@@ -47,6 +48,7 @@
     "task_steps": [
       {
         "done": [],
+        "rush": false,
         "services": [
           "scan"
         ],
@@ -68,6 +70,7 @@
     "column": "devis",
     "created_by": null,
     "description": "no tasks",
+    "due_date": null,
     "flag": null,
     "id": 1,
     "move_lock": "quote",
@@ -113,6 +116,7 @@
     "column": "finish",
     "created_by": null,
     "description": "accepted",
+    "due_date": null,
     "flag": null,
     "id": 4,
     "move_lock": null,
@@ -149,6 +153,7 @@
         "done": [
           "modelisation"
         ],
+        "rush": false,
         "services": [
           "modelisation"
         ],
@@ -170,6 +175,7 @@
     "column": "print",
     "created_by": null,
     "description": "mixed",
+    "due_date": null,
     "flag": null,
     "id": 3,
     "move_lock": "steps",
@@ -211,6 +217,7 @@
         "done": [
           "scan"
         ],
+        "rush": false,
         "services": [
           "scan",
           "impression"
@@ -219,6 +226,7 @@
       },
       {
         "done": [],
+        "rush": false,
         "services": [
           "usinage"
         ],
@@ -240,6 +248,7 @@
     "column": "scan",
     "created_by": null,
     "description": "accepted zero pending",
+    "due_date": null,
     "flag": null,
     "id": 5,
     "move_lock": "steps",
@@ -276,6 +285,7 @@
     "task_steps": [
       {
         "done": [],
+        "rush": false,
         "services": [
           "scan"
         ],

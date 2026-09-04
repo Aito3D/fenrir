@@ -216,7 +216,13 @@ export function AitoPage() {
     departureTarget: (key) => (doneIds.has(Number(key)) ? 'archive' : null),
   });
 
-  const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[], shipping: ShippingDraft | null) => {
+  const createProject = (
+    description: string,
+    draft: ClientDraft,
+    tasks: TaskDraft[],
+    shipping: ShippingDraft | null,
+    dueDate: string | null,
+  ) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
     // not sit open through a round trip. The placeholder is what tells the
     // user their card exists.
@@ -226,6 +232,7 @@ export function AitoPage() {
       draft,
       tasks,
       shipping,
+      dueDate,
       placeholder: placeholderProject({
         description,
         client_id: draft.id,
@@ -235,6 +242,7 @@ export function AitoPage() {
         client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
         client_social_handle: draft.socialHandle.trim() || null,
         client_is_company: draft.isCompany,
+        due_date: dueDate,
         // No quote_status: a manual create posts none (see the mutationFn
         // above), so it defaults to null — the same "waits for Accept" state
         // a draft import has. `TaskDraft` already structurally matches

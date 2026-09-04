@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageAnchor, agingColorCls, agingLevel, agingTextCls } from '../../utils/aitoAging';
+import { ageAnchor, agingColorCls, agingLevel, agingTextCls, dueDateCls, dueDateLevel } from '../../utils/aitoAging';
 
 const DAY = 86_400_000;
 
@@ -92,5 +92,29 @@ describe('ageAnchor', () => {
     const result = ageAnchor({ ...base, created_at: 'not-a-date' });
     expect(result.anchor).toBe('created');
     expect(result.at).toBeNull();
+  });
+});
+
+describe('dueDateLevel', () => {
+  const today = '2026-09-10';
+  it('walks none / far / soon / today / past against a fixed today', () => {
+    expect(dueDateLevel(null, today)).toBe('none');
+    expect(dueDateLevel('2026-09-20', today)).toBe('far');
+    expect(dueDateLevel('2026-09-14', today)).toBe('far');
+    expect(dueDateLevel('2026-09-13', today)).toBe('soon');
+    expect(dueDateLevel('2026-09-11', today)).toBe('soon');
+    expect(dueDateLevel('2026-09-10', today)).toBe('today');
+    expect(dueDateLevel('2026-09-09', today)).toBe('past');
+    expect(dueDateLevel('2020-01-01', today)).toBe('past');
+  });
+  it('treats an unparseable date as none', () => {
+    expect(dueDateLevel('soon', today)).toBe('none');
+  });
+  it('maps levels to complete colour classes', () => {
+    expect(dueDateCls('far')).toBe('text-bambu-gray');
+    expect(dueDateCls('soon')).toBe('text-amber-400');
+    expect(dueDateCls('today')).toBe('text-orange-500');
+    expect(dueDateCls('past')).toBe('text-red-400 font-medium');
+    expect(dueDateCls('none')).toBe('');
   });
 });
