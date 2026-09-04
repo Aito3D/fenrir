@@ -164,3 +164,56 @@ async def test_move_keeps_the_overdue_card_on_top_of_its_destination(async_clien
     assert r.status_code == 200, r.text
     board = (await async_client.get("/api/v1/aito/")).json()
     assert [p["description"] for p in board if p["column"] == "devis"] == ["first", "second", "third"]
+
+
+async def _abc(client):
+    """a, b, c in Devis. Creation prepends, so the STORED order is c, b, a —
+    and `a` is the one given the boundary date."""
+    a = (await _create(client, description="a")).json()
+    b = (await _create(client, description="b")).json()
+    c = (await _create(client, description="c")).json()
+    # Due on the server's today: not overdue there, overdue anywhere already
+    # past midnight. That is the whole disagreement, in one row.
+    await client.patch(f"/api/v1/aito/{a['id']}/due-date", json={"due_date": "2026-09-10"})
+    return a, b, c
+
+
+@pytest.mark.asyncio
+async def test_move_re_sorts_the_destination_with_the_client_s_calendar_date(async_client, today):
+    """The container runs TZ=Europe/Berlin; the shop is in UTC-10. For the
+    hours the two disagree, the board the operator dragged on ranked a card
+    overdue that the server does not — and `position` is an index into THAT
+    order, so re-sorting the destination with the server's date drops the
+    card one slot off.
+
+    Here the server's today is 2026-09-10 and `a` is due 2026-09-10, so the
+    server does not rank it overdue. The browser, already on the 11th, does:
+    it drew a, c, b and asks for `c` at index 1. Sorted with the client's
+    date the destination is [a, b] -> a first, and `c` lands between them.
+    """
+    _a, _b, c = await _abc(async_client)
+
+    r = await async_client.patch(
+        f"/api/v1/aito/{c['id']}/move",
+        json={"column": "devis", "position": 1, "today": "2026-09-11"},
+    )
+    assert r.status_code == 200, r.text
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert [p["description"] for p in board if p["column"] == "devis"] == ["a", "c", "b"]
+
+
+@pytest.mark.asyncio
+async def test_move_without_a_client_date_still_uses_the_server_s(async_client, today):
+    """The control for the test above, and the compatibility guarantee: an
+    older bundle, an API key or a script that sends no date gets exactly the
+    behaviour it got before the field existed. Same setup, same drag — the
+    server does not rank `a` overdue, so the destination stays in stored
+    order [b, a] and `c` lands after `b` instead."""
+    _a, _b, c = await _abc(async_client)
+
+    r = await async_client.patch(f"/api/v1/aito/{c['id']}/move", json={"column": "devis", "position": 1})
+    assert r.status_code == 200, r.text
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert [p["description"] for p in board if p["column"] == "devis"] == ["b", "c", "a"]

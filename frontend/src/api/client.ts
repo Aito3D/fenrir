@@ -1,4 +1,5 @@
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
+import { localDateKey } from '../utils/date';
 
 const API_BASE = '/api/v1';
 
@@ -7644,10 +7645,17 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ task_ids: taskIds }),
     }),
+  /** `position` is an index into the order the operator SAW, and that order
+   *  puts overdue cards first — which means it depends on which day it is
+   *  where THEY are. The server would otherwise re-sort the destination with
+   *  the container's date (TZ=Europe/Berlin against a shop in UTC-10), and
+   *  for the hours the two disagree every drop into a column holding a card
+   *  due on the boundary lands one slot off. So the browser's own calendar
+   *  date rides along with the drag. */
   moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
     request<AitoProject>(`/aito/${id}/move`, {
       method: 'PATCH',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, today: localDateKey(new Date()) }),
     }),
   setAitoQuoteStatus: (id: number, data: { status: 'sent' | 'accepted' | 'declined' }) =>
     // `no_op` is true when the request repeated a decision already applied —

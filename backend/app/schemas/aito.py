@@ -431,6 +431,15 @@ class AitoProjectImport(BaseModel):
 class AitoProjectMove(BaseModel):
     column: AitoColumn
     position: int = Field(ge=0)
+    # The CLIENT's local calendar date, so the destination is re-sorted with
+    # the same "today" the board the operator dragged on was sorted with.
+    # Overdue cards sort first, and which cards are overdue depends on whose
+    # midnight you ask: the container runs TZ=Europe/Berlin while the shop is
+    # in UTC-10, so for eleven hours a day the two disagree and every drop
+    # into a column holding a card due on the boundary lands one slot off.
+    # None falls back to the server's date — an older bundle, an API key or a
+    # script that sends no date is no worse off than before.
+    today: date | None = None
 
 
 class AitoTaskReorder(BaseModel):

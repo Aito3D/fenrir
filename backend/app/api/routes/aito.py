@@ -2305,8 +2305,11 @@ async def move_project(
     # lands N slots off, and some slots become unreachable. Python's sort is
     # stable, so `position, id` order still holds inside each of the three
     # tiers.
-    # Overdue outranks the flag tier — same order as list_projects.
-    today = _today_iso()
+    # Overdue outranks the flag tier — same order as list_projects. The
+    # client's own date wins when it sends one: `position` is an index into
+    # the order the operator SAW, and that order was computed in their
+    # timezone, not the container's. See AitoProjectMove.today.
+    today = payload.today.isoformat() if payload.today else _today_iso()
     destination.sort(key=lambda row: (_overdue_rank(row.due_date, payload.column, today), _flag_rank(row.flag)))
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
