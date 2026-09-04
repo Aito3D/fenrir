@@ -1,3 +1,6 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QRCodeSVG } from 'qrcode.react';
 import type { AitoProject, AitoShippingService } from '../api/client';
 import { formatPhoneDisplay } from './clientDraft';
 import { islandLabel } from './shippingDraft';
@@ -14,6 +17,12 @@ export const AITO3D_SENDER = {
   addressLines: ["20 Route de l'eau Royale", 'Arue – Tahiti', 'Polynésie française'],
   phone: '(+689) 89 25 32 10',
   email: 'contact@aito3d.fr',
+  /** Google Business Profile → "Get more reviews". Printed on the review
+   *  card as text and as a QR code. */
+  reviewUrl: 'https://g.page/r/CVL6WajJzwuGEBM/review',
+  website: 'aito3d.fr',
+  /** One handle for Facebook, Instagram and TikTok alike. */
+  socialHandle: '@aito3d',
 } as const;
 
 /** Everything the printed label says, already resolved to display strings.
@@ -30,8 +39,6 @@ export interface ShippingLabel {
   /** Invoice number. Empty when the invoice has no number yet — the row is
    *  then left out rather than printed blank. */
   reference: string;
-  projectTitle: string;
-  date: Date;
 }
 
 /** The label for this project, or null when there is nothing to print.
@@ -50,7 +57,6 @@ export function shippingLabelFor(
   project: AitoProject,
   services: AitoShippingService[],
   invoiceNumber: string | null | undefined,
-  now: Date = new Date(),
 ): ShippingLabel | null {
   if (project.column !== 'finish' || project.shipping_island === null) return null;
 
@@ -65,16 +71,11 @@ export function shippingLabelFor(
     island: islandLabel(project.shipping_island, services),
     serviceName: project.shipping_service_name ?? project.shipping_service ?? '',
     reference: invoiceNumber ?? '',
-    projectTitle: project.description ?? '',
-    date: now,
   };
 }
 
 const escapeHtml = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-const frenchDate = (date: Date): string =>
-  new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
 
 /** Inter, served from the app's own /fonts. Resolved against the logo URL so
  *  the document — which lives at a blob: URL with no base of its own — still
@@ -108,18 +109,23 @@ const NIHO_STRIP = `<svg class="strip head" aria-hidden="true" xmlns="http://www
   <rect width="100%" height="100%" fill="url(#strip-niho)"/>
 </svg>`;
 
-/** Above the thank-you line: a Mā'ohi band — solid black ground with the
- *  motifs reversed out in white, the way Tahitian (as opposed to Marquesan)
- *  work reads: a tao spearhead, then an unaunahi fish-scale half-disc, each
- *  carrying a smaller black echo of itself. Deliberately the opposite
- *  polarity of the header strip so the two frame rather than repeat. */
+/** Above the thank-you line: a Tahitian bracelet band — solid black with
+ *  the island's own motifs reversed out in white, the organic vocabulary of
+ *  Tahitian tatau rather than Marquesan geometry:
+ *    tiare — the Tahitian gardenia, six petals round a dot;
+ *    manu  — a frigatebird in flight, the two curved wings;
+ *    moana — the ocean curl the parcel crosses.
+ *  Deliberately the opposite polarity of the header strip so the two frame
+ *  the label rather than repeat each other. */
+const TIARE = [0, 60, 120, 180, 240, 300]
+  .map((angle) => `<ellipse cx="10" cy="4.1" rx="1.55" ry="3.7" fill="#fff" transform="rotate(${angle} 10 8.5)"/>`)
+  .join('');
 const MAOHI_STRIP = `<svg class="strip foot" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs><pattern id="strip-maohi" width="26" height="13.2" patternUnits="userSpaceOnUse">
-    <rect width="26" height="13.2"/>
-    <path d="M1.5 12 7 1.4 12.5 12Z" fill="#fff"/>
-    <path d="M5.4 11 7 6.2 8.6 11Z"/>
-    <path d="M13 12A6 6 0 0 1 25 12Z" fill="#fff"/>
-    <path d="M16.4 12A2.6 2.6 0 0 1 21.6 12Z"/>
+  <defs><pattern id="strip-maohi" width="48" height="17" patternUnits="userSpaceOnUse">
+    <rect width="48" height="17"/>
+    ${TIARE}<circle cx="10" cy="8.5" r="1.1"/>
+    <path d="M18.5 12C21.5 4.5 25 5.5 25.5 9.5C26 5.5 29.5 4.5 32.5 12C29.8 8.8 27 9.6 25.5 12C24 9.6 21.2 8.8 18.5 12Z" fill="#fff"/>
+    <path d="M35 14A6 6 0 0 1 47 14A3 3 0 0 0 41 14A1.5 1.5 0 0 1 44 14" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
   </pattern></defs>
   <rect width="100%" height="100%" fill="url(#strip-maohi)"/>
 </svg>`;
@@ -131,8 +137,25 @@ const SCISSORS = `<svg class="scissors" viewBox="0 0 24 24" aria-hidden="true" x
   <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>
 </svg>`;
 
+const STAR = `<svg viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.5l2.9 6.1 6.7.8-4.9 4.6 1.3 6.6L12 17.3 6 20.6l1.3-6.6L2.4 9.4l6.7-.8z"/></svg>`;
+
+/** The review link as a scannable code. `qrcode.react` is already a
+ *  dependency (the printer pages use it); rendered to static markup here
+ *  because the label is a string document, not a React tree. Level M: the
+ *  card is printed at 50mm+ on a home printer, and M survives a smudge. */
+const qrSvg = (value: string): string =>
+  renderToStaticMarkup(createElement(QRCodeSVG, { value, size: 160, level: 'M', marginSize: 0 }));
+
+/** Simple line glyphs for the three networks, drawn rather than fetched:
+ *  a brand's icon font is one more request a print snapshot can miss. */
+const SOCIAL_ICONS: Record<'facebook' | 'instagram' | 'tiktok', string> = {
+  facebook: `<svg viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M14 8h3V4h-3c-2.8 0-4.5 1.7-4.5 4.5V11H7v4h2.5v6h4v-6H17l.5-4h-4V9c0-.6.4-1 .5-1z"/></svg>`,
+  instagram: `<svg viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="12" cy="12" r="3.8"/><circle cx="17.2" cy="6.8" r=".9" fill="#111" stroke="none"/></svg>`,
+  tiktok: `<svg viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M13 3h3c.2 2.2 1.6 3.7 3.8 3.9v3c-1.5 0-2.7-.4-3.8-1.1v6.4A5.3 5.3 0 1 1 10 10v3.1a2.3 2.3 0 1 0 3 2.2V3z"/></svg>`,
+};
+
 /** A complete printable document: A4 portrait, label on the top half, a cut
- *  line at the fold, the bottom half blank.
+ *  line at the fold, and a review card on the bottom half.
  *
  *  Why a document and not a component: the label is printed from a hidden
  *  iframe (see `usePrintBlob`), where it needs its own page rules, its own
@@ -155,7 +178,6 @@ export function buildShippingLabelHtml(label: ShippingLabel, logoUrl: string): s
   const referenceRows = label.reference
     ? `<div class="eyebrow">Référence</div><div class="ref-no">${e(label.reference)}</div>`
     : '';
-  const titleRow = label.projectTitle ? `<div class="ref-title">${e(label.projectTitle)}</div>` : '';
   const phoneRow = label.recipientPhone ? `<div class="to-phone">${e(label.recipientPhone)}</div>` : '';
 
   return `<!doctype html>
@@ -196,8 +218,6 @@ body {
 .from-contact:first-of-type { margin-top: 1.5mm; }
 .ref { margin-top: auto; padding-top: 4mm; }
 .ref-no { font-size: 13pt; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
-.ref-title { font-size: 9pt; color: #333; margin-top: .5mm; }
-.ref-date { font-size: 8.5pt; color: #666; margin-top: 1.5mm; }
 .to { position: relative; display: flex; flex-direction: column; min-width: 0; }
 .to-name { font-size: 22pt; font-weight: 800; letter-spacing: -.015em; line-height: 1.1; overflow-wrap: anywhere; }
 .to-phone { font-size: 13pt; font-weight: 500; margin-top: 1.5mm; font-variant-numeric: tabular-nums; }
@@ -207,13 +227,30 @@ body {
 .service { margin-top: 3.5mm; display: inline-flex; align-self: flex-start; align-items: center; gap: 2mm; font-size: 9.5pt; font-weight: 600; padding: 1.5mm 3.5mm; border: .35mm solid #111; border-radius: 10mm; }
 .service::before { content: ''; width: 2mm; height: 2mm; border-radius: 50%; background: #1a9cd8; }
 .fragile { position: absolute; right: 1mm; bottom: 1mm; transform: rotate(-5deg); padding: 1.4mm 3.5mm; border: .6mm solid #111; border-radius: 1mm; font-size: 10pt; font-weight: 800; letter-spacing: .28em; text-transform: uppercase; }
-.strip.foot { margin: 3mm 0 0; }
+.strip.foot { height: 4.5mm; margin: 3mm 0 0; }
 .thanks { margin-top: 2.5mm; font-size: 9.5pt; font-style: italic; color: #222; display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; }
 .thanks b { font-style: normal; font-weight: 700; color: #1a9cd8; }
 .thanks span { font-style: normal; font-size: 8pt; color: #666; white-space: nowrap; }
 .cut { position: absolute; left: 8mm; right: 8mm; top: 148.5mm; border-top: .3mm dashed #999; }
 .scissors { position: absolute; left: 0; top: -2.2mm; width: 4.2mm; height: 4.2mm; background: #fff; padding: 0 .4mm; }
 .cut-hint { position: absolute; right: 0; top: -1.6mm; background: #fff; padding-left: 1.5mm; font-size: 6.5pt; color: #999; letter-spacing: .12em; text-transform: uppercase; }
+.review { position: absolute; left: 0; top: 148.5mm; width: 210mm; height: 148.5mm; padding: 12mm 12mm 9mm; display: flex; flex-direction: column; overflow: hidden; }
+.review-body { flex: 1; display: grid; grid-template-columns: 1fr 50mm; column-gap: 10mm; align-items: center; min-height: 0; }
+.review-title { font-size: 23pt; font-weight: 900; letter-spacing: -.02em; line-height: 1.05; }
+.review-title b { color: #1a9cd8; }
+.review-text { margin: 4mm 0 0; font-size: 10.5pt; line-height: 1.45; color: #222; }
+.stars { margin-top: 4mm; display: flex; gap: 1.2mm; }
+.stars svg { width: 5.5mm; height: 5.5mm; }
+.review-link { margin-top: 3mm; font-size: 9.5pt; font-weight: 600; overflow-wrap: anywhere; }
+.review-link span { color: #1a9cd8; }
+.socials { margin-top: 5mm; padding-top: 3.5mm; border-top: .3mm solid #111; display: flex; flex-wrap: wrap; align-items: center; gap: 2mm 5mm; font-size: 9pt; }
+.socials .lead { font-weight: 700; }
+.socials .net { display: inline-flex; align-items: center; gap: 1.4mm; font-weight: 600; }
+.socials .net svg { width: 4mm; height: 4mm; }
+.socials .site { margin-left: auto; font-weight: 700; color: #1a9cd8; }
+.qr-box { justify-self: end; width: 50mm; border: .5mm solid #111; border-radius: 2mm; padding: 4mm; text-align: center; }
+.qr svg { width: 100%; height: auto; display: block; }
+.qr-caption { margin-top: 2.5mm; font-size: 7.5pt; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
 </style>
 </head>
 <body>
@@ -235,8 +272,6 @@ body {
       <div class="from-contact">${e(AITO3D_SENDER.email)}</div>
       <div class="ref">
         ${referenceRows}
-        ${titleRow}
-        <div class="ref-date">Expédié le ${e(frenchDate(label.date))}</div>
       </div>
     </section>
     <section class="to">
@@ -253,11 +288,46 @@ body {
   </main>
   ${MAOHI_STRIP}
   <footer class="thanks">
-    <div><b>Māuruuru roa !</b> Merci pour votre confiance, prenez soin de vos pièces et à très bientôt.</div>
+    <div><b>Māuruuru roa !</b> Merci pour ta confiance, prends soin de tes pièces et à très bientôt.</div>
     <span>— l'équipe Aito3D</span>
   </footer>
 </div>
 <div class="cut" aria-hidden="true">${SCISSORS}<span class="cut-hint">Plier · découper ici</span></div>
+<section class="review">
+  <header class="head">
+    <img class="logo" src="${e(logoUrl)}" alt="Aito3D">
+    <div class="head-right">
+      <div class="kicker">Ton avis compte</div>
+      <div class="sub">Atelier de fabrication 3D · Arue, Tahiti</div>
+    </div>
+  </header>
+  ${NIHO_STRIP}
+  <div class="review-body">
+    <div>
+      <div class="review-title">Merci pour ta commande&nbsp;!</div>
+      <p class="review-text">Aito3D, c'est un petit atelier d'Arue, et chaque avis compte énormément pour nous faire connaître. Si tes pièces te plaisent, prends une minute pour nous laisser un avis Google&nbsp;: scanne le code, ou tape le lien ci-dessous.</p>
+      <div class="stars" aria-hidden="true">${STAR}${STAR}${STAR}${STAR}${STAR}</div>
+      <div class="review-link">Avis Google&nbsp;: <span>${e(AITO3D_SENDER.reviewUrl)}</span></div>
+      <div class="socials">
+        <span class="lead">Suis-nous</span>
+        <span class="net">${SOCIAL_ICONS.facebook}Facebook</span>
+        <span class="net">${SOCIAL_ICONS.instagram}Instagram</span>
+        <span class="net">${SOCIAL_ICONS.tiktok}TikTok</span>
+        <span>${e(AITO3D_SENDER.socialHandle)}</span>
+        <span class="site">${e(AITO3D_SENDER.website)}</span>
+      </div>
+    </div>
+    <div class="qr-box">
+      <div class="qr">${qrSvg(AITO3D_SENDER.reviewUrl)}</div>
+      <div class="qr-caption">Scanne-moi</div>
+    </div>
+  </div>
+  ${MAOHI_STRIP}
+  <footer class="thanks">
+    <div><b>Māuruuru roa !</b> À très bientôt à l'atelier.</div>
+    <span>— l'équipe Aito3D</span>
+  </footer>
+</section>
 </body>
 </html>
 `;

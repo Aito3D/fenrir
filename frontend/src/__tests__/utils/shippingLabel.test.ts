@@ -25,33 +25,29 @@ const services: AitoShippingService[] = [
   } as unknown as AitoShippingService,
 ];
 
-const NOW = new Date('2026-09-03T10:00:00');
-
 describe('shippingLabelFor', () => {
   it('returns null unless the project is in Finish', () => {
-    expect(shippingLabelFor({ ...shipped, column: 'print' } as AitoProject, services, 'FA-26-0001', NOW)).toBeNull();
-    expect(shippingLabelFor({ ...shipped, column: 'done' } as AitoProject, services, 'FA-26-0001', NOW)).toBeNull();
+    expect(shippingLabelFor({ ...shipped, column: 'print' } as AitoProject, services, 'FA-26-0001')).toBeNull();
+    expect(shippingLabelFor({ ...shipped, column: 'done' } as AitoProject, services, 'FA-26-0001')).toBeNull();
   });
 
   it('returns null when the project has no shipping', () => {
-    expect(shippingLabelFor({ ...shipped, shipping_island: null } as AitoProject, services, 'FA-26-0001', NOW)).toBeNull();
+    expect(shippingLabelFor({ ...shipped, shipping_island: null } as AitoProject, services, 'FA-26-0001')).toBeNull();
   });
 
   it('assembles recipient, island, service and reference from the project', () => {
-    const label = shippingLabelFor(shipped, services, 'FA-26-0001', NOW);
+    const label = shippingLabelFor(shipped, services, 'FA-26-0001');
     expect(label).toEqual<ShippingLabel>({
       recipientName: 'Teva Tehei',
       recipientPhone: '(+689) 87.75.56.69',
       island: 'Bora Bora',
       serviceName: 'Livraison Avion Société',
       reference: 'FA-26-0001',
-      projectTitle: 'Support de casque',
-      date: NOW,
     });
   });
 
   it('falls back to a title-cased island key when the catalogue has not loaded', () => {
-    const label = shippingLabelFor(shipped, [], 'FA-26-0001', NOW);
+    const label = shippingLabelFor(shipped, [], 'FA-26-0001');
     expect(label?.island).toBe('Bora Bora');
   });
 
@@ -60,7 +56,6 @@ describe('shippingLabelFor', () => {
       { ...shipped, shipping_service_name: null, shipping_first_name: null, shipping_last_name: 'SARL Manu' } as AitoProject,
       services,
       null,
-      NOW,
     );
     expect(label?.serviceName).toBe('societe');
     expect(label?.recipientName).toBe('SARL Manu');
@@ -75,8 +70,6 @@ describe('buildShippingLabelHtml', () => {
     island: 'Bora Bora',
     serviceName: 'Livraison Avion Société',
     reference: 'FA-26-0001',
-    projectTitle: 'Support & casque',
-    date: NOW,
   };
   const html = buildShippingLabelHtml(label, 'https://app.example/assets/aito3d.png');
 
@@ -90,7 +83,13 @@ describe('buildShippingLabelHtml', () => {
   it('prints the recipient block, escaping what came from the operator', () => {
     expect(html).toContain('Teva &lt;Tehei&gt;');
     expect(html).not.toContain('Teva <Tehei>');
-    expect(html).toContain('Support &amp; casque');
+    // Neutral on purpose: nothing on the outside of the parcel says what is
+    // in it or when it left — no project title, no date.
+    expect(html).not.toContain('Support');
+    expect(html).not.toContain('Expédié');
+    // A French long date, e.g. "3 septembre 2026". (Not a bare year: the
+    // font's unicode-range "U+2000-206F" would trip that.)
+    expect(html).not.toMatch(/\b\d{1,2} [a-zéû]+ 20\d\d\b/);
     expect(html).toContain('(+689) 87.75.56.69');
     expect(html).toContain('Bora Bora');
     expect(html).toContain('Livraison Avion Société');
@@ -104,9 +103,10 @@ describe('buildShippingLabelHtml', () => {
     }
   });
 
-  it('carries the French thank-you note and the date in French', () => {
+  it('carries the thank-you note in French, in tutoiement', () => {
     expect(html).toContain('Māuruuru');
-    expect(html).toContain('3 septembre 2026');
+    expect(html).toContain('Merci pour ta confiance');
+    expect(html).not.toContain('votre');
   });
 
   it('loads Inter from the logo origin, and silently skips the fonts when the logo has none', () => {
@@ -130,6 +130,23 @@ describe('buildShippingLabelHtml', () => {
       expect(html).toContain(`id="${motif}"`);
     }
     expect(html).not.toContain('class="tatau"');
+  });
+
+  it('fills the bottom half with a review card: thanks, a Google review link and its QR code', () => {
+    expect(html).toContain('class="review"');
+    expect(html).toContain('top: 148.5mm');
+    expect(html).toContain('Merci pour ta commande');
+    // The link printed as text AND as a scannable code — a printed URL
+    // nobody will retype is not a call to action.
+    expect(html).toContain(AITO3D_SENDER.reviewUrl.replace(/&/g, '&amp;'));
+    expect(html).toContain('class="qr"');
+    expect(html).toMatch(/class="qr"[\s\S]*<svg[\s\S]*shape-rendering="crispEdges"/);
+    // Same register as the label's own note.
+    expect(html).not.toContain('votre');
+    // The follow-us line and the site, under the review ask.
+    for (const text of ['Facebook', 'Instagram', 'TikTok', AITO3D_SENDER.socialHandle, AITO3D_SENDER.website]) {
+      expect(html).toContain(text);
+    }
   });
 
   it('omits the reference row rather than printing an empty one', () => {
