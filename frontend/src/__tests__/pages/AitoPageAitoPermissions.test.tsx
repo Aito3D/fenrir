@@ -66,6 +66,7 @@ const project = {
   quote_status: null,
   flag: null,
   client_contacted_at: null,
+  due_date: null,
   task_count: 0,
   tasks_total: 0,
   task_services: [],
