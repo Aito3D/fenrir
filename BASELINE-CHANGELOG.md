@@ -8974,3 +8974,132 @@ vitest run src/__tests__/components/CalculatorSettingsPanel.test.tsx`: 33 passed
 src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx`: 6 passed. `npx vitest run
 src/__tests__/pages/CalculatorPage.test.tsx`: 49 passed — confirms calculator settings rendering
 is unaffected.
+
+## T-010 — 2026-09-03 — user-approved behavior change
+
+`run_sync_once`'s reconcile branch (the widened, non-pending half of its SELECT — `status ==
+"active"`, `quote_id.is_not(None)`, `quote_sync_state.not_in(("pending", "unmanaged", "locked"))`)
+re-selected every active quoted project on every 300s tick for the rest of the install's life, with
+no way for an operator to stop it short of trashing the card. Archiving a card only sets
+`board_column = "done"` (`routes/aito.py`'s `move_project`); a declined or expired quote is never
+locked either (`quote_sync_state` stays `"idle"`, only `quote_sync_state == "locked"` is excluded,
+and Books' own invoiced lock is a different state entirely). The module's own inline comment inside
+`reconcile_quote_status` already admitted the cost for the event-log half of this ("a finished,
+accepted card is polled and re-recorded forever"); the same is true of the GET call itself. At
+288 ticks/day this exceeds Zoho's 1,000-10,000 requests/day org budget past roughly 35 retained
+quoted projects, board history rather than active workload — and once the org is throttled, every
+Books surface degrades at once (client search, quote PDF, quote/invoice email), with each 429 also
+spending a slot of the sync retry budget T-009 protects.
+
+Fixed by excluding TERMINAL cards from the reconcile branch only — a project whose `board_column`
+is `"done"`, OR whose `quote_status` is `"declined"` or `"expired"` (the exact literals the module
+already uses: `board_column` is `AitoColumn`'s last value, devis|waiting|scan|model|print|finish|
+**done**, and `quote_status` is `AitoQuoteStatus` = draft|sent|viewed|accepted|**declined**|
+**expired**, both in `schemas/aito.py`). The SQL predicate gained
+`AitoProject.board_column != "done"` and `or_(AitoProject.quote_status.is_(None),
+AitoProject.quote_status.not_in(("declined", "expired")))` — the `is_(None)` half is load-bearing:
+`quote_status` is nullable, and a bare `col.not_in(...)` on a NULL column evaluates to SQL NULL
+(neither true nor false), which would have silently excluded every project whose quote has never
+had ANY status recorded, not just declined/expired ones. `_still_selected` (the Python mirror of
+the same predicate, used by `run_sync_once`'s per-iteration re-check) gained the matching branch:
+`if project.board_column == "done" or project.quote_status in ("declined", "expired"): return
+False`, placed before its existing `quote_sync_state not in ("unmanaged", "locked")` check.
+
+Scoped exactly to the reconcile branch, nothing wider:
+- The PENDING branch (`quote_sync_state == "pending"`, the first `or_` term) is completely
+  untouched. An operator's explicit edit on a terminal card still flips it to `"pending"` via
+  `routes/aito.py`'s `_mark_pending_if_ours`, and the sweep still picks it up and pushes that one
+  edit — `sync_project`'s routing (`quote_sync_state != "pending"`) never even reaches the new
+  exclusion for a pending project, so nothing needed to change there.
+- The NULL-`quote_id` `"error"` branch from T-008 (the third `or_` term, re-selecting a project
+  whose very first CREATE never succeeded) is untouched — a project with no `quote_id` yet has no
+  `board_column`/`quote_status` combination that could describe an already-quoted terminal state,
+  and the task explicitly scoped this fix to leave it alone.
+- No per-tick cap, no round-robin, no cutoff timestamp, no new setting — none of the auditor's
+  alternative options were implemented, per the approved scope.
+
+Changed: `backend/app/services/aito_quote_sync.py` only — the reconcile `and_()` clause in
+`run_sync_once` gained the two `board_column`/`quote_status` conditions; `_still_selected` gained
+the matching branch; `run_sync_once`'s own docstring and the `SYNC_FAILURE_LIMIT` module comment
+(which used to claim the sweep "excludes only 'unmanaged' and 'locked'") were both corrected to
+describe the new exclusion so they stop overclaiming forever-polling for a terminal card. No route,
+schema, permission, or DDL changed.
+
+Consumer enumeration — every reader of the sweep predicate and of `_still_selected`, plus the
+close/wake paths, plus the frontend:
+- `run_sync_once` has exactly one production caller, `run_sync_loop` (same module — the 300s
+  background tick, and the one place a `pending_only=False` call ever happens, so it is the only
+  call site that can even reach the reconcile branch this fix touches). `_still_selected` is
+  private to this module, called only from `run_sync_once`'s own per-iteration loop; nothing
+  outside `aito_quote_sync.py` imports it.
+- Every route in `routes/aito.py` that marks a project pending (task/project PATCH,
+  `sync_project_now` — the detail panel's close-time push, `set_quote_status`'s accept/decline
+  flow, etc.) wakes the worker via `request_debounced_sync` or `request_immediate_sync`
+  (`sync_project_now` and project creation use the immediate form; ordinary edits use the debounced
+  one), both of which resolve to the SAME background `run_sync_loop` calling
+  `run_sync_once(db, pending_only=True)` — the reconcile half is always skipped on a wake,
+  regardless of this change, so none of these call sites are affected either way. The trash-decline
+  logic inside `_reconcile_status` (direct `project.quote_status = "declined"` assignment, not
+  `adopt_quote_status` — a decline never stamps `quote_accepted_at`) is reached only from
+  `_update_quote`, itself only reached when `quote_sync_state == "pending"` — the untouched PENDING
+  branch — so a project mid-decline is unaffected by the new reconcile-only exclusion even once its
+  `quote_status` becomes `"declined"`.
+- `quote_sync_state` and `board_column`/`quote_status` are read by `routes/aito.py` (response
+  serialization, `_mark_pending_if_ours`, `move_project`, `set_quote_status`) purely to serve the
+  current row — none of those care WHY a project is or is not in the swept set, only its current
+  stored value, so none needed a change. The frontend (`CardView.tsx`, `ProjectDetailPanel.tsx`,
+  `QuotePrintButton.tsx`, `QuoteDownloadButton.tsx`, `InvoiceCard.tsx`, `DoneGrid.tsx`,
+  `aitoOptimistic.ts`) renders whatever `quote_sync_state`/`board_column`/`quote_status` the row
+  currently holds; it has no expectation about polling frequency and needed no change either.
+
+Verified the existing suite needed no adjustment before adding new coverage: ran the full
+`test_aito_quote_sync.py` file first (111 passed, unchanged) — no test in it constructs a
+reconcile-branch-eligible project (`quote_sync_state` not `"pending"`, `quote_id` set) with
+`board_column == "done"` or `quote_status` in `("declined", "expired")`. The one test that comes
+close, `test_invoicing_a_quote_never_unmakes_the_local_acceptance` (sets `board_column = "done"`
+before calling `run_sync_once`), leaves `quote_sync_state` at the `_project_with_quote` fixture's
+default `"pending"` throughout — it exercises the untouched PENDING branch, not the reconcile
+branch, so it was unaffected and needed no change. Every `quote_status = "declined"` test
+(`test_restoring_reapplies_the_snapshotted_status`, `test_a_quote_that_was_a_draft_comes_back_as_
+sent_on_restore`, `test_restore_from_trash_does_not_restamp_the_acceptance`) is built on the same
+`_project_with_quote` fixture and is likewise still on the PENDING branch. No existing test asserted
+the old forever-polling behavior, so none was adjusted or renamed.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py`:
+- `test_a_done_column_quoted_project_is_not_selected_by_the_sweep` — an idle, quoted project with
+  `board_column = "done"`: `_still_selected` returns `False`, and `run_sync_once` against a
+  transport with no routes registered at all (any Books call would 404 and fail the test) returns
+  `0` and leaves `quote_sync_state` unchanged.
+- `test_a_declined_quote_is_not_selected_by_the_sweep` — the same shape with `quote_status =
+  "declined"` instead, board column left non-terminal (`"waiting"`) to isolate the second
+  condition: `_still_selected` is `False`, `run_sync_once` is `0`, no Books call.
+- `test_an_active_non_terminal_quoted_project_is_still_selected_by_the_sweep` — a plain ongoing
+  quote (`board_column = "print"`, `quote_status = "sent"`): `_still_selected` is `True`,
+  `run_sync_once` returns `1` and the GET is observed — proving the exclusion does not overreach
+  into the ordinary case.
+- `test_a_terminal_card_explicitly_edited_pending_still_syncs_once` — a card that is BOTH archived
+  (`board_column = "done"`) and declined (`quote_status = "declined"`) but explicitly set
+  `quote_sync_state = "pending"` (the edit path): `_still_selected` is `True`, `run_sync_once`
+  returns `1`, a PUT is observed, and the project settles to `"idle"` with both terminal fields left
+  exactly as they were — proving the PENDING branch is genuinely untouched by this fix.
+
+`ruff check backend/` / `ruff format --check backend/`: clean. `pytest
+tests/unit/test_aito_quote_sync.py -q`: 115 passed (111 + 4 new). Every other test file referencing
+`run_sync_once`, `_still_selected`, `quote_sync_state`, or `board_column` was also run:
+`test_aito_active_quote_index_migration.py`, `test_aito_board_migration.py`,
+`test_aito_board_summary.py`, `test_aito_close_sync.py`, `test_aito_contacted.py`,
+`test_aito_event_backfill_migration.py`, `test_aito_flag_migration.py`,
+`test_aito_invoiced_status_heal_migration.py`, `test_aito_project_model.py`,
+`test_aito_quote_accepted_backfill_migration.py`, `test_aito_quote_e2e.py`,
+`test_aito_quote_protection.py`, `test_aito_quote_status.py`, `test_aito_quote_sync_interval.py`,
+`test_aito_quote_sync.py`, `test_aito_routes.py`, `test_aito_shipping_migration.py`,
+`test_aito_shipping_routes.py`, `test_aito_social_handle_migration.py`,
+`test_aito_sync_events.py`, `test_aito_task_description_migration.py`,
+`test_aito_task_reorder.py`, `test_aito_unmanaged_backfill_migration.py`,
+`test_aito_zoho_comments.py` — 579 passed, 0 failed. `./venv/bin/python3 tools/snapshot.py verify`:
+10/10 probes match (no route, schema, or DDL change, as expected). `bash
+tools/gen_surface_all.sh | diff - SURFACE.md`: empty (no new top-level def — `_still_selected` and
+`run_sync_once` both already existed; only their bodies changed).
+
+Observable change (quoted verbatim from the approved task): "a status change made in Zoho Books on
+an archived or declined quote would no longer be reflected back onto the card automatically."

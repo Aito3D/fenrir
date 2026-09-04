@@ -62,13 +62,15 @@ logger = logging.getLogger(__name__)
 #
 # It does NOT stop the project being polled, and never claim it does: the sweep
 # deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
-# which excludes only 'unmanaged' and 'locked' for a project that HAS a
-# quote_id — and, separately, also selects a quote_id-less 'error' project,
-# the failed-CREATE case below), so an escalated project is still re-read
-# every tick — and that read is exactly what lets sync_project's recovery
-# branch bring it back to 'idle' once Books answers again. What the limit
-# ends is the retrying of the PUSH, and it surfaces the failure on the card
-# instead of leaving it silently 'pending' forever.
+# which excludes only 'unmanaged', 'locked', and a TERMINAL card — archived
+# (board_column 'done') or a settled-the-other-way quote (quote_status
+# 'declined'/'expired'), see T-010 — for a project that HAS a quote_id — and,
+# separately, also selects a quote_id-less 'error' project, the failed-CREATE
+# case below), so a still-active, non-terminal escalated project is still
+# re-read every tick — and that read is exactly what lets sync_project's
+# recovery branch bring it back to 'idle' once Books answers again. What the
+# limit ends is the retrying of the PUSH, and it surfaces the failure on the
+# card instead of leaving it silently 'pending' forever.
 #
 # A project whose very first push (the CREATE) is what failed never earns a
 # quote_id in the first place, so the "has a quote_id" half of the SELECT
@@ -1602,6 +1604,13 @@ def _still_selected(project: AitoProject) -> bool:
     if project.quote_id is not None:
         # 'pending' omitted here (unlike the SQL mirror's not_in): the early
         # return above already handles it, so this branch never sees it.
+        # T-010: mirrors the SQL mirror's terminal-card exclusion — an
+        # archived (board_column 'done') or settled-the-other-way
+        # (quote_status 'declined'/'expired') card is not re-attempted even
+        # if it was selected a moment earlier and moved into one of those
+        # states before this row was re-fetched.
+        if project.board_column == "done" or project.quote_status in ("declined", "expired"):
+            return False
         return project.quote_sync_state not in ("unmanaged", "locked")
     # No quote_id: only 'error' (a failed CREATE — see T-008 and
     # run_sync_once's own second SELECT clause) is swept back in. 'idle' with
@@ -1613,7 +1622,17 @@ def _still_selected(project: AitoProject) -> bool:
 
 async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     """Drain every pending project, and reconcile the status of every other
-    managed quote. Returns how many were actually attempted.
+    non-terminal managed quote. Returns how many were actually attempted.
+
+    "Non-terminal" (T-010): the reconcile half skips a card that is archived
+    (``board_column == "done"``) or whose quote is settled the other way
+    (``quote_status`` 'declined'/'expired') — those no longer change on
+    Books' side in any way that matters to the board, so reconciling them
+    forever would only grow with board HISTORY, not with active workload. A
+    change made directly in Zoho Books on one of those cards after it goes
+    terminal is not reflected back automatically. An explicit edit still
+    flips a terminal card back to 'pending' via the PENDING branch below
+    (untouched by this exclusion) and syncs it exactly once, as before.
 
     ``pending_only`` is the wake path (see ``request_immediate_sync``): it
     skips the reconcile half entirely so a wake costs no Books calls beyond
@@ -1639,6 +1658,18 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
                 # invoiced or tax-unsafe estimate, where a status
                 # write is no safer than a line-item write.
                 AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+                # T-010: a TERMINAL card — archived (board_column 'done') or a
+                # quote Books itself considers settled the other way
+                # (quote_status 'declined'/'expired') — costs one Books call
+                # per tick forever otherwise, growing per-tick load with board
+                # HISTORY rather than active workload (see the module's own
+                # comment on SYNC_FAILURE_LIMIT). Excluding it here is a pure
+                # reconcile-skip: it is not written to, not escalated, not
+                # touched at all. The PENDING branch above is untouched — an
+                # explicit edit still flips a terminal card to 'pending' and
+                # is synced exactly once, same as before.
+                AitoProject.board_column != "done",
+                or_(AitoProject.quote_status.is_(None), AitoProject.quote_status.not_in(("declined", "expired"))),
             ),
             and_(
                 AitoProject.status == "active",

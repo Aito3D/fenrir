@@ -22,6 +22,7 @@ from backend.app.services.aito_quote_sync import (
     _deferred_reasons,
     _requeue_marker,
     _snapshot_pushed_costs,
+    _still_selected,
     _update_quote,
     _write_back_rounded_costs,
     load_export_shipping,
@@ -241,6 +242,63 @@ async def test_quote_sync_aito_changed_goes_out_through_the_filtered_fan_out(db_
         if call.args and call.args[0].get("type") == "aito_changed" and call.args[0].get("action") == "quote-sync"
     ]
     assert unfiltered_quote_sync_calls == []
+
+
+@pytest.mark.asyncio
+async def test_tick_survives_a_broadcast_that_raises(db_session, monkeypatch, caplog):
+    """T-014: the best-effort ``ws_manager.broadcast_aito`` call at the end of
+    each project's iteration is wrapped in its own try/except (see the
+    module's own comment on it) — a broadcast failure must not unwind the
+    commit that already landed, nor abort the tick. Mirrors the failure shape
+    routes/aito.py's emitter is already tested against in
+    test_aito_broadcasts.py::test_broadcast_failure_never_fails_the_request."""
+    from unittest.mock import AsyncMock
+
+    from backend.app.services import aito_quote_sync
+
+    monkeypatch.setattr(aito_quote_sync.ws_manager, "broadcast_aito", AsyncMock(side_effect=RuntimeError("ws down")))
+
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    with caplog.at_level("WARNING"):
+        assert await run_sync_once(db_session) == 1
+
+    await db_session.refresh(project)
+    assert project.quote_id == "E1"
+    assert project.quote_sync_state == "idle"
+    assert "aito_changed broadcast failed for quote-sync" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -3509,6 +3567,140 @@ async def test_the_sweep_never_touches_an_unmanaged_project(db_session):
     assert await run_sync_once(db_session) == 1
     assert not any(entry[1].endswith("/estimates/E1") for entry in seen)
     assert any(entry[1].endswith("/estimates/E2") for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_a_done_column_quoted_project_is_not_selected_by_the_sweep(db_session):
+    """T-010: archiving a card (dragging it to Done) sets only
+    ``board_column``, never ``quote_sync_state`` or ``status`` — so before
+    this fix the reconcile branch kept polling it forever, one GET
+    /estimates/{id} per tick for the rest of the install's life, with no
+    action a human could take on the card to stop it short of trashing it.
+    A 'done' card must simply drop out of the swept set."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    project.board_column = "done"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    assert _still_selected(project) is False
+
+    # No route registered at all: any Books call this project's sync would
+    # make (a GET on /estimates/E1) 404s, which would fail this assertion by
+    # tripping the sweep's own error handling, not merely go unasserted.
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}))
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 0
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_a_declined_quote_is_not_selected_by_the_sweep(db_session):
+    """T-010: a quote Books itself already settled the other way
+    (``quote_status`` 'declined') is equally terminal — nothing about
+    reconciling it further changes anything a human would act on, so it is
+    excluded the same way an archived 'done' card is, independent of which
+    board column it happens to still sit in."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "declined"
+    project.quote_sync_state = "idle"
+    project.board_column = "waiting"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    assert _still_selected(project) is False
+
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}))
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 0
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_status == "declined"
+
+
+@pytest.mark.asyncio
+async def test_an_active_non_terminal_quoted_project_is_still_selected_by_the_sweep(db_session):
+    """T-010's exclusion must not overreach: a quoted project that is
+    neither archived (board_column != 'done') nor settled the other way
+    (quote_status not in 'declined'/'expired') is exactly the ordinary
+    ongoing case the sweep exists to reconcile, and must still be attempted
+    every tick, same as before this fix."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "sent"
+    project.quote_sync_state = "idle"
+    project.board_column = "print"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    assert _still_selected(project) is True
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent"}}}, seen)
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    assert any(entry[1].endswith("/estimates/E1") for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_a_terminal_card_explicitly_edited_pending_still_syncs_once(db_session):
+    """T-010's exclusion is scoped to the RECONCILE branch only: the PENDING
+    branch of the sweep is untouched, so a terminal card (here archived AND
+    declined, to exercise both exclusion conditions at once) that a human
+    explicitly edits — which marks it 'pending' via _mark_pending_if_ours —
+    still gets that one edit synced, exactly as it would for any other
+    pending project."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "declined"
+    project.board_column = "done"
+    project.quote_sync_state = "pending"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    assert _still_selected(project) is True
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "declined",
+                        "total": 1000,
+                        "last_modified_time": "2026-09-03T10:00:00-1000",
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    assert any(entry[0] == "PUT" for entry in seen)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    # Neither exclusion field was touched by the sync itself — the PENDING
+    # branch pushes line items and settles the state, nothing else.
+    assert project.board_column == "done"
+    assert project.quote_status == "declined"
 
 
 @pytest.mark.asyncio

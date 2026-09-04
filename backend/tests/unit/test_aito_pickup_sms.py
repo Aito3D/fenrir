@@ -15,6 +15,7 @@ Two endpoints and one relay are pinned here:
 
 import json
 
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -308,6 +309,60 @@ async def test_pushcut_non_2xx_raises(db_session, monkeypatch):
     monkeypatch.setattr(pushcut_service.httpx, "AsyncClient", FakeClient)
     with pytest.raises(pushcut_service.PushcutUpstreamError):
         await pushcut_service.send_sms_notification(db_session, phone="87", text="x", title="t")
+
+
+@pytest.mark.asyncio
+async def test_pushcut_transport_failure_raises_and_chains_the_original(db_session, monkeypatch):
+    """A transport-level failure (no response at all — e.g. DNS/connect
+    refused) is a different code path from the non-2xx case above: it never
+    reaches `response.status_code`, so it needs its own coverage. The
+    original httpx error must survive as `__cause__` for debugging."""
+    db_session.add(Settings(key="pushcut_sms_url", value="https://api.pushcut.io/tok/notifications/SMS"))
+    await db_session.commit()
+    connect_error = httpx.ConnectError("no route")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json=None):
+            raise connect_error
+
+    monkeypatch.setattr(pushcut_service.httpx, "AsyncClient", FakeClient)
+    with pytest.raises(pushcut_service.PushcutUpstreamError) as excinfo:
+        await pushcut_service.send_sms_notification(db_session, phone="87", text="x", title="t")
+    assert excinfo.value.__cause__ is connect_error
+
+
+@pytest.mark.asyncio
+async def test_pushcut_read_timeout_raises_and_chains_the_original(db_session, monkeypatch):
+    db_session.add(Settings(key="pushcut_sms_url", value="https://api.pushcut.io/tok/notifications/SMS"))
+    await db_session.commit()
+    timeout_error = httpx.ReadTimeout("timed out")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json=None):
+            raise timeout_error
+
+    monkeypatch.setattr(pushcut_service.httpx, "AsyncClient", FakeClient)
+    with pytest.raises(pushcut_service.PushcutUpstreamError) as excinfo:
+        await pushcut_service.send_sms_notification(db_session, phone="87", text="x", title="t")
+    assert excinfo.value.__cause__ is timeout_error
 
 
 # ---------------------------------------------------------------- the prompt
