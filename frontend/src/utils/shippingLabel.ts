@@ -99,28 +99,65 @@ function fontFaceCss(logoUrl: string): string {
   }
 }
 
-/** The tattoo band down the label's left edge: Marquesan niho (shark teeth)
- *  on both flanks, a spine of diamonds and chevrons between them. One tile,
- *  6mm wide (22.68 CSS px), repeated vertically. Solid black so it prints
- *  identically on a laser, an inkjet or a photocopier. */
+/** One enata — the human figure of Polynesian tatau, arms raised: family,
+ *  the people the parcel is going to. Drawn once, placed twice. */
+const ENATA = `<g id="tatau-enata">
+    <circle cx="0" cy="3" r="2.7"/>
+    <path d="M-6 2.5 0 8.5 6 2.5" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="-1.3" y="7" width="2.6" height="9"/>
+    <path d="M-5.5 22 0 15.5 5.5 22" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>`;
+
+/** The tatau band down the label's left edge — four Tahitian motifs stacked
+ *  and repeated, 8mm wide (30.24 CSS px), rules between them the way a
+ *  tattooed band is sectioned on the arm:
+ *    enata      — two human figures, family and ancestors;
+ *    niho mano  — interlocking shark teeth, protection on the crossing;
+ *    moana      — the rolling ocean curl the parcel crosses, spray above it;
+ *    tao        — spearheads, strength and direction.
+ *  Solid black with white negative space, so it prints identically on a
+ *  laser, an inkjet or a photocopier. */
 const TATAU_BAND = `<svg class="tatau" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs><pattern id="tatau" width="22.68" height="34" patternUnits="userSpaceOnUse">
-    <path d="M0 0L6 8.5 0 17ZM0 17L6 25.5 0 34Z"/>
-    <path d="M22.68 0L16.68 8.5 22.68 17ZM22.68 17L16.68 25.5 22.68 34Z"/>
-    <path d="M11.34 3L15 8.5 11.34 14 7.68 8.5Z"/>
-    <path d="M7.68 19L11.34 23 15 19V22L11.34 26 7.68 22ZM7.68 27L11.34 31 15 27V30L11.34 34 7.68 30Z"/>
-  </pattern></defs>
+  <defs>
+    ${ENATA}
+    <pattern id="tatau" width="30.24" height="130" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="30.24" height="1.4"/>
+      <use href="#tatau-enata" x="8.6" y="4"/><use href="#tatau-enata" x="21.6" y="4"/>
+      <rect x="0" y="31" width="30.24" height="1.4"/>
+      <g id="tatau-niho"><path d="M0 34 13 41.5 0 49ZM0 49 13 56.5 0 64ZM30.24 34 17.24 41.5 30.24 49ZM30.24 49 17.24 56.5 30.24 64Z"/></g>
+      <rect x="0" y="64" width="30.24" height="1.4"/>
+      <g id="tatau-moana">
+        <path d="M2 75 6 68 10 75ZM11 75 15 68 19 75ZM20 75 24 68 28 75Z"/>
+        <path d="M3 93A12 12 0 0 1 27 93A6 6 0 0 0 15 93A3 3 0 0 1 21 93" fill="none" stroke="#111" stroke-width="2.6" stroke-linecap="round"/>
+      </g>
+      <rect x="0" y="96" width="30.24" height="1.4"/>
+      <g id="tatau-tao">
+        <path d="M0 127 5 99 10 127ZM10 127 15 99 20 127ZM20 127 25 99 30.24 127Z"/>
+        <path d="M3.2 126 5 114 6.8 126ZM13.2 126 15 114 16.8 126ZM23.2 126 25 114 26.8 126Z" fill="#fff"/>
+      </g>
+      <rect x="0" y="128.6" width="30.24" height="1.4"/>
+    </pattern>
+  </defs>
   <rect width="100%" height="100%" fill="url(#tatau)"/>
+  <rect x="0" y="0" width="1.2" height="100%"/><rect x="29.04" y="0" width="1.2" height="100%"/>
 </svg>`;
 
-/** The wave strip under the header — moana, the ocean the parcel crosses.
- *  Nested arcs, stroked, repeated horizontally. */
-const MOANA_STRIP = `<svg class="moana" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs><pattern id="moana" width="13" height="9.45" patternUnits="userSpaceOnUse">
-    <path d="M0 9A6.5 6.5 0 0 1 13 9" fill="none" stroke="#111" stroke-width="1.1"/>
-    <path d="M3.4 9A3.1 3.1 0 0 1 9.6 9" fill="none" stroke="#111" stroke-width="1.1"/>
+/** Under the header: a run of niho mano, teeth down, over a hairline. */
+const NIHO_STRIP = `<svg class="strip head" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs><pattern id="strip-niho" width="20" height="11.34" patternUnits="userSpaceOnUse">
+    <path d="M0 0 10 9.5 20 0Z"/>
+    <rect x="0" y="10.2" width="20" height="1.14"/>
   </pattern></defs>
-  <rect width="100%" height="100%" fill="url(#moana)"/>
+  <rect width="100%" height="100%" fill="url(#strip-niho)"/>
+</svg>`;
+
+/** Above the thank-you line: moana, the ocean curl, rolling the same way
+ *  the parcel travels. */
+const MOANA_STRIP = `<svg class="strip foot" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs><pattern id="strip-moana" width="22" height="11.34" patternUnits="userSpaceOnUse">
+    <path d="M1 10.5A9.5 9.5 0 0 1 20 10.5A4.75 4.75 0 0 0 10.5 10.5A2.3 2.3 0 0 1 15.1 10.5" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+  </pattern></defs>
+  <rect width="100%" height="100%" fill="url(#strip-moana)"/>
 </svg>`;
 
 /** Scissors for the fold line. Drawn rather than the ✂ glyph: not every
@@ -176,16 +213,17 @@ body {
 }
 .label {
   position: relative; width: 210mm; height: 148.5mm;
-  padding: 11mm 12mm 9mm 22mm; overflow: hidden;
+  padding: 11mm 12mm 9mm 24mm; overflow: hidden;
   display: flex; flex-direction: column;
 }
-.tatau { position: absolute; left: 10mm; top: 10mm; width: 6mm; height: 128.5mm; }
+.tatau { position: absolute; left: 9mm; top: 10mm; width: 8mm; height: 128.5mm; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; }
 .logo { height: 9mm; width: auto; display: block; }
 .head-right { text-align: right; }
 .kicker { font-size: 8pt; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; }
 .sub { font-size: 8pt; color: #555; margin-top: 1mm; }
-.moana { display: block; width: 100%; height: 2.5mm; margin: 3.5mm 0 4.5mm; }
+.strip { display: block; width: 100%; height: 3mm; }
+.strip.head { margin: 3.5mm 0 4.5mm; }
 .body { flex: 1; display: grid; grid-template-columns: 58mm 1fr; column-gap: 8mm; min-height: 0; }
 .eyebrow { font-size: 7pt; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: #1a9cd8; margin-bottom: 1.5mm; }
 .from { display: flex; flex-direction: column; padding-right: 6mm; border-right: .3mm solid #111; }
@@ -206,7 +244,7 @@ body {
 .service { margin-top: 3.5mm; display: inline-flex; align-self: flex-start; align-items: center; gap: 2mm; font-size: 9.5pt; font-weight: 600; padding: 1.5mm 3.5mm; border: .35mm solid #111; border-radius: 10mm; }
 .service::before { content: ''; width: 2mm; height: 2mm; border-radius: 50%; background: #1a9cd8; }
 .fragile { position: absolute; right: 1mm; bottom: 1mm; transform: rotate(-5deg); padding: 1.4mm 3.5mm; border: .6mm solid #111; border-radius: 1mm; font-size: 10pt; font-weight: 800; letter-spacing: .28em; text-transform: uppercase; }
-.moana.foot { margin: 3mm 0 0; }
+.strip.foot { margin: 3mm 0 0; }
 .thanks { margin-top: 2.5mm; font-size: 9.5pt; font-style: italic; color: #222; display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; }
 .thanks b { font-style: normal; font-weight: 700; color: #1a9cd8; }
 .thanks span { font-style: normal; font-size: 8pt; color: #666; white-space: nowrap; }
@@ -225,7 +263,7 @@ body {
       <div class="sub">Fret aérien · Air Tahiti</div>
     </div>
   </header>
-  ${MOANA_STRIP}
+  ${NIHO_STRIP}
   <main class="body">
     <section class="from">
       <div class="eyebrow">Expéditeur</div>
@@ -251,7 +289,7 @@ body {
       <div class="fragile">Fragile</div>
     </section>
   </main>
-  ${MOANA_STRIP.replace('class="moana"', 'class="moana foot"')}
+  ${MOANA_STRIP}
   <footer class="thanks">
     <div><b>Māuruuru roa !</b> Merci pour votre confiance, prenez soin de vos pièces et à très bientôt.</div>
     <span>— l'équipe Aito3D</span>

@@ -121,6 +121,16 @@ describe('buildShippingLabelHtml', () => {
     expect(buildShippingLabelHtml(label, 'aito3d.png')).not.toContain('@font-face');
   });
 
+  it('frames the label with Tahitian tatau motifs, each drawn once and repeated', () => {
+    // Four motifs in the vertical band — enata, niho mano, the ocean curl,
+    // tao spearheads — plus the two horizontal strips. Pinned by id so a
+    // redesign that drops one is a deliberate edit here too.
+    for (const motif of ['tatau-enata', 'tatau-niho', 'tatau-moana', 'tatau-tao', 'strip-niho', 'strip-moana']) {
+      expect(html).toContain(`id="${motif}"`);
+    }
+    expect(html).toContain('class="tatau"');
+  });
+
   it('omits the reference row rather than printing an empty one', () => {
     const without = buildShippingLabelHtml({ ...label, reference: '' }, 'x.png');
     expect(without).not.toContain('Référence');
