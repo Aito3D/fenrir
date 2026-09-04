@@ -257,6 +257,8 @@ export default {
     printInvoice: 'Imprimir factura',
     downloadInvoice: 'Descargar factura',
     invoicePrintFailed: 'No se pudo obtener el PDF de la factura',
+    printShippingLabel: 'Imprimir etiqueta de envío',
+    shippingLabelPrintFailed: 'No se pudo preparar la etiqueta de envío',
     invoiceStatus: {
       draft: 'Borrador',
       sent: 'Enviada',

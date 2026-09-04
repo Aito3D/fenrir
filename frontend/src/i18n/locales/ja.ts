@@ -257,6 +257,8 @@ export default {
     printInvoice: '請求書を印刷',
     downloadInvoice: '請求書をダウンロード',
     invoicePrintFailed: '請求書PDFを取得できませんでした',
+    printShippingLabel: '配送ラベルを印刷',
+    shippingLabelPrintFailed: '配送ラベルを準備できませんでした',
     invoiceStatus: {
       draft: '下書き',
       sent: '送信済み',

@@ -257,6 +257,8 @@ export default {
     printInvoice: 'Stampa fattura',
     downloadInvoice: 'Scarica fattura',
     invoicePrintFailed: 'Impossibile recuperare il PDF della fattura',
+    printShippingLabel: 'Stampa etichetta di spedizione',
+    shippingLabelPrintFailed: 'Impossibile preparare l\'etichetta di spedizione',
     invoiceStatus: {
       draft: 'Bozza',
       sent: 'Inviata',

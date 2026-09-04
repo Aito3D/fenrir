@@ -258,6 +258,8 @@ export default {
     printInvoice: 'Друк рахунку',
     downloadInvoice: 'Завантажити рахунок',
     invoicePrintFailed: 'Не вдалося отримати PDF рахунку',
+    printShippingLabel: 'Друк транспортної етикетки',
+    shippingLabelPrintFailed: 'Не вдалося підготувати транспортну етикетку',
     invoiceStatus: {
       draft: 'Чернетка',
       sent: 'Надіслано',

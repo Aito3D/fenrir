@@ -257,6 +257,8 @@ export default {
     printInvoice: 'Печать счёта',
     downloadInvoice: 'Скачать счёт',
     invoicePrintFailed: 'Не удалось получить PDF счёта',
+    printShippingLabel: 'Печать транспортной этикетки',
+    shippingLabelPrintFailed: 'Не удалось подготовить транспортную этикетку',
     invoiceStatus: {
       draft: 'Черновик',
       sent: 'Отправлен',

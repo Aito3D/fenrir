@@ -261,6 +261,8 @@ export default {
     printInvoice: 'Print invoice',
     downloadInvoice: 'Download invoice',
     invoicePrintFailed: 'Could not fetch the invoice PDF',
+    printShippingLabel: 'Print shipping label',
+    shippingLabelPrintFailed: 'Could not prepare the shipping label',
     invoiceStatus: {
       draft: 'Draft',
       sent: 'Sent',

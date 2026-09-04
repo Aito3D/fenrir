@@ -257,6 +257,8 @@ export default {
     printInvoice: '청구서 인쇄',
     downloadInvoice: '청구서 다운로드',
     invoicePrintFailed: '청구서 PDF를 가져오지 못했습니다',
+    printShippingLabel: '배송 라벨 인쇄',
+    shippingLabelPrintFailed: '배송 라벨을 준비할 수 없습니다',
     invoiceStatus: {
       draft: '초안',
       sent: '발송됨',

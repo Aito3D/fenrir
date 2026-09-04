@@ -257,6 +257,8 @@ export default {
     printInvoice: '打印发票',
     downloadInvoice: '下载发票',
     invoicePrintFailed: '无法获取发票 PDF',
+    printShippingLabel: '打印运输标签',
+    shippingLabelPrintFailed: '无法生成运输标签',
     invoiceStatus: {
       draft: '草稿',
       sent: '已发送',
