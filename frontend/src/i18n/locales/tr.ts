@@ -257,6 +257,8 @@ export default {
     printInvoice: 'Faturayı yazdır',
     downloadInvoice: 'Faturayı indir',
     invoicePrintFailed: 'Fatura PDF\'i alınamadı',
+    printShippingLabel: 'Kargo etiketini yazdır',
+    shippingLabelPrintFailed: 'Kargo etiketi hazırlanamadı',
     invoiceStatus: {
       draft: 'Taslak',
       sent: 'Gönderildi',

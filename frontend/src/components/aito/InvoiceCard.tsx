@@ -6,6 +6,7 @@ import { PanelCard } from './PanelCard';
 import { InvoiceDownloadButton } from './InvoiceDownloadButton';
 import { InvoicePrintButton } from './InvoicePrintButton';
 import { SendInvoiceButton } from './SendInvoiceButton';
+import { ShippingLabelButton } from './ShippingLabelButton';
 import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from './invoiceStatus';
 import { Money } from '../calculator/shared';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -183,6 +184,13 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
             same call site pattern, as SendQuoteButton one card up. */}
         {canUpdate && <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} />}
       </div>
+
+      {/* The parcel's label, under the invoice row because that is the
+          moment it gets printed: job finished, invoice raised, box closing.
+          Gates itself on Finish + shipping and renders nothing otherwise, so
+          every other card keeps the row above as its last line. Not gated on
+          `canUpdate`: printing writes nothing. */}
+      <ShippingLabelButton project={project} invoiceNumber={invoice.number || null} />
     </PanelCard>
   );
 }

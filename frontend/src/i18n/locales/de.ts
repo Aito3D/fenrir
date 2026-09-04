@@ -257,6 +257,8 @@ export default {
     printInvoice: 'Rechnung drucken',
     downloadInvoice: 'Rechnung herunterladen',
     invoicePrintFailed: 'Rechnungs-PDF konnte nicht geladen werden',
+    printShippingLabel: 'Versandetikett drucken',
+    shippingLabelPrintFailed: 'Versandetikett konnte nicht erstellt werden',
     invoiceStatus: {
       draft: 'Entwurf',
       sent: 'Gesendet',

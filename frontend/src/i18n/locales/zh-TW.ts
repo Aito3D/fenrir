@@ -257,6 +257,8 @@ export default {
     printInvoice: '列印發票',
     downloadInvoice: '下載發票',
     invoicePrintFailed: '無法取得發票 PDF',
+    printShippingLabel: '列印運輸標籤',
+    shippingLabelPrintFailed: '無法產生運輸標籤',
     invoiceStatus: {
       draft: '草稿',
       sent: '已傳送',

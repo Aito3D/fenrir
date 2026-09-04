@@ -221,4 +221,20 @@ describe('InvoiceCard', () => {
     const link = await screen.findByRole('link', { name: /inv-1/ });
     expect(link).toHaveAttribute('href', INVOICE.url);
   });
+
+  it('offers the shipping label only on a finished project that ships', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue({ catalogue_resolved: true, services: [] });
+    const shipped = { ...project, column: 'finish', shipping_island: 'rangiroa' } as AitoProject;
+
+    const { unmount } = render(<InvoiceCard project={shipped} canUpdate />);
+    expect(await screen.findByRole('button', { name: /print shipping label/i })).toBeInTheDocument();
+    unmount();
+
+    // Same invoice, same shipping, one column earlier: the parcel is not
+    // packed yet, so no label.
+    render(<InvoiceCard project={{ ...shipped, column: 'print' } as AitoProject} canUpdate />);
+    await screen.findByText('FA-26-0001');
+    expect(screen.queryByRole('button', { name: /print shipping label/i })).not.toBeInTheDocument();
+  });
 });
