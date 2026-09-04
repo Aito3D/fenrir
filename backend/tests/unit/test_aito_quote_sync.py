@@ -1,6 +1,7 @@
 """The Aito -> Zoho outbox worker, driven through zoho_service's MockTransport
 seam. No network, no real Books org."""
 
+import itertools
 import json
 import time
 from datetime import datetime
@@ -23,6 +24,7 @@ from backend.app.services.aito_quote_sync import (
     _requeue_marker,
     _snapshot_pushed_costs,
     _still_selected,
+    _sweep_predicate,
     _update_quote,
     _write_back_rounded_costs,
     load_export_shipping,
@@ -5585,3 +5587,86 @@ async def test_the_sweep_leaves_the_total_alone_when_the_estimate_omits_it(db_se
     await sync_project(db_session, project)
 
     assert project.quote_total == 5000
+
+
+@pytest.mark.asyncio
+async def test_still_selected_agrees_with_the_sweep_select_across_the_full_state_space(db_session):
+    """T-022: ``_still_selected`` re-implements ``_sweep_predicate`` (the SQL
+    ``run_sync_once`` selects with) in Python, by hand, and nothing enforced
+    the two staying in agreement — a future edit to one (as already happened
+    for T-010's terminal-card exclusion, added to both by hand) could
+    silently drift from the other with no test failing.
+
+    This exercises every combination of the five columns both predicates
+    read — ``status``, ``quote_id`` presence, ``quote_sync_state``,
+    ``board_column``, ``quote_status``, and ``quote_status_confirmed`` — and
+    asserts the SQL SELECT (``_sweep_predicate``, the same expression
+    ``run_sync_once`` uses when not ``pending_only``) picks exactly the ids
+    ``_still_selected`` would also allow through its per-iteration re-check.
+
+    One test inserting every row and asserting per-row (rather than one
+    ``pytest.mark.parametrize`` case per combination) — parametrizing would
+    rebuild the whole schema (every model in the app) once per case, which
+    across ~400 cases dwarfs the couple of hundred milliseconds this single
+    batched version costs.
+    """
+    statuses = ("active", "deleted")
+    quote_ids = (None, "E1")
+    quote_sync_states = ("pending", "idle", "error", "unmanaged", "locked")
+    board_columns = ("devis", "done")
+    quote_statuses = (None, "sent", "accepted", "declined", "expired")
+    quote_status_confirmed_values = (False, True)
+
+    combos = list(
+        itertools.product(
+            statuses,
+            quote_ids,
+            quote_sync_states,
+            board_columns,
+            quote_statuses,
+            quote_status_confirmed_values,
+        )
+    )
+    assert len(combos) == 400
+
+    projects: list[AitoProject] = []
+    for i, (status, quote_id, quote_sync_state, board_column, quote_status, quote_status_confirmed) in enumerate(
+        combos
+    ):
+        project = AitoProject(
+            description=f"T-022 parity case {i}",
+            board_column=board_column,
+            position=0,
+            status=status,
+            quote_id=quote_id,
+            quote_sync_state=quote_sync_state,
+            quote_status=quote_status,
+            quote_status_confirmed=quote_status_confirmed,
+        )
+        db_session.add(project)
+        projects.append(project)
+    await db_session.commit()
+
+    selected_ids = set((await db_session.execute(select(AitoProject.id).where(_sweep_predicate()))).scalars().all())
+
+    mismatches = [
+        (
+            p.id,
+            p.status,
+            p.quote_id,
+            p.quote_sync_state,
+            p.board_column,
+            p.quote_status,
+            p.quote_status_confirmed,
+            p.id in selected_ids,
+            _still_selected(p),
+        )
+        for p in projects
+        if (p.id in selected_ids) != _still_selected(p)
+    ]
+    assert not mismatches, (
+        "SQL selection and _still_selected disagree for "
+        f"{len(mismatches)}/{len(projects)} combinations "
+        "(id, status, quote_id, quote_sync_state, board_column, quote_status, "
+        f"quote_status_confirmed, sql_selected, still_selected): {mismatches}"
+    )

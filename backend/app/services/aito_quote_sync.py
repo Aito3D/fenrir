@@ -1623,9 +1623,83 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
         logger.exception("Aito quote sync hit an unexpected error for project %s", project_id)
 
 
+def _sweep_predicate():
+    """The full (non-``pending_only``) SELECT predicate ``run_sync_once`` uses
+    to pick which project ids a periodic sweep tick attempts.
+
+    Extracted to its own function (T-022) purely so the parity test in
+    test_aito_quote_sync.py has one source of truth to query against instead
+    of reproducing this expression by hand — the SQLAlchemy clause itself is
+    unchanged, just no longer inlined in ``run_sync_once``. Mirrored in
+    Python by ``_still_selected`` below for the per-iteration re-check; see
+    that function's docstring.
+    """
+    return or_(
+        AitoProject.quote_sync_state == "pending",
+        and_(
+            AitoProject.status == "active",
+            AitoProject.quote_id.is_not(None),
+            # 'unmanaged' is the one state meaning this feature
+            # must never touch the quote. 'locked' is an
+            # invoiced or tax-unsafe estimate, where a status
+            # write is no safer than a line-item write.
+            AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+            # T-010, gated by T-026: a TERMINAL card — archived
+            # (board_column 'done') or a quote Books itself considers
+            # settled the other way (quote_status 'declined'/'expired') —
+            # costs one Books call per tick forever otherwise, growing
+            # per-tick load with board HISTORY rather than active
+            # workload (see the module's own comment on
+            # SYNC_FAILURE_LIMIT). Excluding it here is a pure
+            # reconcile-skip: it is not written to, not escalated, not
+            # touched at all. The PENDING branch above is untouched — an
+            # explicit edit still flips a terminal card to 'pending' and
+            # is synced exactly once, same as before.
+            #
+            # T-026: that exclusion is now gated on quote_status_confirmed
+            # — a card is only dropped once Books has been directly
+            # OBSERVED to agree, never merely because a local write made
+            # it LOOK terminal (see AitoProject.quote_status_confirmed's
+            # own docstring, and reconcile_quote_status's confirm sites).
+            # Without this, a decline written locally while Books was
+            # unreachable (quote_status='declined', push best-effort and
+            # failed) matched both this exclusion and the SQL's
+            # board_column check the instant it was written, and Books —
+            # still holding 'sent' — never received the retry that would
+            # have settled it.
+            or_(
+                AitoProject.quote_status_confirmed.is_(False),
+                and_(
+                    AitoProject.board_column != "done",
+                    or_(
+                        AitoProject.quote_status.is_(None),
+                        AitoProject.quote_status.not_in(("declined", "expired")),
+                    ),
+                ),
+            ),
+        ),
+        and_(
+            AitoProject.status == "active",
+            AitoProject.quote_id.is_(None),
+            # T-008: a project whose quote CREATE never succeeded has no
+            # quote_id, so the clause above (which requires one) can
+            # never re-select it once it is escalated to 'error' — it
+            # would sit showing its failure forever, retried only if a
+            # human edits the card back to 'pending'. This clause is the
+            # fix: it is the ONLY state worth re-selecting for a
+            # quote_id-less project ('idle' here means trashed before
+            # ever quoted, see sync_project's own comment on that state,
+            # and is correctly left alone). sync_project's routing sends
+            # a project selected by this clause into the same CREATE
+            # path a fresh 'pending' project takes.
+            AitoProject.quote_sync_state == "error",
+        ),
+    )
+
+
 def _still_selected(project: AitoProject) -> bool:
-    """Mirrors ``run_sync_once``'s SELECT predicate in Python, for the
-    per-iteration re-check below.
+    """Mirrors ``run_sync_once``'s SELECT predicate (``_sweep_predicate``) in
+    Python, for the per-iteration re-check below.
 
     The re-fetched row can no longer be assumed to still be ``'pending'`` —
     that was true back when the pending queue was the only source of ids, but
@@ -1703,67 +1777,9 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     """
     selected = AitoProject.quote_sync_state == "pending"
     if not pending_only:
-        selected = or_(
-            selected,
-            and_(
-                AitoProject.status == "active",
-                AitoProject.quote_id.is_not(None),
-                # 'unmanaged' is the one state meaning this feature
-                # must never touch the quote. 'locked' is an
-                # invoiced or tax-unsafe estimate, where a status
-                # write is no safer than a line-item write.
-                AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
-                # T-010, gated by T-026: a TERMINAL card — archived
-                # (board_column 'done') or a quote Books itself considers
-                # settled the other way (quote_status 'declined'/'expired') —
-                # costs one Books call per tick forever otherwise, growing
-                # per-tick load with board HISTORY rather than active
-                # workload (see the module's own comment on
-                # SYNC_FAILURE_LIMIT). Excluding it here is a pure
-                # reconcile-skip: it is not written to, not escalated, not
-                # touched at all. The PENDING branch above is untouched — an
-                # explicit edit still flips a terminal card to 'pending' and
-                # is synced exactly once, same as before.
-                #
-                # T-026: that exclusion is now gated on quote_status_confirmed
-                # — a card is only dropped once Books has been directly
-                # OBSERVED to agree, never merely because a local write made
-                # it LOOK terminal (see AitoProject.quote_status_confirmed's
-                # own docstring, and reconcile_quote_status's confirm sites).
-                # Without this, a decline written locally while Books was
-                # unreachable (quote_status='declined', push best-effort and
-                # failed) matched both this exclusion and the SQL's
-                # board_column check the instant it was written, and Books —
-                # still holding 'sent' — never received the retry that would
-                # have settled it.
-                or_(
-                    AitoProject.quote_status_confirmed.is_(False),
-                    and_(
-                        AitoProject.board_column != "done",
-                        or_(
-                            AitoProject.quote_status.is_(None),
-                            AitoProject.quote_status.not_in(("declined", "expired")),
-                        ),
-                    ),
-                ),
-            ),
-            and_(
-                AitoProject.status == "active",
-                AitoProject.quote_id.is_(None),
-                # T-008: a project whose quote CREATE never succeeded has no
-                # quote_id, so the clause above (which requires one) can
-                # never re-select it once it is escalated to 'error' — it
-                # would sit showing its failure forever, retried only if a
-                # human edits the card back to 'pending'. This clause is the
-                # fix: it is the ONLY state worth re-selecting for a
-                # quote_id-less project ('idle' here means trashed before
-                # ever quoted, see sync_project's own comment on that state,
-                # and is correctly left alone). sync_project's routing sends
-                # a project selected by this clause into the same CREATE
-                # path a fresh 'pending' project takes.
-                AitoProject.quote_sync_state == "error",
-            ),
-        )
+        # See _sweep_predicate's own docstring for why this is a function
+        # call and not an inline expression here (T-022).
+        selected = _sweep_predicate()
     project_ids = list(
         (await db.execute(select(AitoProject.id).where(selected).order_by(AitoProject.id))).scalars().all()
     )

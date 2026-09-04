@@ -744,6 +744,36 @@ describe('replaceProject', () => {
     const after = replaceProject(projects, card({ id: 1, description: 'new' }));
     expect(find(after!, 2)).toBe(other);
   });
+
+  describe('with an explicit matchId', () => {
+    it('matches by the old id rather than the replacement row\'s own id', () => {
+      const placeholder = card({ id: -1, description: 'placeholder' });
+      const created = card({ id: 42, description: 'server row' });
+      const after = replaceProject([placeholder], created, placeholder.id);
+      expect(find(after!, 42)).toBe(created);
+      expect(after).toHaveLength(1);
+    });
+
+    it('leaves the cache untouched (undefined) on a cache miss', () => {
+      expect(replaceProject(undefined, card({ id: 42 }), -1)).toBeUndefined();
+    });
+
+    it('is a no-op and does not append when the old id is absent', () => {
+      const projects = [card({ id: 1 })];
+      const after = replaceProject(projects, card({ id: 42 }), -1);
+      expect(after).toEqual(projects);
+      expect(after).toHaveLength(1);
+    });
+
+    it('leaves every other project untouched by reference', () => {
+      const other = card({ id: 2 });
+      const placeholder = card({ id: -1 });
+      const projects = [placeholder, other];
+      const created = card({ id: 42 });
+      const after = replaceProject(projects, created, placeholder.id);
+      expect(find(after!, 2)).toBe(other);
+    });
+  });
 });
 
 describe('placeholder identity', () => {

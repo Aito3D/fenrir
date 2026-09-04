@@ -169,14 +169,17 @@ export function applyTaskSummary(
  *  cache miss must not be seeded with a one-card board. An id with no match
  *  is left as-is rather than appended; every caller's `updated` row already
  *  exists in the list under the same id (this is a REPLACE, never an
- *  insert) except the create/import mutations, which swap a placeholder's
- *  negative id for the server's real one and so call `setQueryData` directly
- *  instead of through this helper. */
+ *  insert) — EXCEPT the create/import mutations
+ *  (useAitoPageMutations.ts), which swap a placeholder's negative id for the
+ *  server's real one. Those pass `matchId` explicitly (the placeholder's own
+ *  id) since `updated.id` is the NEW row's id, not the row being replaced;
+ *  every other caller relies on the default of `updated.id`. */
 export function replaceProject(
   projects: AitoProject[] | undefined,
   updated: AitoProject,
+  matchId: number = updated.id,
 ): AitoProject[] | undefined {
-  return projects?.map((p) => (p.id === updated.id ? updated : p)) ?? projects;
+  return projects?.map((p) => (p.id === matchId ? updated : p)) ?? projects;
 }
 
 export function applyDescription(
