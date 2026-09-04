@@ -267,6 +267,7 @@ describe('CalculatorSettingsPanel', () => {
     { id: 'calc-curve-qty_min_factor', min: 0, max: 1 },
     { id: 'calc-curve-qty_k', min: 0, max: 1_000_000 },
     { id: 'calc-curve-min_task_price', min: 0, max: MONEY_CEILING },
+    { id: 'calc-curve-rush_pct', min: 0, max: 500 },
     { id: 'calc-def-default_difficulty_pct', min: 100, max: 1000 },
     { id: 'calc-def-default_margin_over_cost_pct', min: 0, max: 1000 },
   ];

@@ -51,6 +51,8 @@ export interface CalcState {
   /** True when the time fields came from a slicer estimate (prefill), so the
       time-accuracy correction chip is relevant. Cleared on manual edits. */
   timeFromEstimate: boolean;
+  /** Quote at the rush rate. Session-only, never persisted. */
+  rush: boolean;
 }
 
 export const DEFAULT_STATE: CalcState = {
@@ -82,6 +84,7 @@ export const DEFAULT_STATE: CalcState = {
   dailyHoursOverride: '',
   dismissedChecks: [],
   timeFromEstimate: false,
+  rush: false,
 };
 
 /** Parse a numeric input string, falling back when empty, missing or invalid.
@@ -123,6 +126,7 @@ function loadState(): CalcState {
       }
     }
     delete (state as unknown as Record<string, unknown>).time;
+    state.rush = false; // deliberately not remembered between visits
     return state;
   } catch {
     return DEFAULT_STATE;
@@ -325,5 +329,6 @@ export function buildPricingInputs(state: CalcState, defaults: { stuff_markup_pc
     post_fulfillment_min: Math.max(0, num(state.postFulfillment)),
     stuff_amount: Math.max(0, num(state.stuffAmount)),
     stuff_markup_pct: Math.max(0, num(state.stuffMarkup, defaults.stuff_markup_pct)),
+    rush: state.rush,
   };
 }
