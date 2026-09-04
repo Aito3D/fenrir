@@ -122,11 +122,11 @@ describe('buildShippingLabelHtml', () => {
   });
 
   it('frames the label with two Tahitian tatau strips and no side band', () => {
-    // Niho mano under the header, the Mā'ohi band of spearheads and fish
-    // scales above the thank-you line. Pinned by id so a redesign that drops
-    // one is a deliberate edit here too. The vertical band down the left
-    // edge was removed on request.
-    for (const motif of ['strip-niho', 'strip-maohi']) {
+    // The same niho mano run under the header and above the thank-you line,
+    // each with its own pattern id. Pinned so a redesign that drops one is a
+    // deliberate edit here too. The vertical band down the left edge and the
+    // organic foot strip were both removed on request.
+    for (const motif of ['strip-niho-head', 'strip-niho-foot']) {
       expect(html).toContain(`id="${motif}"`);
     }
     expect(html).not.toContain('class="tatau"');
@@ -147,6 +147,11 @@ describe('buildShippingLabelHtml', () => {
     for (const text of ['Facebook', 'Instagram', 'TikTok', AITO3D_SENDER.socialHandle, AITO3D_SENDER.website]) {
       expect(html).toContain(text);
     }
+    // The card stays plain: no tatau strips and no closing note — those
+    // belong to the label above the fold, not to this half.
+    const card = html.slice(html.indexOf('class="review"'));
+    expect(card).not.toContain('class="strip');
+    expect(card).not.toContain('class="thanks"');
   });
 
   it('omits the reference row rather than printing an empty one', () => {

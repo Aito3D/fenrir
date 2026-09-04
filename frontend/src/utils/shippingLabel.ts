@@ -100,34 +100,17 @@ function fontFaceCss(logoUrl: string): string {
   }
 }
 
-/** Under the header: a run of niho mano, teeth down, over a hairline. */
-const NIHO_STRIP = `<svg class="strip head" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs><pattern id="strip-niho" width="20" height="11.34" patternUnits="userSpaceOnUse">
+/** A run of niho mano — shark teeth, teeth down, over a hairline — the one
+ *  tatau motif the label carries, under the header and again above the
+ *  thank-you line. The pattern id is suffixed per placement: the same id
+ *  twice in one document would make the second `url(#…)` resolve to the
+ *  first pattern, which happens to work and is still invalid HTML. */
+const nihoStrip = (place: 'head' | 'foot'): string => `<svg class="strip ${place}" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs><pattern id="strip-niho-${place}" width="20" height="11.34" patternUnits="userSpaceOnUse">
     <path d="M0 0 10 9.5 20 0Z"/>
     <rect x="0" y="10.2" width="20" height="1.14"/>
   </pattern></defs>
-  <rect width="100%" height="100%" fill="url(#strip-niho)"/>
-</svg>`;
-
-/** Above the thank-you line: a Tahitian bracelet band — solid black with
- *  the island's own motifs reversed out in white, the organic vocabulary of
- *  Tahitian tatau rather than Marquesan geometry:
- *    tiare — the Tahitian gardenia, six petals round a dot;
- *    manu  — a frigatebird in flight, the two curved wings;
- *    moana — the ocean curl the parcel crosses.
- *  Deliberately the opposite polarity of the header strip so the two frame
- *  the label rather than repeat each other. */
-const TIARE = [0, 60, 120, 180, 240, 300]
-  .map((angle) => `<ellipse cx="10" cy="4.1" rx="1.55" ry="3.7" fill="#fff" transform="rotate(${angle} 10 8.5)"/>`)
-  .join('');
-const MAOHI_STRIP = `<svg class="strip foot" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs><pattern id="strip-maohi" width="48" height="17" patternUnits="userSpaceOnUse">
-    <rect width="48" height="17"/>
-    ${TIARE}<circle cx="10" cy="8.5" r="1.1"/>
-    <path d="M18.5 12C21.5 4.5 25 5.5 25.5 9.5C26 5.5 29.5 4.5 32.5 12C29.8 8.8 27 9.6 25.5 12C24 9.6 21.2 8.8 18.5 12Z" fill="#fff"/>
-    <path d="M35 14A6 6 0 0 1 47 14A3 3 0 0 0 41 14A1.5 1.5 0 0 1 44 14" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
-  </pattern></defs>
-  <rect width="100%" height="100%" fill="url(#strip-maohi)"/>
+  <rect width="100%" height="100%" fill="url(#strip-niho-${place})"/>
 </svg>`;
 
 /** Scissors for the fold line. Drawn rather than the ✂ glyph: not every
@@ -227,15 +210,16 @@ body {
 .service { margin-top: 3.5mm; display: inline-flex; align-self: flex-start; align-items: center; gap: 2mm; font-size: 9.5pt; font-weight: 600; padding: 1.5mm 3.5mm; border: .35mm solid #111; border-radius: 10mm; }
 .service::before { content: ''; width: 2mm; height: 2mm; border-radius: 50%; background: #1a9cd8; }
 .fragile { position: absolute; right: 1mm; bottom: 1mm; transform: rotate(-5deg); padding: 1.4mm 3.5mm; border: .6mm solid #111; border-radius: 1mm; font-size: 10pt; font-weight: 800; letter-spacing: .28em; text-transform: uppercase; }
-.strip.foot { height: 4.5mm; margin: 3mm 0 0; }
+.strip.foot { margin: 3mm 0 0; }
 .thanks { margin-top: 2.5mm; font-size: 9.5pt; font-style: italic; color: #222; display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; }
 .thanks b { font-style: normal; font-weight: 700; color: #1a9cd8; }
 .thanks span { font-style: normal; font-size: 8pt; color: #666; white-space: nowrap; }
 .cut { position: absolute; left: 8mm; right: 8mm; top: 148.5mm; border-top: .3mm dashed #999; }
 .scissors { position: absolute; left: 0; top: -2.2mm; width: 4.2mm; height: 4.2mm; background: #fff; padding: 0 .4mm; }
 .cut-hint { position: absolute; right: 0; top: -1.6mm; background: #fff; padding-left: 1.5mm; font-size: 6.5pt; color: #999; letter-spacing: .12em; text-transform: uppercase; }
-.review { position: absolute; left: 0; top: 148.5mm; width: 210mm; height: 148.5mm; padding: 12mm 12mm 9mm; display: flex; flex-direction: column; overflow: hidden; }
-.review-body { flex: 1; display: grid; grid-template-columns: 1fr 50mm; column-gap: 10mm; align-items: center; min-height: 0; }
+.review { position: absolute; left: 0; top: 148.5mm; width: 210mm; height: 148.5mm; padding: 14mm 14mm 12mm; display: flex; flex-direction: column; overflow: hidden; }
+.review .head { padding-bottom: 4mm; border-bottom: .3mm solid #111; }
+.review-body { flex: 1; display: grid; grid-template-columns: 1fr 50mm; column-gap: 12mm; align-items: center; min-height: 0; padding: 2mm 0; }
 .review-title { font-size: 23pt; font-weight: 900; letter-spacing: -.02em; line-height: 1.05; }
 .review-title b { color: #1a9cd8; }
 .review-text { margin: 4mm 0 0; font-size: 10.5pt; line-height: 1.45; color: #222; }
@@ -247,7 +231,7 @@ body {
 .socials .lead { font-weight: 700; }
 .socials .net { display: inline-flex; align-items: center; gap: 1.4mm; font-weight: 600; }
 .socials .net svg { width: 4mm; height: 4mm; }
-.socials .site { margin-left: auto; font-weight: 700; color: #1a9cd8; }
+.socials .site { flex-basis: 100%; margin-top: .5mm; font-weight: 700; color: #1a9cd8; }
 .qr-box { justify-self: end; width: 50mm; border: .5mm solid #111; border-radius: 2mm; padding: 4mm; text-align: center; }
 .qr svg { width: 100%; height: auto; display: block; }
 .qr-caption { margin-top: 2.5mm; font-size: 7.5pt; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
@@ -262,7 +246,7 @@ body {
       <div class="sub">Fret aérien · Air Tahiti</div>
     </div>
   </header>
-  ${NIHO_STRIP}
+  ${nihoStrip('head')}
   <main class="body">
     <section class="from">
       <div class="eyebrow">Expéditeur</div>
@@ -286,7 +270,7 @@ body {
       <div class="fragile">Fragile</div>
     </section>
   </main>
-  ${MAOHI_STRIP}
+  ${nihoStrip('foot')}
   <footer class="thanks">
     <div><b>Māuruuru roa !</b> Merci pour ta confiance, prends soin de tes pièces et à très bientôt.</div>
     <span>— l'équipe Aito3D</span>
@@ -301,7 +285,6 @@ body {
       <div class="sub">Atelier de fabrication 3D · Arue, Tahiti</div>
     </div>
   </header>
-  ${NIHO_STRIP}
   <div class="review-body">
     <div>
       <div class="review-title">Merci pour ta commande&nbsp;!</div>
@@ -322,11 +305,6 @@ body {
       <div class="qr-caption">Scanne-moi</div>
     </div>
   </div>
-  ${MAOHI_STRIP}
-  <footer class="thanks">
-    <div><b>Māuruuru roa !</b> À très bientôt à l'atelier.</div>
-    <span>— l'équipe Aito3D</span>
-  </footer>
 </section>
 </body>
 </html>
