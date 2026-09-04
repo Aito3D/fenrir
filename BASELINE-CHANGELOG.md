@@ -8460,3 +8460,210 @@ originals genuinely differed:
     five. This is a STRICT SUPERSET: `addEventListener` is tested first, so in every environment the
     originals supported the legacy branch is unreachable. It only helps pre-Safari-14, where the four
     others previously threw TypeError inside the effect.
+
+## T-008 — 2026-09-03 — user-approved behavior change
+
+`run_sync_once`'s sweep SELECT (and its Python mirror, `_still_selected`) re-selects a
+non-pending project only via `AitoProject.status == "active", AitoProject.quote_id.is_not(None),
+AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked"))`. A project whose very
+first push — the CREATE — never succeeded still has `quote_id` NULL, so once `sync_project`
+escalates it to `'error'` (five consecutive `ZohoUpstreamError`s = 25 minutes of Books being
+unreachable at the default 300s tick, or one trip through the `except Exception` catch-all, e.g.
+an `IntegrityError` when `_apply_estimate`'s `quote_id` collides with the partial unique index
+`uq_aito_project_active_quote`) it matched NEITHER SELECT branch and was never selected again —
+contradicting `SYNC_FAILURE_LIMIT`'s own comment, which claims the sweep "deliberately keeps
+selecting error projects", true only for projects that already have a `quote_id`. The card kept
+showing "Zoho Books unreachable" forever, no estimate was ever created in Books even after Books
+recovered, and on the `IntegrityError` path an orphan estimate left in Books was never adopted by
+the `find_estimate_by_reference` idempotency guard, because that guard is only ever reached from
+inside `_create_quote`, which was never called again.
+
+Fixed with the auditor's first option (widen the sweep), chosen over the second (leave such
+projects `'pending'` instead of `'error'`) because `sync_project`'s routing at the top of its try
+block (`if project.quote_sync_state != "pending": ... reconcile via get_estimate ...`) uses
+`quote_sync_state` itself to decide whether a project already has a quote to reconcile. Flipping
+the state to `'pending'` on escalation would have satisfied the SELECT for free, but it also
+replaces the card's error icon (`CardView.tsx`'s `quote_sync_state === 'error'` branch) with the
+ordinary "quote pending" label — silently hiding the outage instead of "still surfacing the
+message on the card" until a sync succeeds, which the task explicitly required. Widening the
+SELECT instead needed one more fix to actually work: a project reselected with `state == 'error'`
+and `quote_id == None` matched `sync_project`'s `!= "pending"` reconcile-branch condition too and
+would have called `get_estimate(db, None)` — so that condition gained a `project.quote_id is not
+None` guard, sending a quote_id-less swept project into the same `not project.quote_id: ...
+_create_quote(...)` branch a fresh `'pending'` project takes. That, in turn, exposed a second gap:
+`_create_quote`'s orphan-adoption branch (the `find_estimate_by_reference` idempotency guard)
+deliberately leaves `quote_sync_state` untouched with the comment "Leaving quote_sync_state at
+'pending' (do not touch it)" — true only because every prior caller already had `'pending'`
+entering that branch. A project entering from `'error'` would have kept `'error'` after adopting
+an orphan's identity, permanently misrouting the FOLLOWING tick into the reconcile branch (now
+that `quote_id` is set) instead of `_update_quote`, which would have left the adopted estimate
+missing its real line items forever and the card's error icon stuck despite the retry having
+half-succeeded. That branch now explicitly sets `quote_sync_state = "pending"` (a no-op for the
+pre-existing pending callers, load-bearing for the new error-with-no-quote_id one).
+
+Changed: `backend/app/services/aito_quote_sync.py` — `run_sync_once`'s SELECT gained a second
+OR'd clause (`status == "active"`, `quote_id.is_(None)`, `quote_sync_state == "error"`);
+`_still_selected` gained the matching Python branch; `sync_project`'s reconcile-vs-create routing
+condition gained a `project.quote_id is not None` guard; `_create_quote`'s orphan-adoption branch
+now explicitly writes `quote_sync_state = "pending"` instead of relying on it already being that
+value. `SYNC_FAILURE_LIMIT`'s module comment was corrected to no longer overclaim "excludes only
+unmanaged and locked" for every error project.
+
+Consumer enumeration: grepped `backend/app/` for `run_sync_once`, `_still_selected`, and
+`quote_sync_state`. `run_sync_once` has exactly one production caller, `run_sync_loop` (same
+module — the 300s background tick plus the wake path from `request_immediate_sync`, itself only
+called from `routes/aito.py`'s post-commit hooks); `_still_selected` is private to this module,
+called only from `run_sync_once`'s own per-iteration loop. `quote_sync_state` is read by
+`routes/aito.py` (response serialization, `_mark_pending_if_ours`, the ownership guard checking
+for `'unmanaged'`) and by the frontend (`CardView.tsx`, `ProjectDetailPanel.tsx`,
+`QuotePrintButton.tsx`, `QuoteDownloadButton.tsx`, `InvoiceCard.tsx`, `aitoOptimistic.ts`) purely
+to render the card — none of those call sites distinguish "how a project became eligible for the
+sweep", only its current state, so none needed a change. No route, permission, schema, or DDL
+changed; `python3 tools/snapshot.py verify` (10/10 probes match) and `bash
+tools/gen_surface_all.sh | diff - SURFACE.md` (no diff) confirm the change is confined to the
+sweep's internal selection and routing logic.
+
+Scope note: the fix is unconditional on WHY a `quote_id`-less project is in `'error'` — a payload
+Books permanently rejected (`ZohoRequestRejected`) or an ambiguous/mismatched reference number
+(`ZohoAmbiguousReferenceError`) also lands in `'error'` with `quote_id` still NULL via the same
+`_terminal_error` helper, and is now retried forever too (one POST per 300s tick, same as a
+quote_id-having `'error'` project is already GET-polled forever today), not only the
+outage-induced `ZohoUpstreamError` case the audit finding centered on. This follows the approved
+scope's own wording ("active projects in quote_sync_state 'error' whose quote_id is NULL become
+eligible for the sweep again ... implement exactly this, nothing wider") rather than narrowing
+further to distinguish transient from terminal causes, which no existing column records.
+`_terminal_error`'s existing dedup (`if not already_in_error or previous_sync_error !=
+project.quote_sync_error`) still limits this to one `sync.failed` event per distinct failure, not
+one per tick.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py`:
+- `test_an_errored_project_with_no_quote_id_is_reselected_and_retried` — escalates a fresh,
+  never-quoted project to `'error'` via `SYNC_FAILURE_LIMIT` consecutive 503s (mirroring
+  `test_upstream_failures_escalate_to_error_after_the_limit`), then swaps in a succeeding
+  transport and asserts a further `run_sync_once` call — with no route handler ever touching the
+  project — reselects it (`== 1`), POSTs the create, and settles `quote_id`/`quote_sync_state`/
+  `quote_sync_error`/`quote_sync_failures` exactly as a normal create success would.
+- `test_an_errored_project_with_no_quote_id_adopts_an_orphan_estimate_on_retry` — the
+  `IntegrityError` scenario from the audit finding: a project starts `'error'` with `quote_id`
+  NULL while Books already holds an orphan estimate under its `AITO-{id}` reference (mirroring
+  `test_create_adopts_an_existing_estimate_with_the_same_reference_instead_of_duplicating`'s
+  fixture shape). Asserts the retry adopts the orphan's identity with no POST, and — the
+  regression this task's second fix (`_create_quote`'s explicit `quote_sync_state = "pending"`)
+  guards — that the project lands on `'pending'`, not stuck `'error'`, with the error message and
+  failure counter cleared.
+
+`test_create_with_no_priced_service_becomes_a_terminal_error` asserted the OLD behavior on its
+second `run_sync_once` call (`assert await run_sync_once(db_session) == 0`, i.e. a project that
+just became `'error'` with no `quote_id` after its no-priced-service guard fired is NOT reselected
+by a later tick). That project is exactly the newly-eligible shape, so it is now legitimately
+reselected; updated the assertion to `== 1` and kept `assert seen == []` unchanged — the guard
+still fires before any Zoho call on every tick, so the meaningful invariant (no wasted network
+traffic on an unfixable project) is unchanged and still asserted, only the attempted-count
+expectation moved to match the approved widening. No other test in the file, or in
+`test_aito_close_sync.py`, `test_aito_quote_e2e.py`, `test_aito_quote_protection.py`,
+`test_aito_quote_sync_interval.py`, or `test_aito_sync_events.py` (all files referencing
+`run_sync_once`/`_still_selected`), asserted the old non-selection behavior; none needed changes.
+
+Observable change (quoted verbatim from the approved task): "cards currently stuck showing a sync
+error would start syncing again on their own, so a quote can appear in Zoho Books without anyone
+touching the card."
+
+`ruff check backend/` / `ruff format --check backend/`: clean. `pytest
+backend/tests/unit/test_aito_quote_sync.py -q`: 108 passed. Also ran every other test file
+referencing `run_sync_once`/`_still_selected`/`quote_sync_state`
+(`test_aito_close_sync.py`, `test_aito_quote_e2e.py`, `test_aito_quote_protection.py`,
+`test_aito_quote_sync_interval.py`, `test_aito_sync_events.py`, `test_aito_board_migration.py`,
+`test_aito_contacted.py`, `test_aito_invoiced_status_heal_migration.py`,
+`test_aito_project_model.py`, `test_aito_routes.py`, `test_aito_task_description_migration.py`,
+`test_aito_shipping_routes.py`, `test_aito_task_reorder.py`,
+`test_aito_unmanaged_backfill_migration.py`): all pass. `python3 tools/snapshot.py verify`:
+10/10 probes match. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: no diff.
+
+## T-007 — 2026-09-03 — `_write_back_rounded_costs` reads the pushed value, not the identity map (user-approved behavior change)
+
+`_write_back_rounded_costs` re-selected `AitoTask` rows AFTER the
+`create_estimate`/`update_estimate_lines` network round trip returned, and rewrote every service's
+rounded cost with a plain `setattr` + flush — an unconditional UPDATE by primary key, no value
+check at all. If an operator committed a cost edit on a different session while that round trip
+was on the wire, the re-select could not reliably observe it: this app runs with
+`expire_on_commit=False`, so if the session's identity map still held the rows
+`load_export_tasks` had loaded a moment earlier, SQLAlchemy handed back those SAME in-memory
+objects without repopulating them from the database (no `populate_existing`), silently returning
+pre-round-trip data even though the row had moved on; if nothing still referenced those rows, the
+re-select instead returned the operator's own brand-new figure — before it had ever been pushed
+anywhere. Either way the unconditional write-back stomped whatever the row held with a total
+rounded from data that did not describe what was actually just sent to Books, and — because the
+write-back runs inside `_create_quote`/`_update_quote` before their caller commits — that reverted
+figure was what the next `_update_quote` tick then pushed onward to the customer's Books quote,
+not merely a UI display glitch.
+
+Fixed by capturing a cost snapshot, `_snapshot_pushed_costs`, in the same breath as
+`load_export_tasks` — i.e. before either round trip (the CREATE's `create_estimate` or the
+UPDATE's `update_estimate_lines`) opens the window a concurrent edit could land in — and having
+`_write_back_rounded_costs` round from THAT snapshot only, never from a later re-select. It writes
+back via a Core `UPDATE ... WHERE id = :task_id AND <service>_cost = :pushed_value`, i.e.
+conditioned on the stored cost still equalling the exact value that snapshot captured: a row
+edited mid-round-trip no longer matches that WHERE clause, so the UPDATE affects zero rows and the
+operator's figure is left exactly as committed. Books catches up on that task's real value on the
+next tick via the normal pending path (`_mark_pending_if_ours` marks the project pending again on
+any task PATCH), rather than the write-back erasing the edit and shipping the stale number.
+
+Sequencing note: the write-back UPDATE is now issued eagerly, inside the same transaction as the
+snapshot and round trip, rather than being deferred to a later ORM flush the way the old
+`setattr`-on-loaded-instance form was (SQLAlchemy batches attribute mutations and only emits SQL
+at the next flush/commit boundary). Both forms still execute before `_create_quote`/`_update_quote`
+return control to their caller in `run_sync_once`, which commits the session once per project, so
+this does not change when the write becomes visible to any other reader — only that it is now a
+plain autoflush-independent `db.execute(update(...))` rather than an attribute set relying on
+autoflush to materialize it.
+
+Changed: `backend/app/services/aito_quote_sync.py` only — a new private helper
+`_snapshot_pushed_costs` (captures `{task_id: {service: (pushed_cost, quantity)}}` at
+`load_export_tasks` time); `_write_back_rounded_costs` gained a required `pushed_costs` parameter
+and now performs a conditional Core `update()` per service per task instead of loading rows via
+`select(AitoTask)` and mutating ORM attributes; both `_create_quote` and `_update_quote` now call
+`_snapshot_pushed_costs` immediately after `load_export_tasks` and pass the result through to
+`_write_back_rounded_costs`. No route, schema, model column, or DDL changed.
+
+Consumer enumeration: grepped `backend/` for `_write_back_rounded_costs` and
+`_snapshot_pushed_costs`. Both are private to `aito_quote_sync.py`; `_write_back_rounded_costs` has
+exactly two callers, `_create_quote` and `_update_quote` (same module, both already covered
+above), and `_snapshot_pushed_costs` has no callers outside those same two plus the test file.
+Nothing in `routes/aito.py`, `aito_quote_export.py`, or the frontend calls either function
+directly — `aito_quote_export.py`'s only reference is a comment cross-referencing
+`_write_back_rounded_costs` by name, not a call. The stored `<service>_cost` columns these
+functions write are served back to API clients by `routes/aito.py`'s `_task_to_response` (used by
+the task list/detail/reorder/patch endpoints, e.g. `GET .../tasks`, `PATCH .../tasks/{id}`), which
+reads whatever is currently in the row with no knowledge of how it got there — so an edit that
+now survives the write-back is exactly what that response reflects; a route-level change was
+neither needed nor made.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py`:
+- `test_a_cost_edited_by_another_session_mid_round_trip_survives_the_write_back` — interleaves a
+  second session's `impression_cost = 5000` PATCH (via a monkeypatched
+  `zoho_service.update_estimate_lines` that commits the edit before delegating to the real call)
+  into an in-flight `_update_quote` round trip pushing `impression_cost=2401` over quantity 2, and
+  asserts a fresh read after `run_sync_once` shows `impression_cost == 5000` — the operator's
+  figure, not the reverted-then-rounded 2400 the old code would have written.
+- `test_write_back_is_skipped_entirely_once_a_concurrent_edit_lands` — same interleaving but with
+  `impression_cost = 5001`, a value that is NOT an exact multiple of the quantity, so a write-back
+  that rounded from the operator's post-edit figure (rather than genuinely no-op'ing on a
+  superseded row) would visibly round it down to 5000; asserts it stays exactly `5001`, proving the
+  conditional UPDATE affects zero rows rather than coincidentally reproducing the right answer.
+
+Both tests were verified (per the commit message) to fail against both the original code and an
+intermediate hybrid that snapshotted early but still wrote back unconditionally, isolating the
+fix to the conditional-UPDATE guard specifically, not merely the earlier snapshot timing.
+
+Observable change (quoted verbatim from the approved task): "a task cost an operator saves while
+a Zoho quote round-trip is in flight now survives (and is what the API returns), where before it
+was silently overwritten by the stale rounded value and then pushed to the customer's quote."
+
+This was originally landed in commit 5f2f5cd46 as `refactor(loop-1): T-007
+_write_back_rounded_costs reads the pushed value, not the identity map`, filed by the auditor as a
+concurrency bug fix restoring intended behavior (no behavior-change disclosure). The blind
+verifier flagged the write-back's conditional-UPDATE semantics as an undisclosed observable change
+regardless of intent — a case where a cost value the system now returns/pushes genuinely differs
+from before, for the class of requests that race a live round trip. The user reviewed the flag and
+explicitly approved it after the fact on 2026-09-03; this entry documents that approval and is the
+canonical record of the change for future audits.

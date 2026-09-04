@@ -299,3 +299,31 @@ async def test_invoice_pdf_filename_survives_a_non_latin1_number(async_client, b
     response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf")
 
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_missing_project_is_404(async_client, books_invoices):
+    assert (await async_client.get("/api/v1/aito/99999/invoice.pdf")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_a_project_without_a_quote_never_calls_zoho(async_client, books_invoices):
+    project = await _create(async_client, quoted=False)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf")
+
+    assert response.status_code == 404
+    assert books_invoices["queries"] == []
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_zoho_failure_is_502(async_client, books_invoices, monkeypatch):
+    async def boom(db, estimate_id, customer_id):
+        raise ZohoUpstreamError("Zoho Books unreachable: ConnectError")
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", boom)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf")
+
+    assert response.status_code == 502

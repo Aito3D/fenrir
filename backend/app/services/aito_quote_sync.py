@@ -22,7 +22,7 @@ import logging
 import time
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -61,11 +61,25 @@ logger = logging.getLogger(__name__)
 #
 # It does NOT stop the project being polled, and never claim it does: the sweep
 # deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
-# which excludes only 'unmanaged' and 'locked'), so an escalated project is
-# still re-read every tick — and that read is exactly what lets sync_project's
-# recovery branch bring it back to 'idle' once Books answers again. What the
-# limit ends is the retrying of the PUSH, and it surfaces the failure on the
-# card instead of leaving it silently 'pending' forever.
+# which excludes only 'unmanaged' and 'locked' for a project that HAS a
+# quote_id — and, separately, also selects a quote_id-less 'error' project,
+# the failed-CREATE case below), so an escalated project is still re-read
+# every tick — and that read is exactly what lets sync_project's recovery
+# branch bring it back to 'idle' once Books answers again. What the limit
+# ends is the retrying of the PUSH, and it surfaces the failure on the card
+# instead of leaving it silently 'pending' forever.
+#
+# A project whose very first push (the CREATE) is what failed never earns a
+# quote_id in the first place, so the "has a quote_id" half of the SELECT
+# above cannot be what re-selects it. Without a second clause for that case,
+# such a project would match neither branch once escalated to 'error' and
+# would sit showing its failure forever, never retried, even after Books
+# recovers — see T-008. The fix is a second OR'd clause selecting active,
+# quote_id-IS-NULL, 'error' projects, and sync_project's routing (the
+# `quote_id is not None` guard on its reconcile branch) sends those straight
+# into the same CREATE path a fresh 'pending' project takes, so
+# find_estimate_by_reference's idempotency guard there also protects an
+# orphan estimate left behind by a create that raced a commit failure.
 SYNC_FAILURE_LIMIT = 5
 
 # The statuses that represent a DECISION someone made, as opposed to where a
@@ -451,6 +465,12 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     requeue_marker = _requeue_marker_for(project.id)
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)
+    # Captured in the same breath as `tasks` above, before ANY of this
+    # function's own network calls (including the orphan lookup below) can
+    # open a window for a concurrent cost edit -- see _write_back_rounded_costs'
+    # own docstring for why this snapshot, and not a later re-select, is what
+    # that write-back must round from.
+    pushed_costs = await _snapshot_pushed_costs(db, project.id)
     if not any(enabled_services(task) for task in tasks):
         # Every project is meant to carry a priced service (the create modal
         # enforces it), but a project whose only task was emptied by hand would
@@ -491,13 +511,21 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # commit fails -> user adds an Impression3D service -> this tick
         # finds the orphan. Marking it 'idle' here (the bug this replaces)
         # would declare the card in sync while Books still holds only the
-        # scan line. Leaving quote_sync_state at 'pending' (do not touch it)
-        # means the very next tick takes the normal _update_quote path
-        # instead, which re-reads the FULL estimate and pushes whatever the
-        # project's lines currently are. Also deliberately not writing
-        # quote_synced_at: this summary's last_modified_time is not the full
-        # estimate's and must not be trusted by the Phase 2 poller's echo
-        # suppression.
+        # scan line. Setting quote_sync_state to 'pending' here — even though
+        # for most callers it already IS 'pending' and this is a same-value
+        # no-op — means the very next tick takes the normal _update_quote
+        # path instead, which re-reads the FULL estimate and pushes whatever
+        # the project's lines currently are. This is no longer always a
+        # no-op since T-008: a project swept back in from 'error' with no
+        # quote_id reaches this same branch still carrying 'error', and
+        # leaving that untouched would send the NEXT tick down the reconcile
+        # branch above (quote_id is now set) instead of _update_quote —
+        # permanently short of the full line-item push this orphan still
+        # needs, and never clearing the card's stale error icon either. Also
+        # deliberately not writing quote_synced_at: this summary's
+        # last_modified_time is not the full estimate's and must not be
+        # trusted by the Phase 2 poller's echo suppression.
+        project.quote_sync_state = "pending"
         project.quote_id = estimate["estimate_id"]
         if estimate.get("estimate_number") is not None:
             project.quote_number = estimate["estimate_number"]
@@ -514,7 +542,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
             "line_items": line_items,
         },
     )
-    await _write_back_rounded_costs(db, project.id)
+    await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
     # network call above was in flight; this session never sees that commit
@@ -567,7 +595,35 @@ def _is_locked(estimate: dict) -> bool:
     return bool(estimate.get("is_transaction_created")) or float(estimate.get("invoiced_amount") or 0) > 0
 
 
-async def _write_back_rounded_costs(db: AsyncSession, project_id: int) -> None:
+async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int, dict[str, tuple[float, int]]]:
+    """The exact ``<service>_cost``/``_quantity`` figures about to go out the
+    door, captured at the SAME moment as ``load_export_tasks`` — i.e. before
+    the caller's own network round trip (``create_estimate`` or
+    ``update_estimate_lines``) opens the window a concurrent cost edit could
+    land in. ``_write_back_rounded_costs`` rounds from THIS snapshot and
+    nothing else, so what it writes back is provably the figure that was
+    actually pushed, never whatever the database happens to hold once the
+    round trip returns — a plain re-select at that later point cannot make
+    that distinction (SQLAlchemy's identity map does not repopulate a live,
+    unexpired instance without ``populate_existing``, so a re-select can
+    silently hand back either this same stale snapshot or, once nothing
+    still references those rows, a completely fresh — and by then
+    unrelated-to-the-push — value; neither answers "what did we push").
+    """
+    rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
+    return {
+        row.id: {
+            service: (getattr(row, f"{service}_cost"), max(1, int(getattr(row, f"{service}_quantity") or 1)))
+            for service in SERVICES
+            if getattr(row, f"{service}_cost") is not None
+        }
+        for row in rows
+    }
+
+
+async def _write_back_rounded_costs(
+    db: AsyncSession, project_id: int, pushed_costs: dict[int, dict[str, tuple[float, int]]]
+) -> None:
     """Adopt the total the quote can actually express, for every service.
 
     ``<service>_cost`` is a pre-discount total for all units but a line is
@@ -575,14 +631,34 @@ async def _write_back_rounded_costs(db: AsyncSession, project_id: int) -> None:
     unrepresentable. Writing the achievable figure back here means the project
     and the quote agree immediately — rather than agreeing a tick later, as a
     visible jitter, when the Phase 2 poller pulls the quote's number back.
+
+    ``pushed_costs`` is ``_snapshot_pushed_costs``'s own return value,
+    captured by the caller before its network round trip — never re-derived
+    here, and this function does no SELECT of its own. An operator can PATCH
+    a task's cost from a different session while that round trip is still in
+    flight, committing a new value this session has no way to see without an
+    explicit refresh; rounding from a re-select run once the round trip
+    returns would either compute from stale pre-push data (an identity-map
+    hit) or, just as wrongly, from the operator's own brand-new figure before
+    it was ever pushed anywhere. So every write below is a Core UPDATE
+    guarded by ``<service>_cost == pushed_value``: it only lands on a row
+    whose stored cost STILL equals the value this function rounded from, so
+    a row edited mid-round-trip is left exactly as the operator committed
+    it — Books catches up on that task's real value next tick, via the
+    normal ``_mark_pending_if_ours`` path, instead of this write-back
+    erasing it.
     """
-    rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
-    for row in rows:
-        for service in SERVICES:
-            if getattr(row, f"{service}_cost") is None:
+    for task_id, costs in pushed_costs.items():
+        for service, (pushed_cost, quantity) in costs.items():
+            rounded = round(pushed_cost / quantity) * quantity
+            if rounded == pushed_cost:
                 continue
-            quantity = max(1, int(getattr(row, f"{service}_quantity") or 1))
-            setattr(row, f"{service}_cost", round(getattr(row, f"{service}_cost") / quantity) * quantity)
+            cost_column = getattr(AitoTask, f"{service}_cost")
+            await db.execute(
+                update(AitoTask)
+                .where(AitoTask.id == task_id, cost_column == pushed_cost)
+                .values(**{f"{service}_cost": rounded})
+            )
 
 
 # A snapshotted pre-trash status -> the status a restore puts Books back into.
@@ -916,6 +992,10 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         return
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)
+    # Captured in the same breath as `tasks` above, before this function's own
+    # update_estimate_lines round trip below can open a window for a
+    # concurrent cost edit -- see _write_back_rounded_costs' own docstring.
+    pushed_costs = await _snapshot_pushed_costs(db, project.id)
     if not any(enabled_services(task) for task in tasks):
         # Mirrors the create-path guard: a project whose only priced service
         # was just cleared by hand would otherwise PUT an empty line_items
@@ -955,7 +1035,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         shipping=load_export_shipping(project, catalogue),
     )
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
-    await _write_back_rounded_costs(db, project.id)
+    await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in
     # between refreshes it (expire_on_commit=False). An Accept/Decline
@@ -1128,7 +1208,15 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # hand-typed rows and catalogue overrides across the whole board (see
         # create_project's own note on why marking a fresh import pending is
         # unsafe).
-        if project.quote_sync_state != "pending":
+        #
+        # `quote_id is not None` guards this: run_sync_once's SELECT now also
+        # sweeps 'error' projects that never got a quote_id (a failed CREATE —
+        # see the module-level SYNC_FAILURE_LIMIT comment). There is no
+        # estimate to reconcile for one of those — get_estimate(None) would
+        # be a wrong call, not a retry — so it must fall through to the
+        # `not project.quote_id` branch below and retry the CREATE instead,
+        # exactly like a fresh 'pending' project with no quote yet.
+        if project.quote_sync_state != "pending" and project.quote_id is not None:
             estimate = await zoho_service.get_estimate(db, project.quote_id)
             if _is_locked(estimate):
                 # Re-checked here from the estimate already in hand, not
@@ -1480,13 +1568,18 @@ def _still_selected(project: AitoProject) -> bool:
     """
     if project.quote_sync_state == "pending":
         return True
-    return (
-        project.status == "active"
-        and project.quote_id is not None
+    if project.status != "active":
+        return False
+    if project.quote_id is not None:
         # 'pending' omitted here (unlike the SQL mirror's not_in): the early
         # return above already handles it, so this branch never sees it.
-        and project.quote_sync_state not in ("unmanaged", "locked")
-    )
+        return project.quote_sync_state not in ("unmanaged", "locked")
+    # No quote_id: only 'error' (a failed CREATE — see T-008 and
+    # run_sync_once's own second SELECT clause) is swept back in. 'idle' with
+    # no quote_id is a trashed-before-first-tick project (see sync_project's
+    # own comment on that state) and 'unmanaged'/'locked' never apply without
+    # a quote_id to begin with — none of those are re-selected here.
+    return project.quote_sync_state == "error"
 
 
 async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
@@ -1517,6 +1610,22 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
                 # invoiced or tax-unsafe estimate, where a status
                 # write is no safer than a line-item write.
                 AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+            ),
+            and_(
+                AitoProject.status == "active",
+                AitoProject.quote_id.is_(None),
+                # T-008: a project whose quote CREATE never succeeded has no
+                # quote_id, so the clause above (which requires one) can
+                # never re-select it once it is escalated to 'error' — it
+                # would sit showing its failure forever, retried only if a
+                # human edits the card back to 'pending'. This clause is the
+                # fix: it is the ONLY state worth re-selecting for a
+                # quote_id-less project ('idle' here means trashed before
+                # ever quoted, see sync_project's own comment on that state,
+                # and is correctly left alone). sync_project's routing sends
+                # a project selected by this clause into the same CREATE
+                # path a fresh 'pending' project takes.
+                AitoProject.quote_sync_state == "error",
             ),
         )
     project_ids = list(

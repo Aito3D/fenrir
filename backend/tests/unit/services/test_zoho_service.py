@@ -755,6 +755,55 @@ async def test_get_estimate_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db
 
 
 @pytest.mark.asyncio
+async def test_get_invoice_pdf_returns_bytes(async_client, db_session):
+    """Same shape and same reasoning as ``get_estimate_pdf`` above: a PDF
+    response must not be run through response.json()."""
+    await _configure(async_client)
+    pdf = b"%PDF-1.4 fake"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        assert request.url.params["organization_id"] == "999"
+        assert request.url.path.endswith("/invoices/INV-1")
+        return httpx.Response(200, content=pdf, headers={"Content-Type": "application/pdf"})
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.get_invoice_pdf(db_session, "INV-1") == pdf
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_pdf_maps_not_found(async_client, db_session):
+    """Zoho's ERROR responses are still JSON, so the error mapping is shared."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        return httpx.Response(404, json={"message": "Invoice does not exist"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoNotFound):
+        await zoho_service.get_invoice_pdf(db_session, "INV-1")
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db_session):
+    """A 200 carrying HTML or JSON would otherwise reach the browser labelled
+    application/pdf and open a blank print dialog with no clue why."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        return httpx.Response(200, content=b"<html>sign in</html>")
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoUpstreamError):
+        await zoho_service.get_invoice_pdf(db_session, "INV-1")
+
+
+@pytest.mark.asyncio
 async def test_list_items_page_sends_the_category_filter_and_extracts_has_more_page(db_session, monkeypatch):
     """The filament catalogue relies on this seam to page through
     ``cf_nature_du_produit=Filaments`` server-side rather than Zoho's

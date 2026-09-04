@@ -21,6 +21,7 @@ from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
     _deferred_reasons,
     _requeue_marker,
+    _snapshot_pushed_costs,
     _update_quote,
     _write_back_rounded_costs,
     load_export_shipping,
@@ -1408,6 +1409,137 @@ async def test_impression_cost_is_written_back_to_what_the_quote_can_express(db_
 
 
 @pytest.mark.asyncio
+async def test_a_cost_edited_by_another_session_mid_round_trip_survives_the_write_back(
+    db_session, test_engine, monkeypatch
+):
+    """T-007. ``_write_back_rounded_costs`` used to re-derive "what was
+    pushed" from a re-select of the project's AitoTask rows, run AFTER
+    ``update_estimate_lines``'s network round trip returned. That re-select
+    is not trustworthy either way: if the session's identity map still holds
+    the rows ``load_export_tasks`` loaded a moment earlier (unexpired, since
+    this app runs with ``expire_on_commit=False``), SQLAlchemy hands back
+    those SAME in-memory objects without repopulating them from the
+    database, so the re-select silently returns pre-round-trip data even
+    though the database itself has moved on; if nothing still references
+    those rows, the re-select instead returns whatever is in the database
+    *right now* — which, if an operator committed a cost edit on a different
+    session while the round trip was on the wire, is the OPERATOR'S figure,
+    not the one that was pushed. Either way, the old code's unconditional
+    ``setattr`` + flush (an UPDATE by primary key, no value check at all)
+    stomped that edit with a total rounded from data that does not describe
+    what Books was actually just told: 2401 over 2 units pushed, rounded to
+    2400, and written back over the operator's 5000 regardless of how the
+    5000 got there.
+
+    Fixed by capturing the pushed cost snapshot (``_snapshot_pushed_costs``)
+    in the same breath as ``load_export_tasks``, BEFORE the round trip opens
+    the window, and writing back only via a Core UPDATE conditioned on
+    ``<service>_cost == pushed_value``: a row whose stored cost no longer
+    equals what was actually pushed is left exactly as the operator
+    committed it.
+    """
+    project = await _project_with_quote(db_session, impression_cost=2401, impression_quantity=2)
+    await _configure_zoho(db_session)
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+        # The operator's own edit, committed on its own session while this
+        # round trip is still in flight -- exactly the window
+        # `_write_back_rounded_costs` must not let leak into its own write.
+        async with maker() as edit_db:
+            edit_row = (await edit_db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+            edit_row.impression_cost = 5000
+            await edit_db.commit()
+        return await real_update_estimate_lines(db, quote_id, line_items)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft", "total": 2400}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+
+    # A fresh session, deliberately -- so this read cannot be an identity-map
+    # hit against anything either db_session or the interleaved edit_db
+    # session loaded; it is the database's own current truth.
+    async with maker() as check_db:
+        task_row = (await check_db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+    # The operator's edit survives untouched -- NOT re-rounded (5000 is
+    # already an exact multiple of the quantity, so if the write-back had
+    # rounded from the operator's OWN new figure instead of skipping outright
+    # it would also land on 5000 by coincidence; the real proof is the next
+    # test, which confirms the write-back is skipped, not merely a no-op).
+    assert task_row.impression_cost == 5000
+
+
+@pytest.mark.asyncio
+async def test_write_back_is_skipped_entirely_once_a_concurrent_edit_lands(db_session, test_engine, monkeypatch):
+    """Same interleaving as above, but with an edited figure (5001) that is
+    NOT an exact multiple of the quantity -- so a write-back that rounded
+    from the operator's post-edit value (rather than skipping the row
+    outright) would visibly change it to 5000, right on top of the edit.
+    Proves the fix's conditional UPDATE genuinely no-ops on a superseded row
+    rather than coincidentally reproducing the right answer.
+    """
+    project = await _project_with_quote(db_session, impression_cost=2401, impression_quantity=2)
+    await _configure_zoho(db_session)
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+        async with maker() as edit_db:
+            edit_row = (await edit_db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+            edit_row.impression_cost = 5001
+            await edit_db.commit()
+        return await real_update_estimate_lines(db, quote_id, line_items)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft", "total": 2400}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+
+    async with maker() as check_db:
+        task_row = (await check_db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+    # Must stay exactly 5001 -- untouched, unrounded. 5000 would mean the
+    # write-back rounded the operator's post-edit figure instead of skipping
+    # a row whose cost no longer matches what was pushed.
+    assert task_row.impression_cost == 5001
+
+
+@pytest.mark.asyncio
 async def test_write_back_rounds_every_services_cost(db_session):
     """A line is rate x quantity at price_precision 0, so 2401 over 2 units
     is unrepresentable on ANY service, not just printing."""
@@ -1421,7 +1553,8 @@ async def test_write_back_rounds_every_services_cost(db_session):
         impression_quantity=2,
     )
 
-    await _write_back_rounded_costs(db_session, project.id)
+    pushed_costs = await _snapshot_pushed_costs(db_session, project.id)
+    await _write_back_rounded_costs(db_session, project.id, pushed_costs)
     task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
 
     # 2401 / 2 = 1200.5 -> rate 1200 (banker's rounding on .5) x 2 = 2400
@@ -1451,6 +1584,147 @@ async def test_upstream_failures_escalate_to_error_after_the_limit(db_session):
     await run_sync_once(db_session)
     await db_session.refresh(project)
     assert project.quote_sync_state == "error"
+
+
+@pytest.mark.asyncio
+async def test_an_errored_project_with_no_quote_id_is_reselected_and_retried(db_session):
+    """T-008: a project whose very first push (the CREATE) never succeeded
+    has no quote_id, so once it escalates to 'error' after SYNC_FAILURE_LIMIT
+    outages it used to match neither of run_sync_once's SELECT branches
+    ('pending', or 'quote_id is not None') and would sit showing "Zoho Books
+    unreachable" forever -- retried only if a human edited the card. The
+    sweep's new second clause (active, quote_id IS NULL, 'error') fixes
+    that: this project must be reselected on its own, with no edit, and its
+    quote actually created the moment Books answers again."""
+    project = AitoProject(
+        description="Jamais cree",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Piece", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def failing(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(503, json={"message": "down"})
+
+    zoho_service.transport = httpx.MockTransport(failing)
+    zoho_service.invalidate_token()
+
+    for _ in range(SYNC_FAILURE_LIMIT):
+        await run_sync_once(db_session)
+        await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_id is None
+    assert project.quote_sync_error is not None
+    assert project.quote_sync_failures == SYNC_FAILURE_LIMIT
+
+    # Books answers again. No route handler ever marks the project pending
+    # again -- this must be the sweep re-selecting it on its own.
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E-RECOVERED",
+                        "estimate_number": "DEV26-9010",
+                        "date": "2026-09-03",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-09-03T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_id == "E-RECOVERED"
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
+    assert any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_an_errored_project_with_no_quote_id_adopts_an_orphan_estimate_on_retry(db_session):
+    """T-008 + I4 combined: the IntegrityError scenario in the audit finding
+    -- a CREATE's POST reaches Books, but the commit that would have
+    recorded the returned quote_id fails (e.g. it collides with
+    ``uq_aito_project_active_quote``) -- leaves the project 'error' with
+    quote_id still NULL locally, while Books already holds an orphan
+    estimate under this project's AITO-{id} reference. Once the sweep
+    reselects that project (see the test above), the retry must go through
+    _create_quote's own find_estimate_by_reference guard and adopt the
+    orphan's identity instead of POSTing a duplicate -- exactly the
+    protection a 'pending' project with no quote_id already gets."""
+    project = AitoProject(
+        description="Orpheline",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="error",
+        quote_sync_error="Zoho Books unreachable",
+        quote_sync_failures=SYNC_FAILURE_LIMIT,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Piece", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {
+                    "estimates": [
+                        {
+                            "estimate_id": "E-ORPHAN",
+                            "estimate_number": "DEV26-9011",
+                            "reference_number": f"AITO-{project.id}",
+                            "customer_id": "C1",
+                            "date": "2026-09-03",
+                            "status": "draft",
+                            "total": 5000,
+                            "last_modified_time": "2026-09-03T09:00:00-1000",
+                        }
+                    ]
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_id == "E-ORPHAN"
+    assert project.quote_number == "DEV26-9011"
+    assert not any(entry[0] == "POST" for entry in seen)
+    # Not 'idle': the adopted object is only a list summary (no line_items),
+    # so the project is not actually in sync yet. It must land on 'pending',
+    # not stay 'error' -- staying 'error' would send the NEXT tick down the
+    # reconcile branch instead of _update_quote (quote_id is now set), which
+    # would never push this project's real lines and would leave the card's
+    # error icon showing forever despite the retry having half-succeeded.
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
 
 
 @pytest.mark.asyncio
@@ -2704,8 +2978,13 @@ async def test_create_does_not_adopt_an_estimate_belonging_to_a_different_custom
 async def test_create_with_no_priced_service_becomes_a_terminal_error(db_session):
     """Minor 5: mirrors the update-path test of the same name, on the create
     path. A project whose only task has every service disabled must not spin
-    forever re-attempting creation every tick — it lands in a terminal state,
-    and a second tick makes no Zoho call at all."""
+    forever re-attempting creation every tick — it lands in a terminal state.
+
+    Since T-008, this project (now 'error' with no quote_id) IS reselected by
+    a later sweep — see run_sync_once's second SELECT clause — so a second
+    tick no longer counts as zero attempted. It still makes no Zoho call at
+    all: the no-priced-service guard fires before any lookup or POST, on
+    every tick, exactly as it did on the first."""
     project = AitoProject(
         description="Vide",
         board_column="devis",
@@ -2731,7 +3010,10 @@ async def test_create_with_no_priced_service_becomes_a_terminal_error(db_session
     assert seen == []  # no Zoho call at all: caught before any lookup or POST
 
     seen.clear()
-    assert await run_sync_once(db_session) == 0
+    # T-008: reselected (attempted == 1, not 0 as before) because this
+    # project is now 'error' with no quote_id — but still zero Zoho calls,
+    # the guard above catches it again before any network call.
+    assert await run_sync_once(db_session) == 1
     assert seen == []
 
 
