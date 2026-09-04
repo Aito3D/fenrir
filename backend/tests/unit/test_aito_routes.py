@@ -992,6 +992,7 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "quote_invoiced": False,
         "flag": None,
         "client_contacted_at": None,
+        "due_date": None,
         "quote_sync_error": None,
         "quote_status_block": None,
         "quote_status_remote": None,

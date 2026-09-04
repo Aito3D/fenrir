@@ -55,6 +55,10 @@ KINDS: dict[str, str] = {
     "project.sav.cleared": "story",
     "project.pause.set": "story",
     "project.pause.cleared": "story",
+    # The promise made to the client, and its withdrawal. Story for the same
+    # reason the contacted pair is: it is the audit trail of a commitment.
+    "project.due.set": "story",
+    "project.due.cleared": "story",
     # Story, not detail, and for a reason the board flags do not share: this
     # pair is the audit trail of the promise made to the client, and of the
     # gate that lets a project be archived. "Who told them, and when" is

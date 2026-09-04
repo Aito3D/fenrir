@@ -1,7 +1,7 @@
 """Pydantic DTOs for the Aito production board."""
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -303,6 +303,9 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     quote_total: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     quote_url: str | None = Field(default=None, max_length=300)
     quote_salesperson: str | None = Field(default=None, max_length=200)
+    # The promised delivery day. Parsed as a real calendar date and stored as
+    # its ISO string; any past date is accepted.
+    due_date: date | None = None
     # Restricted to the Zoho vocabulary — an import usually carries one of
     # these (it is read straight off the Books estimate), and a hand-made
     # card only ever sends 'sent'/'accepted'/'declined' through the dedicated
@@ -495,6 +498,13 @@ class AitoFlagUpdate(BaseModel):
     flag: AitoFlag | None
 
 
+class AitoDueDateUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/due-date. One required field, same shape as
+    AitoFlagUpdate: `None` clears the promise, it is not "leave alone"."""
+
+    due_date: date | None
+
+
 class AitoContactedUpdate(BaseModel):
     """Body of PATCH /aito/{id}/contacted.
 
@@ -569,6 +579,9 @@ class AitoProjectResponse(BaseModel):
     # refuses Finish -> Done. The board card reads it to know whether to show
     # the "call the client" state or the ordinary Done button.
     client_contacted_at: datetime | None
+    # ISO `YYYY-MM-DD` promised to the client, or null. Local only — see the
+    # column comment on AitoProject.due_date.
+    due_date: str | None
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when
     # it was recorded — 'conflict' (both sides decided and differ) or
