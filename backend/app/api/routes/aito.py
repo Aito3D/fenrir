@@ -167,6 +167,31 @@ def _today_iso() -> str:
     return datetime.now().date().isoformat()
 
 
+def _overdue_rank(due_date: str | None, column: str, today: str) -> int:
+    """0 when the promise is already broken, else 1. Strictly before today —
+    a card due today is not late — and never in a finished column, where
+    the card paints no badge either. Mirrors `overdueRank` in
+    frontend/src/utils/aitoBoard.ts."""
+    if due_date is None or column in _FINISHED_COLUMNS:
+        return 1
+    return 0 if due_date < today else 1
+
+
+def _overdue_order(today: str):
+    """SQL twin of `_overdue_rank`. Built per request because `today` moves."""
+    return case(
+        (
+            and_(
+                AitoProject.due_date.is_not(None),
+                AitoProject.due_date < today,
+                AitoProject.board_column.not_in(_FINISHED_COLUMNS),
+            ),
+            0,
+        ),
+        else_=1,
+    )
+
+
 # NULL compares as NULL (never True) in SQL, so an unflagged row falls
 # through to `else_` and lands on _UNFLAGGED_RANK — same as _flag_rank.
 _FLAG_ORDER = case(
@@ -848,7 +873,9 @@ async def list_projects(
         # snaps back below one, on the next fetch. Rewriting `position` on
         # flag would "fix" that by destroying the operator's ordering
         # irreversibly, which is worse.
-        .order_by(AitoProject.board_column, _FLAG_ORDER, AitoProject.position, AitoProject.id)
+        .order_by(
+            AitoProject.board_column, _overdue_order(_today_iso()), _FLAG_ORDER, AitoProject.position, AitoProject.id
+        )
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
@@ -2278,7 +2305,9 @@ async def move_project(
     # lands N slots off, and some slots become unreachable. Python's sort is
     # stable, so `position, id` order still holds inside each of the three
     # tiers.
-    destination.sort(key=lambda row: _flag_rank(row.flag))
+    # Overdue outranks the flag tier — same order as list_projects.
+    today = _today_iso()
+    destination.sort(key=lambda row: (_overdue_rank(row.due_date, payload.column, today), _flag_rank(row.flag)))
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
     project.board_column = payload.column
