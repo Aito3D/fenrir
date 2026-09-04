@@ -3,7 +3,7 @@
 9 RequirePermissionIfAuthEnabled(Permission.AITO_CREATE)
 2 RequirePermissionIfAuthEnabled(Permission.AITO_DELETE)
 10 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
-12 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
+14 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
 1 RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ)
 1 RequirePermissionIfAuthEnabled(Permission.API_KEYS_CREATE)
 1 RequirePermissionIfAuthEnabled(Permission.API_KEYS_DELETE)

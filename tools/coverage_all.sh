@@ -25,9 +25,13 @@ WHICH="${1:-both}"
 
 if [ "$WHICH" = "backend" ] || [ "$WHICH" = "both" ]; then
   echo "=== BACKEND coverage (backend/app, whole tree) ==="
+  # --cov-config is REQUIRED: pytest-cov's default (.coveragerc) is resolved from
+  # the CWD (backend/), so the root pyproject.toml [tool.coverage.run] block --
+  # branch=true and the greenlet concurrency -- is silently ignored without it and
+  # the suite reports ~64% instead of ~74% (campaign-10 setup, 2026-09-03).
   ( cd backend && ../venv/bin/python3 -m pytest tests/ -q -n 30 \
       --ignore=tests/unit/services/test_bambu_ftp.py \
-      --cov=app --cov-report=term 2>&1 | tail -15 )
+      --cov=app --cov-config=../pyproject.toml --cov-report=term 2>&1 | tail -15 )
 fi
 
 if [ "$WHICH" = "frontend" ] || [ "$WHICH" = "both" ]; then
