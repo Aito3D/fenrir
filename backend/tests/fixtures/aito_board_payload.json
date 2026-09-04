@@ -47,6 +47,7 @@
     "task_steps": [
       {
         "done": [],
+        "rush": false,
         "services": [
           "scan"
         ],
@@ -149,6 +150,7 @@
         "done": [
           "modelisation"
         ],
+        "rush": false,
         "services": [
           "modelisation"
         ],
@@ -211,6 +213,7 @@
         "done": [
           "scan"
         ],
+        "rush": false,
         "services": [
           "scan",
           "impression"
@@ -219,6 +222,7 @@
       },
       {
         "done": [],
+        "rush": false,
         "services": [
           "usinage"
         ],
@@ -276,6 +280,7 @@
     "task_steps": [
       {
         "done": [],
+        "rush": false,
         "services": [
           "scan"
         ],
