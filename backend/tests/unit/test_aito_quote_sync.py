@@ -4132,6 +4132,88 @@ async def test_restore_from_trash_does_not_restamp_the_acceptance(db_session):
 
 
 @pytest.mark.asyncio
+async def test_restore_of_a_draft_starts_the_sent_clock(db_session):
+    """The restore branch assigns quote_status directly (to protect an old
+    acceptance stamp), which used to mean a draft coming back as 'sent' got no
+    quote_sent_at at all -- the board read "sent" while the "quotes out"
+    follow-up bucket never saw the card.
+
+    The PUT here echoes no ``status``, which is what isolates the restore
+    branch: when Books does echo one, ``_apply_estimate`` adopts it later in
+    the same tick and adopt_quote_status stamps the card as a side effect,
+    masking the miss."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "declined"
+    project.quote_status_before_trash = "draft"
+    project.quote_sent_at = None
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("POST", "/status/sent"): {"message": "ok"},
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "total": 1}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "sent"
+    assert project.quote_sent_at is not None
+
+
+@pytest.mark.asyncio
+async def test_restore_keeps_the_original_sent_stamp_and_never_stamps_an_acceptance(db_session):
+    """Once-only, both ways: an 'accepted' restore keeps its old acceptance
+    stamp (existing behaviour) and does not touch a quote_sent_at that was
+    already set -- the quote left the shop back then, not today."""
+    old_accepted = datetime(2020, 3, 15, 8, 30, 0)
+    old_sent = datetime(2020, 3, 1, 9, 0, 0)
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "declined"
+    project.quote_status_before_trash = "accepted"
+    project.quote_accepted_at = old_accepted
+    project.quote_sent_at = old_sent
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("POST", "/status/accepted"): {"message": "ok"},
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 1}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    assert project.quote_accepted_at == old_accepted
+    assert project.quote_sent_at == old_sent
+
+
+@pytest.mark.asyncio
 async def test_a_push_discovered_acceptance_stamps_quote_accepted_at(db_session):
     """A task-edit push discovers that Books reports 'accepted' — the pending
     path's _apply_estimate adoption (which reconcile_quote_status never sees)

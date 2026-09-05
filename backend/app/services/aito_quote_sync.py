@@ -20,7 +20,7 @@ Phase 2 poller.
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +32,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorFilament
+from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_events import record
 from backend.app.services.aito_invoice_sweep import sweep_invoices
 from backend.app.services.aito_quote_export import (
@@ -854,6 +855,14 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
         # pre-trash status. The job was accepted long ago; restamping here
         # would reset the card's age to the day it came out of the trash.
         project.quote_status = restore_target
+        # ...but the sent-clock still has to start. A card whose quote was a
+        # draft when it was trashed comes back as 'sent' (Books has no
+        # /status/draft), and without this it would read "sent" on the board
+        # with a NULL quote_sent_at -- invisible to the "quotes out" follow-up
+        # bucket forever. Once-only, mirroring adopt_quote_status: a restore
+        # to an away status that already carries a stamp keeps the original.
+        if restore_target in AWAY_STATUSES and project.quote_sent_at is None:
+            project.quote_sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
         project.quote_status_before_trash = None
         _clear_block(project)
     return False
