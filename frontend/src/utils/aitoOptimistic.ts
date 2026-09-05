@@ -401,6 +401,11 @@ export function placeholderProject(fields: {
     quote_salesperson: null,
     quote_status: quoteStatus,
     quote_accepted_at: null,
+    quote_sent_at: null,
+    invoice_status: null,
+    invoice_balance: null,
+    invoice_due_date: null,
+    invoice_checked_at: null,
     quote_sync_state: 'pending',
     quote_invoiced: false,
     // A fresh placeholder carries no flag: it is a workshop signal set by hand

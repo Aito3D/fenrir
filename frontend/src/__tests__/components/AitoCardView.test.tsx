@@ -30,6 +30,11 @@ const project: AitoProject = {
   quote_salesperson: null,
   quote_status: null,
   quote_accepted_at: null,
+  quote_sent_at: null,
+  invoice_status: null,
+  invoice_balance: null,
+  invoice_due_date: null,
+  invoice_checked_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
   flag: null,
@@ -586,6 +591,11 @@ describe('hybrid card anatomy', () => {
       created_at: twentyDaysAgo,
       quote_status: 'accepted',
       quote_accepted_at: oneDayAgo,
+      quote_sent_at: null,
+      invoice_status: null,
+      invoice_balance: null,
+      invoice_due_date: null,
+      invoice_checked_at: null,
     });
     // The ramp cools to the go-ahead, and the label counts from it — both
     // read exactly like a card created a day ago.

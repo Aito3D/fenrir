@@ -1455,6 +1455,9 @@ export interface AppSettings {
   openrouter_model: string;
   // Pushcut pickup-SMS relay (write-only — the URL embeds its secret token)
   pushcut_sms_url: string;
+  /** Aito follow-ups strip thresholds, in days. */
+  aito_followup_quote_days: number;
+  aito_followup_pickup_days: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -4077,6 +4080,17 @@ export interface AitoProject {
    *  the card's elapsed label and aging ramp measure from this instead of
    *  created_at; the value survives a later decline but is ignored then. */
   quote_accepted_at: string | null;
+  /** When the quote first left the shop (naive UTC ISO), or null if never
+   *  sent. Stamped once server-side; the follow-ups strip counts "quotes
+   *  out" from it. */
+  quote_sent_at: string | null;
+  /** The newest Zoho invoice as last read by the hourly sweep; all null
+   *  until the first read. `invoice_balance > 0` past `invoice_due_date`
+   *  is the strip's "unpaid" bucket. */
+  invoice_status: string | null;
+  invoice_balance: number | null;
+  invoice_due_date: string | null;
+  invoice_checked_at: string | null;
   /** The worker's push state for this project's quote. Always present —
    *  never null — even on hand-made cards that have never had a quote
    *  ('idle'). 'pending' while the worker has not yet caught up with the
