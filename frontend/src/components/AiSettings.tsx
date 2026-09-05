@@ -11,6 +11,12 @@ import { useAuth } from '../contexts/AuthContext';
 
 const DEFAULT_MODEL = 'mistralai/mistral-small';
 
+/** A whole number of days in the server's 1..365 range, or the default. */
+function clampDays(raw: string, fallback: number): number {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 && n <= 365 ? n : fallback;
+}
+
 export function AiSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -27,6 +33,10 @@ export function AiSettings() {
   // write-only treatment as the API key beside it.
   const [pushcutUrl, setPushcutUrl] = useState('');
 
+  // Follow-up thresholds — prefilled from settings, kept as strings for the inputs.
+  const [quoteDays, setQuoteDays] = useState('5');
+  const [pickupDays, setPickupDays] = useState('7');
+
   const { data: settings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['settings'],
     queryFn: api.getSettings,
@@ -42,6 +52,8 @@ export function AiSettings() {
       setModel(settings.openrouter_model ?? '');
       // The API key is never returned by the API — always leave blank.
       setApiKey('');
+      setQuoteDays(String(settings.aito_followup_quote_days ?? 5));
+      setPickupDays(String(settings.aito_followup_pickup_days ?? 7));
     }
   }, [settings]);
 
@@ -64,6 +76,8 @@ export function AiSettings() {
       // Omit an untouched secret so saving never wipes the stored one.
       ...(apiKey.trim() ? { openrouter_api_key: apiKey.trim() } : {}),
       ...(pushcutUrl.trim() ? { pushcut_sms_url: pushcutUrl.trim() } : {}),
+      aito_followup_quote_days: clampDays(quoteDays, 5),
+      aito_followup_pickup_days: clampDays(pickupDays, 7),
     });
   };
 
@@ -120,6 +134,41 @@ export function AiSettings() {
             className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
           />
           <p className="text-sm text-bambu-gray mt-1">{t('settings.pushcutUrlDescription')}</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="aito-followup-quote-days" className="block text-sm text-bambu-gray mb-1">
+              {t('settings.aitoFollowupQuoteDays')}
+            </label>
+            <input
+              id="aito-followup-quote-days"
+              type="number"
+              min={1}
+              max={365}
+              step={1}
+              value={quoteDays}
+              onChange={(e) => setQuoteDays(e.target.value)}
+              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            />
+            <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupQuoteDaysDescription')}</p>
+          </div>
+          <div>
+            <label htmlFor="aito-followup-pickup-days" className="block text-sm text-bambu-gray mb-1">
+              {t('settings.aitoFollowupPickupDays')}
+            </label>
+            <input
+              id="aito-followup-pickup-days"
+              type="number"
+              min={1}
+              max={365}
+              step={1}
+              value={pickupDays}
+              onChange={(e) => setPickupDays(e.target.value)}
+              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            />
+            <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupPickupDaysDescription')}</p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-bambu-dark-tertiary">

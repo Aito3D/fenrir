@@ -54,6 +54,8 @@ describe('AiSettings — save path', () => {
           // Write-only secret — the server never echoes a stored key back.
           openrouter_api_key: '',
           openrouter_model: 'anthropic/claude-3-haiku',
+          aito_followup_quote_days: 5,
+          aito_followup_pickup_days: 7,
         });
       }),
       http.put('/api/v1/settings/', async ({ request }) => {
@@ -111,5 +113,22 @@ describe('AiSettings — save path', () => {
     await waitFor(() => expect(putBodies.length).toBe(1));
     expect(putBodies[0].openrouter_model).toBe('mistralai/mistral-small');
     expect(putBodies[0]).not.toHaveProperty('openrouter_api_key');
+  });
+
+  it('seeds and saves the two follow-up thresholds as integers', async () => {
+    const user = userEvent.setup();
+    renderWithClient();
+    const quote = await screen.findByLabelText('Chase a quote after (days)');
+    expect(quote).toHaveValue(5);
+    const pickup = screen.getByLabelText('Chase a pickup after (days)');
+    expect(pickup).toHaveValue(7);
+
+    await user.clear(quote);
+    await user.type(quote, '3');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0].aito_followup_quote_days).toBe(3);
+    expect(putBodies[0].aito_followup_pickup_days).toBe(7);
   });
 });
