@@ -131,4 +131,32 @@ describe('AiSettings — save path', () => {
     expect(putBodies[0].aito_followup_quote_days).toBe(3);
     expect(putBodies[0].aito_followup_pickup_days).toBe(7);
   });
+
+  it('keeps the stored threshold when the typed one is out of range', async () => {
+    // An unreadable keystroke must not become a silent edit: 400 is out of the
+    // server's 1..365 range, so the saved 10 stays 10 rather than snapping to
+    // the hard-coded default of 5.
+    server.use(
+      http.get('/api/v1/settings/', () =>
+        HttpResponse.json({
+          openrouter_api_key: '',
+          openrouter_model: 'anthropic/claude-3-haiku',
+          aito_followup_quote_days: 10,
+          aito_followup_pickup_days: 7,
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithClient();
+
+    const quote = await screen.findByLabelText('Chase a quote after (days)');
+    expect(quote).toHaveValue(10);
+    await user.clear(quote);
+    await user.type(quote, '400');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0].aito_followup_quote_days).toBe(10);
+    expect(putBodies[0].aito_followup_pickup_days).toBe(7);
+  });
 });

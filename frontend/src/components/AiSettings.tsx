@@ -11,7 +11,13 @@ import { useAuth } from '../contexts/AuthContext';
 
 const DEFAULT_MODEL = 'mistralai/mistral-small';
 
-/** A whole number of days in the server's 1..365 range, or the default. */
+/** A whole number of days in the server's 1..365 range, or the fallback.
+ *
+ *  Callers pass the STORED value as the fallback, not the hard default: an
+ *  out-of-range keystroke means "I could not read that", and the honest
+ *  answer is to leave the setting where the operator last put it. Falling back
+ *  to the constant would quietly rewrite a saved 10 to 5 because someone typed
+ *  400 and hit save. */
 function clampDays(raw: string, fallback: number): number {
   const n = Math.floor(Number(raw));
   return Number.isFinite(n) && n >= 1 && n <= 365 ? n : fallback;
@@ -76,8 +82,8 @@ export function AiSettings() {
       // Omit an untouched secret so saving never wipes the stored one.
       ...(apiKey.trim() ? { openrouter_api_key: apiKey.trim() } : {}),
       ...(pushcutUrl.trim() ? { pushcut_sms_url: pushcutUrl.trim() } : {}),
-      aito_followup_quote_days: clampDays(quoteDays, 5),
-      aito_followup_pickup_days: clampDays(pickupDays, 7),
+      aito_followup_quote_days: clampDays(quoteDays, settings?.aito_followup_quote_days ?? 5),
+      aito_followup_pickup_days: clampDays(pickupDays, settings?.aito_followup_pickup_days ?? 7),
     });
   };
 
