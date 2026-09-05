@@ -152,8 +152,11 @@ unpaid red — as complete class strings. `data-testid="aito-followup-<key>"`.
 Page state: `followup: FollowupKey | null`. Clicking the active chip, or
 pressing Escape while the strip has focus, clears it. When set, every
 column's visible list is `board[col].filter(p => bucket.ids.includes(p.id) &&
-matchesSearch(p, search))`; the Done grid count follows the same rule (Done
-never matches, so it reads 0). The existing empty-column copy already handles
+matchesSearch(p, search))`; the Done grid count follows the same rule, and the
+filter clears whenever the view leaves the board (the strip is board-only, so
+a filter surviving into Done or Trash would be invisible, unclearable, and
+would still make the Show Done badge read 0 over a full grid). The existing
+empty-column copy already handles
 a filtered board. The filter is not persisted and clears when the page
 unmounts. The strip's accessible name: `aito.followups.title` ("To chase").
 

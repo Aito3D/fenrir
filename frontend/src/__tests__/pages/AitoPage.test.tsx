@@ -1970,4 +1970,41 @@ describe('follow-ups strip', () => {
     expect(screen.getByText('Fresh quote')).toBeInTheDocument();
     expect(screen.getByText('Waiting pickup')).toBeInTheDocument();
   });
+
+  it('drops the filter when the view leaves the board', async () => {
+    // The strip is only mounted on the board, so a filter that survived into
+    // Done would be invisible and unclearable -- while still being felt, in a
+    // Show Done button reading "(0)" over a grid full of cards.
+    server.use(
+      http.get('/api/v1/aito/', () =>
+        HttpResponse.json([
+          { ...project, id: 1, description: 'Stale quote', quote_status: 'sent', quote_sent_at: ago(6) },
+          { ...project, id: 4, description: 'Vieux boitier', column: 'done', move_lock: null },
+        ]),
+      ),
+    );
+    render(<AitoPage />);
+    await screen.findByText('Stale quote');
+
+    fireEvent.click(await screen.findByTestId('aito-followup-quoteOut'));
+    // The archived card is not in the quotes-out bucket, so the badge that
+    // promises what the next click shows currently says nothing is there.
+    expect(screen.getByRole('button', { name: /show done \(0\)/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show done/i }));
+    // The archived card is on screen, and the count strut behind the "Back to
+    // board" label -- ViewToggleButton keeps both, aria-hidden'ing the one
+    // that does not apply -- no longer reads (0) against it.
+    expect(await screen.findByText('Vieux boitier')).toBeInTheDocument();
+    const backToBoard = screen.getByRole('button', { pressed: true });
+    expect(backToBoard).not.toHaveTextContent(/show done \(0\)/i);
+    expect(backToBoard).toHaveTextContent(/show done \(1\)/i);
+
+    fireEvent.click(backToBoard);
+    await screen.findByText('Stale quote');
+    // The chip is back (the strip only renders on the board) and unpressed.
+    expect(screen.getByRole('button', { name: /show done \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByTestId('aito-followup-quoteOut')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+  });
 });

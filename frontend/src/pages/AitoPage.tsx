@@ -196,6 +196,19 @@ export function AitoPage() {
   );
   const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
 
+  // Leaving the board takes the follow-up filter with it.
+  //
+  // The strip is only mounted for `view === 'board'`, so a filter that
+  // survived into Done or Trash would be invisible and unclearable — while
+  // still being FELT, because `doneCount` applies it: the Show Done button
+  // would read "(0)" and then land on a grid full of cards, exactly the lie
+  // the badge exists to avoid. A follow-up is a question about live work
+  // anyway; the archives are a different question.
+  const changeView = (next: 'board' | 'done' | 'trash') => {
+    if (next !== 'board') setFollowup(null);
+    setView(next);
+  };
+
   // Live, not read once into a `useMemo`: the CSS half of the motion system
   // re-evaluates its media query the moment the OS setting flips, and the two
   // JS-driven animations on this page (dnd-kit's drop flight and the sortable
@@ -328,14 +341,14 @@ export function AitoPage() {
               They are both detours; the board is where the work is. */}
           <ViewToggleButton
             active={view === 'done'}
-            onToggle={() => setView((current) => (current === 'done' ? 'board' : 'done'))}
+            onToggle={() => changeView(view === 'done' ? 'board' : 'done')}
             icon={Archive}
             label={`${t('aito.showDone')} (${doneCount})`}
             data-flight-target=""
           />
           <ViewToggleButton
             active={view === 'trash'}
-            onToggle={() => setView((current) => (current === 'trash' ? 'board' : 'trash'))}
+            onToggle={() => changeView(view === 'trash' ? 'board' : 'trash')}
             icon={Trash2}
             label={t('aito.trash')}
           />
