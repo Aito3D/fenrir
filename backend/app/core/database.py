@@ -1340,7 +1340,13 @@ async def _backfill_aito_quote_accepted_at(conn) -> None:
 async def _backfill_aito_quote_sent_at(conn) -> None:
     """One-shot seed for quote_sent_at (2026-09-04 follow-ups spec): a quoted
     project takes the EARLIEST quote.sent / quote.emailed event, else its
-    Books estimate date at midnight, else its creation instant. Never-quoted
+    Books estimate date at midnight, else its creation instant.
+
+    The GLOB is load-bearing, not decoration: quote_date is whatever string
+    Books last echoed and nothing validates it on write, so a non-ISO value
+    like '10/02/2026' would concatenate into an unparseable DATETIME that the
+    SQLite result processor then raises on for every board list. Anything that
+    is not exactly YYYY-MM-DD falls through to created_at instead. Never-quoted
     rows stay NULL. Never overwrites: gated on the ALTER that adds the column,
     and the WHERE keeps it idempotent even if it ran twice."""
     from sqlalchemy import text
@@ -1351,7 +1357,8 @@ async def _backfill_aito_quote_sent_at(conn) -> None:
             " (SELECT MIN(occurred_at) FROM aito_events"
             "  WHERE aito_events.project_id = aito_projects.id"
             "    AND aito_events.kind IN ('quote.sent', 'quote.emailed')),"
-            " CASE WHEN quote_date IS NOT NULL AND quote_date != '' THEN quote_date || ' 00:00:00' END,"
+            " CASE WHEN quote_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+            "      THEN quote_date || ' 00:00:00' END,"
             " created_at)"
             " WHERE quote_sent_at IS NULL"
             "   AND quote_status IN ('sent', 'viewed', 'expired', 'accepted', 'declined')"

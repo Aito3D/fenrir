@@ -61,6 +61,24 @@ async def test_backfill_falls_back_to_quote_date_then_created_at(db_session):
 
 
 @pytest.mark.asyncio
+async def test_backfill_ignores_a_non_iso_quote_date(db_session):
+    """quote_date is whatever string Books last echoed and nothing validates
+    it on write. Concatenating '10/02/2026' with ' 00:00:00' seeds a DATETIME
+    the SQLite result processor cannot parse, and every board list afterwards
+    raises on the row. Anything that is not exactly YYYY-MM-DD has to fall
+    through to created_at."""
+    from backend.app.core.database import _backfill_aito_quote_sent_at
+
+    await _seed_project(db_session, 1, "sent", "10/02/2026")
+    await db_session.commit()
+
+    await _backfill_aito_quote_sent_at(await db_session.connection())
+    await db_session.commit()
+
+    assert await _sent_at(db_session, 1) == "2026-01-05 10:00:00"
+
+
+@pytest.mark.asyncio
 async def test_backfill_never_overwrites_a_stamp(db_session):
     from backend.app.core.database import _backfill_aito_quote_sent_at
 
