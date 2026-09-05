@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Riporta in Finitura',
     searchPlaceholder: 'Cerca progetti…',
     searchNoResults: 'Nessun progetto corrisponde alla ricerca',
+    followups: {
+      title: 'Da sollecitare',
+      quoteOut: 'Preventivi senza risposta',
+      notTold: 'Cliente non avvisato',
+      notCollected: 'Non ritirato',
+      unpaid: 'Non pagato',
+      longest: '{{days}} gg',
+      clear: 'Rimuovi il filtro solleciti',
+    },
     clearSearch: 'Cancella ricerca',
     inProduction_one: '{{count}} progetto in produzione',
     inProduction_other: '{{count}} progetti in produzione',
@@ -3481,6 +3490,10 @@ export default {
     pushcutUrl: 'URL Pushcut SMS',
     pushcutUrlHint: 'Sola scrittura: lasciare vuoto per mantenere l’URL attuale',
     pushcutUrlDescription: 'Webhook Pushcut che inoltra l’SMS di ritiro Aito al tuo iPhone',
+    aitoFollowupQuoteDays: 'Sollecitare un preventivo dopo (giorni)',
+    aitoFollowupQuoteDaysDescription: 'Un preventivo inviato o visualizzato senza risposta entra nella barra dei solleciti dopo questi giorni.',
+    aitoFollowupPickupDays: 'Sollecitare un ritiro dopo (giorni)',
+    aitoFollowupPickupDaysDescription: 'Un lavoro finito il cui cliente è stato avvisato ma non lo ha ritirato entra nella barra dopo questi giorni.',
   },
 
   // Notifications (for push notifications)

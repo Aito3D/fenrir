@@ -298,6 +298,15 @@ export default {
     restoreToFinish: 'Move back to Finish',
     searchPlaceholder: 'Search projects…',
     searchNoResults: 'No projects match your search',
+    followups: {
+      title: 'To chase',
+      quoteOut: 'Quotes out',
+      notTold: 'Not told',
+      notCollected: 'Not collected',
+      unpaid: 'Unpaid',
+      longest: '{{days}} d',
+      clear: 'Clear the follow-up filter',
+    },
     clearSearch: 'Clear search',
     inProduction_one: '{{count}} project in production',
     inProduction_other: '{{count}} projects in production',
@@ -3527,6 +3536,10 @@ export default {
     pushcutUrl: 'Pushcut SMS URL',
     pushcutUrlHint: 'Write-only — leave blank to keep the current URL',
     pushcutUrlDescription: 'Pushcut webhook that relays the Aito pickup SMS to your iPhone',
+    aitoFollowupQuoteDays: 'Chase a quote after (days)',
+    aitoFollowupQuoteDaysDescription: 'A sent or viewed quote with no answer joins the follow-ups strip after this many days.',
+    aitoFollowupPickupDays: 'Chase a pickup after (days)',
+    aitoFollowupPickupDaysDescription: 'A finished job whose client was told but has not collected it joins the strip after this many days.',
   },
 
   // Notifications (for push notifications)

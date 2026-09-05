@@ -294,6 +294,15 @@ export default {
     restoreToFinish: '退回到後處理',
     searchPlaceholder: '搜尋專案…',
     searchNoResults: '沒有符合的專案',
+    followups: {
+      title: '待跟進',
+      quoteOut: '報價待回覆',
+      notTold: '未通知客戶',
+      notCollected: '未取件',
+      unpaid: '未付款',
+      longest: '{{days}} 天',
+      clear: '清除跟進篩選',
+    },
     clearSearch: '清除搜尋',
     inProduction_one: '進行中 {{count}} 個專案',
     inProduction_other: '進行中 {{count}} 個專案',
@@ -3481,6 +3490,10 @@ export default {
     pushcutUrl: 'Pushcut 簡訊 URL',
     pushcutUrlHint: '只寫——留空以保留目前 URL',
     pushcutUrlDescription: '將 Aito 取件簡訊轉發到您 iPhone 的 Pushcut Webhook',
+    aitoFollowupQuoteDays: '報價跟進天數',
+    aitoFollowupQuoteDaysDescription: '已發送或已查看但未回覆的報價，超過此天數後進入跟進列。',
+    aitoFollowupPickupDays: '取件跟進天數',
+    aitoFollowupPickupDaysDescription: '已通知客戶但尚未取件的完成作業，超過此天數後進入跟進列。',
   },
 
   // Notifications (for push notifications)

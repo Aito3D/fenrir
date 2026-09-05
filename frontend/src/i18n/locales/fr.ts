@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Renvoyer en Finition',
     searchPlaceholder: 'Rechercher un projet…',
     searchNoResults: 'Aucun projet ne correspond à la recherche',
+    followups: {
+      title: 'À relancer',
+      quoteOut: 'Devis sans réponse',
+      notTold: 'Client non prévenu',
+      notCollected: 'Non récupéré',
+      unpaid: 'Impayé',
+      longest: '{{days}} j',
+      clear: 'Retirer le filtre de relance',
+    },
     clearSearch: 'Effacer la recherche',
     inProduction_one: '{{count}} projet en production',
     inProduction_other: '{{count}} projets en production',
@@ -3482,6 +3491,10 @@ export default {
     pushcutUrl: 'URL Pushcut SMS',
     pushcutUrlHint: 'Écriture seule — laisser vide pour conserver l’URL actuelle',
     pushcutUrlDescription: 'Webhook Pushcut qui relaie le SMS de retrait Aito vers votre iPhone',
+    aitoFollowupQuoteDays: 'Relancer un devis après (jours)',
+    aitoFollowupQuoteDaysDescription: 'Un devis envoyé ou consulté sans réponse rejoint la barre de relance après ce délai.',
+    aitoFollowupPickupDays: 'Relancer un retrait après (jours)',
+    aitoFollowupPickupDaysDescription: 'Un travail terminé dont le client a été prévenu mais qui n’est pas venu le chercher rejoint la barre après ce délai.',
   },
 
   // Notifications (for push notifications)

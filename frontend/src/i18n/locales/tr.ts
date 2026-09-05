@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Son işleme geri al',
     searchPlaceholder: 'Proje ara…',
     searchNoResults: 'Aramayla eşleşen proje yok',
+    followups: {
+      title: 'Takip edilecek',
+      quoteOut: 'Yanıtsız teklifler',
+      notTold: 'Müşteri bilgilendirilmedi',
+      notCollected: 'Teslim alınmadı',
+      unpaid: 'Ödenmedi',
+      longest: '{{days}} gün',
+      clear: 'Takip filtresini kaldır',
+    },
     clearSearch: 'Aramayı temizle',
     inProduction_one: 'üretimde {{count}} proje',
     inProduction_other: 'üretimde {{count}} proje',
@@ -3496,6 +3505,10 @@ export default {
     pushcutUrl: 'Pushcut SMS URL’si',
     pushcutUrlHint: 'Yalnızca yazma — mevcut URL’yi korumak için boş bırakın',
     pushcutUrlDescription: 'Aito teslim SMS’ini iPhone’unuza ileten Pushcut webhook’u',
+    aitoFollowupQuoteDays: 'Teklifi takip et (gün sonra)',
+    aitoFollowupQuoteDaysDescription: 'Gönderilmiş veya görüntülenmiş ancak yanıtsız bir teklif bu kadar gün sonra takip şeridine düşer.',
+    aitoFollowupPickupDays: 'Teslim almayı takip et (gün sonra)',
+    aitoFollowupPickupDaysDescription: 'Müşterisi bilgilendirilmiş ama teslim alınmamış bitmiş bir iş bu kadar gün sonra şeride düşer.',
   },
 
   // Bildirimler (push bildirimleri için)

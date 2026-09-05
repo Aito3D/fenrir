@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Voltar para Acabamento',
     searchPlaceholder: 'Buscar projetos…',
     searchNoResults: 'Nenhum projeto corresponde à busca',
+    followups: {
+      title: 'A cobrar',
+      quoteOut: 'Orçamentos sem resposta',
+      notTold: 'Cliente não avisado',
+      notCollected: 'Não retirado',
+      unpaid: 'Não pago',
+      longest: '{{days}} dias',
+      clear: 'Remover o filtro de cobrança',
+    },
     clearSearch: 'Limpar busca',
     inProduction_one: '{{count}} projeto em produção',
     inProduction_other: '{{count}} projetos em produção',
@@ -3481,6 +3490,10 @@ export default {
     pushcutUrl: 'URL do Pushcut SMS',
     pushcutUrlHint: 'Somente gravação — deixe em branco para manter a URL atual',
     pushcutUrlDescription: 'Webhook do Pushcut que encaminha o SMS de retirada do Aito para o seu iPhone',
+    aitoFollowupQuoteDays: 'Cobrar um orçamento após (dias)',
+    aitoFollowupQuoteDaysDescription: 'Um orçamento enviado ou visto sem resposta entra na barra de cobrança após esses dias.',
+    aitoFollowupPickupDays: 'Cobrar uma retirada após (dias)',
+    aitoFollowupPickupDaysDescription: 'Um trabalho concluído cujo cliente foi avisado mas não retirou entra na barra após esses dias.',
   },
 
   // Notifications (for push notifications)

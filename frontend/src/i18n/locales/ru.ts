@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Вернуть в «Отделку»',
     searchPlaceholder: 'Поиск проектов…',
     searchNoResults: 'Нет проектов, соответствующих запросу',
+    followups: {
+      title: 'Напомнить',
+      quoteOut: 'Сметы без ответа',
+      notTold: 'Клиент не уведомлён',
+      notCollected: 'Не забрано',
+      unpaid: 'Не оплачено',
+      longest: '{{days}} дн.',
+      clear: 'Снять фильтр напоминаний',
+    },
     clearSearch: 'Очистить поиск',
     inProduction_one: '{{count}} проект в работе',
     inProduction_other: '{{count}} проектов в работе',
@@ -3340,6 +3349,10 @@ export default {
     pushcutUrl: 'URL Pushcut SMS',
     pushcutUrlHint: 'Только запись — оставьте пустым, чтобы сохранить текущий URL',
     pushcutUrlDescription: 'Вебхук Pushcut, который передаёт SMS о готовности Aito на ваш iPhone',
+    aitoFollowupQuoteDays: 'Напоминать о смете через (дней)',
+    aitoFollowupQuoteDaysDescription: 'Отправленная или просмотренная смета без ответа попадает в полосу напоминаний через столько дней.',
+    aitoFollowupPickupDays: 'Напоминать о выдаче через (дней)',
+    aitoFollowupPickupDaysDescription: 'Готовый заказ, о котором клиент уведомлён, но не забрал, попадает в полосу через столько дней.',
   },
   notification: {
     printStarted: {

@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Zurück zur Fertigstellung',
     searchPlaceholder: 'Projekte suchen…',
     searchNoResults: 'Keine Projekte gefunden',
+    followups: {
+      title: 'Nachfassen',
+      quoteOut: 'Offene Angebote',
+      notTold: 'Kunde nicht informiert',
+      notCollected: 'Nicht abgeholt',
+      unpaid: 'Unbezahlt',
+      longest: '{{days}} T',
+      clear: 'Nachfass-Filter aufheben',
+    },
     clearSearch: 'Suche löschen',
     inProduction_one: '{{count}} Projekt in Arbeit',
     inProduction_other: '{{count}} Projekte in Arbeit',
@@ -3493,6 +3502,10 @@ export default {
     pushcutUrl: 'Pushcut-SMS-URL',
     pushcutUrlHint: 'Nur Schreiben — leer lassen, um die aktuelle URL zu behalten',
     pushcutUrlDescription: 'Pushcut-Webhook, der die Aito-Abhol-SMS an dein iPhone weiterleitet',
+    aitoFollowupQuoteDays: 'Angebot nachfassen nach (Tagen)',
+    aitoFollowupQuoteDaysDescription: 'Ein gesendetes oder angesehenes Angebot ohne Antwort erscheint nach so vielen Tagen in der Nachfass-Leiste.',
+    aitoFollowupPickupDays: 'Abholung nachfassen nach (Tagen)',
+    aitoFollowupPickupDaysDescription: 'Ein fertiger Auftrag, dessen Kunde informiert wurde, ihn aber nicht abgeholt hat, erscheint nach so vielen Tagen in der Leiste.',
   },
 
   // Notifications (for push notifications)

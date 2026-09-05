@@ -294,6 +294,15 @@ export default {
     restoreToFinish: '仕上げに戻す',
     searchPlaceholder: '案件を検索…',
     searchNoResults: '一致する案件がありません',
+    followups: {
+      title: '要フォロー',
+      quoteOut: '返答待ちの見積',
+      notTold: '未連絡',
+      notCollected: '未受取',
+      unpaid: '未払い',
+      longest: '{{days}}日',
+      clear: 'フォローフィルターを解除',
+    },
     clearSearch: '検索をクリア',
     inProduction_one: '進行中の案件 {{count}} 件',
     inProduction_other: '進行中の案件 {{count}} 件',
@@ -3493,6 +3502,10 @@ export default {
     pushcutUrl: 'Pushcut SMSのURL',
     pushcutUrlHint: '書き込み専用 — 空欄で現在のURLを維持',
     pushcutUrlDescription: 'Aitoの受け取りSMSをiPhoneに中継するPushcutウェブフック',
+    aitoFollowupQuoteDays: '見積のフォロー日数',
+    aitoFollowupQuoteDaysDescription: '送信済みまたは閲覧済みで返答のない見積は、この日数を過ぎるとフォロー欄に表示されます。',
+    aitoFollowupPickupDays: '受取のフォロー日数',
+    aitoFollowupPickupDaysDescription: '連絡済みでまだ受け取られていない完成品は、この日数を過ぎるとフォロー欄に表示されます。',
   },
 
   // Notifications (for push notifications)

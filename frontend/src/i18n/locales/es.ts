@@ -294,6 +294,15 @@ export default {
     restoreToFinish: 'Devolver a Acabado',
     searchPlaceholder: 'Buscar proyectos…',
     searchNoResults: 'Ningún proyecto coincide con la búsqueda',
+    followups: {
+      title: 'Por reclamar',
+      quoteOut: 'Presupuestos sin respuesta',
+      notTold: 'Cliente sin avisar',
+      notCollected: 'Sin recoger',
+      unpaid: 'Sin pagar',
+      longest: '{{days}} días',
+      clear: 'Quitar el filtro de reclamación',
+    },
     clearSearch: 'Borrar búsqueda',
     inProduction_one: '{{count}} proyecto en producción',
     inProduction_other: '{{count}} proyectos en producción',
@@ -3495,6 +3504,10 @@ export default {
     pushcutUrl: 'URL de Pushcut SMS',
     pushcutUrlHint: 'Solo escritura: dejar en blanco para conservar la URL actual',
     pushcutUrlDescription: 'Webhook de Pushcut que reenvía el SMS de recogida de Aito a tu iPhone',
+    aitoFollowupQuoteDays: 'Reclamar un presupuesto tras (días)',
+    aitoFollowupQuoteDaysDescription: 'Un presupuesto enviado o visto sin respuesta aparece en la barra de reclamaciones tras estos días.',
+    aitoFollowupPickupDays: 'Reclamar una recogida tras (días)',
+    aitoFollowupPickupDaysDescription: 'Un trabajo terminado cuyo cliente fue avisado pero no lo ha recogido aparece en la barra tras estos días.',
   },
 
   // Notifications (for push notifications)

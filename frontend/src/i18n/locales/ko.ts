@@ -294,6 +294,15 @@ export default {
     restoreToFinish: '마감으로 되돌리기',
     searchPlaceholder: '프로젝트 검색…',
     searchNoResults: '검색과 일치하는 프로젝트가 없습니다',
+    followups: {
+      title: '후속 조치',
+      quoteOut: '답변 없는 견적',
+      notTold: '미통보',
+      notCollected: '미수령',
+      unpaid: '미결제',
+      longest: '{{days}}일',
+      clear: '후속 조치 필터 해제',
+    },
     clearSearch: '검색 지우기',
     inProduction_one: '진행 중인 프로젝트 {{count}}개',
     inProduction_other: '진행 중인 프로젝트 {{count}}개',
@@ -3347,6 +3356,10 @@ export default {
     pushcutUrl: 'Pushcut SMS URL 주소',
     pushcutUrlHint: '쓰기 전용 — 비워 두면 현재 URL 유지',
     pushcutUrlDescription: 'Aito 픽업 SMS를 iPhone으로 전달하는 Pushcut 웹훅',
+    aitoFollowupQuoteDays: '견적 후속 조치 기준 (일)',
+    aitoFollowupQuoteDaysDescription: '발송 또는 열람 후 답변 없는 견적은 이 일수가 지나면 후속 조치 표시줄에 나타납니다.',
+    aitoFollowupPickupDays: '수령 후속 조치 기준 (일)',
+    aitoFollowupPickupDaysDescription: '통보했지만 아직 수령하지 않은 완료 작업은 이 일수가 지나면 표시줄에 나타납니다.',
   },
   notification: {
     printStarted: {

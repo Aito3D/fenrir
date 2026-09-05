@@ -295,6 +295,15 @@ export default {
     restoreToFinish: 'Повернути до «Завершення»',
     searchPlaceholder: 'Пошук проєктів…',
     searchNoResults: 'Немає проєктів, що відповідають запиту',
+    followups: {
+      title: 'Нагадати',
+      quoteOut: 'Кошториси без відповіді',
+      notTold: 'Клієнта не повідомлено',
+      notCollected: 'Не забрано',
+      unpaid: 'Не оплачено',
+      longest: '{{days}} дн.',
+      clear: 'Зняти фільтр нагадувань',
+    },
     clearSearch: 'Очистити пошук',
     inProduction_one: '{{count}} проєкт у роботі',
     inProduction_other: '{{count}} проєктів у роботі',
@@ -3344,6 +3353,10 @@ export default {
     pushcutUrl: 'URL Pushcut SMS',
     pushcutUrlHint: 'Лише запис — залиште порожнім, щоб зберегти поточний URL',
     pushcutUrlDescription: 'Вебхук Pushcut, який передає SMS про готовність Aito на ваш iPhone',
+    aitoFollowupQuoteDays: 'Нагадувати про кошторис через (днів)',
+    aitoFollowupQuoteDaysDescription: 'Надісланий або переглянутий кошторис без відповіді потрапляє до смуги нагадувань через стільки днів.',
+    aitoFollowupPickupDays: 'Нагадувати про видачу через (днів)',
+    aitoFollowupPickupDaysDescription: 'Готове замовлення, про яке клієнта повідомили, але не забрали, потрапляє до смуги через стільки днів.',
   },
   notification: {
     printStarted: {
