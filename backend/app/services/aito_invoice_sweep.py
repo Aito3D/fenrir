@@ -55,9 +55,14 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
             invoices = await zoho_service.list_project_invoices(db, project.quote_id or "", project.client_id or "")
             if invoices:
                 newest = invoices[0]
-                project.invoice_status = newest.get("status") or None
-                project.invoice_balance = float(newest.get("balance") or 0)
-                project.invoice_due_date = newest.get("due_date") or None
+                # Parsed into locals before any assignment: a ValueError on
+                # the balance must leave the row untouched, not half-written.
+                status = newest.get("status") or None
+                balance = float(newest.get("balance") or 0)
+                due = newest.get("due_date") or None
+                project.invoice_status = status
+                project.invoice_balance = balance
+                project.invoice_due_date = due
         except (ZohoUpstreamError, ValueError, TypeError, KeyError) as exc:
             logger.warning("Invoice sweep skipped project %s: %s", project.id, exc)
             continue

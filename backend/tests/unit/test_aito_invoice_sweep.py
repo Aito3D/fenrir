@@ -137,7 +137,9 @@ async def test_a_malformed_payload_skips_one_project_only(db_session, monkeypatc
     updated = await sweep_invoices(db_session, force=True)
     assert updated == 1
     db_session.expire_all()
-    assert (await db_session.get(AitoProject, bad_id)).invoice_checked_at is None
+    bad_row = await db_session.get(AitoProject, bad_id)
+    assert bad_row.invoice_checked_at is None
+    assert bad_row.invoice_status is None
     assert (await db_session.get(AitoProject, good_id)).invoice_balance == 10.0
 
 
