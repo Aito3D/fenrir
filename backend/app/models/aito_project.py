@@ -62,6 +62,12 @@ class AitoProject(Base):
     # cards imported already-accepted and on pre-migration rows without a
     # quote.accepted event: the card's age then falls back to created_at.
     quote_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When the quote first left the shop — the moment the "quotes out with no
+    # answer" follow-up counts from. Stamped ONCE (see adopt_quote_status and
+    # create_project): re-sending never restarts the clock, and unaccepting
+    # never clears it. Naive UTC like quote_accepted_at. NULL for a card that
+    # was never sent.
+    quote_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Username of the webapp user who created the card, snapshotted rather than
     # referenced so it survives that user being renamed or deleted. NULL when
     # auth is disabled, and for API-key requests, which carry no user identity.
@@ -81,6 +87,14 @@ class AitoProject(Base):
     # tax-exclusive quotes — the board's "this job is billed, archive it" glow
     # must not fire for those.
     quote_invoiced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # The newest Zoho invoice as last read by the hourly sweep
+    # (services/aito_invoice_sweep.py): status, what is still owed, its due
+    # date, and when we last looked. All NULL until the first successful read.
+    # Background facts, never edited in the panel — not in VERSIONED_FIELDS.
+    invoice_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    invoice_balance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    invoice_due_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    invoice_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # A local board signal with four states: NULL, 'urgent' ("this job is late
     # / promised / on fire"), 'sav' ("it came back and needs handling again"),
     # or 'pause' ("set this aside for now"). Mutually exclusive by

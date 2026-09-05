@@ -1337,6 +1337,28 @@ async def _backfill_aito_quote_accepted_at(conn) -> None:
     )
 
 
+async def _backfill_aito_quote_sent_at(conn) -> None:
+    """One-shot seed for quote_sent_at (2026-09-04 follow-ups spec): a quoted
+    project takes the EARLIEST quote.sent / quote.emailed event, else its
+    Books estimate date at midnight, else its creation instant. Never-quoted
+    rows stay NULL. Never overwrites: gated on the ALTER that adds the column,
+    and the WHERE keeps it idempotent even if it ran twice."""
+    from sqlalchemy import text
+
+    await conn.execute(
+        text(
+            "UPDATE aito_projects SET quote_sent_at = COALESCE("
+            " (SELECT MIN(occurred_at) FROM aito_events"
+            "  WHERE aito_events.project_id = aito_projects.id"
+            "    AND aito_events.kind IN ('quote.sent', 'quote.emailed')),"
+            " CASE WHEN quote_date IS NOT NULL AND quote_date != '' THEN quote_date || ' 00:00:00' END,"
+            " created_at)"
+            " WHERE quote_sent_at IS NULL"
+            "   AND quote_status IN ('sent', 'viewed', 'expired', 'accepted', 'declined')"
+        )
+    )
+
+
 async def _migrate_create_finance_tables(conn) -> None:
     """Create finance tables missing from databases that predate billing.
 
@@ -4853,6 +4875,19 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_accepted_at DATETIME")
     if not _quote_accepted_at_existed:
         await _backfill_aito_quote_accepted_at(conn)
+
+    # Migration: when the quote first left the shop, plus the cached newest
+    # invoice (2026-09-04 follow-ups strip). The sent stamp is backfilled once
+    # from the event log — see _backfill_aito_quote_sent_at; the invoice
+    # columns start NULL and fill on the sweep's first pass.
+    _quote_sent_at_existed = await _column_exists(conn, "aito_projects", "quote_sent_at")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_sent_at DATETIME")
+    if not _quote_sent_at_existed:
+        await _backfill_aito_quote_sent_at(conn)
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_status VARCHAR(30)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_balance FLOAT")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_due_date VARCHAR(10)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_checked_at DATETIME")
 
     # Migration: backfill the explicit 'unmanaged' ownership marker (Critical
     # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)

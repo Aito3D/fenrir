@@ -568,6 +568,15 @@ class AitoProjectResponse(BaseModel):
     # comment on AitoProject. NULL when there is no known acceptance moment;
     # the card then ages from created_at.
     quote_accepted_at: datetime | None
+    # When the quote first left the shop — see the column comment. The
+    # follow-ups strip counts "quotes out" from it.
+    quote_sent_at: datetime | None
+    # The newest Zoho invoice as last read by the hourly sweep; all null until
+    # the first read. The strip's "unpaid" bucket reads balance and due date.
+    invoice_status: str | None
+    invoice_balance: float | None
+    invoice_due_date: str | None
+    invoice_checked_at: datetime | None
     created_by: str | None
     # 'idle' | 'pending' | 'error' | 'locked' | 'unmanaged' — see the column
     # comment on AitoProject.quote_sync_state for what each means.
