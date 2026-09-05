@@ -1925,3 +1925,49 @@ describe('AitoPage (backend board)', () => {
     expect(screen.queryByText('Boîtier archivé')).not.toBeInTheDocument();
   });
 });
+
+describe('follow-ups strip', () => {
+  const NOW = new Date('2026-09-10T12:00:00Z');
+  const ago = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString().replace('Z', '');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(NOW);
+    server.use(
+      http.get('/api/v1/settings/', () =>
+        HttpResponse.json({ aito_followup_quote_days: 5, aito_followup_pickup_days: 7, currency: 'XPF' }),
+      ),
+      http.get('/api/v1/aito/', () =>
+        HttpResponse.json([
+          { ...project, id: 1, description: 'Stale quote', quote_status: 'sent', quote_sent_at: ago(6) },
+          { ...project, id: 2, description: 'Fresh quote', quote_status: 'sent', quote_sent_at: ago(1) },
+          { ...project, id: 3, description: 'Waiting pickup', column: 'finish', quote_status: 'accepted', client_contacted_at: null, move_lock: null },
+        ]),
+      ),
+    );
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('shows counts, filters every column to the chip, keeps search inside the filter, and clears', async () => {
+    render(<AitoPage />);
+    await screen.findByText('Stale quote');
+    const chip = await screen.findByTestId('aito-followup-quoteOut');
+    expect(chip).toHaveTextContent('1');
+    expect(screen.getByTestId('aito-followup-notTold')).toHaveTextContent('1');
+
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Stale quote')).toBeInTheDocument();
+    expect(screen.queryByText('Fresh quote')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting pickup')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
+    expect(screen.queryByText('Stale quote')).not.toBeInTheDocument();
+    expect(screen.getByText('No projects match your search')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+
+    fireEvent.click(chip);
+    expect(screen.getByText('Fresh quote')).toBeInTheDocument();
+    expect(screen.getByText('Waiting pickup')).toBeInTheDocument();
+  });
+});

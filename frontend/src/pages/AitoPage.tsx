@@ -21,6 +21,9 @@ import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
 import { matchesSearch } from '../utils/aitoSearch';
+import { FollowupStrip } from '../components/aito/FollowupStrip';
+import { followups, type FollowupKey } from '../utils/aitoFollowups';
+import { localDateKey } from '../utils/date';
 import { useCardFlight } from '../hooks/useCardFlight';
 import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
@@ -86,7 +89,21 @@ export function AitoPage() {
   // every time but the one you asked for it.
   const [view, setView] = useState<'board' | 'done' | 'trash'>('board');
   const [search, setSearch] = useState('');
-  const filtering = search.trim().length > 0;
+  const [followup, setFollowup] = useState<FollowupKey | null>(null);
+  // Thresholds ride the same settings query the rest of the app shares; the
+  // defaults below only cover the instant before it resolves.
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
+  const thresholds = {
+    quoteDays: settingsQuery.data?.aito_followup_quote_days ?? 5,
+    pickupDays: settingsQuery.data?.aito_followup_pickup_days ?? 7,
+  };
+  const buckets = useMemo(
+    () => followups(aitoQuery.data ?? [], thresholds, Date.now(), localDateKey(new Date())),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- thresholds is rebuilt each render; its two numbers are the real deps
+    [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays],
+  );
+  const followupIds = useMemo(() => (followup ? new Set(buckets[followup].ids) : null), [buckets, followup]);
+  const filtering = search.trim().length > 0 || followup !== null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
@@ -140,15 +157,25 @@ export function AitoPage() {
   //
   // The six columns the board RENDERS, not COLUMN_IDS — which still carries
   // `done`. The archive is behind the Show Done button, not on the board.
+  const visible = (project: AitoProject) =>
+    (followupIds === null || followupIds.has(project.id)) && matchesSearch(project, search);
   const visibleColumns = useMemo(
     () =>
       COLUMNS.map((column) => ({
         column,
-        projects: board[column.id].filter((project) => matchesSearch(project, search)),
+        projects: board[column.id].filter(visible),
       })),
-    [board, search],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `visible` is rebuilt each render; its real deps are `search` and `followupIds`, both listed
+    [board, search, followupIds],
   );
   const visibleCount = visibleColumns.reduce((sum, { projects }) => sum + projects.length, 0);
+
+  // If a chip's bucket empties while active (the last card got contacted),
+  // clear the filter so the board does not sit empty behind a chip that no
+  // longer exists.
+  useEffect(() => {
+    if (followup && buckets[followup].ids.length === 0) setFollowup(null);
+  }, [buckets, followup]);
 
   // A count badge describes the VIEW; the title describes the BUSINESS.
   //
@@ -163,8 +190,9 @@ export function AitoPage() {
   // keystroke while describing nothing anyone asked for. The inconsistency is
   // the intent — please do not "fix" it.
   const doneCount = useMemo(
-    () => board.done.filter((project) => matchesSearch(project, search)).length,
-    [board, search],
+    () => board.done.filter(visible).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `visible` is rebuilt each render; its real deps are `search` and `followupIds`, both listed
+    [board, search, followupIds],
   );
   const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
 
@@ -325,6 +353,8 @@ export function AitoPage() {
           )}
         </div>
       </div>
+
+      {view === 'board' && <FollowupStrip buckets={buckets} active={followup} onChange={setFollowup} />}
 
       {/* Error state */}
       {aitoQuery.isError && (
