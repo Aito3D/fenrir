@@ -6,7 +6,9 @@ and a project drops out of the selection for good once its balance reads 0.
 The steady-state cost is therefore one call per hour per open receivable.
 
 Reads only. No timeline event is recorded — an hourly "looked at the invoice"
-row would drown the story."""
+row would drown the story. A malformed payload from Books (a non-numeric
+balance, a missing key) skips that one project the same way an upstream
+error does — it costs a project, not the whole pass."""
 
 import logging
 import time
@@ -51,14 +53,14 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
     for project in projects:
         try:
             invoices = await zoho_service.list_project_invoices(db, project.quote_id or "", project.client_id or "")
-        except ZohoUpstreamError as exc:
+            if invoices:
+                newest = invoices[0]
+                project.invoice_status = newest.get("status") or None
+                project.invoice_balance = float(newest.get("balance") or 0)
+                project.invoice_due_date = newest.get("due_date") or None
+        except (ZohoUpstreamError, ValueError, TypeError, KeyError) as exc:
             logger.warning("Invoice sweep skipped project %s: %s", project.id, exc)
             continue
-        if invoices:
-            newest = invoices[0]
-            project.invoice_status = newest.get("status") or None
-            project.invoice_balance = float(newest.get("balance") or 0)
-            project.invoice_due_date = newest.get("due_date") or None
         project.invoice_checked_at = _now()
         updated += 1
     if updated:

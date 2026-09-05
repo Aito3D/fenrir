@@ -124,6 +124,24 @@ async def test_an_upstream_error_skips_one_project_only(db_session, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_a_malformed_payload_skips_one_project_only(db_session, monkeypatch):
+    bad = await _project(db_session, quote_id="EST-BAD")
+    good = await _project(db_session, quote_id="EST-GOOD")
+    bad_id, good_id = bad.id, good.id  # captured before expire_all(); see note above
+    bad_invoice = {"balance": "not-a-number", "status": "unpaid", "due_date": "2026-03-01"}
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake({"EST-BAD": [bad_invoice], "EST-GOOD": [_invoice(10.0)]}, []),
+    )
+    updated = await sweep_invoices(db_session, force=True)
+    assert updated == 1
+    db_session.expire_all()
+    assert (await db_session.get(AitoProject, bad_id)).invoice_checked_at is None
+    assert (await db_session.get(AitoProject, good_id)).invoice_balance == 10.0
+
+
+@pytest.mark.asyncio
 async def test_no_invoice_yet_still_stamps_checked_at(db_session, monkeypatch):
     p = await _project(db_session, quote_id="EST1")
     p_id = p.id  # captured before expire_all(); see note above
