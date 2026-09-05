@@ -90,7 +90,8 @@ describe('quoteOut', () => {
     const expired = project({ quote_status: 'expired', quote_sent_at: ago(0.2) });
     const accepted = project({ quote_status: 'accepted', quote_sent_at: ago(20) });
     const unstamped = project({ quote_status: 'sent', quote_sent_at: null });
-    expect(run([expired, accepted, unstamped]).quoteOut.ids).toEqual([expired.id]);
+    const unstampedExpired = project({ quote_status: 'expired', quote_sent_at: null });
+    expect(run([expired, accepted, unstamped, unstampedExpired]).quoteOut.ids).toEqual([expired.id]);
   });
 });
 
@@ -123,6 +124,10 @@ describe('unpaid', () => {
     const unread = project({ invoice_balance: null, invoice_due_date: null });
     expect(run([overdue, dueToday, paid, unread]).unpaid.ids).toEqual([overdue.id]);
     expect(run([overdue]).unpaid.maxDays).toBe(1);
+  });
+  it('counts a calendar-day span for an older due date', () => {
+    const wayOverdue = project({ invoice_balance: 40, invoice_due_date: '2026-09-01' });
+    expect(run([wayOverdue]).unpaid.maxDays).toBe(9);
   });
 });
 

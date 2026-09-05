@@ -7,7 +7,7 @@
 
 import { ageAnchor } from './aitoAging';
 import { needsClientContact } from './aitoBoard';
-import { parseUTCDateStrict } from './date';
+import { parseUTCDateStrict, parseLocalDateKey } from './date';
 import type { AitoProject } from '../api/client';
 
 export type FollowupKey = 'quoteOut' | 'notTold' | 'notCollected' | 'unpaid';
@@ -58,14 +58,22 @@ const RULES: Record<FollowupKey, Rule> = {
     const days = daysSince(p.client_contacted_at, now);
     return days !== null && days >= t.pickupDays ? days : null;
   },
-  unpaid: (p, _t, now, today) => {
+  unpaid: (p, _t, _now, today) => {
     if (!(p.invoice_balance !== null && p.invoice_balance > 0) || !p.invoice_due_date) return null;
     if (!(p.invoice_due_date < today)) return null;
-    // The due date is a calendar day; count from its midnight UTC.
-    return daysSince(`${p.invoice_due_date}T00:00:00`, now) ?? 0;
+    // Calendar-day difference, not a wall-clock one: the due date and
+    // `today` are both local calendar days, so "overdue" flips at local
+    // midnight (like the due-date badge), and the count must agree — a UTC
+    // comparison here could read a day short (ahead of UTC) or long (behind
+    // it). `Math.round`, not floor, so a DST day doesn't drop a day.
+    return Math.max(0, Math.round((parseLocalDateKey(today).getTime() - parseLocalDateKey(p.invoice_due_date).getTime()) / DAY_MS));
   },
 };
 
+/** `now` is the wall-clock epoch (ms) used to age every stamp except the
+ *  unpaid rule's due date; `today` is the operator's local calendar day
+ *  (`YYYY-MM-DD`, e.g. `localDateKey(new Date())`) and is consulted only by
+ *  the unpaid rule, since invoice due dates are calendar days. */
 export function followups(
   projects: AitoProject[],
   thresholds: FollowupThresholds,
