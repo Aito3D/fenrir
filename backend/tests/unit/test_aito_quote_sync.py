@@ -4967,3 +4967,171 @@ async def test_the_sweep_leaves_the_total_alone_when_the_estimate_omits_it(db_se
     await sync_project(db_session, project)
 
     assert project.quote_total == 5000
+
+
+# --- Retainer invoices are deposits, not invoices (2026-09-05) ---------------
+#
+# Books sets `is_transaction_created` the moment ANY transaction hangs off the
+# estimate, and a retainer invoice (a deposit) is one. Observed in production:
+# project 18's `sync.locked` landed 2026-07-31, the day RET-00268 was raised
+# and weeks before its real invoice. A deposit is no reason the print weight
+# cannot be corrected, so only a real invoice may lock.
+
+_RETAINER = [
+    {
+        "retainerinvoice_id": "RI1",
+        "retainerinvoice_number": "RET-00268",
+        "status": "paid",
+        "date": "2026-07-31",
+        "balance": 0,
+        "total": 28500,
+    }
+]
+
+
+@pytest.mark.asyncio
+async def test_retainer_only_estimate_is_not_locked_and_still_pushes(db_session):
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 0,
+                        "invoice_ids": [],
+                        "retainerinvoices": _RETAINER,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "accepted",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-31T11:00:00-1000",
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_invoiced is False
+    assert any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_sweep_does_not_lock_an_idle_quote_over_a_retainer(db_session):
+    """The sweep's own catch-up branch shares the rule: an accepted quote that
+    only gained a deposit since the last sync stays swept, not locked."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 0,
+                        "invoice_ids": [],
+                        "retainerinvoices": _RETAINER,
+                        "is_inclusive_tax": True,
+                    }
+                },
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_invoiced is False
+
+
+@pytest.mark.asyncio
+async def test_real_invoice_beside_a_retainer_still_locks(db_session):
+    """Regression guard for the rule above: `invoiced_amount` is 0 on every
+    invoiced estimate Books actually returns (the figure lives in
+    `uninvoiced_amount`), so the real-invoice signal is `invoice_ids` /
+    status 'invoiced' -- and a deposit beside it must not un-lock anything."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "invoiced",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 0,
+                        "invoice_ids": ["INV1"],
+                        "retainerinvoices": _RETAINER,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_invoiced is True
+    assert not any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_unexplained_transaction_flag_still_locks(db_session):
+    """Fail closed: `is_transaction_created` with neither list explaining it
+    is an unknown transaction type, and unknown means locked."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 0,
+                        "invoice_ids": [],
+                        "retainerinvoices": [],
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert not any(entry[0] == "PUT" for entry in seen)

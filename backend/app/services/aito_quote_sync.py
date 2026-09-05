@@ -565,8 +565,26 @@ def _is_locked(estimate: dict) -> bool:
     accept a PUT — so this is the app's own guard and the only one there is.
     Accepted deliberately does NOT lock: a client agreeing a price is no
     reason a typo in the print weight cannot be corrected.
+
+    Neither does a retainer invoice. Books sets `is_transaction_created` the
+    moment ANY transaction hangs off the estimate, and a retainer (a deposit)
+    is one — so that flag alone locked every quote the day its deposit was
+    raised (production project 18: `sync.locked` on 2026-07-31, the day of
+    RET-00268, weeks before the real invoice). A real invoice shows up as a
+    non-empty `invoice_ids` and/or status 'invoiced'; `invoiced_amount` is 0
+    on every invoiced estimate Books actually returns (the figure lives in
+    `uninvoiced_amount`) but is kept as a belt-and-braces signal.
+
+    Still fails closed: the flag with NEITHER list explaining it is an
+    unknown transaction type, and unknown means locked.
     """
-    return bool(estimate.get("is_transaction_created")) or float(estimate.get("invoiced_amount") or 0) > 0
+    if estimate.get("invoice_ids") or estimate.get("status") == "invoiced":
+        return True
+    if float(estimate.get("invoiced_amount") or 0) > 0:
+        return True
+    if not estimate.get("is_transaction_created"):
+        return False
+    return not estimate.get("retainerinvoices")
 
 
 async def _write_back_rounded_costs(db: AsyncSession, project_id: int) -> None:

@@ -5270,6 +5270,47 @@ async def run_migrations(conn):
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
 
+    await _migrate_unlock_retainer_locked_quotes(conn)
+
+
+async def _migrate_unlock_retainer_locked_quotes(conn) -> None:
+    """One-time unlock of Aito quotes locked by a retainer invoice (2026-09-05).
+
+    `aito_quote_sync._is_locked` used to read Books' `is_transaction_created`
+    as "invoiced", and a retainer invoice (a deposit) sets that flag too, so
+    every quote locked the day its deposit was raised. A locked project leaves
+    the sweep for good, so fixing the rule alone would never revisit them.
+
+    Resets every invoice-lock — 'locked' with no recorded reason; the
+    tax-exclusive lock always carries one — back to 'idle' and clears the
+    invoiced stamp. The next sweep tick re-reads each estimate and re-locks
+    the genuinely invoiced ones through its existing catch-up branch, at the
+    cost of one tick without their Invoice card and a second `sync.locked`
+    timeline event.
+
+    Gated by a settings marker, same as the 'unmanaged' backfill above:
+    re-running this on every boot would un-lock every invoiced quote for one
+    tick after every restart.
+    """
+    from sqlalchemy import text
+
+    if is_sqlite():
+        marker_sql = "INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"
+    else:
+        marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+    marker_row = await conn.execute(text("SELECT value FROM settings WHERE key = 'aito_retainer_unlock_done'"))
+    if marker_row.scalar_one_or_none() is not None:
+        return
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE aito_projects SET quote_sync_state = 'idle', quote_invoiced = :off "
+                "WHERE quote_sync_state = 'locked' AND quote_sync_error IS NULL"
+            ),
+            {"off": False},
+        )
+        await conn.execute(text(marker_sql), {"key": "aito_retainer_unlock_done", "value": "1"})
+
 
 async def _migrate_drop_ams_slot_locations(conn) -> None:
     """Remove imported AMS slot markers from the storage-location catalogue.
