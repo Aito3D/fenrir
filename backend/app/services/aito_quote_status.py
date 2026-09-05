@@ -14,16 +14,18 @@ from datetime import datetime, timezone
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.schemas.aito import QUOTE_STATUS_VALUES
+from backend.app.services.aito_board_rules import AWAY_STATUSES
 
 logger = logging.getLogger(__name__)
 
 
 def adopt_quote_status(project: AitoProject, new_status: str | None) -> None:
     """Set ``project.quote_status``, stamping ``quote_accepted_at`` on a
-    transition into 'accepted' from any other value. Re-acceptance after a
-    decline overwrites — the latest go-ahead wins; leaving 'accepted' keeps
-    the stamp (it is simply ignored while the status is something else).
-    Naive UTC, matching every other datetime on the row.
+    transition into 'accepted' and ``quote_sent_at`` on the first transition
+    into an away status. Re-acceptance after a decline overwrites — the
+    latest go-ahead wins; leaving 'accepted' keeps the stamp (it is simply
+    ignored while the status is something else). Naive UTC, matching every
+    other datetime on the row.
 
     A status outside the board's own vocabulary is refused rather than stored.
     Books' status set is not ours: it also contains 'invoiced', which reaches
@@ -53,4 +55,11 @@ def adopt_quote_status(project: AitoProject, new_status: str | None) -> None:
         return
     if new_status == "accepted" and project.quote_status != "accepted":
         project.quote_accepted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    # First departure only: the "quotes out" follow-up counts from the first
+    # time the quote left the shop, so a re-send, a view, or an unaccept
+    # (accepted -> sent) never moves it. A decided status adopted straight
+    # from None (a Books-side decision we never saw as sent) leaves it NULL —
+    # nothing is out any more, so no clock is needed.
+    if new_status in AWAY_STATUSES and project.quote_sent_at is None:
+        project.quote_sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
     project.quote_status = new_status

@@ -84,3 +84,56 @@ async def test_project_response_carries_the_new_fields_as_null(async_client):
     body = created.json()
     for key in ("quote_sent_at", "invoice_status", "invoice_balance", "invoice_due_date", "invoice_checked_at"):
         assert key in body and body[key] is None
+
+
+@pytest.mark.asyncio
+async def test_marking_sent_stamps_once_and_emailing_again_keeps_it(async_client, db_session):
+    from sqlalchemy import select
+
+    from backend.app.models.aito_project import AitoProject
+
+    created = await async_client.post(
+        "/api/v1/aito/",
+        json={"description": "Support", "client_id": "z1", "client_name": "ACME", "client_phone": "+689 87 00 00 01"},
+    )
+    project_id = created.json()["id"]
+    r = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})
+    assert r.status_code == 200, r.text
+    # AitoQuoteStatusResponse nests the project under "project", not flat.
+    assert r.json()["project"]["quote_sent_at"] is not None
+    first = r.json()["project"]["quote_sent_at"]
+
+    await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"})
+    r = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})  # unaccept
+    assert r.json()["project"]["quote_sent_at"] == first
+
+    db_session.expire_all()
+    row = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    assert row.quote_sent_at is not None
+
+
+@pytest.mark.asyncio
+async def test_importing_an_already_sent_quote_backdates_the_stamp(async_client):
+    created = await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "Imported",
+            "client_id": "z1",
+            "client_name": "ACME",
+            "quote_id": "EST1",
+            "quote_number": "DEV-1",
+            "quote_date": "2026-02-10",
+            "quote_status": "sent",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["quote_sent_at"].startswith("2026-02-10T")
+
+
+@pytest.mark.asyncio
+async def test_a_hand_made_card_has_no_sent_stamp_until_it_is_sent(async_client):
+    created = await async_client.post(
+        "/api/v1/aito/",
+        json={"description": "Support", "client_id": "z1", "client_name": "ACME", "client_phone": "+689 87 00 00 01"},
+    )
+    assert created.json()["quote_sent_at"] is None

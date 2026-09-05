@@ -58,6 +58,31 @@ def test_none_to_accepted_stamps():
     assert isinstance(project.quote_accepted_at, datetime)
 
 
+def test_entering_an_away_status_stamps_sent_at_once():
+    project = _project(quote_status=None)
+    adopt_quote_status(project, "sent")
+    assert isinstance(project.quote_sent_at, datetime)
+    first = project.quote_sent_at
+    adopt_quote_status(project, "viewed")
+    adopt_quote_status(project, "sent")  # a re-send never restarts the clock
+    assert project.quote_sent_at == first
+
+
+def test_unaccepting_keeps_the_sent_stamp():
+    old = datetime(2026, 2, 2, 14, 15, 0)
+    project = _project(quote_status="accepted", quote_sent_at=old)
+    adopt_quote_status(project, "sent")
+    assert project.quote_sent_at == old
+
+
+def test_a_decided_status_adopted_directly_does_not_stamp():
+    """accepted/declined straight from None (a Books-side decision we never
+    saw as sent) leaves the clock unset — nothing is 'out' any more."""
+    project = _project(quote_status=None)
+    adopt_quote_status(project, "accepted")
+    assert project.quote_sent_at is None
+
+
 def test_a_status_outside_the_board_vocabulary_is_refused():
     """Books' status set is wider than the board's. 'invoiced' is the one that
     actually reached here (from the sync worker's lock path) and it means

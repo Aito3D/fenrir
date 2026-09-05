@@ -55,7 +55,7 @@ from backend.app.schemas.aito import (
     AitoTaskStepsResponse,
     AitoTaskUpdate,
 )
-from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
+from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_quote_sync import (
@@ -983,6 +983,12 @@ async def create_project(
         **({"created_at": created_at} if created_at else {}),
         **(shipping or {}),
     )
+    # An import of a quote Books already sent (or decided) carries no
+    # adoption event, so stamp the clock here: the same instant the import
+    # backdates created_at to, or now for a hand-made card posted with an
+    # away status. Never for a bare draft — it has not left the shop.
+    if payload.quote_status in AWAY_STATUSES or payload.quote_status in ("accepted", "declined"):
+        project.quote_sent_at = created_at or datetime.now(timezone.utc).replace(tzinfo=None)
     for task_payload in payload.tasks:
         _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())
     db.add(project)
