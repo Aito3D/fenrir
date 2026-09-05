@@ -230,6 +230,8 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "ams_humidity_fair",
             "ams_history_retention_days",
             "printer_sensor_history_retention_days",
+            "aito_followup_quote_days",
+            "aito_followup_pickup_days",
             "ftp_retry_count",
             "ftp_retry_delay",
             "ftp_timeout",

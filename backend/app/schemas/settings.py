@@ -137,6 +137,17 @@ class AppSettings(BaseModel):
         default=30, description="Number of days to keep printer heater history data (nozzle / bed / chamber)"
     )
 
+    # Aito follow-ups strip thresholds (2026-09-04): days before a sent or
+    # viewed quote with no answer, and a told-but-uncollected finished job,
+    # join the strip. Must also be listed in routes/settings.py's int-key
+    # list or GET hands the frontend strings.
+    aito_followup_quote_days: int = Field(
+        default=5, ge=1, le=365, description="Days before an unanswered quote is chased"
+    )
+    aito_followup_pickup_days: int = Field(
+        default=7, ge=1, le=365, description="Days before an uncollected finished job is chased"
+    )
+
     # Queue auto-drying settings
     queue_drying_enabled: bool = Field(
         default=False, description="Automatically dry AMS filament between queued prints"
@@ -708,6 +719,8 @@ class AppSettingsUpdate(BaseModel):
     ams_temp_fair: float | None = None
     ams_history_retention_days: int | None = None
     printer_sensor_history_retention_days: int | None = None
+    aito_followup_quote_days: int | None = Field(default=None, ge=1, le=365)
+    aito_followup_pickup_days: int | None = Field(default=None, ge=1, le=365)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
