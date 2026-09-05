@@ -59,6 +59,34 @@ async def test_invoice_locked_rows_are_reset_to_idle_and_uninvoiced():
 
 
 @pytest.mark.asyncio
+async def test_a_stale_unrelated_error_does_not_shield_an_invoice_lock():
+    """The sweep's catch-up lock leaves `quote_sync_error` untouched, so a
+    row locked that way still carries whatever the last failed push wrote
+    ("Zoho Books unreachable: ConnectError" on six live rows). That text is
+    not a lock reason; only the tax-exclusive message is. The reset must
+    read the message, not its mere presence -- and clear it, since it
+    describes nothing current."""
+    engine = await _make_engine()
+    try:
+        async with engine.begin() as conn:
+            stale = await _seed(
+                conn, "Acompte", quote_sync_state="locked", quote_sync_error="Zoho Books unreachable: ConnectError"
+            )
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)
+
+        assert await _row(engine, stale) == ("idle", 0)
+        async with engine.connect() as conn:
+            error = (
+                await conn.execute(text("SELECT quote_sync_error FROM aito_projects WHERE id = :p"), {"p": stale})
+            ).scalar_one()
+        assert error is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_tax_exclusive_locks_keep_their_lock():
     """A lock WITH a recorded reason is the tax-exclusive kind: nothing about
     it has anything to do with invoices, and the sweep re-lock would not fire

@@ -5281,12 +5281,17 @@ async def _migrate_unlock_retainer_locked_quotes(conn) -> None:
     every quote locked the day its deposit was raised. A locked project leaves
     the sweep for good, so fixing the rule alone would never revisit them.
 
-    Resets every invoice-lock — 'locked' with no recorded reason; the
-    tax-exclusive lock always carries one — back to 'idle' and clears the
-    invoiced stamp. The next sweep tick re-reads each estimate and re-locks
-    the genuinely invoiced ones through its existing catch-up branch, at the
-    cost of one tick without their Invoice card and a second `sync.locked`
-    timeline event.
+    Resets every invoice-lock back to 'idle' and clears the invoiced stamp.
+    An invoice-lock is any 'locked' row that is not the tax-exclusive kind,
+    and the tax-exclusive kind is identified by its MESSAGE, not by the mere
+    presence of one: the sweep's catch-up lock leaves `quote_sync_error`
+    untouched, so an invoice-locked row can still carry a stale
+    "Zoho Books unreachable" from a push that failed before the lock. That
+    stale text is cleared along the way, since it describes nothing current.
+    The next sweep tick re-reads each estimate and re-locks the genuinely
+    invoiced ones through its existing catch-up branch, at the cost of one
+    tick without their Invoice card and a second `sync.locked` timeline
+    event.
 
     Gated by a settings marker, same as the 'unmanaged' backfill above:
     re-running this on every boot would un-lock every invoiced quote for one
@@ -5304,8 +5309,9 @@ async def _migrate_unlock_retainer_locked_quotes(conn) -> None:
     async with conn.begin_nested():
         await conn.execute(
             text(
-                "UPDATE aito_projects SET quote_sync_state = 'idle', quote_invoiced = :off "
-                "WHERE quote_sync_state = 'locked' AND quote_sync_error IS NULL"
+                "UPDATE aito_projects SET quote_sync_state = 'idle', quote_invoiced = :off, quote_sync_error = NULL "
+                "WHERE quote_sync_state = 'locked' "
+                "AND (quote_sync_error IS NULL OR quote_sync_error NOT LIKE 'This quote is tax-exclusive%')"
             ),
             {"off": False},
         )
