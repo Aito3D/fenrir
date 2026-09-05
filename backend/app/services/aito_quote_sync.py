@@ -33,6 +33,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_events import record
+from backend.app.services.aito_invoice_sweep import sweep_invoices
 from backend.app.services.aito_quote_export import (
     SERVICES,
     Catalogue,
@@ -1748,6 +1749,10 @@ async def run_sync_loop() -> None:
                 interval = await sync_interval_seconds(db)
                 if await sync_enabled(db) and await zoho_service.is_configured(db):
                     await run_sync_once(db)
+                    # Piggybacks on the same gate: no Books access, no sweep.
+                    # Its own hourly gate makes the 300 s tick a no-op most
+                    # of the time.
+                    await sweep_invoices(db)
         except asyncio.CancelledError:
             raise
         except Exception:
