@@ -11,6 +11,7 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote as urlquote, urlparse
 
 import httpx
@@ -45,6 +46,21 @@ DEFAULT_CONTACT_NAME_FALLBACK = "Client de passage"
 # One refresh a day. The ids barely ever move and the rates move rarely; the
 # point of the cache is that opening the create drawer costs nothing.
 _SHIPPING_CACHE_TTL = timedelta(hours=24)
+
+# T-011: how long a failed shipping-catalogue refresh is remembered so a
+# Books outage does not cost one more /items request per deferring project on
+# every sync tick — mirrors zoho_filaments._FAIL_COOLDOWN (same 30s window,
+# same "process-local timestamp, cleared on the next success" shape), scaled
+# down to this module's much simpler single-item-list refresh: no lock, no
+# generation counter, and no negative-cache exception replay, because
+# get_shipping_catalogue never raises in the first place — a failed refresh
+# here already falls through to serving whatever is cached (see its
+# docstring), so short-circuiting the network call is all this needs to add.
+# Deliberately process-local rather than a persisted setting: it must not
+# appear in a settings export/snapshot, and a process restart should clear it
+# immediately rather than have a stale memo outlive the failure it recorded.
+_SHIPPING_FAIL_COOLDOWN = timedelta(seconds=30)
+_shipping_fail_at: datetime | None = None
 
 # Statuses Books will only accept once the estimate has left draft. Its
 # lifecycle is draft -> sent -> accepted/declined and it enforces that: POSTing
@@ -88,6 +104,54 @@ class ZohoAmbiguousReferenceError(ZohoUpstreamError):
     sync worker catches it by name first to fail closed — record the
     ambiguity and stop, never guess.
     """
+
+
+class ZohoRateLimited(ZohoUpstreamError):
+    """Zoho Books is throttling us (HTTP 429).
+
+    A subclass of ZohoUpstreamError so every existing handler that only knows
+    the base class — every route in api/routes/zoho.py and api/routes/aito.py,
+    the generic ``except (ZohoNotConfiguredError, ZohoUpstreamError)`` sites,
+    the docstring/comment example in this module — still catches it and
+    behaves exactly as before (a 502 to the browser, etc). ``sync_project``
+    (aito_quote_sync.py) catches it by name first instead: unlike an outage,
+    retrying the identical request will simply work once the window clears,
+    so a 429 must not spend a slot of the sync worker's failure budget the
+    way a generic ZohoUpstreamError does — see that handler for the deferral.
+
+    ``retry_after`` is the ``Retry-After`` header, in seconds, when Books
+    sends one and it parses; otherwise None. Not currently acted on beyond
+    being available to a caller that wants it — the sync worker's own
+    response is "stop attempting the rest of this tick", not a timed wait.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """``Retry-After`` per RFC 9110: either a whole number of seconds, or an
+    HTTP-date. Returns seconds either way (the date form as seconds from
+    now, floored at 0), or None if the header is missing or neither form
+    parses — callers must treat that the same as "no hint", never raise.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
 def _normalize_reference_number(value: str | None) -> str:
@@ -291,6 +355,11 @@ class ZohoService:
             raise ZohoNotFound(payload.get("message") or "Not found in Zoho Books")
         if response.status_code == 400:
             raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
+        if response.status_code == 429:
+            raise ZohoRateLimited(
+                f"Zoho Books error (HTTP {response.status_code})",
+                retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+            )
         if response.status_code >= 400:
             raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
 
@@ -616,7 +685,18 @@ class ZohoService:
         items it returned matched a known service name (e.g. the catalogue
         was respelled) — callers must treat either case as "cannot push",
         never as "no shipping services exist".
+
+        T-011: a failed refresh is also remembered for
+        ``_SHIPPING_FAIL_COOLDOWN``, so a caller arriving while Books is
+        still down is answered from whatever is cached without repeating
+        the ``/items`` request — this call has no reason to distinguish "no
+        one has asked yet" from "someone already asked and it failed a
+        moment ago". This applies uniformly to every ``refresh=True``
+        caller, drawer-driven or not; there is no bypass, mirroring
+        ``zoho_filaments.fetch_catalogue``.
         """
+        global _shipping_fail_at
+
         from backend.app.api.routes.settings import get_setting, set_setting
 
         raw = await get_setting(db, "zoho_shipping_catalogue")
@@ -642,30 +722,40 @@ class ZohoService:
                 fresh = False
 
         if refresh and not fresh:
-            try:
-                items = await self.list_items(db, "Livraison Avion")
-            except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-                # Deliberately swallowed: a stale catalogue still bills
-                # correctly, and the drawer must open with Books unreachable.
-                logger.warning("Aito shipping catalogue refresh failed: %s", e)
+            now = datetime.now(timezone.utc)
+            if _shipping_fail_at is not None and now - _shipping_fail_at < _SHIPPING_FAIL_COOLDOWN:
+                # T-011: a refresh failed recently — short-circuit exactly as
+                # a failed refresh would (serve whatever is cached, log
+                # nothing new) instead of repeating an /items request that is
+                # very likely to fail again the same way.
+                pass
             else:
-                cached = merge_shipping_catalogue(cached, items)
-                await set_setting(db, "zoho_shipping_catalogue", json.dumps(cached))
-                await set_setting(
-                    db,
-                    "zoho_shipping_catalogue_at",
-                    datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
-                )
-                # Deliberately no commit here: this getter is called from
-                # request handlers and the sync worker, neither of which is
-                # commit-neutral (create_project commits its whole unit of
-                # work exactly once; run_sync_once commits once per project).
-                # A commit hidden in here would persist a half-built caller
-                # transaction. The caller's own commit (or get_db's
-                # end-of-request commit) carries these two set_setting calls
-                # along with it; if the caller instead rolls back, the cache
-                # write is discarded and the next call just re-fetches from
-                # Zoho — benign, at worst one extra API call.
+                try:
+                    items = await self.list_items(db, "Livraison Avion")
+                except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+                    # Deliberately swallowed: a stale catalogue still bills
+                    # correctly, and the drawer must open with Books unreachable.
+                    logger.warning("Aito shipping catalogue refresh failed: %s", e)
+                    _shipping_fail_at = now
+                else:
+                    _shipping_fail_at = None
+                    cached = merge_shipping_catalogue(cached, items)
+                    await set_setting(db, "zoho_shipping_catalogue", json.dumps(cached))
+                    await set_setting(
+                        db,
+                        "zoho_shipping_catalogue_at",
+                        datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                    )
+                    # Deliberately no commit here: this getter is called from
+                    # request handlers and the sync worker, neither of which is
+                    # commit-neutral (create_project commits its whole unit of
+                    # work exactly once; run_sync_once commits once per project).
+                    # A commit hidden in here would persist a half-built caller
+                    # transaction. The caller's own commit (or get_db's
+                    # end-of-request commit) carries these two set_setting calls
+                    # along with it; if the caller instead rolls back, the cache
+                    # write is discarded and the next call just re-fetches from
+                    # Zoho — benign, at worst one extra API call.
 
         return {
             service: ShippingItem(

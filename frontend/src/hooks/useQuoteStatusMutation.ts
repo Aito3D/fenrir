@@ -4,6 +4,7 @@ import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
 import { applyQuoteStatus } from '../utils/aitoOptimistic';
 import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { settleProject } from '../components/aito/settleProject';
 
 // Module scope: a plain object literal, identical on every render, so it
 // need not be reconstructed each time a consumer renders.
@@ -48,10 +49,7 @@ export function useQuoteStatusMutation(
     transform: (previous, status) => applyQuoteStatus(previous, project.id, status),
     flashId: () => project.id,
     onSuccess: (result, status) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+      settleProject(queryClient, project.id, result.project);
       // A repeat of a decision someone already applied: the board row above is
       // fresh, but there is nothing to announce and no Zoho push happened.
       if (result.no_op) return;

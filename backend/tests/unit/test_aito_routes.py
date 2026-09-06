@@ -2420,7 +2420,7 @@ async def test_a_card_with_no_quote_never_calls_zoho(async_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_linked_quote_is_pushed_to_zoho(async_client, monkeypatch):
+async def test_a_linked_quote_is_pushed_to_zoho(async_client, db_session, monkeypatch):
     from backend.app.services import zoho as zoho_module
 
     calls = []
@@ -2438,6 +2438,12 @@ async def test_a_linked_quote_is_pushed_to_zoho(async_client, monkeypatch):
     r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
     assert r.json()["zoho_synced"] is True
     assert calls == [("EST-9", "accepted")]
+
+    # T-026: a push that actually succeeded is a direct observation that
+    # Books now agrees — gates the reconcile sweep's terminal-card exclusion.
+    # Internal only, so checked on the row, not on the response.
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == p["id"]))).scalar_one()
+    assert project.quote_status_confirmed is True
 
 
 @pytest.mark.asyncio
@@ -2531,7 +2537,7 @@ async def test_an_unreadable_estimate_status_does_not_block_the_push(async_clien
 
 
 @pytest.mark.asyncio
-async def test_a_zoho_failure_still_writes_locally(async_client, monkeypatch):
+async def test_a_zoho_failure_still_writes_locally(async_client, db_session, monkeypatch):
     """The board must be right with Zoho down. Never a non-200."""
     from backend.app.services import zoho as zoho_module
 
@@ -2552,6 +2558,12 @@ async def test_a_zoho_failure_still_writes_locally(async_client, monkeypatch):
     assert r.json()["zoho_synced"] is False
     assert r.json()["project"]["quote_status"] == "accepted"
     assert r.json()["project"]["column"] == "print"
+
+    # T-026: a failed push must NOT be recorded as an observed agreement —
+    # this is exactly the case the reconcile sweep needs to keep retrying
+    # (see test_aito_quote_sync.py::test_an_unconfirmed_decline_is_still_selected_by_the_sweep).
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == p["id"]))).scalar_one()
+    assert project.quote_status_confirmed is False
 
 
 @pytest.mark.asyncio

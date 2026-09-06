@@ -2,15 +2,18 @@
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
 
 from backend.app.api.routes.settings import set_setting
+from backend.app.services import zoho
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
@@ -191,6 +194,59 @@ async def test_request_500_raises_upstream_error(async_client, db_session):
     zoho_service.transport = _transport(handler)
     with pytest.raises(ZohoUpstreamError):
         await zoho_service._request(db_session, "GET", "/contacts")
+
+
+@pytest.mark.asyncio
+async def test_request_429_raises_rate_limited_with_seconds_retry_after(async_client, db_session):
+    """A 429 raises the dedicated subclass, not the generic ZohoUpstreamError,
+    with retry_after parsed from a numeric Retry-After header (seconds)."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoRateLimited) as exc:
+        await zoho_service._request(db_session, "GET", "/contacts")
+    # Still catchable by every existing generic handler.
+    assert isinstance(exc.value, ZohoUpstreamError)
+    assert exc.value.retry_after == 30.0
+    assert str(exc.value) == "Zoho Books error (HTTP 429)"
+
+
+@pytest.mark.asyncio
+async def test_request_429_parses_an_http_date_retry_after(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(
+            429, json={"message": "Rate limited"}, headers={"Retry-After": "Wed, 01 Jan 2100 00:00:00 GMT"}
+        )
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoRateLimited) as exc:
+        await zoho_service._request(db_session, "GET", "/contacts")
+    assert exc.value.retry_after is not None
+    assert exc.value.retry_after > 0
+
+
+@pytest.mark.asyncio
+async def test_request_429_without_retry_after_header_leaves_it_none(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(429, json={"message": "Rate limited"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoRateLimited) as exc:
+        await zoho_service._request(db_session, "GET", "/contacts")
+    assert exc.value.retry_after is None
 
 
 @pytest.mark.asyncio
@@ -755,6 +811,55 @@ async def test_get_estimate_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db
 
 
 @pytest.mark.asyncio
+async def test_get_invoice_pdf_returns_bytes(async_client, db_session):
+    """Same shape and same reasoning as ``get_estimate_pdf`` above: a PDF
+    response must not be run through response.json()."""
+    await _configure(async_client)
+    pdf = b"%PDF-1.4 fake"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        assert request.url.params["organization_id"] == "999"
+        assert request.url.path.endswith("/invoices/INV-1")
+        return httpx.Response(200, content=pdf, headers={"Content-Type": "application/pdf"})
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.get_invoice_pdf(db_session, "INV-1") == pdf
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_pdf_maps_not_found(async_client, db_session):
+    """Zoho's ERROR responses are still JSON, so the error mapping is shared."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        return httpx.Response(404, json={"message": "Invoice does not exist"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoNotFound):
+        await zoho_service.get_invoice_pdf(db_session, "INV-1")
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db_session):
+    """A 200 carrying HTML or JSON would otherwise reach the browser labelled
+    application/pdf and open a blank print dialog with no clue why."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        return httpx.Response(200, content=b"<html>sign in</html>")
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoUpstreamError):
+        await zoho_service.get_invoice_pdf(db_session, "INV-1")
+
+
+@pytest.mark.asyncio
 async def test_list_items_page_sends_the_category_filter_and_extracts_has_more_page(db_session, monkeypatch):
     """The filament catalogue relies on this seam to page through
     ``cf_nature_du_produit=Filaments`` server-side rather than Zoho's
@@ -812,6 +917,16 @@ async def test_get_shipping_catalogue_fetches_once_then_serves_the_cache(db_sess
 
 @pytest.mark.asyncio
 async def test_get_shipping_catalogue_survives_zoho_being_down(db_session, monkeypatch):
+    """T-011: renamed-in-spirit — this used to also assert that a second
+    failed attempt immediately retries the fetch (`boom_calls["n"] == 2`).
+    That was the always-retry gap T-011 closed: a failed refresh now stamps
+    a process-local cooldown so an immediate second caller is short-circuited
+    instead of repeating the `/items` request. That half of the old
+    assertion moved to
+    `test_get_shipping_catalogue_cooldown_skips_the_retry_immediately_after_a_failure`
+    below, which pins the NEW behavior explicitly. This test still covers
+    what it always did: a failed refresh must not lose the cached ids."""
+
     async def ok(db, method, path, **kwargs):
         return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
 
@@ -832,10 +947,180 @@ async def test_get_shipping_catalogue_survives_zoho_being_down(db_session, monke
     # A failed refresh must not stamp zoho_shipping_catalogue_at, or every
     # existing test would stay green even if that write were accidentally
     # moved out of the success-only `else:` arm — which would silently
-    # suppress retries for 24h. A second failed attempt must retry the fetch.
-    again = await zoho_service.get_shipping_catalogue(db_session)
-    assert again["tuamotu"].item_id == "1"
-    assert boom_calls["n"] == 2, "the stale timestamp must not have been refreshed by the failed attempt"
+    # suppress retries for 24h forever, indistinguishable from the T-011
+    # cooldown (which is process-local and expires on its own).
+    assert boom_calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_cooldown_skips_the_retry_immediately_after_a_failure(db_session, monkeypatch):
+    """T-011: a failed refresh followed by an immediate second call must
+    issue NO second `/items` request and must report the same "unavailable"
+    answer the first failure did — here, the stale cache served unchanged —
+    rather than repeating a fetch that just failed and is very likely to
+    fail again the same way, mirroring `zoho_filaments._FAIL_COOLDOWN`."""
+
+    async def ok(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", ok)
+    await zoho_service.get_shipping_catalogue(db_session)  # warms the cache
+    await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")  # ...then stales it
+
+    boom_calls = {"n": 0}
+
+    async def boom(db, method, path, **kwargs):
+        boom_calls["n"] += 1
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    first = await zoho_service.get_shipping_catalogue(db_session)
+    assert first["tuamotu"].item_id == "1"
+    assert boom_calls["n"] == 1
+
+    second = await zoho_service.get_shipping_catalogue(db_session)
+    assert second["tuamotu"].item_id == "1", "still served from the stale cache, unchanged"
+    assert boom_calls["n"] == 1, "the cooldown must skip the retry, not repeat the failed fetch"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_cooldown_skips_the_retry_on_a_cold_cache_too(db_session, monkeypatch):
+    """T-011's cold-cache twin of the warm-cache test above: with no cache to
+    fall back to, the "unavailable" answer is an empty dict, and the cooldown
+    must still prevent a second `/items` request within the window."""
+    boom_calls = {"n": 0}
+
+    async def boom(db, method, path, **kwargs):
+        boom_calls["n"] += 1
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    assert await zoho_service.get_shipping_catalogue(db_session) == {}
+    assert boom_calls["n"] == 1
+
+    assert await zoho_service.get_shipping_catalogue(db_session) == {}
+    assert boom_calls["n"] == 1, "the cooldown must skip the retry even with nothing cached to fall back to"
+
+
+class _ScriptedClock:
+    """Stands in for zoho.py's `datetime` name, handing back a scripted
+    sequence of `now()` values instead of the real wall clock — the same
+    approach `test_zoho_filaments_catalogue.py` uses for
+    `zoho_filaments._FAIL_COOLDOWN` — so the T-011 cooldown's expiry can be
+    exercised without an actual sleep. Once the script is down to its last
+    value, every further call repeats it. Everything else (notably
+    `fromisoformat`, used by the cache-freshness check) forwards to the real
+    `datetime` class unchanged, since zoho.py's `get_shipping_catalogue`
+    calls more than just `.now()` on the name it binds to `datetime`."""
+
+    def __init__(self, values):
+        self._values = list(values)
+
+    def now(self, tz=None):
+        return self._values.pop(0) if len(self._values) > 1 else self._values[0]
+
+    def __getattr__(self, name):
+        return getattr(datetime, name)
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_retries_after_the_failure_cooldown_elapses(db_session, monkeypatch):
+    """T-011: after `_SHIPPING_FAIL_COOLDOWN` elapses, the next call must
+    attempt a real refresh again (recovery) instead of continuing to
+    short-circuit forever."""
+    monkeypatch.setattr(zoho, "_SHIPPING_FAIL_COOLDOWN", timedelta(seconds=5))
+
+    async def ok(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", ok)
+    await zoho_service.get_shipping_catalogue(db_session)  # warms the cache
+    await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")  # ...then stales it
+
+    boom_calls = {"n": 0}
+
+    async def boom(db, method, path, **kwargs):
+        boom_calls["n"] += 1
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+
+    t_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t_fail = t_start + timedelta(seconds=1)
+    t_within_cooldown = t_fail + timedelta(seconds=1)  # well within the 5s cooldown
+    t_after_cooldown = t_fail + timedelta(seconds=10)  # past the 5s cooldown
+    # get_shipping_catalogue reads the clock once for the freshness check
+    # (the stale `zoho_shipping_catalogue_at` set above always makes that
+    # read happen) and once more per attempt that actually reaches the
+    # cooldown gate: [call 1] the failing attempt's freshness check, [call 2]
+    # the failing attempt's cooldown-gate read (stamps `_shipping_fail_at` =
+    # t_fail), [call 3] the within-cooldown attempt's freshness check, [call
+    # 4] its cooldown-gate read (still within the window — short-circuits),
+    # [call 5] the past-cooldown attempt's freshness check, [call 6] its
+    # cooldown-gate read (past the window — lets the recovery through), then
+    # repeats its last value for the recovery's own success-stamp write.
+    monkeypatch.setattr(
+        zoho,
+        "datetime",
+        _ScriptedClock([t_start, t_fail, t_fail, t_within_cooldown, t_after_cooldown, t_after_cooldown]),
+    )
+
+    first = await zoho_service.get_shipping_catalogue(db_session)
+    assert first["tuamotu"].item_id == "1"
+    assert boom_calls["n"] == 1
+
+    # Within the cooldown: short-circuits, no new call to Books.
+    second = await zoho_service.get_shipping_catalogue(db_session)
+    assert second["tuamotu"].item_id == "1"
+    assert boom_calls["n"] == 1
+
+    # Cooldown has elapsed: a real refresh is attempted again. Zoho has
+    # recovered by now, so this one succeeds.
+    monkeypatch.setattr(zoho_service, "_request", ok)
+    recovered = await zoho_service.get_shipping_catalogue(db_session)
+    assert recovered["tuamotu"].item_id == "1"
+    assert boom_calls["n"] == 1, "the recovery attempt goes through _request (ok), not the old boom"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_success_clears_the_cooldown(db_session, monkeypatch):
+    """T-011: a successful fetch must clear the failure cooldown, exactly as
+    `zoho_filaments.fetch_catalogue` clears its own `_fail_at` on success —
+    otherwise a genuine recovery could still be masked by a memo from before
+    it happened.
+
+    Both calls run under the scripted clock (rather than warming up under
+    the real one first) so the second call's "has the cooldown elapsed?"
+    comparison is against a known, controlled `_shipping_fail_at` instead of
+    racing the real wall clock the first call would otherwise stamp it
+    with."""
+    monkeypatch.setattr(zoho, "_SHIPPING_FAIL_COOLDOWN", timedelta(seconds=5))
+
+    async def boom(db, method, path, **kwargs):
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+
+    t_fail = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t_after_cooldown = t_fail + timedelta(seconds=10)  # past the 5s cooldown
+    # Cold cache throughout (no `zoho_shipping_catalogue_at` is ever written
+    # by a failed refresh), so neither call reaches the freshness check —
+    # each reads the clock exactly once: [call 1] the failing attempt's
+    # cooldown-gate read (stamps `_shipping_fail_at` = t_fail), [call 2] the
+    # past-cooldown attempt's cooldown-gate read (lets the recovery through),
+    # then repeats its last value for the recovery's own success-stamp write.
+    monkeypatch.setattr(zoho, "datetime", _ScriptedClock([t_fail, t_after_cooldown, t_after_cooldown]))
+
+    assert await zoho_service.get_shipping_catalogue(db_session) == {}
+    assert zoho._shipping_fail_at is not None
+
+    async def ok(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", ok)
+    recovered = await zoho_service.get_shipping_catalogue(db_session)
+    assert recovered["tuamotu"].item_id == "1"
+    assert zoho._shipping_fail_at is None, "a successful refresh must clear the cooldown memo"
 
 
 @pytest.mark.asyncio

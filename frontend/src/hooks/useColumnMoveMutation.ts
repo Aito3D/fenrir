@@ -5,6 +5,7 @@ import { applyColumnMove } from '../utils/aitoOptimistic';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useCelebration } from '../components/aito/celebration/context';
+import { settleProject } from '../components/aito/settleProject';
 
 /** The board's one manual transition: Finish <-> Done.
  *
@@ -58,15 +59,10 @@ export function useColumnMoveMutation(
       const rect = origin?.();
       if (rect) celebrate(rect);
     },
-    onSuccess: (row) => {
-      // The server's own row over the prediction — it carries the recomputed
-      // `move_lock` and the real `updated_at`, which is what the done grid
-      // sorts on.
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === row.id ? row : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    },
+    // The server's own row over the prediction — it carries the recomputed
+    // `move_lock` and the real `updated_at`, which is what the done grid
+    // sorts on.
+    onSuccess: (row) => settleProject(queryClient, project.id, row),
     onError: () => showToast(t('aito.moveFailed'), 'error'),
   });
 }

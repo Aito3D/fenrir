@@ -167,6 +167,37 @@ class AitoProject(Base):
     # behind by a status change describes an attempt that no longer exists,
     # and would suppress a push that ought to be retried.
     quote_status_remote: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Whether Books has been directly OBSERVED (a successful status push, or a
+    # read that matched) to agree with the CURRENT project.quote_status.
+    # Internal bookkeeping only — never exposed on any Pydantic schema/route.
+    #
+    # This exists for the reconcile sweep's terminal-card exclusion (see
+    # run_sync_once/_still_selected, T-010): that exclusion drops a card once
+    # it looks settled (board_column 'done', or quote_status
+    # 'declined'/'expired'), but "looks settled" was reachable purely from a
+    # LOCAL write — routes/aito.py's set_quote_status writes the decision here
+    # first and pushes to Books best-effort, so a decline made while Books is
+    # unreachable matched the exclusion immediately, stranding Books at its
+    # old status ('sent') forever with no further retry. The exclusion now
+    # only fires when this flag is also True.
+    #
+    # Reset to False at set_quote_status's own local write (alongside its
+    # existing quote_status_block/quote_status_remote reset) — a fresh local
+    # decision is, by definition, not yet confirmed. Set True at every site
+    # that DIRECTLY OBSERVES agreement with Books: set_quote_status when its
+    # best-effort push succeeds; reconcile_quote_status's genuine-agreement
+    # branch (zoho_status == local) and its ours_decided successful-push
+    # branch (advance_estimate_status returned without raising); and the
+    # copy-back guards in reconcile_quote_status's undecided-adopt branch and
+    # in _apply_estimate, both only once the copy actually lands the same
+    # value locally (adopt_quote_status can itself refuse an unrecognised
+    # remote status, which is not agreement).
+    #
+    # Backfills to False (server_default "0") on every pre-existing row, so
+    # every already-terminal card is swept once more until confirmed — a
+    # one-shot cost, not a regression, since none of those rows have ever
+    # been directly observed to agree.
+    quote_status_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     # The estimate's last_modified_time as it stood when the comment mirror
     # last pulled, and when that pull happened. Read by the mirror's fetch
     # policy (services/aito_quote_sync.py): pull comments only when the

@@ -401,11 +401,16 @@ def _swept_project(**overrides) -> AitoProject:
 
 
 @pytest.mark.asyncio
-async def test_429s_escalate_after_the_limit_and_one_healthy_read_recovers(db_session):
-    """Pinned end to end: every rate-limited tick spends one unit of the
-    failure budget (a 429 is indistinguishable from an outage today), the
-    escalation to 'error' emits exactly ONE sync.failed event however long the
-    outage lasts, and a single healthy read walks the project back to idle."""
+async def test_429s_defer_indefinitely_without_escalating_or_spending_the_failure_budget(db_session, monkeypatch):
+    """T-009: a 429 used to be pinned as indistinguishable from an outage --
+    it spent one unit of the failure budget per tick and eventually
+    escalated to 'error' with a "Zoho Books error (HTTP 429)" card message.
+    It is now a deferral: quote_sync_state, quote_sync_error and
+    quote_sync_failures are left exactly as they were, on every tick, for as
+    long as Books keeps answering 429 (well past the old escalation
+    threshold), with no sync.failed event ever recorded for it -- and a
+    single healthy read afterwards finds nothing to recover from, because
+    there was never anything to recover."""
     project = _swept_project()
     db_session.add(project)
     await db_session.commit()
@@ -418,22 +423,37 @@ async def test_429s_escalate_after_the_limit_and_one_healthy_read_recovers(db_se
 
     zoho_service.transport = httpx.MockTransport(rate_limited)
 
-    for tick in range(1, SYNC_FAILURE_LIMIT):
+    # T-028: run_sync_once now short-circuits for as long as a live 429's
+    # throttle window holds (aito_quote_sync._throttled_until) -- exactly
+    # what stops the debounced wake drain from deepening a live throttle,
+    # but not what this loop is probing: it wants every one of these ticks
+    # to actually reach Books, as if each ran on its own later tick once the
+    # (fallback, no Retry-After on this wire) window had already elapsed. A
+    # clock that jumps forward well past _RATE_LIMIT_FALLBACK_SECONDS on
+    # every read stands in for that. Rebinds aito_quote_sync's own `time`
+    # name only (never the shared, process-wide `time` module -- see
+    # test_aito_quote_sync.py's _FakeMonotonicClock docstring for why: it
+    # would also desync zoho.py's separate OAuth-token-cache clock and can
+    # wedge asyncio/httpx internals that lean on real wall-clock progress).
+    from backend.app.services import aito_quote_sync
+
+    class _AdvancingClock:
+        def __init__(self):
+            self._t = 0.0
+
+        def monotonic(self):
+            self._t += aito_quote_sync._RATE_LIMIT_FALLBACK_SECONDS * 2
+            return self._t
+
+    monkeypatch.setattr(aito_quote_sync, "time", _AdvancingClock())
+
+    for _ in range(SYNC_FAILURE_LIMIT + 2):
         assert await run_sync_once(db_session) == 1
         await db_session.refresh(project)
-        assert project.quote_sync_failures == tick
-        assert project.quote_sync_state == "idle"  # still retrying quietly
-        assert project.quote_sync_error == "Zoho Books error (HTTP 429)"
-
-    assert await run_sync_once(db_session) == 1
-    await db_session.refresh(project)
-    assert project.quote_sync_state == "error"
-    assert project.quote_sync_failures == SYNC_FAILURE_LIMIT
-    assert len(await _events_of_kind(db_session, project.id, "sync.failed")) == 1
-
-    # Still down: stays in error, no second event row.
-    assert await run_sync_once(db_session) == 1
-    assert len(await _events_of_kind(db_session, project.id, "sync.failed")) == 1
+        assert project.quote_sync_failures == 0
+        assert project.quote_sync_state == "idle"
+        assert project.quote_sync_error is None
+    assert len(await _events_of_kind(db_session, project.id, "sync.failed")) == 0
 
     zoho_service.transport = httpx.MockTransport(
         zoho_handler({("GET", "/estimates/E5"): {"estimate": {"estimate_id": "E5", "status": "sent", "total": 100}}})

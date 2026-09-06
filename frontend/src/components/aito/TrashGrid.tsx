@@ -9,7 +9,7 @@ import { Button } from '../Button';
 import { api, ApiError, type AitoProject } from '../../api/client';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
-import { applyRestore } from '../../utils/aitoOptimistic';
+import { applyRestore, replaceProject } from '../../utils/aitoOptimistic';
 import { sortByRecencyDesc } from '../../utils/aitoSearch';
 import { formatElapsedTime } from '../../utils/date';
 import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
@@ -44,9 +44,7 @@ function TrashCard({
     transform: (previous, target) => applyRestore(previous, { ...target, status: 'active' }),
     flashId: (target) => target.id,
     onSuccess: (restored) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === restored.id ? restored : p)) ?? prev,
-      );
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, restored));
       queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
       showToast(t('aito.restored'));
     },

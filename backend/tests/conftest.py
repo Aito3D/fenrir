@@ -202,6 +202,46 @@ def reset_auth_enabled_cache():
 
 
 @pytest.fixture(autouse=True)
+def reset_shipping_catalogue_fail_cooldown():
+    """Drop the process-local Zoho shipping-catalogue failure cooldown
+    between tests (T-011).
+
+    ``zoho.get_shipping_catalogue`` stamps a module-level ``_shipping_fail_at``
+    timestamp on a failed refresh so a Books outage does not cost one more
+    ``/items`` request per caller within ``_SHIPPING_FAIL_COOLDOWN``. Left
+    alone, a test that induces a failure would leave that memo set for every
+    later test in the same process/xdist worker, silently skipping a refresh
+    a later test's assertions expect to happen — the same order-dependent
+    leak ``reset_auth_enabled_cache`` above guards against for the
+    auth-enabled cache."""
+    from backend.app.services import zoho as zoho_mod
+
+    zoho_mod._shipping_fail_at = None
+    yield
+    zoho_mod._shipping_fail_at = None
+
+
+@pytest.fixture(autouse=True)
+def reset_aito_quote_sync_rate_limit_throttle():
+    """Drop the process-local Zoho rate-limit throttle between tests (T-028).
+
+    ``aito_quote_sync.sync_project``'s ``ZohoRateLimited`` handler stamps a
+    module-level ``_throttled_until`` (a ``time.monotonic()`` instant) so
+    ``run_sync_once`` short-circuits — no DB select, no Zoho call — while a
+    429 is still being backed off from. Left alone, a test that induces a
+    429 would leave that memo set for every later test in the same
+    process/xdist worker, silently skipping ``run_sync_once`` work a later
+    test's assertions expect to happen — the same order-dependent leak
+    ``reset_shipping_catalogue_fail_cooldown`` above guards against for
+    ``zoho._shipping_fail_at``."""
+    from backend.app.services import aito_quote_sync
+
+    aito_quote_sync._throttled_until = None
+    yield
+    aito_quote_sync._throttled_until = None
+
+
+@pytest.fixture(autouse=True)
 def disconnect_printers_registered_during_a_test():
     """Give every test an empty ``printer_manager`` singleton.
 

@@ -9,7 +9,7 @@
  "app_dir": {
   "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
   "required": false,
-  "type": "<class 'pathlib.Path'>"
+  "type": "<class 'pathlib._local.Path'>"
  },
  "app_name": {
   "default": "'Bambuddy'",
@@ -19,7 +19,7 @@
  "archive_dir": {
   "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')",
   "required": false,
-  "type": "<class 'pathlib.Path'>"
+  "type": "<class 'pathlib._local.Path'>"
  },
  "bambu_studio_api_url": {
   "default": "'http://localhost:3001'",
@@ -44,7 +44,7 @@
  "base_dir": {
   "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
   "required": false,
-  "type": "<class 'pathlib.Path'>"
+  "type": "<class 'pathlib._local.Path'>"
  },
  "database_url": {
   "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'",
@@ -89,7 +89,7 @@
  "log_dir": {
   "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')",
   "required": false,
-  "type": "<class 'pathlib.Path'>"
+  "type": "<class 'pathlib._local.Path'>"
  },
  "log_level": {
   "default": "'INFO'",
@@ -109,7 +109,7 @@
  "plate_calibration_dir": {
   "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')",
   "required": false,
-  "type": "<class 'pathlib.Path'>"
+  "type": "<class 'pathlib._local.Path'>"
  },
  "slicer_api_url": {
   "default": "'http://localhost:3003'",
@@ -119,7 +119,7 @@
  "static_dir": {
   "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')",
   "required": false,
-  "type": "<class 'pathlib.Path'>"
+  "type": "<class 'pathlib._local.Path'>"
  }
 }
 

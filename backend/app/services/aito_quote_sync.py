@@ -19,10 +19,11 @@ Phase 2 poller.
 
 import asyncio
 import logging
+import math
 import time
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -50,6 +51,7 @@ from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
@@ -63,11 +65,29 @@ logger = logging.getLogger(__name__)
 #
 # It does NOT stop the project being polled, and never claim it does: the sweep
 # deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
-# which excludes only 'unmanaged' and 'locked'), so an escalated project is
-# still re-read every tick — and that read is exactly what lets sync_project's
+# which excludes only 'unmanaged', 'locked', and a CONFIRMED-TERMINAL card —
+# archived (board_column 'done') or a settled-the-other-way quote
+# (quote_status 'declined'/'expired'), AND directly observed to agree with
+# Books (quote_status_confirmed), see T-010/T-026 — for a project that HAS a
+# quote_id — and, separately, also selects a quote_id-less 'error' project,
+# the failed-CREATE case below), so a still-active, non-terminal (or
+# terminal-but-unconfirmed) escalated project is still
+# re-read every tick — and that read is exactly what lets sync_project's
 # recovery branch bring it back to 'idle' once Books answers again. What the
 # limit ends is the retrying of the PUSH, and it surfaces the failure on the
 # card instead of leaving it silently 'pending' forever.
+#
+# A project whose very first push (the CREATE) is what failed never earns a
+# quote_id in the first place, so the "has a quote_id" half of the SELECT
+# above cannot be what re-selects it. Without a second clause for that case,
+# such a project would match neither branch once escalated to 'error' and
+# would sit showing its failure forever, never retried, even after Books
+# recovers — see T-008. The fix is a second OR'd clause selecting active,
+# quote_id-IS-NULL, 'error' projects, and sync_project's routing (the
+# `quote_id is not None` guard on its reconcile branch) sends those straight
+# into the same CREATE path a fresh 'pending' project takes, so
+# find_estimate_by_reference's idempotency guard there also protects an
+# orphan estimate left behind by a create that raced a commit failure.
 SYNC_FAILURE_LIMIT = 5
 
 # The statuses that represent a DECISION someone made, as opposed to where a
@@ -87,6 +107,38 @@ _DECIDED = frozenset({"accepted", "declined"})
 # row: the project stays `pending` with a clean error field, exactly as it
 # was before this handler ran.
 _deferred_reasons: dict[int, str] = {}
+
+# T-028: how long ``run_sync_once`` short-circuits after Books returns a 429
+# (see the ``ZohoRateLimited`` handler in ``sync_project`` below), so the
+# wake drain (``request_debounced_sync`` -> ``run_sync_once(pending_only=True)``
+# every ``EDIT_DEBOUNCE_SECONDS``) does not spend one more request on an org
+# that just asked for backoff every time an operator keeps editing the board.
+# Used only when ``ZohoRateLimited.retry_after`` is missing or not a finite,
+# non-negative number (Books sent no ``Retry-After``, or T-025's malformed
+# header case). 60s: comfortably above ``EDIT_DEBOUNCE_SECONDS`` (10s), so a
+# burst of edits made while still throttled collapses into the one drain that
+# runs once the window clears, the same way the debounce window itself already
+# collapses a burst — and short enough that a real throttle clears within a
+# tick or two rather than leaving a card looking stuck.
+_RATE_LIMIT_FALLBACK_SECONDS = 60.0
+
+# T-025 (triaged): an ``inf``/``nan``/negative ``Retry-After`` must not be
+# honoured as-is (it would defer forever or not at all); such a value falls
+# back to ``_RATE_LIMIT_FALLBACK_SECONDS`` above instead (see the handler).
+# A very large but finite value is still capped here rather than trusted
+# outright, so a malformed-but-parseable header (or a legitimate but huge
+# one) cannot freeze the loop for longer than this.
+_RATE_LIMIT_MAX_RETRY_SECONDS = 15 * 60.0
+
+# Process-local "do not attempt a sync before this ``time.monotonic()``
+# instant" set by the ``ZohoRateLimited`` handler in ``sync_project`` and
+# read by ``run_sync_once``. Mirrors ``zoho._shipping_fail_at`` /
+# ``_SHIPPING_FAIL_COOLDOWN``'s shape (a process-local memo, cleared on the
+# next success, never persisted — a restart should not inherit a stale
+# throttle), in ``time.monotonic()`` terms rather than wall-clock because
+# this module's other process-local timer (``_debounce_deadline`` below)
+# already uses that clock. ``None`` means "not throttled".
+_throttled_until: float | None = None
 
 # Project id -> how many times an edit in routes/aito.py has actually landed
 # (committed) for this project, in THIS process. Bumped by
@@ -413,6 +465,15 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
         # records that case as a conflict for a human. Keeping ours simply
         # leaves it for the next sweep to see.
         adopt_quote_status(project, remote_status)
+    if remote_status is not None and project.quote_status == remote_status:
+        # T-026: Books' own report, taken from the same push response, just
+        # matched what the card now holds locally — a direct observation of
+        # agreement. Guards the case where `adopt_quote_status` itself
+        # refused an unrecognised status (see its own docstring): that leaves
+        # `project.quote_status` unequal to `remote_status`, correctly not
+        # confirmed. Gates run_sync_once/_still_selected's terminal-card
+        # exclusion — see AitoProject.quote_status_confirmed's own docstring.
+        project.quote_status_confirmed = True
     _clear_block(project)
     if estimate.get("last_modified_time") is not None:
         project.quote_synced_at = estimate["last_modified_time"]
@@ -453,6 +514,12 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     requeue_marker = _requeue_marker_for(project.id)
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)
+    # Captured in the same breath as `tasks` above, before ANY of this
+    # function's own network calls (including the orphan lookup below) can
+    # open a window for a concurrent cost edit -- see _write_back_rounded_costs'
+    # own docstring for why this snapshot, and not a later re-select, is what
+    # that write-back must round from.
+    pushed_costs = await _snapshot_pushed_costs(db, project.id)
     if not any(enabled_services(task) for task in tasks):
         # Every project is meant to carry a priced service (the create modal
         # enforces it), but a project whose only task was emptied by hand would
@@ -493,13 +560,21 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # commit fails -> user adds an Impression3D service -> this tick
         # finds the orphan. Marking it 'idle' here (the bug this replaces)
         # would declare the card in sync while Books still holds only the
-        # scan line. Leaving quote_sync_state at 'pending' (do not touch it)
-        # means the very next tick takes the normal _update_quote path
-        # instead, which re-reads the FULL estimate and pushes whatever the
-        # project's lines currently are. Also deliberately not writing
-        # quote_synced_at: this summary's last_modified_time is not the full
-        # estimate's and must not be trusted by the Phase 2 poller's echo
-        # suppression.
+        # scan line. Setting quote_sync_state to 'pending' here — even though
+        # for most callers it already IS 'pending' and this is a same-value
+        # no-op — means the very next tick takes the normal _update_quote
+        # path instead, which re-reads the FULL estimate and pushes whatever
+        # the project's lines currently are. This is no longer always a
+        # no-op since T-008: a project swept back in from 'error' with no
+        # quote_id reaches this same branch still carrying 'error', and
+        # leaving that untouched would send the NEXT tick down the reconcile
+        # branch above (quote_id is now set) instead of _update_quote —
+        # permanently short of the full line-item push this orphan still
+        # needs, and never clearing the card's stale error icon either. Also
+        # deliberately not writing quote_synced_at: this summary's
+        # last_modified_time is not the full estimate's and must not be
+        # trusted by the Phase 2 poller's echo suppression.
+        project.quote_sync_state = "pending"
         project.quote_id = estimate["estimate_id"]
         if estimate.get("estimate_number") is not None:
             project.quote_number = estimate["estimate_number"]
@@ -516,7 +591,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
             "line_items": line_items,
         },
     )
-    await _write_back_rounded_costs(db, project.id)
+    await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
     # network call above was in flight; this session never sees that commit
@@ -587,7 +662,35 @@ def _is_locked(estimate: dict) -> bool:
     return not estimate.get("retainerinvoices")
 
 
-async def _write_back_rounded_costs(db: AsyncSession, project_id: int) -> None:
+async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int, dict[str, tuple[float, int]]]:
+    """The exact ``<service>_cost``/``_quantity`` figures about to go out the
+    door, captured at the SAME moment as ``load_export_tasks`` — i.e. before
+    the caller's own network round trip (``create_estimate`` or
+    ``update_estimate_lines``) opens the window a concurrent cost edit could
+    land in. ``_write_back_rounded_costs`` rounds from THIS snapshot and
+    nothing else, so what it writes back is provably the figure that was
+    actually pushed, never whatever the database happens to hold once the
+    round trip returns — a plain re-select at that later point cannot make
+    that distinction (SQLAlchemy's identity map does not repopulate a live,
+    unexpired instance without ``populate_existing``, so a re-select can
+    silently hand back either this same stale snapshot or, once nothing
+    still references those rows, a completely fresh — and by then
+    unrelated-to-the-push — value; neither answers "what did we push").
+    """
+    rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
+    return {
+        row.id: {
+            service: (getattr(row, f"{service}_cost"), max(1, int(getattr(row, f"{service}_quantity") or 1)))
+            for service in SERVICES
+            if getattr(row, f"{service}_cost") is not None
+        }
+        for row in rows
+    }
+
+
+async def _write_back_rounded_costs(
+    db: AsyncSession, project_id: int, pushed_costs: dict[int, dict[str, tuple[float, int]]]
+) -> None:
     """Adopt the total the quote can actually express, for every service.
 
     ``<service>_cost`` is a pre-discount total for all units but a line is
@@ -595,14 +698,34 @@ async def _write_back_rounded_costs(db: AsyncSession, project_id: int) -> None:
     unrepresentable. Writing the achievable figure back here means the project
     and the quote agree immediately — rather than agreeing a tick later, as a
     visible jitter, when the Phase 2 poller pulls the quote's number back.
+
+    ``pushed_costs`` is ``_snapshot_pushed_costs``'s own return value,
+    captured by the caller before its network round trip — never re-derived
+    here, and this function does no SELECT of its own. An operator can PATCH
+    a task's cost from a different session while that round trip is still in
+    flight, committing a new value this session has no way to see without an
+    explicit refresh; rounding from a re-select run once the round trip
+    returns would either compute from stale pre-push data (an identity-map
+    hit) or, just as wrongly, from the operator's own brand-new figure before
+    it was ever pushed anywhere. So every write below is a Core UPDATE
+    guarded by ``<service>_cost == pushed_value``: it only lands on a row
+    whose stored cost STILL equals the value this function rounded from, so
+    a row edited mid-round-trip is left exactly as the operator committed
+    it — Books catches up on that task's real value next tick, via the
+    normal ``_mark_pending_if_ours`` path, instead of this write-back
+    erasing it.
     """
-    rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
-    for row in rows:
-        for service in SERVICES:
-            if getattr(row, f"{service}_cost") is None:
+    for task_id, costs in pushed_costs.items():
+        for service, (pushed_cost, quantity) in costs.items():
+            rounded = round(pushed_cost / quantity) * quantity
+            if rounded == pushed_cost:
                 continue
-            quantity = max(1, int(getattr(row, f"{service}_quantity") or 1))
-            setattr(row, f"{service}_cost", round(getattr(row, f"{service}_cost") / quantity) * quantity)
+            cost_column = getattr(AitoTask, f"{service}_cost")
+            await db.execute(
+                update(AitoTask)
+                .where(AitoTask.id == task_id, cost_column == pushed_cost)
+                .values(**{f"{service}_cost": rounded})
+            )
 
 
 # A snapshotted pre-trash status -> the status a restore puts Books back into.
@@ -671,6 +794,13 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     if zoho_status == local:
         # Genuine agreement: whatever was blocking, is not any more.
         _clear_block(project)
+        # T-026: a direct observation that Books agrees with the CURRENT
+        # local status — set on every tick this holds, not just the first,
+        # so a card that later drifts back into agreement (e.g. a conflict
+        # resolved by a human) is confirmed again. Gates
+        # run_sync_once/_still_selected's terminal-card exclusion — see
+        # AitoProject.quote_status_confirmed's own docstring.
+        project.quote_status_confirmed = True
 
         # Steady state IS agreement, so recording this unconditionally fired
         # on every quoted project on every tick forever -- at the 300s default
@@ -791,6 +921,14 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
                 detail={"ours": project.quote_status, "theirs": project.quote_status_remote},
             )
             return
+        # T-026: the push above returned without raising — Books just
+        # accepted OUR decision, a direct observation of agreement. Gates
+        # run_sync_once/_still_selected's terminal-card exclusion — see
+        # AitoProject.quote_status_confirmed's own docstring. This is the
+        # retry this whole task exists to unlock: a decline pushed while
+        # Books was unreachable stays unconfirmed (and so stays selected by
+        # the sweep) until a tick like this one lands the push for real.
+        project.quote_status_confirmed = True
         _clear_block(project)
         return
 
@@ -799,6 +937,16 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     # ACCEPTANCE is the same news the panel's Accept button delivers, so it
     # stamps quote_accepted_at through the shared helper.
     adopt_quote_status(project, zoho_status)
+    if project.quote_status == zoho_status:
+        # T-026: `adopt_quote_status` can itself refuse an unrecognised
+        # remote status (see its own docstring), leaving `project.quote_status`
+        # unchanged and unequal to `zoho_status` — that is NOT an observed
+        # agreement, so it must not confirm. When it succeeds, this is a
+        # direct copy of Books' own value: as much an observation of
+        # agreement as the branch above. Gates run_sync_once/_still_selected's
+        # terminal-card exclusion — see AitoProject.quote_status_confirmed's
+        # own docstring.
+        project.quote_status_confirmed = True
     _clear_block(project)
 
 
@@ -944,6 +1092,10 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         return
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)
+    # Captured in the same breath as `tasks` above, before this function's own
+    # update_estimate_lines round trip below can open a window for a
+    # concurrent cost edit -- see _write_back_rounded_costs' own docstring.
+    pushed_costs = await _snapshot_pushed_costs(db, project.id)
     if not any(enabled_services(task) for task in tasks):
         # Mirrors the create-path guard: a project whose only priced service
         # was just cleared by hand would otherwise PUT an empty line_items
@@ -983,7 +1135,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         shipping=load_export_shipping(project, catalogue),
     )
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
-    await _write_back_rounded_costs(db, project.id)
+    await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in
     # between refreshes it (expire_on_commit=False). An Accept/Decline
@@ -1125,8 +1277,17 @@ async def _terminal_error(
         )
 
 
-async def sync_project(db: AsyncSession, project: AitoProject) -> None:
-    """One project's whole state machine. Never raises: every outcome is a state."""
+async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
+    """One project's whole state machine. Never raises: every outcome is a state.
+
+    Returns True only when the failure just handled was a Zoho rate limit
+    (HTTP 429, see the ``ZohoRateLimited`` handler below) — ``run_sync_once``
+    uses that to stop attempting the rest of this tick's projects instead of
+    deepening the throttle one call at a time. Every other outcome, success
+    or otherwise, returns None (falsy), same as before this return value
+    existed.
+    """
+    global _throttled_until
     # Captured before anything below can touch the row, and read from these
     # locals everywhere a terminal branch or the comment-mirror recovery code
     # needs "was this already the state before this attempt" -- never by
@@ -1156,8 +1317,21 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # hand-typed rows and catalogue overrides across the whole board (see
         # create_project's own note on why marking a fresh import pending is
         # unsafe).
-        if project.quote_sync_state != "pending":
+        #
+        # `quote_id is not None` guards this: run_sync_once's SELECT now also
+        # sweeps 'error' projects that never got a quote_id (a failed CREATE —
+        # see the module-level SYNC_FAILURE_LIMIT comment). There is no
+        # estimate to reconcile for one of those — get_estimate(None) would
+        # be a wrong call, not a retry — so it must fall through to the
+        # `not project.quote_id` branch below and retry the CREATE instead,
+        # exactly like a fresh 'pending' project with no quote yet.
+        if project.quote_sync_state != "pending" and project.quote_id is not None:
             estimate = await zoho_service.get_estimate(db, project.quote_id)
+            # T-028: a read that reaches this point succeeded — Books is
+            # reachable, so any throttle recorded by a past ZohoRateLimited is
+            # stale. Same "a successful call clears the memo" shape as
+            # zoho._shipping_fail_at being cleared on a successful refresh.
+            _throttled_until = None
             if _is_locked(estimate):
                 # Re-checked here from the estimate already in hand, not
                 # trusted from whatever quote_sync_state this project last
@@ -1345,6 +1519,9 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # same reason logs afresh rather than staying suppressed forever by a
         # dict entry from before whatever changed.
         _deferred_reasons.pop(project_id, None)
+        # T-028: same "reached without a 429" signal as the reconcile branch's
+        # own clear above.
+        _throttled_until = None
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
@@ -1425,6 +1602,48 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             already_in_error,
             previous_sync_error,
         )
+    except ZohoRateLimited as e:
+        # Books is throttling this org (HTTP 429). Like
+        # ShippingCatalogueUnavailable above, this is not evidence anything
+        # is wrong with the project or its data -- retrying the identical
+        # request will simply work once the window clears -- so it must not
+        # spend a slot of SYNC_FAILURE_LIMIT's retry budget the way the plain
+        # ZohoUpstreamError handler just below does. Stay `pending`, leave
+        # quote_sync_error and quote_sync_failures exactly as they were, and
+        # tell run_sync_once (via the return value) to stop attempting the
+        # rest of this tick's projects rather than turning one throttled call
+        # into one-per-remaining-card, deepening it further.
+        #
+        # Reuses _deferred_reasons the same way the ShippingCatalogueUnavailable
+        # handler does: log-spam suppression only, no DB write, so a
+        # sustained throttle logs once per process instead of once per tick.
+        message = str(e)
+        if _deferred_reasons.get(project_id) != message:
+            logger.warning("Aito project %s deferred (Zoho Books rate limit): %s", project_id, e)
+            _deferred_reasons[project_id] = message
+        # T-028: remember when it is safe to try Books again, so run_sync_once
+        # (both the periodic sweep and the debounced wake drain) can skip
+        # straight past every still-throttled tick instead of spending one
+        # more request on an org that just said back off — see
+        # ``_throttled_until``'s own module-level comment for why this is
+        # process-local and shaped like ``zoho._shipping_fail_at``.
+        #
+        # ``e.retry_after`` is honoured only when it is a genuine, usable
+        # hint: not None, and a finite, non-negative number — ``inf``/``nan``/
+        # negative (T-025, triaged) fall back to the fixed window exactly
+        # like "no header at all" rather than being trusted at face value,
+        # which for a negative or NaN value would defer for zero time (no
+        # protection) or crash the comparison below, and for `inf` would
+        # defer forever. A large-but-finite value is still capped at
+        # _RATE_LIMIT_MAX_RETRY_SECONDS so a malformed (or simply huge)
+        # Retry-After cannot freeze the loop for longer than that.
+        retry_after = e.retry_after
+        if retry_after is not None and math.isfinite(retry_after) and retry_after >= 0:
+            window = min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)
+        else:
+            window = _RATE_LIMIT_FALLBACK_SECONDS
+        _throttled_until = time.monotonic() + window
+        return True
     except ZohoUpstreamError as e:
         # Below the limit, this is a plain in-memory write, no flush -- so
         # there is nothing here for a poisoned session to break, and no
@@ -1496,9 +1715,83 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         logger.exception("Aito quote sync hit an unexpected error for project %s", project_id)
 
 
+def _sweep_predicate():
+    """The full (non-``pending_only``) SELECT predicate ``run_sync_once`` uses
+    to pick which project ids a periodic sweep tick attempts.
+
+    Extracted to its own function (T-022) purely so the parity test in
+    test_aito_quote_sync.py has one source of truth to query against instead
+    of reproducing this expression by hand — the SQLAlchemy clause itself is
+    unchanged, just no longer inlined in ``run_sync_once``. Mirrored in
+    Python by ``_still_selected`` below for the per-iteration re-check; see
+    that function's docstring.
+    """
+    return or_(
+        AitoProject.quote_sync_state == "pending",
+        and_(
+            AitoProject.status == "active",
+            AitoProject.quote_id.is_not(None),
+            # 'unmanaged' is the one state meaning this feature
+            # must never touch the quote. 'locked' is an
+            # invoiced or tax-unsafe estimate, where a status
+            # write is no safer than a line-item write.
+            AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+            # T-010, gated by T-026: a TERMINAL card — archived
+            # (board_column 'done') or a quote Books itself considers
+            # settled the other way (quote_status 'declined'/'expired') —
+            # costs one Books call per tick forever otherwise, growing
+            # per-tick load with board HISTORY rather than active
+            # workload (see the module's own comment on
+            # SYNC_FAILURE_LIMIT). Excluding it here is a pure
+            # reconcile-skip: it is not written to, not escalated, not
+            # touched at all. The PENDING branch above is untouched — an
+            # explicit edit still flips a terminal card to 'pending' and
+            # is synced exactly once, same as before.
+            #
+            # T-026: that exclusion is now gated on quote_status_confirmed
+            # — a card is only dropped once Books has been directly
+            # OBSERVED to agree, never merely because a local write made
+            # it LOOK terminal (see AitoProject.quote_status_confirmed's
+            # own docstring, and reconcile_quote_status's confirm sites).
+            # Without this, a decline written locally while Books was
+            # unreachable (quote_status='declined', push best-effort and
+            # failed) matched both this exclusion and the SQL's
+            # board_column check the instant it was written, and Books —
+            # still holding 'sent' — never received the retry that would
+            # have settled it.
+            or_(
+                AitoProject.quote_status_confirmed.is_(False),
+                and_(
+                    AitoProject.board_column != "done",
+                    or_(
+                        AitoProject.quote_status.is_(None),
+                        AitoProject.quote_status.not_in(("declined", "expired")),
+                    ),
+                ),
+            ),
+        ),
+        and_(
+            AitoProject.status == "active",
+            AitoProject.quote_id.is_(None),
+            # T-008: a project whose quote CREATE never succeeded has no
+            # quote_id, so the clause above (which requires one) can
+            # never re-select it once it is escalated to 'error' — it
+            # would sit showing its failure forever, retried only if a
+            # human edits the card back to 'pending'. This clause is the
+            # fix: it is the ONLY state worth re-selecting for a
+            # quote_id-less project ('idle' here means trashed before
+            # ever quoted, see sync_project's own comment on that state,
+            # and is correctly left alone). sync_project's routing sends
+            # a project selected by this clause into the same CREATE
+            # path a fresh 'pending' project takes.
+            AitoProject.quote_sync_state == "error",
+        ),
+    )
+
+
 def _still_selected(project: AitoProject) -> bool:
-    """Mirrors ``run_sync_once``'s SELECT predicate in Python, for the
-    per-iteration re-check below.
+    """Mirrors ``run_sync_once``'s SELECT predicate (``_sweep_predicate``) in
+    Python, for the per-iteration re-check below.
 
     The re-fetched row can no longer be assumed to still be ``'pending'`` —
     that was true back when the pending queue was the only source of ids, but
@@ -1508,18 +1801,59 @@ def _still_selected(project: AitoProject) -> bool:
     """
     if project.quote_sync_state == "pending":
         return True
-    return (
-        project.status == "active"
-        and project.quote_id is not None
+    if project.status != "active":
+        return False
+    if project.quote_id is not None:
         # 'pending' omitted here (unlike the SQL mirror's not_in): the early
         # return above already handles it, so this branch never sees it.
-        and project.quote_sync_state not in ("unmanaged", "locked")
-    )
+        # Checked BEFORE the terminal-and-confirmed check below: an
+        # 'unmanaged'/'locked' card must never be re-selected regardless of
+        # how its terminal/confirmed columns happen to read, matching the
+        # SQL mirror's flat AND (order there does not matter, but it does
+        # here since this is a sequence of early returns).
+        if project.quote_sync_state in ("unmanaged", "locked"):
+            return False
+        # T-010, gated by T-026: an archived (board_column 'done') or
+        # settled-the-other-way (quote_status 'declined'/'expired') card is
+        # not re-attempted, but ONLY once Books has been directly OBSERVED to
+        # agree (`quote_status_confirmed`) — see
+        # AitoProject.quote_status_confirmed's own docstring. A terminal card
+        # that is NOT yet confirmed (e.g. a decline pushed while Books was
+        # unreachable) stays selected so the sweep keeps retrying the push.
+        return not (
+            (project.board_column == "done" or project.quote_status in ("declined", "expired"))
+            and project.quote_status_confirmed
+        )
+    # No quote_id: only 'error' (a failed CREATE — see T-008 and
+    # run_sync_once's own second SELECT clause) is swept back in. 'idle' with
+    # no quote_id is a trashed-before-first-tick project (see sync_project's
+    # own comment on that state) and 'unmanaged'/'locked' never apply without
+    # a quote_id to begin with — none of those are re-selected here.
+    return project.quote_sync_state == "error"
 
 
 async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     """Drain every pending project, and reconcile the status of every other
-    managed quote. Returns how many were actually attempted.
+    non-terminal managed quote. Returns how many were actually attempted.
+
+    "Non-terminal" (T-010, gated by T-026): the reconcile half skips a card
+    that is archived (``board_column == "done"``) or whose quote is settled
+    the other way (``quote_status`` 'declined'/'expired') — those no longer
+    change on Books' side in any way that matters to the board, so
+    reconciling them forever would only grow with board HISTORY, not with
+    active workload. A change made directly in Zoho Books on one of those
+    cards after it goes terminal is not reflected back automatically. An
+    explicit edit still flips a terminal card back to 'pending' via the
+    PENDING branch below (untouched by this exclusion) and syncs it exactly
+    once, as before.
+
+    The exclusion only applies once ``quote_status_confirmed`` is also True —
+    i.e. once Books has been directly OBSERVED to agree with the card's
+    current status, not merely assumed to (see
+    ``AitoProject.quote_status_confirmed``'s own docstring). A card whose
+    decision was written locally but never confirmed by Books (e.g. a
+    decline pushed while Books was unreachable) looks terminal but stays
+    selected, so the sweep keeps retrying the push until it lands.
 
     ``pending_only`` is the wake path (see ``request_immediate_sync``): it
     skips the reconcile half entirely so a wake costs no Books calls beyond
@@ -1532,21 +1866,25 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     Active and soft-deleted alike: a trashed project still owes Books a status
     change. Serial by design — the board holds a handful of cards, and one
     request at a time keeps the failure accounting above trivial.
+
+    T-028: returns 0 without selecting or touching a single project — no
+    Zoho call, and (unlike the mid-batch ``break`` below) not even the DB
+    SELECT that picks candidates — while a previous tick's ``ZohoRateLimited``
+    has this process still inside its throttle window. This is what keeps the
+    wake drain (``pending_only=True``, fired by every committed edit) from
+    re-hitting a throttled org every ``EDIT_DEBOUNCE_SECONDS``: the project(s)
+    involved stay exactly as ``sync_project``'s own handler left them —
+    `pending`, no error, no failure count — and are attempted again on the
+    first tick or wake after the window clears, same as if this call had
+    simply not happened.
     """
+    if _throttled_until is not None and time.monotonic() < _throttled_until:
+        return 0
     selected = AitoProject.quote_sync_state == "pending"
     if not pending_only:
-        selected = or_(
-            selected,
-            and_(
-                AitoProject.status == "active",
-                AitoProject.quote_id.is_not(None),
-                # 'unmanaged' is the one state meaning this feature
-                # must never touch the quote. 'locked' is an
-                # invoiced or tax-unsafe estimate, where a status
-                # write is no safer than a line-item write.
-                AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
-            ),
-        )
+        # See _sweep_predicate's own docstring for why this is a function
+        # call and not an inline expression here (T-022).
+        selected = _sweep_predicate()
     project_ids = list(
         (await db.execute(select(AitoProject.id).where(selected).order_by(AitoProject.id))).scalars().all()
     )
@@ -1583,7 +1921,7 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             # wake path promises never to spend.
             continue
         attempted += 1
-        await sync_project(db, project)
+        rate_limited = await sync_project(db, project)
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
         # would still make every project's durability depend on none of its
@@ -1657,6 +1995,16 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
         except Exception:
             await db.rollback()
             logger.exception("Aito quote sync failed to commit project %s", project_id)
+        if rate_limited:
+            # sync_project just deferred this project on a 429 rather than
+            # failing it (see its own ZohoRateLimited handler above); its
+            # commit/broadcast for THIS project already ran normally. Every
+            # other id still in project_ids would spend another request on an
+            # org Books just told us to back off from, deepening the
+            # throttle instead of clearing it. Stop here — they stay exactly
+            # where the sweep found them (still selected next tick) and are
+            # not counted in `attempted` below beyond this one.
+            break
     return attempted
 
 

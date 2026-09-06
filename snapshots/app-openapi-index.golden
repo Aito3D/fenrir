@@ -6305,6 +6305,34 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/pickup-message": {
+   "operationId": "generate_pickup_message_api_v1_aito__project_id__pickup_message_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoPickupMessageResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/pickup-sms": {
+   "operationId": "send_pickup_sms_api_v1_aito__project_id__pickup_sms_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoPickupSmsRequest"
+   },
+   "responses": {
+    "200": "AitoPickupSmsResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/quote-email": {
    "operationId": "send_quote_email_api_v1_aito__project_id__quote_email_post",
    "params": [
@@ -11257,6 +11285,30 @@
     "note"
    ]
   },
+  "AitoPickupMessageResponse": {
+   "properties": {
+    "message": "string",
+    "model": "string"
+   },
+   "required": [
+    "message",
+    "model"
+   ]
+  },
+  "AitoPickupSmsRequest": {
+   "properties": {
+    "message": "string"
+   },
+   "required": [
+    "message"
+   ]
+  },
+  "AitoPickupSmsResponse": {
+   "properties": {
+    "sent": "boolean"
+   },
+   "required": []
+  },
   "AitoProjectCreate": {
    "properties": {
     "client_email": "anyOf(string,null)",
@@ -11816,6 +11868,7 @@
     "printer_sensor_history_retention_days": "integer",
     "prometheus_enabled": "boolean",
     "prometheus_token": "string",
+    "pushcut_sms_url": "string",
     "queue_drying_block": "boolean",
     "queue_drying_enabled": "boolean",
     "queue_keep_bed_warm": "boolean",
@@ -11967,6 +12020,7 @@
     "printer_sensor_history_retention_days": "anyOf(integer,null)",
     "prometheus_enabled": "anyOf(boolean,null)",
     "prometheus_token": "anyOf(string,null)",
+    "pushcut_sms_url": "anyOf(string,null)",
     "queue_drying_block": "anyOf(boolean,null)",
     "queue_drying_enabled": "anyOf(boolean,null)",
     "queue_keep_bed_warm": "anyOf(boolean,null)",

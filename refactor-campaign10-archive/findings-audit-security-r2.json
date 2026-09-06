@@ -1,0 +1,16 @@
+{"findings": [
+  {"severity": "medium", "category": "authorization",
+   "file": "backend/app/core/auth.py", "line": 125,
+   "title": "Permission.AITO_READ is mapped to the can_read_status API-key scope, which defaults on for every key",
+   "evidence": "backend/app/core/auth.py:125 `    Permission.AITO_READ: \"can_read_status\",` + backend/app/models/api_key.py:32 `    can_read_status: Mapped[bool] = mapped_column(Boolean, default=True)  # Query status`. GET /api/v1/aito/ is gated on RequirePermissionIfAuthEnabled(Permission.AITO_READ) (backend/app/api/routes/aito.py:825-847) and returns list[AitoProjectResponse], whose fields include client_name, client_phone, client_email and quote_total (backend/app/schemas/aito.py:520-540). Neighbouring entries in the same map carry an explicit rationale comment for why they are API-key-usable (USERS_READ_SLIM at :112-118, SETTINGS_READ at :120-122); AITO_READ has none. AITO_CREATE/UPDATE/DELETE are correctly denied to API keys (auth.py:332-334), so the write side was classified deliberately and the read side appears to have been swept in with the rest of the read-only bucket.",
+   "fix": "either drop Permission.AITO_READ from _APIKEY_SCOPE_BY_PERMISSION so it becomes admin-only like AITO_CREATE/UPDATE/DELATE already are, or give it its own dedicated scope flag that defaults to False on new keys (mirroring can_control_printer's default=False), so an operator has to opt a key into the CRM board explicitly. Whichever is chosen, add the rationale comment the neighbouring entries carry.",
+   "behavior_change": true,
+   "behavior_change_note": "any existing API key that today can GET /api/v1/aito/ (and /aito/{id}/tasks, /events, /trash, /invoice, the quote/invoice email previews and both PDF endpoints) would start receiving 403, so an integration or dashboard reading the Aito board by API key stops working until its key is re-scoped or switched to a user token."},
+
+  {"severity": "low", "category": "input validation",
+   "file": "backend/app/services/zoho.py", "line": 143,
+   "title": "_parse_retry_after() accepts inf/nan/negative seconds from the Retry-After header",
+   "evidence": "backend/app/services/zoho.py:141-144 `    try:\\n        return float(value)\\n    except ValueError:\\n        pass` — the numeric branch does no finiteness or sign check, so an upstream `Retry-After: inf`, `Retry-After: nan` or `Retry-After: -1` is carried verbatim onto ZohoRateLimited.retry_after (set at :356-359 in _raise_for_status). RFC 9110 permits only a non-negative whole number of seconds; the HTTP-date branch immediately below is already floored at 0 (`max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)`), so the two branches disagree on the invariant. The class docstring (:118-127) states the value is 'not currently acted on', so there is no exploit path today — but the attribute is public and the first caller to do `await asyncio.sleep(e.retry_after)` would hang the sync worker forever on `inf` and raise on `nan`.",
+   "fix": "in the numeric branch, reject non-finite and negative values the same way the date branch already floors at 0 — e.g. parse to a float, then `return max(parsed, 0.0) if math.isfinite(parsed) else None`, so the header can only ever yield a finite non-negative number of seconds or None.",
+   "behavior_change": false}
+]}

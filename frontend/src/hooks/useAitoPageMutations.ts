@@ -10,7 +10,7 @@ import { shippingPayload } from '../utils/shippingDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
 import { clearNewProjectDraft } from './useNewProjectDraft';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
-import { applyCreate, applyDelete } from '../utils/aitoOptimistic';
+import { applyCreate, applyDelete, replaceProject } from '../utils/aitoOptimistic';
 
 // Mirrors `_SHIPPING_PHONE_RE` in backend/app/api/routes/aito.py — POST
 // /aito/ 422s the WHOLE create if `shipping_phone` doesn't match this shape.
@@ -110,7 +110,7 @@ export function useAitoPageMutations() {
     // place, so there is no card left to ring.
     onSuccess: (created, { placeholder, draft }) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
+        replaceProject(prev, created, placeholder.id),
       );
       void syncClientToZoho(draft);
       // The card exists now — the drawer's persisted localStorage draft
@@ -167,7 +167,7 @@ export function useAitoPageMutations() {
     transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     onSuccess: (created, { placeholder }) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
+        replaceProject(prev, created, placeholder.id),
       );
     },
     onError: (error) => {

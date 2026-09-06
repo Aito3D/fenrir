@@ -1,0 +1,10 @@
+{"findings": [
+  {"severity": "low",
+   "category": "input validation",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 1300,
+   "title": "get_invoice_pdf() builds Content-Disposition from an unsanitised Zoho invoice number",
+   "evidence": "backend/app/api/routes/aito.py:1300 `        filename = f\"{invoice['number'] or invoice['id']}.pdf\"` is passed straight to `build_content_disposition(filename, disposition=\"inline\")` on line 1308, with no control-character strip. The sibling route does strip: backend/app/api/routes/aito.py:1596-1597 `        filename = f\"{project.quote_number or project.quote_id}.pdf\"` / `        filename = _CONTROL_CHARS_RE.sub(\"\", filename)`. backend/app/utils/http.py:52-53 shows the helper only removes non-ASCII, `\"` and `\\` from the legacy parameter — `ascii_fallback = filename.encode(\"ascii\", \"ignore\").decode(\"ascii\").strip(\" ._-\") or \"download\"` — so ASCII C0 controls (CR, LF, TAB, ESC, DEL) in Books' `invoice_number` survive into the raw `filename=\"...\"` header value. The module comment at aito.py:101-110 states the consequence for exactly this class of value: \"A handful of them (CR, LF, and a few other C0 controls) make h11 refuse to send the response at all\".",
+   "fix": "In get_invoice_pdf, apply the same strip the quote route already uses before building the header: `filename = _CONTROL_CHARS_RE.sub(\"\", filename)` immediately after line 1300 (or route the name through backend/app/utils/http.safe_download_filename, which does the same replacement). No new regex is needed — _CONTROL_CHARS_RE is already defined at aito.py:111 in the same module.",
+   "behavior_change": false}
+]}
