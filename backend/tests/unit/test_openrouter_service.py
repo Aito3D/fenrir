@@ -7,6 +7,7 @@ from backend.app.services import openrouter
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
+    _chat,
     _task_lines,
     summarize_tasks,
 )
@@ -215,3 +216,90 @@ async def test_summarize_returns_truncated_content_instead_of_raising(db_session
     summary, model = await summarize_tasks(db_session, TASKS)
     assert summary == "Résumé du proj"
     assert model == "mistralai/mistral-small"
+
+
+@pytest.mark.parametrize("transport_error", [httpx.ConnectTimeout, httpx.ReadError])
+@pytest.mark.asyncio
+async def test_chat_wraps_transport_failures_in_upstream_error(monkeypatch, transport_error):
+    """A raised httpx transport error (never a status code) must surface as
+    OpenRouterUpstreamError, not the raw httpx exception — callers only
+    handle the two module errors.
+    """
+
+    class _RaisingClient(_FakeClient):
+        async def post(self, url, headers=None, json=None):
+            raise transport_error("boom", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(openrouter.httpx, "AsyncClient", _RaisingClient)
+    with pytest.raises(OpenRouterUpstreamError, match="OpenRouter request failed"):
+        await _chat("sk-or-test", "some-model", "system", "user", max_tokens=50)
+
+
+@pytest.mark.parametrize(
+    "malformed_payload",
+    [
+        {},
+        {"choices": []},
+        {"choices": [{"message": {}}]},
+    ],
+)
+@pytest.mark.asyncio
+async def test_chat_raises_on_malformed_payload(monkeypatch, malformed_payload):
+    class _MalformedResponse:
+        status_code = 200
+
+        def json(self):
+            return malformed_payload
+
+    class _MalformedClient(_FakeClient):
+        async def post(self, url, headers=None, json=None):
+            return _MalformedResponse()
+
+    monkeypatch.setattr(openrouter.httpx, "AsyncClient", _MalformedClient)
+    with pytest.raises(OpenRouterUpstreamError, match="unexpected payload"):
+        await _chat("sk-or-test", "some-model", "system", "user", max_tokens=50)
+
+
+class _TruncatedClientForChat(_FakeClient):
+    async def post(self, url, headers=None, json=None):
+        return _TruncatedResponse()
+
+
+@pytest.mark.asyncio
+async def test_chat_raises_on_truncation_when_opted_in(monkeypatch):
+    """raise_on_truncation=True (proofread_text's own use) treats a
+    finish_reason of "length" as an upstream failure rather than returning
+    the cut-off text.
+    """
+    monkeypatch.setattr(openrouter.httpx, "AsyncClient", _TruncatedClientForChat)
+    with pytest.raises(OpenRouterUpstreamError, match="truncated"):
+        await _chat("sk-or-test", "some-model", "system", "user", max_tokens=50, raise_on_truncation=True)
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_truncated_content_when_not_opted_in(monkeypatch):
+    """Same truncated payload, but with the default raise_on_truncation=False
+    (summarize_tasks' behavior): the cut-off content is still returned,
+    pinning that the guard is opt-in.
+    """
+    monkeypatch.setattr(openrouter.httpx, "AsyncClient", _TruncatedClientForChat)
+    content = await _chat("sk-or-test", "some-model", "system", "user", max_tokens=50)
+    assert content == "Résumé du proj"
+
+
+@pytest.mark.parametrize("empty_content", ["", "   "])
+@pytest.mark.asyncio
+async def test_chat_raises_on_empty_answer(monkeypatch, empty_content):
+    class _EmptyResponse:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": empty_content}}]}
+
+    class _EmptyClient(_FakeClient):
+        async def post(self, url, headers=None, json=None):
+            return _EmptyResponse()
+
+    monkeypatch.setattr(openrouter.httpx, "AsyncClient", _EmptyClient)
+    with pytest.raises(OpenRouterUpstreamError, match="empty answer"):
+        await _chat("sk-or-test", "some-model", "system", "user", max_tokens=50)

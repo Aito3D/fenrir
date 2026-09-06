@@ -32,13 +32,13 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ showToast: showToastMock }),
 }));
 
-function renderQuoteStatusHook(project: AitoProject) {
+function renderQuoteStatusHook(project: AitoProject, toastKeys?: Partial<Record<'sent' | 'accepted' | 'declined', string>>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   client.setQueryData(['aito-projects'], [project]);
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  return renderHook(() => useQuoteStatusMutation(project), { wrapper });
+  return renderHook(() => useQuoteStatusMutation(project, toastKeys), { wrapper });
 }
 
 const project = { id: 1, quote_id: 'q-1', quote_status: 'sent' } as AitoProject;
@@ -105,5 +105,38 @@ describe('useQuoteStatusMutation', () => {
     });
 
     expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the default sent toast on an ordinary successful transition', async () => {
+    vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({
+      project: { ...project, quote_status: 'sent', version: 1 },
+      zoho_synced: true,
+      no_op: false,
+    });
+    const { result } = renderQuoteStatusHook(project);
+
+    await act(async () => {
+      result.current.mutate('sent');
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(showToastMock).toHaveBeenCalledWith('aito.quoteSent', 'success');
+  });
+
+  it('uses the caller-supplied toastKeys override instead of the default', async () => {
+    vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({
+      project: { ...project, quote_status: 'sent', version: 1 },
+      zoho_synced: true,
+      no_op: false,
+    });
+    const { result } = renderQuoteStatusHook(project, { sent: 'aito.quoteUnaccepted' });
+
+    await act(async () => {
+      result.current.mutate('sent');
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(showToastMock).toHaveBeenCalledWith('aito.quoteUnaccepted', 'success');
+    expect(showToastMock).not.toHaveBeenCalledWith('aito.quoteSent', 'success');
   });
 });

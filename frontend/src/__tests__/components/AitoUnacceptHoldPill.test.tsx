@@ -108,6 +108,12 @@ describe('UnacceptHoldPill', () => {
     });
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'sent' }));
     expect(onDone).toHaveBeenCalledTimes(1);
+
+    // The pill's whole reason for overriding the shared hook's toastKeys: a
+    // revoked acceptance must not be announced as an ordinary "marked as
+    // sent" — see the hook's own doc comment on the toastKeys parameter.
+    expect(await screen.findByText('Acceptance removed — quote is back in Waiting')).toBeInTheDocument();
+    expect(screen.queryByText('Quote marked as sent')).not.toBeInTheDocument();
   });
 
   it('a pointer leaving the pill cancels the hold', async () => {

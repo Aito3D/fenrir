@@ -191,6 +191,7 @@ describe('QuoteStatusActions', () => {
     await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /accept quote/i }) });
     vi.advanceTimersByTime(600);
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'accepted' }));
+    expect(await screen.findByText('Quote accepted')).toBeInTheDocument();
   });
 
   it('drops Mark as sent once the client already has the quote', () => {
@@ -211,6 +212,7 @@ describe('QuoteStatusActions', () => {
     await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /mark as sent/i }) });
     vi.advanceTimersByTime(600);
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'sent' }));
+    expect(await screen.findByText('Quote marked as sent')).toBeInTheDocument();
   });
 
   it('offers only Mark as sent while the quote is still a draft', () => {
@@ -309,6 +311,7 @@ describe('QuoteStatusActions', () => {
     await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /decline quote/i }) });
     vi.advanceTimersByTime(600);
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'declined' }));
+    expect(await screen.findByText('Quote declined')).toBeInTheDocument();
   });
 
   it('puts the card back and flashes when the server refuses a decline', async () => {
