@@ -89,6 +89,11 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/v1/archives/{archive_id}/media/dl/{token}/{filename}"),
         # Obico cached frame — one-time nonce embedded in <img> tags.
         ("GET", "/api/v1/obico/cached-frame/{nonce}"),
+        # Aito client tracking page — the 43-char random token in the path IS
+        # the credential; the response carries no client-identifying data
+        # (see AitoTrackingResponse), and the auth middleware exempts the
+        # same "/api/v1/aito/track/" prefix (PUBLIC_API_PREFIXES in main.py).
+        ("GET", "/api/v1/aito/track/{token}"),
         # MakerWorld thumbnail proxy — fetches external URL; no Bambuddy data exposed.
         ("GET", "/api/v1/makerworld/thumbnail"),
         # ---- HTTP API: operational + UI-bootstrap (no sensitive data) ----
