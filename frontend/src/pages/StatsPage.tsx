@@ -54,6 +54,7 @@ import { CostBreakdownWidget } from '../components/stats/CostBreakdownWidget';
 import { FilamentForecastWidget } from '../components/stats/FilamentForecastWidget';
 import { MaintenanceReliabilityWidget } from '../components/stats/MaintenanceReliabilityWidget';
 import { EnergyWidget } from '../components/stats/EnergyWidget';
+import { PipelineWidget } from '../components/stats/PipelineWidget';
 
 // Timeframe types and helpers
 type TimeframePreset = 'today' | 'this-week' | 'this-month' | 'last-7' | 'last-30' | 'last-90' | 'this-year' | 'all-time' | 'custom';
@@ -1396,6 +1397,14 @@ export function StatsPage() {
           title: t('stats.maintenanceReliability'),
           component: <MaintenanceReliabilityWidget archives={archives || []} />,
           defaultSize: 1 as const,
+        }]
+      : []),
+    ...(hasPermission('aito:read')
+      ? [{
+          id: 'aito-pipeline',
+          title: t('stats.aitoPipeline'),
+          component: <PipelineWidget dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} />,
+          defaultSize: 2 as const,
         }]
       : []),
     {

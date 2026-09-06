@@ -409,6 +409,47 @@ describe('StatsPage', () => {
       });
     });
 
+    it('shows the Aito pipeline widget', async () => {
+      server.use(
+        http.get('/api/v1/aito/stats', () =>
+          HttpResponse.json({
+            board: [
+              { column: 'devis', count: 0, total: 0 },
+              { column: 'waiting', count: 0, total: 0 },
+              { column: 'scan', count: 0, total: 0 },
+              { column: 'model', count: 0, total: 0 },
+              { column: 'print', count: 0, total: 0 },
+              { column: 'finish', count: 0, total: 0 },
+              { column: 'done', count: 0, total: 0 },
+            ],
+            conversion: {
+              sent: { count: 0, total: 0 },
+              accepted: { count: 0, total: 0 },
+              declined: { count: 0, total: 0 },
+              acceptance_rate: null,
+            },
+            stage_days: [
+              { column: 'devis', median_days: null, sample: 0 },
+              { column: 'waiting', median_days: null, sample: 0 },
+              { column: 'scan', median_days: null, sample: 0 },
+              { column: 'model', median_days: null, sample: 0 },
+              { column: 'print', median_days: null, sample: 0 },
+              { column: 'finish', median_days: null, sample: 0 },
+            ],
+            invoicing: { invoiced_total: 0, invoiced_count: 0, outstanding_balance: 0, outstanding_count: 0 },
+            date_from: null,
+            date_to: null,
+          }),
+        ),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Aito pipeline')).toBeInTheDocument();
+      });
+    });
+
     it('shows records widget', async () => {
       render(<StatsPage />);
 
