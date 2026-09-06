@@ -46,6 +46,7 @@ from backend.app.services.aito_quote_export import (
 )
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_shipping import island_label
+from backend.app.services.aito_tracking import NOTES_PREFIX, build_tracking_url
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -58,6 +59,14 @@ from backend.app.services.zoho import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _tracking_notes(db: AsyncSession, project: AitoProject) -> str | None:
+    """The customer-notes string for this project's estimate, or None while
+    the tracking link isn't configured — see build_tracking_url."""
+    url = await build_tracking_url(db, project)
+    return f"{NOTES_PREFIX}{url}" if url else None
+
 
 # Consecutive upstream failures before a project's push is escalated to
 # 'error'. Twenty-five minutes of a Books outage at the default 300s tick, which
@@ -582,15 +591,16 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = None
         project.quote_sync_failures = 0
         return
-    estimate = await zoho_service.create_estimate(
-        db,
-        {
-            "customer_id": project.client_id,
-            "reference_number": reference_number,
-            "is_inclusive_tax": True,
-            "line_items": line_items,
-        },
-    )
+    payload = {
+        "customer_id": project.client_id,
+        "reference_number": reference_number,
+        "is_inclusive_tax": True,
+        "line_items": line_items,
+    }
+    notes = await _tracking_notes(db, project)
+    if notes:
+        payload["notes"] = notes
+    estimate = await zoho_service.create_estimate(db, payload)
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
@@ -1134,7 +1144,9 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         catalogue,
         shipping=load_export_shipping(project, catalogue),
     )
-    updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
+    updated = await zoho_service.update_estimate_lines(
+        db, project.quote_id, line_items, notes=await _tracking_notes(db, project)
+    )
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in

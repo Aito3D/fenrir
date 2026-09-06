@@ -937,7 +937,7 @@ async def test_an_edit_committed_during_the_books_round_trip_leaves_the_project_
 
     real_update_estimate_lines = zoho_service.update_estimate_lines
 
-    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
         # Same shape as routes/aito.py:_mark_pending -- re-marks an
         # ALREADY-pending project pending (a same-value no-op on the row
         # itself) and bumps the process-local requeue marker, exactly as the
@@ -945,7 +945,7 @@ async def test_an_edit_committed_during_the_books_round_trip_leaves_the_project_
         project.quote_sync_state = "pending"
         project.quote_sync_failures = 0
         _bump_requeue_marker(project.id)
-        return await real_update_estimate_lines(db, quote_id, line_items)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
 
     monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
     zoho_service.transport = httpx.MockTransport(
@@ -1057,11 +1057,11 @@ async def test_a_raced_projects_marker_entry_survives_the_settle_it_prevented(db
 
     real_update_estimate_lines = zoho_service.update_estimate_lines
 
-    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
         project.quote_sync_state = "pending"
         project.quote_sync_failures = 0
         _bump_requeue_marker(project.id)
-        return await real_update_estimate_lines(db, quote_id, line_items)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
 
     monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
     zoho_service.transport = httpx.MockTransport(
@@ -1177,7 +1177,7 @@ async def test_an_edit_marked_pending_before_the_workers_capture_but_committed_o
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     real_update_estimate_lines = zoho_service.update_estimate_lines
 
-    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
         # The edit's own commit, on its own session, landing only now --
         # strictly after _update_quote's requeue_marker snapshot (captured as
         # the very first line of that function) and after its own read of
@@ -1186,7 +1186,7 @@ async def test_an_edit_marked_pending_before_the_workers_capture_but_committed_o
         async with maker() as edit_db:
             edit_project = await edit_db.get(AitoProject, project.id)
             await aito_routes._commit_and_wake(edit_db, True, edit_project.id)
-        return await real_update_estimate_lines(db, quote_id, line_items)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
 
     monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
     zoho_service.transport = httpx.MockTransport(
@@ -1507,7 +1507,7 @@ async def test_a_cost_edited_by_another_session_mid_round_trip_survives_the_writ
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     real_update_estimate_lines = zoho_service.update_estimate_lines
 
-    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
         # The operator's own edit, committed on its own session while this
         # round trip is still in flight -- exactly the window
         # `_write_back_rounded_costs` must not let leak into its own write.
@@ -1515,7 +1515,7 @@ async def test_a_cost_edited_by_another_session_mid_round_trip_survives_the_writ
             edit_row = (await edit_db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
             edit_row.impression_cost = 5000
             await edit_db.commit()
-        return await real_update_estimate_lines(db, quote_id, line_items)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
 
     monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
     zoho_service.transport = httpx.MockTransport(
@@ -1566,12 +1566,12 @@ async def test_write_back_is_skipped_entirely_once_a_concurrent_edit_lands(db_se
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     real_update_estimate_lines = zoho_service.update_estimate_lines
 
-    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
         async with maker() as edit_db:
             edit_row = (await edit_db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
             edit_row.impression_cost = 5001
             await edit_db.commit()
-        return await real_update_estimate_lines(db, quote_id, line_items)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
 
     monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
     zoho_service.transport = httpx.MockTransport(
@@ -2384,13 +2384,13 @@ async def test_an_accept_committed_during_the_push_round_trip_is_not_overwritten
     real_update_estimate_lines = zoho_service.update_estimate_lines
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
         async with maker() as edit_db:
             edit_project = await edit_db.get(AitoProject, project.id)
             edit_project.quote_status = "accepted"
             edit_project.quote_accepted_at = datetime(2026, 7, 29, 12, 0, 0)
             await edit_db.commit()
-        return await real_update_estimate_lines(db, quote_id, line_items)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
 
     monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
     zoho_service.transport = httpx.MockTransport(

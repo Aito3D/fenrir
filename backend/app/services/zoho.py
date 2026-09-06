@@ -550,12 +550,15 @@ class ZohoService:
         return estimate
 
     async def create_estimate(self, db: AsyncSession, payload: dict) -> dict:
-        """Create a draft estimate. Template, salesperson, notes, terms, expiry
-        and numbering are all left to the org defaults — this app sends only
-        what it owns."""
+        """Create a draft estimate. Template, salesperson, terms, expiry and
+        numbering are left to the org defaults; notes are the one field a
+        caller may set (the tracking link) — this app sends only what it
+        owns."""
         return (await self._request(db, "POST", "/estimates", json=payload)).get("estimate", {})
 
-    async def update_estimate_lines(self, db: AsyncSession, estimate_id: str, line_items: list[dict]) -> dict:
+    async def update_estimate_lines(
+        self, db: AsyncSession, estimate_id: str, line_items: list[dict], notes: str | None = None
+    ) -> dict:
         """Replace the line items and nothing else.
 
         A partial PUT: Books preserves customer_id, notes, terms,
@@ -563,7 +566,12 @@ class ZohoService:
         the body. Verified against the live org — do not "helpfully" resend
         them, that is how a hand-edited note gets clobbered.
         """
-        body = {"line_items": line_items}
+        body: dict = {"line_items": line_items}
+        if notes is not None:
+            # Customer notes print on the estimate PDF Books emails — the
+            # tracking link's only way into the quote. Omitted (not '') when
+            # unset so a partial PUT keeps whatever someone typed in Books.
+            body["notes"] = notes
         return (await self._request(db, "PUT", f"/estimates/{_seg(estimate_id)}", json=body)).get("estimate", {})
 
     async def set_estimate_status(self, db: AsyncSession, estimate_id: str, status: str) -> None:

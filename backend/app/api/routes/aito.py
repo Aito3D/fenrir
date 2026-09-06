@@ -77,6 +77,7 @@ from backend.app.services.aito_shipping import (
 )
 from backend.app.services.aito_stats import compute_aito_stats
 from backend.app.services.aito_tracking import (
+    SMS_PREFIX,
     build_tracking_url,
     compute_tracking,
     external_url as tracking_external_url,
@@ -2864,6 +2865,10 @@ async def generate_pickup_message(
         raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
     except OpenRouterUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    url = await build_tracking_url(db, project)
+    if url:
+        message = f"{message}{SMS_PREFIX}{url}"
+    await db.commit()  # the minted token must outlive this draft request
     return AitoPickupMessageResponse(message=message, model=model)
 
 
