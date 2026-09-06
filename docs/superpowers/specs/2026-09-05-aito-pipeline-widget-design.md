@@ -31,16 +31,21 @@ project rows and the Aito event log. Four blocks:
 
 ## 1. Endpoint
 
-`GET /api/v1/aito/stats?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
+`GET /api/v1/aito/stats?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&tz_offset_minutes=N`
 
 - Gated on `Permission.AITO_READ` (the calculator insights precedent:
   aggregates are computed server-side so an Aito reader needs nothing else).
 - Both dates optional; absent means unbounded on that side. `date_to` is
   inclusive (the range ends at `date_to 23:59:59`). A `date_from` after
-  `date_to` is a 422. Dates are interpreted as naive UTC calendar days,
-  matching every `occurred_at` on the row.
+  `date_to` is a 422. The dates are the caller's LOCAL calendar days,
+  converted to the naive-UTC window the `occurred_at` columns are stored in
+  by `utils/dates.local_day_bounds` with `tz_offset_minutes` (minutes east of
+  UTC, `-840…840`, default 0) — exactly what `/archives/stats` and
+  `/smart-plugs/energy/history` do, so the widget's period is the same span of
+  time as the sibling widgets sitting beside it on the Stats page. The client
+  always sends the offset.
 - Implemented in `services/aito_stats.py`, one entry point
-  `compute(db, date_from: date | None, date_to: date | None) -> AitoStatsResponse`.
+  `compute_aito_stats(db, date_from, date_to, tz_offset_minutes) -> AitoStatsResponse`.
 
 ### Response
 
@@ -78,6 +83,21 @@ project rows and the Aito event log. Four blocks:
   0). A project accepted then unaccepted still counts as accepted at its first
   acceptance. `acceptance_rate` = accepted / (accepted + declined), `null`
   when the denominator is 0.
+- **Conversion — acceptances mirrored from Zoho**: `reconcile_quote_status`
+  adopts a decision Books already holds and records only `poll.reconciled`, so
+  a real client acceptance can exist with NO `quote.accepted` event. That path
+  does stamp `project.quote_accepted_at`, so the acceptance moment for a
+  project is `min(first quote.accepted event, quote_accepted_at)` over
+  whichever of the two exist. There is no matching column for a decline, so a
+  Zoho-side decline with no event stays invisible to this widget — accepted
+  by design rather than inventing a write path for it.
+- **Conversion — imported decisions**: a quote imported already-decided
+  records `quote.{accepted,declined}` with `occurred_at = now` for a decision
+  the client made at some past, unknown moment. `create_project` marks that
+  row `detail = {"cause": "import"}` and the aggregate ignores every
+  `quote.*` row so marked when picking a project's first moment (hence the
+  ordered scan + first-non-import row in Python instead of a SQL `MIN`),
+  so an import never credits its own week with someone else's sale.
 - **Stage days**: order each project's `stage.changed` events by
   `occurred_at`; each event closes a stay in `changes[0].from` that began at
   the previous `stage.changed` event's `occurred_at`, or at the project's
@@ -85,7 +105,14 @@ project rows and the Aito event log. Four blocks:
   event falls in the range. `median_days` is the median of stay lengths in
   days (float, one decimal is the widget's job), `sample` the count. Stays
   in `done` are never produced (nothing leaves Done except a restore, which
-  is not a stage), so `stage_days` lists the six columns before Done.
+  is not a stage), so `stage_days` lists the six columns before Done. A stay
+  whose closing `stage.changed` lands within 60 seconds AFTER the project's
+  own `project.created` event is skipped: that is the board rules placing a
+  brand-new card, not a move. It matters because an imported card's
+  `created_at` is backdated to the Books quote's date, which would otherwise
+  turn that opening placement into a weeks-long fake stay in `devis`. A
+  project with no `project.created` event (pre-event-log rows) keeps every
+  stay. The skipped move still opens the next stay.
 - **Invoicing**: `invoiced_total`/`invoiced_count` over active projects with
   `quote_invoiced` true whose first `quote.accepted` falls in the range;
   `outstanding_*` over all active invoiced projects with
@@ -93,11 +120,12 @@ project rows and the Aito event log. Four blocks:
 
 ### Cost
 
-Five small queries: the active project rows (board totals and invoicing are
-summed in Python from them), three `MIN(occurred_at) GROUP BY project_id`
-queries (sent/emailed, accepted, declined) restricted to those projects, and
-one ordered scan of `stage.changed` events for them (the stay maths runs in
-Python over that ordered list). SQLite handles the board sizes in question
+Six small queries: the active project rows (board totals and invoicing are
+summed in Python from them), four ordered `occurred_at` scans restricted to
+those projects (sent/emailed, accepted, declined, and `project.created` for
+the creation-move anchor — first-non-import row per project taken in Python),
+and one ordered scan of `stage.changed` events for them (the stay maths runs
+in Python over that ordered list). SQLite handles the board sizes in question
 (tens to hundreds of projects, low thousands of events) in milliseconds; no
 cache. The `project_id IN (...)` lists carry one bound parameter per active
 project, well under SQLite's variable limit at this scale.
@@ -127,8 +155,10 @@ Layout, top to bottom:
 
 Money through the existing `formatMoney(value, currency)`; currency from
 `useCurrency()`. Loading: the same skeleton the energy widget uses. Empty
-(every count 0): one line, `stats.aitoPipelineEmpty`. Error: the dashboard's
-standard error slot.
+(every count 0): one line, `stats.aitoPipelineEmpty`. Error (`isError` from
+the query, or no data): one line in the same slot, the existing
+`common.errorLoading` — never the empty line, which would report a 403 or a
+500 as a quiet board.
 
 ## 3. i18n
 
@@ -155,13 +185,24 @@ event inserts):
   even sample averages the middle two.
 - Invoicing: period filter on invoiced total, snapshot on outstanding, a paid
   invoice (balance 0) not outstanding.
+- Zoho-side acceptance: `quote_accepted_at` with no `quote.accepted` event
+  counts (and reaches `invoiced_total`); with both, the earlier moment wins.
+- Imported decision: a `quote.{accepted}` carrying `detail.cause == "import"`
+  is not counted in the import's period.
+- Creation-time move: a `stage.changed` 5 s after `project.created` is no
+  stay, one 2 days later is; a move out of `done` is no stay but still resets
+  the clock for the next one.
+- Timezone: with `tz_offset_minutes=-600`, an event at `2026-08-31 09:30` UTC
+  is 30 August locally and falls outside `date_to=2026-08-31`.
 - Route: 422 on inverted range, permission is `aito:read` (static-closure
   test), absent dates allowed.
 
 Frontend:
 - `PipelineWidget.test.tsx`: renders all four sections from a fixture, the
   rate text, `—` for a null rate and a zero sample, the empty state, money
-  formatting with the app currency.
+  formatting with the app currency, the load error on a 500 (and NOT the
+  empty line), and the query string carrying both dates plus
+  `tz_offset_minutes`.
 - `StatsPage.test.tsx`: the widget appears with `aito:read` and not without.
 
 ## Open decisions, resolved
@@ -172,4 +213,4 @@ Frontend:
 | Where rules run | Server, one endpoint, `aito:read` |
 | Date range | Conversion, stage days, invoiced total follow the page range; board and outstanding are snapshots |
 | Done column | In the board response; omitted from the bar, shown as a chip; no stage-days entry |
-| "First event" semantics | MIN(occurred_at) per project and kind group |
+| "First event" semantics | Earliest occurred_at per project and kind group, skipping `detail.cause == "import"` rows; an acceptance also considers `project.quote_accepted_at` |

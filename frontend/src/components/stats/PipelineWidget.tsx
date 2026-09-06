@@ -13,7 +13,7 @@ import { useCurrency } from '../../hooks/useCurrency';
 export function PipelineWidget({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
   const { t } = useTranslation();
   const currency = useCurrency();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['aitoStats', dateFrom, dateTo],
     queryFn: () => api.getAitoStats({ dateFrom, dateTo }),
   });
@@ -25,7 +25,12 @@ export function PipelineWidget({ dateFrom, dateTo }: { dateFrom?: string; dateTo
       </div>
     );
   }
-  if (!data || isEmpty(data)) {
+  // A failed request is not an empty pipeline: without this, a 403 or a 500
+  // reads as "nothing happened on the board", which is a lie about the data.
+  if (isError || !data) {
+    return <p className="text-bambu-gray text-center py-4">{t('common.errorLoading')}</p>;
+  }
+  if (isEmpty(data)) {
     return <p className="text-bambu-gray text-center py-4">{t('stats.aitoPipelineEmpty')}</p>;
   }
 

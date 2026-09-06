@@ -69,7 +69,15 @@ describe('PipelineWidget', () => {
     expect(screen.queryByTestId('pipeline-conversion')).not.toBeInTheDocument();
   });
 
-  it('sends the date range to the API', async () => {
+  it('shows the load error, not the empty line, when the request fails', async () => {
+    server.use(http.get('/api/v1/aito/stats', () => new HttpResponse(null, { status: 500 })));
+    render(<PipelineWidget dateFrom="2026-08-01" dateTo="2026-09-05" />);
+    expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing on the Aito board in this period')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pipeline-board')).not.toBeInTheDocument();
+  });
+
+  it('sends the date range and the browser timezone offset to the API', async () => {
     let seen = '';
     server.use(
       http.get('/api/v1/aito/stats', ({ request }) => {
@@ -79,6 +87,9 @@ describe('PipelineWidget', () => {
     );
     render(<PipelineWidget dateFrom="2026-08-01" dateTo="2026-08-31" />);
     await screen.findByTestId('pipeline-board');
-    expect(seen).toBe('?date_from=2026-08-01&date_to=2026-08-31');
+    expect(seen).toContain('date_from=2026-08-01');
+    expect(seen).toContain('date_to=2026-08-31');
+    // The days are the user's local ones, so the server needs the offset.
+    expect(seen).toMatch(/tz_offset_minutes=-?\d+/);
   });
 });

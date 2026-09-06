@@ -4,6 +4,8 @@
 
 import { http, HttpResponse } from 'msw';
 
+const AITO_BOARD_COLUMNS = ['devis', 'waiting', 'scan', 'model', 'print', 'finish', 'done'] as const;
+
 // Sample data
 const mockSmartPlugs = [
   {
@@ -608,4 +610,27 @@ export const handlers = [
   // the field keeps exactly what was typed. Tests about the correction itself
   // override this with server.use().
   http.post('/api/v1/aito/proofread', () => HttpResponse.json({ detail: 'OpenRouter is not configured' }, { status: 409 })),
+  // The Stats page's Aito pipeline widget fetches this for anyone with
+  // aito:read, so every StatsPage test would otherwise issue a real request.
+  // An all-zero board renders the widget's empty line; tests about the widget
+  // itself override this with server.use().
+  http.get('/api/v1/aito/stats', () =>
+    HttpResponse.json({
+      board: AITO_BOARD_COLUMNS.map((column) => ({ column, count: 0, total: 0 })),
+      conversion: {
+        sent: { count: 0, total: 0 },
+        accepted: { count: 0, total: 0 },
+        declined: { count: 0, total: 0 },
+        acceptance_rate: null,
+      },
+      stage_days: AITO_BOARD_COLUMNS.filter((column) => column !== 'done').map((column) => ({
+        column,
+        median_days: null,
+        sample: 0,
+      })),
+      invoicing: { invoiced_total: 0, invoiced_count: 0, outstanding_balance: 0, outstanding_count: 0 },
+      date_from: null,
+      date_to: null,
+    })
+  ),
 ];

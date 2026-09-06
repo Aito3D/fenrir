@@ -910,18 +910,24 @@ async def list_trash(
 
 @router.get("/stats", response_model=AitoStatsResponse)
 async def get_aito_stats(
-    date_from: date | None = Query(default=None, description="Inclusive start day (UTC)."),
-    date_to: date | None = Query(default=None, description="Inclusive end day (UTC)."),
+    date_from: date | None = Query(default=None, description="Inclusive start day, in the caller's local time."),
+    date_to: date | None = Query(default=None, description="Inclusive end day, in the caller's local time."),
+    tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The Stats page's pipeline widget. Read-only aggregates over active
     projects and their events; gated on AITO_READ alone, like the calculator
     insights endpoint, so an Aito reader needs nothing else. Declared ahead of
-    the `/{project_id}` routes so `stats` is never parsed as an id."""
+    the `/{project_id}` routes so `stats` is never parsed as an id.
+
+    The dates are LOCAL calendar days, converted with `tz_offset_minutes` the
+    same way `/archives/stats` does it — the Stats page's sibling widgets all
+    range over the user's own days, and a UTC-only window would slice the
+    board's period differently from the ones beside it."""
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must not be after date_to")
-    return await compute_aito_stats(db, date_from, date_to)
+    return await compute_aito_stats(db, date_from, date_to, tz_offset_minutes)
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
@@ -1072,6 +1078,12 @@ async def create_project(
             # from its real history). This call exists only so the decision
             # has an actor on the timeline, same as the dedicated
             # /quote-status route records for a hand-made card.
+            #
+            # detail.cause = "import" marks it as a backfilled decision whose
+            # occurred_at is the import moment, NOT the moment the client
+            # decided. aito_stats skips these rows for exactly that reason —
+            # without the marker an import would credit the import week with a
+            # sale (and an invoiced total) that happened weeks earlier.
             await record(
                 db,
                 project.id,
@@ -1080,6 +1092,7 @@ async def create_project(
                 actor_name=_actor(current_user),
                 subject_type="project",
                 subject_id=project.id,
+                detail={"cause": "import"},
             )
         new_tasks = [
             AitoTask(project_id=project.id, position=position, **task_payload.model_dump())

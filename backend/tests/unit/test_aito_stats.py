@@ -16,13 +16,24 @@ async def _create(client, **overrides):
     return r.json()["id"]
 
 
-async def _event(db_session, pid: int, kind: str, at: str, changes=None):
+async def _event(db_session, pid: int, kind: str, at: str, changes=None, detail=None):
     await db_session.execute(
         text(
-            "INSERT INTO aito_events (project_id, occurred_at, kind, actor_class, changes) "
-            "VALUES (:pid, :at, :kind, 'user', :changes)"
+            "INSERT INTO aito_events (project_id, occurred_at, kind, actor_class, changes, detail) "
+            "VALUES (:pid, :at, :kind, 'user', :changes, :detail)"
         ),
-        {"pid": pid, "at": at, "kind": kind, "changes": changes},
+        {"pid": pid, "at": at, "kind": kind, "changes": changes, "detail": detail},
+    )
+    await db_session.commit()
+
+
+async def _move_event(db_session, pid: int, kind: str, at: str):
+    """Backdate an event `record()` stamped with the real 'now' — the import
+    marker and the creation-move anchor are both about WHEN, so the tests need
+    to place the real rows on the calendar rather than fabricate look-alikes."""
+    await db_session.execute(
+        text("UPDATE aito_events SET occurred_at = :at WHERE project_id = :pid AND kind = :kind"),
+        {"pid": pid, "at": at, "kind": kind},
     )
     await db_session.commit()
 
@@ -119,6 +130,98 @@ async def test_invoicing_period_total_and_snapshot_outstanding(async_client, db_
     inv = body["invoicing"]
     assert inv["invoiced_total"] == 1700.0 and inv["invoiced_count"] == 2
     assert inv["outstanding_balance"] == 700.0 and inv["outstanding_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_zoho_side_acceptance_without_an_event_counts_from_quote_accepted_at(async_client, db_session):
+    """reconcile_quote_status adopts a Books decision and records only
+    `poll.reconciled` — but adopt_quote_status DOES stamp quote_accepted_at, so
+    that column is the acceptance moment when no `quote.accepted` event exists."""
+    silent = await _create(async_client, description="silent")
+    both = await _create(async_client, description="both")
+    await _set(db_session, silent, quote_total=800.0, quote_invoiced=1, quote_accepted_at="2026-08-14 09:00:00")
+    await _set(db_session, both, quote_total=200.0, quote_accepted_at="2026-08-20 09:00:00")
+    # Later stamp than the event: the earlier of the two wins, so `both` is
+    # counted at 2026-07-02 — outside the window below.
+    await _event(db_session, both, "quote.accepted", "2026-07-02 09:00:00")
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    assert body["conversion"]["accepted"] == {"count": 1, "total": 800.0}
+    assert body["invoicing"]["invoiced_total"] == 800.0 and body["invoicing"]["invoiced_count"] == 1
+
+    july = (await async_client.get(STATS, params={"date_from": "2026-07-01", "date_to": "2026-07-31"})).json()
+    assert july["conversion"]["accepted"] == {"count": 1, "total": 200.0}
+
+
+@pytest.mark.asyncio
+async def test_imported_decision_events_are_not_counted_in_the_import_period(async_client, db_session):
+    """A quote imported already-decided records `quote.accepted` at the import
+    moment for an acceptance that happened at some unknown past moment."""
+    pid = await _create(async_client, quote_id="zq1", quote_number="Q-1", quote_status="accepted")
+    await _set(db_session, pid, quote_total=5000.0, quote_invoiced=1)
+    # create_project stamped the decision with detail {"cause": "import"} at the
+    # import moment; put that real row inside the window under test.
+    await _move_event(db_session, pid, "quote.accepted", "2026-08-10 09:00:00")
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    assert body["conversion"]["accepted"] == {"count": 0, "total": 0.0}
+    assert body["invoicing"]["invoiced_total"] == 0.0 and body["invoicing"]["invoiced_count"] == 0
+    # No decision counted at all, so the rate has no denominator.
+    assert body["conversion"]["acceptance_rate"] is None
+
+
+@pytest.mark.asyncio
+async def test_creation_time_stage_move_is_not_a_stay(async_client, db_session):
+    """An imported card's created_at is backdated to the quote's date, so the
+    board rules' move at creation would otherwise close a weeks-long fake stay."""
+    pid = await _create(async_client, description="imported")
+    await _set(db_session, pid, created_at="2026-08-01 00:00:00")
+    await _move_event(db_session, pid, "project.created", "2026-08-20 12:00:00")
+    await _event(db_session, pid, "stage.changed", "2026-08-20 12:00:05", _stage("devis", "print"))
+    await _event(db_session, pid, "stage.changed", "2026-08-22 12:00:05", _stage("print", "finish"))
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    days = {row["column"]: row for row in body["stage_days"]}
+    assert days["devis"] == {"column": "devis", "median_days": None, "sample": 0}
+    # The skipped move still opened the `print` stay, which the move 2 days later closes.
+    assert days["print"] == {"column": "print", "median_days": 2.0, "sample": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_move_out_of_done_is_no_stay_but_still_resets_the_clock(async_client, db_session):
+    """Done -> Finish (a re-open) produces no stay: `done` has no stage-days
+    entry. It must still start the next stay, or Finish would be measured from
+    the card's creation."""
+    pid = await _create(async_client, description="reopened")
+    await _set(db_session, pid, created_at="2026-08-01 00:00:00")
+    await _event(db_session, pid, "stage.changed", "2026-08-05 00:00:00", _stage("done", "finish"))
+    await _event(db_session, pid, "stage.changed", "2026-08-08 00:00:00", _stage("finish", "print"))
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    days = {row["column"]: row for row in body["stage_days"]}
+    assert [row["column"] for row in body["stage_days"]] == ["devis", "waiting", "scan", "model", "print", "finish"]
+    assert days["finish"] == {"column": "finish", "median_days": 3.0, "sample": 1}  # not 7 from created_at
+    assert days["devis"] == {"column": "devis", "median_days": None, "sample": 0}
+
+
+@pytest.mark.asyncio
+async def test_range_is_local_calendar_days_via_tz_offset(async_client, db_session):
+    """UTC-10 (tz_offset_minutes=-600): the local day 2026-08-31 runs from
+    2026-08-31 10:00 UTC to 2026-09-01 09:59:59 UTC."""
+    early = await _create(async_client, description="early")
+    late = await _create(async_client, description="late")
+    await _set(db_session, early, quote_total=100.0)
+    await _set(db_session, late, quote_total=250.0)
+    await _event(db_session, early, "quote.sent", "2026-08-31 09:30:00")  # 30 Aug locally
+    await _event(db_session, late, "quote.sent", "2026-08-31 23:30:00")  # 31 Aug locally
+
+    params = {"date_from": "2026-08-31", "date_to": "2026-08-31", "tz_offset_minutes": -600}
+    body = (await async_client.get(STATS, params=params)).json()
+    assert body["conversion"]["sent"] == {"count": 1, "total": 250.0}
+
+    # Same window in UTC keeps the early one and drops the late one's neighbour-day nothing.
+    utc = (await async_client.get(STATS, params={"date_from": "2026-08-31", "date_to": "2026-08-31"})).json()
+    assert utc["conversion"]["sent"] == {"count": 2, "total": 350.0}
 
 
 @pytest.mark.asyncio

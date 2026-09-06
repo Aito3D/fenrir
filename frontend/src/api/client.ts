@@ -7791,8 +7791,11 @@ export const api = {
     const params = new URLSearchParams();
     if (options?.dateFrom) params.set('date_from', options.dateFrom);
     if (options?.dateTo) params.set('date_to', options.dateTo);
-    const query = params.toString();
-    return request<AitoStats>(`/aito/stats${query ? `?${query}` : ''}`);
+    // date_from/date_to are the Stats page's LOCAL calendar days, like every
+    // sibling widget's range — always send the offset (same as
+    // getEnergyHistory), so the server slices the same days the page shows.
+    params.set('tz_offset_minutes', String(-new Date().getTimezoneOffset()));
+    return request<AitoStats>(`/aito/stats?${params}`);
   },
   /** Record — or take back — the fact that the client has been told the job is
    *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to

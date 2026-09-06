@@ -1,6 +1,6 @@
 """Aggregates for the Stats page's Aito pipeline widget.
 
-Four read-only queries over projects and the event log; the stay maths for
+Six read-only queries over projects and the event log; the stay maths for
 "days per stage" runs in Python over one ordered scan. Trashed projects and
 their events are excluded everywhere. Spec:
 docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md
@@ -8,10 +8,10 @@ docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md
 
 import json
 from collections import defaultdict
-from datetime import date, datetime, time
+from datetime import date, datetime, timedelta
 from statistics import median
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
@@ -25,20 +25,20 @@ from backend.app.schemas.aito import (
     AitoStatsStageDays,
 )
 from backend.app.services.aito_board_rules import COLUMN_ORDER
+from backend.app.utils.dates import local_day_bounds
 
 _SENT_KINDS = ("quote.sent", "quote.emailed")
 _STAGE_COLUMNS = tuple(column for column in COLUMN_ORDER if column != "done")
 _DAY_SECONDS = 86_400.0
+# A `stage.changed` this soon after the card's own `project.created` is the
+# creation-time board placement, not a real move: an imported card is created
+# with a backdated `created_at` (the quote's date in Books), so that first
+# rule-driven move would otherwise close a weeks-long fake stay in `devis`.
+_CREATION_MOVE_GRACE = timedelta(seconds=60)
 
 
 def _in_range(at: datetime, start: datetime | None, end: datetime | None) -> bool:
     return (start is None or at >= start) and (end is None or at <= end)
-
-
-def _bounds(date_from: date | None, date_to: date | None) -> tuple[datetime | None, datetime | None]:
-    start = datetime.combine(date_from, time.min) if date_from else None
-    end = datetime.combine(date_to, time.max) if date_to else None
-    return start, end
 
 
 async def _active_projects(db: AsyncSession) -> dict[int, AitoProject]:
@@ -56,15 +56,30 @@ def _board(projects: dict[int, AitoProject]) -> list[AitoStatsStage]:
 
 
 async def _first_moments(db: AsyncSession, kinds: tuple[str, ...], project_ids: list[int]) -> dict[int, datetime]:
-    """project_id -> earliest occurred_at among ``kinds``, active projects only."""
+    """project_id -> earliest occurred_at among ``kinds``, active projects only.
+
+    Rows stamped ``detail.cause == "import"`` are skipped: an already-decided
+    Books quote pulled onto the board records its decision with
+    ``occurred_at=now`` even though the client decided at some past, unknown
+    moment, so counting it would credit the import week with a sale that never
+    happened in it. That is why the ordering + first-non-import scan runs in
+    Python instead of a SQL ``MIN``.
+    """
     if not project_ids:
         return {}
     stmt = (
-        select(AitoEvent.project_id, func.min(AitoEvent.occurred_at))
+        select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.detail)
         .where(AitoEvent.kind.in_(kinds), AitoEvent.project_id.in_(project_ids))
-        .group_by(AitoEvent.project_id)
+        .order_by(AitoEvent.occurred_at, AitoEvent.id)
     )
-    return dict((await db.execute(stmt)).all())
+    firsts: dict[int, datetime] = {}
+    for pid, at, detail in (await db.execute(stmt)).all():
+        if isinstance(detail, str):
+            detail = json.loads(detail)
+        if (detail or {}).get("cause") == "import" or pid in firsts:
+            continue
+        firsts[pid] = at
+    return firsts
 
 
 def _bucket(
@@ -80,6 +95,7 @@ async def _stage_days(
     ids = list(projects)
     stays: dict[str, list[float]] = defaultdict(list)
     if ids:
+        born = await _first_moments(db, ("project.created",), ids)
         stmt = (
             select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes)
             .where(AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(ids))
@@ -89,9 +105,16 @@ async def _stage_days(
         for pid, at, changes in (await db.execute(stmt)).all():
             if isinstance(changes, str):
                 changes = json.loads(changes)
-            left = (changes or [{}])[0].get("from") if changes else None
+            left = changes[0].get("from") if changes else None
             began = opened_at.get(pid) or projects[pid].created_at
             opened_at[pid] = at
+            # The board rules move a freshly created card into its computed
+            # column in the same request that created it. `created_at` can be
+            # backdated (an import carries the Books quote's date), so measure
+            # against the `project.created` EVENT and drop that opening move.
+            created = born.get(pid)
+            if created is not None and timedelta(0) <= at - created <= _CREATION_MOVE_GRACE:
+                continue
             if left in _STAGE_COLUMNS and began is not None and _in_range(at, start, end):
                 stays[left].append(max(0.0, (at - began).total_seconds() / _DAY_SECONDS))
     return [
@@ -102,14 +125,30 @@ async def _stage_days(
     ]
 
 
-async def compute_aito_stats(db: AsyncSession, date_from: date | None, date_to: date | None) -> AitoStatsResponse:
-    start, end = _bounds(date_from, date_to)
+async def compute_aito_stats(
+    db: AsyncSession,
+    date_from: date | None,
+    date_to: date | None,
+    tz_offset_minutes: int = 0,
+) -> AitoStatsResponse:
+    start, end = local_day_bounds(date_from, date_to, tz_offset_minutes)
     projects = await _active_projects(db)
     ids = list(projects)
 
     sent = await _first_moments(db, _SENT_KINDS, ids)
     accepted = await _first_moments(db, ("quote.accepted",), ids)
     declined = await _first_moments(db, ("quote.declined",), ids)
+    # A decision mirrored from Books (reconcile_quote_status -> adopt_quote_status)
+    # records only `poll.reconciled`, but it DOES stamp quote_accepted_at, so a
+    # client acceptance can exist with no `quote.accepted` event at all. Take
+    # the earlier of the two moments wherever both exist. Declines have no such
+    # column, so a Zoho-side decline without an event stays invisible.
+    for pid, project in projects.items():
+        stamped = project.quote_accepted_at
+        if stamped is None:
+            continue
+        known = accepted.get(pid)
+        accepted[pid] = stamped if known is None or stamped < known else known
     acc = _bucket(accepted, projects, start, end)
     dec = _bucket(declined, projects, start, end)
     decided = acc.count + dec.count
