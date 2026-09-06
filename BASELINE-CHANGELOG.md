@@ -10661,3 +10661,182 @@ connection is fully connected) is unchanged. A connection that, through some fut
 rather than included.
 
 user-approved 2026-09-06
+
+## Campaign 11 · T-041 — 2026-09-06 — user-approved behavior change
+
+`ConnectionManager._fan_out` (`backend/app/core/websocket.py`) evicted a timed-out or raising
+connection from `active_connections` under the lock but never closed the underlying socket. A
+laptop that slept for a few seconds with the board open would blow the 5s `_BROADCAST_SEND_TIMEOUT`
+(T-020), get silently dropped from the fan-out list, then wake up with a perfectly healthy-looking
+TCP connection: `useWebSocket`'s 30s ping still got a pong and `ws.onclose` never fired, so its 3s
+reconnect path never ran. The endpoint's own `await websocket.receive_json()` loop
+(`routes/websocket.py`) also stayed parked on that socket forever. The operator was left with a
+connected-looking Aito board that had silently stopped receiving `aito_changed` /
+`aito_presence_state` (and every other broadcast, including `printer_status`) until they manually
+reloaded the tab.
+
+Fixed by giving `_fan_out` a companion `_close_quietly(connection)` helper: after the timed-out/
+raising connections are removed from `active_connections` under the lock (unchanged), each one now
+gets a best-effort `close(code=1011)` fired via `asyncio.create_task`, *outside* the lock, bounded by
+a new `_EVICTION_CLOSE_TIMEOUT = 2.0` instance constant so a socket wedged badly enough to blow the
+send timeout can't also hang the close indefinitely. 1011 is the WebSocket "internal error" close
+code — the server, not the client, decided the connection could not continue. Any exception raised
+by `close()` itself (the peer already tore the transport down, etc.) is swallowed inside
+`_close_quietly`, matching the existing best-effort spirit of the eviction path. The created tasks
+are held in a new `self._pending_eviction_closes: set[asyncio.Task]` with
+`add_done_callback(self._pending_eviction_closes.discard)` so they are never garbage-collected
+mid-await. `disconnect()` was already idempotent (`if websocket in self.active_connections` guards
+the removal) so no change was needed there for it to tolerate running again on an already-evicted
+socket once the endpoint's `receive_json()` unblocks from the close and its own except-clause calls
+`ws_manager.disconnect()`. Nothing else in the file changes: `broadcast()`, `broadcast_aito()`, and
+`broadcast_to_user()` are all unaffected except by sharing the now-closing `_fan_out` (the first two
+already routed through it as of T-020/T-028; `broadcast_to_user` still has its own inline loop,
+untouched by this task). `routes/websocket.py` is untouched.
+
+Tests added to `backend/tests/unit/test_ws_broadcast_backpressure.py` (new "T-041" section), plus a
+small `_drain_pending_eviction_closes` helper that awaits whatever is left in
+`mgr._pending_eviction_closes` instead of a fixed sleep:
+- `test_timed_out_client_is_closed_with_1011_but_healthy_client_is_not` — the evicted connection's
+  mocked `close()` is awaited once with `code=1011`; the healthy connection's `close()` is never
+  awaited.
+- `test_a_hanging_close_does_not_block_fan_out_and_is_itself_bounded` — a connection whose `close()`
+  never returns on its own does not delay `broadcast()`'s return (the close is fired as a background
+  task, never awaited inline), and draining that background task completes quickly under a
+  shortened instance-level `_EVICTION_CLOSE_TIMEOUT`, proving the internal `wait_for` actually
+  cancels the hang.
+- `test_a_close_that_raises_is_swallowed` — a `close()` that raises `RuntimeError` does not escape
+  the background task or affect delivery to a second, healthy connection.
+- `test_disconnect_after_eviction_is_a_no_op` — calling `disconnect()` on a connection `_fan_out`
+  already evicted raises nothing and leaves `active_connections` unchanged.
+
+Verification: `ruff check backend/` and `ruff format backend/` clean.
+`pytest backend/tests/unit/test_ws_aito_read_filter.py backend/tests/unit/test_ws_broadcast_backpressure.py
+backend/tests/unit/test_ws_aito_presence.py` (32 passed, `--cov=backend.app.core.websocket`: 69%,
+up from 64% before this task — no coverage decrease).
+`pytest backend/tests/ -k "websocket or ws_ or broadcast"` (191 passed, `-n 8`).
+`tools/snapshot.py verify`: 10/10 (`core/websocket.py` is outside every probe's glob).
+`SURFACE.md`: unchanged (confirmed via a fresh `gen_surface_all.sh` regen diffed against the tracked
+file — empty diff).
+
+User-visible effect, quoted verbatim from the approved task: "A client dropped for a slow send now
+sees its socket close and reconnects a few seconds later (brief 'disconnected' state, one fresh
+ws-token) instead of sitting silently frozen."
+
+user-approved 2026-09-06
+
+## Campaign 11 · T-042 (+ T-049 folded) — 2026-09-06 — user-approved behavior change
+
+`ConnectionManager.broadcast_to_user()` (`backend/app/core/websocket.py`) was the one broadcast path
+T-020/T-028 left untouched: it filtered `active_connections` by
+`websocket.state.bambuddy_principal_user_id` and then `await`ed each matching connection's
+`send_text()` inline, *inside* `async with self._lock:`, with no timeout at all. During an FTP
+dispatch, `send_queue_item_upload_progress(user_id=A, ...)` hitting operator A's wedged socket (the
+same sleeping-laptop/dead-cell-link case `_BROADCAST_SEND_TIMEOUT` exists for) held the lock for the
+whole stall — this class's own docstring on `_fan_out` already says such a send "never returns on
+its own." Every other broadcast takes the same lock: `broadcast_aito()` is awaited inline from every
+Aito route handler's closing `_broadcast_changed()` (`routes/aito.py`), so the board write would
+commit but the HTTP response would never return — every operator's card edit, drag, flag and
+quote-status click would hang indefinitely — and `connect()`/`disconnect()` would stop admitting or
+removing sockets too, all blocked behind the wedged send to a single user's toast.
+
+Fixed by routing `broadcast_to_user()` through the same `_fan_out()` helper `broadcast()` and
+`broadcast_aito()` already use: the `bambuddy_principal_user_id` filter now runs under the lock to
+build a snapshot list (exact same filter — `getattr(..., None) == user_id`, so an unstamped
+connection is still skipped), the lock is released, and `await self._fan_out(snapshot, data)` does
+the actual sends. `_fan_out` already applies the 5s `_BROADCAST_SEND_TIMEOUT`, drops timed-out/
+raising connections under the lock against the live list (T-020), and — since T-041 — fires a
+best-effort bounded `close(code=1011)` for each evicted connection outside the lock. This also folds
+in T-049 (a cleanliness finding): `broadcast_to_user()` was the last hand-rolled
+send-then-clean-up-disconnects loop in the file; it now shares the one implementation `_fan_out`
+centralizes, same as the other two broadcasts. The `user_id is None` early return (routes to
+`broadcast()`, the auth-disabled single-user path) and the empty-connections early returns are
+byte-identical to before. `_fan_out` itself is unchanged apart from its docstring now naming all
+three callers. `routes/websocket.py` is untouched.
+
+Tests added to `backend/tests/unit/test_ws_broadcast_backpressure.py` (new "T-042" section):
+- `test_broadcast_to_user_wedged_target_is_evicted_and_closed_but_other_user_a_conn_still_gets_it` —
+  a targeted send to user A's wedged connection times out under a shortened instance timeout, evicts
+  and closes (`code=1011`) that connection, while a second, healthy connection of the same user A
+  still receives the message and is never closed.
+- `test_broadcast_to_user_filter_still_excludes_other_users_and_unstamped_connections` — the
+  `bambuddy_principal_user_id` filter is preserved: a different user's connection and an unstamped
+  connection receive nothing.
+- `test_broadcast_to_user_lock_is_not_held_across_the_wedged_send` — while user A's send is stalled,
+  `connect()`/`disconnect()` of an unrelated socket and a concurrent `broadcast_aito()` all complete
+  within a bounded wait, proving the lock is released before the I/O (this is the exact hang T-042
+  fixes for `routes/aito.py` handlers).
+- `test_broadcast_to_user_none_still_fans_out_via_broadcast` — pins existing behavior: `user_id=None`
+  still routes through `broadcast()` unfiltered.
+
+The existing `backend/tests/unit/test_ws_broadcast_to_user.py` asserted only the filter and the
+`user_id=None` fan-out, not the old under-lock sequential timing, so both of its tests pass unchanged
+against the new implementation — no rename needed.
+
+Verification: `ruff check backend/` and `ruff format backend/` clean.
+`pytest backend/tests/unit/test_ws_broadcast_backpressure.py backend/tests/unit/test_ws_aito_read_filter.py
+backend/tests/unit/test_ws_aito_presence.py backend/tests/unit/test_ws_broadcast_to_user.py`
+(41 passed, `--cov=backend.app.core.websocket`: 89%, no coverage decrease).
+`pytest backend/tests/ -k "websocket or ws_ or broadcast or queue_item or upload_progress"`
+(265 passed, `-n 8`).
+`tools/snapshot.py verify`: 10/10 (`core/websocket.py` is outside every probe's glob).
+`SURFACE.md`: unchanged (confirmed via a fresh `gen_surface_all.sh` regen diffed against the tracked
+file — empty diff).
+
+User-visible effect, quoted verbatim from the approved task: "A queue-dispatch toast to a wedged
+client is abandoned after the 5s send timeout and that connection is evicted, where previously the
+send waited indefinitely."
+
+user-approved 2026-09-06
+
+## Campaign 11 · T-044 — 2026-09-06 — user-approved behavior change
+
+Deleted 13 unreferenced i18n keys from all 13 locale files
+(`frontend/src/i18n/locales/{de,en,es,fr,it,ja,ko,pt-BR,ru,tr,uk,zh-CN,zh-TW}.ts`):
+
+- `aito.trashTitle`
+- `aito.clearClient`
+- `aito.newClientTitle`
+- `aito.stepPending`
+- `aito.markDone`
+- `aito.markNotDone`
+- `aito.quoteImportAgain`
+- `aito.syncIdle`
+- `aito.showMore`
+- `aito.showLess`
+- `calculator.quote.volumePricing`
+- `calculator.quote.discount`
+- `calculator.quote.unitPrice`
+
+Each was confirmed unreferenced across `frontend/src` outside `src/i18n/locales` (no literal
+`t('key…')` call, no dynamic `aito.${…}` / `calculator.quote.${…}` template construction, no object
+spread of the `aito` or `calculator.quote` namespace), and each has a live sibling actually used
+instead: `ProjectDetailPanel.tsx`'s `SYNC_LABEL_KEY` map only lists `pending`/`error`/`locked`, so
+`syncIdle` is dead by design; `BoardColumn.tsx` uses `aito.markProjectDone`, not `markDone`/
+`markNotDone`; `AitoPage.tsx` uses `aito.showDone`, not `showMore`/`showLess`; `ClientCombobox.tsx`
+uses `aito.resetToDefaultClient`, not `clearClient`, and renders `NewContactForm` with no title at
+all (`newClientTitle` unused); `TrashGrid.tsx` never reads `trashTitle`; `ImportQuoteDrawer.tsx` uses
+`aito.quoteImport`, not `quoteImportAgain`; `CalculatorQuotePage.tsx` renders no volume-pricing/
+discount/unit-price table at all. All 13 keys were present (equally dead) in all 13 locale files
+before this change; the same 13 keys were removed from every file so parity holds.
+
+User-visible effect, quoted verbatim from the approved task: "fe-i18n-parity tracks key counts per
+locale file, so removing these keys changes that count across all 13 locale files and must be done
+as a coordinated edit, not silently."
+
+`snapshots/fe-i18n-parity.golden` was re-recorded for the resulting count change (7177 -> 7164 for
+`en_key_count` and every locale's `key_count`); `missing_vs_en`/`extra_vs_en`/
+`placeholder_mismatch_vs_en` remain `[]` for every locale, unchanged.
+
+Verification: `npx tsc -b --noEmit` clean. `npm run check:i18n` passes (all locales at 7164, in
+parity with en). `npx eslint src/i18n/locales/` clean.
+`npx vitest run src/__tests__/pages/AitoPage.test.tsx` (61 passed),
+`src/__tests__/components/ImportQuoteDrawer.test.tsx` (15 passed),
+`src/__tests__/pages/CalculatorQuotePage.test.tsx` (7 passed),
+`src/__tests__/components/AitoTrashGrid.test.tsx` (8 passed).
+`tools/snapshot.py verify`: 10/10, with only `fe-i18n-parity` having required a re-record (count
+lines only, confirmed via `git diff snapshots/fe-i18n-parity.golden`).
+`git diff --stat loop-12 -- snapshots/`: only `snapshots/fe-i18n-parity.golden` changed.
+`SURFACE.md`: unchanged (confirmed via a fresh `gen_surface_all.sh` regen diffed against the tracked
+file — empty diff).
+
+user-approved 2026-09-06

@@ -1,8 +1,11 @@
 import asyncio
 import json
+import logging
 from typing import Any
 
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
@@ -18,9 +21,21 @@ class ConnectionManager:
     # for more than one broadcast cycle.
     _BROADCAST_SEND_TIMEOUT = 5.0
 
+    # (T-041) Bound for the best-effort close() issued against a connection
+    # _fan_out() just evicted. A socket wedged badly enough to blow the send
+    # timeout can also hang on close() (e.g. the underlying transport is
+    # stuck, not merely slow) — this keeps that from lingering forever. 1011
+    # is the WebSocket "internal error" close code: the server, not the
+    # client, decided the connection could not continue.
+    _EVICTION_CLOSE_TIMEOUT = 2.0
+    _EVICTION_CLOSE_CODE = 1011
+
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self._lock = asyncio.Lock()
+        # (T-041) Strong references to in-flight eviction-close tasks so
+        # they are not garbage-collected mid-await; discarded once done.
+        self._pending_eviction_closes: set[asyncio.Task] = set()
 
     async def connect(self, websocket: WebSocket):
         """Accept a new WebSocket connection."""
@@ -59,9 +74,37 @@ class ConnectionManager:
         if had_presence:
             await self.broadcast_aito(self.aito_presence_state())
 
+    async def _close_quietly(self, connection: WebSocket) -> None:
+        """(T-041) Best-effort, bounded close of a connection ``_fan_out``
+        just evicted, run as a fire-and-forget task outside the manager
+        lock.
+
+        Without this, an evicted socket that woke back up (e.g. a laptop
+        that slept through the send timeout) would look perfectly healthy
+        to the client: ``ws.onclose`` never fires, so the frontend's
+        reconnect logic never runs, and the tab silently stops receiving
+        updates until the user reloads it. Calling ``close()`` here makes
+        the server side of that TCP connection actually go away, which
+        unblocks the endpoint's ``await websocket.receive_json()`` loop and
+        lets the client's own close handler kick off a reconnect.
+
+        Bounded by ``_EVICTION_CLOSE_TIMEOUT`` because a socket wedged badly
+        enough to blow the send timeout can also hang on close() — this
+        must never block the caller (``_fan_out``) waiting on it. Any
+        exception (the peer already tore the connection down, close() isn't
+        supported by this transport, etc.) is swallowed: this is cleanup of
+        an already-evicted connection, not something callers can act on.
+        """
+        try:
+            await asyncio.wait_for(
+                connection.close(code=self._EVICTION_CLOSE_CODE), timeout=self._EVICTION_CLOSE_TIMEOUT
+            )
+        except Exception:
+            logger.debug("Best-effort close of an evicted WebSocket connection failed", exc_info=True)
+
     async def _fan_out(self, connections: list[WebSocket], data: str) -> None:
-        """Shared send path for ``broadcast()`` and ``broadcast_aito()``
-        (T-020, T-028).
+        """Shared send path for ``broadcast()``, ``broadcast_aito()`` and
+        ``broadcast_to_user()`` (T-020, T-028, T-042).
 
         Sends fan out concurrently across ``connections`` — the lock is
         never held across this call, only around building the snapshot
@@ -74,7 +117,11 @@ class ConnectionManager:
         out or raises is dropped via the same removal path a normal
         disconnect uses, under the lock, against the live list (not the
         snapshot passed in) so it can't race a concurrent
-        connect()/disconnect().
+        connect()/disconnect(). (T-041) Once removed, each evicted
+        connection also gets a best-effort, bounded ``close()`` fired as a
+        background task *outside* the lock — see ``_close_quietly`` — so the
+        client actually observes the drop and reconnects instead of sitting
+        parked on a socket the server has already given up on.
         """
         if not connections:
             return
@@ -95,6 +142,10 @@ class ConnectionManager:
                 for conn in disconnected:
                     if conn in self.active_connections:
                         self.active_connections.remove(conn)
+            for conn in disconnected:
+                task = asyncio.create_task(self._close_quietly(conn))
+                self._pending_eviction_closes.add(task)
+                task.add_done_callback(self._pending_eviction_closes.discard)
 
     async def broadcast(self, message: dict[str, Any]):
         """Broadcast a message to all connected clients.
@@ -164,6 +215,17 @@ class ConnectionManager:
         stamped at connect time (``routes/websocket.py``). Connections
         without a stamped id are skipped on the targeted path so an
         anonymous reader never receives another user's dispatch toast.
+
+        (T-042) Filtering happens under the lock while building the
+        snapshot, then the lock is released before handing off to
+        ``_fan_out`` — the same shape as ``broadcast()``/``broadcast_aito()``,
+        for the same reason: this is the path FTP dispatch progress toasts
+        (``send_queue_item_upload_progress`` et al.) go through, and without
+        it a single wedged operator socket would stall every other
+        broadcast — including ``broadcast_aito()``, awaited inline from
+        ``routes/aito.py`` after every board mutation — behind the same
+        lock for as long as the stall lasts. See ``_fan_out`` for the
+        timeout/cleanup details.
         """
         if user_id is None:
             await self.broadcast(message)
@@ -174,19 +236,14 @@ class ConnectionManager:
 
         data = json.dumps(message)
         async with self._lock:
-            disconnected = []
-            for connection in self.active_connections:
-                conn_uid = getattr(connection.state, "bambuddy_principal_user_id", None)
-                if conn_uid != user_id:
-                    continue
-                try:
-                    await connection.send_text(data)
-                except Exception:
-                    disconnected.append(connection)
-
-            for conn in disconnected:
-                if conn in self.active_connections:
-                    self.active_connections.remove(conn)
+            connections = [
+                conn
+                for conn in self.active_connections
+                if getattr(conn.state, "bambuddy_principal_user_id", None) == user_id
+            ]
+        if not connections:
+            return
+        await self._fan_out(connections, data)
 
     async def send_printer_status(self, printer_id: int, status: dict):
         """Send printer status update to all clients."""
