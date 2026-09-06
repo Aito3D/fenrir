@@ -1,8 +1,8 @@
 """Aggregates for the Stats page's Aito pipeline widget.
 
-Six read-only queries over projects and the event log; the stay maths for
-"days per stage" runs in Python over one ordered scan. Trashed projects and
-their events are excluded everywhere. Spec:
+Seven read-only queries over projects, the event log, and tracking-page views;
+the stay maths for "days per stage" runs in Python over one ordered scan.
+Trashed projects and their events are excluded everywhere. Spec:
 docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md
 """
 
@@ -11,11 +11,12 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from statistics import median
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.schemas.aito import (
     AitoStatsBucket,
     AitoStatsConversion,
@@ -23,6 +24,7 @@ from backend.app.schemas.aito import (
     AitoStatsResponse,
     AitoStatsStage,
     AitoStatsStageDays,
+    AitoStatsTracking,
 )
 from backend.app.services.aito_board_rules import COLUMN_ORDER
 from backend.app.utils.dates import local_day_bounds
@@ -146,6 +148,22 @@ async def _stage_days(
     ]
 
 
+async def _tracking(
+    db: AsyncSession, projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
+) -> AitoStatsTracking:
+    stmt = select(func.count(AitoTrackingView.id), func.count(func.distinct(AitoTrackingView.project_id)))
+    if start is not None:
+        stmt = stmt.where(AitoTrackingView.viewed_at >= start)
+    if end is not None:
+        stmt = stmt.where(AitoTrackingView.viewed_at <= end)
+    views, cards = (await db.execute(stmt)).one()
+    return AitoStatsTracking(
+        views=int(views or 0),
+        cards_viewed=int(cards or 0),
+        cards_with_link=sum(1 for p in projects.values() if p.tracking_token),
+    )
+
+
 async def compute_aito_stats(
     db: AsyncSession,
     date_from: date | None,
@@ -201,6 +219,7 @@ async def compute_aito_stats(
         conversion=conversion,
         stage_days=await _stage_days(db, projects, born, start, end),
         invoicing=invoicing,
+        tracking=await _tracking(db, projects, start, end),
         date_from=date_from,
         date_to=date_to,
     )

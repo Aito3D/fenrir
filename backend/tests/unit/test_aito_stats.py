@@ -255,3 +255,29 @@ async def test_inverted_range_is_422_and_absent_dates_are_allowed(async_client):
 
 def test_stats_route_is_gated_on_aito_read():
     assert _declared_permissions("get_aito_stats") == ["aito:read"]
+
+
+async def _view(db_session, pid: int, at: str):
+    await db_session.execute(
+        text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"), {"pid": pid, "at": at}
+    )
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_tracking_block_counts_views_in_range_distinct_cards_and_cards_with_a_link(async_client, db_session):
+    a = await _create(async_client, description="a")
+    b = await _create(async_client, description="b")
+    gone = await _create(async_client, description="gone")
+    await _set(db_session, a, tracking_token="tok-a")
+    await _set(db_session, b, tracking_token="tok-b")
+    await _set(db_session, gone, tracking_token="tok-gone", status="deleted")
+    await _view(db_session, a, "2026-08-10 09:00:00")
+    await _view(db_session, a, "2026-08-11 09:00:00")
+    await _view(db_session, b, "2026-08-12 09:00:00")
+    await _view(db_session, b, "2026-09-01 09:00:00")  # outside the window
+
+    body = (await async_client.get(f"{STATS}?date_from=2026-08-01&date_to=2026-08-31")).json()
+    assert body["tracking"] == {"views": 3, "cards_viewed": 2, "cards_with_link": 2}
+    empty = (await async_client.get(f"{STATS}?date_from=2026-07-01&date_to=2026-07-31")).json()
+    assert empty["tracking"] == {"views": 0, "cards_viewed": 0, "cards_with_link": 2}

@@ -26,6 +26,7 @@ const stats: AitoStats = {
     { column: 'finish', median_days: 6.5, sample: 4 },
   ],
   invoicing: { invoiced_total: 28000, invoiced_count: 5, outstanding_balance: 7400, outstanding_count: 2 },
+  tracking: { views: 12, cards_viewed: 4, cards_with_link: 9 },
   date_from: '2026-08-01',
   date_to: '2026-09-05',
 };
@@ -35,6 +36,7 @@ const empty: AitoStats = {
   conversion: { sent: bucket(0, 0), accepted: bucket(0, 0), declined: bucket(0, 0), acceptance_rate: null },
   stage_days: stats.stage_days.map((s) => ({ ...s, median_days: null, sample: 0 })),
   invoicing: { invoiced_total: 0, invoiced_count: 0, outstanding_balance: 0, outstanding_count: 0 },
+  tracking: { views: 0, cards_viewed: 0, cards_with_link: 0 },
 };
 
 describe('PipelineWidget', () => {
@@ -60,6 +62,12 @@ describe('PipelineWidget', () => {
     expect(inv).toHaveTextContent('5');
     expect(inv).toHaveTextContent('Outstanding');
     expect(inv).toHaveTextContent('2');
+
+    const tracking = screen.getByTestId('pipeline-tracking');
+    expect(tracking).toHaveTextContent('Client tracking');
+    expect(tracking).toHaveTextContent('12');
+    expect(tracking).toHaveTextContent('4');
+    expect(tracking).toHaveTextContent('9');
   });
 
   it('shows a dash for a null rate and the empty line when nothing happened', async () => {

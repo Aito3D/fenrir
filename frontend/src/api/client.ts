@@ -4048,6 +4048,7 @@ export interface AitoStats {
   conversion: { sent: AitoStatsBucket; accepted: AitoStatsBucket; declined: AitoStatsBucket; acceptance_rate: number | null };
   stage_days: { column: AitoColumnId; median_days: number | null; sample: number }[];
   invoicing: { invoiced_total: number; invoiced_count: number; outstanding_balance: number; outstanding_count: number };
+  tracking: { views: number; cards_viewed: number; cards_with_link: number };
   date_from: string | null;
   date_to: string | null;
 }

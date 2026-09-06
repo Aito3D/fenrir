@@ -118,6 +118,15 @@ export function PipelineWidget({ dateFrom, dateTo }: { dateFrom?: string; dateTo
           />
         </div>
       </section>
+
+      <section data-testid="pipeline-tracking" className="space-y-2">
+        <Heading>{t('stats.pipelineTracking')}</Heading>
+        <div className="grid grid-cols-3 gap-2">
+          <CountTile label={t('stats.pipelineTrackingViews')} value={data.tracking.views} />
+          <CountTile label={t('stats.pipelineTrackingCards')} value={data.tracking.cards_viewed} />
+          <CountTile label={t('stats.pipelineTrackingLinks')} value={data.tracking.cards_with_link} />
+        </div>
+      </section>
     </div>
   );
 }
@@ -127,12 +136,22 @@ function isEmpty(d: AitoStats): boolean {
     d.board.every((b) => b.count === 0) &&
     d.conversion.sent.count + d.conversion.accepted.count + d.conversion.declined.count === 0 &&
     d.stage_days.every((s) => s.sample === 0) &&
-    d.invoicing.invoiced_count + d.invoicing.outstanding_count === 0
+    d.invoicing.invoiced_count + d.invoicing.outstanding_count === 0 &&
+    d.tracking.views + d.tracking.cards_viewed + d.tracking.cards_with_link === 0
   );
 }
 
 function Heading({ children }: { children: ReactNode }) {
   return <h3 className="text-[11px] font-bold uppercase tracking-wider text-bambu-gray">{children}</h3>;
+}
+
+function TileShell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg bg-bambu-dark px-3 py-2">
+      <div className="text-xs text-bambu-gray">{label}</div>
+      {children}
+    </div>
+  );
 }
 
 function Tile({
@@ -147,11 +166,20 @@ function Tile({
   extra?: string;
 }) {
   return (
-    <div className="rounded-lg bg-bambu-dark px-3 py-2">
-      <div className="text-xs text-bambu-gray">{label}</div>
+    <TileShell label={label}>
       <div className="text-lg font-semibold text-white tabular-nums">{bucket.count}</div>
       <div className="text-xs text-bambu-gray-light tabular-nums">{money(bucket.total)}</div>
       {extra && <div className="mt-0.5 text-xs text-bambu-green">{extra}</div>}
-    </div>
+    </TileShell>
+  );
+}
+
+/** A count-only tile: no money bucket, for the tracking block's page opens /
+ *  cards viewed / cards-with-a-link — nothing here has a currency. */
+function CountTile({ label, value }: { label: string; value: number }) {
+  return (
+    <TileShell label={label}>
+      <div className="text-lg font-semibold text-white tabular-nums">{value}</div>
+    </TileShell>
   );
 }

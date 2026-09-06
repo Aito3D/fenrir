@@ -951,6 +951,14 @@ class AitoStatsInvoicing(BaseModel):
     outstanding_count: int
 
 
+class AitoStatsTracking(BaseModel):
+    # Opens of the public tracking page in the period, distinct cards among them,
+    # and (snapshot) active cards that have a link at all.
+    views: int
+    cards_viewed: int
+    cards_with_link: int
+
+
 class AitoStatsResponse(BaseModel):
     """The pipeline widget's four blocks — see docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md."""
 
@@ -958,6 +966,7 @@ class AitoStatsResponse(BaseModel):
     conversion: AitoStatsConversion
     stage_days: list[AitoStatsStageDays]
     invoicing: AitoStatsInvoicing
+    tracking: AitoStatsTracking
     date_from: date | None
     date_to: date | None
 
