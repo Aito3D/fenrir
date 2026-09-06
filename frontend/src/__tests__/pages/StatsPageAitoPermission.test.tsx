@@ -101,6 +101,7 @@ const emptyAitoStats = {
     { column: 'finish', median_days: null, sample: 0 },
   ],
   invoicing: { invoiced_total: 0, invoiced_count: 0, outstanding_balance: 0, outstanding_count: 0 },
+  tracking: { views: 0, cards_viewed: 0, cards_with_link: 0 },
   date_from: null,
   date_to: null,
 };

@@ -137,8 +137,15 @@ function isEmpty(d: AitoStats): boolean {
     d.conversion.sent.count + d.conversion.accepted.count + d.conversion.declined.count === 0 &&
     d.stage_days.every((s) => s.sample === 0) &&
     d.invoicing.invoiced_count + d.invoicing.outstanding_count === 0 &&
-    d.tracking.views + d.tracking.cards_viewed + d.tracking.cards_with_link === 0
+    trackingOf(d).views + trackingOf(d).cards_viewed + trackingOf(d).cards_with_link === 0
   );
+}
+
+/** The tracking block, or zeros when the backend predates it (a deployed
+ *  server behind this bundle): the widget must degrade to an empty block,
+ *  never throw on an older payload. */
+function trackingOf(d: AitoStats): AitoStats['tracking'] {
+  return d.tracking ?? { views: 0, cards_viewed: 0, cards_with_link: 0 };
 }
 
 function Heading({ children }: { children: ReactNode }) {
