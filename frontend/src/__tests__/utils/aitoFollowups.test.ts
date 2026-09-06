@@ -129,6 +129,24 @@ describe('unpaid', () => {
     const wayOverdue = project({ invoice_balance: 40, invoice_due_date: '2026-09-01' });
     expect(run([wayOverdue]).unpaid.maxDays).toBe(9);
   });
+  it('drops a non-ISO due date instead of always treating it as overdue', () => {
+    const nonIso = project({ invoice_balance: 40, invoice_due_date: '10/02/2026' });
+    const r = run([nonIso]);
+    expect(r.unpaid.ids).toEqual([]);
+    expect(r.unpaid.maxDays).toBe(0);
+    expect(Number.isNaN(r.unpaid.maxDays)).toBe(false);
+  });
+  it('drops an empty-string due date', () => {
+    const blank = project({ invoice_balance: 40, invoice_due_date: '' });
+    expect(run([blank]).unpaid.ids).toEqual([]);
+  });
+  it('still counts an ISO overdue date with the right day span alongside a non-ISO one', () => {
+    const overdue = project({ invoice_balance: 40, invoice_due_date: '2026-09-01' });
+    const nonIso = project({ invoice_balance: 40, invoice_due_date: '10/02/2026' });
+    const r = run([overdue, nonIso]);
+    expect(r.unpaid.ids).toEqual([overdue.id]);
+    expect(r.unpaid.maxDays).toBe(9);
+  });
 });
 
 describe('scope and order', () => {

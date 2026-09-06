@@ -30,6 +30,10 @@ export interface FollowupThresholds {
 
 const DAY_MS = 86_400_000;
 const AWAY = new Set(['sent', 'viewed', 'expired']);
+// Books occasionally echoes a non-ISO due date (e.g. "10/02/2026"); a string
+// compare against `today` would misread it as always overdue. Same shape as
+// aitoAging.ts's ISO_DATE.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Whole days between an ISO stamp and `now`, never negative; null when the
  *  stamp is missing or unparseable. */
@@ -60,6 +64,7 @@ const RULES: Record<FollowupKey, Rule> = {
   },
   unpaid: (p, _t, _now, today) => {
     if (!(p.invoice_balance !== null && p.invoice_balance > 0) || !p.invoice_due_date) return null;
+    if (!ISO_DATE.test(p.invoice_due_date)) return null;
     if (!(p.invoice_due_date < today)) return null;
     // Calendar-day difference, not a wall-clock one: the due date and
     // `today` are both local calendar days, so "overdue" flips at local

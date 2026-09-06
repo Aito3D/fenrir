@@ -2007,4 +2007,74 @@ describe('follow-ups strip', () => {
     expect(screen.getByTestId('aito-followup-quoteOut')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
   });
+
+  describe('ticking clock (re-ages without a board write)', () => {
+    // Matches the component's own re-check cadence (AitoPage.tsx's
+    // `useFollowupClock`) — the rules are all day-granular, so a minute is
+    // plenty to prove the memo re-runs on the interval rather than only on a
+    // board write. Not imported from production code: the hook is
+    // component-local by design (kept out of SURFACE.md).
+    const FOLLOWUP_CLOCK_TICK_MS = 60_000;
+
+    // quoteDays is 5 (see the outer beforeEach's settings stub): one card at
+    // exactly 4 days old sits one short of the threshold on first render.
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/aito/', () =>
+          HttpResponse.json([
+            { ...project, id: 1, description: 'Aging quote', quote_status: 'sent', quote_sent_at: ago(4) },
+          ]),
+        ),
+      );
+    });
+
+    it('does not show the chip yet at 4 days, then shows it once the clock ticks past the 5-day threshold — with no board write', async () => {
+      render(<AitoPage />);
+      await screen.findByText('Aging quote');
+
+      // React Query's structural sharing keeps `aitoQuery.data` referentially
+      // identical across a same-content refetch, so if the memo were still
+      // keyed on that reference alone, nothing below would ever move it.
+      expect(screen.queryByTestId('aito-followup-quoteOut')).not.toBeInTheDocument();
+
+      // Cross local midnight into day 5, then let one clock tick (60s) land —
+      // the interval, not a data change, is what should re-run the memo.
+      await act(async () => {
+        vi.setSystemTime(new Date(NOW.getTime() + 86_400_000));
+        await vi.advanceTimersByTimeAsync(FOLLOWUP_CLOCK_TICK_MS);
+      });
+
+      expect(await screen.findByTestId('aito-followup-quoteOut')).toHaveTextContent('1');
+    });
+
+    it('recomputes immediately on a visibilitychange to visible, without waiting for the interval', async () => {
+      render(<AitoPage />);
+      await screen.findByText('Aging quote');
+      expect(screen.queryByTestId('aito-followup-quoteOut')).not.toBeInTheDocument();
+
+      await act(async () => {
+        vi.setSystemTime(new Date(NOW.getTime() + 86_400_000));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+
+      // No interval tick elapsed — only the visibility event fired.
+      expect(await screen.findByTestId('aito-followup-quoteOut')).toHaveTextContent('1');
+    });
+
+    it('clears the interval on unmount (no further ticks, no act warnings)', async () => {
+      const { unmount } = render(<AitoPage />);
+      await screen.findByText('Aging quote');
+
+      unmount();
+
+      // If the interval survived the unmount, advancing past the threshold
+      // and flushing timers here would call `setState` on an unmounted
+      // component — surfaced by React/RTL as an act warning that fails the
+      // test under this suite's console-error guard (see test setup).
+      await act(async () => {
+        vi.setSystemTime(new Date(NOW.getTime() + 86_400_000));
+        await vi.advanceTimersByTimeAsync(FOLLOWUP_CLOCK_TICK_MS * 2);
+      });
+    });
+  });
 });

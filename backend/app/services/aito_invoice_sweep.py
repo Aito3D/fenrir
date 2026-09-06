@@ -8,7 +8,14 @@ The steady-state cost is therefore one call per hour per open receivable.
 Reads only. No timeline event is recorded — an hourly "looked at the invoice"
 row would drown the story. A malformed payload from Books (a non-numeric
 balance, a missing key) skips that one project the same way an upstream
-error does — it costs a project, not the whole pass."""
+error does — it costs a project, not the whole pass.
+
+T-007: if Books reports no invoice at all (deleted, or its estimate/customer
+link removed), the cached status/balance/due date are cleared rather than
+left showing the last figures ever seen. A cleared row still has a null
+balance, so it keeps matching the selection above and costs one call per
+hour until either an invoice reappears or the project itself is archived —
+the same steady state as a project that was never invoiced yet."""
 
 import logging
 import time
@@ -73,6 +80,17 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                 project.invoice_status = status
                 project.invoice_balance = balance
                 project.invoice_due_date = due
+            else:
+                # T-007: Books no longer knows about an invoice for this
+                # project (deleted, or its estimate/customer link removed).
+                # The cached fields must not keep answering for an invoice
+                # that is gone -- clear them the same way a fresh project
+                # reads before its first invoice ever existed. This still
+                # counts as a refresh (the call succeeded), so the row is
+                # stamped and counted below like any other pass.
+                project.invoice_status = None
+                project.invoice_balance = None
+                project.invoice_due_date = None
         except ZohoRateLimited:
             # T-006: stop here rather than spending one more request per
             # remaining project — commit what already succeeded and let the

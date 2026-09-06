@@ -9901,3 +9901,169 @@ trying every project), and a 429 observed by the sweep would additionally pause 
 the backoff window."
 
 user-approved 2026-09-05
+
+## Campaign 11 · T-007 — 2026-09-05 — user-approved behavior change
+
+`sweep_invoices` (`backend/app/services/aito_invoice_sweep.py`) fetches
+`list_project_invoices` for every project still selected (invoiced, `invoice_balance` either
+`NULL` or `> 0`) and, before this change, only wrote `invoice_status`/`invoice_balance`/
+`invoice_due_date` inside `if invoices:` — there was no `else`. When Books answered `[]` (the
+invoice deleted, or its estimate/customer link removed), none of the three cached fields were
+touched, yet the row was still stamped `invoice_checked_at = _now()` and counted in the
+returned `updated` total. The project kept showing its last-seen status/balance/due date
+forever, `invoice_checked_at` told the operator it had "just been verified", and because the
+selection predicate is `or_(invoice_balance.is_(None), invoice_balance > 0)` the row also never
+stopped costing one Books call every hour for the life of the card — while the board's `unpaid`
+follow-up chip (`frontend/src/utils/aitoFollowups.ts`, keyed on `invoice_balance > 0` and
+`invoice_due_date`) kept chasing a client for an invoice that no longer existed.
+
+Fixed by adding the missing `else` branch: when `invoices` is empty, `invoice_status`,
+`invoice_balance` and `invoice_due_date` are all reset to `None`, exactly like a project that
+has never had an invoice yet. This is still treated as a successful refresh — `invoice_checked_at`
+is stamped and the project is counted in `updated`, the same as the non-empty branch — because
+the call to Books did succeed and did produce the current truth (no invoice); only a failed call
+(caught by the existing `ZohoRateLimited` / `ZohoUpstreamError`+parsing handlers, both of which
+already `continue`/re-raise without stamping) is excluded from the count, which required no
+code change beyond making the `[]` branch itself a genuine refresh.
+
+Decision (a) vs (b) on what to reset `invoice_balance` to: the task allowed either resetting to
+`None` (row keeps being swept hourly; matches "lose its cached invoice status/balance/due date"
+verbatim) or to `0.0` (row drops out of the selection for good, matching the module docstring's
+existing "a project drops out of the selection for good once its balance reads 0" line, but `0`
+does not mean "no invoice"). Chose **(a), reset to `None`**: it is what the user approved
+verbatim, `None` is the honest representation of "Books has no invoice for this project" (as
+opposed to `0.0`, which means "an invoice exists and it is fully paid" — a different fact), and
+the frontend's `unpaid` rule already treats `invoice_balance === None` as "not unpaid"
+(`!(p.invoice_balance !== null && p.invoice_balance > 0)` short-circuits to `null`/no chip
+regardless of `invoice_due_date`), so the approved user-visible effect (card disappears from the
+unpaid follow-up chip) holds either way. The cost consequence is documented in the module
+docstring: a cleared row keeps matching `invoice_balance.is_(None)` and is asked about again
+next pass, the same steady-state cost as a project that was never invoiced yet — not the
+one-time drop-out a paid invoice gets.
+
+Consumer enumeration: `invoice_status`/`invoice_balance`/`invoice_due_date` are read by
+`AitoProjectResponse` (schema pass-through, no logic) and by the frontend's `unpaid` follow-up
+rule cited above; no other backend code branches on these three fields. The frontend was not
+touched — its existing `None`-handling already produces the approved effect.
+
+Tests added to `backend/tests/unit/test_aito_invoice_sweep.py`:
+- `test_an_invoice_deleted_in_books_clears_the_stale_cached_fields` — a project seeded with
+  stale `invoice_status`/`invoice_balance`/`invoice_due_date` whose Books answer is `[]` ends
+  with all three `None` and `invoice_checked_at` stamped (a real refresh, `updated == 1`).
+- `test_a_project_still_owing_keeps_refreshing_as_before` — a live invoice still refreshes the
+  three fields from the newest invoice exactly as before this change.
+- `test_a_cleared_row_is_still_selected_on_the_next_pass` — confirms decision (a): after a
+  reset, the row is asked about again on the next pass (`calls == ["EST1", "EST1"]`), it does
+  not silently drop out of the sweep the way a paid invoice does.
+
+Verification: `ruff check backend/` / `ruff format backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_aito_invoice_sweep.py` (12 passed, 98%
+targeted coverage on `aito_invoice_sweep.py`), `backend/tests/unit/test_aito_quote_sync.py` (131
+passed, `-n 8`), `backend/tests/unit/test_aito_invoice.py
+backend/tests/unit/test_aito_followup_settings.py backend/tests/unit/test_aito_routes.py` (317
+passed, `-n 4`). `tools/snapshot.py verify`: 10/10. `SURFACE.md`: unchanged (no new top-level def
+starting with a letter was added; the new `else` branch adds no new function).
+
+Observable change, quoted verbatim from the approved task: "a card whose Books invoice has been
+deleted would lose its cached invoice status/balance/due date and disappear from the unpaid
+follow-up chip, instead of showing the last figures it ever saw."
+
+user-approved 2026-09-05
+
+## Campaign 11 · T-008 — 2026-09-05 — user-approved behavior change
+
+The `unpaid` rule in `frontend/src/utils/aitoFollowups.ts` compared `p.invoice_due_date` against
+`today` with a plain string `<`, then fed both into `parseLocalDateKey` for the days-overdue
+arithmetic. `invoice_due_date` is whatever Zoho Books echoed back verbatim
+(`_map_invoice` in `backend/app/services/zoho.py` stores `invoice.get("due_date", "")` with no
+format check, and the invoice sweep writes it unvalidated) — this repo has already been bitten by
+a non-ISO Books date (`_backfill_aito_quote_sent_at` in `backend/app/core/database.py` guards
+`quote_date` with a GLOB because a real `quote_date` once came back as `10/02/2026`). A due date
+like `'10/02/2026'` sorts lexically below any `'2026-…'` `today`, so the string comparison flagged
+the invoice as overdue on every board regardless of its real date, and
+`parseLocalDateKey('10/02/2026')` then produced an `Invalid Date`, making `days` `NaN`: the chip's
+"longest wait" label silently disappeared (`NaN > 0` is `false`) and the bucket's sort comparator
+returned `NaN`, making the chase order arbitrary. The sibling consumer `dueDateLevel`
+(`frontend/src/utils/aitoAging.ts`) already guards the same field shape with
+`ISO_DATE.test(dueDate)`; this rule did not.
+
+Fixed by adding a module-private `ISO_DATE = /^\d{4}-\d{2}-\d{2}$/` regex (same shape as
+`aitoAging.ts`'s, not exported — `SURFACE.md` tracks every `utils/`/`hooks/` export and stays
+frozen) to `aitoFollowups.ts`, and testing `p.invoice_due_date` against it before the `<`
+comparison, returning `null` (card leaves the unpaid bucket) when it fails — exactly mirroring
+`dueDateLevel`'s guard. ISO dates are unaffected: the `<` comparison and the
+`Math.round`/`parseLocalDateKey` days arithmetic run exactly as before for any `YYYY-MM-DD` value.
+
+Observable change, quoted verbatim from the approved task: "an invoice whose Books due date is not
+in YYYY-MM-DD form would stop appearing in the unpaid follow-up chip instead of always appearing
+there as overdue."
+
+Tests added to `frontend/src/__tests__/utils/aitoFollowups.test.ts`:
+- `drops a non-ISO due date instead of always treating it as overdue` — a `'10/02/2026'` due date
+  is excluded from `unpaid.ids`, `maxDays` stays `0`, and is confirmed not `NaN`.
+- `drops an empty-string due date` — an empty string is excluded (it already failed the falsy
+  check before this change, confirmed still excluded after adding the regex guard).
+- `still counts an ISO overdue date with the right day span alongside a non-ISO one` — a
+  `'2026-09-01'` due date is still flagged overdue with the correct 9-day span while a sibling
+  project with a `'10/02/2026'` due date in the same run is excluded.
+
+Verification: `npx tsc -b --noEmit` clean. `npx eslint src/utils/aitoFollowups.ts
+src/__tests__/utils/aitoFollowups.test.ts` clean. `npx vitest run
+src/__tests__/utils/aitoFollowups.test.ts` (11 passed).
+`npx vitest run src/__tests__/components/FollowupStrip.test.tsx` (4 passed).
+`npx vitest run src/__tests__/pages/AitoPage.test.tsx` (58 passed). `tools/snapshot.py verify`:
+10/10. `SURFACE.md`: unchanged (no new export; `ISO_DATE` is module-private).
+
+user-approved 2026-09-05
+
+## Campaign 11 · T-009 — 2026-09-05 — user-approved behavior change
+
+`AitoPage.tsx`'s follow-up buckets were computed by `useMemo(() => followups(aitoQuery.data ??
+[], thresholds, Date.now(), localDateKey(new Date())), [aitoQuery.data, thresholds.quoteDays,
+thresholds.pickupDays])` — the wall-clock epoch and the operator's local calendar day were read
+*inside* the memo but were not among its deps. React Query's default structural sharing keeps
+`aitoQuery.data` referentially identical across a refetch that returns unchanged rows, so on a
+board left open with no writes (overnight, a weekend, a wall display) the memo never re-ran: a
+quote crossing `quoteDays`, a finished job crossing `pickupDays`, and an invoice falling due at
+local midnight never appeared in their chip, and the counts and `maxDays` shown stayed pinned to
+whatever they were the last time the board data actually changed.
+
+Fixed by adding a component-local `useFollowupClock()` hook (module-private, not exported —
+`SURFACE.md` tracks every `utils/`/`hooks/` export and stays frozen; keeping the hook inside
+`AitoPage.tsx` itself keeps it off that list entirely) holding `{ now, today }` state, seeded from
+`Date.now()`/`localDateKey(new Date())` exactly as the inline calls were, so the first render
+computes identically to before. The state is refreshed by a 60-second `setInterval` and on
+`document`'s `visibilitychange` event (so a laptop waking from sleep or a tab regaining focus
+doesn't wait for the next tick), both torn down on unmount. 60 seconds was chosen because every
+rule in `aitoFollowups.ts`'s `RULES` table is day-granular — none of `quoteOut`, `notTold`,
+`notCollected`, or `unpaid` needs sub-minute freshness — so a minute keeps the chase list current
+without re-running the memo far more often than its output could ever change. `followupClock.now`
+and `followupClock.today` replace the inline `Date.now()`/`localDateKey(new Date())` calls in the
+memo and are added to its dependency array; the existing `eslint-disable` comment (covering
+`thresholds`, rebuilt each render) still applies to the same line.
+
+Observable change, quoted verbatim from the approved task: "follow-up chips would appear, change
+count and update their 'longest wait' figure on their own while the board sits untouched, where
+today they only move when the board data changes."
+
+Tests added to `frontend/src/__tests__/pages/AitoPage.test.tsx`, inside the existing `follow-ups
+strip` describe block's fake-timers setup, as a new `ticking clock (re-ages without a board
+write)` sub-describe:
+- `does not show the chip yet at 4 days, then shows it once the clock ticks past the 5-day
+  threshold — with no board write` — a project's `quote_sent_at` is fixed at exactly `quoteDays -
+  1` (4) days old; the `quoteOut` chip is absent, `vi.setSystemTime` advances one day and
+  `vi.advanceTimersByTimeAsync` runs one 60s tick, and the chip then appears with count `1`.
+- `recomputes immediately on a visibilitychange to visible, without waiting for the interval` —
+  the same day advance plus a `document.dispatchEvent(new Event('visibilitychange'))` (no interval
+  tick elapsed) also surfaces the chip.
+- `clears the interval on unmount (no further ticks, no act warnings)` — unmounts the page, then
+  advances two ticks past the threshold; a leaked interval calling `setState` on an unmounted tree
+  would surface as an act warning under this suite's console-error guard.
+
+Verification: `npx tsc -b --noEmit` clean. `npx eslint src/pages/AitoPage.tsx
+src/__tests__/pages/AitoPage.test.tsx` clean. `npx vitest run src/__tests__/pages/AitoPage.test.tsx`
+(61 passed). `npx vitest run src/__tests__/components/FollowupStrip.test.tsx` (4 passed). `npx
+vitest run src/__tests__/pages/AitoPageClientSync.test.tsx` (9 passed). `tools/snapshot.py verify`:
+10/10. `SURFACE.md`: unchanged (`useFollowupClock` is not exported).
+
+user-approved 2026-09-05

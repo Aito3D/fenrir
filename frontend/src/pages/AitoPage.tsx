@@ -51,6 +51,42 @@ const DROP_ANIMATION: DropAnimation = {
   },
 };
 
+// Re-checked every 60s: every follow-up rule (aitoFollowups.ts) is day-
+// granular — nothing in `RULES` needs sub-minute freshness — so a minute is
+// plenty responsive for a board left open (overnight, a weekend, a wall
+// display) without re-running the memo far more often than the numbers it
+// produces could ever change.
+const FOLLOWUP_CLOCK_INTERVAL_MS = 60_000;
+
+/** The wall-clock epoch and the operator's local calendar day, refreshed on
+ *  an interval and whenever the tab regains visibility (a laptop woken from
+ *  sleep should not wait a full interval to notice the day changed).
+ *
+ *  Component-local rather than exported: this is a `followups()` cache-buster,
+ *  not a general-purpose clock, so it stays out of SURFACE.md. */
+function useFollowupClock() {
+  const [now, setNow] = useState(() => Date.now());
+  const [today, setToday] = useState(() => localDateKey(new Date()));
+
+  useEffect(() => {
+    const tick = () => {
+      setNow(Date.now());
+      setToday(localDateKey(new Date()));
+    };
+    const interval = setInterval(tick, FOLLOWUP_CLOCK_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  return { now, today };
+}
+
 export function AitoPage() {
   const { t } = useTranslation();
   // Mirrors CalculatorPage's gating: `hasPermission` returns true for
@@ -97,10 +133,11 @@ export function AitoPage() {
     quoteDays: settingsQuery.data?.aito_followup_quote_days ?? 5,
     pickupDays: settingsQuery.data?.aito_followup_pickup_days ?? 7,
   };
+  const followupClock = useFollowupClock();
   const buckets = useMemo(
-    () => followups(aitoQuery.data ?? [], thresholds, Date.now(), localDateKey(new Date())),
+    () => followups(aitoQuery.data ?? [], thresholds, followupClock.now, followupClock.today),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- thresholds is rebuilt each render; its two numbers are the real deps
-    [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays],
+    [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays, followupClock.now, followupClock.today],
   );
   const followupIds = useMemo(() => (followup ? new Set(buckets[followup].ids) : null), [buckets, followup]);
   const filtering = search.trim().length > 0 || followup !== null;

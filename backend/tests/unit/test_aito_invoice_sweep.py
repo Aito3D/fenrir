@@ -171,6 +171,75 @@ async def test_no_invoice_yet_still_stamps_checked_at(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_an_invoice_deleted_in_books_clears_the_stale_cached_fields(db_session, monkeypatch):
+    """T-007: Books answering ``[]`` for a project that previously had an
+    invoice (deleted, or its estimate/customer link removed) must clear the
+    cached status/balance/due date rather than leave the last-seen figures
+    in place -- otherwise the unpaid follow-up chip keeps chasing a client
+    for an invoice that no longer exists."""
+    p = await _project(
+        db_session,
+        quote_id="EST1",
+        invoice_status="unpaid",
+        invoice_balance=100.0,
+        invoice_due_date="2026-01-01",
+    )
+    p_id = p.id  # captured before expire_all(); see note on the other tests
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, []))
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == (None, None, None)
+    # The call still succeeded, so this counts as a real refresh -- the
+    # operator can trust invoice_checked_at, it isn't a stale timestamp.
+    assert isinstance(row.invoice_checked_at, datetime)
+
+
+@pytest.mark.asyncio
+async def test_a_project_still_owing_keeps_refreshing_as_before(db_session, monkeypatch):
+    """A live, still-unpaid invoice is unaffected by the T-007 ``else``
+    branch: the sweep still refreshes it from the newest invoice every
+    pass, exactly like before that fix."""
+    p = await _project(db_session, quote_id="EST1")
+    p_id = p.id  # captured before expire_all(); see note on the other tests
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST1": [_invoice(25.0)]}, []))
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("unpaid", 25.0, "2026-03-01")
+
+
+@pytest.mark.asyncio
+async def test_a_cleared_row_is_still_selected_on_the_next_pass(db_session, monkeypatch):
+    """T-007 decision (a): the reset sets ``invoice_balance`` to ``None``
+    rather than ``0.0``, so the row keeps matching the selection's
+    ``invoice_balance.is_(None)`` clause and is asked about again next
+    pass -- it does not silently drop out of the sweep the way a paid
+    invoice (balance == 0.0) does."""
+    await _project(
+        db_session,
+        quote_id="EST1",
+        invoice_status="unpaid",
+        invoice_balance=100.0,
+        invoice_due_date="2026-01-01",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, calls))
+
+    await sweep_invoices(db_session, force=True)
+    aito_invoice_sweep._last_run = 0.0  # bypass the hourly gate for the next pass
+    await sweep_invoices(db_session, force=True)
+
+    assert calls == ["EST1", "EST1"]
+
+
+@pytest.mark.asyncio
 async def test_the_hourly_gate_skips_a_second_pass(db_session, monkeypatch):
     await _project(db_session, quote_id="EST1")
     calls: list[str] = []
