@@ -230,17 +230,19 @@
    228	# Migration: an optional social-network handle on an Aito card, standing in
    229	# Migration: the Finish column's "client has been told to collect" mark.
    230	# Migration: promised delivery date and per-task rush flag (2026-09-04).
-   231	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   232	# Migration: per-file print progress inside a project (#1897).
-   233	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   234	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   235	# Migration: variant grouping for library files (#671 / #2570). The
-   236	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   237	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   238	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   239	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   240	# Migration: drop the AMS slot markers an older Bambuddy wrote into
-   241	# Migration: whether Books has been directly observed to agree with an
+   231	# Migration: public tracking link token (2026-09-06). Nullable, minted on
+   232	# Migration: tracking page view log (2026-09-06). A row is a card and a
+   233	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   234	# Migration: per-file print progress inside a project (#1897).
+   235	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   236	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   237	# Migration: variant grouping for library files (#671 / #2570). The
+   238	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   239	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   240	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   241	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   242	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+   243	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 
