@@ -1,0 +1,89 @@
+=== 2026-09-03 · iteration 1 · verifier run 1 ===
+VERDICT: FAIL
+BUILD: npx tsc -b --noEmit clean
+LINT: ruff check/format clean · npm run lint clean
+TESTS: backend 12695 passed / 1 skipped / 0 failed (BASE 12685; +10 new) · frontend 5430 passed / 0 failed. No flaky-list test failed.
+SNAPSHOTS: 10/10 · SURFACE: unchanged · SANCTIONED_CHANGES: T-008 (2dda958f9, marked, matches BASELINE-CHANGELOG entry incl. the one modified assertion in test_create_with_no_priced_service_becomes_a_terminal_error 0->1)
+COVERAGE: backend 72% (= baseline) · frontend 60.29% lines (= baseline). No test deleted, no exclusion added; freeze diff (pyproject.toml, vitest.config.ts, tools/, PROBES.json, snapshots/, SURFACE.md) empty.
+REGRESSIONS:
+- Undisclosed behavior change in 5f2f5cd46 (T-007) backend/app/services/aito_quote_sync.py: _write_back_rounded_costs rewritten from ORM re-select + unconditional setattr to a pre-round-trip snapshot (_snapshot_pushed_costs) + Core UPDATE guarded on cost_column == pushed_cost. When a cost edit commits on another session mid-round-trip the persisted <service>_cost now differs from BASE (operator's value survives instead of being overwritten by the rounded pushed figure); the two new tests assert exactly that (5000/5001 vs BASE 2400). Served back via GET /api/v1/aito/ task payloads -> user-observable. No BASELINE-CHANGELOG entry, commit not marked. Precedent in the changelog treats this class (T-032 2026-08-27, T-007 2026-08-29 "no longer reverts edits typed while its PATCH is in flight") as approval-requiring.
+- Secondary (same commit): write-back statement now issued eagerly (autoflush) rather than at the later commit's ORM flush; same transaction, no constructible outcome change.
+Everything else clean: e7c632510 (T-015) pure test addition; 2dda958f9 (T-008) matches its entry.
+KNOWN_BROKEN_STATUS: n/a (empty at BASE; both suites green).
+=== 2026-09-03 · iteration 1 · verifier run 2 (after T-007 changelog commit 6a8b0573d) ===
+VERDICT: PASS
+BUILD: npx tsc -b --noEmit clean · LINT: ruff check/format clean, eslint clean
+TESTS: backend 12695 passed / 1 skipped / 0 failed (+10 vs BASE) · frontend 5430 passed / 0 failed. No flaky-list test fired.
+SNAPSHOTS: 10/10 · SURFACE: unchanged · SANCTIONED_CHANGES: T-008 (2dda958f9) and T-007 (5f2f5cd46, sanctioned by later marked commit 6a8b0573d) — both in BASELINE-CHANGELOG.md. Disclosed assertion change in test_create_with_no_priced_service_becomes_a_terminal_error (0->1) retained its `seen == []` invariant.
+COVERAGE: backend 71.80% (71748/18370 missed; baseline 71.78% = 72% rounded) — up · frontend 60.29% lines (= baseline). Freeze diff empty; no test deleted; no exclusion added.
+REGRESSIONS: none · KNOWN_BROKEN_STATUS: none at BASE, still zero.
+=== 2026-09-03 · iteration 2 · verifier run 1 ===
+VERDICT: FAIL
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12695 passed / 1 skipped / 0 failed (345s) · frontend 384 files, 5442 passed / 0 failed. No flaky test fired.
+COVERAGE: backend 72% (= baseline) · frontend 60.36% lines (baseline 60.29%) — up. Freeze diff empty. No test files deleted; loop-1..HEAD removes zero test lines, adds 254.
+SNAPSHOTS: 10/10 · SURFACE: CHANGED — regen adds one line in "Frontend exported symbols — utils + hooks": `export function replaceProject` (frontend/src/utils/aitoOptimistic.ts, commit 0445d4759 T-002). No BASELINE-CHANGELOG entry covers the loop-2 range.
+SANCTIONED_CHANGES: T-007, T-008 (bb00776f6) cover the whole aito_quote_sync.py delta.
+REGRESSIONS: undeclared public-contract change (the added export) — FAIL per the frozen-SURFACE rule, not runtime. Runtime behavior: none — replaceProject is byte-for-byte the semantics of the seven inlined callbacks it replaced (undefined stays undefined, no append on unknown id), both pinned by new tests. b2cc84388 and 8c56c7897 are test-only.
+KNOWN_BROKEN_STATUS: n/a (empty; still zero failures).
+=== 2026-09-03 · iteration 2 · verifier run 2 (after T-002 SURFACE/changelog commit 0649058cd) ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12695 passed / 1 skipped / 0 failed · frontend 384 files, 5442 passed / 0 failed. No flaky entries tripped.
+SNAPSHOTS: 10/10 · SURFACE: regen == committed (the +export function replaceProject line is sanctioned) · SANCTIONED_CHANGES: T-008, T-007 (bb00776f6), T-002 (0649058cd).
+COVERAGE: backend 71.80% (= 72% baseline) · frontend 60.36% lines (baseline 60.29%, +0.07pp). Freeze diff (pyproject, vitest.config, tools/, PROBES.json, snapshots/) empty. No test file deleted/renamed; only 4 removed test lines in the whole range, all disclosed.
+REGRESSIONS: none · KNOWN_BROKEN_STATUS: n/a.
+=== 2026-09-03 · iteration 3 · verifier run 1 ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12701 passed / 1 skipped / 0 failed (313s) · frontend run 1: 3 failed / 5439 passed (2 files), full rerun on idle machine: 384 files / 5442 passed — non-reproducing load flakes. Zero test files deleted (--diff-filter=D empty).
+SNAPSHOTS: 10/10 · SURFACE: regen == committed; committed BASE..HEAD delta 3 lines, all sanctioned (T-009: sync_project -> bool | None, class ZohoRateLimited; loop-2: export function replaceProject).
+SANCTIONED_CHANGES: T-009 (331ae5279), T-004 (57689d1d9), T-005 (439cc623a) — entries present, commits marked. fe-i18n-parity golden 7171 -> 7152 on every count (= 4 + 15), parity lists all still []; the 13 locale files are deletion-only; 19 deleted keys independently re-grepped: zero hits. T-009 code matches its entry (429 branch before generic >=400, message byte-identical, subclass keeps every except site; break after per-project commit/broadcast). Two rewritten tests named in the entry, neither weakened.
+COVERAGE: backend 71.80% (= 72% baseline; zoho.py 96.41%, aito_quote_sync.py 94.90%) · frontend 60.35% lines (baseline 60.29%). Freeze diff (pyproject, vitest.config, tools/, PROBES.json) empty.
+REGRESSIONS: none · KNOWN_BROKEN_STATUS: n/a.
+=== 2026-09-03 · iteration 4 · verifier run 1 ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12708 passed / 1 skipped / 0 failed (313s; +23 vs BASE) · frontend 384 files, 5442 passed / 0 failed. No flaky entry fired.
+SNAPSHOTS: 10/10 · SURFACE: regen == committed (3-line committed delta all from earlier verified iterations) · SANCTIONED_CHANGES: T-010 (c14734f77, entry in same commit) — the only behavior change this iteration; verified: reconcile-branch only, pending and NULL-quote_id/error terms byte-identical, is_(None) guard on nullable quote_status present, board_column non-nullable so bare != is safe; four new tests pin exclusion + untouched pending path. T-014 (9917a0449) and T-013 (83b80944c) test-only.
+COVERAGE: backend 71.81% (baseline 71.78%) up · frontend 60.36% lines (baseline 60.29%) up. Freeze diff empty; no test file deleted/renamed; zero removed test lines in loop-3..HEAD.
+REGRESSIONS: none · KNOWN_BROKEN_STATUS: n/a.
+=== 2026-09-03 · iteration 5 · verifier run 1 ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12712 passed / 1 skipped / 0 failed (324s) · frontend 385 files, 5448 passed / 0 failed. No flaky test failed.
+SNAPSHOTS: 10/10 · SURFACE: regen == committed; this iteration adds nothing to SURFACE.md or snapshots/ · SANCTIONED_CHANGES: T-011 (4bc33acc2) — code matches entry (cooldown gate inside `if refresh and not fresh`, stamp on except arm, clear on success, no settings/DDL change). Older sanctioned artifacts re-matched: T-009 SURFACE lines, T-002 export, T-004/T-005 golden 7171->7152.
+COVERAGE: backend 71.81% (= 72% baseline) · frontend 60.36% lines (baseline 60.29%). Freeze diff empty; no test deleted/renamed; no skip/only added. One rewritten assertion (test_get_shipping_catalogue_survives_zoho_being_down n==2 -> n==1) pinned the sanctioned-removed behavior and is replaced by four dedicated tests — net assertions up.
+REGRESSIONS: none · KNOWN_BROKEN_STATUS: n/a.
+=== 2026-09-03 · iteration 6 · verifier run 1 ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12792 passed / 1 skipped / 0 failed (311s; +107 vs BASE) · frontend run 1: 5447 passed / 1 failed (name not captured by the grep), clean full rerun: 5448 passed / 0 failed — load flake. No test file deleted; only additive assertion edits + two fixtures setting quote_status_confirmed=True (described in the entry).
+SNAPSHOTS: 10/10 · SURFACE: regen == committed · SANCTIONED_CHANGES: T-026 (276b5c541) verified site-by-site (reset in set_quote_status; five set-True sites; or_() predicate; reordered _still_selected); DDL migration additive via _safe_execute; goldens app-ddl (+1 line) and app-migrations-index (+1 line) exactly as the entry quotes; SURFACE.md aito_projects 42->43; app-openapi-index unchanged (column not serialised). T-030 (ea41ab996), T-031 (06d3c44b9) test-only.
+COVERAGE: backend 71.82% (= 72% baseline; 74.41% line-only) · frontend 60.36%/60.35% lines (baseline 60.29%). Freeze diff empty; concurrency/branch settings intact.
+REGRESSIONS: none · KNOWN_BROKEN_STATUS: n/a.
+=== 2026-09-03 · iteration 7 · verifier run 1 ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12793 passed / 1 skipped / 0 failed · frontend 386 files, 5455 passed / 0 failed. No flaky test failed.
+SNAPSHOTS: 10/10 · SURFACE: regen == committed · SANCTIONED_CHANGES: none new (BASELINE-CHANGELOG.md untouched in loop-6..HEAD; no golden/SURFACE/PROBES/tools/config diff this iteration). Earlier diffs re-mapped to T-008/T-009/T-004/T-005/T-002/T-026.
+COVERAGE: backend 72% (= baseline) · frontend 60.34% lines (baseline 60.29%). Freeze diff empty; no test deleted; no ignore/skip pragmas added; assertions net +178.
+REGRESSIONS: none. Diff review: replaceProject matchId default reproduces the old match; settleProject preserves write-then-invalidate at all six sites with trailing steps inline; _sweep_predicate returns the same or_() SQL; pending_only path unchanged.
+KNOWN_BROKEN_STATUS: none.
+=== 2026-09-04 · iteration 8 · verifier run 1 ===
+VERDICT: FAIL
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12803 passed / 1 skipped / 0 failed (+118 vs BASE) · frontend 386 files, 5455 passed / 0 failed. No flaky test tripped; no test deleted; no assertion weakened.
+SNAPSHOTS: 10/10 · SURFACE: regen == committed; no golden/SURFACE/PROBES/tools/config diff this iteration · SANCTIONED_CHANGES: T-024 (eb017dee6), T-027 (cb6b7b26a) — entries + markers, code matches line for line. Earlier deltas re-mapped to T-026/T-004/T-005/T-009/T-002.
+COVERAGE: backend 71.82% (= 72% baseline) · frontend 60.35% lines (baseline 60.29%).
+REGRESSIONS: unsanctioned behavior change in ed8031a54 (T-028): process-global _throttled_until makes run_sync_once return 0 for min(Retry-After, 900s) or a 60s fallback after any 429 — every card sits pending un-attempted for that window where each tick previously retried; sync-timing only (no HTTP response changes) but observable on the board. No BASELINE-CHANGELOG entry, no commit marker. Evidence: test_429s_defer_indefinitely_without_escalating_or_spending_the_failure_budget needed a fake advancing clock to keep asserting ==1 per tick. Precedent: T-011 shipped the identical cooldown shape as a marked, changelogged change. Fix confined to T-028: changelog entry + marker, or revert ed8031a54.
+NOTE (orchestrator): the verifier cited "PLAN.md line 308" — it read the untracked PLAN.md from the worktree. Blindness is only enforced via git diff; a future briefing should forbid reading PLAN.md/TRIAGE.md/VERDICTS.log/findings-*.json explicitly. Verdict unaffected.
+KNOWN_BROKEN_STATUS: n/a.
+=== 2026-09-04 · iteration 8 · verifier run 2 (after T-028 changelog commit 53e132d81; verifier told not to read loop state files) ===
+VERDICT: PASS
+BUILD: tsc clean · LINT: ruff/eslint clean
+TESTS: backend 12803 passed / 1 skipped / 0 failed (319s) · frontend 386 files, 5455 passed / 0 failed. No test file deleted; no flaky test failed.
+SNAPSHOTS: 10/10 · SURFACE: regen == committed · SANCTIONED_CHANGES: T-024, T-027, T-028 (entries + marked commits in range). Earlier frozen-file diffs all trace to marked commits.
+COVERAGE: backend 72% (= baseline) · frontend 60.35% lines (baseline 60.29%). Freeze diff empty.
+REGRESSIONS: none. Notes: T-024 is a real contract change the goldens cannot see (enum and decorators unchanged) — the changelog is its only record and it matches; T-027's project_pk capture before rollback is correct; T-028's rewired e2e test still asserts ==1 per tick with an advancing clock (only removed test line: the signature gaining monkeypatch), and the autouse reset fixture guards the module global under xdist.
+KNOWN_BROKEN_STATUS: none.
