@@ -624,6 +624,32 @@ def test_flat_amount_discount_is_not_adopted():
     assert preview["tasks"][0]["impression_discount_pct"] is None
 
 
+def test_malformed_percent_discount_is_not_adopted():
+    """A percent-suffixed discount that isn't a valid number (a French-locale
+    comma decimal, or outright garbage) must degrade to None rather than
+    raise — `float()` rejects both, and the import must not crash on a
+    hand-edited or mis-locale'd estimate."""
+    for raw in ("10,00%", "abc%"):
+        estimate = {
+            "estimate_id": "e1",
+            "estimate_number": "DEV26-9001",
+            "is_inclusive_tax": True,
+            "price_precision": 0,
+            "line_items": [
+                {
+                    "item_order": 1,
+                    "sku": "P3DIMP",
+                    "description": "Projet: X",
+                    "rate": 1600,
+                    "quantity": 1,
+                    "discount": raw,
+                },
+            ],
+        }
+        preview = build_preview(estimate, None, "https://x")
+        assert preview["tasks"][0]["impression_discount_pct"] is None
+
+
 def test_import_reads_quantity_and_discount_off_a_machining_line():
     """Task 4 made the exporter uniform across all four services; the
     importer must read quantity and discount off every service's line, not
@@ -838,6 +864,40 @@ def test_a_shipping_line_is_not_reported_as_a_skipped_line():
     recognised, skipped, _shipping = parse_lines(estimate, shipping_ids=SHIPPING_IDS)
     assert recognised == []
     assert skipped == [], "a recognised shipping line is not an unimportable row"
+
+
+def test_an_unparseable_shipping_line_is_dropped_silently_not_skipped():
+    """Ours by item_id (it is in shipping_ids), but the description does not
+    resolve to a known island. parse_lines must not report this as an
+    unimportable row -- the whole point of checking shipping_id_values first
+    is that the export step's echo rule keeps such a line alive on the quote
+    without bothering the operator -- and it must not stop the rest of the
+    estimate's lines from being parsed normally."""
+    estimate = {
+        "line_items": [
+            {
+                "item_id": "SHIP-TU",
+                "sku": "LIV-TU",
+                "name": "Livraison Avion Tuamotu",
+                "description": "Nom: X\nÎle: Atlantis",
+                "rate": 1,
+                "quantity": 1,
+                "item_order": 1,
+            },
+            {
+                "sku": "P3DSCAN",
+                "name": "Scan",
+                "description": "Info: Helice grise",
+                "rate": 5000,
+                "quantity": 1,
+                "item_order": 2,
+            },
+        ]
+    }
+    recognised, skipped, shipping = parse_lines(estimate, shipping_ids=SHIPPING_IDS)
+    assert skipped == []
+    assert shipping is None
+    assert len(recognised) == 1
 
 
 def test_build_preview_returns_the_shipment():
