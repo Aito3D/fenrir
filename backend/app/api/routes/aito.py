@@ -56,7 +56,10 @@ from backend.app.schemas.aito import (
     AitoTaskResponse,
     AitoTaskStepsResponse,
     AitoTaskUpdate,
+    AitoTrackingLinkResponse,
+    AitoTrackingResponse,
 )
+from backend.app.services import aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
@@ -72,7 +75,14 @@ from backend.app.services.aito_shipping import (
     service_for_island,
 )
 from backend.app.services.aito_stats import compute_aito_stats
-from backend.app.services.aito_tracking import external_url as tracking_external_url, tracking_url_for
+from backend.app.services.aito_tracking import (
+    build_tracking_url,
+    compute_tracking,
+    external_url as tracking_external_url,
+    mint_token,
+    tracking_url,
+    tracking_url_for,
+)
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -345,6 +355,14 @@ async def _shipping_names(db: AsyncSession) -> dict[str, str]:
     return {
         service: item.name for service, item in (await zoho_service.get_shipping_catalogue(db, refresh=False)).items()
     }
+
+
+async def _island_labels(db: AsyncSession) -> dict[str, str]:
+    """Island key -> display label, through the same source `/shipping/services`
+    resolves via (``grouped_islands``) — never a hard-coded table. Takes ``db``
+    for call-site symmetry with `_shipping_names`, though the island table
+    itself is app data, not anything Zoho returns."""
+    return {key: label for _service, islands in grouped_islands() for key, label in islands}
 
 
 async def _external_url(db: AsyncSession) -> str:
@@ -961,6 +979,27 @@ async def get_client_history(
     Declared ahead of the `/{project_id}` routes so `clients` is never parsed
     as an id."""
     return await compute_client_history(db, client_id, limit)
+
+
+@router.get("/track/{token}", response_model=AitoTrackingResponse)
+async def get_tracking(token: str, response: Response, db: AsyncSession = Depends(get_db)):
+    """The client's public tracking page. No auth: the token IS the
+    credential (43 random urlsafe chars, unique-indexed), and the auth
+    middleware exempts this prefix. Declared ahead of the `/{project_id}`
+    routes so `track` is never parsed as an id. Unknown, trashed and expired
+    links all get the same 404."""
+    response.headers["Cache-Control"] = "no-store"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Lien introuvable")
+    project_id, data = found
+    try:
+        await tracking_service.log_view(db, project_id, now)
+    except Exception:  # noqa: BLE001 — the log must never break the page it measures
+        logger.warning("tracking view log failed for project %s", project_id, exc_info=True)
+        await db.rollback()
+    return data
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
@@ -2743,6 +2782,35 @@ async def set_project_contacted(
         await db.refresh(project)
 
     return await _project_response(db, project)
+
+
+@router.get("/{project_id}/tracking-link", response_model=AitoTrackingLinkResponse)
+async def get_tracking_link(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """The panel's Copy button. An UPDATE, not a read: the first call mints
+    the token. Null while `external_url` is unset."""
+    project = await _get_active_project_or_404(db, project_id)
+    url = await build_tracking_url(db, project)
+    await db.commit()
+    return AitoTrackingLinkResponse(tracking_url=url)
+
+
+@router.post("/{project_id}/tracking-token", response_model=AitoTrackingLinkResponse)
+async def regenerate_tracking_token(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Kill a leaked link: a new token, the old one 404s at once. The event
+    carries no token — the log is readable by every aito:read holder."""
+    project = await _get_active_project_or_404(db, project_id)
+    project.tracking_token = mint_token()
+    await record(db, project.id, "tracking.regenerated", actor_class="user", actor_name=_actor(current_user), detail={})
+    await db.commit()
+    return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project))
 
 
 async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:

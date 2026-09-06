@@ -1,7 +1,9 @@
 """Tracking token: minting, link building, and the two response fields."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.settings import Settings
@@ -12,6 +14,7 @@ from backend.app.services.aito_tracking import (
     tracking_url,
     tracking_url_for,
 )
+from backend.tests.unit.test_aito_contacted import _declared_permissions
 
 
 async def _create(client, **overrides):
@@ -88,3 +91,256 @@ async def test_project_responses_carry_tracking_fields(async_client, db_session)
     body = (await async_client.get("/api/v1/aito/")).json()[0]
     assert body["tracking_configured"] is True
     assert body["tracking_url"] == f"https://aito.example/track/{project.tracking_token}"
+
+
+TRACK = "/api/v1/aito/track/"
+
+
+async def _set(db_session, pid: int, **cols):
+    sets = ", ".join(f"{k} = :{k}" for k in cols)
+    await db_session.execute(text(f"UPDATE aito_projects SET {sets} WHERE id = :pid"), {"pid": pid, **cols})
+    await db_session.commit()
+
+
+async def _done_event(db_session, pid: int, days_ago: float):
+    at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(tzinfo=None).isoformat(sep=" ")
+    await db_session.execute(
+        text(
+            "INSERT INTO aito_events (project_id, occurred_at, kind, actor_class, changes) "
+            "VALUES (:pid, :at, 'stage.changed', 'user', :changes)"
+        ),
+        {"pid": pid, "at": at, "changes": '[{"field": "column", "from": "finish", "to": "done"}]'},
+    )
+    await db_session.commit()
+
+
+async def _token(async_client, db_session, pid: int) -> str:
+    project = await _project(db_session, pid)
+    token = await ensure_tracking_token(db_session, project)
+    await db_session.commit()
+    return token
+
+
+@pytest.mark.asyncio
+async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, db_session):
+    pid = await _create(async_client, description="job")
+    await async_client.post(f"/api/v1/aito/{pid}/tasks", json={"title": "Support GoPro", "scan_cost": 1000.0})
+    await async_client.post(f"/api/v1/aito/{pid}/tasks", json={"title": None, "modelisation_cost": 500.0})
+    await _set(
+        db_session,
+        pid,
+        due_date="2026-09-20",
+        board_column="print",
+        shipping_island="rangiroa",
+        shipping_service="tuamotu",
+        shipping_first_name="A",
+        shipping_last_name="B",
+        shipping_phone="+689-87000001",
+        shipping_price=3200.0,
+    )
+    token = await _token(async_client, db_session, pid)
+
+    r = await async_client.get(TRACK + token)
+    assert r.status_code == 200, r.text
+    assert r.headers["cache-control"] == "no-store"
+    body = r.json()
+    assert set(body) == {"column", "tasks", "due_date", "shipping", "done_at", "invoice", "reference", "updated_at"}
+    assert body["updated_at"]  # project.updated_at, naive UTC ISO string
+    assert body["column"] == "print"
+    assert body["tasks"] == [{"title": "Support GoPro", "quantity": None}, {"title": "Pièce 2", "quantity": None}]
+    assert body["due_date"] == "2026-09-20"
+    assert body["shipping"]["island"]  # label resolved server-side (key 'rangiroa' → its label)
+    assert body["done_at"] is None
+    assert body["invoice"] is None
+    assert body["reference"] is None
+    await _set(db_session, pid, quote_number="EST-000142")
+    assert (await async_client.get(TRACK + token)).json()["reference"] == "EST-000142"
+
+
+@pytest.mark.asyncio
+async def test_public_task_quantity_only_when_every_priced_service_agrees(async_client, db_session):
+    pid = await _create(async_client)
+    await async_client.post(
+        f"/api/v1/aito/{pid}/tasks",
+        json={
+            "title": "agree",
+            "scan_cost": 100.0,
+            "scan_quantity": 2,
+            "modelisation_cost": 50.0,
+            "modelisation_quantity": 2,
+        },
+    )
+    await async_client.post(
+        f"/api/v1/aito/{pid}/tasks",
+        json={
+            "title": "disagree",
+            "scan_cost": 100.0,
+            "scan_quantity": 2,
+            "modelisation_cost": 50.0,
+            "modelisation_quantity": 1,
+        },
+    )
+    await async_client.post(
+        f"/api/v1/aito/{pid}/tasks", json={"title": "single", "scan_cost": 100.0, "scan_quantity": 1}
+    )
+    await async_client.post(
+        f"/api/v1/aito/{pid}/tasks",
+        json={"title": "print only", "impression_cost": 900.0, "impression_quantity": 3, "scan_quantity": 7},
+    )  # unpriced scan ignored
+    tasks = (await async_client.get(TRACK + await _token(async_client, db_session, pid))).json()["tasks"]
+    assert [t["quantity"] for t in tasks] == [2, None, None, 3]
+
+
+@pytest.mark.asyncio
+async def test_public_updated_at_is_the_latest_event_else_the_row_timestamp(async_client, db_session):
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    # A fresh card has a project.created event from the API; force a known latest event.
+    await _done_event(db_session, pid, 0.5)  # 12 h ago
+    body = (await async_client.get(TRACK + token)).json()
+    latest = (
+        await db_session.execute(text("SELECT MAX(occurred_at) FROM aito_events WHERE project_id = :pid"), {"pid": pid})
+    ).scalar_one()
+    assert body["updated_at"].replace("T", " ")[:19] == str(latest)[:19]
+    await db_session.execute(text("DELETE FROM aito_events WHERE project_id = :pid"), {"pid": pid})
+    await db_session.commit()
+    body = (await async_client.get(TRACK + token)).json()
+    row = (
+        await db_session.execute(text("SELECT updated_at FROM aito_projects WHERE id = :pid"), {"pid": pid})
+    ).scalar_one()
+    assert body["updated_at"].replace("T", " ")[:19] == str(row)[:19]
+
+
+@pytest.mark.asyncio
+async def test_public_view_is_logged_once_per_200_and_never_breaks_the_page(async_client, db_session, monkeypatch):
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+
+    def count():
+        return db_session.execute(
+            text("SELECT COUNT(*) FROM aito_tracking_views WHERE project_id = :pid"), {"pid": pid}
+        )
+
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    assert (await async_client.get(TRACK + "nope")).status_code == 404
+    assert (await count()).scalar_one() == 2
+
+    from backend.app.services import aito_tracking as svc
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(svc, "log_view", boom)
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    assert (await count()).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("paid", "paid"),
+        ("overdue", "overdue"),
+        ("sent", "unpaid"),
+        ("unpaid", "unpaid"),
+        ("partially_paid", "unpaid"),
+        ("draft", None),
+        ("void", None),
+        (None, None),
+    ],
+)
+async def test_public_invoice_state_is_mapped_without_amounts(async_client, db_session, status, expected):
+    pid = await _create(async_client)
+    await _set(db_session, pid, invoice_status=status, invoice_balance=1234.5)
+    body = await async_client.get(TRACK + await _token(async_client, db_session, pid))
+    assert body.status_code == 200
+    assert body.json()["invoice"] == expected
+    assert "1234" not in body.text and "balance" not in body.text
+
+
+@pytest.mark.asyncio
+async def test_public_404s_for_unknown_and_trashed(async_client, db_session):
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    assert (await async_client.get(TRACK + "nope")).status_code == 404
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    await _set(db_session, pid, status="deleted")
+    r = await async_client.get(TRACK + token)
+    assert r.status_code == 404 and r.json() == {"detail": "Lien introuvable"}
+
+
+@pytest.mark.asyncio
+async def test_public_expires_30_days_after_the_latest_move_to_done(async_client, db_session):
+    fresh = await _create(async_client, description="fresh")
+    stale = await _create(async_client, description="stale")
+    never = await _create(async_client, description="never")
+    for pid in (fresh, stale, never):
+        await _set(db_session, pid, board_column="done")
+    await _done_event(db_session, fresh, 29)
+    await _done_event(db_session, stale, 40)
+    await _done_event(db_session, stale, 31)  # latest is still > 30 days
+    assert (await async_client.get(TRACK + await _token(async_client, db_session, fresh))).status_code == 200
+    assert (await async_client.get(TRACK + await _token(async_client, db_session, stale))).status_code == 404
+    # No stage.changed-to-done event at all (pre-event-log card): never expires.
+    assert (await async_client.get(TRACK + await _token(async_client, db_session, never))).status_code == 200
+    # Left Done and came back 2 days ago → fresh window, and done_at is that move.
+    await _done_event(db_session, stale, 2)
+    r = await async_client.get(TRACK + await _token(async_client, db_session, stale))
+    assert r.status_code == 200 and r.json()["done_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_public_never_leaks_client_or_money(async_client, db_session):
+    pid = await _create(async_client, client_name="Secret Person", client_email="s@example.pf")
+    await _set(db_session, pid, quote_total=12345.0)
+    body = (await async_client.get(TRACK + await _token(async_client, db_session, pid))).text
+    for needle in ("Secret", "example.pf", "12345", "client", "quote_", "balance", "total", '"id"'):
+        assert needle not in body
+
+
+@pytest.mark.asyncio
+async def test_link_route_mints_and_regenerate_replaces(async_client, db_session):
+    await _set_external_url(db_session, "https://aito.example")
+    pid = await _create(async_client)
+    first = (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"]
+    assert first.startswith("https://aito.example/track/")
+    assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"] == first
+    old_token = first.rsplit("/", 1)[1]
+    assert (await async_client.get(TRACK + old_token)).status_code == 200
+
+    second = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()["tracking_url"]
+    assert second != first
+    assert (await async_client.get(TRACK + old_token)).status_code == 404
+    assert (await async_client.get(TRACK + second.rsplit("/", 1)[1])).status_code == 200
+    events = (await async_client.get(f"/api/v1/aito/{pid}/events")).json()
+    kinds = [e["kind"] for e in events["events"]]
+    assert "tracking.regenerated" in kinds
+    assert old_token not in (await async_client.get(f"/api/v1/aito/{pid}/events")).text
+
+
+@pytest.mark.asyncio
+async def test_link_route_without_external_url_returns_null_but_mints(async_client, db_session):
+    pid = await _create(async_client)
+    assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json() == {"tracking_url": None}
+    assert (await _project(db_session, pid)).tracking_token is not None
+
+
+@pytest.mark.asyncio
+async def test_public_route_bypasses_auth_middleware_but_siblings_do_not(async_client, db_session):
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    await db_session.commit()
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).status_code == 401
+    assert (await async_client.get("/api/v1/aito/")).status_code == 401
+
+
+def test_permissions():
+    from backend.app.main import app
+
+    assert _declared_permissions("get_tracking_link") == ["aito:update"]
+    assert _declared_permissions("regenerate_tracking_token") == ["aito:update"]
+    route = next(r for r in app.routes if getattr(r, "name", "") == "get_tracking")
+    assert all(d.name != "current_user" for d in route.dependant.dependencies)

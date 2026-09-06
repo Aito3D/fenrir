@@ -985,3 +985,35 @@ class AitoClientHistoryResponse(BaseModel):
     # bounded by `limit`: Zoho never stores the handle, so this is the only
     # place the drawer can recover it from.
     latest_social: AitoClientHistorySocial | None
+
+
+class AitoTrackingShipping(BaseModel):
+    island: str
+    service: str
+
+
+class AitoTrackingTask(BaseModel):
+    title: str
+    # Shown only when every priced service on the task carries the same count > 1.
+    quantity: int | None
+
+
+class AitoTrackingResponse(BaseModel):
+    """Everything the public tracking page draws — and nothing else. See
+    docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md."""
+
+    column: AitoColumn
+    tasks: list[AitoTrackingTask]
+    due_date: date | None
+    shipping: AitoTrackingShipping | None
+    done_at: datetime | None
+    # A state, never an amount: paid / unpaid / overdue, or None without an invoice.
+    invoice: Literal["paid", "unpaid", "overdue"] | None
+    # The quote number the client already holds (EST-000142), for "Devis n° …".
+    reference: str | None
+    # project.updated_at — the page's "Mis à jour …" line. Real data only.
+    updated_at: datetime
+
+
+class AitoTrackingLinkResponse(BaseModel):
+    tracking_url: str | None

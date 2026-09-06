@@ -8959,6 +8959,8 @@ PUBLIC_API_PREFIXES = [
     "/api/v1/ws",
     # OIDC authorize redirects — include provider_id in path
     "/api/v1/auth/oidc/authorize/",
+    # Aito client tracking page — the token in the path is the credential.
+    "/api/v1/aito/track/",
 ]
 
 # Route patterns that are public (read-only display data)

@@ -83,6 +83,11 @@ KINDS: dict[str, str] = {
     "project.updated": "detail",
     "note.added": "detail",
     "zoho.comment": "detail",
+    # The public link was rotated by hand. Detail, not story: it carries no
+    # token (a leaked-link timeline entry must not be a second leak) and is
+    # exactly the kind of administrative act "detail" already holds — a
+    # person editing something about the card rather than the card's story.
+    "tracking.regenerated": "detail",
     # trace: machine traffic. Even debounced to transitions (see
     # aito_quote_sync.reconcile_quote_status), it is still noisier and less
     # legible than anything a person did by hand, which is why it is a

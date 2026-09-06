@@ -9,13 +9,16 @@ docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md
 
 import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
+from backend.app.models.aito_tracking_view import AitoTrackingView
+from backend.app.schemas.aito import AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
 
 TOKEN_BYTES = 32
 TRACKING_TTL_AFTER_DONE = timedelta(days=30)
@@ -80,3 +83,101 @@ async def done_at(db: AsyncSession, project_id: int) -> datetime | None:
 
 def is_expired(column: str, finished_at: datetime | None, now: datetime) -> bool:
     return column == "done" and finished_at is not None and finished_at + TRACKING_TTL_AFTER_DONE < now
+
+
+TASK_FALLBACK = "Pièce {n}"
+# invoice_status (services/aito_invoice_sweep.py vocabulary) → the page's three states.
+_INVOICE_STATE = {
+    "paid": "paid",
+    "overdue": "overdue",
+    "sent": "unpaid",
+    "unpaid": "unpaid",
+    "partially_paid": "unpaid",
+}
+
+
+def invoice_state(status: str | None) -> str | None:
+    return _INVOICE_STATE.get(status or "")
+
+
+# (cost column, quantity column) per service — the quantity of a service
+# only counts when that service is priced (a non-null cost).
+_SERVICE_COUNTS = (
+    ("scan_cost", "scan_quantity"),
+    ("modelisation_cost", "modelisation_quantity"),
+    ("usinage_cost", "usinage_quantity"),
+    ("impression_cost", "impression_quantity"),
+)
+
+
+def task_quantity(task: AitoTask) -> int | None:
+    """One number only when it is unambiguous: every priced service on the
+    task has the same count and it is > 1. Otherwise None — never a guess."""
+    counts = {(getattr(task, qty) or 1) for cost, qty in _SERVICE_COUNTS if getattr(task, cost) is not None}
+    if len(counts) != 1:
+        return None
+    (count,) = counts
+    return count if count > 1 else None
+
+
+async def last_activity(db: AsyncSession, project: AitoProject) -> datetime:
+    """The card's latest event moment, or its row timestamp for a card that
+    has no events — the honest "Mis à jour" value."""
+    latest = (
+        await db.execute(select(func.max(AitoEvent.occurred_at)).where(AitoEvent.project_id == project.id))
+    ).scalar_one()
+    return latest or project.updated_at
+
+
+async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
+    """One row per successful open. The route wraps this in a try/except:
+    the log must never break the page it measures."""
+    db.add(AitoTrackingView(project_id=project_id, viewed_at=now))
+    await db.commit()
+
+
+async def compute_tracking(
+    db: AsyncSession, token: str, shipping_names: dict[str, str], island_labels: dict[str, str], now: datetime
+) -> tuple[int, AitoTrackingResponse] | None:
+    """None for unknown, trashed and expired alike — the caller turns all
+    three into the same 404, so a guesser learns nothing. Otherwise the
+    project id rides along with the payload so the route can log the view
+    without a second lookup."""
+    project = (
+        await db.execute(select(AitoProject).where(AitoProject.tracking_token == token, AitoProject.status == "active"))
+    ).scalar_one_or_none()
+    if project is None:
+        return None
+    finished_at = await done_at(db, project.id) if project.board_column == "done" else None
+    if is_expired(project.board_column, finished_at, now):
+        return None
+    tasks = (
+        (
+            await db.execute(
+                select(AitoTask).where(AitoTask.project_id == project.id).order_by(AitoTask.position, AitoTask.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    titles = [
+        AitoTrackingTask(title=(t.title or "").strip() or TASK_FALLBACK.format(n=i + 1), quantity=task_quantity(t))
+        for i, t in enumerate(tasks)
+    ]
+    shipping = None
+    if project.shipping_island:
+        shipping = AitoTrackingShipping(
+            island=island_labels.get(project.shipping_island, project.shipping_island),
+            service=shipping_names.get(project.shipping_service or "", project.shipping_service or ""),
+        )
+    data = AitoTrackingResponse(
+        column=project.board_column,
+        tasks=titles,
+        due_date=date.fromisoformat(project.due_date) if project.due_date else None,
+        shipping=shipping,
+        done_at=finished_at,
+        invoice=invoice_state(project.invoice_status),
+        reference=project.quote_number or None,
+        updated_at=await last_activity(db, project),
+    )
+    return project.id, data
