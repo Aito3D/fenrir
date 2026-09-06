@@ -263,11 +263,14 @@ async def test_public_invoice_state_is_mapped_without_amounts(async_client, db_s
 async def test_public_404s_for_unknown_and_trashed(async_client, db_session):
     pid = await _create(async_client)
     token = await _token(async_client, db_session, pid)
-    assert (await async_client.get(TRACK + "nope")).status_code == 404
+    unknown = await async_client.get(TRACK + "nope")
+    assert unknown.status_code == 404
+    assert unknown.headers["cache-control"] == "no-store"
     assert (await async_client.get(TRACK + token)).status_code == 200
     await _set(db_session, pid, status="deleted")
     r = await async_client.get(TRACK + token)
     assert r.status_code == 404 and r.json() == {"detail": "Lien introuvable"}
+    assert r.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio
@@ -281,7 +284,9 @@ async def test_public_expires_30_days_after_the_latest_move_to_done(async_client
     await _done_event(db_session, stale, 40)
     await _done_event(db_session, stale, 31)  # latest is still > 30 days
     assert (await async_client.get(TRACK + await _token(async_client, db_session, fresh))).status_code == 200
-    assert (await async_client.get(TRACK + await _token(async_client, db_session, stale))).status_code == 404
+    expired = await async_client.get(TRACK + await _token(async_client, db_session, stale))
+    assert expired.status_code == 404
+    assert expired.headers["cache-control"] == "no-store"
     # No stage.changed-to-done event at all (pre-event-log card): never expires.
     assert (await async_client.get(TRACK + await _token(async_client, db_session, never))).status_code == 200
     # Left Done and came back 2 days ago → fresh window, and done_at is that move.

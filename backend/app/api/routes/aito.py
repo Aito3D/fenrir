@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -982,7 +983,9 @@ async def get_client_history(
 
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
-async def get_tracking(token: str, response: Response, db: AsyncSession = Depends(get_db)):
+async def get_tracking(
+    token: str, response: Response, db: AsyncSession = Depends(get_db)
+) -> AitoTrackingResponse | JSONResponse:
     """The client's public tracking page. No auth: the token IS the
     credential (43 random urlsafe chars, unique-indexed), and the auth
     middleware exempts this prefix. Declared ahead of the `/{project_id}`
@@ -992,7 +995,13 @@ async def get_tracking(token: str, response: Response, db: AsyncSession = Depend
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
     if found is None:
-        raise HTTPException(status_code=404, detail="Lien introuvable")
+        # Not `raise HTTPException`: FastAPI's exception handler builds a
+        # fresh JSONResponse that drops the `response` object's headers
+        # entirely, so the no-store guarantee would silently vanish on the
+        # majority of real traffic (unknown/trashed/expired links).
+        return JSONResponse(
+            status_code=404, content={"detail": "Lien introuvable"}, headers={"Cache-Control": "no-store"}
+        )
     project_id, data = found
     try:
         await tracking_service.log_view(db, project_id, now)
