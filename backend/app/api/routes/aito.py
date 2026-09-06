@@ -905,12 +905,12 @@ async def list_trash(
     return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names) for p in projects]
 
 
-@router.post("/", response_model=AitoProjectResponse, status_code=201)
-async def create_project(
+async def _validate_create_payload(
+    db: AsyncSession,
     payload: AitoProjectCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
-):
+    current_user: User | None,
+) -> dict:
+    """Permission, contact and shipping checks for create_project; returns the validated shipping fields."""
     if (
         payload.quote_status in ("accepted", "declined")
         and current_user is not None
@@ -951,7 +951,67 @@ async def create_project(
     rates = {}
     if _mentions_shipping(create_fields):
         rates = await _shipping_rates(db)
-    shipping = _validated_shipping(create_fields, rates)
+    return _validated_shipping(create_fields, rates)
+
+
+async def _record_creation_events(
+    db: AsyncSession,
+    project: AitoProject,
+    payload: AitoProjectCreate,
+    current_user: User | None,
+) -> None:
+    """The up-to-three timeline entries a freshly created project can carry."""
+    await record(
+        db,
+        project.id,
+        "project.created",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"imported_from": project.quote_number} if project.quote_number else None,
+    )
+    if project.due_date:
+        await record(
+            db,
+            project.id,
+            "project.due.set",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "due_date", "from": None, "to": project.due_date}],
+        )
+    if payload.quote_status in ("accepted", "declined"):
+        # Only reachable with a quote_id (the schema's
+        # _decided_status_needs_a_quote_id validator gates the other
+        # case), i.e. a genuine import of an already-decided Books quote.
+        # Not routed through adopt_quote_status: that helper also stamps
+        # quote_accepted_at, which must stay NULL for an import (see the
+        # column comment on AitoProject.quote_accepted_at — the decision
+        # already happened at some past, unknown moment in Books, so a
+        # fresh "now" stamp would misdate it and desync the card's age
+        # from its real history). This call exists only so the decision
+        # has an actor on the timeline, same as the dedicated
+        # /quote-status route records for a hand-made card.
+        await record(
+            db,
+            project.id,
+            f"quote.{payload.quote_status}",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+        )
+
+
+@router.post("/", response_model=AitoProjectResponse, status_code=201)
+async def create_project(
+    payload: AitoProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    shipping = await _validate_create_payload(db, payload, current_user)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
@@ -1020,48 +1080,7 @@ async def create_project(
     # leak the race as an unhandled 500.
     try:
         await db.flush()
-        await record(
-            db,
-            project.id,
-            "project.created",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project.id,
-            detail={"imported_from": project.quote_number} if project.quote_number else None,
-        )
-        if project.due_date:
-            await record(
-                db,
-                project.id,
-                "project.due.set",
-                actor_class="user",
-                actor_name=_actor(current_user),
-                subject_type="project",
-                subject_id=project.id,
-                changes=[{"field": "due_date", "from": None, "to": project.due_date}],
-            )
-        if payload.quote_status in ("accepted", "declined"):
-            # Only reachable with a quote_id (the schema's
-            # _decided_status_needs_a_quote_id validator gates the other
-            # case), i.e. a genuine import of an already-decided Books quote.
-            # Not routed through adopt_quote_status: that helper also stamps
-            # quote_accepted_at, which must stay NULL for an import (see the
-            # column comment on AitoProject.quote_accepted_at — the decision
-            # already happened at some past, unknown moment in Books, so a
-            # fresh "now" stamp would misdate it and desync the card's age
-            # from its real history). This call exists only so the decision
-            # has an actor on the timeline, same as the dedicated
-            # /quote-status route records for a hand-made card.
-            await record(
-                db,
-                project.id,
-                f"quote.{payload.quote_status}",
-                actor_class="user",
-                actor_name=_actor(current_user),
-                subject_type="project",
-                subject_id=project.id,
-            )
+        await _record_creation_events(db, project, payload, current_user)
         new_tasks = [
             AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
             for position, task_payload in enumerate(payload.tasks)

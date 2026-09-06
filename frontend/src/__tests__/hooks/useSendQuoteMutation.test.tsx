@@ -13,18 +13,14 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useSendQuoteMutation } from '../../hooks/useSendQuoteMutation';
 import { api, type AitoProject } from '../../api/client';
+import { showToastMock } from './boardMutationHarness';
 
-// `t` returns the key so assertions can check against the raw i18n key
-// instead of a translated string, same pattern useQuoteStatusMutation.test.tsx
-// uses.
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-const showToastMock = vi.fn();
-vi.mock('../../contexts/ToastContext', () => ({
-  useToast: () => ({ showToast: showToastMock }),
-}));
+// `vi.mock(...)` factories are hoisted above this file's own imports, so the
+// harness's factories cannot be referenced directly here (that trips a
+// temporal-dead-zone ReferenceError) — a dynamic import inside the factory
+// sidesteps the hoisting order instead.
+vi.mock('react-i18next', async () => (await import('./boardMutationHarness')).i18nKeyTranslationFactory());
+vi.mock('../../contexts/ToastContext', async () => (await import('./boardMutationHarness')).toastContextMockFactory());
 
 const project = { id: 1, quote_id: 'q-1', quote_status: 'draft' } as AitoProject;
 

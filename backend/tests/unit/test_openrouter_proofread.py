@@ -13,36 +13,11 @@ from backend.app.services.openrouter import (
     _unquote,
     proofread_text,
 )
+from backend.tests._fixtures.openrouter import FakeOpenRouterClient
 
 
-class _FakeResponse:
-    status_code = 200
-
-    def __init__(self, content, finish_reason=None):
-        self._content = content
-        self._finish_reason = finish_reason
-
-    def json(self):
-        message = {"content": self._content}
-        choice = {"message": message}
-        if self._finish_reason is not None:
-            choice["finish_reason"] = self._finish_reason
-        return {"choices": [choice]}
-
-
-class _FakeClient:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def post(self, url, headers=None, json=None):
-        _FakeClient.last_json = json
-        return _FakeResponse(_FakeClient.reply, _FakeClient.finish_reason)
+class _FakeClient(FakeOpenRouterClient):
+    pass
 
 
 def _configure_reply(monkeypatch, reply, finish_reason=None):
