@@ -46,7 +46,11 @@ function Footer() {
         <a className={linkCls} href={TEL}>
           {AITO3D_SENDER.phone}
         </a>
-        {' · '}
+        {/* The dot only makes sense while both links share a line; below
+            360 px the email wraps, and a dangling dot would trail the phone. */}
+        <span className="mx-[4px] max-[359px]:hidden" aria-hidden="true">
+          ·
+        </span>
         <a className={linkCls} href={`mailto:${AITO3D_SENDER.email}`}>
           {AITO3D_SENDER.email}
         </a>
