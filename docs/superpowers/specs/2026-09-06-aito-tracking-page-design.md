@@ -12,8 +12,9 @@ client where their order stands, without a login.
 1. A per-card random token and a link `<external_url>/track/<token>`.
 2. A public read endpoint, `GET /api/v1/aito/track/{token}`, returning only
    what the page draws.
-3. A standalone French page at `/track/:token`: stage rail, one status
-   sentence, task titles, promised date.
+3. A standalone French page at `/track/:token`: the Aito3D logo, stage
+   rail, one status sentence, the invoice state when an invoice exists
+   (paid / to pay / overdue, no amount), task titles, promised date.
 4. The link reaches the client three ways: a Copy button in the detail
    panel, a final line on the pickup SMS draft, and the Zoho estimate's
    customer notes (so it prints on the quote PDF Books emails).
@@ -21,8 +22,9 @@ client where their order stands, without a login.
 
 ## Non-goals
 
-- No prices, quote status, invoice balance, client name or contact details
-  on the page. No login, no comments, no notifications from the page.
+- No prices, quote status, invoice amounts, client name or contact details
+  on the page (the invoice appears as a state only). No login, no comments,
+  no notifications from the page.
 - No i18n: the page is fixed French, outside the 13-locale catalogues.
 - No new permission: Copy/Regenerate reuse `aito:update`; the URL is
   readable with `aito:read`.
@@ -88,12 +90,18 @@ Response `AitoTrackingResponse`:
   "tasks": ["Support GoPro", "Pièce 2"],    // titles in position order; untitled → "Pièce {n}" (1-based) — done SERVER-side so the page has no rule
   "due_date": "2026-09-20" | null,
   "shipping": {"island": "Rangiroa", "service": "Livraison Avion Tuamotu"} | null,   // labels from _shipping_names / shipping_service
-  "done_at": "2026-09-01T18:20:00" | null   // the latest move-to-Done event's occurred_at; null unless column == 'done' and an event exists
+  "done_at": "2026-09-01T18:20:00" | null,  // the latest move-to-Done event's occurred_at; null unless column == 'done' and an event exists
+  "invoice": "paid" | "unpaid" | "overdue" | null   // a STATE, never an amount — see below
 }
 ```
 
-Nothing else: no ids, no client fields, no prices, no quote or invoice data.
-`Cache-Control: no-store` on the response.
+`invoice` is derived from `project.invoice_status` (kept fresh by the hourly
+invoice sweep): `paid` → `"paid"`; `overdue` → `"overdue"`; `sent`, `unpaid`
+and `partially_paid` → `"unpaid"`; `draft`, `void`, `None` and a card with
+no invoice → `null` (the block is not drawn). The balance is never sent.
+
+Nothing else: no ids, no client fields, no prices, no quote data, no invoice
+amounts. `Cache-Control: no-store` on the response.
 
 Cost: one project lookup on the unique token index, one tasks query, one
 events query (only for Done cards), one settings read for shipping names.
@@ -152,15 +160,40 @@ Props: `project: AitoProject`.
 Route `/track/:token` registered in `App.tsx` beside `/overlay/:printerId`
 (outside `ProtectedRoute`, no layout, `lazyWithReload`). Fetches
 `api.getAitoTracking(token)` under `['aito-track', token]`, `retry: false`,
-`staleTime: 30_000`. The page is `min-h-screen bg-white text-gray-900`
-like `CalculatorQuotePage`, one centred column, max width 40rem.
+`staleTime: 30_000`. The page is DARK, independent of the operator's theme:
+midnight ground, one centred card, max width 40rem, cyan accent.
+
+Design tokens, added to the `@theme` block of `frontend/src/index.css`
+(fixed literals, never theme-aware — the public page must not follow
+whichever preset the operator picks):
+
+```
+--color-aito-cyan: #04A1E4;        /* accent: current stage, done stages, status box, dates */
+--color-aito-midnight: #0c1016;    /* page ground = the app's "Midnight Blue" dark preset (--bg-primary) */
+--color-aito-card: #141b23;        /* the card (= that preset's --bg-secondary) */
+--color-aito-line: #212c37;        /* separators, outlined stages (= --bg-tertiary / --border-color) */
+--color-aito-ink: #e9eff6;         /* text (= --text-primary) */
+--color-aito-muted: #93a4b6;       /* secondary text (= --text-secondary) */
+```
+
+The five neutrals are copied from `.dark.bg-midnight` in `index.css`, so
+the page matches an operator who runs the app on Midnight Blue. Invoice
+states keep semantic colours (green `#22C55E` paid, amber `#F59E0B` unpaid,
+red `#EF4444` overdue) as 15 % tints with a 45 % border, so cyan stays the
+one brand accent. The `aito3d_logo.png` asset is black + cyan; on the dark
+card it gets `filter: invert(1) hue-rotate(180deg)`, which turns the black
+white and brings the cyan back to cyan (a dedicated light logo asset can
+replace the filter later without touching anything else).
 
 Copy is a `const FR = {...}` map in `utils/aitoTracking.ts` (so tests can
 import it), not the i18n catalogues. Layout:
 
-1. **Header**: "Aito 3D" and the contact line from `utils/shippingLabel.ts`'s
-   sender constant (phone · email · website), reused so the page and the
-   label read as one brand. Below it, `FR.title` = "Suivi de votre commande".
+1. **Header**, centred: the Aito3D logo (`src/assets/aito3d_logo.png`, the
+   asset the shipping label already imports, 40 px tall, `alt="Aito3D"`)
+   and under it the contact line from `utils/shippingLabel.ts`'s sender
+   constant (phone · email · website), reused so the page and the label
+   read as one brand. Below it, `FR.title` = "Suivi de votre commande",
+   centred.
 2. **Rail** (`components/aito/TrackingRail.tsx`, new, read-only): the seven
    columns in board order with French labels from `FR.stages` (`devis` →
    "Devis", `waiting` → "Accord", `scan` → "Scan", `model` → "Modélisation",
@@ -176,12 +209,19 @@ import it), not the i18n catalogues. Layout:
    - `done` with `shipping` → "Votre commande a été expédiée vers {island} ({service})."
    - `done` with `done_at` and no shipping → "Votre commande a été récupérée le {date}." (`toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })`)
    - `done` with neither → "Votre commande est terminée."
-4. **Tasks**: `FR.tasksHeading` = "Vos pièces", then a plain `<ul>` of
+4. **Invoice state** (`components/aito/TrackingInvoice.tsx`, new): drawn
+   only when `invoice` is non-null, directly under the status sentence, as
+   a tinted box with a round glyph and two lines:
+   - `paid` (green, ✓): "Facture réglée" / "Merci pour votre confiance."
+   - `unpaid` (amber, !): "Facture à régler" / "Merci de la régler avant le retrait ou l'expédition."
+   - `overdue` (red, !): "Facture en retard de règlement" / "Contactez-nous si vous avez déjà payé."
+   `data-testid="track-invoice"` with `data-state` = the value.
+5. **Tasks**: `FR.tasksHeading` = "Vos pièces", then a plain `<ul>` of
    `tasks` as delivered by the server.
-5. **Promised date**: when `due_date` is set, "Date prévue : {date}" with
+6. **Promised date**: when `due_date` is set, "Date prévue : {date}" with
    the same French long date; absent otherwise.
-6. **Footer**: `FR.footer` = "Une question ? Répondez à notre message ou
-   appelez-nous." plus the contact line again.
+7. **Footer**, centred: `FR.footer` = "Une question ? Répondez à notre
+   message ou appelez-nous." plus the contact line again.
 
 States: loading renders the header and a neutral "Chargement…" line. Any
 error (404, network) renders the header, `FR.invalid` = "Ce lien n'est plus
@@ -190,7 +230,7 @@ raw status code. `document.title` is set to "Suivi de commande · Aito 3D".
 
 ## 6. API client
 
-`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null }`;
+`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null }`;
 `AitoProject.tracking_url: string | null; tracking_configured: boolean`;
 `api.getAitoTracking(token)`, `api.getAitoTrackingLink(id)`,
 `api.regenerateAitoTrackingToken(id)`. Default msw handlers: track → 404,
@@ -205,7 +245,8 @@ Backend (`tests/unit/test_aito_tracking.py`):
 - Regenerate replaces the token, the old one 404s, the event is recorded
   without the token in its detail.
 - Public endpoint: 200 shape (titles in position order with "Pièce n"
-  fallback, due_date, shipping labels, done_at); trashed → 404; unknown →
+  fallback, due_date, shipping labels, done_at, `invoice` mapped from each
+  `invoice_status` value and null without one; no balance key); trashed → 404; unknown →
   404; Done 31 days ago → 404; Done 29 days ago → 200; Done with no event →
   200; card that left Done and returned 2 days ago → 200; no client field or
   price key in the body; `Cache-Control: no-store`.
@@ -222,9 +263,10 @@ Backend (`tests/unit/test_aito_tracking.py`):
 
 Frontend:
 - `aitoTracking.test.ts`: every branch of `statusSentence`, French dates.
-- `AitoTrackPage.test.tsx`: renders rail (current stage marked), sentence,
-  tasks, promised date from a fixture; shipped and picked-up variants; 404
-  → the invalid line and the contact line; no login redirect.
+- `AitoTrackPage.test.tsx`: renders the logo, rail (current stage marked),
+  sentence, tasks, promised date from a fixture; shipped and picked-up
+  variants; the three invoice states and its absence; 404 → the invalid
+  line and the contact line; no login redirect.
 - `TrackingLinkControl.test.tsx`: Copy calls the link endpoint and writes
   the clipboard; disabled with the hint when `tracking_configured` is false;
   Regenerate needs the hold and toasts; buttons absent without
@@ -235,9 +277,10 @@ Frontend:
 
 | Question | Decision |
 |---|---|
-| Page content | Rail, status sentence, task titles, promised date; nothing about the client or money |
+| Page content | Logo, rail, status sentence, invoice state (paid / to pay / overdue, no amount), task titles, promised date; nothing about the client, no prices |
 | Token life | Computed: active card, and ≤ 30 days after the latest move to Done; Regenerate replaces |
 | Delivery | Copy button, SMS draft line, Zoho estimate notes (Zoho's email body is not writable) |
 | Language | Fixed French constants, no i18n |
+| Look | Dark, the app's Midnight Blue neutrals (`#0c1016` ground) with cyan `#04A1E4` accent, logo centred at the top, independent of the operator's theme |
 | Link origin | `external_url` setting only; empty → no link anywhere, buttons disabled with a Settings hint |
 | Expiry storage | None; the event log is the source |
