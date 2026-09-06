@@ -6,7 +6,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { NewProjectDrawer } from '../../components/aito/NewProjectDrawer';
 import { api } from '../../api/client';
-import type { AitoShippingService } from '../../api/client';
+import type { AitoClientHistory, AitoShippingService, AitoTask } from '../../api/client';
 import { defaultClientDraft } from '../../utils/clientDraft';
 import { emptyTaskDraft } from '../../utils/taskDraft';
 import { tasksSignature } from '../../utils/aitoSummary';
@@ -43,6 +43,82 @@ const JEAN_PIERRE = {
   mobile: '87123456',
   email: 'jp@example.pf',
 };
+
+function historyTask(overrides: Partial<AitoTask>): AitoTask {
+  return {
+    id: 900,
+    project_id: 42,
+    position: 0,
+    title: null,
+    scan_description: null,
+    modelisation_description: null,
+    impression_description: null,
+    usinage_description: null,
+    scan_cost: null,
+    modelisation_cost: null,
+    usinage_cost: null,
+    impression_printer_id: null,
+    impression_filament_id: null,
+    impression_weight_g: null,
+    impression_time_min: null,
+    impression_quantity: 1,
+    impression_color: null,
+    impression_cost: null,
+    impression_discount_pct: null,
+    impression_rush: false,
+    scan_quantity: null,
+    modelisation_quantity: null,
+    usinage_quantity: null,
+    scan_discount_pct: null,
+    modelisation_discount_pct: null,
+    usinage_discount_pct: null,
+    scan_done: true,
+    modelisation_done: false,
+    impression_done: false,
+    usinage_done: false,
+    created_at: '2026-08-12T09:14:00',
+    updated_at: '2026-08-12T09:14:00',
+    ...overrides,
+  };
+}
+
+const JP_HISTORY: AitoClientHistory = {
+  cards: [
+    {
+      id: 42,
+      created_at: '2026-08-12T09:14:00',
+      column: 'done',
+      total: 3000,
+      tasks: [
+        historyTask({ id: 900, title: 'Bracket', scan_cost: 1000 }),
+        historyTask({ id: 901, title: 'Lid', modelisation_cost: 2000, scan_done: false, modelisation_done: true }),
+      ],
+    },
+  ],
+  latest_social: { network: 'instagram', handle: 'jp.dupont' },
+};
+
+function mockHistory(body: AitoClientHistory) {
+  server.use(http.get('/api/v1/aito/clients/:clientId/history', () => HttpResponse.json(body)));
+}
+
+/** The task rows the Work section currently shows, in row order. Most rows
+ *  are collapsed to their header line under the drawer's accordion (one form
+ *  open at a time — see TaskEditor), so the row's live TITLE is only ever a
+ *  mounted input for the row currently open for editing; every other row's
+ *  header shows its trimmed title (or the "Task N" fallback for a blank one).
+ *  There is at most one title input on screen at a time (TaskEditor.test.tsx
+ *  asserts this directly), so it is unambiguous which header it belongs to:
+ *  the one row whose disclosure button is expanded. */
+function taskTitles(): string[] {
+  const headings = screen.getAllByRole('heading', { level: 4 });
+  const openInput = screen.queryByLabelText(/optional title/i) as HTMLInputElement | null;
+  return headings.map((heading) => {
+    const expanded = heading.querySelector('button')?.getAttribute('aria-expanded') === 'true';
+    if (expanded && openInput) return openInput.value;
+    return heading.querySelector('span')?.textContent ?? '';
+  });
+}
 
 // Ported from NewProjectModal.test.tsx: the drawer renders TaskEditor
 // unconditionally, and every TaskRow's edit form mounts ImpressionFields,
@@ -873,5 +949,86 @@ describe('NewProjectDrawer', () => {
     // never having stored it — proves the drawer seeded it from the form's
     // own callback argument, not from `contact`.
     await waitFor(() => expect(clientHeader()).toHaveTextContent('moana.3d'));
+  });
+});
+
+describe('repeat-client recall', () => {
+  it('appends the reused tasks below a typed row, as fresh unticked rows', async () => {
+    mockHistory(JP_HISTORY);
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await fillOneTask();
+    await openClientSection();
+    await userEvent.click(await screen.findByRole('button', { name: /reuse/i }));
+
+    expect(await screen.findByText(/2 tasks added/)).toBeInTheDocument();
+    await waitFor(() => expect(taskTitles()).toEqual(['', 'Bracket', 'Lid']));
+    // Receipt: 10 000 typed + 1 000 + 2 000 reused.
+    expect(screen.getByTestId('rail-project-total')).toHaveTextContent('13 000');
+  });
+
+  it('replaces the untouched empty first row instead of keeping it', async () => {
+    mockHistory(JP_HISTORY);
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(await screen.findByRole('button', { name: /reuse/i }));
+    await waitFor(() => expect(taskTitles()).toEqual(['Bracket', 'Lid']));
+  });
+
+  it('hands fresh drafts to onCreate: no id, no done ticks, distinct uids', async () => {
+    mockHistory(JP_HISTORY);
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+    await userEvent.click(await screen.findByRole('button', { name: /reuse/i }));
+    await waitFor(() => expect(taskTitles()).toEqual(['Bracket', 'Lid']));
+    await userEvent.click(createButton());
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    const tasks = onCreate.mock.calls[0][2];
+    expect(tasks.map((t: { id: number | null }) => t.id)).toEqual([null, null]);
+    expect(tasks.every((t: { done: Record<string, boolean> }) => Object.values(t.done).every((v) => !v))).toBe(true);
+    expect(new Set(tasks.map((t: { uid: string }) => t.uid)).size).toBe(2);
+  });
+
+  it('asks for a fresh summary after reuse unless the summary was hand-edited', async () => {
+    mockHistory(JP_HISTORY);
+    await renderDrawer();
+    await fillOneTask();
+    await openClientSection();
+    await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole('button', { name: /reuse/i }));
+    await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(2));
+  });
+
+  it('prefills the social handle once from the latest card and never overwrites a typed one', async () => {
+    mockHistory(JP_HISTORY);
+    await renderDrawer();
+    await openClientSection();
+    const handle = await screen.findByLabelText(/username/i);
+    expect(handle).toHaveValue('jp.dupont');
+    expect(screen.getByRole('radio', { name: /instagram/i })).toBeChecked();
+
+    await userEvent.clear(handle);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(handle).toHaveValue('');
+  });
+
+  it('does not touch a handle the operator typed before the history arrived', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/history', async () => {
+        await gate;
+        return HttpResponse.json(JP_HISTORY);
+      }),
+    );
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('radio', { name: /whatsapp/i }));
+    await userEvent.type(await screen.findByLabelText(/username/i), 'typed');
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByLabelText(/username/i)).toHaveValue('typed');
+    expect(screen.getByRole('radio', { name: /whatsapp/i })).toBeChecked();
   });
 });

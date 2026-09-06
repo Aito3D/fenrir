@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronDown, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
-import type { ZohoContact } from '../../api/client';
+import type { AitoTask, ZohoContact } from '../../api/client';
 import { AiSummaryPanel } from './AiSummaryPanel';
 import { ClientSection } from './ClientSection';
 import { CreateChecklist } from './CreateChecklist';
@@ -17,20 +17,30 @@ import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
+import { useToast } from '../../contexts/ToastContext';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
-import { defaultClientDraft, draftFromContact, formatPhone, visibleClientDraftErrors } from '../../utils/clientDraft';
+import {
+  defaultClientDraft,
+  draftFromContact,
+  formatPhone,
+  isSocialNetwork,
+  visibleClientDraftErrors,
+} from '../../utils/clientDraft';
 import type { ClientDraft, SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel, visibleShippingDraftErrors } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import {
   emptyTaskDraft,
+  freshenTaskDraft,
   hasPricedService,
+  isBlankTaskDraft,
   projectHasPricedService,
   projectTotal,
   // The identity a row's blur-reveal is recorded under, shared with TaskEditor —
   // `onRowBlur` hands back the task, not the key, so both must agree on the same
   // function or a revealed row would never be recognised as revealed.
   rowKey,
+  taskDraftFromAitoTask,
   taskTotal,
 } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -178,6 +188,20 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     queryFn: api.getAitoShippingServices,
     staleTime: 60 * 60_000,
   });
+  const { showToast } = useToast();
+  // Same key and options as ClientHistory's own query, so React Query dedupes
+  // — the precedent is the Zoho status query this drawer and ClientSection
+  // both run. The drawer needs the data for the handle prefill below.
+  const historyClientId = draft && !draft.isDefault ? draft.id : '';
+  const historyQuery = useQuery({
+    queryKey: ['aito-client-history', historyClientId],
+    queryFn: () => api.getAitoClientHistory(historyClientId, 5),
+    enabled: historyClientId !== '',
+    staleTime: 60_000,
+  });
+  // The last client id the social prefill ran for. Once per client: clearing
+  // the handle by hand must not refill it, picking another client must.
+  const socialPrefilledForRef = useRef<string>('');
   // Shared with the panel header's pill and ShippingCard's read view — see
   // `islandLabel`'s own doc for why the degrade (catalogue unresolved) has
   // to be the same computation on all three surfaces rather than each
@@ -196,6 +220,18 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   useEffect(() => {
     if (!draft && defaultId) setDraft(defaultClientDraft(defaultId, defaultName));
   }, [draft, defaultId, defaultName]);
+
+  // Zoho never stores the social handle; the client's own past cards do.
+  // Fill the EMPTY social field from the newest one, once per client id.
+  const latestSocial = historyQuery.data?.latest_social ?? null;
+  useEffect(() => {
+    if (!draft || draft.isDefault || !latestSocial) return;
+    if (socialPrefilledForRef.current === draft.id) return;
+    if (draft.socialNetwork !== null || draft.socialHandle !== '') return;
+    if (!isSocialNetwork(latestSocial.network)) return;
+    socialPrefilledForRef.current = draft.id;
+    setDraft({ ...draft, socialNetwork: latestSocial.network, socialHandle: latestSocial.handle });
+  }, [draft, latestSocial]);
 
   // Escape and a backdrop click are both "dismiss the thing on top": while the
   // create-client sub-form is showing that means stepping back to the client
@@ -260,6 +296,30 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     }
   };
 
+  // Reuse from the recall block. Fresh rows (no id, no ticks, new uids) land
+  // BELOW what was typed; the untouched empty row a new draft opens with is
+  // replaced rather than kept. The rows count as revealed so a task that
+  // arrived unpriced names itself at once. The Client section is open when
+  // this runs, so the signature check `openClient` performs on opening would
+  // never fire — it is repeated here under the same hand-edited guard.
+  const reuseTasks = (source: AitoTask[]) => {
+    const fresh = source.map((task) => freshenTaskDraft(taskDraftFromAitoTask(task)));
+    if (fresh.length === 0) return;
+    const next = [...tasks.filter((task) => !isBlankTaskDraft(task)), ...fresh];
+    setTasks(next);
+    setRevealedTaskKeys((prev) => {
+      const keys = new Set(prev);
+      fresh.forEach((task) => keys.add(rowKey(task)));
+      return keys;
+    });
+    const signature = tasksSignature(next);
+    if (!summaryEdited && signature !== summarySignatureRef.current) {
+      summarySignatureRef.current = signature;
+      setGenerateNonce((n) => n + 1);
+    }
+    showToast(t('aito.tasksReused', { count: fresh.length }), 'success');
+  };
+
   const resetDraft = () => {
     persistence.clear();
     setTasks([emptyTaskDraft()]);
@@ -280,6 +340,8 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setCreatingClient(false);
     setShipping(null);
     setDueDate('');
+    // A later pick of the same client (or a return to it) must prefill again.
+    socialPrefilledForRef.current = '';
   };
 
   const taskName = (task: TaskDraft, index: number) => task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
@@ -490,6 +552,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                     defaultContactName={defaultName}
                     shipping={shipping}
                     onShippingChange={setShipping}
+                    onReuseTasks={reuseTasks}
                   />
                   <div className="mt-3">
                     <label htmlFor="new-project-due-date" className={labelCls}>

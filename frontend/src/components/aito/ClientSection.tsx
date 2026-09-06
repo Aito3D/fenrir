@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Plane, RotateCcw } from 'lucide-react';
 import { api } from '../../api/client';
-import type { ZohoContact } from '../../api/client';
+import type { AitoTask, ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
+import { ClientHistory } from './ClientHistory';
 import { PhoneInput } from './PhoneInput';
 import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
@@ -24,6 +25,8 @@ export interface ClientSectionProps {
   defaultContactName: string;
   shipping: ShippingDraft | null;
   onShippingChange: (next: ShippingDraft | null) => void;
+  /** Reuse from the recall block: the drawer appends these as fresh rows. */
+  onReuseTasks: (tasks: AitoTask[]) => void;
 }
 
 /** The client half of the Aito new-project form: who the client is, the phone
@@ -42,6 +45,7 @@ export function ClientSection({
   defaultContactName,
   shipping,
   onShippingChange,
+  onReuseTasks,
 }: ClientSectionProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -111,6 +115,8 @@ export function ClientSection({
         onReset={() => onChange(defaultClientDraft(defaultContactId, defaultContactName))}
         showReset={value.id !== defaultContactId}
       />
+
+      <ClientHistory clientId={value.id} isDefault={value.isDefault} onReuse={onReuseTasks} />
 
       <div>
         <label htmlFor="aito-client-phone" className={labelCls}>

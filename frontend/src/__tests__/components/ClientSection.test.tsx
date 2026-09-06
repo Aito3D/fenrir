@@ -58,6 +58,7 @@ const renderSection = (value = defaultClientDraft(DEFAULT_ID, DEFAULT_NAME), onC
       defaultContactName={DEFAULT_NAME}
       shipping={null}
       onShippingChange={vi.fn()}
+      onReuseTasks={vi.fn()}
     />,
   );
   return onChange;
@@ -92,6 +93,7 @@ describe('ClientSection', () => {
         defaultContactName={DEFAULT_NAME}
         shipping={null}
         onShippingChange={vi.fn()}
+        onReuseTasks={vi.fn()}
       />,
     );
     await user.type(screen.getByLabelText(/^phone/i), '9');
@@ -107,6 +109,7 @@ describe('ClientSection', () => {
         defaultContactName={DEFAULT_NAME}
         shipping={null}
         onShippingChange={vi.fn()}
+        onReuseTasks={vi.fn()}
       />,
     );
     await user.click(screen.getByRole('button', { name: /revert phone/i }));
@@ -131,6 +134,7 @@ describe('ClientSection', () => {
         defaultContactName={DEFAULT_NAME}
         shipping={null}
         onShippingChange={vi.fn()}
+        onReuseTasks={vi.fn()}
       />
     );
     const user = userEvent.setup();
@@ -163,6 +167,7 @@ describe('ClientSection', () => {
         defaultContactName={DEFAULT_NAME}
         shipping={null}
         onShippingChange={vi.fn()}
+        onReuseTasks={vi.fn()}
       />
     );
     const user = userEvent.setup();
@@ -244,6 +249,7 @@ describe('ClientSection', () => {
           shipping = next;
           rerender(section());
         }}
+        onReuseTasks={vi.fn()}
       />
     );
     const user = userEvent.setup();
