@@ -1757,6 +1757,7 @@ export function isExternalSidebarItemId
 export function isExternalSpoolHidden
 export function isFinished
 export function isGcodeCompatible
+export function isIsoDateKey
 export function islandLabel
 export function isLightColor
 export function isPlaceholder

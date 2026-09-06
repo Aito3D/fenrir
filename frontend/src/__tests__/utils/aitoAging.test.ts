@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ageAnchor, agingColorCls, agingLevel, agingTextCls, dueDateCls, dueDateLevel } from '../../utils/aitoAging';
+import {
+  ageAnchor,
+  agingColorCls,
+  agingLevel,
+  agingTextCls,
+  dueDateCls,
+  dueDateLevel,
+  isIsoDateKey,
+} from '../../utils/aitoAging';
 
 const DAY = 86_400_000;
 
@@ -116,5 +124,17 @@ describe('dueDateLevel', () => {
     expect(dueDateCls('today')).toBe('text-orange-500');
     expect(dueDateCls('past')).toBe('text-red-400 font-medium');
     expect(dueDateCls('none')).toBe('');
+  });
+});
+
+describe('isIsoDateKey', () => {
+  it('accepts a plain YYYY-MM-DD string', () => {
+    expect(isIsoDateKey('2026-09-06')).toBe(true);
+  });
+  it('rejects non-ISO shapes, empty strings, and stamps with a time component', () => {
+    expect(isIsoDateKey('10/02/2026')).toBe(false);
+    expect(isIsoDateKey('')).toBe(false);
+    expect(isIsoDateKey('2026-9-6')).toBe(false);
+    expect(isIsoDateKey('2026-09-06T00:00')).toBe(false);
   });
 });

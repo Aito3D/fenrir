@@ -18,10 +18,17 @@ flag, not just that the flag itself computes correctly in isolation.
 A fourth group (T-011, also user-approved) drives the same end-to-end
 harness with an inbound ``aito_presence`` message, proving the handler
 itself — not just the initial send — is gated on ``aito_read``.
+
+A fifth group (T-028, also user-approved) pins ``broadcast_aito``'s
+backpressure handling — it now shares ``ConnectionManager._fan_out`` with
+``broadcast()``, so a wedged/slow client is dropped after
+``_BROADCAST_SEND_TIMEOUT`` instead of stalling every other client and the
+manager lock.
 """
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -101,6 +108,117 @@ async def test_non_aito_broadcast_still_reaches_a_connection_without_aito_read()
     await mgr.send_printer_status(1, {"state": "RUNNING"})
 
     denied.send_text.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Layer 1b (T-028): broadcast_aito fans out outside the lock, timeout-bounded
+#
+# Mirrors test_ws_broadcast_backpressure.py's coverage of broadcast() —
+# broadcast_aito() now shares the same _fan_out helper and must behave
+# identically: a wedged client is dropped after _BROADCAST_SEND_TIMEOUT
+# without blocking delivery to other clients or the manager lock.
+# ---------------------------------------------------------------------------
+
+
+class _NeverReturningConn:
+    """A permitted (``aito_read=True``) connection whose ``send_text`` hangs
+    forever, simulating a wedged socket stuck behind TCP backpressure."""
+
+    def __init__(self):
+        self.state = SimpleNamespace(aito_read=True)
+        self.started = False
+
+    async def send_text(self, data: str) -> None:
+        self.started = True
+        await asyncio.Event().wait()  # never resolves on its own
+
+
+class _RaisingConn:
+    """A permitted connection whose send raises immediately (closed socket)."""
+
+    def __init__(self):
+        self.state = SimpleNamespace(aito_read=True)
+
+    async def send_text(self, data: str) -> None:
+        raise RuntimeError("socket closed")
+
+
+@pytest.mark.asyncio
+async def test_broadcast_aito_drops_a_wedged_client_but_still_delivers_to_others():
+    mgr = ConnectionManager()
+    mgr._BROADCAST_SEND_TIMEOUT = 0.05
+    slow = _NeverReturningConn()
+    fast = _conn(True)
+    mgr.active_connections = [slow, fast]
+
+    await asyncio.wait_for(
+        mgr.broadcast_aito({"type": "aito_changed", "action": "create", "project_id": 1, "actor": "paul"}),
+        timeout=2.0,
+    )
+
+    assert slow.started is True  # the wedged send was attempted
+    assert slow not in mgr.active_connections
+    fast.send_text.assert_awaited_once()
+    assert fast in mgr.active_connections
+
+
+@pytest.mark.asyncio
+async def test_broadcast_aito_lock_is_not_held_across_sends():
+    """While broadcast_aito is stalled on a wedged client's send, connect()
+    and disconnect() must still be able to acquire the manager lock — proving
+    the lock is released before the I/O, not held across it (the exact bug
+    T-028 fixes)."""
+    mgr = ConnectionManager()
+    mgr._BROADCAST_SEND_TIMEOUT = 1.0  # long enough that connect()/disconnect()
+    # would visibly hang under the old lock-held-across-I/O behavior
+    slow = _NeverReturningConn()
+    mgr.active_connections = [slow]
+
+    broadcast_task = asyncio.create_task(
+        mgr.broadcast_aito({"type": "aito_changed", "action": "create", "project_id": 1, "actor": "paul"})
+    )
+
+    # Let the broadcast task run far enough to enter the (slow) I/O phase.
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert slow.started is True
+
+    new_conn = SimpleNamespace(state=SimpleNamespace(), accept=None)
+
+    async def _accept():
+        return None
+
+    new_conn.accept = _accept
+
+    # connect() must return well before the 1.0s send timeout if the lock
+    # was released before the I/O.
+    await asyncio.wait_for(mgr.connect(new_conn), timeout=0.2)
+    assert new_conn in mgr.active_connections
+
+    disconnect_target = SimpleNamespace(state=SimpleNamespace())
+    disconnect_target.state.aito_project_id = None
+    mgr.active_connections.append(disconnect_target)
+    await asyncio.wait_for(mgr.disconnect(disconnect_target), timeout=0.2)
+    assert disconnect_target not in mgr.active_connections
+
+    await asyncio.wait_for(broadcast_task, timeout=2.0)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_aito_one_failing_client_does_not_stop_others():
+    mgr = ConnectionManager()
+    bad = _RaisingConn()
+    good = _conn(True)
+    mgr.active_connections = [bad, good]
+
+    await asyncio.wait_for(
+        mgr.broadcast_aito({"type": "aito_changed", "action": "create", "project_id": 1, "actor": "paul"}),
+        timeout=2.0,
+    )
+
+    assert bad not in mgr.active_connections
+    assert good in mgr.active_connections
+    good.send_text.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

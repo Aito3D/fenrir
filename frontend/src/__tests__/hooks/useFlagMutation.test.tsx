@@ -5,55 +5,38 @@
  * immediately, so none of `transform`, `onSuccess` (settleProject) or
  * `onError` ever ran in any test.
  *
- * Mirrors useContactedMutation.test.tsx's mocks (react-i18next `t` returning
- * the key, ToastContext mocked to `showToastMock`, `flashRevert` mocked as a
- * direct binding since the wrapper imports it that way) and its
- * manually-released-promise pattern for observing the optimistic write
+ * Shares its mocks and render helper with useContactedMutation.test.tsx,
+ * useColumnMoveMutation.test.tsx and useDueDateMutation.test.tsx via
+ * boardMutationHarness.tsx (react-i18next `t` returning the key,
+ * ToastContext mocked to `showToastMock`, and `../../hooks/useRevertFlash`
+ * mocked since the wrapper imports `flashRevert` as a direct binding), and
+ * its manually-released-promise pattern for observing the optimistic write
  * before the mocked request settles.
  */
-import type { ReactNode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, waitFor } from '@testing-library/react';
 import { useFlagMutation } from '../../hooks/useFlagMutation';
-import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { flashRevert } from '../../hooks/useRevertFlash';
 import { api, type AitoProject } from '../../api/client';
+import { showToastMock, resetBoardMutationHarness, renderBoardMutationHook } from './boardMutationHarness';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-const showToastMock = vi.fn();
-vi.mock('../../contexts/ToastContext', () => ({
-  useToast: () => ({ showToast: showToastMock }),
-}));
-
-// The wrapper imports `flashRevert` as a direct binding, so vi.spyOn on the
-// namespace would patch an object nobody reads. Mock the module instead, and
-// spread the original so anything else re-exported stays real.
-vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../hooks/useRevertFlash')>()),
-  flashRevert: vi.fn(),
-}));
+// `vi.mock(...)` factories are hoisted above this file's own imports, so the
+// harness's factories cannot be referenced directly here (that trips a
+// temporal-dead-zone ReferenceError) — a dynamic import inside the factory
+// sidesteps the hoisting order instead.
+vi.mock('react-i18next', async () => (await import('./boardMutationHarness')).i18nKeyTranslationFactory());
+vi.mock('../../contexts/ToastContext', async () => (await import('./boardMutationHarness')).toastContextMockFactory());
+vi.mock('../../hooks/useRevertFlash', async () => (await import('./boardMutationHarness')).revertFlashMockFactory());
 
 function renderFlagHook(project: AitoProject) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  client.setQueryData(['aito-projects'], [project]);
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  );
-  const { result } = renderHook(() => useFlagMutation(project), { wrapper });
-  return { client, result };
+  return renderBoardMutationHook(() => useFlagMutation(project), project);
 }
 
 const project = { id: 7, flag: null } as AitoProject;
 
 describe('useFlagMutation', () => {
   beforeEach(() => {
-    __resetBoardSync();
-    vi.restoreAllMocks();
-    showToastMock.mockClear();
+    resetBoardMutationHarness();
   });
 
   it('optimistically sets the flag, then adopts the server row on success', async () => {

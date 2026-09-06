@@ -96,6 +96,14 @@ export type DueLevel = 'none' | 'far' | 'soon' | 'today' | 'past';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** True when `value` is a plain `YYYY-MM-DD` string. Books occasionally
+ *  echoes a non-ISO due date (e.g. "10/02/2026"); a string compare against
+ *  `today` would misread it as always overdue. Shared with aitoFollowups.ts's
+ *  unpaid rule so the two never drift apart. */
+export function isIsoDateKey(value: string): boolean {
+  return ISO_DATE.test(value);
+}
+
 export function dueDateLevel(dueDate: string | null, today: string): DueLevel {
   if (!dueDate || !ISO_DATE.test(dueDate)) return 'none';
   const days = Math.round((parseLocalDateKey(dueDate).getTime() - parseLocalDateKey(today).getTime()) / DAY_MS);

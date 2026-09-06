@@ -7,40 +7,31 @@
  * itself IS covered, by AitoDoneCelebration.test.tsx — this file leaves that
  * one alone and does not duplicate it beyond a light happy-path check.)
  *
- * Mirrors useContactedMutation.test.tsx's mocks (react-i18next `t` returning
- * the key, ToastContext mocked to `showToastMock`, `flashRevert` mocked as a
- * direct binding since the wrapper imports it that way) and its
- * manually-released-promise pattern for observing the optimistic write
+ * Shares its mocks and render helper with useContactedMutation.test.tsx,
+ * useFlagMutation.test.tsx and useDueDateMutation.test.tsx via
+ * boardMutationHarness.tsx (react-i18next `t` returning the key,
+ * ToastContext mocked to `showToastMock`, and `../../hooks/useRevertFlash`
+ * mocked since the wrapper imports `flashRevert` as a direct binding), and
+ * its manually-released-promise pattern for observing the optimistic write
  * before the mocked request settles. The celebration mock is
  * AitoDoneCelebration.test.tsx's lighter approach: stub `useCelebration` to
  * return a spy rather than mounting the real canvas provider.
  */
-import type { ReactNode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, waitFor } from '@testing-library/react';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
-import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { flashRevert } from '../../hooks/useRevertFlash';
 import { applyColumnMove } from '../../utils/aitoOptimistic';
 import { api, type AitoProject } from '../../api/client';
+import { showToastMock, resetBoardMutationHarness, renderBoardMutationHook } from './boardMutationHarness';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-const showToastMock = vi.fn();
-vi.mock('../../contexts/ToastContext', () => ({
-  useToast: () => ({ showToast: showToastMock }),
-}));
-
-// The wrapper imports `flashRevert` as a direct binding, so vi.spyOn on the
-// namespace would patch an object nobody reads. Mock the module instead, and
-// spread the original so anything else re-exported stays real.
-vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../hooks/useRevertFlash')>()),
-  flashRevert: vi.fn(),
-}));
+// `vi.mock(...)` factories are hoisted above this file's own imports, so the
+// harness's factories cannot be referenced directly here (that trips a
+// temporal-dead-zone ReferenceError) — a dynamic import inside the factory
+// sidesteps the hoisting order instead.
+vi.mock('react-i18next', async () => (await import('./boardMutationHarness')).i18nKeyTranslationFactory());
+vi.mock('../../contexts/ToastContext', async () => (await import('./boardMutationHarness')).toastContextMockFactory());
+vi.mock('../../hooks/useRevertFlash', async () => (await import('./boardMutationHarness')).revertFlashMockFactory());
 
 // AitoDoneCelebration.test.tsx's lighter approach: stub the hook rather than
 // mounting the real canvas provider, which jsdom cannot draw into anyway.
@@ -53,22 +44,14 @@ vi.mock('../../components/aito/celebration/context', async (importOriginal) => {
 const CARD_RECT = { left: 100, top: 200, width: 300, height: 120 } as DOMRect;
 
 function renderMoveHook(project: AitoProject, column: 'done' | 'finish', origin?: () => DOMRect | null) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  client.setQueryData(['aito-projects'], [project]);
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  );
-  const { result } = renderHook(() => useColumnMoveMutation(project, column, origin), { wrapper });
-  return { client, result };
+  return renderBoardMutationHook(() => useColumnMoveMutation(project, column, origin), project);
 }
 
 const project = { id: 7, column: 'finish', move_lock: null, version: 1 } as AitoProject;
 
 describe('useColumnMoveMutation', () => {
   beforeEach(() => {
-    __resetBoardSync();
-    vi.restoreAllMocks();
-    showToastMock.mockClear();
+    resetBoardMutationHarness();
     celebrateSpy.mockClear();
   });
 

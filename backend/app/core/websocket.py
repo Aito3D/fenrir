@@ -59,27 +59,26 @@ class ConnectionManager:
         if had_presence:
             await self.broadcast_aito(self.aito_presence_state())
 
-    async def broadcast(self, message: dict[str, Any]):
-        """Broadcast a message to all connected clients.
+    async def _fan_out(self, connections: list[WebSocket], data: str) -> None:
+        """Shared send path for ``broadcast()`` and ``broadcast_aito()``
+        (T-020, T-028).
 
-        (T-020) Sends fan out concurrently, and the lock is only held to take
-        a snapshot of ``active_connections`` / to apply cleanup afterwards —
-        never across the actual I/O. Holding it across ``send_text`` would
-        mean one client stuck behind TCP backpressure (a laptop that slept
-        with the dashboard open, a phone on a dead cell link) stalls delivery
-        to every other client *and* blocks ``connect()``/``disconnect()``
-        from registering new sockets, since they take the same lock. Each
-        send is bounded by ``_BROADCAST_SEND_TIMEOUT``; a connection that
-        times out or raises is dropped via the same removal path a normal
+        Sends fan out concurrently across ``connections`` — the lock is
+        never held across this call, only around building the snapshot
+        passed in. Holding it across ``send_text`` would mean one client
+        stuck behind TCP backpressure (a laptop that slept with the
+        dashboard open, a phone on a dead cell link) stalls delivery to
+        every other client *and* blocks ``connect()``/``disconnect()`` from
+        registering new sockets, since they take the same lock. Each send
+        is bounded by ``_BROADCAST_SEND_TIMEOUT``; a connection that times
+        out or raises is dropped via the same removal path a normal
         disconnect uses, under the lock, against the live list (not the
-        snapshot) so it can't race a concurrent connect()/disconnect().
+        snapshot passed in) so it can't race a concurrent
+        connect()/disconnect().
         """
-        async with self._lock:
-            connections = list(self.active_connections)
         if not connections:
             return
 
-        data = json.dumps(message)
         results = await asyncio.gather(
             *(
                 asyncio.wait_for(connection.send_text(data), timeout=self._BROADCAST_SEND_TIMEOUT)
@@ -96,6 +95,20 @@ class ConnectionManager:
                 for conn in disconnected:
                     if conn in self.active_connections:
                         self.active_connections.remove(conn)
+
+    async def broadcast(self, message: dict[str, Any]):
+        """Broadcast a message to all connected clients.
+
+        (T-020) The lock is only held to take a snapshot of
+        ``active_connections`` before handing off to ``_fan_out`` — never
+        across the actual I/O. See ``_fan_out`` for why.
+        """
+        async with self._lock:
+            connections = list(self.active_connections)
+        if not connections:
+            return
+        data = json.dumps(message)
+        await self._fan_out(connections, data)
 
     async def broadcast_aito(self, message: dict[str, Any]):
         """Broadcast an Aito board message (``aito_changed`` /
@@ -127,24 +140,23 @@ class ConnectionManager:
         Every other broadcast (printer status, print start/complete,
         archive events, queue toasts, spool warnings) keeps calling the
         unfiltered ``broadcast()`` above and is untouched by this filter.
+
+        (T-028) Filtering happens under the lock while building the
+        snapshot, then the lock is released before handing off to
+        ``_fan_out`` — the same shape as ``broadcast()``, for the same
+        reason: without it, one connection stuck behind TCP backpressure
+        would stall Aito delivery to every other client and block
+        ``connect()``/``disconnect()``, and since ``broadcast_aito`` is
+        awaited inline from request handlers after every board mutation
+        (e.g. ``routes/aito.py``), that stall would also hang the HTTP
+        response itself. See ``_fan_out`` for the timeout/cleanup details.
         """
-        if not self.active_connections:
-            return
-
-        data = json.dumps(message)
         async with self._lock:
-            disconnected = []
-            for connection in self.active_connections:
-                if not getattr(connection.state, "aito_read", True):
-                    continue
-                try:
-                    await connection.send_text(data)
-                except Exception:
-                    disconnected.append(connection)
-
-            for conn in disconnected:
-                if conn in self.active_connections:
-                    self.active_connections.remove(conn)
+            connections = [conn for conn in self.active_connections if getattr(conn.state, "aito_read", True)]
+        if not connections:
+            return
+        data = json.dumps(message)
+        await self._fan_out(connections, data)
 
     async def broadcast_to_user(self, user_id: int | None, message: dict[str, Any]):
         """Send a message to every connection authenticated as the given user.

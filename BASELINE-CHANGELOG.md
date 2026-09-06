@@ -10333,3 +10333,96 @@ response-body-adjacent header construction). `SURFACE.md`: unchanged (confirmed 
 `gen_surface_all.sh` regen diff).
 
 user-approved 2026-09-05
+
+## Campaign 11 · T-028 — 2026-09-06 — user-approved behavior change
+
+`ConnectionManager.broadcast_aito` (`backend/app/core/websocket.py`) sent to every connection
+serially, inside `async with self._lock`, with no per-send timeout — the exact shape `broadcast()`
+was hardened away from in T-020, whose own docstring explains why: uvicorn applies TCP
+backpressure, so `send_text()` to a client whose socket window is full (sleeping laptop, dead cell
+link) never returns on its own, and holding the lock across it stalls delivery to every other
+client and blocks `connect()`/`disconnect()` from registering new sockets, since they take the same
+lock. `broadcast_aito` took neither mitigation. Because `broadcast_aito` is awaited inline inside
+request handlers after every board mutation (`_broadcast_changed` in `routes/aito.py`), a single
+wedged client — e.g. an operator whose laptop slept with the board open — could therefore wedge the
+whole `ConnectionManager` lock: printer-status broadcasts, new WS connects and disconnects all block
+behind it, and the writing operator's own PATCH/POST never returns, leaving their card stuck in its
+optimistic state with `boardSync.pendingWrites` never decrementing.
+
+Fixed by giving `broadcast_aito` the same shape as `broadcast()`: both now share a new
+`ConnectionManager._fan_out(connections, data)` helper that fans sends out concurrently via
+`asyncio.gather`, each wrapped in `asyncio.wait_for(..., timeout=self._BROADCAST_SEND_TIMEOUT)`
+(the existing 5.0s constant from T-020 — no new timeout was added), then re-takes the lock only to
+drop the connections that timed out or raised, against the live list rather than the snapshot, so
+it can't race a concurrent `connect()`/`disconnect()`. `broadcast_aito` still takes the lock first
+to build its filtered snapshot (`aito_read` truthy — the existing `getattr(..., True)` default is
+unchanged, per T-030), then releases it before handing the snapshot to `_fan_out`. `broadcast()`'s
+own behavior, docstring intent, and every other broadcast method (`broadcast_to_user`, printer
+status, print start/complete, archive events, queue toasts, spool warnings) are unchanged.
+
+Tests added to `backend/tests/unit/test_ws_aito_read_filter.py` (new "Layer 1b (T-028)" section),
+mirroring `test_ws_broadcast_backpressure.py`'s coverage of `broadcast()`:
+- `test_broadcast_aito_drops_a_wedged_client_but_still_delivers_to_others` — a connection whose
+  `send_text` never returns (an `asyncio.Event().wait()` fake) is dropped from
+  `active_connections` after a shortened instance-level `_BROADCAST_SEND_TIMEOUT`, while a second,
+  healthy connection still receives the message and the call returns.
+- `test_broadcast_aito_lock_is_not_held_across_sends` — while one send is blocked on a long
+  timeout, `mgr.connect()` and `mgr.disconnect()` of other sockets both complete well inside a
+  bounded `asyncio.wait_for`, proving the lock is released before the I/O, not held across it.
+- `test_broadcast_aito_one_failing_client_does_not_stop_others` — a connection whose send raises
+  immediately is dropped while a second connection still receives the message.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`pytest backend/tests/unit/test_ws_aito_read_filter.py backend/tests/unit/test_ws_aito_presence.py`
+(21 passed, `--cov=backend.app.core.websocket` unchanged coverage shape for the touched lines).
+`pytest backend/tests/ -k "websocket or ws_ or broadcast"` (184 passed, `-n 8`).
+`pytest backend/tests/unit/test_aito_routes.py backend/tests/unit/test_aito_broadcasts.py` (302
+passed, `-n 8`) — confirms `routes/aito.py`'s inline `await _broadcast_changed(...)` call sites are
+unaffected. `tools/snapshot.py verify`: 10/10 (`core/websocket.py` is outside every probe's glob).
+`SURFACE.md`: unchanged (confirmed via `gen_surface_all.sh` regen diff).
+
+Observable change, quoted verbatim from the approved task: "a client that cannot accept an Aito
+message within 5 s is disconnected instead of stalling everyone, so a very slow connection may be
+dropped where it previously survived."
+
+user-approved 2026-09-06
+
+## Campaign 11 · T-024 — 2026-09-06 — user-approved surface change
+
+`ISO_DATE` (`/^\d{4}-\d{2}-\d{2}$/`) was declared twice, byte-identical, for the same purpose —
+rejecting a non-ISO due-date string from Books before comparing it to `today` — in
+`frontend/src/utils/aitoAging.ts` and `frontend/src/utils/aitoFollowups.ts`, with no shared import.
+`aitoFollowups.ts` already imports `ageAnchor` from `./aitoAging`, so the duplicate was purely
+historical (added independently by T-007's ISO guard).
+
+Fixed by keeping the module-private `ISO_DATE` const in `aitoAging.ts` as the implementation and
+adding one new exported wrapper, `export function isIsoDateKey(value: string): boolean { return
+ISO_DATE.test(value); }`. `aitoFollowups.ts` deletes its local `ISO_DATE` const and the "same shape
+as aitoAging.ts's ISO_DATE" comment, imports `isIsoDateKey` from `./aitoAging` alongside `ageAnchor`,
+and calls it at the unpaid rule's due-date-shape check. `dueDateLevel` in `aitoAging.ts` keeps using
+the local `ISO_DATE` const directly — behaviorally identical either way. The regex itself is
+unchanged, so every call site produces the same boolean for every input as before.
+
+This adds exactly one new export to the frontend surface: `export function isIsoDateKey` (in
+`frontend/src/utils/aitoAging.ts`, alphabetized into the "frontend utils/hooks exports" section of
+`SURFACE.md`). No other line of `SURFACE.md` changed.
+
+Tests: `src/__tests__/utils/aitoAging.test.ts` gets a new `isIsoDateKey` describe block covering
+`'2026-09-06'` (true), `'10/02/2026'`, `''`, `'2026-9-6'`, and `'2026-09-06T00:00'` (all false).
+`src/__tests__/utils/aitoFollowups.test.ts` is unchanged and still passes, proving the unpaid rule's
+behavior did not move.
+
+Verification: `npx tsc -b --noEmit` clean. `npx eslint` on both touched utils and both touched test
+files clean. `npx vitest run src/__tests__/utils/aitoAging.test.ts` (15 passed).
+`npx vitest run src/__tests__/utils/aitoFollowups.test.ts` (11 passed).
+`npx vitest run src/__tests__/components/FollowupStrip.test.tsx` (4 passed).
+`npx vitest run src/__tests__/components/DueDateControl.test.tsx` (4 passed, nearest due-date
+component test — no `DueDateBadge.test.tsx` exists). `tools/snapshot.py verify`: 10/10 (no golden
+probe covers this export). `SURFACE.md` regenerated via `gen_surface_all.sh`: diff against the
+prior committed version is exactly one added line, `export function isIsoDateKey`, confirmed by
+`git diff --stat -- SURFACE.md` reporting `1 insertion(+)`.
+
+No runtime behavior change: the regex is byte-identical and both call sites produce the same
+booleans for every input before and after.
+
+user-approved 2026-09-06 (surface-only)
