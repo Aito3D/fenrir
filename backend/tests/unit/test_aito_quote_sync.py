@@ -2686,12 +2686,19 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
     # that is THE connection, so db_session's own teardown then rolls back on
     # a dead connection ("no active connection"), failing the test at
     # teardown deterministically whenever this test runs first in a worker.
+    # Set the moment a worker session is OPENED (in ``__init__``, i.e. the
+    # instant ``async_session()`` is called), so the startup full pass below
+    # can be waited IN rather than merely waited OUT: waiting only for
+    # `live_sessions` to go empty right after `create_task` could pass
+    # trivially before the loop task has even been scheduled once.
+    startup_session_opened = asyncio.Event()
     live_sessions: set[AsyncSession] = set()
 
     class TrackedSession(AsyncSession):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             live_sessions.add(self)
+            startup_session_opened.set()
 
         async def close(self) -> None:
             try:
@@ -2734,8 +2741,27 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
 
     loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
     try:
-        # Let the startup full pass run; there is nothing for it to drain yet.
-        await asyncio.sleep(0.05)
+        # Two-phase, condition-based wait for the startup full pass -- not a
+        # fixed sleep. db_session and every worker session share ONE physical
+        # aiosqlite connection (StaticPool, see the class comment above), so
+        # the project below must not be added/committed until that pass's own
+        # session has fully CLOSED: if it is still mid-transaction (its SELECTs
+        # autobegin one) when db_session's insert lands and commits on that
+        # same connection, the startup session's later rollback-on-close can
+        # silently discard the just-committed insert.
+        #
+        # Phase 1: wait for the startup pass's session to have OPENED at all
+        # (`startup_session_opened`, set in `TrackedSession.__init__`) --
+        # without this, phase 2 ("wait for `live_sessions` to be empty") could
+        # pass trivially before the loop task has even been scheduled once.
+        await asyncio.wait_for(startup_session_opened.wait(), timeout=5)
+        # Phase 2: now that the startup session is known to exist, wait for it
+        # (and anything else transiently open) to CLOSE before writing.
+        for _ in range(100):
+            if not live_sessions:
+                break
+            await asyncio.sleep(0.01)
+        assert not live_sessions
         project = AitoProject(
             description="Nouveau",
             board_column="devis",

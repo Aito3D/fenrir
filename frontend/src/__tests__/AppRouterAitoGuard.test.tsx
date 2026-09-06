@@ -32,7 +32,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from './mocks/server';
 
 const mockUseAuth = {
-  user: { id: 1, username: 'operator', permissions: [] as string[] },
+  user: { id: 1, username: 'operator', permissions: [] as string[] } as { id: number; username: string; permissions: string[] } | null,
   authEnabled: true,
   requiresSetup: false,
   loading: false,
@@ -86,6 +86,8 @@ beforeEach(() => {
   vi.resetModules();
   stubAppShellEndpoints();
   mockUseAuth.authEnabled = true;
+  mockUseAuth.loading = false;
+  mockUseAuth.user = { id: 1, username: 'operator', permissions: [] };
   mockUseAuth.hasPermission.mockReset();
 });
 
@@ -115,6 +117,46 @@ describe('App router — /aito route guard (T-035)', () => {
 
     expect(await screen.findByText('No projects yet')).toBeInTheDocument();
     expect(window.location.pathname).toBe('/aito');
+    expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
+  });
+
+  it('while auth is loading: shows the loading state, stays on /aito and never mounts the board', async () => {
+    mockUseAuth.loading = true;
+    mockUseAuth.hasPermission.mockImplementation((permission: string) => permission === 'aito:read');
+    window.history.pushState({}, '', '/aito');
+
+    const { default: App } = await import('../App');
+    const { container } = rtlRender(<App />);
+
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/aito');
+    expect(screen.queryByText('No projects yet')).not.toBeInTheDocument();
+    expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
+  });
+
+  it('with auth disabled: mounts the Aito board at /aito even without aito:read', async () => {
+    mockUseAuth.authEnabled = false;
+    mockUseAuth.hasPermission.mockImplementation(() => false);
+    window.history.pushState({}, '', '/aito');
+
+    const { default: App } = await import('../App');
+    rtlRender(<App />);
+
+    expect(await screen.findByText('No projects yet')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/aito');
+    expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
+  });
+
+  it('when logged out: redirects to /login and never mounts the Aito board', async () => {
+    mockUseAuth.user = null;
+    mockUseAuth.hasPermission.mockImplementation((permission: string) => permission === 'aito:read');
+    window.history.pushState({}, '', '/aito');
+
+    const { default: App } = await import('../App');
+    rtlRender(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    expect(screen.queryByText('No projects yet')).not.toBeInTheDocument();
     expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
   });
 });
