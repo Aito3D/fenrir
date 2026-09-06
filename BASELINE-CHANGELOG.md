@@ -10840,3 +10840,70 @@ lines only, confirmed via `git diff snapshots/fe-i18n-parity.golden`).
 file — empty diff).
 
 user-approved 2026-09-06
+
+## Campaign 11 · T-043 — 2026-09-06 — user-approved behavior change
+
+The three OpenRouter-backed Aito routes — `POST /aito/summarize` (`summarize_project`),
+`POST /aito/proofread` (`proofread_field`), and `POST /aito/{project_id}/pickup-message`
+(`generate_pickup_message`) — each billed one OpenRouter completion per call and had no throttle at
+all: `proofread_field` fires on every field blur in the create drawer / detail panel, so a caller
+pasting into several fields in a row, or any client on an auth-disabled install, could run the bill
+up with no bound.
+
+Added a module-private, in-process sliding-window rate limiter to `backend/app/api/routes/aito.py`
+(`_check_ai_rate_limit`, `_ai_rate_limit_key`, `_ai_rate_limit_calls`), enforced at the top of all
+three handlers, before the OpenRouter call:
+
+- **Constants**: 30 calls per 60 seconds per principal (`_AI_RATE_LIMIT_MAX_CALLS` /
+  `_AI_RATE_LIMIT_WINDOW_S`). Chosen generous enough that an operator proofreading every field on a
+  large task list, or summarizing several drafts while building a card, never hits it in normal use,
+  while still bounding a runaway client loop or an auth-disabled install being hammered.
+- **Keying**: the authenticated user's id (`user:{id}`) when `current_user` is bound; otherwise the
+  client's IP (`request.client.host`, `ip:{host}`) — the same "who is this" split
+  `require_any_permission_if_auth_enabled` already returns (it also yields `None` for a valid API-key
+  caller, which therefore buckets by IP like the auth-disabled case). The three routes' permission
+  dependency parameter was renamed from `_` to `current_user` to bind it (the dependency itself is
+  unchanged), and each gained a `request: Request` parameter to read the client host.
+- **429 response**: `HTTPException(status_code=429, detail="Too many AI requests. Please wait a
+  moment and try again.")`. No `Retry-After` header — mirrored `mfa.py`'s existing 429s
+  (`check_rate_limit`, `check_email_otp_send_rate`), none of which set one.
+- **Deliberately NOT used**: `mfa.py`'s DB-backed `check_rate_limit`/`AuthRateLimitEvent`. That
+  primitive counts *failed* auth attempts in an auth-specific event log; reusing it here would mean
+  adding a new `EventType` to a shared model for something with nothing to do with login failures. A
+  small in-process token/window counter (modeled on `services/bug_report.py`'s `_check_rate_limit`,
+  but keyed per principal instead of globally) fits the actual shape of the problem.
+- **Clock**: reads the module's own `time` name (`time.monotonic()`), not a bound `monotonic`
+  import, so a test can rebind `aito_routes.time` to a fake clock without touching the real
+  `time.monotonic` — which asyncio's own loop internals (timeouts, `call_later`) also depend on, and
+  which must never be patched in an async test.
+- **Surface-neutral by design**: kept as `_`-prefixed module-private helpers inside `routes/aito.py`
+  rather than a new `backend/app/services/` module, because `SURFACE.md`'s backend-service def-count
+  section only greps `backend/app/services/*.py` for non-underscore top-level `def`/`class` — a new
+  services module would have added entries there, a route-level private helper does not. The 429 is
+  raised only at runtime, never declared in the route decorator's `responses=`, so the OpenAPI index
+  snapshot (`app-openapi-index`) stays byte-identical; no new `RequirePermissionIfAuthEnabled` call
+  was added, so `app-route-perms` is unaffected either.
+
+Tests added in `backend/tests/unit/test_aito_proofread_route.py`,
+`test_aito_summarize_route.py`, and `test_aito_pickup_sms.py` (one `_FakeClock` class and an autouse
+`_ai_rate_limit_calls`-clearing fixture per file): the `_AI_RATE_LIMIT_MAX_CALLS`th call in the
+window still succeeds, the next one gets 429 with the exact detail and never reaches the (billed)
+OpenRouter call; a different principal (dependency-overridden `current_user`) is unaffected by
+another principal's exhausted budget; and advancing the rebound fake clock past
+`_AI_RATE_LIMIT_WINDOW_S` allows the same principal through again.
+
+User-visible effect, quoted verbatim from the approved task: "a user who blurs many fields in quick
+succession (or any caller on an auth-disabled install) would start getting 429s from
+`/aito/proofread`, `/aito/summarize` and `/aito/{id}/pickup-message` instead of an answer, so the
+drawer's spell-check would visibly stop correcting until the window clears."
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`pytest backend/tests/unit/test_aito_proofread_route.py backend/tests/unit/test_aito_summarize_route.py
+backend/tests/unit/test_aito_pickup_sms.py` (45 passed).
+`pytest backend/tests/unit/test_aito_routes.py backend/tests/unit/test_aito_permissions.py -n 8`
+(347 passed). `pytest backend/tests/ -k aito -n 8` (1129 passed).
+`tools/snapshot.py verify`: 10/10, `app-openapi-index` and `app-route-perms` unchanged.
+`SURFACE.md`: unchanged (confirmed via a fresh `gen_surface_all.sh` regen diffed against the tracked
+file — empty diff).
+
+user-approved 2026-09-06

@@ -2,10 +2,11 @@
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1106,15 +1107,65 @@ async def create_project(
     return await _project_response(db, project, summary)
 
 
+# T-043: the three OpenRouter-backed routes below (summarize, proofread,
+# pickup-message) each bill one completion per call and had no throttle at
+# all — proofread fires on every field blur, so a caller pasting into several
+# fields in a row (or any client on an auth-disabled install) could run the
+# bill up arbitrarily. A tiny in-process sliding window, not mfa.py's
+# DB-backed check_rate_limit/AuthRateLimitEvent: that primitive counts FAILED
+# auth attempts in an auth-specific event log, and reusing it here would mean
+# adding a new EventType to a shared model for something that has nothing to
+# do with login failures. 30 calls / 60s is generous enough that an operator
+# actually editing a card — even one proofreading every field on a big task
+# list — never hits it, while still bounding a runaway loop or an
+# auth-disabled install being hammered.
+_AI_RATE_LIMIT_WINDOW_S = 60.0
+_AI_RATE_LIMIT_MAX_CALLS = 30
+_AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try again."
+# principal key -> call timestamps (module's own `time.monotonic`, see below).
+_ai_rate_limit_calls: dict[str, list[float]] = {}
+
+
+def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
+    """One bucket per authenticated user; per client IP when auth is disabled
+    (or the caller authenticated via an API key, which the any-of permission
+    checker also surfaces as `None` — see require_any_permission_if_auth_enabled)."""
+    if current_user is not None:
+        return f"user:{current_user.id}"
+    host = request.client.host if request.client else "unknown"
+    return f"ip:{host}"
+
+
+def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
+    """Raise 429 once a principal exceeds _AI_RATE_LIMIT_MAX_CALLS calls in
+    _AI_RATE_LIMIT_WINDOW_S seconds. Enforced before the OpenRouter call.
+
+    Reads the clock through the module's own `time` name (`time.monotonic()`)
+    rather than importing `monotonic` directly, so a test can rebind
+    `aito_routes.time` to a fake clock. Never patch the real
+    `time.monotonic` in an async test — asyncio's own loop internals
+    (timeouts, call_later) depend on it too.
+    """
+    key = _ai_rate_limit_key(request, current_user)
+    now = time.monotonic()
+    calls = _ai_rate_limit_calls.setdefault(key, [])
+    calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]
+    if len(calls) >= _AI_RATE_LIMIT_MAX_CALLS:
+        raise HTTPException(status_code=429, detail=_AI_RATE_LIMIT_DETAIL)
+    calls.append(now)
+
+
 @router.post("/summarize", response_model=AitoSummarizeResponse)
 async def summarize_project(
     payload: AitoSummarizeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """French project summary for the create drawer. Registered before the
     /{project_id} routes on purpose — a literal segment after a parametric
     route would 422 instead of matching."""
+    _check_ai_rate_limit(request, current_user)
     try:
         summary, model = await summarize_tasks(db, [t.model_dump() for t in payload.tasks])
     except OpenRouterNotConfiguredError:
@@ -1127,8 +1178,9 @@ async def summarize_project(
 @router.post("/proofread", response_model=AitoProofreadResponse)
 async def proofread_field(
     payload: AitoProofreadRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(
+    current_user: User | None = Depends(
         # Any-of, not AITO_CREATE alone: the same field component serves the
         # create drawer and the detail panel's edit mode, and a user who may
         # only update existing projects must still get their spelling fixed.
@@ -1138,6 +1190,7 @@ async def proofread_field(
     """Spell-check one task field's French, on blur. Registered before the
     /{project_id} routes for the same reason /summarize is — a literal segment
     after a parametric route would 422 instead of matching."""
+    _check_ai_rate_limit(request, current_user)
     try:
         corrected, model = await proofread_text(db, payload.text)
     except OpenRouterNotConfiguredError:
@@ -2718,8 +2771,9 @@ async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:
 @router.post("/{project_id}/pickup-message", response_model=AitoPickupMessageResponse)
 async def generate_pickup_message(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Draft the "come and collect" SMS for a finished project.
 
@@ -2729,6 +2783,7 @@ async def generate_pickup_message(
     client is an act on the card, and "may edit an Aito card" is the right
     authority for it.
     """
+    _check_ai_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     await _finished_or_409(db, project)
     # The task titles are the names the client knows the parts by — the SMS
