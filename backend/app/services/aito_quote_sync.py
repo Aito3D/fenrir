@@ -2140,13 +2140,18 @@ async def run_sync_loop() -> None:
                     # Its own hourly gate makes the 300 s tick a no-op most
                     # of the time.
                     await sweep_invoices(db)
-                    # Retention for the tracking-view log, guarded the same
-                    # way the sweep guards each project: a purge failure
-                    # costs this tick, never the loop.
-                    try:
-                        await purge_tracking_views(db)
-                    except Exception as exc:
-                        logger.warning("Tracking-view purge failed: %s", exc)
+                # Retention for the tracking-view log: unlike the sweep above,
+                # this has nothing to do with Zoho — a Bambuddy instance can
+                # run the public tracking page with only `external_url` set
+                # and no Books connection at all — so it runs every tick,
+                # gated only by its own try/except like the sweep guards each
+                # project: a purge failure costs this tick, never the loop.
+                # An indexed DELETE that usually deletes nothing is cheap
+                # enough to run at the full 300 s cadence.
+                try:
+                    await purge_tracking_views(db)
+                except Exception as exc:
+                    logger.warning("Tracking-view purge failed: %s", exc)
         except asyncio.CancelledError:
             raise
         except Exception:
