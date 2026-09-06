@@ -91,15 +91,24 @@ Response `AitoTrackingResponse`:
 ```
 {
   "column": "print",                        // AitoColumn
-  "tasks": ["Support GoPro", "Pièce 2"],    // titles in position order; untitled → "Pièce {n}" (1-based) — done SERVER-side so the page has no rule
+  "tasks": [                                // position order; untitled → "Pièce {n}" (1-based) — done SERVER-side so the page has no rule
+    {"title": "Support GoPro", "quantity": null},
+    {"title": "Boîtier capteur", "quantity": 2}   // quantity: the count when EVERY priced service on the task carries the same count > 1; null otherwise (1, or services that disagree)
+  ],
   "due_date": "2026-09-20" | null,
   "shipping": {"island": "Rangiroa", "service": "Livraison Avion Tuamotu"} | null,   // labels from _shipping_names / shipping_service
   "done_at": "2026-09-01T18:20:00" | null,  // the latest move-to-Done event's occurred_at; null unless column == 'done' and an event exists
   "invoice": "paid" | "unpaid" | "overdue" | null,  // a STATE, never an amount — see below
   "reference": "EST-000142" | null,         // project.quote_number: the number printed on the client's own quote; null before a quote exists
-  "updated_at": "2026-09-06T09:42:00"       // project.updated_at (naive UTC) — the page's "Mis à jour …" line; real data, never a fake "recently"
+  "updated_at": "2026-09-06T09:42:00"       // the card's last ACTIVITY (naive UTC): the latest aito_events.occurred_at for the project, or project.updated_at when it has no events — the page's "Mis à jour …" line; real data, never a fake "recently"
 }
 ```
+
+`tasks[].quantity`: per-service counts live on the task (`scan_quantity`,
+`modelisation_quantity`, `usinage_quantity`, `impression_quantity`); the
+page shows one number only when it is unambiguous — every service with a
+non-null cost has the same count and it is greater than 1. A print step at
+×2 next to a scan at ×1 sends `null`, never a guess.
 
 `invoice` is derived from `project.invoice_status` (kept fresh by the hourly
 invoice sweep): `paid` → `"paid"`; `overdue` → `"overdue"`; `sent`, `unpaid`
@@ -244,8 +253,8 @@ uppercase with light tracking; content 15.5 px. Two weights only (400/600).
 4. **Parts**: `FR.tasksHeading` = "Vos pièces" as the 12 px section label,
    then a `<ul>` of `tasks` at 15.5 px with 11 px vertical padding and
    60 %-opacity `aito-line` separators — a client summary, not a table.
-   (No right-aligned quantity: quantities are per service on a task, not
-   per part, so a single number would be wrong for mixed tasks.)
+   A right-aligned "×N" only when the server sent a `quantity` (see §2's
+   rule); nothing for a count of 1 or an ambiguous task.
 5. **Payment** (`components/aito/TrackingInvoice.tsx`, new): drawn only
    when `invoice` is non-null, as a bordered secondary card (`aito-line`
    border, no tint): a 10 px status dot, a semibold title with a muted
@@ -272,7 +281,7 @@ raw status code. `document.title` is set to "Suivi de commande · Aito 3D".
 
 ## 6. API client
 
-`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null; reference: string | null; updated_at: string }`;
+`AitoTracking { column: AitoColumnId; tasks: { title: string; quantity: number | null }[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null; reference: string | null; updated_at: string }`;
 `AitoProject.tracking_url: string | null; tracking_configured: boolean`;
 `api.getAitoTracking(token)`, `api.getAitoTrackingLink(id)`,
 `api.regenerateAitoTrackingToken(id)`. Default msw handlers: track → 404,
@@ -325,6 +334,92 @@ Frontend:
   `aito:update`.
 - i18n parity for the six app keys.
 
+## 7b. Finishing pass (binding)
+
+The visual direction above is the source of truth; this section is the
+production polish, states and responsive behaviour. Nothing here adds an
+element for decoration.
+
+**Composition and spacing.** Card `max-width: 620px`, fluid below; on
+phones `width: calc(100% - 32px)`; comfortable top margin, no forced
+vertical centring. One spacing scale — 4 / 8 / 12 / 16 / 24 / 32 / 48 px:
+32 px between the four blocks, 16 px between a heading and its content,
+8 px between a primary text and its secondary line. No other values.
+Radius 12 px on the card, the state panel and the payment card; 8 px on
+buttons. Borders at `aito-line`, never stronger; shadow none.
+
+**Typography.** Page title 22–24 px semibold; reference 13 px muted; state
+title 18–20 px semibold; body 14–15 px; date 17–18 px semibold; section
+labels 11–12 px uppercase with light tracking; line-height 1.4–1.5; two
+weights only. Three text levels: `aito-ink`, `aito-muted` (`#a3b1c0`, AA
+on the card) and a very-secondary `aito-muted/70` for the update line.
+
+**Header.** Logo only (28 px tall), 20 px of air, title, reference. The
+logo signs the page; it does not lead it.
+
+**Timeline.** Desktop: disc centres and the track share one axis; the
+cyan fill stops at the active disc; labels centred under their discs;
+"Modélisation" and "Fabrication" fit at 11 px in 7 equal columns at
+620 px. Done discs at 30 % cyan with a check in `aito-ink`, labels muted;
+future discs outlined; the active disc is the only bright one: full cyan,
+white centre dot, soft halo, label semibold `aito-ink`. `aria-current="step"`
+on the active item and a visually-hidden "Étape 5 sur 7 : Fabrication"
+for screen readers. The halo pulse is `motion-safe:` only. Below 560 px
+the row is replaced by "Étape 5 sur 7" / "Fabrication" / a 3 px bar, plus
+a "Voir les étapes" disclosure that lists the seven stages vertically with
+the same done/active/future marks.
+
+**State panel.** Order: title, sub-line, hairline, "DISPONIBILITÉ ESTIMÉE"
+label, date, update line. No icons. Date rules:
+- set and not passed → the date;
+- set, passed, and the card is still before Finish → "Estimation en cours
+  de mise à jour" (never the stale date as if all were well);
+- unset and the card is in Scan / Modélisation / Fabrication → "Nous vous
+  communiquerons une date dès que possible.";
+- unset in the other states → the block is omitted entirely, no gap.
+The update line reads "Mis à jour aujourd'hui à 09:42" / "hier à 16:20" /
+"le 3 septembre à 11:05" from `updated_at`, which is the card's last
+activity, never fabricated.
+
+**Parts.** 12 px vertical padding, separators at `aito-line/60`; the name
+wraps on two lines on phones while the quantity stays top-aligned right in
+its own column (`flex` with `shrink-0` on the quantity, `min-w-0` on the
+name); quantity rendered "×2" only when non-null. Above 8 parts, show the
+first 6 and a "Voir les {n} pièces" button that expands the list.
+
+**Payment.** Paid: borderless, a green dot, "Facture réglée", "Merci pour
+votre confiance." — quiet, it must not compete with the state. Unpaid: a
+bordered card, amber dot, "Facture à régler", "À régler avant le retrait ou
+l'expédition.", and a "Voir les modalités" button (44 px tall, full width
+under 400 px) with hover / focus-visible / active states. Overdue: same
+card with a red dot and the word "retard" in the title, so colour is not
+the only signal; "Contactez-nous si vous avez déjà payé." A "Régler la
+facture" button is reserved for the day a payment link exists.
+
+**Footer.** "Une question sur votre commande ?" then, on its own line,
+phone · email as `tel:` / `mailto:` links with 44 px tap targets.
+
+**States.** Loading: a skeleton of the rail and the state panel, no
+spinner. Any non-404 error: the header, "Impossible de charger le suivi
+pour le moment." and a "Réessayer" button that refetches. 404: a dedicated
+page — logo, "Ce lien de suivi n'est plus valide", one sentence ("Il a
+peut-être expiré ou été remplacé. Contactez-nous et nous vous enverrons un
+nouveau lien.") and the footer contacts. Expired and unknown are the same
+404 on purpose (§2), so one page covers both. Never a stack trace, a raw
+API message or the login screen.
+
+**Interaction.** Links and buttons: subtle hover, visible keyboard focus
+(2 px cyan outline offset 2 px), 150–200 ms transitions; nothing animates
+on purely informational elements. Full keyboard support.
+
+**Responsive.** Checked at 320, 360, 390, 430, 768, 1024 and 1440 px: no
+horizontal scroll, no truncation, footer legible, card radius 12 px on
+phones too. Long content must hold: a 60-character part name, 10+ parts, a
+long reference, a multi-line sub-line.
+
+**Performance.** No new library; the logo PNG is the existing 5 KB asset;
+the skeleton reserves the panel's height so nothing shifts when data lands.
+
 ## 8. Usage statistics
 
 Question to answer: is the page used at all, and by how many clients?
@@ -367,3 +462,7 @@ Question to answer: is the page used at all, and by how many clients?
 | Link origin | `external_url` setting only; empty → no link anywhere, buttons disabled with a Settings hint |
 | Expiry storage | None; the event log is the source |
 | Usage statistics | Every successful open logged as (card, timestamp) only; surfaced as a fifth block of the Stats pipeline widget; no per-visitor data |
+| Part quantities | Shown only when every priced service on the task agrees and the count is > 1; otherwise omitted |
+| Update time | The card's last activity (latest event, else `updated_at`); never a synthetic "recently" |
+| Missing / passed date | "Nous vous communiquerons une date dès que possible." while in production; "Estimation en cours de mise à jour" once passed before Finish; block omitted otherwise |
+| Expired vs unknown | One "link no longer valid" page for both, since the API answers one 404 by design |
