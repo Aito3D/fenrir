@@ -348,7 +348,7 @@ export function AitoPage() {
           </span>
           <PrintBacklogBadge
             minutes={backlogMinutes}
-            printerCount={printersQuery.data?.length ?? 0}
+            printerCount={printersQuery.data?.length}
             dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
           />
         </h1>

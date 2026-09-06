@@ -8,17 +8,29 @@ export function PrintBacklogBadge({
   dailyHours,
 }: {
   minutes: number;
-  printerCount: number;
+  printerCount?: number;
   dailyHours: number[];
 }) {
   const { t } = useTranslation();
   if (minutes <= 0) return null;
   const hours = formatBacklogHours(minutes);
-  const printers = Math.max(1, printerCount);
-  const capacity = dailyCapacityHours(printerCount, dailyHours);
-  const days = (minutes / 60 / capacity).toFixed(1);
-  const perPrinter = (capacity / printers).toFixed(0);
-  const title = `${t('aito.backlogTitle')} — ${hours} h ÷ (${printers} × ${perPrinter} h) ≈ ${days} d`;
+  // Capacity (and therefore the days estimate) needs a real printer count.
+  // `undefined` means the printers query hasn't resolved yet, or errored
+  // (e.g. a 403 for a role without printers:read) — either way, showing a
+  // days figure would fabricate a capacity that was never actually known.
+  const capacityKnown = printerCount !== undefined;
+  let title = t('aito.backlogTitle');
+  let daysLabel: string | null = null;
+  if (capacityKnown) {
+    const printers = Math.max(1, printerCount);
+    const capacity = dailyCapacityHours(printerCount, dailyHours);
+    const rawDays = minutes / 60 / capacity;
+    const days = rawDays < 0.1 ? '< 0.1' : rawDays.toFixed(1);
+    const perPrinter = capacity / printers;
+    const perPrinterStr = Number.isInteger(perPrinter) ? String(perPrinter) : perPrinter.toFixed(1);
+    title = `${t('aito.backlogTitle')} — ${hours} h ÷ (${printers} × ${perPrinterStr} h) ≈ ${days} d`;
+    daysLabel = t('aito.backlogDays', { days, count: printers });
+  }
   return (
     <span
       data-testid="aito-print-backlog"
@@ -27,7 +39,7 @@ export function PrintBacklogBadge({
     >
       <Clock className="w-3.5 h-3.5 text-orange-400" aria-hidden="true" />
       <span>{t('aito.backlogHours', { hours })}</span>
-      <span className="text-bambu-gray">{t('aito.backlogDays', { days, count: printers })}</span>
+      {daysLabel !== null && <span className="text-bambu-gray">{daysLabel}</span>}
     </span>
   );
 }
