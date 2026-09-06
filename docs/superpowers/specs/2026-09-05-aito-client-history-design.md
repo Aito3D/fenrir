@@ -80,8 +80,9 @@ same parts.
 ### Cost
 
 Three small queries: the ordered card rows, their tasks, and the one-row
-social lookup. All sit on `aito_projects.client_id`, which SQLite scans in
-milliseconds at the board sizes in question (hundreds of cards). No cache.
+social lookup. The card queries filter on the indexed `status` column and
+then on `client_id` (unindexed, by design: a non-goal), which SQLite scans
+in milliseconds at the board sizes in question (hundreds of cards). No cache.
 
 ## 2. Drawer — `components/aito/ClientHistory.tsx`
 
@@ -155,8 +156,10 @@ and `draft`:
 - Applies at most once per client id: the ids already prefilled are kept as
   a list, `socialPrefilledFor: string[]`, persisted WITH the draft by
   `useNewProjectDraft` (an older blob without the field restores as `[]`)
-  and emptied by the reset hold. The effect checks membership before
-  applying and appends the id after. A single "last id" would not do:
+  and emptied by the reset hold. The id is marked the first time the effect
+  EVALUATES for that client with a non-null `latest_social`, whether or not
+  the prefill applies — so an operator who picked a network pill before the
+  history landed, then un-picked it, is not surprised by a late fill. A single "last id" would not do:
   `draftFromContact` blanks the social pair on every pick, so an A → B → A
   round-trip, or a close/reopen of the drawer (which unmounts it) with a
   persisted draft, would refill a handle the operator had cleared. Clearing
