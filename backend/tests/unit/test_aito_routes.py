@@ -353,6 +353,52 @@ async def test_create_and_list(async_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["sent", "accepted", "declined"])
+async def test_create_with_a_quote_date_backdates_quote_sent_at_to_created_at(async_client, status):
+    """An import carrying an already-sent/accepted/declined status never
+    passes through set_quote_status (that route is for the hand-made-card
+    path), so create_project itself must stamp quote_sent_at — this is the
+    only clock the 'quotes out' follow-up bucket (utils/aitoFollowups.ts)
+    ever gets for such a card. Asserted against the response's own
+    created_at (catching a regression to the `or` order) AND against the
+    literal noon-UTC instant (catching a break in _imported_created_at's
+    quote_date parsing)."""
+    r = await _create(
+        async_client,
+        quote_id="EST-BACKDATE",
+        quote_date="2026-02-10",
+        quote_status=status,
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["created_at"] == "2026-02-10T12:00:00"
+    assert body["quote_sent_at"] == body["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_create_sent_with_no_quote_date_stamps_quote_sent_at_near_now(async_client):
+    """No quote_id/quote_date to backdate from, so create_project falls back
+    to `datetime.now(timezone.utc)` for quote_sent_at, while created_at keeps
+    the column's own server-default `now()` — two independent clock reads
+    that land close together but are not guaranteed byte-identical."""
+    r = await _create(async_client, quote_status="sent")
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["quote_sent_at"] is not None
+    assert _seconds_since(body["quote_sent_at"]) < 60
+    assert _seconds_since(body["created_at"]) < 60
+
+
+@pytest.mark.asyncio
+async def test_create_with_quote_status_omitted_leaves_quote_sent_at_null(async_client):
+    """A bare draft has not left the shop, so create_project must not stamp
+    quote_sent_at at all."""
+    r = await _create(async_client)
+    assert r.status_code == 201, r.text
+    assert r.json()["quote_sent_at"] is None
+
+
+@pytest.mark.asyncio
 async def test_board_lists_flagged_cards_first_within_their_column(async_client):
     """Display ordering only. Manual drag order still holds inside the flagged
     group and inside the normal group — stored `position` values are never

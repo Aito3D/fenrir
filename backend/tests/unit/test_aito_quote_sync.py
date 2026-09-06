@@ -2777,6 +2777,159 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
 
 
 @pytest.mark.asyncio
+async def test_run_sync_loop_survives_a_failing_periodic_tick(monkeypatch, caplog):
+    """T-021: run_sync_loop's own docstring promises that one bad tick must
+    not kill the loop, or a single transient failure would silently end
+    syncing until the next restart. Drive the periodic-tick ``except`` block
+    directly -- the first ``run_sync_once(pending_only=False)`` call raises,
+    and the loop must log it, then keep calling ``run_sync_once`` on the
+    following tick rather than dying.
+
+    Driven against the loop's own collaborators (as
+    ``test_an_edit_drains_on_the_debounce_not_the_interval`` below does),
+    not a real database: this is a scheduling/resilience property, not a
+    persistence one, and a fake session avoids risking the shared in-memory
+    engine at teardown for a test that spins the loop through two ticks.
+    """
+    import asyncio
+    import contextlib
+
+    from backend.app.services import aito_quote_sync
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield None
+
+    tick_calls: list[None] = []
+    second_tick_done = asyncio.Event()
+    third_tick_started = asyncio.Event()
+    hang = asyncio.Event()
+
+    async def flaky_run_sync_once(db, pending_only=False):
+        tick_calls.append(None)
+        n = len(tick_calls)
+        if n == 1:
+            raise RuntimeError("boom")
+        if n == 2:
+            second_tick_done.set()
+            return 0
+        # A third tick that hangs: lets the test cancel the loop while it is
+        # genuinely in flight inside this same try block, proving real
+        # cancellation still propagates through the guard that just
+        # swallowed the RuntimeError above rather than being swallowed too.
+        third_tick_started.set()
+        await hang.wait()
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", flaky_run_sync_once)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    # Tiny interval: only the loop's own retry cadence, never the mechanism
+    # the test blocks on -- the assertion below waits on an Event, not a
+    # sleep, so scheduler jitter can never turn this into a flake.
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(0.01))
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _always(0))
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(second_tick_done.wait(), timeout=10)
+        assert "Aito quote sync tick failed" in caplog.text
+        assert len(tick_calls) >= 2
+        assert not loop_task.done()
+
+        await asyncio.wait_for(third_tick_started.wait(), timeout=10)
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+        assert loop_task.cancelled()
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
+async def test_run_sync_loop_survives_a_failing_wake_drain(monkeypatch, caplog):
+    """T-021: the wake-drain's own ``except`` block around
+    ``run_sync_once(pending_only=True)`` must not kill the loop either -- the
+    first drain triggered by ``request_immediate_sync()`` raises, and a
+    second wake afterwards must still drain successfully.
+    """
+    import asyncio
+    import contextlib
+
+    from backend.app.services import aito_quote_sync
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield None
+
+    drain_calls: list[None] = []
+    first_drain_attempted = asyncio.Event()
+    second_drain_done = asyncio.Event()
+    third_drain_started = asyncio.Event()
+    hang = asyncio.Event()
+
+    async def flaky_run_sync_once(db, pending_only=False):
+        if not pending_only:
+            # The loop's own startup full pass -- not what this test is about.
+            return 0
+        drain_calls.append(None)
+        n = len(drain_calls)
+        if n == 1:
+            first_drain_attempted.set()
+            raise RuntimeError("boom-wake")
+        if n == 2:
+            second_drain_done.set()
+            return 0
+        # A third drain that hangs: lets the test cancel the loop while it
+        # is genuinely in flight inside this same try block, proving real
+        # cancellation still propagates through the guard that just
+        # swallowed the RuntimeError above rather than being swallowed too.
+        third_drain_started.set()
+        await hang.wait()
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", flaky_run_sync_once)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    # Long interval: the periodic tick must not fire again mid-test and be
+    # mistaken for a second wake drain.
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _always(0))
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        # Let the startup full pass run before the first wake.
+        await asyncio.sleep(0.05)
+
+        with caplog.at_level("ERROR"):
+            aito_quote_sync.request_immediate_sync()
+            await asyncio.wait_for(first_drain_attempted.wait(), timeout=10)
+        assert "Aito quote sync wake drain failed" in caplog.text
+        assert not loop_task.done()
+
+        aito_quote_sync.request_immediate_sync()
+        await asyncio.wait_for(second_drain_done.wait(), timeout=10)
+        assert len(drain_calls) == 2
+        assert not loop_task.done()
+
+        aito_quote_sync.request_immediate_sync()
+        await asyncio.wait_for(third_drain_started.wait(), timeout=10)
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+        assert loop_task.cancelled()
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
 async def test_sync_interval_falls_back_to_three_hundred_seconds(db_session):
     from backend.app.services.aito_quote_sync import sync_interval_seconds
 
@@ -5315,6 +5468,98 @@ async def test_a_deferral_logs_once_then_stays_silent_for_the_same_reason(db_ses
     deferred_calls = [c for c in calls if c and c[0] == "Aito project %s deferred: %s"]
     assert len(deferred_calls) == 1, "the second tick's identical deferral must not log again"
     assert project.id in aito_quote_sync._deferred_reasons
+
+
+@pytest.mark.asyncio
+async def test_a_second_exception_during_the_warm_up_retry_does_not_abort_the_batch(db_session, monkeypatch):
+    """T-022. The warm-up call inside the ``ShippingCatalogueUnavailable``
+    handler (``zoho_service.get_shipping_catalogue(db, refresh=True)``) has
+    its own ``except Exception`` specifically because a SECOND, unrelated
+    failure there — a DB error, a bug in ``merge_shipping_catalogue`` — must
+    not escape ``sync_project`` and abort the rest of the tick's batch. Only
+    the ``refresh=True`` (warm-up) call is made to fail here; ``get_catalogue``'s
+    own ``refresh=False`` read, used to notice the service is unresolved in
+    the first place, is left working so the deferral is reached genuinely
+    rather than by a shortcut."""
+    from backend.app.services import aito_quote_sync
+
+    deferred_project = await _project_with_shipping_and_a_priced_task(db_session)
+
+    # A second, ordinary project (no shipping) selected in the SAME tick.
+    # AitoProject rows are created in ascending id order and run_sync_once
+    # selects `order_by(AitoProject.id)`, so this project is only reached if
+    # the batch keeps going past the first project's warm-up failure.
+    other_project = AitoProject(
+        description="Autre piece",
+        board_column="devis",
+        position=1,
+        client_id="C2",
+        client_name="Autre client",
+        quote_sync_state="pending",
+    )
+    db_session.add(other_project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=other_project.id, position=0, title="Piece", scan_cost=4000))
+    await db_session.commit()
+    assert other_project.id > deferred_project.id
+
+    await _configure_zoho(db_session)
+
+    real_get_shipping_catalogue = zoho_service.get_shipping_catalogue
+
+    async def failing_warm_up(db, *, refresh):
+        if refresh:
+            raise RuntimeError("boom")
+        return await real_get_shipping_catalogue(db, refresh=refresh)
+
+    monkeypatch.setattr(zoho_service, "get_shipping_catalogue", failing_warm_up)
+
+    calls: list = []
+    monkeypatch.setattr(aito_quote_sync.logger, "warning", lambda *args, **kwargs: calls.append(args))
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/items"): {"items": []},
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E2",
+                        "estimate_number": "DEV26-9002",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 4000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    # (a) sync_project's "never raises" promise holds even with the warm-up
+    # itself raising, so run_sync_once returns normally instead of the
+    # RuntimeError escaping the loop.
+    assert await run_sync_once(db_session) == 2
+
+    # (b) the warm-up's own failure is logged, not silently dropped.
+    warm_up_calls = [c for c in calls if c and c[0] == "Aito shipping catalogue warm-up failed for project %s"]
+    assert len(warm_up_calls) == 1
+
+    # (c) the deferred project is unchanged by the warm-up's own failure: no
+    # error state, still pending, still remembered as deferred.
+    await db_session.refresh(deferred_project)
+    assert deferred_project.quote_sync_state == "pending"
+    assert deferred_project.quote_sync_error is None
+    assert (deferred_project.quote_sync_failures or 0) == 0
+    assert deferred_project.id in aito_quote_sync._deferred_reasons
+
+    # (d) the batch was not aborted: the second project, later in the same
+    # tick, still synced successfully.
+    await db_session.refresh(other_project)
+    assert other_project.quote_id == "E2"
+    assert other_project.quote_sync_state == "idle"
 
 
 @pytest.mark.asyncio
