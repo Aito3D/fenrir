@@ -1,0 +1,52 @@
+{"findings": [
+  {"severity": "medium", "category": "dead-code",
+   "file": "frontend/src/i18n/locales/en.ts", "line": 59,
+   "title": "Ten aito.* i18n keys and three calculator.quote.* keys are unreferenced",
+   "evidence": "rg -n for each of aito.trashTitle(59), aito.clearClient(113), aito.newClientTitle(135), aito.stepPending(194), aito.markDone(195), aito.markNotDone(196), aito.quoteImportAgain(214), aito.syncIdle(278), aito.showMore(289), aito.showLess(290), calculator.quote.volumePricing/discount/unitPrice(8412-8414) across frontend/src (*.ts,*.tsx) outside src/i18n/locales -> zero hits for each. Confirmed each has a live sibling actually used instead: components/aito/ProjectDetailPanel.tsx's SYNC_LABEL_KEY map explicitly lists only pending/error/locked ('the sync row only renders for three of its five values') so syncIdle is dead by design; components/aito/BoardColumn.tsx uses t('aito.markProjectDone') not markDone/markNotDone; pages/AitoPage.tsx uses t('aito.showDone') not showMore/showLess; components/aito/ClientCombobox.tsx uses t('aito.resetToDefaultClient') not clearClient, and renders NewContactForm with no title at all (newClientTitle unused); components/aito/TrashGrid.tsx never reads trashTitle; components/aito/ImportQuoteDrawer.tsx uses t('aito.quoteImport') not quoteImportAgain; pages/CalculatorQuotePage.tsx renders no volume-pricing/discount/unit-price table at all. All 13 keys are also present (equally dead) in all 12 other locale files (grep -l count 13/13 for each). Ruled out dynamic construction: grep for 'aito.${' / \"aito.\" + / template-literal aito keys found none (unlike calculator.realityCheck.${base}, which IS built dynamically in CalculatorRealityCheckCard.tsx and is correctly NOT flagged here).",
+   "fix": "Delete these 13 keys from en.ts and the 12 translated locale files once a maintainer confirms no feature using them is mid-flight.",
+   "behavior_change": true,
+   "behavior_change_note": "fe-i18n-parity tracks key counts per locale file, so removing these keys changes that count across all 13 locale files and must be done as a coordinated edit, not silently."},
+
+  {"severity": "medium", "category": "duplication",
+   "file": "frontend/src/__tests__/hooks/useQuoteStatusMutation.test.tsx", "line": 22,
+   "title": "Three pre-existing mutation-hook test files still hand-paste the mocks boardMutationHarness.tsx now centralizes",
+   "evidence": "useQuoteStatusMutation.test.tsx:22-33, useSendQuoteMutation.test.tsx:20-27, and useSendInvoiceMutation.test.tsx:25-35 each independently define `vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key) => key }) }))` and `const showToastMock = vi.fn(); vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: showToastMock }) }))` -- byte-for-byte the same object literals boardMutationHarness.tsx's i18nKeyTranslationFactory()/toastContextMockFactory() now export specifically to end this duplication (its own comment: 'Each test file therefore keeps its own three one-line vi.mock(...) calls, but the calls delegate to the factories exported here instead of repeating the object literals'). These three files were not migrated when the harness was introduced this round.",
+   "fix": "Point these three files' vi.mock('react-i18next', ...) and vi.mock('../../contexts/ToastContext', ...) calls at i18nKeyTranslationFactory / toastContextMockFactory from boardMutationHarness.tsx, importing showToastMock from there too.",
+   "behavior_change": false},
+
+  {"severity": "medium", "category": "duplication",
+   "file": "backend/tests/unit/test_openrouter_proofread.py", "line": 18,
+   "title": "_FakeClient/_FakeResponse OpenRouter HTTP mock duplicated between test_openrouter_proofread.py and test_openrouter_service.py",
+   "evidence": "test_openrouter_proofread.py:18-46 defines class _FakeResponse (status_code=200, .json() wrapping {content, finish_reason}) and class _FakeClient (__init__/__aenter__/__aexit__ no-ops, .post() records last_json and returns _FakeResponse), monkeypatched onto openrouter.httpx.AsyncClient. test_openrouter_service.py:129-148 defines the same two classes with the identical __init__/__aenter__/__aexit__/post shape (only the canned response body and lack of a configurable finish_reason differ), also monkeypatched onto the same openrouter.httpx.AsyncClient.",
+   "fix": "Extract a shared FakeOpenRouterClient/FakeOpenRouterResponse pair (parameterized by reply/finish_reason) into a conftest.py or shared test helper module both files import.",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "leftovers",
+   "file": "backend/app/services/aito_invoice_sweep.py", "line": 171,
+   "title": "Inline comment misattributes the per-project-commit behavior to T-027 instead of T-010",
+   "evidence": "Module docstring (lines 20-22) and the function docstring (line 80, 'the 429 was already committed on its own (T-010)') both correctly credit T-010 with committing each project's refresh on its own, and T-027 only with catching a failure on that commit -- also matched by the test file's own comment at test_aito_invoice_sweep.py:293 ('T-010's per-project commit'). But the inline comment right above the code reads: '# T-027 (loop-9): commit this project's refresh on its own rather than batching the whole pass into one commit at the end.' -- attributing T-010's behavior to T-027, contradicting every other reference to the same fact in this file and its test.",
+   "fix": "Reword the line-171 comment to credit T-010 for the per-project commit and keep T-027 scoped to the try/except around it, matching the module and function docstrings.",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "inconsistency",
+   "file": "frontend/src/utils/aitoAging.ts", "line": 108,
+   "title": "dueDateLevel() re-tests ISO_DATE inline instead of calling isIsoDateKey(), defined two lines above for exactly this check",
+   "evidence": "isIsoDateKey (line 100-102) is documented as 'Shared with aitoFollowups.ts's unpaid rule so the two never drift apart' and wraps `ISO_DATE.test(value)`. aitoFollowups.ts does call it (import at line 8, use at line 62). But dueDateLevel(), defined in the same file five lines later, writes `if (!dueDate || !ISO_DATE.test(dueDate)) return 'none';` directly instead of `!isIsoDateKey(dueDate)` -- the one call site in the file that defines the wrapper doesn't use it.",
+   "fix": "Change dueDateLevel()'s guard to `!isIsoDateKey(dueDate)` for consistency; ISO_DATE itself should stay module-private (isIsoDateKey is still the only cross-file consumer).",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "duplication",
+   "file": "backend/app/core/websocket.py", "line": 155,
+   "title": "broadcast_to_user() still hand-rolls the send-then-clean-up-disconnects loop that _fan_out() now centralizes for broadcast()/broadcast_aito()",
+   "evidence": "_fan_out() (lines 62-97) is documented as 'Shared send path for broadcast() and broadcast_aito()' and both of those are now thin wrappers around it (lines 99-111, 148-153) -- confirming the T-020/T-028 refactor succeeded for the two callers it names. broadcast_to_user() (lines 155-189) was not folded in: it loops `for connection in self.active_connections: ... await connection.send_text(data) except Exception: disconnected.append(connection)` sequentially, under the lock, with no per-send timeout -- the same shape _fan_out() replaced specifically to avoid one wedged client stalling every other send and blocking connect()/disconnect() (see _fan_out's own docstring on why the timeout/concurrency matters).",
+   "fix": "Give _fan_out() an optional connection-list filter (or a predicate parameter) so broadcast_to_user() can reuse it instead of its own sequential loop.",
+   "behavior_change": true,
+   "behavior_change_note": "unifying onto _fan_out would make per-user queue-toast sends concurrent and timeout-bounded (currently sequential and unbounded), a user-visible latency/ordering change for queue_item_* toasts under a wedged connection."},
+
+  {"severity": "medium", "category": "oversized-unit",
+   "file": "backend/app/api/routes/aito.py", "line": 909,
+   "title": "create_project() does permission-gating, contact validation, shipping validation, position-shifting, event recording (3 kinds) and task creation all in one 182-line function",
+   "evidence": "ruff --select C901: `create_project` is too complex (13 > 10) at aito.py:909. The function body (lines 909-1087) sequentially: checks an AITO_UPDATE permission escalation (914-936), validates the client has a contact channel (938-949), validates shipping fields (950-954), shifts every other 'devis'-column card's position (956-957), builds the AitoProject row (959-985), stamps quote_sent_at for imports (990-991), inserts the row and up to three separate timeline `record()` calls for creation/due-date/decision (1021-1064), builds and inserts AitoTask rows (1065-1069), applies board rules (1073), commits with IntegrityError handling for the concurrent-duplicate-quote race (1074-1079), then wakes the sync worker and broadcasts (1080-1087).",
+   "fix": "Extract the permission/contact/shipping validation into one _validate_create_payload() helper and the three record() calls into one _record_creation_events() helper, leaving create_project() as the orchestration; keep the flush/commit/IntegrityError envelope exactly as-is given its documented race-condition sensitivity.",
+   "behavior_change": false}
+]}

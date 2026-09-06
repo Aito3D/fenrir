@@ -2,10 +2,11 @@
 
 import logging
 import re
+import time
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -1012,12 +1013,12 @@ async def get_tracking(
     return data
 
 
-@router.post("/", response_model=AitoProjectResponse, status_code=201)
-async def create_project(
+async def _validate_create_payload(
+    db: AsyncSession,
     payload: AitoProjectCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
-):
+    current_user: User | None,
+) -> dict:
+    """Permission, contact and shipping checks for create_project; returns the validated shipping fields."""
     if (
         payload.quote_status in ("accepted", "declined")
         and current_user is not None
@@ -1058,7 +1059,74 @@ async def create_project(
     rates = {}
     if _mentions_shipping(create_fields):
         rates = await _shipping_rates(db)
-    shipping = _validated_shipping(create_fields, rates)
+    return _validated_shipping(create_fields, rates)
+
+
+async def _record_creation_events(
+    db: AsyncSession,
+    project: AitoProject,
+    payload: AitoProjectCreate,
+    current_user: User | None,
+) -> None:
+    """The up-to-three timeline entries a freshly created project can carry."""
+    await record(
+        db,
+        project.id,
+        "project.created",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"imported_from": project.quote_number} if project.quote_number else None,
+    )
+    if project.due_date:
+        await record(
+            db,
+            project.id,
+            "project.due.set",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "due_date", "from": None, "to": project.due_date}],
+        )
+    if payload.quote_status in ("accepted", "declined"):
+        # Only reachable with a quote_id (the schema's
+        # _decided_status_needs_a_quote_id validator gates the other
+        # case), i.e. a genuine import of an already-decided Books quote.
+        # Not routed through adopt_quote_status: that helper also stamps
+        # quote_accepted_at, which must stay NULL for an import (see the
+        # column comment on AitoProject.quote_accepted_at — the decision
+        # already happened at some past, unknown moment in Books, so a
+        # fresh "now" stamp would misdate it and desync the card's age
+        # from its real history). This call exists only so the decision
+        # has an actor on the timeline, same as the dedicated
+        # /quote-status route records for a hand-made card.
+        #
+        # detail.cause = "import" marks it as a backfilled decision whose
+        # occurred_at is the import moment, NOT the moment the client
+        # decided. aito_stats skips these rows for exactly that reason —
+        # without the marker an import would credit the import week with a
+        # sale (and an invoiced total) that happened weeks earlier.
+        await record(
+            db,
+            project.id,
+            f"quote.{payload.quote_status}",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            detail={"cause": "import"},
+        )
+
+
+@router.post("/", response_model=AitoProjectResponse, status_code=201)
+async def create_project(
+    payload: AitoProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    shipping = await _validate_create_payload(db, payload, current_user)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
@@ -1127,55 +1195,7 @@ async def create_project(
     # leak the race as an unhandled 500.
     try:
         await db.flush()
-        await record(
-            db,
-            project.id,
-            "project.created",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project.id,
-            detail={"imported_from": project.quote_number} if project.quote_number else None,
-        )
-        if project.due_date:
-            await record(
-                db,
-                project.id,
-                "project.due.set",
-                actor_class="user",
-                actor_name=_actor(current_user),
-                subject_type="project",
-                subject_id=project.id,
-                changes=[{"field": "due_date", "from": None, "to": project.due_date}],
-            )
-        if payload.quote_status in ("accepted", "declined"):
-            # Only reachable with a quote_id (the schema's
-            # _decided_status_needs_a_quote_id validator gates the other
-            # case), i.e. a genuine import of an already-decided Books quote.
-            # Not routed through adopt_quote_status: that helper also stamps
-            # quote_accepted_at, which must stay NULL for an import (see the
-            # column comment on AitoProject.quote_accepted_at — the decision
-            # already happened at some past, unknown moment in Books, so a
-            # fresh "now" stamp would misdate it and desync the card's age
-            # from its real history). This call exists only so the decision
-            # has an actor on the timeline, same as the dedicated
-            # /quote-status route records for a hand-made card.
-            #
-            # detail.cause = "import" marks it as a backfilled decision whose
-            # occurred_at is the import moment, NOT the moment the client
-            # decided. aito_stats skips these rows for exactly that reason —
-            # without the marker an import would credit the import week with a
-            # sale (and an invoiced total) that happened weeks earlier.
-            await record(
-                db,
-                project.id,
-                f"quote.{payload.quote_status}",
-                actor_class="user",
-                actor_name=_actor(current_user),
-                subject_type="project",
-                subject_id=project.id,
-                detail={"cause": "import"},
-            )
+        await _record_creation_events(db, project, payload, current_user)
         new_tasks = [
             AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
             for position, task_payload in enumerate(payload.tasks)
@@ -1201,15 +1221,65 @@ async def create_project(
     return await _project_response(db, project, summary)
 
 
+# T-043: the three OpenRouter-backed routes below (summarize, proofread,
+# pickup-message) each bill one completion per call and had no throttle at
+# all — proofread fires on every field blur, so a caller pasting into several
+# fields in a row (or any client on an auth-disabled install) could run the
+# bill up arbitrarily. A tiny in-process sliding window, not mfa.py's
+# DB-backed check_rate_limit/AuthRateLimitEvent: that primitive counts FAILED
+# auth attempts in an auth-specific event log, and reusing it here would mean
+# adding a new EventType to a shared model for something that has nothing to
+# do with login failures. 30 calls / 60s is generous enough that an operator
+# actually editing a card — even one proofreading every field on a big task
+# list — never hits it, while still bounding a runaway loop or an
+# auth-disabled install being hammered.
+_AI_RATE_LIMIT_WINDOW_S = 60.0
+_AI_RATE_LIMIT_MAX_CALLS = 30
+_AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try again."
+# principal key -> call timestamps (module's own `time.monotonic`, see below).
+_ai_rate_limit_calls: dict[str, list[float]] = {}
+
+
+def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
+    """One bucket per authenticated user; per client IP when auth is disabled
+    (or the caller authenticated via an API key, which the any-of permission
+    checker also surfaces as `None` — see require_any_permission_if_auth_enabled)."""
+    if current_user is not None:
+        return f"user:{current_user.id}"
+    host = request.client.host if request.client else "unknown"
+    return f"ip:{host}"
+
+
+def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
+    """Raise 429 once a principal exceeds _AI_RATE_LIMIT_MAX_CALLS calls in
+    _AI_RATE_LIMIT_WINDOW_S seconds. Enforced before the OpenRouter call.
+
+    Reads the clock through the module's own `time` name (`time.monotonic()`)
+    rather than importing `monotonic` directly, so a test can rebind
+    `aito_routes.time` to a fake clock. Never patch the real
+    `time.monotonic` in an async test — asyncio's own loop internals
+    (timeouts, call_later) depend on it too.
+    """
+    key = _ai_rate_limit_key(request, current_user)
+    now = time.monotonic()
+    calls = _ai_rate_limit_calls.setdefault(key, [])
+    calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]
+    if len(calls) >= _AI_RATE_LIMIT_MAX_CALLS:
+        raise HTTPException(status_code=429, detail=_AI_RATE_LIMIT_DETAIL)
+    calls.append(now)
+
+
 @router.post("/summarize", response_model=AitoSummarizeResponse)
 async def summarize_project(
     payload: AitoSummarizeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """French project summary for the create drawer. Registered before the
     /{project_id} routes on purpose — a literal segment after a parametric
     route would 422 instead of matching."""
+    _check_ai_rate_limit(request, current_user)
     try:
         summary, model = await summarize_tasks(db, [t.model_dump() for t in payload.tasks])
     except OpenRouterNotConfiguredError:
@@ -1222,8 +1292,9 @@ async def summarize_project(
 @router.post("/proofread", response_model=AitoProofreadResponse)
 async def proofread_field(
     payload: AitoProofreadRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(
+    current_user: User | None = Depends(
         # Any-of, not AITO_CREATE alone: the same field component serves the
         # create drawer and the detail panel's edit mode, and a user who may
         # only update existing projects must still get their spelling fixed.
@@ -1233,6 +1304,7 @@ async def proofread_field(
     """Spell-check one task field's French, on blur. Registered before the
     /{project_id} routes for the same reason /summarize is — a literal segment
     after a parametric route would 422 instead of matching."""
+    _check_ai_rate_limit(request, current_user)
     try:
         corrected, model = await proofread_text(db, payload.text)
     except OpenRouterNotConfiguredError:
@@ -1473,13 +1545,16 @@ async def get_invoice_pdf(
         logger.warning("Aito invoice PDF failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     filename = f"{invoice['number'] or invoice['id']}.pdf"
+    filename = _CONTROL_CHARS_RE.sub("", filename)
     return Response(
         content=pdf,
         media_type="application/pdf",
         # inline + the shared header helper, for the reasons on get_quote_pdf:
         # the browser prints this from a blob, and invoice_number is upstream
         # text that Starlette would fail to latin-1 encode if it contained an
-        # em dash or a curly quote.
+        # em dash or a curly quote. Control characters are stripped above for
+        # the same reason as get_quote_pdf: they survive build_content_disposition's
+        # own stripping (it only drops non-ASCII, quotes, and backslashes).
         headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
     )
 
@@ -2840,8 +2915,9 @@ async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:
 @router.post("/{project_id}/pickup-message", response_model=AitoPickupMessageResponse)
 async def generate_pickup_message(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Draft the "come and collect" SMS for a finished project.
 
@@ -2851,6 +2927,7 @@ async def generate_pickup_message(
     client is an act on the card, and "may edit an Aito card" is the right
     authority for it.
     """
+    _check_ai_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     await _finished_or_409(db, project)
     # The task titles are the names the client knows the parts by — the SMS

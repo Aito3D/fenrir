@@ -22,11 +22,11 @@ typed identical to the task's title is swallowed on import rather than kept.
 """
 
 import re
-import unicodedata
 from dataclasses import dataclass
 
 from backend.app.schemas.aito import is_plausible_phone
 from backend.app.services.aito_shipping import island_for_label
+from backend.app.utils.text import fold_text
 
 # The four Aito services, in the canonical order the board renders badges in
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
@@ -71,9 +71,15 @@ _BOILERPLATE = "*fichier non cede*"
 
 
 def _fold(value: str) -> str:
-    """Lowercase and strip accents: 'Matériau' -> 'materiau'."""
-    decomposed = unicodedata.normalize("NFD", value)
-    return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
+    """Lowercase and strip accents: 'Matériau' -> 'materiau'.
+
+    Uses NFD (canonical decomposition only), not the shared helper's NFKD
+    default — this file's boilerplate check compares a whole free-text row
+    against a literal string, and NFKD's compatibility folding would turn
+    an NBSP into a plain space, silently matching rows that merely have
+    Zoho/Word paste artifacts in them. See fold_text()'s docstring.
+    """
+    return fold_text(value, form="NFD")
 
 
 def parse_description(

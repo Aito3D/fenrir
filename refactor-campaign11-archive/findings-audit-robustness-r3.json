@@ -1,0 +1,17 @@
+{"findings": [
+{"severity": "high", "category": "partial-failure",
+ "file": "backend/app/core/websocket.py", "line": 90,
+ "title": "_fan_out() evicts a timed-out connection without closing it, so the client never learns it was dropped",
+ "evidence": "`disconnected = [conn for conn, result in zip(connections, results, strict=True) if isinstance(result, Exception)]` followed by `self.active_connections.remove(conn)` — the socket is removed but never closed, and `websocket_endpoint` stays parked in `await websocket.receive_json()`. The class's own comment names the trigger: \"send_text() to a client whose socket window is full (sleeping laptop, dead cell link) never returns on its own\". A laptop that sleeps for a few seconds with the board open blows the 5s `_BROADCAST_SEND_TIMEOUT`, is evicted, then wakes with a perfectly healthy TCP connection: `useWebSocket`'s 30s ping still gets a pong and `ws.onclose` never fires, so its 3s reconnect never runs. The operator sees a connected-looking Aito board that stops receiving `aito_changed`/`aito_presence_state` (and every printer_status) forever — cards silently stale, their own presence invisible to colleagues — until they manually reload the tab.",
+ "fix": "After removing the connection under the lock, fire a best-effort bounded close (e.g. a task running `asyncio.wait_for(conn.close(code=1011), timeout=...)`, outside the manager lock) so the endpoint's receive loop unblocks and the client's onclose reconnect path runs.",
+ "behavior_change": true,
+ "behavior_change_note": "A client dropped for a slow send now sees its socket close and reconnects a few seconds later (brief 'disconnected' state, one fresh ws-token) instead of sitting silently frozen."},
+
+{"severity": "high", "category": "concurrency",
+ "file": "backend/app/core/websocket.py", "line": 183,
+ "title": "broadcast_to_user() awaits send_text while holding the manager lock, so one wedged client blocks every broadcast_aito()",
+ "evidence": "`async with self._lock:` … `await connection.send_text(data)` with no `wait_for` — the one send path T-020/T-028 left untouched. During an FTP dispatch, `send_queue_item_upload_progress(user_id=A, …)` hits operator A's wedged socket (the same sleeping-laptop case `_BROADCAST_SEND_TIMEOUT` exists for, which here has no timeout at all and per the class comment \"never returns on its own\"). The lock is held for the whole stall, so every Aito route handler's closing `_broadcast_changed()` → `broadcast_aito()` → `async with self._lock` blocks behind it: the board writes commit but their HTTP responses never return, so every operator's card edit, drag, flag and quote-status click hangs indefinitely, and `connect()`/`disconnect()` stop admitting sockets too.",
+ "fix": "Route this through `_fan_out`: filter the matching connections into a snapshot under the lock, release it, then fan out with the same per-send timeout and removal path the other two broadcasts use.",
+ "behavior_change": true,
+ "behavior_change_note": "A queue-dispatch toast to a wedged client is abandoned after the 5s send timeout and that connection is evicted, where previously the send waited indefinitely."}
+]}

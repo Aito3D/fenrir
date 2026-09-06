@@ -5,7 +5,7 @@
  *  the same render. Spec: docs/superpowers/specs/2026-09-04-aito-followups-strip-design.md.
  *  Written to be mirrored in Python if a morning push ever wants it. */
 
-import { ageAnchor } from './aitoAging';
+import { ageAnchor, isIsoDateKey } from './aitoAging';
 import { needsClientContact } from './aitoBoard';
 import { parseUTCDateStrict, parseLocalDateKey } from './date';
 import type { AitoProject } from '../api/client';
@@ -60,6 +60,7 @@ const RULES: Record<FollowupKey, Rule> = {
   },
   unpaid: (p, _t, _now, today) => {
     if (!(p.invoice_balance !== null && p.invoice_balance > 0) || !p.invoice_due_date) return null;
+    if (!isIsoDateKey(p.invoice_due_date)) return null;
     if (!(p.invoice_due_date < today)) return null;
     // Calendar-day difference, not a wall-clock one: the due date and
     // `today` are both local calendar days, so "overdue" flips at local

@@ -19,8 +19,9 @@ be respelled without orphaning a project.
 """
 
 import math
-import unicodedata
 from dataclasses import dataclass
+
+from backend.app.utils.text import fold_text
 
 SERVICE_KEYS: tuple[str, ...] = ("societe", "tuamotu", "marquises", "australes", "gambier")
 
@@ -95,8 +96,7 @@ def _fold(value: str) -> str:
     """Case- and accent-insensitive comparison key. Same idea as the
     importer's own `_fold`: a label read back out of a quote may have been
     retyped by a human in Books."""
-    stripped = unicodedata.normalize("NFKD", (value or "").strip().lower())
-    return "".join(char for char in stripped if not unicodedata.combining(char))
+    return fold_text(value)
 
 
 _BY_LABEL: dict[str, str] = {_fold(label): key for key, label, _ in ISLANDS}

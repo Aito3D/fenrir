@@ -1,0 +1,32 @@
+{"findings": [
+  {"severity": "low", "category": "authorization",
+   "file": "backend/app/api/routes/websocket.py", "line": 197,
+   "title": "aito_presence message handler is not gated on the connection's aito_read stamp",
+   "evidence": "elif data.get(\"type\") == \"aito_presence\": ... await ws_manager.set_aito_presence(websocket, pid if isinstance(pid, int) and not isinstance(pid, bool) else None)  — no `websocket.state.aito_read` check, unlike the outbound paths (routes/websocket.py:166 `if websocket.state.aito_read:` and core/websocket.py:138 `if not getattr(connection.state, \"aito_read\", True):`)",
+   "fix": "ignore the aito_presence message when websocket.state.aito_read is False, so only principals holding AITO_READ can enter the viewers map",
+   "behavior_change": true,
+   "behavior_change_note": "a websocket principal without aito:read (an API-key connection, or a user whose role lacks the permission) currently has its 'viewing project N' ping accepted and its username fanned out to every authorized operator's board; after the fix that ping becomes a silent no-op and the name disappears from their presence indicators."},
+
+  {"severity": "low", "category": "authorization",
+   "file": "frontend/src/App.tsx", "line": 272,
+   "title": "/aito route is registered without a PermissionRoute guard",
+   "evidence": "<Route path=\"aito\" element={<AitoPage />} />  — compare the sibling on line 269: <Route path=\"calculator\" element={<PermissionRoute permission=\"calculator:read\"><CalculatorPage /></PermissionRoute>} />. Layout.tsx:330 maps the nav item to 'aito:read', so only the sidebar entry is hidden; direct navigation still mounts the board.",
+   "fix": "wrap AitoPage in <PermissionRoute permission=\"aito:read\"> to match the calculator route (backend already enforces AITO_READ on every endpoint, so this is defence in depth only)",
+   "behavior_change": true,
+   "behavior_change_note": "a signed-in user without aito:read who navigates directly to /aito currently sees an empty board whose requests 403 in the background; afterwards they get the no-permission page instead."},
+
+  {"severity": "low", "category": "input validation",
+   "file": "backend/app/api/routes/aito.py", "line": 1361,
+   "title": "get_invoice_pdf builds Content-Disposition without the control-character strip get_quote_pdf applies",
+   "evidence": "filename = f\"{invoice['number'] or invoice['id']}.pdf\"  followed directly by headers={\"Content-Disposition\": build_content_disposition(filename, disposition=\"inline\")} — get_quote_pdf (aito.py:1656-1657) does the same interpolation but adds `filename = _CONTROL_CHARS_RE.sub(\"\", filename)` first, and that regex's own comment states control characters 'survive build_content_disposition's own stripping (it only drops non-ASCII, quotes, and backslashes)'.",
+   "fix": "apply _CONTROL_CHARS_RE.sub(\"\", filename) to the invoice filename as well, so both PDF proxies sanitize upstream Books text identically",
+   "behavior_change": true,
+   "behavior_change_note": "for an invoice whose Books number contains an ASCII control character, the ascii-fallback filename in the response header would change (and, for CR/LF, an aborted response would become a normal one) — no observable change for any ordinary invoice number."},
+
+  {"severity": "low", "category": "log injection",
+   "file": "backend/app/api/routes/calculator.py", "line": 89,
+   "title": "user-controlled filament/printer names are logged unsanitized in the calculator CRUD routes",
+   "evidence": "logger.info(\"Created calculator filament: %s\", filament.name)  — name is derived from CalculatorFilamentCreate.brand/material, which are `Field(max_length=100)` with no character class, so a newline is accepted; the same pattern appears at calculator.py:150, :317 and :357. backend/app/core/logging_filters.py performs URL-credential redaction only and never strips newlines from records written to logs/bambuddy.log.",
+   "fix": "collapse newlines/carriage returns in the name before logging it (e.g. a small helper applied at all four call sites), so a stored name cannot forge additional log lines",
+   "behavior_change": false}
+]}

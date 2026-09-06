@@ -18,21 +18,14 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useSendInvoiceMutation } from '../../hooks/useSendInvoiceMutation';
 import { api, type AitoInvoice } from '../../api/client';
+import { showToastMock } from './boardMutationHarness';
 
-// Mocked BEFORE any importing module runs, same pattern useWebSocket.test.ts
-// and useQuoteStatusMutation.test.tsx use: `t` returns the key so assertions
-// need not depend on a translated string.
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-// Mocked directly rather than wrapped in the real ToastProvider: the hook
-// only needs `showToast`, and mocking it lets the tests assert on exactly
-// what was shown without rendering the toast portal.
-const showToastMock = vi.fn();
-vi.mock('../../contexts/ToastContext', () => ({
-  useToast: () => ({ showToast: showToastMock }),
-}));
+// `vi.mock(...)` factories are hoisted above this file's own imports, so the
+// harness's factories cannot be referenced directly here (that trips a
+// temporal-dead-zone ReferenceError) — a dynamic import inside the factory
+// sidesteps the hoisting order instead.
+vi.mock('react-i18next', async () => (await import('./boardMutationHarness')).i18nKeyTranslationFactory());
+vi.mock('../../contexts/ToastContext', async () => (await import('./boardMutationHarness')).toastContextMockFactory());
 
 const SENT_INVOICE = {
   id: 'INV-7',

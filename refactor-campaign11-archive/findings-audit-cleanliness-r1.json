@@ -1,0 +1,37 @@
+{"findings": [
+  {"severity": "low", "category": "inconsistency",
+   "file": "frontend/src/components/ZohoSettings.tsx", "line": 134,
+   "title": "ZohoSettings form fields still have no label/input association (htmlFor/id), unlike every sibling Aito/Calculator form",
+   "evidence": "Still true at HEAD (re-checked, not fixed since campaign 10's T-023/T-033): all 8 text/password inputs in ZohoSettings.tsx (lines 134-224: clientId, clientSecret, refreshToken, organizationId, defaultContactId, defaultContactName, baseUrl, accountsUrl) render `<label className=...>{t('zoho.clientId')}</label>` as a plain sibling of `<input>` with no `htmlFor`/`id` pair. frontend/src/__tests__/components/ZohoSettings.test.tsx still defines a custom `inputForLabel()` DOM-walk helper ('The labels are plain siblings of their <input> ... testing-library's label-association queries can't find them') because getByLabelText does not work. By contrast, frontend/src/components/aito/NewContactForm.tsx (lines 105,121,136,157,176), frontend/src/components/aito/ClientSection.tsx (116,167), and frontend/src/components/calculator/CalculatorInputsCard.tsx (31,111,232,253) all use htmlFor/id in the same feature scope.",
+   "fix": "add a matching id to each ZohoSettings input and htmlFor to its label (or wrap each input in its label), matching NewContactForm/ClientSection/CalculatorInputsCard's convention; then ZohoSettings.test.tsx's inputForLabel DOM-walk helper can be replaced with screen.getByLabelText.",
+   "behavior_change": true,
+   "behavior_change_note": "purely additive markup (id + htmlFor) with no visual change for a sighted mouse user, but it changes what a screen reader announces when focusing these fields and what testing-library's getByLabelText can find."},
+
+  {"severity": "medium", "category": "duplication",
+   "file": "backend/app/services/aito_shipping.py", "line": 94,
+   "title": "_fold() accent/case-normalization helper duplicated between aito_shipping.py and aito_quote_import.py",
+   "evidence": "backend/app/services/aito_shipping.py:94-99 defines `_fold(value)` doing `unicodedata.normalize(\"NFKD\", (value or \"\").strip().lower())` then stripping combining marks; backend/app/services/aito_quote_import.py:73-76 defines its own `_fold(value)` doing `unicodedata.normalize(\"NFD\", value)` then stripping combining marks and lower-casing at the end. Both exist for the identical purpose (case/accent-insensitive matching of a label read back off a Books quote line) and aito_shipping.py's own docstring at line 96 admits it: 'Same idea as the importer's own `_fold`: a label read back out of a quote may have been retyped by a human in Books.' `rg -n \"unicodedata.normalize\" backend/app/services/*.py` -> only these two definitions in the whole tree.",
+   "fix": "move one _fold(value) implementation (pick NFKD+strip+lower, the more defensive of the two — it survives a None input, which aito_quote_import.py's version does not) into a small shared module (e.g. backend/app/utils/text.py) and import it from both aito_shipping.py and aito_quote_import.py instead of keeping two hand-synced copies.",
+   "behavior_change": false},
+
+  {"severity": "medium", "category": "duplication",
+   "file": "frontend/src/hooks/useDueDateMutation.ts", "line": 19,
+   "title": "useDueDateMutation re-implements settleProject() by hand instead of calling the shared helper",
+   "evidence": "frontend/src/hooks/useDueDateMutation.ts:19-23 (`onSuccess`) writes `queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => prev?.map((p) => (p.id === row.id ? row : p)) ?? prev); queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });` — exactly the two-statement body of frontend/src/components/aito/settleProject.ts's `settleProject(queryClient, projectId, row)`, which six sibling hooks (useContactedMutation, useFlagMutation, useColumnMoveMutation, useQuoteStatusMutation, useSendQuoteMutation, components/aito/useProjectPatchMutation.ts) already call instead of writing this out. `rg -n \"settleProject\" frontend/src -l` shows useDueDateMutation.ts is not among the callers even though its shape matches exactly. useDueDateMutation.ts was added with the 2026-09-04 due-date feature, after settleProject was extracted by campaign 10.",
+   "fix": "replace the two lines in useDueDateMutation.ts's onSuccess with `settleProject(queryClient, project.id, row)`, matching the other single-project mutation hooks.",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "duplication",
+   "file": "backend/app/api/routes/aito.py", "line": 1567,
+   "title": "Guarded-rollback swallow block now repeated four times in aito.py (a new pickup-SMS site copied the pattern instead of sharing it)",
+   "evidence": "The identical `try:\\n    await db.rollback()\\nexcept Exception:  # noqa: BLE001 — see the comment above\\n    pass` block occurs at aito.py:1565-1568, 1606-1609 and 1619-1622 (all inside send_invoice_email, previously flagged as 3 sites in campaign 10's T-003, still unfixed) and now also at 2797-2800 inside the newer pickup-SMS handler (send_pickup_sms), added by the 2026-09-04/05 pickup-SMS feature. `rg -n \"except Exception:  # noqa: BLE001\" backend/app/api/routes/aito.py` -> 4 hits, one more than campaign 10 recorded.",
+   "fix": "extract a tiny local helper, e.g. `async def _rollback_quietly(db): try: await db.rollback() except Exception: pass  # noqa: BLE001`, and call it from all four sites, keeping each site's own explanatory comment about *why* the swallow is needed.",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "dead-code",
+   "file": "backend/app/services/aito_quote_sync.py", "line": 692,
+   "title": "_write_back_rounded_costs()'s project_id parameter is unused",
+   "evidence": "ruff (ARG001): `Unused function argument: project_id` at backend/app/services/aito_quote_sync.py:692. `rg -n \"project_id\" backend/app/services/aito_quote_sync.py` restricted to lines 691-722 (the function body) shows it appears only in the signature — the loop over `pushed_costs.items()` keys every UPDATE off `task_id`/`service` alone, never `project_id`. Both call sites (lines 594 and 1138) pass `project.id` in.",
+   "fix": "drop the project_id parameter from _write_back_rounded_costs and update its two call sites (aito_quote_sync.py:594, 1138) to stop passing it.",
+   "behavior_change": false}
+]}

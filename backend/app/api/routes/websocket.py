@@ -105,9 +105,16 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
             await websocket.close(code=_WS_CLOSE_UNAUTHORIZED)
             return
 
-    # Token verified (or auth disabled); now safe to admit the connection.
-    logger.info("WebSocket client connecting (principal=%s)", principal if principal else "<anonymous>")
-    await ws_manager.connect(websocket)
+    # Token verified (or auth disabled). Resolve the caller's principal
+    # attributes — including the Aito board authority stamp — before
+    # admitting the connection into ws_manager.active_connections (T-030 /
+    # audit-security follow-up to T-038): broadcast_aito() walks that list,
+    # and previously there was a real window, between connect() and the
+    # stamp below, during which an unstamped connection was already
+    # reachable and — under the old fail-open default — treated as
+    # permitted. Stamping everything first closes that window: nothing is
+    # ever in active_connections without an aito_read value already set.
+    #
     # Stash on connection state for any future per-message permission
     # logic; today the message handlers are read-only and only respond
     # to the requesting socket, so the stash is informational. The
@@ -139,6 +146,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
             logger.warning("WebSocket principal resolve failed for %s", principal, exc_info=True)
     websocket.state.bambuddy_principal_user_id = principal_user_id
     websocket.state.aito_read = aito_read
+
+    # Now safe to admit the connection — every attribute broadcast_aito()
+    # or broadcast_to_user() could ever read is already stamped.
+    logger.info("WebSocket client connecting (principal=%s)", principal if principal else "<anonymous>")
+    await ws_manager.connect(websocket)
     logger.info("WebSocket client connected")
 
     try:
@@ -194,7 +206,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                         )
 
             # Aito presence: "I am viewing project N" / None on panel close.
-            elif data.get("type") == "aito_presence":
+            # T-011: mirror the outbound gate above — a connection stamped
+            # without AITO_READ never enters the viewers map, matching the
+            # fact it never receives presence fan-out either.
+            elif data.get("type") == "aito_presence" and websocket.state.aito_read:
                 pid = data.get("project_id")
                 # bool is an int subclass in Python — isinstance(True, int) is
                 # True — so `isinstance(pid, int)` alone admits a stray

@@ -20,6 +20,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/aito/{project_id} ['PATCH']
 /api/v1/aito/{project_id} ['DELETE']
 /api/v1/aito/{project_id}/contacted ['PATCH']
+/api/v1/aito/{project_id}/due-date ['PATCH']
 /api/v1/aito/{project_id}/events ['GET']
 /api/v1/aito/{project_id}/events ['POST']
 /api/v1/aito/{project_id}/flag ['PATCH']
@@ -1130,6 +1131,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def store_print_data(
 1 async def submit_report(
 1 async def summarize_tasks(db: AsyncSession, tasks: list[dict]) -> tuple[str, str]:
+1 async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
 1 async def sync_enabled(db: AsyncSession) -> bool:
 1 async def sync_interval_seconds(db: AsyncSession) -> int:
 1 async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
@@ -1536,6 +1538,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 ```
 export class GrowingBuffer
 export const AITO_CARD_VT_NAME
+export const AITO3D_SENDER
 export const API_KEY_QR_VERSION
 export const API_SLICEABLE_FILE_TYPES
 export const AWAY_STATUSES
@@ -1565,6 +1568,7 @@ export const FAN_SPEED_DEFAULTS
 export const FILAMENT_BRANDS
 export const FILAMENT_MATERIALS
 export const filamentLineCost
+export const FOLLOWUP_KEYS
 export const FTS_INLET_SIDE
 export const inventoryLocationsQueryKey
 export const libraryTagsQueryKey
@@ -1637,6 +1641,7 @@ export function buildLoadedFilaments
 export function buildPresetOptions
 export function buildPricingInputs
 export function buildQuoteSummary
+export function buildShippingLabelHtml
 export function buildWaterfall
 export function calculatorPrefillUrl
 export function canonicalFilamentType
@@ -1659,6 +1664,7 @@ export function computePopoverPosition
 export function computePricing
 export function computeSkuForecasts
 export function correctedTimeH
+export function daysSince
 export function defaultClientDraft
 export function deriveChamberTargetForTrays
 export function detectPlatform
@@ -1666,6 +1672,8 @@ export function diffTaskDraft
 export function discountMatrix
 export function downloadTextFile
 export function draftFromContact
+export function dueDateCls
+export function dueDateLevel
 export function effectivePreferLowest
 export function elapsedDays
 export function eligibleParents
@@ -1687,6 +1695,7 @@ export function flashRevert
 export function fleetAudience
 export function flightDuration
 export function foldSessionOverrides
+export function followups
 export function formatDate
 export function formatDateInput
 export function formatDateOnly
@@ -1748,6 +1757,7 @@ export function isExternalSidebarItemId
 export function isExternalSpoolHidden
 export function isFinished
 export function isGcodeCompatible
+export function isIsoDateKey
 export function islandLabel
 export function isLightColor
 export function isPlaceholder
@@ -1781,6 +1791,7 @@ export function openArchiveInSlicer
 export function openCameraWindow
 export function openInSlicer
 export function openSafeExternalUrl
+export function overdueRank
 export function parseDateInput
 export function parseFilamentColor
 export function parseGridFrames
@@ -1837,6 +1848,7 @@ export function setAitoPresenceState
 export function setColorCatalog
 export function setExternalSpoolHidden
 export function shippingDraftErrors
+export function shippingLabelFor
 export function shippingPayload
 export function sizeMargin
 export function skuKey
@@ -1882,6 +1894,7 @@ export function useCombinedGridStats
 export function useContactedMutation
 export function useCurrency
 export function useDismissableDialog
+export function useDueDateMutation
 export function useFilamentMapping
 export function useFlagMutation
 export function useFlipReorder
@@ -1948,6 +1961,8 @@ export interface FilamentPresetOption
 export interface FilamentPresetSources
 export interface FilamentRequirement
 export interface FilamentRequirementsResponse
+export interface FollowupBucket
+export interface FollowupThresholds
 export interface GridStreamStats
 export interface ImpressionDraft
 export interface LoadedFilament
@@ -1974,6 +1989,7 @@ export interface RealityCheck
 export interface RealityCheckOverrides
 export interface ShippingDraft
 export interface ShippingDraftErrors
+export interface ShippingLabel
 export interface SkuForecast
 export interface SkuGroup
 export interface SpoolBuddyState
@@ -1996,10 +2012,12 @@ export type ColorFamily
 export type ColumnId
 export type DateFormat
 export type DryingPreset
+export type DueLevel
 export type FilamentPresetSource
 export type FilamentStatus
 export type FlightDeparture
 export type FlightSuspension
+export type FollowupKey
 export type MoveLock
 export type MoveTarget
 export type PageTab
@@ -2581,6 +2599,7 @@ sendAitoQuoteEmail
 sendEmailOTP
 setAirductMode
 setAitoProjectContacted
+setAitoProjectDueDate
 setAitoProjectFlag
 setAitoQuoteStatus
 setAmsFilamentBackup
@@ -2751,8 +2770,8 @@ UsersPage.tsx
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "import backend.app.main; from backend.app.core.database import Base; [print(n, len(t.columns)) for n, t in sorted(Base.metadata.tables.items())]" 2>/dev/null```
 ```
 aito_events 15
-aito_projects 43
-aito_tasks 31
+aito_projects 49
+aito_tasks 32
 ams_labels 6
 ams_sensor_history 7
 api_keys 20
@@ -2760,7 +2779,7 @@ auth_ephemeral_tokens 10
 auth_rate_limit_events 4
 budget_reservations 9
 bug_reports 9
-calculator_defaults 22
+calculator_defaults 23
 calculator_filaments 15
 calculator_printers 9
 color_catalog 9

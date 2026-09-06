@@ -5564,6 +5564,21 @@
    },
    "security": true
   },
+  "PATCH /api/v1/aito/{project_id}/due-date": {
+   "operationId": "set_project_due_date_api_v1_aito__project_id__due_date_patch",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoDueDateUpdate"
+   },
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PATCH /api/v1/aito/{project_id}/flag": {
    "operationId": "set_project_flag_api_v1_aito__project_id__flag_patch",
    "params": [
@@ -11176,6 +11191,14 @@
     "contacted"
    ]
   },
+  "AitoDueDateUpdate": {
+   "properties": {
+    "due_date": "anyOf(string,null)"
+   },
+   "required": [
+    "due_date"
+   ]
+  },
   "AitoEventPage": {
    "properties": {
     "events": "[AitoEventResponse]",
@@ -11319,6 +11342,7 @@
     "client_social_handle": "anyOf(string,null)",
     "client_social_network": "anyOf(string,null)",
     "description": "string",
+    "due_date": "anyOf(string,null)",
     "quote_date": "anyOf(string,null)",
     "quote_id": "anyOf(string,null)",
     "quote_number": "anyOf(string,null)",
@@ -11362,7 +11386,8 @@
   "AitoProjectMove": {
    "properties": {
     "column": "string",
-    "position": "integer"
+    "position": "integer",
+    "today": "anyOf(string,null)"
    },
    "required": [
     "column",
@@ -11383,8 +11408,13 @@
     "created_at": "string",
     "created_by": "anyOf(string,null)",
     "description": "string",
+    "due_date": "anyOf(string,null)",
     "flag": "anyOf(string,null)",
     "id": "integer",
+    "invoice_balance": "anyOf(number,null)",
+    "invoice_checked_at": "anyOf(string,null)",
+    "invoice_due_date": "anyOf(string,null)",
+    "invoice_status": "anyOf(string,null)",
     "move_lock": "anyOf(string,null)",
     "position": "integer",
     "quote_accepted_at": "anyOf(string,null)",
@@ -11393,6 +11423,7 @@
     "quote_invoiced": "boolean",
     "quote_number": "anyOf(string,null)",
     "quote_salesperson": "anyOf(string,null)",
+    "quote_sent_at": "anyOf(string,null)",
     "quote_status": "anyOf(string,null)",
     "quote_status_block": "anyOf(string,null)",
     "quote_status_remote": "anyOf(string,null)",
@@ -11431,8 +11462,13 @@
     "created_at",
     "created_by",
     "description",
+    "due_date",
     "flag",
     "id",
+    "invoice_balance",
+    "invoice_checked_at",
+    "invoice_due_date",
+    "invoice_status",
     "move_lock",
     "position",
     "quote_accepted_at",
@@ -11441,6 +11477,7 @@
     "quote_invoiced",
     "quote_number",
     "quote_salesperson",
+    "quote_sent_at",
     "quote_status",
     "quote_status_block",
     "quote_status_remote",
@@ -11629,6 +11666,7 @@
     "impression_filament_id": "anyOf(integer,null)",
     "impression_printer_id": "anyOf(integer,null)",
     "impression_quantity": "anyOf(integer,null)",
+    "impression_rush": "boolean",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
     "modelisation_cost": "anyOf(number,null)",
@@ -11670,6 +11708,7 @@
     "impression_filament_id": "anyOf(integer,null)",
     "impression_printer_id": "anyOf(integer,null)",
     "impression_quantity": "anyOf(integer,null)",
+    "impression_rush": "boolean",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
     "modelisation_cost": "anyOf(number,null)",
@@ -11703,6 +11742,7 @@
   "AitoTaskStepsResponse": {
    "properties": {
     "done": "[string]",
+    "rush": "boolean",
     "services": "[string]",
     "title": "string"
    },
@@ -11721,6 +11761,7 @@
     "impression_filament_id": "anyOf(integer,null)",
     "impression_printer_id": "anyOf(integer,null)",
     "impression_quantity": "anyOf(integer,null)",
+    "impression_rush": "anyOf(boolean,null)",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
     "modelisation_cost": "anyOf(number,null)",
@@ -11753,6 +11794,8 @@
   },
   "AppSettings": {
    "properties": {
+    "aito_followup_pickup_days": "integer",
+    "aito_followup_quote_days": "integer",
     "ambient_drying_enabled": "boolean",
     "ams_history_retention_days": "integer",
     "ams_humidity_fair": "integer",
@@ -11908,6 +11951,8 @@
   },
   "AppSettingsUpdate": {
    "properties": {
+    "aito_followup_pickup_days": "anyOf(integer,null)",
+    "aito_followup_quote_days": "anyOf(integer,null)",
     "ambient_drying_enabled": "anyOf(boolean,null)",
     "ams_history_retention_days": "anyOf(integer,null)",
     "ams_humidity_fair": "anyOf(integer,null)",
@@ -12793,6 +12838,7 @@
     "prototype_rate_pct": "number",
     "qty_k": "number",
     "qty_min_factor": "number",
+    "rush_pct": "number",
     "stuff_markup_pct": "number",
     "tax_pct": "number",
     "updated_at": "string"
@@ -12816,6 +12862,7 @@
     "prototype_rate_pct",
     "qty_k",
     "qty_min_factor",
+    "rush_pct",
     "stuff_markup_pct",
     "tax_pct",
     "updated_at"
@@ -12840,6 +12887,7 @@
     "prototype_rate_pct": "anyOf(number,null)",
     "qty_k": "anyOf(number,null)",
     "qty_min_factor": "anyOf(number,null)",
+    "rush_pct": "anyOf(number,null)",
     "stuff_markup_pct": "anyOf(number,null)",
     "tax_pct": "anyOf(number,null)"
    },

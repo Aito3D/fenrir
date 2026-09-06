@@ -131,8 +131,11 @@ export function ZohoSettings() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.clientId')}</label>
+            <label htmlFor="zoho-client-id" className="block text-sm text-bambu-gray mb-1">
+              {t('zoho.clientId')}
+            </label>
             <input
+              id="zoho-client-id"
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
@@ -141,13 +144,14 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">
+            <label htmlFor="zoho-client-secret" className="block text-sm text-bambu-gray mb-1">
               {t('zoho.clientSecret')}
               {zohoStatus?.configured && (
                 <span className="ml-2 text-xs text-green-700 dark:text-green-400">{t('zoho.secretSaved')}</span>
               )}
             </label>
             <input
+              id="zoho-client-secret"
               type="password"
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
@@ -157,13 +161,14 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">
+            <label htmlFor="zoho-refresh-token" className="block text-sm text-bambu-gray mb-1">
               {t('zoho.refreshToken')}
               {zohoStatus?.configured && (
                 <span className="ml-2 text-xs text-green-700 dark:text-green-400">{t('zoho.secretSaved')}</span>
               )}
             </label>
             <input
+              id="zoho-refresh-token"
               type="password"
               value={refreshToken}
               onChange={(e) => setRefreshToken(e.target.value)}
@@ -173,8 +178,11 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.organizationId')}</label>
+            <label htmlFor="zoho-organization-id" className="block text-sm text-bambu-gray mb-1">
+              {t('zoho.organizationId')}
+            </label>
             <input
+              id="zoho-organization-id"
               type="text"
               value={organizationId}
               onChange={(e) => setOrganizationId(e.target.value)}
@@ -183,8 +191,11 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.defaultContactId')}</label>
+            <label htmlFor="zoho-default-contact-id" className="block text-sm text-bambu-gray mb-1">
+              {t('zoho.defaultContactId')}
+            </label>
             <input
+              id="zoho-default-contact-id"
               type="text"
               value={defaultContactId}
               onChange={(e) => setDefaultContactId(e.target.value)}
@@ -193,8 +204,11 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.defaultContactName')}</label>
+            <label htmlFor="zoho-default-contact-name" className="block text-sm text-bambu-gray mb-1">
+              {t('zoho.defaultContactName')}
+            </label>
             <input
+              id="zoho-default-contact-name"
               type="text"
               value={defaultContactName}
               onChange={(e) => setDefaultContactName(e.target.value)}
@@ -203,8 +217,11 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.baseUrl')}</label>
+            <label htmlFor="zoho-base-url" className="block text-sm text-bambu-gray mb-1">
+              {t('zoho.baseUrl')}
+            </label>
             <input
+              id="zoho-base-url"
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
@@ -214,8 +231,11 @@ export function ZohoSettings() {
           </div>
 
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.accountsUrl')}</label>
+            <label htmlFor="zoho-accounts-url" className="block text-sm text-bambu-gray mb-1">
+              {t('zoho.accountsUrl')}
+            </label>
             <input
+              id="zoho-accounts-url"
               type="text"
               value={accountsUrl}
               onChange={(e) => setAccountsUrl(e.target.value)}

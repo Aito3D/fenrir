@@ -16,17 +16,6 @@ import { render } from '../utils';
 import { ZohoSettings } from '../../components/ZohoSettings';
 import { server } from '../mocks/server';
 
-// The labels are plain siblings of their `<input>` (no `for`/`id` or
-// wrapping), so testing-library's label-association queries can't find
-// them. Walk from the label text node to the input in its own wrapper div
-// instead — mirrors how a sighted user visually associates them.
-function inputForLabel(labelText: string): HTMLInputElement {
-  const label = screen.getByText(labelText);
-  const input = label.parentElement?.querySelector('input');
-  if (!input) throw new Error(`no input found next to label "${labelText}"`);
-  return input as HTMLInputElement;
-}
-
 describe('ZohoSettings — save payload and test-connection failure', () => {
   let putBodies: Record<string, unknown>[];
 
@@ -57,7 +46,7 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Client ID'), 'my-client-id');
+    await user.type(screen.getByLabelText('Client ID'), 'my-client-id');
     await user.click(saveButton);
 
     await waitFor(() => expect(putBodies.length).toBe(1));
@@ -71,7 +60,7 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Client Secret'), 'shh-its-a-secret');
+    await user.type(screen.getByLabelText('Client Secret'), 'shh-its-a-secret');
     await user.click(saveButton);
 
     await waitFor(() => expect(putBodies.length).toBe(1));
@@ -92,6 +81,58 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     // absence of a network call.
     expect(await screen.findByText('Zoho settings saved')).toBeInTheDocument();
     expect(putBodies).toHaveLength(0);
+  });
+
+  it('includes zoho_refresh_token when the refresh-token field is filled in', async () => {
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    await user.type(screen.getByLabelText('Refresh Token'), 'shh-its-a-refresh-token');
+    await user.click(saveButton);
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0]).toMatchObject({ zoho_refresh_token: 'shh-its-a-refresh-token' });
+    expect(putBodies[0]).not.toHaveProperty('zoho_client_secret');
+  });
+
+  it('sends a diff key for each changed non-secret field', async () => {
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    await user.type(screen.getByLabelText('Organization ID'), 'org-123');
+    await user.type(screen.getByLabelText('Default client ID'), 'contact-1');
+    await user.type(screen.getByLabelText('Default client name'), 'Ada Lovelace');
+    await user.type(screen.getByLabelText('API Base URL'), 'https://www.zohoapis.eu');
+    await user.type(screen.getByLabelText('Accounts URL'), 'https://accounts.zoho.eu');
+    await user.click(saveButton);
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0]).toMatchObject({
+      zoho_organization_id: 'org-123',
+      zoho_default_contact_id: 'contact-1',
+      zoho_default_contact_name: 'Ada Lovelace',
+      zoho_base_url: 'https://www.zohoapis.eu',
+      zoho_accounts_url: 'https://accounts.zoho.eu',
+    });
+    expect(putBodies[0]).not.toHaveProperty('zoho_client_secret');
+    expect(putBodies[0]).not.toHaveProperty('zoho_refresh_token');
+  });
+
+  it("shows saveMutation's own error toast when the save PUT request fails", async () => {
+    server.use(
+      http.put('/api/v1/settings/', () => HttpResponse.json({ detail: 'Failed to save settings' }, { status: 500 })),
+    );
+
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    await user.type(screen.getByLabelText('Client ID'), 'my-client-id');
+    await user.click(saveButton);
+
+    expect(await screen.findByText('Failed to save settings')).toBeInTheDocument();
   });
 
   it('shows an error toast when the test-connection probe fails', async () => {

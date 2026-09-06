@@ -21,9 +21,31 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import aito as aito_routes
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.settings import Settings
 from backend.app.services import openrouter as openrouter_service, pushcut as pushcut_service
+
+
+class _FakeClock:
+    """Stands in for the module's `time` name — only `.monotonic()` is used
+    by `_check_ai_rate_limit`. Never patch the real `time.monotonic`: asyncio's
+    own loop internals depend on it, and this test suite runs async tests."""
+
+    def __init__(self, start: float = 0.0):
+        self.now = start
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+@pytest.fixture(autouse=True)
+def _reset_ai_rate_limit():
+    """Every route in this file shares the module-level bucket dict — clear it
+    so one test's calls never count against another's budget."""
+    aito_routes._ai_rate_limit_calls.clear()
+    yield
+    aito_routes._ai_rate_limit_calls.clear()
 
 
 async def _create(client, **overrides):
@@ -122,6 +144,92 @@ async def test_draft_upstream_502(async_client, monkeypatch):
 async def test_draft_404_on_unknown_project(async_client):
     r = await async_client.post("/api/v1/aito/999999/pickup-message")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------- T-043: rate limit
+
+
+@pytest.mark.asyncio
+async def test_draft_rate_limit_blocks_the_call_past_the_budget(async_client, monkeypatch):
+    """The Nth call in the window still succeeds; the N+1th gets 429 with the
+    exact detail, and never reaches the (billed) OpenRouter call. Enforced
+    before the finished-project lookup, so the same project id is reusable."""
+    project = await _create_finished(async_client)
+    calls: list[str] = []
+
+    async def fake(db, description, client_name=None, parts=None):
+        calls.append("call")
+        return "message", "m"
+
+    _patch_pickup_message(monkeypatch, fake)
+
+    for _ in range(aito_routes._AI_RATE_LIMIT_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+        assert r.status_code == 200
+
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+    assert r.status_code == 429
+    assert r.json()["detail"] == aito_routes._AI_RATE_LIMIT_DETAIL
+    assert len(calls) == aito_routes._AI_RATE_LIMIT_MAX_CALLS
+
+
+@pytest.mark.asyncio
+async def test_draft_rate_limit_is_per_principal(async_client, monkeypatch):
+    """A different principal (a different `current_user`) is not affected by
+    another principal's exhausted budget — the bucket is keyed per user, not
+    global."""
+    from backend.app.main import app
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    project = await _create_finished(async_client)
+
+    async def fake(db, description, client_name=None, parts=None):
+        return "message", "m"
+
+    _patch_pickup_message(monkeypatch, fake)
+
+    for _ in range(aito_routes._AI_RATE_LIMIT_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+        assert r.status_code == 200
+    blocked = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+    assert blocked.status_code == 429
+
+    route = next(r for r in app.routes if getattr(r, "name", "") == "generate_pickup_message")
+    dep = next(d.call for d in route.dependant.dependencies if d.name == "current_user")
+    app.dependency_overrides[dep] = lambda: User(
+        id=999, username="other", groups=[Group(name="t", permissions=["aito:update"])]
+    )
+    try:
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+        assert r.status_code == 200
+    finally:
+        app.dependency_overrides.pop(dep, None)
+
+
+@pytest.mark.asyncio
+async def test_draft_rate_limit_clears_once_the_window_elapses(async_client, monkeypatch):
+    """After the window passes, the same principal is allowed again. The
+    module's own `time` name is rebound to a fake clock — never the real
+    `time.monotonic`, which asyncio's loop also relies on."""
+    project = await _create_finished(async_client)
+
+    async def fake(db, description, client_name=None, parts=None):
+        return "message", "m"
+
+    clock = _FakeClock(start=1_000.0)
+    monkeypatch.setattr(aito_routes, "time", clock)
+    _patch_pickup_message(monkeypatch, fake)
+
+    for _ in range(aito_routes._AI_RATE_LIMIT_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+        assert r.status_code == 200
+    blocked = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+    assert blocked.status_code == 429
+
+    clock.now += aito_routes._AI_RATE_LIMIT_WINDOW_S + 1
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+    assert r.status_code == 200
 
 
 # ---------------------------------------------------------------- the send
