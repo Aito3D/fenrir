@@ -289,6 +289,7 @@ async def init_db():
         aito_event,
         aito_project,
         aito_task,
+        aito_tracking_view,
         ams_history,
         ams_label,
         api_key,
@@ -5158,6 +5159,30 @@ async def run_migrations(conn):
     # nothing and an existing print step was not rushed.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN due_date VARCHAR(10)")
     await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN impression_rush BOOLEAN NOT NULL DEFAULT 0")
+
+    # Migration: public tracking link token (2026-09-06). Nullable, minted on
+    # first use, so no backfill. The unique index is what the public lookup
+    # runs on.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN tracking_token VARCHAR(64)")
+    await _safe_execute(
+        conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_aito_projects_tracking_token ON aito_projects(tracking_token)"
+    )
+    # Migration: tracking page view log (2026-09-06). A row is a card and a
+    # timestamp — no IP, no user agent — so it answers "is the page used?"
+    # and nothing about who used it.
+    await _safe_execute(
+        conn,
+        "CREATE TABLE IF NOT EXISTS aito_tracking_views ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " project_id INTEGER NOT NULL,"
+        " viewed_at DATETIME NOT NULL)",
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_viewed_at ON aito_tracking_views(viewed_at)"
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_project_id ON aito_tracking_views(project_id)"
+    )
 
     await _backfill_aito_events(conn)
 

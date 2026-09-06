@@ -37,6 +37,10 @@ class AitoProject(Base):
     # rather than by a DB constraint, so a legacy row cannot fail to load.
     client_social_network: Mapped[str | None] = mapped_column(String(20), nullable=True)
     client_social_handle: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Public tracking link token (services/aito_tracking.py). Minted lazily
+    # the first time a link is needed; Regenerate replaces it. NOT in
+    # VERSIONED_FIELDS: rotating a link is not an edit the panel conflicts on.
+    tracking_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     # Snapshot of the Zoho quote this project was imported from; NULL on cards
     # created by hand. quote_total is the quote's own total, not the project's.
     quote_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)

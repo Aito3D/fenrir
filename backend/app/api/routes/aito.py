@@ -72,6 +72,7 @@ from backend.app.services.aito_shipping import (
     service_for_island,
 )
 from backend.app.services.aito_stats import compute_aito_stats
+from backend.app.services.aito_tracking import external_url as tracking_external_url, tracking_url_for
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -346,6 +347,12 @@ async def _shipping_names(db: AsyncSession) -> dict[str, str]:
     }
 
 
+async def _external_url(db: AsyncSession) -> str:
+    """Resolved once per request and shared by every card `_to_response`
+    builds, like `_shipping_names`."""
+    return await tracking_external_url(db)
+
+
 async def _shipping_rates(db: AsyncSession) -> dict[str, float]:
     """Service key -> Books rate, for the two mutation paths that validate a
     shipping payload (create and update) and only need it once
@@ -360,22 +367,25 @@ async def _shipping_rates(db: AsyncSession) -> dict[str, float]:
     return {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
 
 
-def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str]) -> AitoProjectResponse:
-    """`summary` and `shipping_names` are both required, never defaulted. The
-    detail panel writes PATCH (and move / quote-status / restore) responses
-    straight into the board cache with setQueryData, replacing the row — so
-    an endpoint that quietly returned zeros, or an empty shipping_names map,
-    would blank a card's badges — or its shipping service name, on a card
-    that HAS a shipment — and nothing would fail. Requiring both makes every
-    call site state its intent instead of forgetting one silently.
+def _to_response(
+    p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str], external_url: str
+) -> AitoProjectResponse:
+    """`summary`, `shipping_names` and `external_url` are all required, never
+    defaulted. The detail panel writes PATCH (and move / quote-status /
+    restore) responses straight into the board cache with setQueryData,
+    replacing the row — so an endpoint that quietly returned zeros, an empty
+    shipping_names map, or a blank external_url when one is configured, would
+    blank a card's badges — or its shipping service name, or its tracking
+    link — and nothing would fail. Requiring all three makes every call site
+    state its intent instead of forgetting one silently.
 
-    `shipping_names` is resolved ONCE per request by the caller
-    (`_shipping_names`), not per row: the catalogue is one cached read and
-    every card on the board shares it. This function stays synchronous —
-    it cannot await the catalogue itself, or the board list would force one
-    fetch per card. A caller with genuinely no shipment in play may pass an
-    explicitly-named empty dict, but should prefer resolving it — it costs
-    one cached settings read, and correctness beats the saving."""
+    `shipping_names` and `external_url` are each resolved ONCE per request by
+    the caller (`_shipping_names`, `_external_url`), not per row: both are one
+    cached read shared by every card on the board. This function stays
+    synchronous — it cannot await either itself, or the board list would
+    force one fetch per card. A caller with genuinely no shipment in play may
+    pass an explicitly-named empty dict, but should prefer resolving it — it
+    costs one cached settings read, and correctness beats the saving."""
     _, lock = evaluate(p.quote_status, p.board_column, summary.pending)
     return AitoProjectResponse(
         id=p.id,
@@ -418,6 +428,8 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # unflushed in-memory row reads None, which IS "nobody told them yet".
         client_contacted_at=p.client_contacted_at,
         due_date=p.due_date,
+        tracking_url=tracking_url_for(external_url, p.tracking_token),
+        tracking_configured=external_url != "",
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.
         version=p.version or 0,
@@ -453,20 +465,21 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
 async def _project_response(
     db: AsyncSession, p: AitoProject, summary: TaskSummary | None = None
 ) -> AitoProjectResponse:
-    """`_to_response(p, summary, shipping_names)` with `shipping_names`
-    always resolved here via `_shipping_names`, and `summary` resolved via
+    """`_to_response(p, summary, shipping_names, external_url)` with
+    `shipping_names` and `external_url` always resolved here via
+    `_shipping_names` and `_external_url`, and `summary` resolved via
     `_summary_for` too when the caller has none in hand yet.
 
     Callers that already computed `summary` earlier — because a step before
     the response build needed it too (`_apply_rules`, `evaluate`, or simply
     because it was cheaper to derive from rows already in memory) — pass it
-    explicitly, and this function only awaits `_shipping_names`. That keeps
-    the original evaluation order in both cases: summary before shipping
-    names.
+    explicitly, and this function only awaits `_shipping_names` and
+    `_external_url`. That keeps the original evaluation order in both cases:
+    summary before shipping names and external url.
     """
     if summary is None:
         summary = await _summary_for(db, p.id)
-    return _to_response(p, summary, await _shipping_names(db))
+    return _to_response(p, summary, await _shipping_names(db), await _external_url(db))
 
 
 def _task_to_response(t: AitoTask) -> AitoTaskResponse:
@@ -890,7 +903,8 @@ async def list_projects(
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
-    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names) for p in projects]
+    external_url = await _external_url(db)
+    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url) for p in projects]
 
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
@@ -907,7 +921,8 @@ async def list_trash(
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
-    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names) for p in projects]
+    external_url = await _external_url(db)
+    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url) for p in projects]
 
 
 @router.get("/stats", response_model=AitoStatsResponse)
@@ -2303,7 +2318,8 @@ async def import_legacy_projects(
     # AitoProjectImportItem carries no shipping fields at all, so no imported
     # project can have a shipment — an empty map is correct here, not merely
     # a shortcut.
-    return [_to_response(p, TaskSummary(), {}) for p in created]
+    external_url = await _external_url(db)
+    return [_to_response(p, TaskSummary(), {}, external_url) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)

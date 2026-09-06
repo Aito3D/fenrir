@@ -1,6 +1,7 @@
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.models.ams_history import AMSSensorHistory
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.api_key import APIKey
@@ -50,6 +51,7 @@ __all__ = [
     "AitoEvent",
     "AitoProject",
     "AitoTask",
+    "AitoTrackingView",
     "Printer",
     "PrintArchive",
     "Filament",

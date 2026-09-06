@@ -1034,6 +1034,8 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "flag": None,
         "client_contacted_at": None,
         "due_date": None,
+        "tracking_url": None,
+        "tracking_configured": False,
         "quote_sync_error": None,
         "quote_status_block": None,
         "quote_status_remote": None,
