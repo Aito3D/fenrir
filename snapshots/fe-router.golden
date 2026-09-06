@@ -80,7 +80,7 @@
     78	element=ProjectDetailPage
     79	<Route
     80	path="aito"
-    81	element=AitoPage
+    81	element=PermissionRoute
     82	<Route
     83	path="inventory"
     84	element=InventoryPage

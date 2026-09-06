@@ -10248,3 +10248,88 @@ board; after the fix that ping becomes a silent no-op and the name disappears fr
 indicators."
 
 user-approved 2026-09-05
+
+## Campaign 11 · T-012 — 2026-09-05 — user-approved behavior change
+
+`frontend/src/App.tsx`'s `/aito` route was registered without a `PermissionRoute` guard —
+`<Route path="aito" element={<AitoPage />} />` — unlike its sibling `calculator` route one line
+above (`<Route path="calculator" element={<PermissionRoute permission="calculator:read">...`).
+`Layout.tsx` (line ~330) already maps the sidebar nav entry to the `aito:read` permission, so the
+link itself was hidden from a user without it, but nothing stopped that same user from typing
+`/aito` into the address bar directly: the board mounted, fired its normal fetches, and only the
+backend's per-endpoint `AITO_READ` enforcement (`routes/aito.py`) turned those into 403s in the
+background, leaving the user looking at a blank/broken board instead of being routed away.
+
+Fixed by wrapping the route the same way the calculator route already is: `<Route path="aito"
+element={<PermissionRoute permission="aito:read"><AitoPage /></PermissionRoute>} />`. `aito:read`
+was confirmed as the exact permission string the frontend model already uses for this page (grepped
+in `Layout.tsx`'s nav-permission map and in `AitoPageAitoPermissions.test.tsx`'s permission-gating
+matrix). `PermissionRoute` itself, its behavior, and every other route in `App.tsx` are unchanged —
+this is one route wrapped in an already-existing, already-used guard.
+
+Tests added in `frontend/src/__tests__/pages/AitoPageAitoPermissions.test.tsx` (new "AitoPage —
+/aito route guard (T-012)" describe block). `App.tsx` does not export its router or its local
+`PermissionRoute` helper, so the tests rebuild the same two building blocks App.tsx wires together
+for this route (a `RoutePermissionGate` mirroring `PermissionRoute`'s exact redirect/authEnabled
+semantics, mounted via `createBrowserRouter`/`RouterProvider`) — the same pattern already used by
+`ViewTransitionWiring.test.tsx` to test router wiring without importing App.tsx. Two cases: without
+`aito:read`, navigating to `/aito` redirects to `/` and `AitoPage` never mounts (no "Project"
+button in the DOM at all); with `aito:read`, the board mounts as before.
+
+Verification: `npx tsc -b --noEmit` clean. `npx eslint src/App.tsx
+src/__tests__/pages/AitoPageAitoPermissions.test.tsx` clean. `npx vitest run
+src/__tests__/pages/AitoPageAitoPermissions.test.tsx` (17 passed) and `npx vitest run
+src/__tests__/pages/AitoPage.test.tsx` (61 passed). `tools/snapshot.py verify` before the change:
+9/10, with the only mismatch being `fe-router` and the only differing line being the `aito` route's
+recorded `element=AitoPage` → `element=PermissionRoute` (the probe greps `App.tsx`'s route table).
+`snapshots/fe-router.golden` was re-recorded for exactly that one element line (confirmed via `git
+diff --stat snapshots/` showing only that file, and `git diff snapshots/fe-router.golden` showing
+only that line); `tools/snapshot.py verify` after the re-record: 10/10. `SURFACE.md` is unaffected —
+`App.tsx` is not in its globs; confirmed by diffing a fresh `gen_surface_all.sh` regen against the
+tracked file (empty diff).
+
+Observable change, quoted verbatim from the approved task: "a signed-in user without aito:read who
+navigates directly to /aito currently sees an empty board whose requests 403 in the background;
+afterwards they get the no-permission page instead."
+
+user-approved 2026-09-05
+
+## Campaign 11 · T-013 — 2026-09-05 — user-approved behavior change
+
+`get_invoice_pdf` in `backend/app/api/routes/aito.py` built its `Content-Disposition` filename as
+`f"{invoice['number'] or invoice['id']}.pdf"` and passed it straight to `build_content_disposition`.
+`get_quote_pdf`, right next to it, builds its filename the same way but then applies
+`filename = _CONTROL_CHARS_RE.sub("", filename)` before handing it to the same helper — the
+regex's own docstring notes that ASCII control characters "survive `build_content_disposition`'s
+own stripping (it only drops non-ASCII, quotes, and backslashes)". `get_invoice_pdf` skipped that
+step, so an invoice number containing a control character (upstream Books text, unvalidated) would
+reach the header un-stripped: for CR/LF specifically, h11 refuses to send a response whose header
+value contains a bare CR/LF, turning the request into an aborted response instead of a normal one;
+for the remaining C0 controls, the served filename itself would carry the raw byte.
+
+Fixed by adding the identical `filename = _CONTROL_CHARS_RE.sub("", filename)` line to
+`get_invoice_pdf`, right after its filename is built, mirroring `get_quote_pdf` exactly, and
+extending the adjacent comment to point at the same shared reason.
+
+Observable change, quoted verbatim from the approved task: "for an invoice whose Books number
+contains an ASCII control character, the ascii-fallback filename in the response header would
+change (and, for CR/LF, an aborted response would become a normal one) — no observable change for
+any ordinary invoice number."
+
+Tests added to `backend/tests/unit/test_aito_invoice.py`:
+- `test_invoice_pdf_strips_control_characters_from_the_filename` — an invoice number of
+  `"INV-00\x0742\r\n"` yields a 200 response whose `Content-Disposition` equals
+  `build_content_disposition("INV-0042.pdf", disposition="inline")`, with the CR, LF and control
+  byte all absent from the header.
+- A regression assertion added to the existing `test_invoice_pdf_is_served_inline`: an ordinary
+  `"FA-26-0001"` invoice number's header is byte-identical to
+  `build_content_disposition("FA-26-0001.pdf", disposition="inline")`, pinning the unchanged case.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean.
+`pytest backend/tests/unit/test_aito_invoice.py` (20 passed).
+`pytest backend/tests/unit/test_aito_routes.py` (all passed, `-n 8`).
+`tools/snapshot.py verify`: 10/10 (no route signature, permission, or OpenAPI shape changed — only
+response-body-adjacent header construction). `SURFACE.md`: unchanged (confirmed via
+`gen_surface_all.sh` regen diff).
+
+user-approved 2026-09-05

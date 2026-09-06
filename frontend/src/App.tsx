@@ -269,7 +269,7 @@ const router = createBrowserRouter(
         <Route path="calculator" element={<PermissionRoute permission="calculator:read"><CalculatorPage /></PermissionRoute>} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
-        <Route path="aito" element={<AitoPage />} />
+        <Route path="aito" element={<PermissionRoute permission="aito:read"><AitoPage /></PermissionRoute>} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="files" element={<FileManagerPage />} />
         <Route path="files/trash" element={<LibraryTrashPage />} />

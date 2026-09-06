@@ -14,12 +14,19 @@
  * AuthContext), so the first case below pins that a default single-user
  * install sees no difference at all.
  */
-import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import React, { useState } from 'react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, waitFor, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { ThemeProvider } from '../../contexts/ThemeContext';
+import { FullscreenProvider } from '../../contexts/FullscreenContext';
+import { ToastProvider } from '../../contexts/ToastContext';
+import { createTestQueryClient } from '../utils';
 
 const mockUseAuth = {
   user: { id: 1, username: 'operator', permissions: [] as string[] },
@@ -434,5 +441,88 @@ describe('AitoPage — aito:update permission gating (T-048)', () => {
     expect(within(dialog).getByRole('button', { name: /send quote/i })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /add task/i })).toBeInTheDocument();
     expect(await within(dialog).findByLabelText('Remove task')).toBeInTheDocument();
+  });
+});
+
+// T-012: the /aito route itself must be guarded, not just the sidebar entry
+// and the in-page controls above. App.tsx does not export its router or its
+// local `PermissionRoute` helper, so this rebuilds the same two building
+// blocks App.tsx wires together for that route — `<Route path="aito"
+// element={<PermissionRoute permission="aito:read"><AitoPage /></PermissionRoute>}
+// />` — the same way `ViewTransitionWiring.test.tsx` builds its own
+// createBrowserRouter/RouterProvider tree rather than importing App.tsx's.
+// `RoutePermissionGate` below mirrors App.tsx's `PermissionRoute` exactly
+// (same redirect target, same authEnabled bypass) so this exercises the real
+// contract: no aito:read never mounts AitoPage at all, not just the buttons
+// inside it.
+function RoutePermissionGate({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const { authEnabled, hasPermission } = mockUseAuth;
+  if (!authEnabled) {
+    return <>{children}</>;
+  }
+  if (!hasPermission(permission)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
+function RouterProviders({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(createTestQueryClient);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <ThemeProvider>
+          <FullscreenProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </FullscreenProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+describe('AitoPage — /aito route guard (T-012)', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('without aito:read: redirects away and never mounts the board', async () => {
+    mockUseAuth.authEnabled = true;
+    mockUseAuth.hasPermission.mockImplementation(() => false);
+
+    window.history.pushState({}, '', '/aito');
+    const router = createBrowserRouter([
+      { path: '/aito', element: <RoutePermissionGate permission="aito:read"><AitoPage /></RoutePermissionGate> },
+      { path: '/', element: <span>home-page</span> },
+    ]);
+
+    rtlRender(
+      <RouterProviders>
+        <RouterProvider router={router} />
+      </RouterProviders>,
+    );
+
+    expect(await screen.findByText('home-page')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Project' })).not.toBeInTheDocument();
+  });
+
+  it('with aito:read: mounts the board', async () => {
+    mockUseAuth.authEnabled = true;
+    mockUseAuth.hasPermission.mockImplementation((permission: string) => permission === 'aito:read');
+
+    window.history.pushState({}, '', '/aito');
+    const router = createBrowserRouter([
+      { path: '/aito', element: <RoutePermissionGate permission="aito:read"><AitoPage /></RoutePermissionGate> },
+      { path: '/', element: <span>home-page</span> },
+    ]);
+
+    rtlRender(
+      <RouterProviders>
+        <RouterProvider router={router} />
+      </RouterProviders>,
+    );
+
+    expect(await screen.findByRole('button', { name: /Support GoPro/ })).toBeInTheDocument();
+    expect(screen.queryByText('home-page')).not.toBeInTheDocument();
   });
 });

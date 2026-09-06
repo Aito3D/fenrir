@@ -9,6 +9,7 @@ and one that renders a stranger's invoice.
 import pytest
 
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.utils.http import build_content_disposition
 
 INVOICE = {
     "invoice_id": "inv-1",
@@ -202,6 +203,32 @@ async def test_invoice_pdf_is_served_inline(async_client, books_invoices, monkey
     assert "inline" in response.headers["content-disposition"]
     assert "FA-26-0001.pdf" in response.headers["content-disposition"]
     assert response.content.startswith(b"%PDF-")
+    # Regression pin: an ordinary invoice number's header is byte-identical
+    # to what it was before the control-character strip was added.
+    assert response.headers["content-disposition"] == build_content_disposition("FA-26-0001.pdf", disposition="inline")
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_strips_control_characters_from_the_filename(async_client, books_invoices, monkeypatch):
+    """Mirrors test_quote_pdf_strips_control_characters_from_the_filename in
+    test_aito_routes.py: an invoice number containing CR/LF (or other C0
+    controls) must not reach Content-Disposition raw."""
+    books_invoices["rows"][:] = [{**INVOICE, "invoice_number": "INV-00\x0742\r\n"}]
+
+    async def pdf(db, invoice_id):
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(zoho_service, "get_invoice_pdf", pdf)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf")
+
+    assert response.status_code == 200
+    header = response.headers["content-disposition"]
+    assert header == build_content_disposition("INV-0042.pdf", disposition="inline")
+    assert "\r" not in header
+    assert "\n" not in header
+    assert "\x07" not in header
 
 
 @pytest.mark.asyncio

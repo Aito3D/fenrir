@@ -1359,13 +1359,16 @@ async def get_invoice_pdf(
         logger.warning("Aito invoice PDF failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     filename = f"{invoice['number'] or invoice['id']}.pdf"
+    filename = _CONTROL_CHARS_RE.sub("", filename)
     return Response(
         content=pdf,
         media_type="application/pdf",
         # inline + the shared header helper, for the reasons on get_quote_pdf:
         # the browser prints this from a blob, and invoice_number is upstream
         # text that Starlette would fail to latin-1 encode if it contained an
-        # em dash or a curly quote.
+        # em dash or a curly quote. Control characters are stripped above for
+        # the same reason as get_quote_pdf: they survive build_content_disposition's
+        # own stripping (it only drops non-ASCII, quotes, and backslashes).
         headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
     )
 

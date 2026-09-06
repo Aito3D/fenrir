@@ -2150,12 +2150,13 @@ async def run_sync_loop() -> None:
                     # back off must not be re-hit by the sweep every tick
                     # either. And if the sweep itself is the one that hits
                     # the 429 (it has no throttle check of its own before
-                    # this point, since it may not have run in a while), it
-                    # commits whatever it already refreshed and lets the
-                    # exception propagate here, where it is handled exactly
-                    # like sync_project's own 429 — arm the same shared
-                    # window via ``_arm_rate_limit_throttle`` — so a limit
-                    # discovered by the sweep also pauses the sync side.
+                    # this point, since it may not have run in a while),
+                    # having already committed each refreshed project as it
+                    # went (T-010), lets the exception propagate here, where
+                    # it is handled exactly like sync_project's own 429 — arm
+                    # the same shared window via ``_arm_rate_limit_throttle``
+                    # — so a limit discovered by the sweep also pauses the
+                    # sync side.
                     if _throttled_until is None or time.monotonic() >= _throttled_until:
                         try:
                             await sweep_invoices(db)
