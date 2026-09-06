@@ -638,4 +638,7 @@ export const handlers = [
   // issue an unhandled request. Empty by default — the block renders nothing;
   // tests about the block override this with server.use().
   http.get('/api/v1/aito/clients/:clientId/history', () => HttpResponse.json({ cards: [], latest_social: null })),
+  http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ detail: 'Lien introuvable' }, { status: 404 })),
+  http.get('/api/v1/aito/:id/tracking-link', () => HttpResponse.json({ tracking_url: null })),
+  http.post('/api/v1/aito/:id/tracking-token', () => HttpResponse.json({ tracking_url: null })),
 ];

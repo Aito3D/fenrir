@@ -470,6 +470,8 @@ export function placeholderProject(fields: {
     shipping_phone: null,
     shipping_price: null,
     shipping_service_name: null,
+    tracking_url: null,
+    tracking_configured: false,
     version: 0,
     created_at: now,
     updated_at: now,

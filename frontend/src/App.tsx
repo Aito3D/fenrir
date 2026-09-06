@@ -64,6 +64,7 @@ const LibraryTrashPage = lazyWithReload(() => import('./pages/LibraryTrashPage')
 const CameraPage = lazyWithReload(() => import('./pages/CameraPage').then(m => ({ default: m.CameraPage })));
 const StreamOverlayPage = lazyWithReload(() => import('./pages/StreamOverlayPage').then(m => ({ default: m.StreamOverlayPage })));
 const ExternalLinkPage = lazyWithReload(() => import('./pages/ExternalLinkPage').then(m => ({ default: m.ExternalLinkPage })));
+const AitoTrackPage = lazyWithReload(() => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage })));
 const GroupEditPage = lazyWithReload(() => import('./pages/GroupEditPage').then(m => ({ default: m.GroupEditPage })));
 const InventoryPage = lazyWithReload(() => import('./pages/InventoryPage'));
 const MakerworldPage = lazyWithReload(() => import('./pages/MakerworldPage').then(m => ({ default: m.MakerworldPage })));
@@ -229,6 +230,8 @@ const router = createBrowserRouter(
 
       {/* Stream overlay page - standalone for OBS/streaming embeds, no auth required */}
       <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
+      {/* Aito client tracking page — public, the token in the URL is the credential, no auth, no layout */}
+      <Route path="/track/:token" element={<AitoTrackPage />} />
 
       {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}
       <Route

@@ -58,6 +58,8 @@ const baseProject: AitoProject = {
   shipping_phone: null,
   shipping_price: null,
   shipping_service_name: null,
+  tracking_url: null,
+  tracking_configured: false,
   version: 1,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',

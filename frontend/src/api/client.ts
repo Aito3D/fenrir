@@ -4071,6 +4071,35 @@ export interface AitoClientHistory {
   latest_social: { network: string; handle: string } | null;
 }
 
+export type AitoTrackingInvoice = 'paid' | 'unpaid' | 'overdue';
+
+/** One part line. `quantity` is null unless every priced service on the
+ *  task agrees on a count > 1 — the server decides, the page only renders. */
+export interface AitoTrackingTask {
+  title: string;
+  quantity: number | null;
+}
+
+/** The public tracking page's payload — the server sends finished strings
+ *  (untitled tasks already read "Pièce N") so the page carries no rule.
+ *  `invoice` is a state, never an amount; `reference` is the quote number
+ *  the client already holds; `updated_at` is the card's last activity and
+ *  feeds the "Mis à jour" line. */
+export interface AitoTracking {
+  column: AitoColumnId;
+  tasks: AitoTrackingTask[];
+  due_date: string | null;
+  shipping: { island: string; service: string } | null;
+  done_at: string | null;
+  invoice: AitoTrackingInvoice | null;
+  reference: string | null;
+  updated_at: string;
+}
+
+export interface AitoTrackingLink {
+  tracking_url: string | null;
+}
+
 export type AitoFlag = 'urgent' | 'sav' | 'pause';
 
 export interface AitoProject {
@@ -4211,6 +4240,13 @@ export interface AitoProject {
   shipping_price: number | null;
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
+  /** The client-facing tracking link for this card, and whether it has ever
+   *  been generated. `tracking_url` is null until the first
+   *  `regenerateAitoTrackingToken` call; `tracking_configured` mirrors that
+   *  independently so the UI can render "not yet configured" without
+   *  round-tripping the link itself. */
+  tracking_url: string | null;
+  tracking_configured: boolean;
   /** Content-fields revision — echo back as `expected_version` on updates so
    *  a concurrent edit 409s instead of being silently overwritten. */
   version: number;
@@ -7818,6 +7854,14 @@ export const api = {
   },
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
+  /** The public tracking page's payload — see routes/aito.py:get_aito_tracking.
+   *  No auth: the token in the URL is the credential. */
+  getAitoTracking: (token: string) => request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`),
+  /** The current tracking link for the project, or null if never generated. */
+  getAitoTrackingLink: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-link`),
+  /** Mints (or re-mints) the project's tracking token, invalidating any
+   *  previous link. */
+  regenerateAitoTrackingToken: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-token`, { method: 'POST' }),
   /** Record — or take back — the fact that the client has been told the job is
    *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to
    *  stamp, and a browser clock that is wrong would otherwise skew both the

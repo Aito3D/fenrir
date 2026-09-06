@@ -91,6 +91,19 @@
   --color-bambu-gray: var(--text-muted);
   --color-bambu-gray-light: var(--text-secondary);
   --color-bambu-gray-dark: var(--text-tertiary);
+
+  /* Aito client tracking page (public, always dark) — fixed literals, never
+     theme-aware. Ground/card/line/ink are the "Midnight Blue" preset's values
+     (.dark.bg-midnight below) frozen, so the page matches that preset
+     without following whichever one the operator picks; muted is one step
+     lighter than the preset for outdoor phone legibility. */
+  --color-aito-cyan: #04A1E4;
+  --color-aito-cyan-dim: #11364a; /* done stepper nodes: 20 % cyan pre-mixed onto the card, OPAQUE */
+  --color-aito-midnight: #0c1016;
+  --color-aito-card: #141b23;
+  --color-aito-line: #212c37;
+  --color-aito-ink: #e9eff6;
+  --color-aito-muted: #a3b1c0;
 }
 
 /* ============================================
