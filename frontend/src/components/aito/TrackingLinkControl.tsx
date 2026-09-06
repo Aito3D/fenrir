@@ -88,7 +88,7 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
         <RotateCcw className="w-4 h-4" />
       </HoldButton>
       {!configured && (
-        <Link to="/settings?tab=general" className="text-xs text-bambu-green hover:underline">
+        <Link to="/settings?tab=network" className="text-xs text-bambu-green hover:underline">
           {t('aito.trackingSettingsLink')}
         </Link>
       )}

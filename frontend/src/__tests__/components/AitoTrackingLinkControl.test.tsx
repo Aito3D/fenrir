@@ -126,7 +126,7 @@ describe('TrackingLinkControl', () => {
   it('is disabled with a settings hint when the external URL is not configured', () => {
     render(<TrackingLinkControl project={{ ...project, tracking_configured: false }} />);
     expect(screen.getByRole('button', { name: /copy tracking link/i })).toBeDisabled();
-    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings?tab=general');
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings?tab=network');
   });
 
   it('regenerates on a completed hold and toasts', async () => {
