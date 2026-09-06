@@ -163,8 +163,9 @@ Props: `project: AitoProject`.
   response, `tracking_configured: bool` (= `external_url` non-empty),
   computed once per request beside `tracking_url`. When false, both buttons
   are disabled with `title = t('aito.trackingNeedsExternalUrl')` and a
-  `Link` to `/settings?tab=general` (the General tab of `SettingsPage` is
-  where `external_url` is edited) rendered beside them.
+  `Link` to `/settings?tab=network` (`external_url` is registered on the
+  Network tab of `SettingsPage`, anchor `card-externalurl`) rendered beside
+  them.
 - i18n keys (app side, all 13 locales): `aito.trackingCopy`,
   `aito.trackingCopied`, `aito.trackingRegenerate`,
   `aito.trackingRegenerated`, `aito.trackingNeedsExternalUrl`,
