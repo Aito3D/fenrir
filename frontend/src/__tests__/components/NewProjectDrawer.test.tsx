@@ -1031,4 +1031,98 @@ describe('repeat-client recall', () => {
     expect(screen.getByLabelText(/username/i)).toHaveValue('typed');
     expect(screen.getByRole('radio', { name: /whatsapp/i })).toBeChecked();
   });
+
+  // A second, distinct client — its own history carries its own
+  // `latest_social`, so a test that switches between the two can tell whose
+  // handle actually got prefilled rather than the two coincidentally sharing
+  // one value.
+  const SECOND_CONTACT = {
+    id: 'zTeura',
+    name: 'Teura MARAE',
+    company_name: '',
+    customer_sub_type: 'individual',
+    phone: '',
+    mobile: '87654321',
+    email: 'teura@example.pf',
+  };
+  const SECOND_HISTORY: AitoClientHistory = {
+    cards: [],
+    latest_social: { network: 'whatsapp', handle: '87654321' },
+  };
+
+  function mockHistoryPerClient(byId: Record<string, AitoClientHistory>) {
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/history', ({ params }) =>
+        HttpResponse.json(byId[params.clientId as string] ?? { cards: [], latest_social: null }),
+      ),
+    );
+  }
+
+  it('does not refill a client whose handle was cleared, after picking someone else in between', async () => {
+    // Regression for a scalar "last prefilled id" ref: it forgets client A
+    // the instant client B is picked, so re-picking A later looks
+    // unprefilled again and silently undoes the operator's earlier clear.
+    mockHistoryPerClient({ [JEAN_PIERRE.id]: JP_HISTORY, [SECOND_CONTACT.id]: SECOND_HISTORY });
+    server.use(http.get('/api/v1/zoho/contacts', () => HttpResponse.json([JEAN_PIERRE, SECOND_CONTACT])));
+    await renderDrawer();
+    await userEvent.click(clientHeader());
+    const combobox = await screen.findByRole('combobox', { name: /client/i });
+
+    // Focus + `fireEvent.change` rather than `userEvent.clear`/`type`: the
+    // combobox reverts to showing the ATTACHED client's name on blur (see
+    // ClientCombobox's own doc), so re-focusing it after a previous pick has
+    // to reliably re-enter search mode before the next search term lands.
+    const search = (term: string) => {
+      fireEvent.focus(combobox);
+      fireEvent.change(combobox, { target: { value: term } });
+    };
+
+    search('Jean');
+    await userEvent.click(await screen.findByText('Jean-Pierre DUPONT'));
+    await waitFor(() => expect(screen.getByLabelText(/username/i)).toHaveValue('jp.dupont'));
+    await userEvent.clear(screen.getByLabelText(/username/i));
+
+    search('Teura');
+    await userEvent.click(await screen.findByText('Teura MARAE'));
+    await waitFor(() => expect(screen.getByLabelText(/username/i)).toHaveValue('87654321'));
+
+    // Back to Jean-Pierre: picking a contact always resets network/handle to
+    // null/'' (see draftFromContact), so the only thing that can stop a
+    // refill here is his id already being on the prefilled list.
+    search('Jean');
+    await userEvent.click(await screen.findByText('Jean-Pierre DUPONT'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { checked: true })).not.toBeInTheDocument();
+  });
+
+  it('does not refill a handle the operator cleared, across a drawer close and reopen', async () => {
+    // Regression for an in-memory-only ref: AitoPage conditionally mounts the
+    // drawer, so closing it unmounts the ref along with it. The persisted
+    // draft (same client, handle emptied) plus a fresh history fetch/cache
+    // on remount must not look like an unprefilled client again.
+    mockHistory(JP_HISTORY);
+    const { unmount } = await renderDrawer();
+    await openClientSection();
+    const handle = await screen.findByLabelText(/username/i);
+    await waitFor(() => expect(handle).toHaveValue('jp.dupont'));
+
+    // The operator's real undo: re-picking the SELECTED network clears both
+    // fields at once (see SocialInput's own doc) — not just the typed text.
+    await userEvent.click(screen.getByRole('radio', { name: /instagram/i }));
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'aito.newProjectDraft.v1',
+        expect.stringContaining('"socialPrefilledFor":["zJeanPierre"]'),
+      ),
+    );
+    unmount();
+
+    render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    await screen.findByText(/Client account — Jean-Pierre DUPONT/);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+  });
 });

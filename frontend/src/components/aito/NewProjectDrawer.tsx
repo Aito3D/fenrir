@@ -199,9 +199,16 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     enabled: historyClientId !== '',
     staleTime: 60_000,
   });
-  // The last client id the social prefill ran for. Once per client: clearing
-  // the handle by hand must not refill it, picking another client must.
-  const socialPrefilledForRef = useRef<string>('');
+  // Every client id the social prefill has already run for — a LIST, not the
+  // last one, and persisted alongside the draft (see `PersistedDraft`'s own
+  // doc). A scalar "last id" would forget client A the moment client B is
+  // picked, so re-picking A later would look unprefilled again and refill a
+  // handle the operator had deliberately cleared; and an in-memory-only ref
+  // would forget EVERY id the instant the drawer unmounts (AitoPage only
+  // mounts it while open), so a close/reopen with the same persisted client
+  // would refill just the same way. Once per client id, for the life of the
+  // draft, is only true if this list survives both of those.
+  const socialPrefilledForRef = useRef<string[]>(persistence.initial?.socialPrefilledFor ?? []);
   // Shared with the panel header's pill and ShippingCard's read view — see
   // `islandLabel`'s own doc for why the degrade (catalogue unresolved) has
   // to be the same computation on all three surfaces rather than each
@@ -226,10 +233,10 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const latestSocial = historyQuery.data?.latest_social ?? null;
   useEffect(() => {
     if (!draft || draft.isDefault || !latestSocial) return;
-    if (socialPrefilledForRef.current === draft.id) return;
+    if (socialPrefilledForRef.current.includes(draft.id)) return;
     if (draft.socialNetwork !== null || draft.socialHandle !== '') return;
     if (!isSocialNetwork(latestSocial.network)) return;
-    socialPrefilledForRef.current = draft.id;
+    socialPrefilledForRef.current = [...socialPrefilledForRef.current, draft.id];
     setDraft({ ...draft, socialNetwork: latestSocial.network, socialHandle: latestSocial.handle });
   }, [draft, latestSocial]);
 
@@ -260,6 +267,10 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // as a side effect of some other field changing later. `resetDraft`'s ref
   // clear needs no such proxy: it always lands alongside a tasks/draft/
   // summaryText/summaryEdited/shipping reset, which already reruns this.
+  // `socialPrefilledForRef` needs no proxy of its own either: the only place
+  // that mutates it (the prefill effect above) always pairs the mutation with
+  // a `setDraft` call in the same synchronous block, and `draft` is already a
+  // dependency here.
   useEffect(() => {
     persistence.save({
       tasks,
@@ -269,6 +280,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       summarySignature: summarySignatureRef.current,
       shipping,
       dueDate,
+      socialPrefilledFor: socialPrefilledForRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, draft, summaryText, summaryEdited, shipping, dueDate, generateNonce]);
@@ -340,8 +352,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setCreatingClient(false);
     setShipping(null);
     setDueDate('');
-    // A later pick of the same client (or a return to it) must prefill again.
-    socialPrefilledForRef.current = '';
+    // A later pick of any client (including one already in the list) must
+    // prefill again against a wiped draft.
+    socialPrefilledForRef.current = [];
   };
 
   const taskName = (task: TaskDraft, index: number) => task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });

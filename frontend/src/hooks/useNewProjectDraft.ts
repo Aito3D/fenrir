@@ -20,6 +20,13 @@ export interface PersistedDraft {
   /** ISO `YYYY-MM-DD` or '' for none. Optional for the same reason shipping
    *  is: an older blob simply lacks the key. */
   dueDate?: string;
+  /** Zoho contact ids the social-handle prefill has already run for (see
+   *  NewProjectDrawer's prefill effect). Persisted so a close/reopen — which
+   *  remounts the drawer and would otherwise reset an in-memory-only marker
+   *  — does not refill a handle the operator deliberately cleared. Optional
+   *  for the same reason shipping/dueDate are: an older blob lacks the key
+   *  and reads as undefined; callers default it to `[]`. */
+  socialPrefilledFor?: string[];
 }
 
 // Bumped by every external clear so a live hook instance's debounced write
