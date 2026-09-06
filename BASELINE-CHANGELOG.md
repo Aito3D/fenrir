@@ -8460,3 +8460,1345 @@ originals genuinely differed:
     five. This is a STRICT SUPERSET: `addEventListener` is tested first, so in every environment the
     originals supported the legacy branch is unreachable. It only helps pre-Safari-14, where the four
     others previously threw TypeError inside the effect.
+
+## T-008 — 2026-09-03 — user-approved behavior change
+
+`run_sync_once`'s sweep SELECT (and its Python mirror, `_still_selected`) re-selects a
+non-pending project only via `AitoProject.status == "active", AitoProject.quote_id.is_not(None),
+AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked"))`. A project whose very
+first push — the CREATE — never succeeded still has `quote_id` NULL, so once `sync_project`
+escalates it to `'error'` (five consecutive `ZohoUpstreamError`s = 25 minutes of Books being
+unreachable at the default 300s tick, or one trip through the `except Exception` catch-all, e.g.
+an `IntegrityError` when `_apply_estimate`'s `quote_id` collides with the partial unique index
+`uq_aito_project_active_quote`) it matched NEITHER SELECT branch and was never selected again —
+contradicting `SYNC_FAILURE_LIMIT`'s own comment, which claims the sweep "deliberately keeps
+selecting error projects", true only for projects that already have a `quote_id`. The card kept
+showing "Zoho Books unreachable" forever, no estimate was ever created in Books even after Books
+recovered, and on the `IntegrityError` path an orphan estimate left in Books was never adopted by
+the `find_estimate_by_reference` idempotency guard, because that guard is only ever reached from
+inside `_create_quote`, which was never called again.
+
+Fixed with the auditor's first option (widen the sweep), chosen over the second (leave such
+projects `'pending'` instead of `'error'`) because `sync_project`'s routing at the top of its try
+block (`if project.quote_sync_state != "pending": ... reconcile via get_estimate ...`) uses
+`quote_sync_state` itself to decide whether a project already has a quote to reconcile. Flipping
+the state to `'pending'` on escalation would have satisfied the SELECT for free, but it also
+replaces the card's error icon (`CardView.tsx`'s `quote_sync_state === 'error'` branch) with the
+ordinary "quote pending" label — silently hiding the outage instead of "still surfacing the
+message on the card" until a sync succeeds, which the task explicitly required. Widening the
+SELECT instead needed one more fix to actually work: a project reselected with `state == 'error'`
+and `quote_id == None` matched `sync_project`'s `!= "pending"` reconcile-branch condition too and
+would have called `get_estimate(db, None)` — so that condition gained a `project.quote_id is not
+None` guard, sending a quote_id-less swept project into the same `not project.quote_id: ...
+_create_quote(...)` branch a fresh `'pending'` project takes. That, in turn, exposed a second gap:
+`_create_quote`'s orphan-adoption branch (the `find_estimate_by_reference` idempotency guard)
+deliberately leaves `quote_sync_state` untouched with the comment "Leaving quote_sync_state at
+'pending' (do not touch it)" — true only because every prior caller already had `'pending'`
+entering that branch. A project entering from `'error'` would have kept `'error'` after adopting
+an orphan's identity, permanently misrouting the FOLLOWING tick into the reconcile branch (now
+that `quote_id` is set) instead of `_update_quote`, which would have left the adopted estimate
+missing its real line items forever and the card's error icon stuck despite the retry having
+half-succeeded. That branch now explicitly sets `quote_sync_state = "pending"` (a no-op for the
+pre-existing pending callers, load-bearing for the new error-with-no-quote_id one).
+
+Changed: `backend/app/services/aito_quote_sync.py` — `run_sync_once`'s SELECT gained a second
+OR'd clause (`status == "active"`, `quote_id.is_(None)`, `quote_sync_state == "error"`);
+`_still_selected` gained the matching Python branch; `sync_project`'s reconcile-vs-create routing
+condition gained a `project.quote_id is not None` guard; `_create_quote`'s orphan-adoption branch
+now explicitly writes `quote_sync_state = "pending"` instead of relying on it already being that
+value. `SYNC_FAILURE_LIMIT`'s module comment was corrected to no longer overclaim "excludes only
+unmanaged and locked" for every error project.
+
+Consumer enumeration: grepped `backend/app/` for `run_sync_once`, `_still_selected`, and
+`quote_sync_state`. `run_sync_once` has exactly one production caller, `run_sync_loop` (same
+module — the 300s background tick plus the wake path from `request_immediate_sync`, itself only
+called from `routes/aito.py`'s post-commit hooks); `_still_selected` is private to this module,
+called only from `run_sync_once`'s own per-iteration loop. `quote_sync_state` is read by
+`routes/aito.py` (response serialization, `_mark_pending_if_ours`, the ownership guard checking
+for `'unmanaged'`) and by the frontend (`CardView.tsx`, `ProjectDetailPanel.tsx`,
+`QuotePrintButton.tsx`, `QuoteDownloadButton.tsx`, `InvoiceCard.tsx`, `aitoOptimistic.ts`) purely
+to render the card — none of those call sites distinguish "how a project became eligible for the
+sweep", only its current state, so none needed a change. No route, permission, schema, or DDL
+changed; `python3 tools/snapshot.py verify` (10/10 probes match) and `bash
+tools/gen_surface_all.sh | diff - SURFACE.md` (no diff) confirm the change is confined to the
+sweep's internal selection and routing logic.
+
+Scope note: the fix is unconditional on WHY a `quote_id`-less project is in `'error'` — a payload
+Books permanently rejected (`ZohoRequestRejected`) or an ambiguous/mismatched reference number
+(`ZohoAmbiguousReferenceError`) also lands in `'error'` with `quote_id` still NULL via the same
+`_terminal_error` helper, and is now retried forever too (one POST per 300s tick, same as a
+quote_id-having `'error'` project is already GET-polled forever today), not only the
+outage-induced `ZohoUpstreamError` case the audit finding centered on. This follows the approved
+scope's own wording ("active projects in quote_sync_state 'error' whose quote_id is NULL become
+eligible for the sweep again ... implement exactly this, nothing wider") rather than narrowing
+further to distinguish transient from terminal causes, which no existing column records.
+`_terminal_error`'s existing dedup (`if not already_in_error or previous_sync_error !=
+project.quote_sync_error`) still limits this to one `sync.failed` event per distinct failure, not
+one per tick.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py`:
+- `test_an_errored_project_with_no_quote_id_is_reselected_and_retried` — escalates a fresh,
+  never-quoted project to `'error'` via `SYNC_FAILURE_LIMIT` consecutive 503s (mirroring
+  `test_upstream_failures_escalate_to_error_after_the_limit`), then swaps in a succeeding
+  transport and asserts a further `run_sync_once` call — with no route handler ever touching the
+  project — reselects it (`== 1`), POSTs the create, and settles `quote_id`/`quote_sync_state`/
+  `quote_sync_error`/`quote_sync_failures` exactly as a normal create success would.
+- `test_an_errored_project_with_no_quote_id_adopts_an_orphan_estimate_on_retry` — the
+  `IntegrityError` scenario from the audit finding: a project starts `'error'` with `quote_id`
+  NULL while Books already holds an orphan estimate under its `AITO-{id}` reference (mirroring
+  `test_create_adopts_an_existing_estimate_with_the_same_reference_instead_of_duplicating`'s
+  fixture shape). Asserts the retry adopts the orphan's identity with no POST, and — the
+  regression this task's second fix (`_create_quote`'s explicit `quote_sync_state = "pending"`)
+  guards — that the project lands on `'pending'`, not stuck `'error'`, with the error message and
+  failure counter cleared.
+
+`test_create_with_no_priced_service_becomes_a_terminal_error` asserted the OLD behavior on its
+second `run_sync_once` call (`assert await run_sync_once(db_session) == 0`, i.e. a project that
+just became `'error'` with no `quote_id` after its no-priced-service guard fired is NOT reselected
+by a later tick). That project is exactly the newly-eligible shape, so it is now legitimately
+reselected; updated the assertion to `== 1` and kept `assert seen == []` unchanged — the guard
+still fires before any Zoho call on every tick, so the meaningful invariant (no wasted network
+traffic on an unfixable project) is unchanged and still asserted, only the attempted-count
+expectation moved to match the approved widening. No other test in the file, or in
+`test_aito_close_sync.py`, `test_aito_quote_e2e.py`, `test_aito_quote_protection.py`,
+`test_aito_quote_sync_interval.py`, or `test_aito_sync_events.py` (all files referencing
+`run_sync_once`/`_still_selected`), asserted the old non-selection behavior; none needed changes.
+
+Observable change (quoted verbatim from the approved task): "cards currently stuck showing a sync
+error would start syncing again on their own, so a quote can appear in Zoho Books without anyone
+touching the card."
+
+`ruff check backend/` / `ruff format --check backend/`: clean. `pytest
+backend/tests/unit/test_aito_quote_sync.py -q`: 108 passed. Also ran every other test file
+referencing `run_sync_once`/`_still_selected`/`quote_sync_state`
+(`test_aito_close_sync.py`, `test_aito_quote_e2e.py`, `test_aito_quote_protection.py`,
+`test_aito_quote_sync_interval.py`, `test_aito_sync_events.py`, `test_aito_board_migration.py`,
+`test_aito_contacted.py`, `test_aito_invoiced_status_heal_migration.py`,
+`test_aito_project_model.py`, `test_aito_routes.py`, `test_aito_task_description_migration.py`,
+`test_aito_shipping_routes.py`, `test_aito_task_reorder.py`,
+`test_aito_unmanaged_backfill_migration.py`): all pass. `python3 tools/snapshot.py verify`:
+10/10 probes match. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: no diff.
+
+## T-007 — 2026-09-03 — `_write_back_rounded_costs` reads the pushed value, not the identity map (user-approved behavior change)
+
+`_write_back_rounded_costs` re-selected `AitoTask` rows AFTER the
+`create_estimate`/`update_estimate_lines` network round trip returned, and rewrote every service's
+rounded cost with a plain `setattr` + flush — an unconditional UPDATE by primary key, no value
+check at all. If an operator committed a cost edit on a different session while that round trip
+was on the wire, the re-select could not reliably observe it: this app runs with
+`expire_on_commit=False`, so if the session's identity map still held the rows
+`load_export_tasks` had loaded a moment earlier, SQLAlchemy handed back those SAME in-memory
+objects without repopulating them from the database (no `populate_existing`), silently returning
+pre-round-trip data even though the row had moved on; if nothing still referenced those rows, the
+re-select instead returned the operator's own brand-new figure — before it had ever been pushed
+anywhere. Either way the unconditional write-back stomped whatever the row held with a total
+rounded from data that did not describe what was actually just sent to Books, and — because the
+write-back runs inside `_create_quote`/`_update_quote` before their caller commits — that reverted
+figure was what the next `_update_quote` tick then pushed onward to the customer's Books quote,
+not merely a UI display glitch.
+
+Fixed by capturing a cost snapshot, `_snapshot_pushed_costs`, in the same breath as
+`load_export_tasks` — i.e. before either round trip (the CREATE's `create_estimate` or the
+UPDATE's `update_estimate_lines`) opens the window a concurrent edit could land in — and having
+`_write_back_rounded_costs` round from THAT snapshot only, never from a later re-select. It writes
+back via a Core `UPDATE ... WHERE id = :task_id AND <service>_cost = :pushed_value`, i.e.
+conditioned on the stored cost still equalling the exact value that snapshot captured: a row
+edited mid-round-trip no longer matches that WHERE clause, so the UPDATE affects zero rows and the
+operator's figure is left exactly as committed. Books catches up on that task's real value on the
+next tick via the normal pending path (`_mark_pending_if_ours` marks the project pending again on
+any task PATCH), rather than the write-back erasing the edit and shipping the stale number.
+
+Sequencing note: the write-back UPDATE is now issued eagerly, inside the same transaction as the
+snapshot and round trip, rather than being deferred to a later ORM flush the way the old
+`setattr`-on-loaded-instance form was (SQLAlchemy batches attribute mutations and only emits SQL
+at the next flush/commit boundary). Both forms still execute before `_create_quote`/`_update_quote`
+return control to their caller in `run_sync_once`, which commits the session once per project, so
+this does not change when the write becomes visible to any other reader — only that it is now a
+plain autoflush-independent `db.execute(update(...))` rather than an attribute set relying on
+autoflush to materialize it.
+
+Changed: `backend/app/services/aito_quote_sync.py` only — a new private helper
+`_snapshot_pushed_costs` (captures `{task_id: {service: (pushed_cost, quantity)}}` at
+`load_export_tasks` time); `_write_back_rounded_costs` gained a required `pushed_costs` parameter
+and now performs a conditional Core `update()` per service per task instead of loading rows via
+`select(AitoTask)` and mutating ORM attributes; both `_create_quote` and `_update_quote` now call
+`_snapshot_pushed_costs` immediately after `load_export_tasks` and pass the result through to
+`_write_back_rounded_costs`. No route, schema, model column, or DDL changed.
+
+Consumer enumeration: grepped `backend/` for `_write_back_rounded_costs` and
+`_snapshot_pushed_costs`. Both are private to `aito_quote_sync.py`; `_write_back_rounded_costs` has
+exactly two callers, `_create_quote` and `_update_quote` (same module, both already covered
+above), and `_snapshot_pushed_costs` has no callers outside those same two plus the test file.
+Nothing in `routes/aito.py`, `aito_quote_export.py`, or the frontend calls either function
+directly — `aito_quote_export.py`'s only reference is a comment cross-referencing
+`_write_back_rounded_costs` by name, not a call. The stored `<service>_cost` columns these
+functions write are served back to API clients by `routes/aito.py`'s `_task_to_response` (used by
+the task list/detail/reorder/patch endpoints, e.g. `GET .../tasks`, `PATCH .../tasks/{id}`), which
+reads whatever is currently in the row with no knowledge of how it got there — so an edit that
+now survives the write-back is exactly what that response reflects; a route-level change was
+neither needed nor made.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py`:
+- `test_a_cost_edited_by_another_session_mid_round_trip_survives_the_write_back` — interleaves a
+  second session's `impression_cost = 5000` PATCH (via a monkeypatched
+  `zoho_service.update_estimate_lines` that commits the edit before delegating to the real call)
+  into an in-flight `_update_quote` round trip pushing `impression_cost=2401` over quantity 2, and
+  asserts a fresh read after `run_sync_once` shows `impression_cost == 5000` — the operator's
+  figure, not the reverted-then-rounded 2400 the old code would have written.
+- `test_write_back_is_skipped_entirely_once_a_concurrent_edit_lands` — same interleaving but with
+  `impression_cost = 5001`, a value that is NOT an exact multiple of the quantity, so a write-back
+  that rounded from the operator's post-edit figure (rather than genuinely no-op'ing on a
+  superseded row) would visibly round it down to 5000; asserts it stays exactly `5001`, proving the
+  conditional UPDATE affects zero rows rather than coincidentally reproducing the right answer.
+
+Both tests were verified (per the commit message) to fail against both the original code and an
+intermediate hybrid that snapshotted early but still wrote back unconditionally, isolating the
+fix to the conditional-UPDATE guard specifically, not merely the earlier snapshot timing.
+
+Observable change (quoted verbatim from the approved task): "a task cost an operator saves while
+a Zoho quote round-trip is in flight now survives (and is what the API returns), where before it
+was silently overwritten by the stale rounded value and then pushed to the customer's quote."
+
+This was originally landed in commit 5f2f5cd46 as `refactor(loop-1): T-007
+_write_back_rounded_costs reads the pushed value, not the identity map`, filed by the auditor as a
+concurrency bug fix restoring intended behavior (no behavior-change disclosure). The blind
+verifier flagged the write-back's conditional-UPDATE semantics as an undisclosed observable change
+regardless of intent — a case where a cost value the system now returns/pushes genuinely differs
+from before, for the class of requests that race a live round trip. The user reviewed the flag and
+explicitly approved it after the fact on 2026-09-03; this entry documents that approval and is the
+canonical record of the change for future audits.
+
+## T-002 — 2026-09-03 — new utils export replaceProject (user-approved surface change, no runtime change)
+
+Commit 0445d4759 added `export function replaceProject(projects: AitoProject[] | undefined, updated:
+AitoProject): AitoProject[] | undefined` to `frontend/src/utils/aitoOptimistic.ts` and switched seven
+call sites onto it, replacing seven byte-identical inline `queryClient.setQueryData<AitoProject[]>(['aito-projects'],
+(prev) => prev?.map((p) => (p.id === X.id ? X : p)) ?? prev)` callbacks in their `onSuccess` handlers
+with `queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, X))`.
+The helper's body, `projects?.map((p) => (p.id === updated.id ? updated : p)) ?? projects`, is a
+verbatim extraction of what every one of those seven call sites was already doing inline — same
+undefined-stays-undefined short-circuit, same match-by-id replace, same fall-through leaving an
+unmatched id untouched rather than appending it.
+
+Consumer enumeration (`git show 0445d4759 --stat`; grepped `replaceProject` across `frontend/src`):
+`frontend/src/hooks/useSendQuoteMutation.ts`, `useQuoteStatusMutation.ts`, `useContactedMutation.ts`,
+`useFlagMutation.ts`, `useColumnMoveMutation.ts`, `frontend/src/components/aito/useProjectPatchMutation.ts`,
+and `frontend/src/components/aito/TrashGrid.tsx` — one call site each, all in a mutation's `onSuccess`,
+all replacing the exact inline form above with a call to the new helper. `frontend/src/hooks/useAitoPageMutations.ts`'s
+two placeholder-swap sites (`prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev`, the
+create and import mutations) were deliberately left alone: they match by `placeholder.id`, a
+negative client-generated id, and replace it with a differently-id'd server row (`created`) — an
+insert-via-replace on a temporary key, not the same operation `replaceProject` performs, and folding
+it in would have obscured that distinction rather than clarified it.
+
+Tests pinning the helper's semantics: a new `describe('replaceProject', ...)` block in
+`frontend/src/__tests__/utils/aitoOptimistic.test.ts` — cache-miss `undefined` stays `undefined`
+rather than fabricating a one-card board; a matching id is replaced; an unknown id is a no-op and is
+not appended; every other project in the list is left untouched BY REFERENCE (`toBe`, not `toEqual`),
+pinning that the map allocates a new array but does not clone unrelated rows.
+
+The auditor filed this as a plain cleanliness refactor — a pure extraction of a pattern repeated
+seven times, no behavioral intent. The blind verifier flagged it anyway because the surface generator
+scrapes every `export function` out of `frontend/src/utils/*.ts`, and `replaceProject` is a new one;
+per the loop's rule that any SURFACE.md delta needs a disclosed and approved entry regardless of
+where the export came from, this counted as undisclosed until now. Regenerating via
+`bash tools/gen_surface_all.sh` produces exactly one added line, in the "Frontend exported symbols —
+utils + hooks" section:
+
+    export function replaceProject
+
+`tools/snapshot.py verify` shows 10/10 probes matching, unaffected by this change (no probe touches
+`aitoOptimistic.ts` or any of the seven call sites' cache-write shape, which is unchanged from before
+the extraction).
+
+The user reviewed the flag and explicitly approved it on 2026-09-03. Observable change (quoted
+verbatim as approved): "adds one line to SURFACE.md's exported-symbols section. Runtime behavior is
+unchanged (verifier-confirmed)."
+
+## T-009 — 2026-09-03 — user-approved behavior change
+
+`ZohoService._raise_for_status` mapped every HTTP status `>= 400` that was not 400 or 404 —
+including 429 — to a plain `ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")`,
+with `Retry-After` never read. `aito_quote_sync.sync_project`'s `except ZohoUpstreamError` handler
+increments `project.quote_sync_failures` and, once it reaches `SYNC_FAILURE_LIMIT` (5), escalates
+the project to `quote_sync_state = "error"` with the message stamped on the card. Because a 429
+was indistinguishable from a genuine outage, throttling spent the same five-attempt retry budget
+an outage does, and `run_sync_once`'s per-tick loop (`for project_id in project_ids: ...
+await sync_project(...)`) had no circuit breaker: the first 429 of a tick was followed by one more
+throttled request per remaining selected project, deepening the throttle instead of backing off.
+After five ticks every quoted card on the board could simultaneously read "Zoho Books error (HTTP
+429)" and stop pushing line items until a successful read happened to land.
+
+Fixed with the approved scope, implemented exactly:
+1. A dedicated `ZohoRateLimited(ZohoUpstreamError)` subclass in `services/zoho.py`, raised by
+   `_raise_for_status` on `response.status_code == 429` (checked before the generic `>= 400`
+   branch, after the existing 404/400 checks). It carries `retry_after: float | None`, parsed by a
+   new `_parse_retry_after` helper from the `Retry-After` header — a bare number of seconds, or an
+   RFC 9110 HTTP-date converted to seconds-from-now via `email.utils.parsedate_to_datetime` (naive
+   dates treated as UTC, negative results floored at 0); `None` when the header is absent or
+   neither form parses. Being a subclass of `ZohoUpstreamError`, it is transparently caught by
+   every existing `except ZohoUpstreamError` (and `except (..., ZohoUpstreamError)`) handler that
+   does not name it specifically — their behavior is unchanged.
+2. `aito_quote_sync.sync_project` gained an `except ZohoRateLimited as e:` clause, placed before
+   the existing `except ZohoUpstreamError as e:` clause (exception ordering — a subclass must be
+   caught first). It mirrors the existing `ShippingCatalogueUnavailable` deferral: the project's
+   `quote_sync_state`, `quote_sync_error`, and `quote_sync_failures` are left completely untouched
+   (no failure spent, no card-visible error), a `logger.warning` fires once per distinct message
+   via the same process-local `_deferred_reasons` dict `ShippingCatalogueUnavailable` already uses
+   for log-spam suppression, and the function returns `True` — sync_project's signature widened
+   from `-> None` to `-> bool | None` to carry that signal; every other path is an unchanged bare
+   `return` (`None`, falsy).
+3. `run_sync_once`'s per-project loop captures that return value (`rate_limited = await
+   sync_project(db, project)`) and, immediately after the existing per-project commit/rollback and
+   `_apply_rules`/broadcast block (so the rate-limited project's own commit and broadcast still
+   run exactly as before), `break`s out of the loop if it is truthy. The remaining selected ids for
+   that tick are never fetched or attempted, are not counted in the returned `attempted` total
+   beyond the one project that saw the 429, and stay in whatever state the sweep found them —
+   picked up again next tick's SELECT with no special marking needed.
+
+Changed: `backend/app/services/zoho.py` (new `ZohoRateLimited` class + `_parse_retry_after` helper
++ the 429 branch in `_raise_for_status`; new `from email.utils import parsedate_to_datetime`
+import) and `backend/app/services/aito_quote_sync.py` (`ZohoRateLimited` import; `sync_project`'s
+return-type annotation and docstring; the new `except ZohoRateLimited` clause; `run_sync_once`'s
+loop capturing the return value and breaking on it). No route, schema, settings, or DDL changed.
+
+Consumer enumeration — every `except ZohoUpstreamError` (or a tuple naming it) site, confirming
+each keeps its current behavior because `ZohoRateLimited` is still an instance of the base class:
+- `backend/app/api/routes/zoho.py` lines 73, 94, 182, 223, 308, 323, 334 (`except ZohoUpstreamError
+  as e:`) — every Books-proxy route (contact search/create, estimate lookup, PDF, email content/
+  send, invoice PDF/email/send) still maps a 429 to its existing `HTTPException(502, ...)` (or
+  whatever status that handler already used), message unchanged (`str(e)` is still `"Zoho Books
+  error (HTTP 429)"`).
+- `backend/app/api/routes/aito.py` lines 1225, 1297, 1344, 1455, 1515, 1591, 1669, 1757 (`except
+  (ZohoNotConfiguredError, ZohoUpstreamError) as e:`, one with `SQLAlchemyError` added) — every
+  Aito route that talks to Books directly (search contacts, create/update contact, quote preview,
+  quote pdf, email content/send, invoice content/send) is unaffected; a 429 there still surfaces as
+  whatever generic error response that handler already returns. None of these routes go through
+  `sync_project`/`run_sync_once`, so the deferral semantics do not apply to them, by design (scope
+  is the sync worker only).
+- `backend/app/services/zoho.py` line 647 (`except (ZohoNotConfiguredError, ZohoUpstreamError) as
+  e:`, inside the shipping-catalogue refresh) — unaffected; a 429 mid-refresh still falls back to
+  serving the stale cache exactly as any other `ZohoUpstreamError` does (`test_failed_refresh_
+  serves_the_stale_cache_unchanged` in `test_zoho_transport_failures.py` still passes unmodified).
+- `backend/app/services/aito_quote_sync.py` line 1497 (renumbered; the pre-existing `except
+  ZohoUpstreamError as e:` handler that increments `quote_sync_failures`) — now only reached for a
+  NON-429 upstream error (400/404/ambiguous-reference are already carved out by their own more
+  specific handlers above it, and 429 is now carved out by the new clause added directly before
+  it), so its escalation behavior for genuine outages (500/503/network errors/etc.) is completely
+  unchanged — see `test_a_500_still_increments_failures_unlike_a_429` and the pre-existing
+  `test_upstream_failures_escalate_to_error_after_the_limit`.
+
+Every caller of `_raise_for_status` — `_request` (the shared JSON path, used by nearly every
+`ZohoService` method) and the two hand-rolled binary paths (`get_estimate_pdf`, `get_invoice_pdf`)
+— now raises `ZohoRateLimited` instead of `ZohoUpstreamError` specifically for a 429 response;
+every other status code they can produce (400, 404, everything else `>= 400`) is unchanged.
+
+Tests added:
+- `backend/tests/unit/services/test_zoho_service.py` —
+  `test_request_429_raises_rate_limited_with_seconds_retry_after` (raises `ZohoRateLimited`, is
+  still an instance of `ZohoUpstreamError`, `retry_after == 30.0` from a numeric header, message
+  unchanged); `test_request_429_parses_an_http_date_retry_after` (an HTTP-date `Retry-After`
+  parses to a positive `retry_after`); `test_request_429_without_retry_after_header_leaves_it_none`
+  (no header -> `retry_after is None`).
+- `backend/tests/unit/services/test_zoho_transport_failures.py` — the existing
+  `test_429_maps_to_generic_upstream_error_without_retry` asserted the OLD behavior (plain
+  `ZohoUpstreamError`, no `retry_after` concept, module docstring calling the gap out as "arguably
+  a product bug"). Renamed to `test_429_maps_to_rate_limited_without_a_client_side_retry` and
+  updated to assert `ZohoRateLimited` (still `isinstance(..., ZohoUpstreamError)`),
+  `retry_after is None` for a header-less response, and the message and no-client-retry pin kept
+  exactly as before; the module docstring's aside about the "product bug" was updated to point at
+  this task and at `test_aito_quote_sync.py` for the deferral coverage, rather than silently
+  encoding the old opinion as still current.
+- `backend/tests/unit/test_aito_quote_sync.py` —
+  `test_a_500_still_increments_failures_unlike_a_429` (a genuine 503 on a swept project still
+  increments `quote_sync_failures` to 1 and stamps `quote_sync_error`, contrasting directly with
+  the 429 case below); `test_429_defers_a_pending_project_without_touching_failures_or_error` (a
+  single fresh pending project hit with 429 on its `find_estimate_by_reference` search: `run_
+  sync_once` still reports `attempted == 1`, but the project stays `'pending'` with
+  `quote_sync_failures == 0` and `quote_sync_error is None`); `test_429_on_first_of_three_selected_
+  projects_stops_the_tick` (three pending projects, all Books calls answer 429: `run_sync_once`
+  returns `1`, exactly one request ever reaches the mock transport — proving the second and third
+  projects are never attempted — and all three projects, including the untouched two, are still
+  `'pending'` with failures/error untouched).
+- `backend/tests/unit/test_aito_quote_e2e.py` — the existing end-to-end
+  `test_429s_escalate_after_the_limit_and_one_healthy_read_recovers` pinned the OLD behavior
+  explicitly (its own docstring: "every rate-limited tick spends one unit of the failure budget...
+  the escalation to 'error' emits exactly ONE sync.failed event"), asserting `quote_sync_failures
+  == tick` per iteration up to `SYNC_FAILURE_LIMIT`, then `quote_sync_state == "error"` with a
+  `sync.failed` event recorded. Renamed to `test_429s_defer_indefinitely_without_escalating_or_
+  spending_the_failure_budget` and rewritten to run `SYNC_FAILURE_LIMIT + 2` ticks (well past the
+  old escalation threshold) asserting `quote_sync_failures == 0`, `quote_sync_state == "idle"`
+  (its pre-existing swept state — a project that is not `'pending'` never becomes `'pending'` from
+  a deferral, it simply stays wherever the sweep found it), and `quote_sync_error is None` on
+  every tick, with zero `sync.failed` events ever recorded; the final "Books answers again" section
+  (a healthy read landing after the outage) is kept, now asserting it finds nothing to recover
+  from rather than walking the project back from `'error'`.
+
+Every other test file referencing `ZohoUpstreamError`, `_raise_for_status`, `sync_project`, or
+`run_sync_once` was run and passes unmodified: `test_aito_close_sync.py`,
+`test_aito_invoice_email.py`, `test_aito_invoice.py`, `test_aito_quote_email.py`,
+`test_aito_quote_protection.py`, `test_aito_quote_sync_interval.py`, `test_aito_routes.py`,
+`test_aito_sync_events.py`, `test_aito_unmanaged_backfill_migration.py` — none of them exercise a
+429 response, so none needed changes. A broader sweep of the remaining Zoho-adjacent test files
+(`test_zoho_routes.py`, `test_zoho_estimate_routes.py`, `test_zoho_settings.py`,
+`test_aito_zoho_comments.py`, `test_zoho_estimate_email.py`, `test_zoho_invoice_email.py`) was also
+run as a safety net and all pass unmodified.
+
+SURFACE.md gained exactly two lines, both expected consequences of the approved scope — the new
+subclass, and `sync_project`'s widened return-type annotation (the mechanism item (c) of the scope
+requires to signal a deferral from `sync_project` up to `run_sync_once`):
+
+    1 class ZohoRateLimited(ZohoUpstreamError):
+
+and (replacing the prior line for the same def):
+
+    1 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
+
+`bash tools/gen_surface_all.sh | diff - SURFACE.md` showed only those two lines before
+regenerating; `git diff SURFACE.md` after regenerating confirms nothing else changed.
+`./venv/bin/python3 tools/snapshot.py verify`: 10/10 probes match — no route, schema, permission,
+or DDL change, as expected.
+
+Observable change (quoted verbatim from the approved task): "a rate-limited board would stop
+showing 'Zoho Books error (HTTP 429)' on its cards and would stop escalating to the 'error' state,
+staying 'pending' until the throttle clears."
+
+`ruff check backend/` / `ruff format --check backend/`: clean on the changed files. `pytest
+tests/unit/services/test_zoho_service.py tests/unit/test_aito_quote_sync.py -q`: 159 passed (48 +
+111). Full sweep — `pytest tests/unit/services/test_zoho_service.py
+tests/unit/services/test_zoho_transport_failures.py tests/unit/test_aito_close_sync.py
+tests/unit/test_aito_invoice_email.py tests/unit/test_aito_invoice.py
+tests/unit/test_aito_quote_e2e.py tests/unit/test_aito_quote_email.py
+tests/unit/test_aito_quote_protection.py tests/unit/test_aito_quote_sync_interval.py
+tests/unit/test_aito_quote_sync.py tests/unit/test_aito_routes.py
+tests/unit/test_aito_sync_events.py tests/unit/test_aito_unmanaged_backfill_migration.py -q`: 571
+passed.
+
+## T-004 — 2026-09-03 — dead aito.lock* i18n keys removed (user-approved golden re-record, no user-visible change)
+
+Audit `audit-cleanliness` found four Aito i18n keys — `lockQuote`, `lockWaiting`, `lockDeclined`,
+`lockSteps` (`frontend/src/i18n/locales/en.ts:164-167`, fully translated in all 13 locales) — that
+are never read anywhere in the frontend. `schemas/aito.py`'s `AitoProjectResponse.move_lock`
+docstring claims "the frontend renders its lock badge... from this and nothing else," but the
+actual frontend (`BoardColumn.tsx`, `DoneGrid.tsx`, `ProjectDoneAction.tsx`,
+`useColumnMoveMutation.ts`) only ever checks `project.move_lock === null` — it never branches on
+the specific reason (`'quote'|'waiting'|'declined'|'steps'`) to look up per-reason copy. Re-verified
+before deleting: `rg -n "lockQuote|lockWaiting|lockDeclined|lockSteps" frontend/src -g '*.ts' -g
+'*.tsx' -g '!frontend/src/i18n/locales/*'` returned zero matches; a further search for dynamic
+lookups (`` aito.lock${...} ``, `'aito.lock' +`, `` `aito.lock ``) also returned zero matches; and
+`frontend/src/__tests__` has no test asserting on any of the four keys. The plan called for removal
+(wiring an unused reason into a new lock badge would be a feature, not a refactor).
+
+Removed the four `lock*` key/value lines from all 13 locale files under
+`frontend/src/i18n/locales/`: `de.ts`, `en.ts`, `es.ts`, `fr.ts`, `it.ts`, `ja.ts`, `ko.ts`,
+`pt-BR.ts`, `ru.ts`, `tr.ts`, `uk.ts`, `zh-CN.ts`, `zh-TW.ts` — 4 lines each, 52 lines total, no
+other line touched (`git diff --stat` confirms `13 files changed, 52 deletions(-)`, zero
+insertions). No component, hook, or test file was touched — nothing renders these keys, so there is
+no user-visible string change anywhere.
+
+`fe-i18n-parity` is a golden probe that records `en_key_count` and each locale's `key_count` (plus
+`missing_vs_en`/`extra_vs_en`/`placeholder_mismatch_vs_en`, which assert full key-set parity across
+locales). Deleting four keys from all 13 files legitimately drops every count by exactly 4 — this is
+the sanctioned exception approved by the user on 2026-09-03 for T-004 and T-005.
+`./venv/bin/python3 tools/snapshot.py verify` showed exactly one mismatch, `fe-i18n-parity`, and the
+diff was exclusively key-count lines:
+
+    en_key_count: 7171 → 7167
+    de/es/fr/it/ja/ko/ptBR/ru/tr/uk/zhCN/zhTW key_count: 7171 → 7167 (each)
+
+`missing_vs_en`, `extra_vs_en`, and `placeholder_mismatch_vs_en` stayed `[]` for every locale both
+before and after (confirmed by running `node tools/probe_i18n_parity.cjs` directly and diffing its
+full, untruncated output against the prior golden). `tools/snapshot.py` has no per-probe record
+option (`record -h` only takes no arguments), so the full `record` was run;
+`git diff --stat -- snapshots/` confirmed only `snapshots/fe-i18n-parity.golden` changed (13
+locales × 2 lines = 26 changed lines), and a follow-up `snapshot.py verify` now shows 10/10 probes
+matching. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: empty (i18n locale keys are not part
+of the surface). `PROBES.json` and `tools/` were not touched.
+
+`cd frontend && npx tsc -b --noEmit`: clean. `npm run lint`: clean. `npx vitest run
+src/__tests__/i18n`: 2 files, 26 tests passed (locale parity + parity-script coverage). `npx vitest
+run src/__tests__/components/AitoCardView.test.tsx`: 70 passed — confirms Aito card rendering is
+unaffected.
+
+## T-005 — 2026-09-03 — dead calculator settings-panel i18n keys removed (user-approved golden re-record, no user-visible change)
+
+Audit `audit-cleanliness` found fifteen i18n keys under the `calculator` namespace
+(`frontend/src/i18n/locales/en.ts`, fully translated in all 13 locales) that are the remains of
+the pre-hyperbolic-margin tabbed settings UI (Defaults / Pricing / Margin curve tabs), replaced by
+the current single-panel `CalculatorSettingsPanel.tsx` on 2026-08-27: `printingTimeMin`,
+`defaultsHint`, `bulkTitle`, `tabDefaults`, `tabMarginCurve`, `saveMarginCurve`,
+`marginCurveSaved`, `globalMarkup`, `defaultsSaved`, `saveDefaults`, `tabPricing`, `pricingHint`,
+`marginTitle`, `savePricing`, `pricingSaved`. Re-verified each key independently before deleting:
+`rg -n "\bkey\b" frontend/src -g '*.ts' -g '*.tsx' -g '!frontend/src/i18n/locales/*'` returned zero
+hits for all fifteen; a further search for dynamic lookups (`` calculator.${...} ``,
+`` `calculator. ``) found only `calculator.realityCheck.${base}` / `${base}Scoped`, which do not
+touch any of these keys; and `frontend/src/__tests__` has no test asserting on any of them.
+`bulkTitle` needed extra care — it appears three times as an object key across all locales, but
+the other two hits are `inventory.labels.bulkTitle` (`InventoryPage.tsx:1363`) and
+`fileManager.tags.bulkTitle` (`BulkTagsPickerModal.tsx:227`), both unrelated namespaces still in
+active use; only `calculator.bulkTitle` was deleted. `unsavedChanges` (`unsavedChanges_one` /
+`unsavedChanges_other`) in the same block IS still used
+(`CalculatorSettingsPanel.tsx:390`, `t('calculator.unsavedChanges', { count: dirtyKeys.length })`)
+and was kept, along with every other key in the namespace (`ratesTitle`, `provisionsTitle`,
+`filamentSettings`, `marginCurvesTitle`, `saveSettings`, `discardChanges`, `settingsSaved`, etc. —
+all confirmed used at `CalculatorSettingsPanel.tsx:331-399`).
+
+Removed the fifteen key/value lines from all 13 locale files under
+`frontend/src/i18n/locales/`: `de.ts`, `en.ts`, `es.ts`, `fr.ts`, `it.ts`, `ja.ts`, `ko.ts`,
+`pt-BR.ts`, `ru.ts`, `tr.ts`, `uk.ts`, `zh-CN.ts`, `zh-TW.ts` — 15 lines each, 195 lines total, no
+other line touched (`git diff --stat` confirms `13 files changed, 195 deletions(-)`, zero
+insertions). No component, hook, or test file was touched — none of the fifteen keys were ever
+read, so there is no user-visible string change anywhere.
+
+`fe-i18n-parity` is a golden probe that records `en_key_count` and each locale's `key_count` (plus
+`missing_vs_en`/`extra_vs_en`/`placeholder_mismatch_vs_en`, which assert full key-set parity across
+locales). Deleting fifteen keys from all 13 files legitimately drops every count by exactly 15 —
+this is the sanctioned exception approved by the user on 2026-09-03 for T-004 and T-005.
+`./venv/bin/python3 tools/snapshot.py verify` showed exactly one mismatch, `fe-i18n-parity`, and
+the diff was exclusively key-count lines:
+
+    en_key_count: 7167 → 7152
+    de/es/fr/it/ja/ko/ptBR/ru/tr/uk/zhCN/zhTW key_count: 7167 → 7152 (each)
+
+`missing_vs_en`, `extra_vs_en`, and `placeholder_mismatch_vs_en` stayed `[]` for every locale both
+before and after (confirmed against the golden diff, which showed no lines other than the
+key-count pairs). `./venv/bin/python3 tools/snapshot.py record` was then run;
+`git diff --stat -- snapshots/` confirmed only `snapshots/fe-i18n-parity.golden` changed (13
+locales × 2 lines = 26 changed lines), and a follow-up `snapshot.py verify` now shows 10/10 probes
+matching. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: empty (i18n locale keys are not
+part of the surface). `PROBES.json` and `tools/` were not touched.
+
+`cd frontend && npx tsc -b --noEmit`: clean. `npm run lint`: clean. `npx vitest run
+src/__tests__/i18n`: 2 files, 26 tests passed (locale parity + parity-script coverage). `npx
+vitest run src/__tests__/components/CalculatorSettingsPanel.test.tsx`: 33 passed. `npx vitest run
+src/__tests__/components/CalculatorSettingsPanelDrag.test.tsx`: 6 passed. `npx vitest run
+src/__tests__/pages/CalculatorPage.test.tsx`: 49 passed — confirms calculator settings rendering
+is unaffected.
+
+## T-010 — 2026-09-03 — user-approved behavior change
+
+`run_sync_once`'s reconcile branch (the widened, non-pending half of its SELECT — `status ==
+"active"`, `quote_id.is_not(None)`, `quote_sync_state.not_in(("pending", "unmanaged", "locked"))`)
+re-selected every active quoted project on every 300s tick for the rest of the install's life, with
+no way for an operator to stop it short of trashing the card. Archiving a card only sets
+`board_column = "done"` (`routes/aito.py`'s `move_project`); a declined or expired quote is never
+locked either (`quote_sync_state` stays `"idle"`, only `quote_sync_state == "locked"` is excluded,
+and Books' own invoiced lock is a different state entirely). The module's own inline comment inside
+`reconcile_quote_status` already admitted the cost for the event-log half of this ("a finished,
+accepted card is polled and re-recorded forever"); the same is true of the GET call itself. At
+288 ticks/day this exceeds Zoho's 1,000-10,000 requests/day org budget past roughly 35 retained
+quoted projects, board history rather than active workload — and once the org is throttled, every
+Books surface degrades at once (client search, quote PDF, quote/invoice email), with each 429 also
+spending a slot of the sync retry budget T-009 protects.
+
+Fixed by excluding TERMINAL cards from the reconcile branch only — a project whose `board_column`
+is `"done"`, OR whose `quote_status` is `"declined"` or `"expired"` (the exact literals the module
+already uses: `board_column` is `AitoColumn`'s last value, devis|waiting|scan|model|print|finish|
+**done**, and `quote_status` is `AitoQuoteStatus` = draft|sent|viewed|accepted|**declined**|
+**expired**, both in `schemas/aito.py`). The SQL predicate gained
+`AitoProject.board_column != "done"` and `or_(AitoProject.quote_status.is_(None),
+AitoProject.quote_status.not_in(("declined", "expired")))` — the `is_(None)` half is load-bearing:
+`quote_status` is nullable, and a bare `col.not_in(...)` on a NULL column evaluates to SQL NULL
+(neither true nor false), which would have silently excluded every project whose quote has never
+had ANY status recorded, not just declined/expired ones. `_still_selected` (the Python mirror of
+the same predicate, used by `run_sync_once`'s per-iteration re-check) gained the matching branch:
+`if project.board_column == "done" or project.quote_status in ("declined", "expired"): return
+False`, placed before its existing `quote_sync_state not in ("unmanaged", "locked")` check.
+
+Scoped exactly to the reconcile branch, nothing wider:
+- The PENDING branch (`quote_sync_state == "pending"`, the first `or_` term) is completely
+  untouched. An operator's explicit edit on a terminal card still flips it to `"pending"` via
+  `routes/aito.py`'s `_mark_pending_if_ours`, and the sweep still picks it up and pushes that one
+  edit — `sync_project`'s routing (`quote_sync_state != "pending"`) never even reaches the new
+  exclusion for a pending project, so nothing needed to change there.
+- The NULL-`quote_id` `"error"` branch from T-008 (the third `or_` term, re-selecting a project
+  whose very first CREATE never succeeded) is untouched — a project with no `quote_id` yet has no
+  `board_column`/`quote_status` combination that could describe an already-quoted terminal state,
+  and the task explicitly scoped this fix to leave it alone.
+- No per-tick cap, no round-robin, no cutoff timestamp, no new setting — none of the auditor's
+  alternative options were implemented, per the approved scope.
+
+Changed: `backend/app/services/aito_quote_sync.py` only — the reconcile `and_()` clause in
+`run_sync_once` gained the two `board_column`/`quote_status` conditions; `_still_selected` gained
+the matching branch; `run_sync_once`'s own docstring and the `SYNC_FAILURE_LIMIT` module comment
+(which used to claim the sweep "excludes only 'unmanaged' and 'locked'") were both corrected to
+describe the new exclusion so they stop overclaiming forever-polling for a terminal card. No route,
+schema, permission, or DDL changed.
+
+Consumer enumeration — every reader of the sweep predicate and of `_still_selected`, plus the
+close/wake paths, plus the frontend:
+- `run_sync_once` has exactly one production caller, `run_sync_loop` (same module — the 300s
+  background tick, and the one place a `pending_only=False` call ever happens, so it is the only
+  call site that can even reach the reconcile branch this fix touches). `_still_selected` is
+  private to this module, called only from `run_sync_once`'s own per-iteration loop; nothing
+  outside `aito_quote_sync.py` imports it.
+- Every route in `routes/aito.py` that marks a project pending (task/project PATCH,
+  `sync_project_now` — the detail panel's close-time push, `set_quote_status`'s accept/decline
+  flow, etc.) wakes the worker via `request_debounced_sync` or `request_immediate_sync`
+  (`sync_project_now` and project creation use the immediate form; ordinary edits use the debounced
+  one), both of which resolve to the SAME background `run_sync_loop` calling
+  `run_sync_once(db, pending_only=True)` — the reconcile half is always skipped on a wake,
+  regardless of this change, so none of these call sites are affected either way. The trash-decline
+  logic inside `_reconcile_status` (direct `project.quote_status = "declined"` assignment, not
+  `adopt_quote_status` — a decline never stamps `quote_accepted_at`) is reached only from
+  `_update_quote`, itself only reached when `quote_sync_state == "pending"` — the untouched PENDING
+  branch — so a project mid-decline is unaffected by the new reconcile-only exclusion even once its
+  `quote_status` becomes `"declined"`.
+- `quote_sync_state` and `board_column`/`quote_status` are read by `routes/aito.py` (response
+  serialization, `_mark_pending_if_ours`, `move_project`, `set_quote_status`) purely to serve the
+  current row — none of those care WHY a project is or is not in the swept set, only its current
+  stored value, so none needed a change. The frontend (`CardView.tsx`, `ProjectDetailPanel.tsx`,
+  `QuotePrintButton.tsx`, `QuoteDownloadButton.tsx`, `InvoiceCard.tsx`, `DoneGrid.tsx`,
+  `aitoOptimistic.ts`) renders whatever `quote_sync_state`/`board_column`/`quote_status` the row
+  currently holds; it has no expectation about polling frequency and needed no change either.
+
+Verified the existing suite needed no adjustment before adding new coverage: ran the full
+`test_aito_quote_sync.py` file first (111 passed, unchanged) — no test in it constructs a
+reconcile-branch-eligible project (`quote_sync_state` not `"pending"`, `quote_id` set) with
+`board_column == "done"` or `quote_status` in `("declined", "expired")`. The one test that comes
+close, `test_invoicing_a_quote_never_unmakes_the_local_acceptance` (sets `board_column = "done"`
+before calling `run_sync_once`), leaves `quote_sync_state` at the `_project_with_quote` fixture's
+default `"pending"` throughout — it exercises the untouched PENDING branch, not the reconcile
+branch, so it was unaffected and needed no change. Every `quote_status = "declined"` test
+(`test_restoring_reapplies_the_snapshotted_status`, `test_a_quote_that_was_a_draft_comes_back_as_
+sent_on_restore`, `test_restore_from_trash_does_not_restamp_the_acceptance`) is built on the same
+`_project_with_quote` fixture and is likewise still on the PENDING branch. No existing test asserted
+the old forever-polling behavior, so none was adjusted or renamed.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py`:
+- `test_a_done_column_quoted_project_is_not_selected_by_the_sweep` — an idle, quoted project with
+  `board_column = "done"`: `_still_selected` returns `False`, and `run_sync_once` against a
+  transport with no routes registered at all (any Books call would 404 and fail the test) returns
+  `0` and leaves `quote_sync_state` unchanged.
+- `test_a_declined_quote_is_not_selected_by_the_sweep` — the same shape with `quote_status =
+  "declined"` instead, board column left non-terminal (`"waiting"`) to isolate the second
+  condition: `_still_selected` is `False`, `run_sync_once` is `0`, no Books call.
+- `test_an_active_non_terminal_quoted_project_is_still_selected_by_the_sweep` — a plain ongoing
+  quote (`board_column = "print"`, `quote_status = "sent"`): `_still_selected` is `True`,
+  `run_sync_once` returns `1` and the GET is observed — proving the exclusion does not overreach
+  into the ordinary case.
+- `test_a_terminal_card_explicitly_edited_pending_still_syncs_once` — a card that is BOTH archived
+  (`board_column = "done"`) and declined (`quote_status = "declined"`) but explicitly set
+  `quote_sync_state = "pending"` (the edit path): `_still_selected` is `True`, `run_sync_once`
+  returns `1`, a PUT is observed, and the project settles to `"idle"` with both terminal fields left
+  exactly as they were — proving the PENDING branch is genuinely untouched by this fix.
+
+`ruff check backend/` / `ruff format --check backend/`: clean. `pytest
+tests/unit/test_aito_quote_sync.py -q`: 115 passed (111 + 4 new). Every other test file referencing
+`run_sync_once`, `_still_selected`, `quote_sync_state`, or `board_column` was also run:
+`test_aito_active_quote_index_migration.py`, `test_aito_board_migration.py`,
+`test_aito_board_summary.py`, `test_aito_close_sync.py`, `test_aito_contacted.py`,
+`test_aito_event_backfill_migration.py`, `test_aito_flag_migration.py`,
+`test_aito_invoiced_status_heal_migration.py`, `test_aito_project_model.py`,
+`test_aito_quote_accepted_backfill_migration.py`, `test_aito_quote_e2e.py`,
+`test_aito_quote_protection.py`, `test_aito_quote_status.py`, `test_aito_quote_sync_interval.py`,
+`test_aito_quote_sync.py`, `test_aito_routes.py`, `test_aito_shipping_migration.py`,
+`test_aito_shipping_routes.py`, `test_aito_social_handle_migration.py`,
+`test_aito_sync_events.py`, `test_aito_task_description_migration.py`,
+`test_aito_task_reorder.py`, `test_aito_unmanaged_backfill_migration.py`,
+`test_aito_zoho_comments.py` — 579 passed, 0 failed. `./venv/bin/python3 tools/snapshot.py verify`:
+10/10 probes match (no route, schema, or DDL change, as expected). `bash
+tools/gen_surface_all.sh | diff - SURFACE.md`: empty (no new top-level def — `_still_selected` and
+`run_sync_once` both already existed; only their bodies changed).
+
+Observable change (quoted verbatim from the approved task): "a status change made in Zoho Books on
+an archived or declined quote would no longer be reflected back onto the card automatically."
+
+## T-011 — 2026-09-03 — user-approved behavior change
+
+`ZohoService.get_shipping_catalogue` (`backend/app/services/zoho.py`) refreshed the 5 "Livraison
+Avion" items from Books' `/items` endpoint whenever its 24h cache (`zoho_shipping_catalogue_at`)
+was missing or stale, but recorded no memory of a FAILED refresh — the `zoho_shipping_catalogue_at`
+stamp was written only in the success `else:` branch, so a failed refresh left `fresh` False and
+every subsequent caller repeated the whole `/items` fetch. `aito_quote_sync.sync_project`'s
+`except ShippingCatalogueUnavailable` handler calls this with `refresh=True` once, as a best-effort
+warm-up, every time a project defers because its shipping service has not resolved yet — so while
+Books was down, every shipping-carrying deferring project cost one extra `/items` request every
+sync tick, on top of the per-project estimate reads, mirroring the exact gap
+`zoho_filaments.fetch_catalogue`'s pre-existing `_FAIL_COOLDOWN` was built to close on the sibling
+filament-catalogue path.
+
+Fixed with the approved scope, implemented exactly:
+1. A new process-local `_SHIPPING_FAIL_COOLDOWN = timedelta(seconds=30)` constant plus a
+   `_shipping_fail_at: datetime | None = None` module global in `services/zoho.py`, mirroring
+   `zoho_filaments._FAIL_COOLDOWN`'s shape and duration (same 30s window, same "process-local
+   timestamp, cleared on the next success" idea) — scaled down to this module's much simpler
+   single-item-list refresh: no lock, no generation counter, and no negative-cache exception
+   replay, because `get_shipping_catalogue` never raises in the first place (a failed refresh
+   already falls through to serving whatever is cached). Deliberately NOT a persisted setting —
+   a settings key would change the settings surface/golden (the `app-settings` probe), which is
+   out of the approved scope; a process-local global also means a restart clears it immediately
+   rather than have a stale memo outlive the failure it recorded.
+2. Inside the existing `if refresh and not fresh:` block, `get_shipping_catalogue` now captures
+   `now = datetime.now(timezone.utc)` and checks `_shipping_fail_at is not None and now -
+   _shipping_fail_at < _SHIPPING_FAIL_COOLDOWN` BEFORE calling `self.list_items(...)`. Within the
+   cooldown, the `/items` call is skipped entirely — the function short-circuits exactly as a
+   failed refresh already does today: nothing is logged, and whatever is cached (a stale catalogue,
+   or `{}` if nothing has ever resolved) is returned unchanged. Outside the cooldown (or with no
+   memo yet), the fetch proceeds as before: the `except (ZohoNotConfiguredError,
+   ZohoUpstreamError)` branch now also stamps `_shipping_fail_at = now`; the success `else:` branch
+   now also clears it (`_shipping_fail_at = None`) before writing the refreshed cache. No exception
+   type or return type changed — `get_shipping_catalogue` still never raises, and its return shape
+   (`dict[str, ShippingItem]`) is untouched.
+3. The cooldown gates every `refresh=True` caller uniformly, drawer-driven or not — there is no
+   bypass parameter, mirroring `zoho_filaments.fetch_catalogue`, which has no such bypass either
+   (its own pre-lock cold/warm fail-cooldown checks apply identically regardless of who is calling
+   or why).
+
+Changed: `backend/app/services/zoho.py` only (`_SHIPPING_FAIL_COOLDOWN` + `_shipping_fail_at`
+module globals; the cooldown gate and its two stamp/clear sites inside
+`get_shipping_catalogue`; docstring). No route, schema, settings, or DDL changed.
+
+Consumer enumeration — every caller of `get_shipping_catalogue`, confirming each keeps its current
+contract (never raises; returns the cache, refreshed or not) with the refresh simply skipped while
+the cooldown is fresh:
+- `backend/app/services/aito_quote_sync.py:1456` (`sync_project`'s `except
+  ShippingCatalogueUnavailable` handler, `refresh=True`) — the deferral path named in the task's
+  evidence. Its own docstring already frames this call as "best-effort" and wraps it in `except
+  Exception: pass`; a skipped `/items` request changes nothing about `sync_project`'s own behavior,
+  which was already tolerant of the warm-up doing nothing.
+- `backend/app/api/routes/aito.py:324` (`GET .../shipping/rates`, default `refresh=True`) — the
+  drawer's own rate-lookup endpoint. Within the cooldown it now answers from the cached rate
+  instead of re-hitting Books; this is the one route the "up to the cooldown window longer to
+  appear" observable change describes.
+- `backend/app/api/routes/aito.py:1085` (`refresh=True`, project-shipping resolution) — same
+  cache-or-refresh contract, unaffected in shape.
+- `backend/app/api/routes/aito.py:309` (`_shipping_names`, `refresh=False`) and
+  `backend/app/services/zoho.py:618` (`get_catalogue`'s own shipping read, `refresh=False`) — both
+  always answer from cache only and never reach the `if refresh and not fresh:` block the cooldown
+  lives in, so neither is affected at all.
+
+Tests added to `backend/tests/unit/services/test_zoho_service.py` (and one new autouse fixture in
+`backend/tests/conftest.py`):
+- `reset_shipping_catalogue_fail_cooldown` (new autouse fixture, `conftest.py`) — clears the
+  module-local `zoho._shipping_fail_at` before and after every test, the same "leak across
+  files/xdist workers" guard the existing `reset_auth_enabled_cache` fixture documents for its own
+  module global; without it a test that induces a failure in one file could silently suppress a
+  refresh a later, unrelated test expects to happen.
+- `test_get_shipping_catalogue_cooldown_skips_the_retry_immediately_after_a_failure` — a failed
+  refresh (warm, stale cache) followed by an immediate second call: the second call issues NO
+  second `/items` request (`boom_calls["n"]` stays `1`) and still serves the stale cache unchanged.
+- `test_get_shipping_catalogue_cooldown_skips_the_retry_on_a_cold_cache_too` — the cold-cache twin:
+  with nothing cached, the "unavailable" answer is `{}`, and a second immediate call still issues
+  no second request.
+- `test_get_shipping_catalogue_retries_after_the_failure_cooldown_elapses` — a scripted-clock test
+  (`_ScriptedClock`, mirroring `test_zoho_filaments_catalogue.py`'s own clock double for
+  `_FAIL_COOLDOWN`, extended with a `__getattr__` fallback to the real `datetime` class since this
+  module's freshness check also calls `datetime.fromisoformat`) proving a call within the 5s
+  (patched) cooldown short-circuits, while a call after it elapses attempts — and here, succeeds
+  at — a real refresh.
+- `test_get_shipping_catalogue_success_clears_the_cooldown` — a failed refresh stamps
+  `zoho._shipping_fail_at`; a later successful refresh (past the cooldown, so it is actually
+  attempted) clears it back to `None`, matching `zoho_filaments.fetch_catalogue`'s own
+  clear-on-success behavior.
+- `test_get_shipping_catalogue_survives_zoho_being_down` — the PRE-EXISTING test that asserted the
+  OLD always-retry behavior (`boom_calls["n"] == 2` after two immediate failed calls). Its docstring
+  now names the change explicitly and points at
+  `test_get_shipping_catalogue_cooldown_skips_the_retry_immediately_after_a_failure` above for the
+  new behavior; the test itself keeps only what it always meant to cover — a failed refresh must
+  not lose the cached ids — now asserting `boom_calls["n"] == 1` (a single failed attempt, no
+  retry assertion of any count baked in beyond that).
+
+Every other test file referencing `get_shipping_catalogue` or `ShippingCatalogueUnavailable` was
+run and passes unmodified: `test_zoho_estimate_routes.py`, `test_aito_version.py`,
+`test_aito_shipping_routes.py`, `test_aito_quote_sync.py`,
+`services/test_zoho_transport_failures.py` — none of them exercise a repeated failed refresh within
+the cooldown window, so none needed changes.
+
+SURFACE.md gained no lines — `_SHIPPING_FAIL_COOLDOWN` and `_shipping_fail_at` are module-level
+constants/globals, not a new top-level `def`/`class`, and `get_shipping_catalogue`'s signature and
+return type are unchanged. `bash tools/gen_surface_all.sh | diff - SURFACE.md`: empty, as expected.
+`./venv/bin/python3 tools/snapshot.py verify`: 10/10 probes match, including `app-settings`
+unchanged — confirming no persisted setting was added, per the approved scope.
+
+Observable change (quoted verbatim from the approved task): "after a Books outage a newly-available
+shipping rate can take up to the cooldown window longer to appear in the create drawer."
+
+`ruff check backend/` / `ruff format --check backend/`: clean on the changed files. `pytest
+tests/unit/services/test_zoho_service.py tests/unit/test_aito_quote_sync.py -q`: 407 passed (52 +
+355). Full sweep — `pytest tests/unit/services/test_zoho_service.py
+tests/unit/test_aito_quote_sync.py tests/unit/services/test_zoho_transport_failures.py
+tests/unit/test_zoho_estimate_routes.py tests/unit/test_aito_version.py
+tests/unit/test_aito_shipping_routes.py -q`: 240 passed.
+
+## T-026 — 2026-09-03 — user-approved behavior change
+
+A consequence of T-010 (above, same day): T-010's reconcile-sweep terminal-card exclusion — drop a
+card once `board_column == "done"` or `quote_status` is `"declined"`/`"expired"` — is reachable from
+a purely LOCAL write, not only from Books genuinely settling a quote. `routes/aito.py`'s
+`set_quote_status` writes the decision to `project.quote_status` FIRST, unconditionally, and pushes
+to Books only best-effort (`except Exception: ... zoho_synced = False`); `_apply_rules` then moves a
+declined card straight to `board_column = "done"`. The instant an operator declines a quote while
+Books is unreachable, the row matches BOTH T-010 exclusions in the very same commit — Books is left
+holding its old status (e.g. `"sent"`, still live and acceptable by the client online) while the
+board says `"declined"`, and nothing ever selects the project again to retry the push:
+`reconcile_quote_status`'s `if ours_decided:` branch — the ONLY code that retries
+`advance_estimate_status` for a decision Books has not got — is never reached, because the reconcile
+sweep no longer selects the row at all. The operator's only signal was a one-off "Saved locally —
+Zoho was not updated" toast; clicking Decline again hits `set_quote_status`'s
+`if payload.status == project.quote_status:` early return, which reports `no_op`/`zoho_synced=True`
+and makes no Zoho call — so nothing short of a schema change could ever re-arm the retry.
+
+Fixed with the approved design: a new internal column records whether Books has been DIRECTLY
+OBSERVED to agree with the project's current `quote_status`, and T-010's exclusion now only fires
+once that column is also true.
+
+**Column** (`backend/app/models/aito_project.py`, added directly after `quote_status_remote`):
+
+```python
+quote_status_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+```
+
+Internal only — never added to any Pydantic schema in `schemas/aito.py`, never serialised on any
+route response, confirmed by `app-openapi-index` staying byte-identical (see golden diffs below).
+
+**Migration** (`backend/app/core/database.py`, appended as the last statement in `run_migrations`,
+mirroring `quote_invoiced`'s own additive-boolean shape and the file's `is_sqlite()` default
+convention):
+
+```python
+# Migration: whether Books has been directly observed to agree with an
+# Aito project's current quote_status (2026-09-03). Gates the reconcile
+# sweep's terminal-card exclusion (T-010/T-026) — see
+# AitoProject.quote_status_confirmed's own docstring. Every pre-existing
+# row backfills to False/0, so an already-terminal card is swept once
+# more until confirmed; a one-shot cost, not a regression.
+_aito_quote_status_confirmed_default = "0" if is_sqlite() else "false"
+await _safe_execute(
+    conn,
+    "ALTER TABLE aito_projects ADD COLUMN quote_status_confirmed BOOLEAN NOT NULL DEFAULT "
+    f"{_aito_quote_status_confirmed_default}",
+)
+```
+
+Plain additive `ALTER TABLE`, no backfill DML — `_safe_execute` swallows "duplicate column" on every
+boot after the first, same idempotency mechanism every other column addition in this file relies on.
+Every pre-existing row (including one mid-decline the instant this boots) starts at `False`/`0`: an
+already-terminal-but-unconfirmed card is swept once more, which is exactly the retry this task exists
+to restore, and a card genuinely settled in agreement re-confirms itself on its very next reconcile
+tick (see the genuine-agreement branch below) — so the one-shot cost is one extra Books call per
+previously-terminal card, once, not an ongoing regression.
+
+**Reset site** — `set_quote_status` (`routes/aito.py`), alongside its existing
+`quote_status_block`/`quote_status_remote` reset, right after `adopt_quote_status` writes the new
+local decision:
+
+```python
+project.quote_status_block = None
+project.quote_status_remote = None
+project.quote_status_confirmed = False
+```
+
+A fresh local decision is, by definition, not yet confirmed — this is the ONLY explicit reset site;
+every other writer of `quote_status` either goes through a confirm site below in the same breath, or
+(the trash-decline / restore-from-trash direct assignments inside `_reconcile_status`, which
+deliberately bypass `adopt_quote_status` — see that function's own docstring) is reached only for a
+soft-deleted or just-restored project, which the reconcile sweep's `status == "active"` filter
+already excludes on its own; if such a row later becomes both active and terminal-looking again, its
+very next reconcile tick observes Books' own status matches (both sides were just told the same
+thing) and self-confirms via the genuine-agreement branch below — no separate reset was needed there.
+
+**Set-True sites** — every direct observation that Books agrees with the CURRENT local status:
+
+1. `set_quote_status` (`routes/aito.py`), only when its best-effort push SUCCEEDS:
+   ```python
+   await zoho_service.advance_estimate_status(db, project.quote_id, payload.status)
+   zoho_synced = True
+   project.quote_status_confirmed = True
+   ```
+   Persisted by `get_db`'s own implicit commit after the handler returns (no extra commit needed);
+   on failure the `except` branch is untouched and `project.quote_status_confirmed` stays `False`
+   from the reset above.
+
+2. `reconcile_quote_status`'s genuine-agreement branch (`aito_quote_sync.py`), `zoho_status == local`
+   — set on every tick this holds, not only the first, so a card that drifts back into agreement
+   (e.g. a conflict a human resolved) re-confirms:
+   ```python
+   if zoho_status == local:
+       _clear_block(project)
+       project.quote_status_confirmed = True
+       ...
+   ```
+
+3. `reconcile_quote_status`'s `ours_decided` successful-push branch — `advance_estimate_status`
+   returned without raising, i.e. Books just accepted OUR decision. This is the retry this whole task
+   exists to unlock:
+   ```python
+   await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
+   ... (ZohoRequestRejected handler unchanged, still leaves it unconfirmed) ...
+   project.quote_status_confirmed = True
+   _clear_block(project)
+   ```
+
+4. `reconcile_quote_status`'s undecided-adopt branch — copying Books' own value onto an undecided
+   local status, guarded against `adopt_quote_status`'s own refusal of an unrecognised remote status
+   (e.g. `"invoiced"`), which is NOT agreement and must not confirm:
+   ```python
+   adopt_quote_status(project, zoho_status)
+   if project.quote_status == zoho_status:
+       project.quote_status_confirmed = True
+   _clear_block(project)
+   ```
+
+5. `_apply_estimate`'s matching copy-back guard (`aito_quote_sync.py`, shared by both `_create_quote`
+   and `_update_quote`) — the same refusal-safe equality check, applied to the estimate returned by
+   the push itself:
+   ```python
+   if remote_status is not None and not (project.quote_status in _DECIDED and remote_status != project.quote_status):
+       adopt_quote_status(project, remote_status)
+   if remote_status is not None and project.quote_status == remote_status:
+       project.quote_status_confirmed = True
+   _clear_block(project)
+   ```
+   Covers three cases uniformly: remote already matched a DECIDED local status (no-op adopt, but
+   still a live observation) — confirms; remote differs from a DECIDED local status (guard skips the
+   adopt, decision kept) — does NOT confirm, since nothing was observed to agree; undecided local
+   adopts remote — confirms once the copy lands, refusal-safe the same way as site 4.
+
+**Predicate change, both places** (`aito_quote_sync.py`):
+
+`run_sync_once`'s reconcile `and_()` clause — the T-010 terminal-exclusion pair is now wrapped in an
+`or_()` with the confirmed check, so a row is excluded only when BOTH terminal AND confirmed:
+
+```python
+AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+or_(
+    AitoProject.quote_status_confirmed.is_(False),
+    and_(
+        AitoProject.board_column != "done",
+        or_(
+            AitoProject.quote_status.is_(None),
+            AitoProject.quote_status.not_in(("declined", "expired")),
+        ),
+    ),
+),
+```
+
+`_still_selected` gained the matching branch, reordered per this task's explicit instruction: the
+`quote_sync_state in ("unmanaged", "locked")` check runs BEFORE the terminal-and-confirmed check —
+the SQL's flat `AND` already behaves that way (the `not_in` term and the `or_` term are independent
+conjuncts), but `_still_selected` is a sequence of early returns, so the order has to be stated
+explicitly there or a locked terminal-but-unconfirmed card would poll forever waiting for a
+confirmation `quote_sync_state == "locked"` (a locked project is never pushed to again) guarantees
+will never arrive:
+
+```python
+if project.quote_sync_state in ("unmanaged", "locked"):
+    return False
+if (
+    project.board_column == "done" or project.quote_status in ("declined", "expired")
+) and project.quote_status_confirmed:
+    return False
+return True
+```
+(Ruff's SIM103 then collapsed the trailing two lines to `return not (...)`, same logic.) T-008's
+NULL-`quote_id` `"error"` branch (the third `or_` clause in `run_sync_once`, and the final
+`return project.quote_sync_state == "error"` in `_still_selected`) is untouched — neither reads
+`quote_status_confirmed`, and the task explicitly scoped this fix to leave it alone.
+
+**Consumer enumeration** — every reader of the two changed predicates, plus every direct writer of
+`quote_status`:
+
+- `run_sync_once` has exactly one production caller, `run_sync_loop` (T-010's own enumeration
+  already covers this — unchanged here). `_still_selected` remains private to this module, called
+  only from `run_sync_once`'s own per-iteration loop.
+- Every wake path (`request_debounced_sync`/`request_immediate_sync`) still resolves to
+  `run_sync_once(db, pending_only=True)`, which skips the reconcile half — and therefore both
+  predicates this task touches — entirely, regardless of `quote_status_confirmed`. None of those call
+  sites are affected either way, same as T-010 already established.
+- `_reconcile_status`'s trash-decline and restore-from-trash direct assignments (bypassing
+  `adopt_quote_status`, see that function's docstring) are unaffected: both are reached only through
+  `_update_quote`, itself only reached from the untouched PENDING branch, and only for a
+  soft-deleted or just-restored project — the reconcile branch's `status == "active"` filter means
+  neither predicate this task touches is even evaluated for those rows at the moment they run. See
+  the reset-site paragraph above for why no explicit `quote_status_confirmed` write was needed there.
+- `quote_status_confirmed` is read only by the two predicates above and written only by the five
+  sites enumerated — no route, no schema, no other service reads or writes it. The frontend never
+  sees this column (not on any response schema) and needed no change.
+- Every other reader of `quote_status`/`board_column` (`routes/aito.py`'s response serialization,
+  `_mark_pending_if_ours`, `move_project`, `set_quote_status`'s own conflict guards; the frontend's
+  `CardView.tsx`, `ProjectDetailPanel.tsx`, `QuotePrintButton.tsx`, `QuoteDownloadButton.tsx`,
+  `InvoiceCard.tsx`, `DoneGrid.tsx`, `aitoOptimistic.ts`) reads only the CURRENT stored value, same
+  as T-010 already established, and needed no change.
+
+**Goldens** — sanctioned re-record for exactly two probes, both quoted in full:
+
+`snapshots/app-ddl.golden`:
+```diff
+ 	quote_status_before_trash VARCHAR(30), 
+ 	quote_status_block VARCHAR(20), 
+ 	quote_status_remote VARCHAR(30), 
++	quote_status_confirmed BOOLEAN DEFAULT '0' NOT NULL, 
+ 	zoho_comments_watermark VARCHAR(30), 
+ 	zoho_comments_checked_at DATETIME, 
+```
+
+`snapshots/app-migrations-index.golden`:
+```diff
+    235	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+    236	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+    237	# Migration: drop the AMS slot markers an older Bambuddy wrote into
++   238	# Migration: whether Books has been directly observed to agree with an
+```
+
+`./venv/bin/python3 tools/snapshot.py verify` before recording showed exactly these two mismatches
+(`app-ddl`, `app-migrations-index`) and no others — `app-openapi-index` (confirming the column is
+never serialised on any schema/route), `app-permissions`, `app-settings` (confirming no persisted
+setting was added), `app-middleware-stack`, `app-route-perms`, `fe-router`, `fe-i18n-parity` and
+`fe-money-pure` all matched untouched. After recording, 10/10 probes match.
+
+`SURFACE.md` gained exactly one changed line, the `aito_projects` column count in the "Database
+tables" section (`bash tools/gen_surface_all.sh` regenerated it byte-identical otherwise — no new
+top-level `def`/`class`/export was added, since every changed function already existed):
+
+```diff
+-aito_projects 42
++aito_projects 43
+```
+
+**Tests** — new file `backend/tests/unit/test_aito_quote_status_confirmed_migration.py` (mirroring
+`test_aito_unmanaged_backfill_migration.py`'s fixture shape, but for a plain additive column with no
+backfill DML, matching `quote_invoiced`'s own migration shape): the column is added and defaults to
+`False`/`0` on the first-ever migration (schema built without it, then dropped and re-added by
+`run_migrations`); a second `run_migrations` call (an ordinary restart) is idempotent and does not
+disturb a row the application has since confirmed `True`; a freshly `create_all`'d row already
+defaults to unconfirmed via the ORM's own `server_default`.
+
+`backend/tests/unit/test_aito_quote_sync.py`:
+- `test_a_done_column_quoted_project_is_not_selected_by_the_sweep` (pre-existing, T-010) — updated to
+  set `quote_status_confirmed = True` explicitly, since the exclusion it asserts now requires it; its
+  docstring now says so and points at the tests below for how a card gets confirmed.
+- `test_a_declined_quote_is_not_selected_by_the_sweep` renamed to
+  `test_a_confirmed_declined_quote_is_not_selected_by_the_sweep` (per this task's explicit
+  instruction) and updated the same way — its fixture now models a CONFIRMED decline.
+- `test_an_unconfirmed_decline_is_still_selected_by_the_sweep` (new) — the defect's regression test:
+  a decline written locally (`quote_status = "declined"`, `board_column = "done"`, both T-010
+  terminal conditions) with `quote_status_confirmed = False` IS selected by the sweep
+  (`_still_selected` is `True`); the tick observes Books still at `"sent"`, retries
+  `advance_estimate_status` (asserted via the `POST .../status/declined` call), the push succeeds,
+  `quote_status_confirmed` flips `True`, and only THEN does `_still_selected` become `False` and a
+  following `run_sync_once` make zero Books calls — proving both halves of the fix (the unconfirmed
+  card is retried; the confirmed card is excluded) in one place.
+- `test_a_locked_terminal_unconfirmed_card_is_not_selected` (new) — the ordering note: a `"locked"` +
+  terminal + unconfirmed card is excluded because it is locked, not because it is confirmed, so it
+  does not poll forever waiting for a confirmation a locked project will never receive.
+- `test_an_undecided_board_adopts_books_status` (pre-existing) — extended with an assertion that
+  `quote_status_confirmed` is `True` after Books' own status is adopted (the undecided-adopt confirm
+  site).
+- `test_an_active_non_terminal_quoted_project_is_still_selected_by_the_sweep` (pre-existing) —
+  extended with an assertion that `quote_status_confirmed` is `True` after a tick where Books' status
+  already matched local (the genuine-agreement confirm site).
+- `test_pending_project_without_a_quote_gets_one_created` (pre-existing) — extended with an assertion
+  that `quote_status_confirmed` is `True` after a fresh CREATE adopts Books' own returned status (the
+  `_apply_estimate` copy-back confirm site).
+
+`backend/tests/unit/test_aito_routes.py`:
+- `test_a_linked_quote_is_pushed_to_zoho` (pre-existing) — extended (now takes `db_session`) with an
+  assertion that `quote_status_confirmed` is `True` after a successful push — the `set_quote_status`
+  success confirm site.
+- `test_a_zoho_failure_still_writes_locally` (pre-existing) — extended (now takes `db_session`) with
+  an assertion that `quote_status_confirmed` stays `False` after a failed push — the exact case the
+  reconcile sweep must keep retrying.
+
+No unrelated assertion was weakened or removed anywhere in this task.
+
+Swept by both symbol grep and field-name grep, per this task's explicit instruction — every test file
+referencing `run_sync_once`, `_still_selected`, `reconcile_quote_status`, `set_quote_status`,
+`quote_status`, or an `AitoProject(` constructor: `test_aito_board_migration.py`,
+`test_aito_board_rules.py`, `test_aito_board_summary.py`, `test_aito_broadcasts.py`,
+`test_aito_close_sync.py`, `test_aito_event_capture.py`, `test_aito_invoice_email.py`,
+`test_aito_invoiced_status_heal_migration.py`, `test_aito_permissions.py`,
+`test_aito_project_model.py`, `test_aito_quote_accepted_backfill_migration.py`,
+`test_aito_quote_e2e.py`, `test_aito_quote_email.py`, `test_aito_quote_import.py`,
+`test_aito_quote_protection.py`, `test_aito_quote_status_confirmed_migration.py`,
+`test_aito_quote_status_conflicts.py`, `test_aito_quote_status.py`,
+`test_aito_quote_sync_interval.py`, `test_aito_quote_sync.py`, `test_aito_quote_unaccept.py`,
+`test_aito_routes.py`, `test_aito_shipping_migration.py`, `test_aito_shipping_routes.py`,
+`test_aito_social_handle_migration.py`, `test_aito_sync_events.py`, `test_aito_version.py`,
+`test_aito_zoho_comments.py` — every `AitoProject(` constructor in every one of these files omits
+`quote_status_confirmed` and relies on the ORM's `default=False`/the column's `server_default="0"`,
+confirmed by running the full set: 749 passed (453 in the first targeted run of
+`test_aito_quote_sync.py` + `test_aito_routes.py` + `test_aito_permissions.py`, 296 in the remaining
+26 files). `ruff check backend/` / `ruff format --check backend/`: clean.
+
+Observable change, quoted verbatim from the approved task: "a Zoho estimate that stayed 'sent' after
+a failed decline would later flip to 'declined' on its own, and such cards would resume costing one
+Books call per tick until the decline is confirmed."
+
+Note: a first attempt at this task reported BLOCKED — no existing column could distinguish "Books
+confirmed this status" from "we merely wrote it locally" without a schema change, which needed
+explicit sign-off since it touches the frozen golden snapshots. The user approved the
+`quote_status_confirmed` column, its migration, and the two golden re-records on 2026-09-03, and this
+entry implements that approved design exactly.
+
+## T-024 — 2026-09-03 — user-approved behavior change
+
+`_APIKEY_SCOPE_BY_PERMISSION` in `backend/app/core/auth.py` mapped `Permission.AITO_READ` to
+the `can_read_status` API-key scope flag — the same flag `PRINTERS_READ`, `SETTINGS_READ`,
+`STATS_READ`, and every other `*_READ` permission maps to, and which defaults to `True`
+(`models/api_key.py:32`, comment `# Query status`) on every newly-created key. Unlike its
+neighbouring read entries in the same map (`USERS_READ_SLIM` at auth.py:111-118,
+`SETTINGS_READ` at auth.py:120-122), `AITO_READ` carried no rationale comment explaining why
+it was safe for the default-on scope, and its own write-side siblings (`AITO_CREATE`,
+`AITO_UPDATE`, `AITO_DELETE`) are denied to API keys entirely (`_APIKEY_DENIED_PERMISSIONS`),
+so the read side looks like it was swept into the generic read bucket rather than classified
+on purpose. The Aito board response (`AitoProjectResponse`, `schemas/aito.py:520-540`)
+carries `client_name`, `client_phone`, `client_email`, and `quote_total` — client PII and
+pricing an operator did not necessarily intend every `can_read_status` key (kiosk displays,
+status dashboards) to be able to read.
+
+Fixed by removing `Permission.AITO_READ: "can_read_status"` from
+`_APIKEY_SCOPE_BY_PERMISSION` and adding `Permission.AITO_READ` to
+`_APIKEY_DENIED_PERMISSIONS` instead, next to `AITO_CREATE` / `AITO_UPDATE` / `AITO_DELETE`,
+with a rationale comment matching the shape the neighbouring entries carry: "the CRM board
+response carries client PII (name, phone, email) and quote totals. Unlike `SETTINGS_READ` /
+`USERS_READ_SLIM` above, no kiosk or automation depends on reading it via API key, so it
+stays user-token only rather than riding along on the `can_read_status` default-on scope."
+This is the first of the two options the finding offered (drop it from the allowlist, making
+it admin/user-token-only like the write side) — the alternative (a dedicated
+`can_read_aito`-style scope flag defaulting to `False`) was explicitly **not** chosen because
+it would add a new `api_keys` DDL column and move the `app-permissions` / `app-ddl` golden
+snapshots, which was out of scope for this task.
+
+Consumer enumeration — every route gated on `RequirePermissionIfAuthEnabled(Permission.AITO_READ)`
+in `backend/app/api/routes/aito.py`: `GET /api/v1/aito/` (list_projects), `GET
+/api/v1/aito/trash` (list_trash), `GET /api/v1/aito/shipping/services` (shipping catalogue),
+`GET /api/v1/aito/{project_id}/tasks` (list_tasks), `GET /api/v1/aito/{project_id}/events`
+(list_events), `GET /api/v1/aito/{project_id}/invoice` (invoice JSON), `GET
+/api/v1/aito/{project_id}/invoice.pdf`, `GET /api/v1/aito/{project_id}/invoice-email` (invoice
+email preview), `GET /api/v1/aito/{project_id}/quote.pdf`, and `GET
+/api/v1/aito/{project_id}/quote-email` (quote email preview). All ten now 403 for a caller
+authenticating solely via API key (`X-API-Key` / `Authorization: Bearer bb_...`), regardless
+of which scope flags that key holds — `AITO_READ` is unmapped in the allowlist, so
+`_check_apikey_permissions` fails closed for all of them. Real user tokens (JWT) holding
+`aito:read` are unaffected — the change is entirely on the API-key allowlist/denylist, not on
+`Permission.AITO_READ` itself or on how user-token requests are gated. No frontend or route
+change; `aito.py` is untouched.
+
+Tests, `backend/tests/unit/test_aito_permissions.py` (new fixture + cases, appended at the
+end of the file):
+- `t024_read_status_api_key` fixture — mints a real, persisted `APIKey` row with
+  `can_read_status=True` (the flag `AITO_READ` used to map to) and turns auth on, mirroring
+  `test_auth_apikey_rbac.py`'s `api_key_data` fixture.
+- `test_read_status_api_key_cannot_list_the_board` — that key now gets 403 on `GET
+  /api/v1/aito/` with the API-key denial message ("API keys cannot be used for administrative
+  operations"), not the JWT-gate's "Missing required permissions" message.
+- `test_read_status_api_key_cannot_read_project_events` — same key, same 403, on `GET
+  /api/v1/aito/{project_id}/events` (a second, path-parameterised Aito read route), using a
+  nonexistent project id — the permission gate runs before the id lookup (pinned by the
+  existing `test_permission_gate_rejects_a_nonexistent_id_and_an_invalid_body_before_either_is_reached`
+  in the same file), so a 403 here proves the gate fired, not a coincidental 404.
+- `test_aito_read_user_token_can_still_list_the_board` — the existing `aito_tokens` fixture's
+  `read_only` JWT (holding `aito:read` via a real `Group`) still gets 200 with an empty list on
+  `GET /api/v1/aito/`, proving the change is scoped to the API-key path only.
+
+The pre-existing generic invariant tests in
+`backend/tests/integration/test_auth_apikey_rbac.py` (`test_every_permission_has_a_classification`,
+`test_allowlist_and_denylist_are_disjoint`, `test_admin_permissions_are_denied_for_api_keys`,
+`test_operational_permissions_are_allowed_for_api_keys`) required no edits — they iterate
+`Permission` generically and `AITO_READ` is still classified exactly once (now in the
+denylist instead of the allowlist), so they continue to pass unchanged.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean on both touched
+files; `tests/unit/test_aito_permissions.py` (52 passed); `tests/integration/test_auth_apikey_rbac.py`
++ `tests/unit/test_aito_routes.py` + `tests/unit/test_ws_aito_read_filter.py` (378 passed);
+`tests/unit -k "api_key or apikey or auth or aito or permission"` (1236 passed, 8588
+deselected). `./venv/bin/python3 tools/snapshot.py verify` — 10/10 match (no `Permission`
+enum member added/removed, no route decorator text changed, so `app-permissions` and
+`app-route-perms` were unaffected). `bash tools/gen_surface_all.sh | diff - SURFACE.md` — empty.
+
+Observable change, quoted verbatim from the approved task: "any existing API key that today
+can GET /api/v1/aito/ (and /aito/{id}/tasks, /events, /trash, /invoice, the quote/invoice
+email previews and both PDF endpoints) would start receiving 403, so an integration or
+dashboard reading the Aito board by API key stops working until its key is re-scoped or
+switched to a user token."
+
+## T-027 — 2026-09-03 — user-approved behavior change
+
+`send_pickup_sms` (`backend/app/api/routes/aito.py`) called `await send_sms_notification(...)`
+— which pushes the pickup SMS to the operator's phone via Pushcut — followed unguarded by
+`await record(db, project.id, "project.sms.sent", ...)` and `await db.commit()`. By the time
+those run, the notification is already on the phone: an `SQLAlchemyError` on that flush/commit
+(e.g. "database is locked" from the `aito_quote_sync` worker writing the same SQLite file)
+propagated straight to a 500, the exact case `send_invoice_email` and `send_quote_email` each
+already guard against with their own `except SQLAlchemyError`. The operator would see a
+failure toast for an SMS that WAS pushed, tap Send again, and a second notification would land
+on the phone while the timeline recorded neither.
+
+Fixed by mirroring `send_invoice_email`'s guard: the `record()` + `db.commit()` pair is now
+wrapped in its own `try`/`except SQLAlchemyError`, which logs the failure loudly (this is the
+one path where a real send leaves no `project.sms.sent` row at all) and then rolls back inside
+its own guarded `try`/`except Exception: pass` — a bare `await db.rollback()` could itself
+raise and 500 anyway, defeating the point of catching `SQLAlchemyError` above it. The handler
+still returns `AitoPickupSmsResponse()` afterwards either way.
+
+`project.id` is read into a local (`project_pk`) BEFORE the guarded block, not after —
+`Session.rollback()` expires every attribute on `project` regardless of
+`expire_on_commit=False`, and reading an expired attribute from async code afterwards raises
+`MissingGreenlet` rather than lazily re-fetching, which is itself a `SQLAlchemyError` and would
+be silently swallowed by the very except-block meant to degrade gracefully. In this handler
+the response (`AitoPickupSmsResponse`, `schemas/aito.py:870-871`) carries only a static
+`sent: bool = True` with no field sourced from `project`, so the capture-before-rollback
+discipline has nothing further to protect in the return value itself — but `project_pk` is
+still captured up front, exactly as `send_invoice_email` captures `project_pk`/`quote_id`/
+`client_id`, so nothing after the guarded block ever touches `project` again.
+
+Consumer enumeration: `frontend/src/components/aito/SmsPickupModal.tsx`'s `send` mutation
+(`mutationFn: () => api.sendAitoPickupSms(...)`) only branches on the promise resolving vs.
+rejecting — `onSuccess` shows the `aito.smsSent` toast and invalidates the `aito-events` query
+so the open panel's timeline rail can't show a history missing what just happened; `onError`
+shows `aito.smsSendFailed`. Neither branch reads any field off the response body beyond the
+promise settling, and `SmsPickupButton.tsx` only renders the modal — it does not call the
+mutation itself. Both need no change: a request that now returns 200 instead of 500 already
+resolves the promise cleanly through the existing success path, and `invalidateQueries` on a
+timeline that in this one failure mode gained no new event is a normal, harmless refetch.
+
+Tests, `backend/tests/unit/test_aito_pickup_sms.py` (new test, mirroring the technique in
+`test_aito_invoice_email.py::test_a_record_commit_failure_after_a_real_send_does_not_500`):
+- `test_a_record_commit_failure_after_a_real_send_does_not_500` — monkeypatches
+  `AsyncSession.commit` to raise `SQLAlchemyError("database is locked")` on its first call only
+  (real commit on any later call), with Pushcut's `send_sms_notification` faked to succeed.
+  Asserts: the fake Pushcut relay was called exactly once (the failure is entirely on the local
+  side, after the real send already went out); the response is `200` with body `{"sent":
+  True}` (proving no `MissingGreenlet` leaked past the guarded rollback into a 500); and no
+  `project.sms.sent` event exists afterwards.
+- The pre-existing `test_send_records_the_event_but_never_the_contact` (happy path — the event
+  IS recorded when nothing fails) and `test_a_failed_relay_records_nothing` (a Pushcut failure
+  BEFORE the write still maps to its existing error status, 502, with nothing recorded) required
+  no changes and continue to pass unmodified, pinning both ends of the behavior this fix sits
+  between.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean on both touched
+files; `backend/tests/unit/test_aito_pickup_sms.py` + `test_aito_permissions.py` +
+`test_aito_routes.py` (363 passed). `./venv/bin/python3 tools/snapshot.py verify` — 10/10
+match (no route or schema change). `bash tools/gen_surface_all.sh | diff - SURFACE.md` —
+empty (no new top-level def in a `services/` file; routes are not scraped for defs).
+
+Observable change, quoted verbatim from the approved task: "a pickup-SMS request whose local
+event write fails would return success (with no project.sms.sent entry on the timeline)
+instead of the current 500 error toast."
+
+## T-028 — 2026-09-04 — user-approved behavior change
+
+`sync_project`'s (`backend/app/services/aito_quote_sync.py`) `except ZohoRateLimited` handler
+already deferred a rate-limited card without spending its failure budget (T-009) — but it did so
+for exactly one tick. `e.retry_after`, the parsed `Retry-After` header Books sends with a 429, was
+read only to decide the log message, then discarded; nothing remembered that Books had just asked
+for backoff. `run_sync_once` reselects every `pending` project on the very next call with no
+memory of the 429 at all, and it is called far more often than the 300s sweep interval suggests:
+every committed edit calls `request_debounced_sync`, which wakes `run_sync_loop` to run
+`run_sync_once(db, pending_only=True)` after `EDIT_DEBOUNCE_SECONDS` (10s) — so an operator editing
+a card for a couple of minutes while its org sat throttled re-hit Books roughly once every ten
+seconds, spending one request per wake on an org that had explicitly said back off, exactly the
+gap `zoho._shipping_fail_at` / `_SHIPPING_FAIL_COOLDOWN` (T-011, same day) was built to close on
+the sibling shipping-catalogue path.
+
+Fixed by giving the loop the same process-local memo shape: a module-level `_throttled_until:
+float | None = None` in `aito_quote_sync.py`, set by the `ZohoRateLimited` handler in
+`sync_project` and read by `run_sync_once`.
+- Two new module constants: `_RATE_LIMIT_FALLBACK_SECONDS = 60.0` (used when Books sends no
+  `Retry-After`, or the header is present but not a finite, non-negative number) and
+  `_RATE_LIMIT_MAX_RETRY_SECONDS = 15 * 60.0` (a hard cap on any `Retry-After` value, however
+  large, so a malformed-but-parseable or simply huge header cannot freeze the loop indefinitely).
+- In the `ZohoRateLimited` handler, `e.retry_after` is honoured only when it is `not None` and
+  `math.isfinite(retry_after) and retry_after >= 0`; an `inf`, `nan`, or negative value (T-025,
+  triaged — `_parse_retry_after` hands those back rather than rejecting them) falls back to
+  `_RATE_LIMIT_FALLBACK_SECONDS` exactly like a missing header, since trusting `inf` would defer
+  forever, a negative value would defer for zero time, and `nan` would break the comparison
+  outright. The window (`min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)` or the fallback) is
+  added to `time.monotonic()` and stamped into `_throttled_until` at the end of the handler,
+  after the existing `_deferred_reasons` bookkeeping.
+- `run_sync_once` gained a new early return at its very top: `if _throttled_until is not None and
+  time.monotonic() < _throttled_until: return 0` — before the `AitoProject.quote_sync_state ==
+  "pending"` SELECT is even built, so a call inside the window issues no DB query and no Zoho call
+  at all, for both the periodic full sweep (`pending_only=False`) and the debounced wake drain
+  (`pending_only=True`).
+- `_throttled_until` is cleared (`= None`) at both places in `sync_project` that represent "a call
+  to Books just succeeded": the reconcile branch right after a successful `get_estimate` read, and
+  the end of the main try block after a successful create/update round trip — mirroring
+  `zoho._shipping_fail_at` being cleared on the sibling catalogue path's own next success.
+- The clock is read via the module's own `time` name (`time.monotonic()`), not imported as
+  `from time import monotonic` — deliberately, so a test can `monkeypatch.setattr(aito_quote_sync,
+  "time", ...)` to substitute a scripted/advancing clock double without touching the real,
+  process-wide `time` module, which `zoho.py`'s separate OAuth-token-cache clock also reads and
+  which real asyncio/httpx internals lean on for wall-clock progress.
+
+Card-visible state is untouched: `quote_sync_state`, `quote_sync_error`, and
+`quote_sync_failures` are exactly what `sync_project`'s `ZohoRateLimited` handler already set
+before this change (`pending`, no error, no budget spent) — the new early return in
+`run_sync_once` sits entirely outside `sync_project` and never touches a project row. A throttled
+tick or wake simply does nothing rather than reselecting and re-deferring the same row.
+
+Consumer enumeration — every path that reads (or does not read) `run_sync_once`'s return value or
+otherwise observes this change:
+- `run_sync_loop` (same file) calls `await run_sync_once(db)` on its fixed interval and `await
+  run_sync_once(db, pending_only=True)` on a wake, in both cases discarding the returned int —
+  neither call site branches on it. The observable effect of the throttle is entirely about WHEN a
+  Books request happens, not any return-value plumbing.
+- `request_debounced_sync` / `request_immediate_sync` (same file) — called from
+  `routes/aito.py`'s task/project write handlers and from `sync_project_now` (the close-sync
+  route, `POST /{project_id}/sync`) — only set the module-local wake `Event` and (for the
+  debounced path) the fixed edit window; neither calls `run_sync_once` itself or reads its return
+  value. They are unaffected by this change; what changes is what the loop they wake does once it
+  runs.
+- `sync_project_now` (`routes/aito.py`, the close-sync route) marks the project pending, commits,
+  and calls `request_immediate_sync()` — it returns `AitoProjectResponse` built from the
+  just-committed DB row via `_project_response`, before the worker loop (and therefore before
+  `run_sync_once` or the throttle guard) ever runs. Its response body is unaffected; only the
+  async push that follows may now be skipped until the window clears.
+- No other route calls `run_sync_once`, `sync_project`, or reads `_throttled_until` — grepped
+  `backend/app/api/routes/` for `run_sync_once` and `sync_project` with no other hits. No HTTP
+  response body, status code, or schema changed by this commit.
+
+Tests added to `backend/tests/unit/test_aito_quote_sync.py` (a new `_FakeMonotonicClock` test
+double, mirroring `test_zoho_service.py`'s `_ScriptedClock`, plus three new test functions — one
+parametrized four ways, six test cases total):
+- `test_429_with_retry_after_short_circuits_the_wake_drain_until_it_elapses` — a 429 with
+  `Retry-After: 30` stamps `_throttled_until`; an immediate `run_sync_once(pending_only=True)`
+  attempts nothing and spends no Books request (0 returned, call count unchanged, project stays
+  `pending` with no error/failures); once the fake clock reports past the window, the same drain
+  proceeds normally, succeeds, and clears `_throttled_until` back to `None`.
+- `test_429_without_retry_after_uses_the_fallback_window` — a 429 with no `Retry-After` header
+  stamps `_throttled_until` from `_RATE_LIMIT_FALLBACK_SECONDS`, not left undeferred.
+- `test_429_retry_after_is_bounded_or_falls_back_on_a_bad_value` (parametrized over `"999999"`,
+  `"inf"`, `"nan"`, `"-5"`) — a huge-but-finite header is capped at
+  `_RATE_LIMIT_MAX_RETRY_SECONDS`; a non-finite or negative header falls back to
+  `_RATE_LIMIT_FALLBACK_SECONDS` instead of deferring forever, not at all, or raising on the
+  comparison.
+
+A new autouse fixture, `reset_aito_quote_sync_rate_limit_throttle` in `backend/tests/conftest.py`,
+clears `aito_quote_sync._throttled_until` before and after every test — mirroring
+`reset_shipping_catalogue_fail_cooldown`'s own rationale (T-011, same day): left alone, a 429
+induced by one test would silently skip `run_sync_once` work a later, unrelated test in the same
+process/xdist worker expects to happen.
+
+The pre-existing e2e test `test_429s_defer_indefinitely_without_escalating_or_spending_the_failure_budget`
+(`backend/tests/unit/test_aito_quote_e2e.py`) drives `SYNC_FAILURE_LIMIT + 2` consecutive calls to
+`run_sync_once` and asserts every single one attempts the project (`== 1`, not `0`) with no
+escalation to `error` and no failure-budget spend — behavior this change would otherwise break,
+since without advancing the clock every call after the first would now hit the new early return
+and vacuously return `0` for the wrong reason (throttled, not merely deferred). It was rewired to
+`monkeypatch.setattr(aito_quote_sync, "time", ...)` an `_AdvancingClock` double that jumps forward
+by `2 * _RATE_LIMIT_FALLBACK_SECONDS` on every `monotonic()` read, so each loop iteration lands
+after the previous 429's window has already elapsed — standing in for each tick running on its own
+later real tick once the window had cleared. The test's own assertions (`== 1` every iteration, no
+escalation, no budget spent) were preserved verbatim; only the clock feeding the throttle guard
+changed.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean on all four touched
+files. `./venv/bin/python3 -m pytest backend/tests/unit/test_aito_quote_sync.py
+backend/tests/unit/test_aito_quote_e2e.py backend/tests/conftest.py -q` (targeted); no schema,
+route, or DDL change, so no snapshot probe is affected.
+
+Observable change, quoted verbatim from the approved task: "after a Zoho 429, the sync loop skips
+every card for min(Retry-After, 15 min) or 60 s if no header, instead of retrying each tick and
+wake. Cards stay 'pending' with no error; they drain on the first tick after the window."
+
+This was originally landed in commit ed8031a54 as `refactor(loop-8): T-028 honour Retry-After with
+a process-local throttle window for the quote-sync loop`, filed by the auditor as a hardening fix
+restoring the intended shape of T-009's existing 429 deferral (no behavior-change disclosure). The
+blind verifier flagged the sync-timing change as undisclosed regardless of intent — after a 429,
+every card now sits pending un-attempted for the throttle window instead of being reselected and
+re-attempted on each subsequent tick/wake, a genuine change in when a card is retried. The user
+reviewed the flag and explicitly approved it on 2026-09-04; this entry documents that approval and
+is the canonical record of the change for future audits.

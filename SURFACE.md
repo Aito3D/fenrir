@@ -28,6 +28,8 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/aito/{project_id}/invoice-email ['POST']
 /api/v1/aito/{project_id}/invoice.pdf ['GET']
 /api/v1/aito/{project_id}/move ['PATCH']
+/api/v1/aito/{project_id}/pickup-message ['POST']
+/api/v1/aito/{project_id}/pickup-sms ['POST']
 /api/v1/aito/{project_id}/quote-email ['GET']
 /api/v1/aito/{project_id}/quote-email ['POST']
 /api/v1/aito/{project_id}/quote-status ['POST']
@@ -1085,6 +1087,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPreview:
 1 async def perform_ssh_update(device_id: str, ip_address: str, install_path: str | None = None) -> None:
 1 async def persist_session(
+1 async def pickup_message(
 1 async def pop_frame(nonce: str) -> bytes | None:
 1 async def prepare_internal_spool_payload(db: AsyncSession, data: dict, fields_set: set[str]) -> dict:
 1 async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
@@ -1117,6 +1120,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
 1 async def save_smtp_settings(db: AsyncSession, smtp_settings: SMTPSettings) -> None:
 1 async def select_energy_reading(
+1 async def send_sms_notification(db: AsyncSession, *, phone: str, text: str, title: str) -> None:
 1 async def send_user_print_notification(
 1 async def shutdown_all_broadcasters() -> None:
 1 async def shutdown_broadcaster(key: str) -> bool:
@@ -1130,7 +1134,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def sync_interval_seconds(db: AsyncSession) -> int:
 1 async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
 1 async def sync_personal_wallet_balance(db: AsyncSession, wallet: UserWallet) -> float:
-1 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
+1 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
 1 async def test_camera_connection(
 1 async def test_connection(url: str, camera_type: str) -> dict:
 1 async def upload_file_async(
@@ -1253,6 +1257,8 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class PrintState:
 1 class ProfileMatch:
 1 class ProjectPageParser:
+1 class PushcutNotConfiguredError(Exception):
+1 class PushcutUpstreamError(Exception):
 1 class ResolvedProfile(NamedTuple):
 1 class RESTSmartPlugService:
 1 class ScanResult(BaseModel):
@@ -1295,6 +1301,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class ZohoFilamentRefreshBusyError(RuntimeError):
 1 class ZohoNotConfiguredError(Exception):
 1 class ZohoNotFound(ZohoUpstreamError):
+1 class ZohoRateLimited(ZohoUpstreamError):
 1 class ZohoRequestRejected(ZohoUpstreamError):
 1 class ZohoService:
 1 class ZohoUpstreamError(Exception):
@@ -1811,6 +1818,7 @@ export function readGridSize
 export function readMaterialFilter
 export function realityCheckImpact
 export function registerPresenceSender
+export function replaceProject
 export function resolveDesktopSlicer
 export function resolveDryingPresetKey
 export function resolveInteropDefault
@@ -2221,6 +2229,7 @@ extruderJog
 findSimilarArchives
 forgotPassword
 forgotPasswordConfirm
+generateAitoPickupMessage
 get2FAStatus
 getAdvancedAuthStatus
 getAitoEvents
@@ -2567,6 +2576,7 @@ searchZohoFilaments
 selectArchiveTimelapse
 selectExtruder
 sendAitoInvoiceEmail
+sendAitoPickupSms
 sendAitoQuoteEmail
 sendEmailOTP
 setAirductMode
@@ -2741,7 +2751,7 @@ UsersPage.tsx
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "import backend.app.main; from backend.app.core.database import Base; [print(n, len(t.columns)) for n, t in sorted(Base.metadata.tables.items())]" 2>/dev/null```
 ```
 aito_events 15
-aito_projects 42
+aito_projects 43
 aito_tasks 31
 ams_labels 6
 ams_sensor_history 7

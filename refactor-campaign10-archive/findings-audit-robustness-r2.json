@@ -1,0 +1,31 @@
+{"findings": [
+  {"severity": "high", "category": "partial-failure",
+   "file": "backend/app/services/aito_quote_sync.py", "line": 1672,
+   "title": "the terminal-card sweep exclusion also drops reconcile_quote_status' PUSH half, stranding a decline Books never received",
+   "evidence": "run_sync_once's reconcile clause now ends with `AitoProject.board_column != \"done\",` and `or_(AitoProject.quote_status.is_(None), AitoProject.quote_status.not_in((\"declined\", \"expired\"))),` — but reconcile_quote_status is bidirectional: its `if ours_decided:` branch is the ONLY code that retries `advance_estimate_status(db, project.quote_id, local, ...)` for a decision Books has not got. routes/aito.py's set_quote_status writes 'declined' locally first and pushes to Books best-effort (`except Exception: ... zoho_synced = False`), and evaluate() sends a declined card to board_column 'done' — so the instant an operator declines a quote while Books is unreachable the row matches BOTH exclusions and is never selected again. Books keeps the estimate at 'sent' (still live and acceptable by the client online) while the board says declined, forever; the operator's only visible signal is the one-off 'Saved locally — Zoho was not updated' toast, and clicking Decline again hits set_quote_status' `if payload.status == project.quote_status:` early return, which reports no_op/zoho_synced=True and makes no Zoho call at all. Nothing else pushes status: _update_quote only rewrites line items, and _apply_estimate's _DECIDED guard refuses to adopt Books' stale 'sent'. test_a_declined_quote_is_not_selected_by_the_sweep asserts the exclusion but its docstring assumes Books itself settled the quote, which the predicate cannot distinguish from 'we settled it and Books never heard'.",
+   "fix": "keep a decided-locally card in the sweep until Books has been observed to agree — e.g. exclude on quote_status 'declined'/'expired' only when quote_status_remote/last reconcile confirms the same value, or have set_quote_status record an unconfirmed-push marker the SELECT honours; alternatively drop the no_op short-circuit's zoho_synced=True so re-declining actually re-pushes.",
+   "behavior_change": true,
+   "behavior_change_note": "a Zoho estimate that stayed 'sent' after a failed decline would later flip to 'declined' on its own, and such cards would resume costing one Books call per tick until the decline is confirmed."},
+
+  {"severity": "medium", "category": "partial-failure",
+   "file": "backend/app/api/routes/aito.py", "line": 2649,
+   "title": "send_pickup_sms 500s after Pushcut already accepted the notification, inviting a duplicate send",
+   "evidence": "`await send_sms_notification(...)` is followed unguarded by `await record(db, project.id, \"project.sms.sent\", ...)` and `await db.commit()`. The notification is already on the operator's phone at that point, so an SQLAlchemy failure on that flush/commit — 'database is locked' from the aito_quote_sync worker writing the same SQLite file, the exact case send_quote_email and send_invoice_email each guard against with their own try/except SQLAlchemyError — becomes a 500: the operator sees a failure toast for an SMS that WAS pushed, taps Send again, and a second notification lands on the phone while the timeline records neither.",
+   "fix": "mirror send_invoice_email: wrap the record()+commit() in `except SQLAlchemyError`, log loudly, roll back inside its own try, and still return AitoPickupSmsResponse.",
+   "behavior_change": true,
+   "behavior_change_note": "a pickup-SMS request whose local event write fails would return success (with no project.sms.sent entry on the timeline) instead of the current 500 error toast."},
+
+  {"severity": "medium", "category": "unbounded-growth",
+   "file": "backend/app/services/aito_quote_sync.py", "line": 1499,
+   "title": "the 429 deferral is per-tick only: ZohoRateLimited.retry_after is discarded and the wake drain re-hits the throttled org",
+   "evidence": "`except ZohoRateLimited as e:` logs, remembers the message in _deferred_reasons and `return True`, which only makes run_sync_once `break` out of THIS tick's loop; `e.retry_after` (parsed from Retry-After by zoho._parse_retry_after and documented as 'not currently acted on') is never read, and no process-level cooldown is written. request_debounced_sync fires on every committed edit, so an operator still working the board while Books throttles the org drives run_sync_once(pending_only=True) every EDIT_DEBOUNCE_SECONDS (10s), each drain spending one more request on an org that just said back off — prolonging the throttle instead of clearing it. Both sibling modules already memoize this: zoho_filaments._FAIL_COOLDOWN and zoho._SHIPPING_FAIL_COOLDOWN.",
+   "fix": "record a module-local 'throttled until' instant from retry_after (falling back to a fixed window) and have run_sync_once/the wake drain short-circuit while it holds, the same shape as _SHIPPING_FAIL_COOLDOWN.",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "boundary-validation",
+   "file": "backend/app/api/routes/aito.py", "line": 1300,
+   "title": "get_invoice_pdf builds Content-Disposition from an unsanitised Zoho invoice number",
+   "evidence": "`filename = f\"{invoice['number'] or invoice['id']}.pdf\"` goes straight into `build_content_disposition(filename, disposition=\"inline\")`, which only strips non-ASCII and quotes (`ascii_fallback.replace('\"', \"\").replace(\"\\\\\", \"\")` in utils/http.py) — ASCII control characters survive into the header value. get_quote_pdf, 300 lines below, does `filename = _CONTROL_CHARS_RE.sub(\"\", filename)` for exactly this reason and explains that the helper's non-ASCII stripping never touches them. Books invoice numbers carry an operator-configured prefix, so a stray CR/LF or control byte there makes the response header invalid (h11 rejects it) and the operator gets a failed print with nothing in the app's own logs to explain it.",
+   "fix": "apply the same `_CONTROL_CHARS_RE.sub(\"\", filename)` used by get_quote_pdf before building the header.",
+   "behavior_change": false}
+]}

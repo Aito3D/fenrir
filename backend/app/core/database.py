@@ -5270,6 +5270,19 @@ async def run_migrations(conn):
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
 
+    # Migration: whether Books has been directly observed to agree with an
+    # Aito project's current quote_status (2026-09-03). Gates the reconcile
+    # sweep's terminal-card exclusion (T-010/T-026) — see
+    # AitoProject.quote_status_confirmed's own docstring. Every pre-existing
+    # row backfills to False/0, so an already-terminal card is swept once
+    # more until confirmed; a one-shot cost, not a regression.
+    _aito_quote_status_confirmed_default = "0" if is_sqlite() else "false"
+    await _safe_execute(
+        conn,
+        "ALTER TABLE aito_projects ADD COLUMN quote_status_confirmed BOOLEAN NOT NULL DEFAULT "
+        f"{_aito_quote_status_confirmed_default}",
+    )
+
     await _migrate_unlock_retainer_locked_quotes(conn)
 
 

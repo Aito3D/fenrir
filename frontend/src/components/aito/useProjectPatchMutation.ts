@@ -4,6 +4,7 @@ import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client'
 import { useToast } from '../../contexts/ToastContext';
 import { latestProjectVersion, useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { showVersionConflictToast } from './versionConflictToast';
+import { settleProject } from './settleProject';
 
 /** The freshest version THIS CLIENT has personally seen the server acknowledge
  *  for a project, keyed by project id, stored as the PAIR it came from —
@@ -143,12 +144,7 @@ export function useProjectPatchMutation(
     },
     transform,
     flashId: () => project.id,
-    onSuccess: (updatedProject) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    },
+    onSuccess: (updatedProject) => settleProject(queryClient, project.id, updatedProject),
     onError: (error) => showVersionConflictToast(error, t, showToast),
   });
 }

@@ -51,6 +51,7 @@ CREATE TABLE aito_projects (
 	quote_status_before_trash VARCHAR(30), 
 	quote_status_block VARCHAR(20), 
 	quote_status_remote VARCHAR(30), 
+	quote_status_confirmed BOOLEAN DEFAULT '0' NOT NULL, 
 	zoho_comments_watermark VARCHAR(30), 
 	zoho_comments_checked_at DATETIME, 
 	shipping_island VARCHAR(50), 
