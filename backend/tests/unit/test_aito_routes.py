@@ -562,6 +562,12 @@ async def test_import_only_on_empty_board(async_client):
 
 
 @pytest.mark.asyncio
+# CI runs pytest with `--timeout=60 --timeout-method=thread`, and the thread
+# method hard-exits the xdist worker ("node down: Not properly terminated")
+# instead of failing the test. A thousand imports take ~37 s on an M-series
+# Mac and longer on a shared 4-vCPU runner, so this one test gets its own
+# ceiling — the assertion is about the cap being accepted, not about speed.
+@pytest.mark.timeout(240)
 async def test_import_accepts_a_thousand_projects(async_client):
     """1000 mirrors library.py's BulkFileOperation.file_ids cap (T-037/T-049)
     — a payload sitting exactly on it must still be accepted, not just one
