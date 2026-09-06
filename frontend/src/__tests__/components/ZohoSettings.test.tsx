@@ -94,6 +94,58 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     expect(putBodies).toHaveLength(0);
   });
 
+  it('includes zoho_refresh_token when the refresh-token field is filled in', async () => {
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    await user.type(inputForLabel('Refresh Token'), 'shh-its-a-refresh-token');
+    await user.click(saveButton);
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0]).toMatchObject({ zoho_refresh_token: 'shh-its-a-refresh-token' });
+    expect(putBodies[0]).not.toHaveProperty('zoho_client_secret');
+  });
+
+  it('sends a diff key for each changed non-secret field', async () => {
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    await user.type(inputForLabel('Organization ID'), 'org-123');
+    await user.type(inputForLabel('Default client ID'), 'contact-1');
+    await user.type(inputForLabel('Default client name'), 'Ada Lovelace');
+    await user.type(inputForLabel('API Base URL'), 'https://www.zohoapis.eu');
+    await user.type(inputForLabel('Accounts URL'), 'https://accounts.zoho.eu');
+    await user.click(saveButton);
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0]).toMatchObject({
+      zoho_organization_id: 'org-123',
+      zoho_default_contact_id: 'contact-1',
+      zoho_default_contact_name: 'Ada Lovelace',
+      zoho_base_url: 'https://www.zohoapis.eu',
+      zoho_accounts_url: 'https://accounts.zoho.eu',
+    });
+    expect(putBodies[0]).not.toHaveProperty('zoho_client_secret');
+    expect(putBodies[0]).not.toHaveProperty('zoho_refresh_token');
+  });
+
+  it("shows saveMutation's own error toast when the save PUT request fails", async () => {
+    server.use(
+      http.put('/api/v1/settings/', () => HttpResponse.json({ detail: 'Failed to save settings' }, { status: 500 })),
+    );
+
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    await user.type(inputForLabel('Client ID'), 'my-client-id');
+    await user.click(saveButton);
+
+    expect(await screen.findByText('Failed to save settings')).toBeInTheDocument();
+  });
+
   it('shows an error toast when the test-connection probe fails', async () => {
     server.use(
       http.get('/api/v1/zoho/status', ({ request }) => {

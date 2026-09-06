@@ -2757,17 +2757,20 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
         # contention under a parallel test run can never turn a genuine
         # drain into a false failure the way a wall-clock poll could.
         await asyncio.wait_for(drain_completed.wait(), timeout=30)
-        await db_session.refresh(project)
-        assert project.quote_id == "E1"
-        assert project.quote_sync_state == "idle"
-        # Condition-based, not a sleep: only cancel once every worker session
-        # has fully closed, so the cancellation lands in the loop's idle
-        # wait_for and can never terminate the shared pooled connection.
+        # Condition-based, not a sleep: wait for every worker session to
+        # fully close before doing anything else. This gates two things --
+        # the refresh below (so it can never land on the shared pooled
+        # connection while the worker's own close/reset is still in
+        # flight) and the cancellation in `finally` (so it lands in the
+        # loop's idle wait_for and can never terminate that connection).
         for _ in range(100):
             if not live_sessions:
                 break
             await asyncio.sleep(0.01)
         assert not live_sessions
+        await db_session.refresh(project)
+        assert project.quote_id == "E1"
+        assert project.quote_sync_state == "idle"
     finally:
         loop_task.cancel()
         await asyncio.gather(loop_task, return_exceptions=True)
