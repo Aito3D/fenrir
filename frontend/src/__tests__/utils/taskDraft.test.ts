@@ -12,7 +12,10 @@ import {
   taskDraftToTaskCreate,
   normaliseTaskDraft,
   roundUpTo50,
+  freshenTaskDraft,
+  isBlankTaskDraft,
 } from '../../utils/taskDraft';
+import type { TaskDraft } from '../../utils/taskDraft';
 import { computePricing } from '../../utils/pricing';
 import type { PricingDefaults, PricingFilament, PricingPrinter } from '../../utils/pricing';
 import type { AitoTask } from '../../api/client';
@@ -418,5 +421,58 @@ describe('impression.rush', () => {
   it('reads a server row with no rush field as not rushed', () => {
     const { impression_rush: _dropped, ...legacy } = row;
     expect(taskDraftFromAitoTask(legacy as typeof row).impression.rush).toBe(false);
+  });
+});
+
+describe('isBlankTaskDraft', () => {
+  it('is true for a fresh empty draft whatever its uid', () => {
+    expect(isBlankTaskDraft(emptyTaskDraft())).toBe(true);
+    expect(isBlankTaskDraft({ ...emptyTaskDraft(), uid: 'anything', id: 7 })).toBe(true);
+  });
+
+  it('is false once any field carries content, including a 0 cost', () => {
+    expect(isBlankTaskDraft({ ...emptyTaskDraft(), title: 'x' })).toBe(false);
+    expect(isBlankTaskDraft({ ...emptyTaskDraft(), scanCost: 0 })).toBe(false);
+    expect(isBlankTaskDraft({ ...emptyTaskDraft(), scanDescription: 'note' })).toBe(false);
+    const base = emptyTaskDraft();
+    expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, weightG: 12 } })).toBe(false);
+    expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, color: 'red' } })).toBe(false);
+    expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, rush: true } })).toBe(false);
+    expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, quantity: 2 } })).toBe(false);
+    expect(isBlankTaskDraft({ ...base, scanQuantity: 2 })).toBe(false);
+    expect(isBlankTaskDraft({ ...base, usinageDiscountPct: 10 })).toBe(false);
+  });
+});
+
+describe('freshenTaskDraft', () => {
+  it('clears id and done ticks, issues a new uid, keeps everything quoted', () => {
+    const source: TaskDraft = {
+      ...emptyTaskDraft(),
+      id: 42,
+      uid: 'server-42',
+      title: 'Bracket',
+      scanCost: 1000,
+      impressionCost: 2500,
+      impressionDiscountPct: 10,
+      scanQuantity: 3,
+      impression: { printerId: 1, filamentId: 2, weightG: 30, timeMin: 90, quantity: 2, color: 'black', rush: true },
+      done: { scan: true, modelisation: false, impression: true, usinage: false },
+    };
+    const fresh = freshenTaskDraft(source);
+    expect(fresh.id).toBeNull();
+    expect(fresh.uid).not.toBe('server-42');
+    expect(fresh.done).toEqual({ scan: false, modelisation: false, impression: false, usinage: false });
+    expect(fresh.title).toBe('Bracket');
+    expect(fresh.scanCost).toBe(1000);
+    expect(fresh.impressionCost).toBe(2500);
+    expect(fresh.impressionDiscountPct).toBe(10);
+    expect(fresh.scanQuantity).toBe(3);
+    expect(fresh.impression).toEqual(source.impression);
+    expect(fresh.impression).not.toBe(source.impression);
+  });
+
+  it('gives two freshened copies of the same task different uids', () => {
+    const source = { ...emptyTaskDraft(), id: 1, title: 'x' };
+    expect(freshenTaskDraft(source).uid).not.toBe(freshenTaskDraft(source).uid);
   });
 });

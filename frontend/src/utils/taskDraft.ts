@@ -298,6 +298,41 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
   };
 }
 
+/** A saved task turned back into a brand-new draft: no id, a fresh uid, no
+ *  done ticks — and everything that was QUOTED (prices, quantities, discounts,
+ *  descriptions, print parameters, rush) kept exactly as it was. This is what
+ *  the drawer's "Reuse" appends, so a regular's reorder starts from the last
+ *  card rather than from scratch. */
+export function freshenTaskDraft(draft: TaskDraft): TaskDraft {
+  return {
+    ...draft,
+    id: null,
+    uid: makeDraftUid(),
+    impression: { ...draft.impression },
+    done: { scan: false, modelisation: false, impression: false, usinage: false },
+  };
+}
+
+/** True when the draft carries nothing the operator typed — every field equal
+ *  to `emptyTaskDraft()` except the identity fields `id` and `uid`. Checked
+ *  field by field (a `0` cost is content: it means "free", not "disabled"),
+ *  so the untouched first row a new draft opens with is replaced by a reuse
+ *  and a half-typed row never is. */
+export function isBlankTaskDraft(draft: TaskDraft): boolean {
+  const blank = emptyTaskDraft();
+  const { id: _id, uid: _uid, impression, done, ...rest } = draft;
+  const { id: _bid, uid: _buid, impression: blankImpression, done: blankDone, ...blankRest } = blank;
+  void _id; void _uid; void _bid; void _buid;
+  const flat = Object.keys(blankRest).every(
+    (key) => rest[key as keyof typeof rest] === blankRest[key as keyof typeof blankRest],
+  );
+  const impressionSame = (Object.keys(blankImpression) as (keyof typeof blankImpression)[]).every(
+    (key) => impression[key] === blankImpression[key],
+  );
+  const doneSame = (Object.keys(blankDone) as (keyof typeof blankDone)[]).every((key) => done[key] === blankDone[key]);
+  return flat && impressionSame && doneSame;
+}
+
 /** Client shape -> wire shape, matching the conventions the create modal
  *  established: `title` and `impression_color` collapse blank to `null`
  *  rather than `''`; every numeric field passes straight through so a `0`
