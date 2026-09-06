@@ -121,8 +121,55 @@ describe('AitoTrackPage', () => {
   it('renders the invalid-link line on a 404, never a login screen', async () => {
     mockTrack(null);
     renderAt('gone');
-    expect(await screen.findByText("Ce lien n'est plus valide.")).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: "Ce lien de suivi n'est plus valide" })).toBeInTheDocument();
     expect(screen.queryByText(/Vos pièces/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/password|mot de passe/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the missing-date and passed-date wordings instead of a stale or fake date', async () => {
+    mockTrack({ ...FIXTURE, column: 'scan', due_date: null });
+    const { unmount } = renderAt('soon');
+    expect(await screen.findByText('Nous vous communiquerons une date dès que possible.')).toBeInTheDocument();
+    unmount();
+    mockTrack({ ...FIXTURE, column: 'print', due_date: '2000-01-01' });
+    renderAt('late');
+    expect(await screen.findByText('Estimation en cours de mise à jour')).toBeInTheDocument();
+    expect(screen.queryByText(/2000/)).not.toBeInTheDocument();
+  });
+
+  it('collapses a long parts list behind a button', async () => {
+    const tasks = Array.from({ length: 11 }, (_, i) => ({ title: `Pièce ${i + 1}`, quantity: null }));
+    mockTrack({ ...FIXTURE, tasks });
+    renderAt('many');
+    await screen.findByText('Pièce 1');
+    expect(screen.queryByText('Pièce 7')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Voir les 11 pièces' }));
+    expect(screen.getByText('Pièce 11')).toBeInTheDocument();
+  });
+
+  it('offers a retry on a server error and a dedicated page on 404', async () => {
+    let calls = 0;
+    server.use(http.get('/api/v1/aito/track/:token', () => (++calls === 1 ? HttpResponse.error() : HttpResponse.json(FIXTURE))));
+    renderAt('flaky');
+    expect(await screen.findByText('Impossible de charger le suivi pour le moment.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+    expect(await screen.findByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
+
+    mockTrack(null);
+    const { unmount } = renderAt('gone');
+    expect(await screen.findByRole('heading', { level: 1, name: "Ce lien de suivi n'est plus valide" })).toBeInTheDocument();
+    expect(screen.getByText(/nous vous enverrons un nouveau lien/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Réessayer' })).not.toBeInTheDocument();
+    unmount();
+  });
+
+  it('exposes the timeline to assistive tech and lists the steps on demand', async () => {
+    mockTrack(FIXTURE);
+    renderAt('a11y');
+    await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
+    expect(screen.getByText('Étape 5 sur 7 : Fabrication')).toBeInTheDocument(); // visually hidden
+    await userEvent.click(screen.getByRole('button', { name: 'Voir les étapes' }));
+    const list = screen.getByRole('list', { name: 'Détail des étapes' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(7);
   });
 });

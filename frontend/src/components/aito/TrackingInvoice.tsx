@@ -5,32 +5,49 @@ import { FR } from '../../utils/aitoTracking';
 const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid: 'bg-amber-500', overdue: 'bg-red-500' };
 
 /** The invoice as a STATE — never an amount, never a PDF (a PDF carries
- *  the amount). A bordered secondary card: status dot, title, sub-line,
- *  and for an unpaid invoice an outlined button that reveals the shop's
- *  payment terms, so the line is an action and not a dead end. */
+ *  the amount). Paid is quiet and borderless: a dot centred on the title
+ *  only, and a sub-line, so it never competes with the state above it.
+ *  Unpaid/overdue are a bordered secondary card with an outlined button
+ *  that reveals the shop's payment terms, so the line is an action and
+ *  not a dead end. */
 export function TrackingInvoice({ state }: { state: AitoTrackingInvoice }) {
   const [open, setOpen] = useState(false);
   const copy = FR.invoice[state];
+
+  if (state === 'paid') {
+    return (
+      <div data-testid="track-invoice" data-state={state} className="text-[15px]">
+        <div className="flex items-center gap-[8px]">
+          <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${DOT[state]}`} aria-hidden="true" />
+          <span className="font-semibold text-aito-ink">{copy.title}</span>
+        </div>
+        <p className="mt-[4px] text-[13px] text-aito-muted">{copy.sub}</p>
+      </div>
+    );
+  }
+
   return (
     <div data-testid="track-invoice" data-state={state}>
-      <div className="flex items-center gap-3.5 rounded-xl border border-aito-line px-4 py-4 text-[15px]">
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DOT[state]}`} aria-hidden="true" />
-        <span className="flex-1">
-          <span className="block font-semibold text-aito-ink">{copy.title}</span>
-          <span className="block text-[13px] text-aito-muted">{copy.sub}</span>
+      <div className="flex flex-wrap items-center gap-[16px] rounded-[12px] border border-aito-line px-[16px] py-[16px] text-[15px]">
+        <span className="flex min-w-0 flex-1 items-center gap-[8px]">
+          <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${DOT[state]}`} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold text-aito-ink">{copy.title}</span>
+            <span className="block text-[13px] text-aito-muted">{copy.sub}</span>
+          </span>
         </span>
         {copy.terms && (
           <button
             type="button"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="shrink-0 whitespace-nowrap rounded-lg border border-aito-cyan/35 px-3 py-1.5 text-[13.5px] font-semibold text-aito-cyan hover:bg-aito-cyan/10"
+            className="inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] border border-aito-cyan/35 px-[16px] text-[13.5px] font-semibold text-aito-cyan transition-colors duration-150 hover:bg-aito-cyan/10 active:bg-aito-cyan/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan sm:w-auto"
           >
             {FR.paymentTermsToggle}
           </button>
         )}
       </div>
-      {copy.terms && open && <p className="mt-3 px-4 text-sm text-aito-muted">{FR.paymentTerms}</p>}
+      {copy.terms && open && <p className="mt-[12px] px-[16px] text-[13px] text-aito-muted">{FR.paymentTerms}</p>}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FR, frLongDate, frUpdated, statusCopy, trackStages } from '../../utils/aitoTracking';
+import { FR, etaCopy, frLongDate, frUpdated, statusCopy, trackStages } from '../../utils/aitoTracking';
 import type { AitoTracking } from '../../api/client';
 
 const base: AitoTracking = {
@@ -41,5 +41,25 @@ describe('aitoTracking', () => {
       sub: 'Le 1 septembre 2026. Merci pour votre confiance !',
     });
     expect(statusCopy({ ...base, column: 'done' })).toEqual(FR.status.doneBare);
+  });
+
+  describe('etaCopy', () => {
+    const today = new Date('2026-09-10T20:00:00Z');
+    const at = (column: AitoTracking['column'], due_date: string | null): AitoTracking => ({ ...base, column, due_date });
+    it('shows the date while it is not passed', () => {
+      expect(etaCopy(at('print', '2026-09-20'), today)).toEqual({ kind: 'date', text: '20 septembre 2026' });
+    });
+    it('replaces a passed date with the updating line before Finish', () => {
+      expect(etaCopy(at('print', '2026-09-01'), today)).toEqual({ kind: 'updating', text: FR.etaUpdating });
+      expect(etaCopy(at('finish', '2026-09-01'), today).kind).toBe('none');
+    });
+    it('promises a date only while in production, otherwise nothing', () => {
+      expect(etaCopy(at('scan', null), today)).toEqual({ kind: 'soon', text: FR.etaSoon });
+      expect(etaCopy(at('devis', null), today).kind).toBe('none');
+      expect(etaCopy(at('done', null), today).kind).toBe('none');
+    });
+    it('omits the date entirely once the order is ready or over, whatever the date', () => {
+      expect(etaCopy(at('finish', '2099-01-01'), today).kind).toBe('none');
+    });
   });
 });

@@ -11,11 +11,18 @@ export const FR = {
   stepOf: (n: number, total: number) => `Étape ${n} sur ${total}`,
   tasksHeading: 'Vos pièces',
   eta: 'Disponibilité estimée',
+  etaSoon: 'Nous vous communiquerons une date dès que possible.',
+  etaUpdating: 'Estimation en cours de mise à jour',
   updated: (when: string) => `Mis à jour ${when}`,
   loading: 'Chargement…',
-  invalid: "Ce lien n'est plus valide.",
-  footerLead: 'Une question sur votre commande ? Nous sommes disponibles au',
-  footerOr: 'ou à',
+  error: 'Impossible de charger le suivi pour le moment.',
+  retry: 'Réessayer',
+  invalidTitle: "Ce lien de suivi n'est plus valide",
+  invalidBody: 'Il a peut-être expiré ou été remplacé. Contactez-nous et nous vous enverrons un nouveau lien.',
+  showSteps: 'Voir les étapes',
+  stepsList: 'Détail des étapes',
+  showAllParts: (n: number) => `Voir les ${n} pièces`,
+  footerQuestion: 'Une question sur votre commande ?',
   invoice: {
     paid: { title: 'Facture réglée', sub: 'Merci pour votre confiance.', terms: false },
     unpaid: { title: 'Facture à régler', sub: "À régler avant le retrait ou l'expédition.", terms: true },
@@ -95,4 +102,21 @@ export function statusCopy(data: AitoTracking): { title: string; sub: string } {
     default:
       return FR.status.working;
   }
+}
+
+const PRODUCTION: readonly AitoColumnId[] = ['scan', 'model', 'print'];
+const BEFORE_FINISH: readonly AitoColumnId[] = ['devis', 'waiting', 'scan', 'model', 'print'];
+
+/** What the date slot says — a real date, an honest "updating", a promise
+ *  while in production, or nothing. Never a stale date shown as if all
+ *  were well, never a fabricated one. Once the order is ready or over
+ *  (Finish / Done), the date is dropped entirely — the state already
+ *  says it all. */
+export function etaCopy(data: AitoTracking, today: Date = new Date()): { kind: 'date' | 'updating' | 'soon' | 'none'; text: string } {
+  if (!BEFORE_FINISH.includes(data.column)) return { kind: 'none', text: '' }; // ready or over: the state says it all
+  if (data.due_date) {
+    const passed = new Date(`${data.due_date}T23:59:59`) < today;
+    return passed ? { kind: 'updating', text: FR.etaUpdating } : { kind: 'date', text: frLongDate(data.due_date) };
+  }
+  return PRODUCTION.includes(data.column) ? { kind: 'soon', text: FR.etaSoon } : { kind: 'none', text: '' };
 }
