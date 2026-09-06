@@ -46,7 +46,7 @@ project rows and the Aito event log. Four blocks:
 
 ```
 {
-  "board": [ {"column": "devis", "count": 3, "total": 12300.0}, … ],   // six board columns, fixed order, done included
+  "board": [ {"column": "devis", "count": 3, "total": 12300.0}, … ],   // all seven board columns, fixed order, done included
   "conversion": {
     "sent": {"count": 9, "total": 41000.0},
     "accepted": {"count": 6, "total": 30500.0},
@@ -93,12 +93,14 @@ project rows and the Aito event log. Four blocks:
 
 ### Cost
 
-Four queries: one `GROUP BY board_column`, one `MIN(occurred_at) GROUP BY
-project_id, kind` over the relevant kinds joined to active projects, one
-ordered scan of `stage.changed` events for active projects (the stay maths
-runs in Python over that ordered list), and one over invoiced projects.
-SQLite handles the board sizes in question (tens to hundreds of projects,
-low thousands of events) in milliseconds; no cache.
+Five small queries: the active project rows (board totals and invoicing are
+summed in Python from them), three `MIN(occurred_at) GROUP BY project_id`
+queries (sent/emailed, accepted, declined) restricted to those projects, and
+one ordered scan of `stage.changed` events for them (the stay maths runs in
+Python over that ordered list). SQLite handles the board sizes in question
+(tens to hundreds of projects, low thousands of events) in milliseconds; no
+cache. The `project_id IN (...)` lists carry one bound parameter per active
+project, well under SQLite's variable limit at this scale.
 
 ## 2. Widget — `components/stats/PipelineWidget.tsx`
 
