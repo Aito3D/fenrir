@@ -14,6 +14,10 @@ against a throwaway ``ConnectionManager`` instance (never the global
 ``ws_manager`` singleton — matching every other websocket test in this repo)
 to prove the initial presence-state send is actually gated on the stamped
 flag, not just that the flag itself computes correctly in isolation.
+
+A fourth group (T-011, also user-approved) drives the same end-to-end
+harness with an inbound ``aito_presence`` message, proving the handler
+itself — not just the initial send — is gated on ``aito_read``.
 """
 
 from __future__ import annotations
@@ -263,3 +267,89 @@ async def test_connect_sends_everything_when_auth_is_disabled(monkeypatch, test_
     verify_spy.assert_not_awaited()
     assert ws.state.aito_read is True
     assert "aito_presence_state" in _sent_types(ws)
+
+
+# ---------------------------------------------------------------------------
+# Layer 4 (T-011): the inbound "aito_presence" message handler, end to end
+# ---------------------------------------------------------------------------
+
+
+class _MessageWebSocket(_FakeWebSocket):
+    """Like ``_FakeWebSocket``, but replays a queued sequence of inbound
+    messages before disconnecting, so the endpoint's ``while True`` loop
+    actually reaches the branch under test."""
+
+    def __init__(self, messages: list[dict]):
+        super().__init__()
+        self._messages = list(messages)
+
+    async def receive_json(self):
+        if self._messages:
+            return self._messages.pop(0)
+        raise WebSocketDisconnect()
+
+
+async def _run_endpoint_with_messages(monkeypatch, test_engine, *, group_permissions, messages):
+    session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as seed:
+        group = Group(name="T011-group", permissions=group_permissions)
+        seed.add(group)
+        seed.add(User(username="t011-user", groups=[group]))
+        await seed.commit()
+
+    fresh_mgr = ConnectionManager()
+    presence_spy = AsyncMock(wraps=fresh_mgr.set_aito_presence)
+    monkeypatch.setattr(fresh_mgr, "set_aito_presence", presence_spy)
+    monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
+    monkeypatch.setattr(ws_route, "async_session", session_maker)
+    monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="t011-user"))
+
+    ws = _MessageWebSocket(messages)
+    await ws_route.websocket_endpoint(ws, token="tok")
+    return ws, presence_spy
+
+
+@pytest.mark.asyncio
+async def test_inbound_aito_presence_is_applied_with_aito_read(monkeypatch, test_engine):
+    ws, presence_spy = await _run_endpoint_with_messages(
+        monkeypatch,
+        test_engine,
+        group_permissions=[Permission.AITO_READ.value],
+        messages=[{"type": "aito_presence", "project_id": 5}],
+    )
+
+    assert ws.state.aito_read is True
+    presence_spy.assert_awaited_once_with(ws, 5)
+
+
+@pytest.mark.asyncio
+async def test_inbound_aito_presence_is_ignored_without_aito_read(monkeypatch, test_engine):
+    """Without AITO_READ the ping is a silent no-op, but the loop must keep
+    running — a following message (here, a plain ping) still gets a
+    reply."""
+    ws, presence_spy = await _run_endpoint_with_messages(
+        monkeypatch,
+        test_engine,
+        group_permissions=[],
+        messages=[{"type": "aito_presence", "project_id": 5}, {"type": "ping"}],
+    )
+
+    assert ws.state.aito_read is False
+    presence_spy.assert_not_awaited()
+    assert "pong" in _sent_types(ws)
+
+
+@pytest.mark.asyncio
+async def test_inbound_aito_presence_with_bogus_project_id_is_ignored_without_aito_read(monkeypatch, test_engine):
+    """A stray boolean ``project_id`` must not slip through the aito_read
+    gate either — no call at all, sanitizing or otherwise."""
+    ws, presence_spy = await _run_endpoint_with_messages(
+        monkeypatch,
+        test_engine,
+        group_permissions=[],
+        messages=[{"type": "aito_presence", "project_id": True}],
+    )
+
+    assert ws.state.aito_read is False
+    presence_spy.assert_not_awaited()

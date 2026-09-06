@@ -16,17 +16,6 @@ import { render } from '../utils';
 import { ZohoSettings } from '../../components/ZohoSettings';
 import { server } from '../mocks/server';
 
-// The labels are plain siblings of their `<input>` (no `for`/`id` or
-// wrapping), so testing-library's label-association queries can't find
-// them. Walk from the label text node to the input in its own wrapper div
-// instead — mirrors how a sighted user visually associates them.
-function inputForLabel(labelText: string): HTMLInputElement {
-  const label = screen.getByText(labelText);
-  const input = label.parentElement?.querySelector('input');
-  if (!input) throw new Error(`no input found next to label "${labelText}"`);
-  return input as HTMLInputElement;
-}
-
 describe('ZohoSettings — save payload and test-connection failure', () => {
   let putBodies: Record<string, unknown>[];
 
@@ -57,7 +46,7 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Client ID'), 'my-client-id');
+    await user.type(screen.getByLabelText('Client ID'), 'my-client-id');
     await user.click(saveButton);
 
     await waitFor(() => expect(putBodies.length).toBe(1));
@@ -71,7 +60,7 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Client Secret'), 'shh-its-a-secret');
+    await user.type(screen.getByLabelText('Client Secret'), 'shh-its-a-secret');
     await user.click(saveButton);
 
     await waitFor(() => expect(putBodies.length).toBe(1));
@@ -99,7 +88,7 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Refresh Token'), 'shh-its-a-refresh-token');
+    await user.type(screen.getByLabelText('Refresh Token'), 'shh-its-a-refresh-token');
     await user.click(saveButton);
 
     await waitFor(() => expect(putBodies.length).toBe(1));
@@ -112,11 +101,11 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Organization ID'), 'org-123');
-    await user.type(inputForLabel('Default client ID'), 'contact-1');
-    await user.type(inputForLabel('Default client name'), 'Ada Lovelace');
-    await user.type(inputForLabel('API Base URL'), 'https://www.zohoapis.eu');
-    await user.type(inputForLabel('Accounts URL'), 'https://accounts.zoho.eu');
+    await user.type(screen.getByLabelText('Organization ID'), 'org-123');
+    await user.type(screen.getByLabelText('Default client ID'), 'contact-1');
+    await user.type(screen.getByLabelText('Default client name'), 'Ada Lovelace');
+    await user.type(screen.getByLabelText('API Base URL'), 'https://www.zohoapis.eu');
+    await user.type(screen.getByLabelText('Accounts URL'), 'https://accounts.zoho.eu');
     await user.click(saveButton);
 
     await waitFor(() => expect(putBodies.length).toBe(1));
@@ -140,7 +129,7 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     render(<ZohoSettings />);
 
     const saveButton = await screen.findByRole('button', { name: /^save$/i });
-    await user.type(inputForLabel('Client ID'), 'my-client-id');
+    await user.type(screen.getByLabelText('Client ID'), 'my-client-id');
     await user.click(saveButton);
 
     expect(await screen.findByText('Failed to save settings')).toBeInTheDocument();

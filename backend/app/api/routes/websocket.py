@@ -194,7 +194,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                         )
 
             # Aito presence: "I am viewing project N" / None on panel close.
-            elif data.get("type") == "aito_presence":
+            # T-011: mirror the outbound gate above — a connection stamped
+            # without AITO_READ never enters the viewers map, matching the
+            # fact it never receives presence fan-out either.
+            elif data.get("type") == "aito_presence" and websocket.state.aito_read:
                 pid = data.get("project_id")
                 # bool is an int subclass in Python — isinstance(True, int) is
                 # True — so `isinstance(pid, int)` alone admits a stray

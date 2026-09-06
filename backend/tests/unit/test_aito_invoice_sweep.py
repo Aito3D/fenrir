@@ -289,9 +289,11 @@ async def test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed(db_se
     # Never reached EST-NEVER: the loop stopped dead at the 429, not merely
     # skipped the one project like a plain ZohoUpstreamError would.
     assert calls == ["EST-GOOD", "EST-BAD"]
-    # Exactly one commit -- the early one taken right before the exception is
-    # re-raised, not also the ordinary end-of-pass commit further down (which
-    # this path never reaches).
+    # Exactly one commit -- T-010's per-project commit for EST-GOOD, taken
+    # right after that project succeeds and well before EST-BAD is even
+    # attempted. There is no longer a second, end-of-pass commit for this
+    # path to also take (dropped as dead code by T-010: by the time a 429
+    # can fire, every prior success is already committed).
     assert len(commit_calls) == 1
 
     db_session.expire_all()
@@ -305,6 +307,83 @@ async def test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed(db_se
     assert bad_row.invoice_checked_at is None
     never_row = await db_session.get(AitoProject, never_id)
     assert never_row.invoice_checked_at is None
+    # T-010: a pass that ends in ZohoRateLimited does not spend the hourly
+    # slot either -- the throttle window run_sync_loop arms already
+    # prevents hammering Books again immediately, so the sweep should
+    # simply resume on the very next tick once that window clears.
+    assert aito_invoice_sweep._last_run == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_mid_pass_commit_failure_persists_earlier_projects_and_does_not_spend_the_hour(
+    db_session, test_engine, monkeypatch
+):
+    """T-010: a per-project commit failure (SQLite "database is locked", or
+    anything else) mid-pass must cost only the project it happened on --
+    every project already refreshed earlier in the same pass stays
+    persisted -- and must not spend the hourly slot, so the next
+    (non-forced) call re-enters the sweep instead of early-returning 0 for
+    another hour."""
+    good = await _project(db_session, quote_id="EST-GOOD")
+    bad = await _project(db_session, quote_id="EST-BAD")
+    good_id, bad_id = good.id, bad.id  # captured before expire_all(); see note above
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake({"EST-GOOD": [_invoice(10.0)], "EST-BAD": [_invoice(20.0)]}, []),
+    )
+    original_commit = db_session.commit
+    commit_n = {"count": 0}
+
+    async def _flaky_commit():
+        commit_n["count"] += 1
+        if commit_n["count"] == 2:
+            raise RuntimeError("database is locked")
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", _flaky_commit)
+
+    with pytest.raises(RuntimeError):
+        await sweep_invoices(db_session, force=True)
+
+    # Read through a brand-new session against the same engine rather than
+    # db_session itself: db_session's own transaction is still sitting on
+    # top of the failed second commit, so only a fresh session proves what
+    # actually reached the database.
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as fresh:
+        good_row = await fresh.get(AitoProject, good_id)
+        assert good_row.invoice_balance == 10.0
+        assert good_row.invoice_checked_at is not None
+        bad_row = await fresh.get(AitoProject, bad_id)
+        assert bad_row.invoice_checked_at is None
+        assert bad_row.invoice_balance is None
+
+    # The pass never finished, so the hourly slot was never spent -- a
+    # subsequent non-forced call must run again, not early-return 0.
+    assert aito_invoice_sweep._last_run == 0.0
+    calls: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST-GOOD": [], "EST-BAD": []}, calls))
+    updated = await sweep_invoices(db_session)
+    assert calls  # re-entered the sweep instead of returning 0 for the hourly gate
+    assert updated == 2
+
+
+@pytest.mark.asyncio
+async def test_a_fully_successful_pass_spends_the_hourly_slot(db_session, monkeypatch):
+    """T-010: only a pass that runs to completion stamps ``_last_run`` --
+    the mirror image of the two tests above, confirming the ordinary
+    success path still gates the next call for the full hour."""
+    await _project(db_session, quote_id="EST1")
+    calls: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST1": [_invoice(10.0)]}, calls))
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    assert aito_invoice_sweep._last_run != 0.0
+    assert await sweep_invoices(db_session) == 0
+    assert calls == ["EST1"]  # the second, non-forced call never re-asked
 
 
 @pytest.fixture

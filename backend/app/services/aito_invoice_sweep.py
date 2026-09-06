@@ -15,7 +15,16 @@ link removed), the cached status/balance/due date are cleared rather than
 left showing the last figures ever seen. A cleared row still has a null
 balance, so it keeps matching the selection above and costs one call per
 hour until either an invoice reappears or the project itself is archived —
-the same steady state as a project that was never invoiced yet."""
+the same steady state as a project that was never invoiced yet.
+
+T-010: each project's refresh is committed on its own, right after it is
+computed, rather than batching every project into one commit at the end of
+the pass. A database-locked (or any other) failure on that commit now costs
+the one project mid-flush, not the whole pass's worth of already-refreshed
+rows. The hourly gate's timestamp is stamped only once the pass has
+actually finished, so a pass that never reaches the end (a ``ZohoRateLimited``
+or any other exception escaping the function) is retried on the very next
+300 s tick instead of sitting out the rest of the hour."""
 
 import logging
 import time
@@ -49,15 +58,20 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
     upstream error — retrying the identical request will simply work once
     the window clears, so continuing to hit Books once per remaining project
     would only deepen the throttle, the same failure mode ``sync_project``'s
-    own 429 handler exists to avoid. This function commits whatever it has
-    already refreshed and then lets the exception propagate: ``run_sync_loop``
-    catches it there and arms the same process-local throttle window
-    ``sync_project`` uses, so the two callers share one backoff instead of
-    each discovering the limit on its own."""
+    own 429 handler exists to avoid. Every project already refreshed before
+    the 429 was already committed on its own (T-010), so this function has
+    nothing left to flush — it simply lets the exception propagate:
+    ``run_sync_loop`` catches it there and arms the same process-local
+    throttle window ``sync_project`` uses, so the two callers share one
+    backoff instead of each discovering the limit on its own. The hourly
+    gate's timestamp is deliberately NOT stamped on this path either: the
+    throttle window in ``run_sync_loop`` already prevents hammering Books
+    again immediately, so once that window clears the sweep should simply
+    resume on the next tick rather than also sitting out the rest of an
+    hour it never got to finish."""
     global _last_run
     if not force and _last_run and time.monotonic() - _last_run < _SWEEP_INTERVAL_SECONDS:
         return 0
-    _last_run = time.monotonic()
 
     stmt = select(AitoProject).where(
         AitoProject.status == "active",
@@ -93,16 +107,27 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                 project.invoice_due_date = None
         except ZohoRateLimited:
             # T-006: stop here rather than spending one more request per
-            # remaining project — commit what already succeeded and let the
-            # caller (run_sync_loop) arm the shared throttle.
-            if updated:
-                await db.commit()
+            # remaining project — everything refreshed so far this pass was
+            # already committed per project below, so there is nothing left
+            # to flush; just let the caller (run_sync_loop) arm the shared
+            # throttle.
             raise
         except (ZohoUpstreamError, ValueError, TypeError, KeyError) as exc:
             logger.warning("Invoice sweep skipped project %s: %s", project.id, exc)
             continue
         project.invoice_checked_at = _now()
         updated += 1
-    if updated:
+        # T-010: commit this project's refresh on its own rather than
+        # batching the whole pass into one commit at the end. A failure on
+        # this specific commit (SQLite "database is locked", for example)
+        # then costs only this one project instead of discarding every
+        # project already refreshed earlier in the same pass.
         await db.commit()
+    # T-010: the hourly slot is spent only once the pass has actually
+    # finished. An exception escaping the loop above (a ZohoRateLimited,
+    # or anything else) skips this line entirely, leaving _last_run at
+    # whatever it was before this call so the next 300 s tick tries again
+    # instead of waiting out the rest of an hour for a pass that never
+    # completed.
+    _last_run = time.monotonic()
     return updated
