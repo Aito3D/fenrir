@@ -4052,6 +4052,25 @@ export interface AitoStats {
   date_to: string | null;
 }
 
+/** One past card of a client, for the drawer's repeat-client recall. `total`
+ *  is the board card's total (TaskSummary.total); `tasks` are in position
+ *  order so Reuse appends them as they were quoted. */
+export interface AitoClientHistoryCard {
+  id: number;
+  created_at: string;
+  column: AitoColumnId;
+  total: number;
+  tasks: AitoTask[];
+}
+
+export interface AitoClientHistory {
+  cards: AitoClientHistoryCard[];
+  /** The newest active card's social pair, from beyond the card limit too.
+   *  `network` stays a plain string on the wire; the drawer narrows it with
+   *  `isSocialNetwork` before trusting it. */
+  latest_social: { network: string; handle: string } | null;
+}
+
 export type AitoFlag = 'urgent' | 'sav' | 'pause';
 
 export interface AitoProject {
@@ -7797,6 +7816,8 @@ export const api = {
     params.set('tz_offset_minutes', String(-new Date().getTimezoneOffset()));
     return request<AitoStats>(`/aito/stats?${params}`);
   },
+  getAitoClientHistory: (clientId: string, limit = 5) =>
+    request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
   /** Record — or take back — the fact that the client has been told the job is
    *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to
    *  stamp, and a browser clock that is wrong would otherwise skew both the

@@ -633,4 +633,9 @@ export const handlers = [
       date_to: null,
     })
   ),
+  // The new-project drawer asks for a client's history the moment a real
+  // contact is attached, so every drawer test that picks one would otherwise
+  // issue an unhandled request. Empty by default — the block renders nothing;
+  // tests about the block override this with server.use().
+  http.get('/api/v1/aito/clients/:clientId/history', () => HttpResponse.json({ cards: [], latest_social: null })),
 ];
