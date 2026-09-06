@@ -152,10 +152,16 @@ and `draft`:
 - Applies only when `draft` is non-null, `!draft.isDefault`,
   `latest_social` is non-null, `draft.socialNetwork === null` and
   `draft.socialHandle === ''`.
-- Applies at most once per client id: a ref `socialPrefilledForRef` holds
-  the last client id the prefill ran for; it is compared before applying and
-  set after. Clearing the handle by hand therefore does not refill it, while
-  picking a different client applies that client's pair.
+- Applies at most once per client id: the ids already prefilled are kept as
+  a list, `socialPrefilledFor: string[]`, persisted WITH the draft by
+  `useNewProjectDraft` (an older blob without the field restores as `[]`)
+  and emptied by the reset hold. The effect checks membership before
+  applying and appends the id after. A single "last id" would not do:
+  `draftFromContact` blanks the social pair on every pick, so an A → B → A
+  round-trip, or a close/reopen of the drawer (which unmounts it) with a
+  persisted draft, would refill a handle the operator had cleared. Clearing
+  the handle by hand therefore never refills it, while picking a different
+  client applies that client's pair.
 - Sets `socialNetwork` and `socialHandle` on the draft. The social pair is
   card-only and never written to Zoho, so nothing in `touched`/`original`
   changes.
