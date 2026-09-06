@@ -1,13 +1,17 @@
 """The hourly invoice sweep: one Books call per open invoice, stops when paid."""
 
+import asyncio
+import contextlib
+import time
 from datetime import datetime
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.models.aito_project import AitoProject
-from backend.app.services import aito_invoice_sweep
+from backend.app.services import aito_invoice_sweep, aito_quote_sync
 from backend.app.services.aito_invoice_sweep import sweep_invoices
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +19,17 @@ def reset_gate():
     aito_invoice_sweep._last_run = 0.0
     yield
     aito_invoice_sweep._last_run = 0.0
+
+
+@pytest.fixture(autouse=True)
+def reset_throttle():
+    """``_throttled_until`` is process-local, module-level state shared with
+    aito_quote_sync (T-006) -- mirrors the reset fixtures in
+    test_aito_quote_sync.py for the same reason: it must not leak into a
+    later test."""
+    aito_quote_sync._throttled_until = None
+    yield
+    aito_quote_sync._throttled_until = None
 
 
 def _invoice(balance: float, status: str = "unpaid", due: str = "2026-03-01") -> dict:
@@ -165,3 +180,144 @@ async def test_the_hourly_gate_skips_a_second_pass(db_session, monkeypatch):
     assert calls == ["EST1"]
     assert await sweep_invoices(db_session, force=True) == 1
     assert calls == ["EST1", "EST1"]
+
+
+@pytest.mark.asyncio
+async def test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed(db_session, monkeypatch):
+    """T-006: a Books rate limit on one project must not be treated like an
+    ordinary upstream error (skip one project, keep going) -- it must stop
+    the whole pass right there, without touching any project still waiting
+    in the queue, while keeping whatever was already refreshed."""
+    good = await _project(db_session, quote_id="EST-GOOD")
+    bad = await _project(db_session, quote_id="EST-BAD")
+    never = await _project(db_session, quote_id="EST-NEVER")
+    # Captured before expire_all(); see note on the other tests in this file.
+    good_id, bad_id, never_id = good.id, bad.id, never.id
+    calls: list[str] = []
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake(
+            {
+                "EST-GOOD": [_invoice(10.0)],
+                "EST-BAD": ZohoRateLimited("Too many requests", retry_after=5.0),
+            },
+            calls,
+        ),
+    )
+    commit_calls: list[None] = []
+    original_commit = db_session.commit
+
+    async def _tracking_commit():
+        commit_calls.append(None)
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", _tracking_commit)
+
+    with pytest.raises(ZohoRateLimited):
+        await sweep_invoices(db_session, force=True)
+
+    # Never reached EST-NEVER: the loop stopped dead at the 429, not merely
+    # skipped the one project like a plain ZohoUpstreamError would.
+    assert calls == ["EST-GOOD", "EST-BAD"]
+    # Exactly one commit -- the early one taken right before the exception is
+    # re-raised, not also the ordinary end-of-pass commit further down (which
+    # this path never reaches).
+    assert len(commit_calls) == 1
+
+    db_session.expire_all()
+    good_row = await db_session.get(AitoProject, good_id)
+    assert good_row.invoice_balance == 10.0
+    assert good_row.invoice_checked_at is not None
+    # EST-BAD's own row was never marked as checked either: the 429 fires
+    # before that project's fields are set, so it is left exactly as
+    # untouched as the one still waiting behind it in the queue.
+    bad_row = await db_session.get(AitoProject, bad_id)
+    assert bad_row.invoice_checked_at is None
+    never_row = await db_session.get(AitoProject, never_id)
+    assert never_row.invoice_checked_at is None
+
+
+@pytest.fixture
+def fresh_wake_event():
+    """``_wake`` is a module-level ``asyncio.Event`` that binds to the first
+    event loop that awaits it, and every test gets a fresh loop -- mirrors
+    the identically-named fixture in test_aito_quote_sync.py, needed here by
+    the two tests below that actually drive ``run_sync_loop``."""
+    aito_quote_sync._wake = asyncio.Event()
+    aito_quote_sync._debounce_deadline = None
+    yield
+    aito_quote_sync._debounce_deadline = None
+
+
+@pytest.mark.asyncio
+async def test_run_sync_loop_arms_the_shared_throttle_on_a_sweep_side_429(
+    db_session, test_engine, fresh_wake_event, monkeypatch
+):
+    """T-006: a 429 seen only by the sweep (never by sync_project) must still
+    arm the same process-local ``_throttled_until`` the quote sync path
+    reads, so the next tick's ``run_sync_once`` also backs off instead of
+    the sweep alone knowing about the limit."""
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(aito_quote_sync, "async_session", maker)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", lambda db: _immediate(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", lambda db: _immediate(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _immediate(300))
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False: _immediate(0))
+
+    async def _raise_once(db):
+        raise ZohoRateLimited("Too many requests", retry_after=42.0)
+
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _raise_once)
+
+    before = time.monotonic()
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        await asyncio.sleep(0.05)
+        assert aito_quote_sync._throttled_until is not None
+        assert before + 40 <= aito_quote_sync._throttled_until <= before + 45
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
+async def test_run_sync_loop_skips_the_sweep_while_already_throttled(
+    db_session, test_engine, fresh_wake_event, monkeypatch
+):
+    """T-006: while a previous 429 (either side) has this process inside the
+    backoff window, the periodic tick must not call the sweep at all -- not
+    even once -- the same way ``run_sync_once`` already refuses to spend a
+    Books call of its own during that window."""
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(aito_quote_sync, "async_session", maker)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", lambda db: _immediate(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", lambda db: _immediate(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _immediate(300))
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False: _immediate(0))
+
+    sweep_calls: list[None] = []
+
+    async def _tracked_sweep(db):
+        sweep_calls.append(None)
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _tracked_sweep)
+    aito_quote_sync._throttled_until = time.monotonic() + 1000
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        await asyncio.sleep(0.05)
+        assert sweep_calls == []
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+async def _immediate(value):
+    """A coroutine that resolves to ``value`` immediately -- used to stand in
+    for the module-level async helpers ``run_sync_loop`` awaits, since
+    ``monkeypatch.setattr`` needs a plain callable, not the value itself."""
+    return value

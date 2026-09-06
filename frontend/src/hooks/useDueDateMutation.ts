@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
+import { settleProject } from '../components/aito/settleProject';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
@@ -16,12 +17,7 @@ export function useDueDateMutation(project: AitoProject) {
     transform: (previous, dueDate) =>
       previous?.map((p) => (p.id === project.id ? { ...p, due_date: dueDate } : p)),
     flashId: () => project.id,
-    onSuccess: (row) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === row.id ? row : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    },
+    onSuccess: (row) => settleProject(queryClient, project.id, row),
     onError: () => showToast(t('aito.dueDateFailed'), 'error'),
   });
 }

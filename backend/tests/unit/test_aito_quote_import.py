@@ -52,6 +52,17 @@ def test_parse_description_drops_boilerplate_and_keeps_free_text():
     assert free == ("Couleur Noir de face.", "Faire plusieurs pièce")
 
 
+def test_parse_description_nbsp_variant_of_boilerplate_is_not_folded_away():
+    # Regression: _fold() must use NFD (canonical decomposition only), not
+    # NFKD -- NFKD's *compatibility* decomposition turns an NBSP into a
+    # plain space, which would make this row compare equal to the real
+    # boilerplate line and get silently dropped instead of kept as free
+    # text. The row's NBSPs (U+00A0) are deliberate, not a typo.
+    labels, free = parse_description("*fichier\xa0non\xa0cede*")
+    assert labels == {}
+    assert free == ("*fichier\xa0non\xa0cede*",)
+
+
 def test_parse_description_treats_unfilled_placeholders_as_empty():
     labels, free = parse_description("Projet: [TITLE]\nMatériau: [MATERIAL]\nPoids: [WEIGHT]")
     assert labels == {"projet": "", "materiau": "", "poids": ""}

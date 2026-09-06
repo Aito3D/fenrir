@@ -1277,6 +1277,36 @@ async def _terminal_error(
         )
 
 
+def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
+    """Set ``_throttled_until`` from a caught ``ZohoRateLimited``.
+
+    Extracted (T-006) so both callers that can observe a 429 — this
+    module's own ``sync_project`` handler below, and ``run_sync_loop``'s
+    ``sweep_invoices`` call site, which has no project to attribute the
+    log line to and lets the exception propagate here instead of handling
+    it inline — arm the exact same process-local backoff window instead of
+    each keeping its own memo. See ``_throttled_until``'s module-level
+    comment for the shape.
+
+    ``e.retry_after`` is honoured only when it is a genuine, usable hint:
+    not None, and a finite, non-negative number — ``inf``/``nan``/negative
+    (T-025, triaged) fall back to the fixed window exactly like "no header
+    at all" rather than being trusted at face value, which for a negative
+    or NaN value would defer for zero time (no protection) or crash the
+    comparison below, and for `inf` would defer forever. A large-but-finite
+    value is still capped at _RATE_LIMIT_MAX_RETRY_SECONDS so a malformed
+    (or simply huge) Retry-After cannot freeze the loop for longer than
+    that.
+    """
+    global _throttled_until
+    retry_after = e.retry_after
+    if retry_after is not None and math.isfinite(retry_after) and retry_after >= 0:
+        window = min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)
+    else:
+        window = _RATE_LIMIT_FALLBACK_SECONDS
+    _throttled_until = time.monotonic() + window
+
+
 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
     """One project's whole state machine. Never raises: every outcome is a state.
 
@@ -1627,22 +1657,7 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
         # more request on an org that just said back off — see
         # ``_throttled_until``'s own module-level comment for why this is
         # process-local and shaped like ``zoho._shipping_fail_at``.
-        #
-        # ``e.retry_after`` is honoured only when it is a genuine, usable
-        # hint: not None, and a finite, non-negative number — ``inf``/``nan``/
-        # negative (T-025, triaged) fall back to the fixed window exactly
-        # like "no header at all" rather than being trusted at face value,
-        # which for a negative or NaN value would defer for zero time (no
-        # protection) or crash the comparison below, and for `inf` would
-        # defer forever. A large-but-finite value is still capped at
-        # _RATE_LIMIT_MAX_RETRY_SECONDS so a malformed (or simply huge)
-        # Retry-After cannot freeze the loop for longer than that.
-        retry_after = e.retry_after
-        if retry_after is not None and math.isfinite(retry_after) and retry_after >= 0:
-            window = min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)
-        else:
-            window = _RATE_LIMIT_FALLBACK_SECONDS
-        _throttled_until = time.monotonic() + window
+        _arm_rate_limit_throttle(e)
         return True
     except ZohoUpstreamError as e:
         # Below the limit, this is a plain in-memory write, no flush -- so
@@ -2127,7 +2142,26 @@ async def run_sync_loop() -> None:
                     # Piggybacks on the same gate: no Books access, no sweep.
                     # Its own hourly gate makes the 300 s tick a no-op most
                     # of the time.
-                    await sweep_invoices(db)
+                    #
+                    # T-006: also skipped outright while a previous 429 (from
+                    # either run_sync_once above or a past sweep) has this
+                    # process inside its throttle window — the same reasoning
+                    # as run_sync_once's own guard: an org that just said
+                    # back off must not be re-hit by the sweep every tick
+                    # either. And if the sweep itself is the one that hits
+                    # the 429 (it has no throttle check of its own before
+                    # this point, since it may not have run in a while), it
+                    # commits whatever it already refreshed and lets the
+                    # exception propagate here, where it is handled exactly
+                    # like sync_project's own 429 — arm the same shared
+                    # window via ``_arm_rate_limit_throttle`` — so a limit
+                    # discovered by the sweep also pauses the sync side.
+                    if _throttled_until is None or time.monotonic() >= _throttled_until:
+                        try:
+                            await sweep_invoices(db)
+                        except ZohoRateLimited as e:
+                            logger.warning("Aito invoice sweep deferred (Zoho Books rate limit): %s", e)
+                            _arm_rate_limit_throttle(e)
         except asyncio.CancelledError:
             raise
         except Exception:

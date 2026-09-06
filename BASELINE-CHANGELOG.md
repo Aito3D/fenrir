@@ -9802,3 +9802,102 @@ every card now sits pending un-attempted for the throttle window instead of bein
 re-attempted on each subsequent tick/wake, a genuine change in when a card is retried. The user
 reviewed the flag and explicitly approved it on 2026-09-04; this entry documents that approval and
 is the canonical record of the change for future audits.
+
+## Campaign 11 · T-006 — 2026-09-05 — user-approved behavior change
+
+`sweep_invoices` (`backend/app/services/aito_invoice_sweep.py`) reads every open receivable's
+invoice status once an hour, one `list_project_invoices` call per project, and its only exception
+handler before this change was `except (ZohoUpstreamError, ValueError, TypeError, KeyError):
+continue` — log a warning, skip that one project, keep going. `ZohoRateLimited` (Books' HTTP 429)
+is a subclass of `ZohoUpstreamError` (`services/zoho.py`), so a 429 on the very first project in
+the pass was swallowed as an ordinary skip and the loop went straight on to issue
+`list_project_invoices` for every remaining open receivable, one more 429 at a time — deepening
+the exact throttle that `sync_project`'s own `ZohoRateLimited` handler (T-028, 2026-09-04) exists
+to stop doing on the quote-sync side. The sweep also neither read nor set
+`aito_quote_sync._throttled_until`: `run_sync_loop` called `await sweep_invoices(db)`
+unconditionally right after `run_sync_once`, so on an org already throttled by the sync side, the
+tick that correctly spent zero sync calls (T-028's own guard) still spent one Books call per open
+invoice via the sweep — and a 429 seen only by the sweep never armed the throttle for the sync
+path either, so the next tick's `run_sync_once` had no idea Books had just said back off.
+
+Fixed with the minimal shape the task specified (design option 1 from the brief: let
+`ZohoRateLimited` propagate out of `sweep_invoices` after committing what is already refreshed,
+and have the existing call site in `run_sync_loop` catch it and arm the shared throttle):
+
+- `aito_invoice_sweep.py`: the per-project `try` now catches `ZohoRateLimited` ahead of the
+  generic `(ZohoUpstreamError, ValueError, TypeError, KeyError)` handler (exception ordering
+  matters here since the former is a subclass of the latter's first member). The new handler
+  commits the session if any project earlier in this pass was already updated (`if updated: await
+  db.commit()`), then re-raises — stopping the `for` loop dead at the first 429 instead of
+  continuing to the next project, while keeping whatever was already refreshed and committed
+  before it. No new import of `aito_quote_sync` was added (would have created a circular import,
+  since `aito_quote_sync.py` already imports `sweep_invoices` from this module) — the module stays
+  ignorant of the throttle it feeds; it only ever raises or doesn't.
+- `aito_quote_sync.py`: the `ZohoRateLimited` handler inside `sync_project`'s window-arming logic
+  (computing the bounded/fallback window from `e.retry_after` and stamping `_throttled_until =
+  time.monotonic() + window`) was extracted verbatim into a new module-private helper,
+  `_arm_rate_limit_throttle(e: ZohoRateLimited) -> None`, called from both `sync_project`'s
+  existing handler (unchanged in effect — same window math, same `_throttled_until` write, same
+  `return True`) and a new `except ZohoRateLimited` around the `run_sync_loop` call site's `await
+  sweep_invoices(db)`, which additionally logs `"Aito invoice sweep deferred (Zoho Books rate
+  limit): %s"` (the sweep has no single project id to attribute the way `sync_project`'s
+  `_deferred_reasons`-gated log line does, so this one is unconditional — it can only fire once
+  per throttle window's-worth of ticks anyway, since the next tick skips the sweep entirely, see
+  below).
+- `run_sync_loop`'s tick gained a throttle check immediately before the `sweep_invoices` call: `if
+  _throttled_until is None or time.monotonic() >= _throttled_until:` — while a previous 429 (from
+  either `run_sync_once` moments earlier in the same tick, or a past tick's sweep) still has the
+  process inside the window, the sweep is not called at all, not even once, mirroring
+  `run_sync_once`'s own early-return guard from T-028.
+
+Card-visible state for quote sync is unaffected: `_arm_rate_limit_throttle`'s window computation
+and the `_throttled_until` write are byte-for-byte the same as before extraction; `sync_project`'s
+own 429 path (window math, `_deferred_reasons` dedup, `return True`) is unchanged in effect, only
+relocated into a shared helper it now calls instead of computing inline.
+
+Consumer enumeration: `sweep_invoices` has exactly one caller, `run_sync_loop`'s periodic tick
+(grepped `backend/app/` and `backend/tests/` for `sweep_invoices` — the only other hits are its
+own tests and this call site); it is never awaited from a route or from the debounced wake drain.
+`_arm_rate_limit_throttle` is module-private (leading underscore) and has no other caller.
+
+Tests added to `backend/tests/unit/test_aito_invoice_sweep.py`:
+- `test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed` — three projects (good, bad,
+  never); the 429 on `bad` raises out of `sweep_invoices` (asserted via `pytest.raises`), `never`'s
+  `list_project_invoices` is never called (call log stops at `["EST-GOOD", "EST-BAD"]`), exactly
+  one `db.commit()` happens (tracked by wrapping the session's own `commit`), and `good`'s
+  refreshed balance/`invoice_checked_at` are visible afterward while `never`'s are not.
+- `test_run_sync_loop_arms_the_shared_throttle_on_a_sweep_side_429` — drives a real
+  `run_sync_loop` for one tick (mocking `sync_enabled`/`is_configured`/`sync_interval_seconds`/
+  `run_sync_once` to no-ops and `sweep_invoices` to raise `ZohoRateLimited(retry_after=42.0)`) and
+  asserts `aito_quote_sync._throttled_until` lands in the expected window after the tick, proving
+  the loop's catch site actually reuses the shared arming helper rather than the exception being
+  silently swallowed by the outer per-tick `except Exception`.
+- `test_run_sync_loop_skips_the_sweep_while_already_throttled` — pre-arms `_throttled_until` into
+  the future, drives one tick, and asserts the mocked `sweep_invoices` is never called.
+- A new autouse `reset_throttle` fixture (mirroring `test_aito_quote_sync.py`'s own module-state
+  reset fixtures) clears `aito_quote_sync._throttled_until` before and after every test in this
+  file, and a `fresh_wake_event` fixture (same rationale as its identically-named counterpart in
+  `test_aito_quote_sync.py`) rebinds the module's `_wake` `asyncio.Event` for the two tests that
+  drive `run_sync_loop`, since the event binds to the first event loop that awaits it and every
+  test gets a fresh one.
+
+Verification: `ruff check backend/` / `ruff format backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_aito_invoice_sweep.py` (9 passed),
+`backend/tests/unit/test_aito_quote_sync.py` (131 passed, `-n 8`),
+`backend/tests/unit/test_aito_quote_sync_interval.py backend/tests/unit/test_aito_followup_settings.py
+backend/tests/unit/test_aito_invoice.py` (28 passed). Targeted coverage
+(`--cov=backend.app.services.aito_invoice_sweep --cov=backend.app.services.aito_quote_sync
+--cov-config=../pyproject.toml`): `aito_invoice_sweep.py` 98%, `aito_quote_sync.py` 94% (both
+already-high, pre-existing gaps unrelated to this change). `tools/snapshot.py verify`: 10/10 —
+none of the ten probes cover this module. `SURFACE.md`: unaffected — `gen_surface_all.sh`'s
+"Backend service top-level defs" section is generated by `grep -hE "^(def|class|async def)
+[a-zA-Z]"`, which requires the name to start with a letter; the one new top-level def added,
+`_arm_rate_limit_throttle`, starts with an underscore and is excluded by that regex, confirmed by
+diffing a fresh regen against the tracked file (empty diff).
+
+Observable change, quoted verbatim from the approved task: "during a Zoho rate-limit window the
+invoice cards refresh later than they do today (the sweep stops after the first 429 instead of
+trying every project), and a 429 observed by the sweep would additionally pause the quote sync for
+the backoff window."
+
+user-approved 2026-09-05
