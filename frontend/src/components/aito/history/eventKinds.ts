@@ -42,6 +42,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.due.set': 'aito.history.projectDueSet',
   'project.due.cleared': 'aito.history.projectDueCleared',
   'project.sms.sent': 'aito.history.smsSent',
+  'tracking.regenerated': 'aito.history.trackingRegenerated',
 };
 
 /** Red overrides the actor colour: a failure is the one thing worth finding

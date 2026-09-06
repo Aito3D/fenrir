@@ -32,6 +32,7 @@ import { ContactedControl } from './ContactedControl';
 import { SmsPickupButton } from './SmsPickupButton';
 import { FlagControl } from './FlagControl';
 import { DueDateControl } from './DueDateControl';
+import { TrackingLinkControl } from './TrackingLinkControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -453,9 +454,13 @@ function PanelHeader({
                     <SmsPickupButton project={project} />
                   )}
                   <ContactedControl project={project} />
+                  <TrackingLinkControl project={project} />
                 </>
               ) : (
-                <FlagControl project={project} />
+                <>
+                  <FlagControl project={project} />
+                  <TrackingLinkControl project={project} />
+                </>
               )}
             </span>
           )}

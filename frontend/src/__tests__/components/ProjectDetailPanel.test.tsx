@@ -864,11 +864,17 @@ describe('ProjectDetailPanel tasks', () => {
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
     const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
+    // Wrapped in a Router: `acceptedProject` is not in a finished column, so
+    // the contact row renders `TrackingLinkControl` (see Task 5), which
+    // renders a react-router `Link` to Settings while untracked — and throws
+    // without a router in the tree, same as the Host below.
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
-        <AuthProvider>
-          <ToastProvider>{open ? <ProjectDetailPanel canCreate canUpdate canDelete project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
-        </AuthProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>{open ? <ProjectDetailPanel canCreate canUpdate canDelete project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
       </QueryClientProvider>
     );
 
