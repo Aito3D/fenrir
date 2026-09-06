@@ -19,6 +19,10 @@ client where their order stands, without a login.
    panel, a final line on the pickup SMS draft, and the Zoho estimate's
    customer notes (so it prints on the quote PDF Books emails).
 5. Regenerate from the panel to kill a leaked link.
+6. A view log: every successful open of the page is recorded, and the
+   Stats page's pipeline widget gains a "Suivi client" block (views, cards
+   viewed, cards with a link) so the operator can see whether the page is
+   actually used.
 
 ## Non-goals
 
@@ -92,7 +96,8 @@ Response `AitoTrackingResponse`:
   "shipping": {"island": "Rangiroa", "service": "Livraison Avion Tuamotu"} | null,   // labels from _shipping_names / shipping_service
   "done_at": "2026-09-01T18:20:00" | null,  // the latest move-to-Done event's occurred_at; null unless column == 'done' and an event exists
   "invoice": "paid" | "unpaid" | "overdue" | null,  // a STATE, never an amount — see below
-  "reference": "EST-000142" | null          // project.quote_number: the number printed on the client's own quote; null before a quote exists
+  "reference": "EST-000142" | null,         // project.quote_number: the number printed on the client's own quote; null before a quote exists
+  "updated_at": "2026-09-06T09:42:00"       // project.updated_at (naive UTC) — the page's "Mis à jour …" line; real data, never a fake "recently"
 }
 ```
 
@@ -162,7 +167,11 @@ Route `/track/:token` registered in `App.tsx` beside `/overlay/:printerId`
 (outside `ProtectedRoute`, no layout, `lazyWithReload`). Fetches
 `api.getAitoTracking(token)` under `['aito-track', token]`, `retry: false`,
 `staleTime: 30_000`. The page is DARK, independent of the operator's theme:
-midnight ground, one centred card, max width 40rem, cyan accent.
+midnight ground, one centred card 640 px wide (padding 36 px, 20 px on
+phones with 16 px page margins), cyan accent reserved for three things: the
+current stage, the primary action, and the estimated date. Other links are
+`aito-ink`, not cyan. Four blocks — progression, current state, parts,
+payment — separated by 32 px (26 px on phones) and as few rules as possible.
 
 Design tokens, added to the `@theme` block of `frontend/src/index.css`
 (fixed literals, never theme-aware — the public page must not follow
@@ -174,11 +183,12 @@ whichever preset the operator picks):
 --color-aito-card: #141b23;        /* the card (= that preset's --bg-secondary) */
 --color-aito-line: #212c37;        /* separators, outlined stages (= --bg-tertiary / --border-color) */
 --color-aito-ink: #e9eff6;         /* text (= --text-primary) */
---color-aito-muted: #93a4b6;       /* secondary text (= --text-secondary) */
+--color-aito-muted: #a3b1c0;       /* secondary text — the preset's #93a4b6 lifted one step for outdoor phone legibility */
 ```
 
-The five neutrals are copied from `.dark.bg-midnight` in `index.css`, so
-the page matches an operator who runs the app on Midnight Blue. Invoice
+Four of the neutrals are copied from `.dark.bg-midnight` in `index.css`,
+so the page matches an operator who runs the app on Midnight Blue; the
+muted text is deliberately one step lighter than the preset. Invoice
 states keep semantic colours (green `#22C55E` paid, amber `#F59E0B` unpaid,
 red `#EF4444` overdue) as 15 % tints with a 45 % border, so cyan stays the
 one brand accent. The `aito3d_logo.png` asset is black + cyan; on the dark
@@ -189,61 +199,71 @@ replace the filter later without touching anything else).
 Copy is a `const FR = {...}` map in `utils/aitoTracking.ts` (so tests can
 import it), not the i18n catalogues. Layout:
 
-1. **Header**, centred: the Aito3D logo (`src/assets/aito3d_logo.png`, the
-   asset the shipping label already imports, 40 px tall, `alt="Aito3D"`)
-   and under it the contact line from `utils/shippingLabel.ts`'s sender
-   constant (phone · email · website) in `aito-muted` at 13.5 px, reused so
-   the page and the label read as one brand. Below it, `FR.title` = "Suivi
-   de votre commande", centred, and when `reference` is set a muted line
-   "Devis n° {reference}" right under it, so the client knows they are
-   looking at THEIR order and can quote the number on the phone.
-2. **Rail** (`components/aito/TrackingRail.tsx`, new, read-only): the seven
-   columns in board order with French labels from `TRACK_STAGES` (`devis` →
-   "Devis", `waiting` → "Accord", `scan` → "Scan", `model` → "Modélisation",
-   `print` → "Fabrication", `finish` → "Prête") and a LAST label that says
-   what actually ends the order: "Expédiée" when the card has a shipment,
-   "Récupérée" otherwise. Stages before the current get a check on a cyan
-   disc; the current is a FULL cyan disc with a small white pulsing centre
-   dot and its label in cyan bold, so the current state reads in half a
-   second; later stages are outlined in `aito-line`. Props
-   `{ column: AitoColumnId; shipped: boolean }`. Below 560 px the row is
+Typography, strict: title 23 px semibold; reference 13.5 px muted; state
+title 20 px semibold; secondary text 15 px muted; section label 12 px
+uppercase with light tracking; content 15.5 px. Two weights only (400/600).
+
+1. **Header**, centred, logo only: the Aito3D logo (`src/assets/aito3d_logo.png`,
+   the asset the shipping label already imports, 32 px tall, `alt="Aito3D"`),
+   28 px of air, then `FR.title` = "Suivi de votre commande", then when
+   `reference` is set a muted line "Devis n° {reference}", so the client
+   knows they are looking at THEIR order and can quote the number on the
+   phone. No contact line here — it lives in the footer only, so the state
+   below is the page's hero.
+2. **Progression** (`components/aito/TrackingRail.tsx`, new, read-only):
+   the seven columns in board order with French labels from `trackStages`
+   (`devis` → "Devis", `waiting` → "Accord", `scan` → "Scan", `model` →
+   "Modélisation", `print` → "Fabrication", `finish` → "Prête") and a LAST
+   label that says what actually ends the order: "Expédiée" when the card
+   has a shipment, "Récupérée" otherwise. Done stages are SECONDARY: a
+   28 %-cyan disc with a check, 11 px muted label; the current stage
+   dominates: a full cyan disc with a small white pulsing centre dot,
+   12.5 px semibold `aito-ink` label; later stages are outlined in
+   `aito-line`. The track's cyan fill is dimmed to 55 %. Props
+   `{ column: AitoColumnId; shipped: boolean }`. Below 600 px the row is
    replaced by a compact variant: "Étape {n} sur 7" left, the current label
-   in cyan right, and a thin cyan progress bar under them (same component,
-   two markups toggled by Tailwind's `max-sm:`/`sm:` classes).
-3. **State block** (`statusCopy(data): { title: string; sub: string }` in
-   `utils/aitoTracking.ts`), a cyan-tinted panel (neutral tint for the two
-   pre-order states) holding a bold title, a human one-liner, and, when
-   `due_date` is set, a separated line with a calendar icon:
-   "Disponibilité estimée : **{date}**" (French long date). The date lives
-   HERE, next to the state, not under the parts list: after the state it is
-   what the client most wants to know.
-   - `devis` → "Nous préparons votre devis" / "Vous le recevrez par e-mail dès qu'il est prêt."
-   - `waiting` → "Votre devis vous attend" / "Dites-nous si vous le validez, et nous lançons la fabrication."
-   - `scan`, `model`, `print` → "Votre commande est en fabrication" / "Nous préparons actuellement vos pièces."
-   - `finish` → "Votre commande est prête" / "Contactez-nous ou passez au magasin pour la récupérer."
-   - `done` with `shipping` → "Votre commande a été expédiée" / "Vers {island} par {service}."
-   - `done` with `done_at`, no shipping → "Votre commande a été récupérée" / "Le {date}. Merci pour votre confiance !"
-   - `done` with neither → "Votre commande est terminée" / "Merci pour votre confiance !"
-4. **Tasks**: `FR.tasksHeading` = "Vos pièces" as a small uppercase
-   heading, then a `<ul>` of `tasks` as delivered by the server, thin
-   `aito-line` separators.
-5. **Invoice line** (`components/aito/TrackingInvoice.tsx`, new): drawn
-   only when `invoice` is non-null, UNDER the parts list, compact: a small
-   coloured disc with a glyph, two lines of text, and on the right a
-   disclosure link — no full-width tinted box, so the page does not stack
-   panel inside panel:
-   - `paid` (green ✓): "Facture réglée" / "Merci pour votre confiance." — no link.
-   - `unpaid` (amber !): "Facture à régler" / "Avant le retrait ou l'expédition." — link "Modalités de paiement →".
-   - `overdue` (red !): "Facture en retard" / "Contactez-nous si vous avez déjà payé." — same link.
-   The link toggles an inline paragraph `FR.paymentTerms` under the line
+   semibold right, and a 3 px cyan progress bar under them (same component,
+   two markups toggled by Tailwind's `sm:` classes).
+3. **Current state** (`statusCopy(data): { title: string; sub: string }` in
+   `utils/aitoTracking.ts`), the hero: a cyan-tinted panel (10 % tint, 35 %
+   border; neutral for the two pre-order states) with a SHORT 20 px title,
+   a human one-liner, then, when `due_date` is set, a separated block with
+   the label "Disponibilité estimée" small uppercase muted over the date as
+   an 18 px semibold cyan value (French long date) — label and value
+   isolated so the date scans on its own. Under it, always, a 12.5 px muted
+   line `FR.updated(...)` = "Mis à jour {when}" built from `updated_at`:
+   "aujourd'hui à 09:42" / "hier à 18:20" / "le 4 septembre à 11:05"
+   (local time of the browser). Real data only.
+   - `devis` → "Devis en préparation" / "Vous le recevrez par e-mail dès qu'il est prêt."
+   - `waiting` → "En attente de votre accord" / "Dites-nous si vous validez le devis, et nous lançons la fabrication."
+   - `scan`, `model`, `print` → "En fabrication" / "Nous préparons actuellement vos pièces."
+   - `finish` → "Prête" / "Contactez-nous ou passez au magasin pour la récupérer."
+   - `done` with `shipping` → "Expédiée" / "Vers {island} par {service}."
+   - `done` with `done_at`, no shipping → "Récupérée" / "Le {date}. Merci pour votre confiance !"
+   - `done` with neither → "Terminée" / "Merci pour votre confiance !"
+4. **Parts**: `FR.tasksHeading` = "Vos pièces" as the 12 px section label,
+   then a `<ul>` of `tasks` at 15.5 px with 11 px vertical padding and
+   60 %-opacity `aito-line` separators — a client summary, not a table.
+   (No right-aligned quantity: quantities are per service on a task, not
+   per part, so a single number would be wrong for mixed tasks.)
+5. **Payment** (`components/aito/TrackingInvoice.tsx`, new): drawn only
+   when `invoice` is non-null, as a bordered secondary card (`aito-line`
+   border, no tint): a 10 px status dot, a semibold title with a muted
+   sub-line, and on the right an outlined cyan button:
+   - `paid` (green dot): "Facture réglée" / "Merci pour votre confiance." — no button.
+   - `unpaid` (amber dot): "Facture à régler" / "À régler avant le retrait ou l'expédition." — button "Voir les modalités".
+   - `overdue` (red dot): "Facture en retard" / "Contactez-nous si vous avez déjà payé." — same button.
+   The button toggles a muted paragraph `FR.paymentTerms` under the card
    (a fixed constant, no request): "Règlement par virement ou au magasin,
    en indiquant le numéro de votre devis. Répondez à notre message pour
    toute question." There is no online payment and no invoice PDF on this
-   page (a PDF carries amounts, which the page never shows).
+   page (a PDF carries amounts, which the page never shows); a "Régler la
+   facture" button is a follow-up for the day a payment link exists.
    `data-testid="track-invoice"` with `data-state` = the value.
-6. **Footer**, centred, 13.5 px: `FR.footer` = "Une question sur votre
-   commande ? Nous sommes disponibles au {phone} ou à {email}." with the
-   phone and email as cyan `tel:` / `mailto:` links.
+6. **Footer**, centred, 13.5 px muted, above a soft rule: "Une question
+   sur votre commande ? Nous sommes disponibles au {phone} ou à {email}."
+   with the phone and email as `aito-ink` `tel:` / `mailto:` links (not
+   cyan: the accent is reserved).
 
 States: loading renders the header and a neutral "Chargement…" line. Any
 error (404, network) renders the header, `FR.invalid` = "Ce lien n'est plus
@@ -252,7 +272,7 @@ raw status code. `document.title` is set to "Suivi de commande · Aito 3D".
 
 ## 6. API client
 
-`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null; reference: string | null }`;
+`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null; reference: string | null; updated_at: string }`;
 `AitoProject.tracking_url: string | null; tracking_configured: boolean`;
 `api.getAitoTracking(token)`, `api.getAitoTrackingLink(id)`,
 `api.regenerateAitoTrackingToken(id)`. Default msw handlers: track → 404,
@@ -275,6 +295,11 @@ Backend (`tests/unit/test_aito_tracking.py`):
   price key in the body; `Cache-Control: no-store`.
 - Middleware: with auth enabled the route answers without a bearer, and
   `/api/v1/aito/{id}` still 401s (pin the prefix).
+- View log: a 200 inserts exactly one `aito_tracking_views` row for the
+  card; a 404 inserts none; an insert failure (patched to raise) still
+  returns 200. Stats: `tracking.views` counts rows in the local-day window
+  only, `cards_viewed` is distinct, `cards_with_link` counts active cards
+  with a token and ignores trashed ones; zeros when nothing was viewed.
 - SMS draft ends with `"Suivi : <url>"` when configured and is unchanged
   when not; the draft request commits the minted token.
 - Quote sync: create and update payloads carry `notes` when configured and
@@ -300,6 +325,36 @@ Frontend:
   `aito:update`.
 - i18n parity for the six app keys.
 
+## 8. Usage statistics
+
+Question to answer: is the page used at all, and by how many clients?
+
+- **Table** `aito_tracking_views (id INTEGER PK, project_id INTEGER NOT NULL,
+  viewed_at DATETIME NOT NULL)`, indexes on `viewed_at` and `project_id`;
+  model `backend/app/models/aito_tracking_view.py` (`AitoTrackingView`),
+  created in `run_migrations()` with `CREATE TABLE IF NOT EXISTS`. No IP,
+  no user agent, no cookie: a row is a timestamp and a card, nothing that
+  identifies a person or a device. Every open counts (a refresh is a view);
+  there is no dedup window, because "how often do clients come back" is
+  part of the question.
+- **Write**: `get_tracking` inserts one row after `compute_tracking` returns
+  a payload (never for a 404), in the same request, best-effort: a failed
+  insert is logged at warning and the page still renders — the log must
+  never break the page it measures.
+- **Read**: `GET /aito/stats` gains a fifth block,
+  `tracking: {"views": int, "cards_viewed": int, "cards_with_link": int}`:
+  `views` = rows with `viewed_at` in the widget's local-day window (the same
+  `local_day_bounds` the other blocks use), `cards_viewed` = distinct
+  `project_id` among them, `cards_with_link` = active cards with a
+  `tracking_token` (snapshot, like the board). Two queries.
+- **Widget**: `PipelineWidget` gains a `pipeline-tracking` section after
+  Invoicing — heading `stats.pipelineTracking` ("Client tracking"), three
+  plain count tiles: `stats.pipelineTrackingViews` ("Page opens"),
+  `stats.pipelineTrackingCards` ("Cards viewed"),
+  `stats.pipelineTrackingLinks` ("Cards with a link"). The widget's empty
+  rule ("every count 0") includes these counts. All 13 locales.
+- Per-card counts in the detail panel are a follow-up, not in this spec.
+
 ## Open decisions, resolved
 
 | Question | Decision |
@@ -311,3 +366,4 @@ Frontend:
 | Look | Dark, the app's Midnight Blue neutrals (`#0c1016` ground) with cyan `#04A1E4` accent, logo centred at the top, independent of the operator's theme |
 | Link origin | `external_url` setting only; empty → no link anywhere, buttons disabled with a Settings hint |
 | Expiry storage | None; the event log is the source |
+| Usage statistics | Every successful open logged as (card, timestamp) only; surfaced as a fifth block of the Stats pipeline widget; no per-visitor data |
