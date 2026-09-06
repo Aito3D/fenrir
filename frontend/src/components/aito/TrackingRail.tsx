@@ -21,7 +21,7 @@ function StageMark({ state }: { state: StageState }) {
     );
   }
   return (
-    <span className="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-aito-cyan ring-[5px] ring-aito-cyan/15">
+    <span className="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-aito-cyan ring-[5px] ring-aito-cyan/14">
       <span className="h-[9px] w-[9px] rounded-full bg-white motion-safe:animate-pulse" aria-hidden="true" />
     </span>
   );
