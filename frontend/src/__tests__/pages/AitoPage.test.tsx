@@ -2011,3 +2011,49 @@ describe('follow-ups strip', () => {
     expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
   });
 });
+
+describe('print backlog badge', () => {
+  const printer = (id: number, name: string) => ({
+    id,
+    name,
+    serial_number: `00M0${id}A000000000`,
+    ip_address: `192.168.1.${id}`,
+    is_active: true,
+    model: 'X1C',
+    nozzle_count: 1,
+    auto_archive: true,
+    location: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
+
+  it('shows the print backlog and drops it when the board empties of accepted work', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([printer(1, 'Printer A'), printer(2, 'Printer B')])),
+      http.get('/api/v1/calculator/printers/', () =>
+        HttpResponse.json([
+          {
+            id: 1,
+            name: 'H2S',
+            purchase_price: 347000,
+            lifetime_years: 2,
+            daily_usage_hours: 8,
+            power_watts: 400,
+            repair_rate_pct: 30,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ]),
+      ),
+      http.get('/api/v1/aito/', () =>
+        HttpResponse.json([
+          { ...project, quote_status: 'accepted', column: 'print', print_minutes_pending: 240, move_lock: null },
+        ]),
+      ),
+    );
+    render(<AitoPage />);
+    const badge = await screen.findByTestId('aito-print-backlog');
+    expect(badge).toHaveTextContent('4.0 h to print');
+    expect(badge).toHaveTextContent('≈ 0.3 d on 2 printers');
+  });
+});

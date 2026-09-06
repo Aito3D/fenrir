@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import cases from '../fixtures/aitoBoardRules.cases.json';
-import { evaluate, summariseTasks, netCost, SERVICES, STAGES } from '../../utils/aitoBoardRules';
+import { evaluate, summariseTasks, netCost, SERVICES, STAGES, toTaskLike as toTaskLikeFromCreate } from '../../utils/aitoBoardRules';
 import type { ServiceId, TaskLike } from '../../utils/aitoBoardRules';
-import type { AitoColumnId } from '../../api/client';
+import type { AitoColumnId, AitoTaskCreate } from '../../api/client';
 
 interface EvaluateCase {
   quote_status: string | null;
@@ -169,6 +169,49 @@ describe('printMinutesPending', () => {
       }),
     ]);
     expect(summary.printMinutesPending).toBe(0);
+  });
+
+  // toTaskLike (the AitoTaskCreate adapter, not this file's fixture-row
+  // adapter above) used to map no `impression` fields at all, so an import
+  // placeholder card reported printMinutesPending 0 and rush false until the
+  // server row arrived and replaced it.
+  it('carries through an import placeholder built by toTaskLike', () => {
+    const minimalWireTask = {
+      title: null,
+      scan_description: null,
+      modelisation_description: null,
+      impression_description: null,
+      usinage_description: null,
+      scan_cost: null,
+      modelisation_cost: null,
+      usinage_cost: null,
+      impression_printer_id: null,
+      impression_filament_id: null,
+      impression_weight_g: null,
+      impression_time_min: null,
+      impression_quantity: null,
+      impression_color: null,
+      impression_cost: null,
+      impression_discount_pct: null,
+      scan_quantity: null,
+      modelisation_quantity: null,
+      usinage_quantity: null,
+      scan_discount_pct: null,
+      modelisation_discount_pct: null,
+      usinage_discount_pct: null,
+    } as AitoTaskCreate;
+
+    const summary = summariseTasks([
+      toTaskLikeFromCreate({
+        ...minimalWireTask,
+        impression_cost: 100,
+        impression_time_min: 90,
+        impression_quantity: 2,
+        impression_rush: true,
+      }),
+    ]);
+    expect(summary.printMinutesPending).toBe(180);
+    expect(summary.stepsByTask[0].rush).toBe(true);
   });
 });
 

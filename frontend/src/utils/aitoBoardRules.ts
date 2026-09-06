@@ -173,6 +173,11 @@ export function toTaskLike(task: AitoTaskCreate): TaskLike {
     modelisationDiscountPct: task.modelisation_discount_pct,
     impressionDiscountPct: task.impression_discount_pct,
     usinageDiscountPct: task.usinage_discount_pct,
+    impression: {
+      rush: task.impression_rush ?? false,
+      timeMin: task.impression_time_min ?? null,
+      quantity: task.impression_quantity ?? undefined,
+    },
   };
 }
 
