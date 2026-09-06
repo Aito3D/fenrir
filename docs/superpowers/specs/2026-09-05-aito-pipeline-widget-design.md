@@ -93,11 +93,17 @@ project rows and the Aito event log. Four blocks:
   by design rather than inventing a write path for it.
 - **Conversion — imported decisions**: a quote imported already-decided
   records `quote.{accepted,declined}` with `occurred_at = now` for a decision
-  the client made at some past, unknown moment. `create_project` marks that
-  row `detail = {"cause": "import"}` and the aggregate ignores every
-  `quote.*` row so marked when picking a project's first moment (hence the
-  ordered scan + first-non-import row in Python instead of a SQL `MIN`),
-  so an import never credits its own week with someone else's sale.
+  the client made at some past, unknown moment. Such a row is ignored when
+  picking a project's first moment (hence the ordered scan + first-eligible
+  row in Python instead of a SQL `MIN`), so an import never credits its own
+  week with someone else's sale. A row counts as import-time when EITHER it
+  carries `detail = {"cause": "import"}`, which `create_project` now stamps,
+  OR its `occurred_at` falls within 60 seconds after the project's own
+  `project.created` event — the same window and the same fetched map the
+  stage-days rule uses. The second clause covers the cards imported before
+  the marker existed, so no backfill migration is needed; the explicit cause
+  check stays for new imports, whose decision is recorded from the same
+  request but need not be assumed to stay inside that window.
 - **Stage days**: order each project's `stage.changed` events by
   `occurred_at`; each event closes a stay in `changes[0].from` that began at
   the previous `stage.changed` event's `occurred_at`, or at the project's
@@ -122,8 +128,9 @@ project rows and the Aito event log. Four blocks:
 
 Six small queries: the active project rows (board totals and invoicing are
 summed in Python from them), four ordered `occurred_at` scans restricted to
-those projects (sent/emailed, accepted, declined, and `project.created` for
-the creation-move anchor — first-non-import row per project taken in Python),
+those projects (sent/emailed, accepted, declined, and `project.created` — the
+creation anchor, fetched once and reused by both the decision filter and the
+stage-days rule; first eligible row per project taken in Python),
 and one ordered scan of `stage.changed` events for them (the stay maths runs
 in Python over that ordered list). SQLite handles the board sizes in question
 (tens to hundreds of projects, low thousands of events) in milliseconds; no
@@ -187,8 +194,10 @@ event inserts):
   invoice (balance 0) not outstanding.
 - Zoho-side acceptance: `quote_accepted_at` with no `quote.accepted` event
   counts (and reaches `invoiced_total`); with both, the earlier moment wins.
-- Imported decision: a `quote.{accepted}` carrying `detail.cause == "import"`
-  is not counted in the import's period.
+- Imported decision: a `quote.accepted` carrying `detail.cause == "import"`
+  is not counted in the import's period; neither is an unmarked one 5 s after
+  `project.created` (the legacy-import case), while the same event 2 days
+  later is.
 - Creation-time move: a `stage.changed` 5 s after `project.created` is no
   stay, one 2 days later is; a move out of `done` is no stay but still resets
   the clock for the next one.
@@ -213,4 +222,4 @@ Frontend:
 | Where rules run | Server, one endpoint, `aito:read` |
 | Date range | Conversion, stage days, invoiced total follow the page range; board and outstanding are snapshots |
 | Done column | In the board response; omitted from the bar, shown as a chip; no stage-days entry |
-| "First event" semantics | Earliest occurred_at per project and kind group, skipping `detail.cause == "import"` rows; an acceptance also considers `project.quote_accepted_at` |
+| "First event" semantics | Earliest occurred_at per project and kind group, skipping import-time decisions (`detail.cause == "import"`, or within 60 s after `project.created`); an acceptance also considers `project.quote_accepted_at` |

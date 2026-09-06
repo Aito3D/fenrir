@@ -171,6 +171,25 @@ async def test_imported_decision_events_are_not_counted_in_the_import_period(asy
 
 
 @pytest.mark.asyncio
+async def test_a_decision_recorded_at_creation_is_an_import_even_without_the_cause(async_client, db_session):
+    """Cards imported before `detail.cause = "import"` existed carry an unmarked
+    decision stamped at the import moment. The same 60 s creation window the
+    stage-days rule uses catches them, so no backfill migration is needed."""
+    at_creation = await _create(async_client, description="legacy import")
+    later = await _create(async_client, description="decided later")
+    await _set(db_session, at_creation, quote_total=5000.0, quote_invoiced=1)
+    await _set(db_session, later, quote_total=600.0)
+    await _move_event(db_session, at_creation, "project.created", "2026-08-10 12:00:00")
+    await _move_event(db_session, later, "project.created", "2026-08-10 12:00:00")
+    await _event(db_session, at_creation, "quote.accepted", "2026-08-10 12:00:05")
+    await _event(db_session, later, "quote.accepted", "2026-08-12 12:00:05")
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    assert body["conversion"]["accepted"] == {"count": 1, "total": 600.0}
+    assert body["invoicing"]["invoiced_total"] == 0.0 and body["invoicing"]["invoiced_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_creation_time_stage_move_is_not_a_stay(async_client, db_session):
     """An imported card's created_at is backdated to the quote's date, so the
     board rules' move at creation would otherwise close a weeks-long fake stay."""

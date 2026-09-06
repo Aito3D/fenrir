@@ -55,14 +55,29 @@ def _board(projects: dict[int, AitoProject]) -> list[AitoStatsStage]:
     return [AitoStatsStage(column=c, count=count[c], total=total[c]) for c in COLUMN_ORDER]
 
 
-async def _first_moments(db: AsyncSession, kinds: tuple[str, ...], project_ids: list[int]) -> dict[int, datetime]:
+def _is_creation_time(at: datetime, born: datetime | None) -> bool:
+    """Did this land in the window where a card is still being created?"""
+    return born is not None and timedelta(0) <= at - born <= _CREATION_MOVE_GRACE
+
+
+async def _first_moments(
+    db: AsyncSession,
+    kinds: tuple[str, ...],
+    project_ids: list[int],
+    born: dict[int, datetime] | None = None,
+) -> dict[int, datetime]:
     """project_id -> earliest occurred_at among ``kinds``, active projects only.
 
-    Rows stamped ``detail.cause == "import"`` are skipped: an already-decided
-    Books quote pulled onto the board records its decision with
-    ``occurred_at=now`` even though the client decided at some past, unknown
-    moment, so counting it would credit the import week with a sale that never
-    happened in it. That is why the ordering + first-non-import scan runs in
+    Import-time records are skipped: an already-decided Books quote pulled onto
+    the board records its decision with ``occurred_at=now`` even though the
+    client decided at some past, unknown moment, so counting it would credit
+    the import week with a sale that never happened in it. A row counts as one
+    when EITHER it carries ``detail.cause == "import"`` (what ``create_project``
+    stamps now) OR — when ``born`` is given — it lands within
+    ``_CREATION_MOVE_GRACE`` after the project's own ``project.created``, which
+    catches the cards imported before that marker existed without a backfill.
+
+    That pair of checks is why the ordered scan + first-eligible-row runs in
     Python instead of a SQL ``MIN``.
     """
     if not project_ids:
@@ -74,9 +89,13 @@ async def _first_moments(db: AsyncSession, kinds: tuple[str, ...], project_ids: 
     )
     firsts: dict[int, datetime] = {}
     for pid, at, detail in (await db.execute(stmt)).all():
+        if pid in firsts:
+            continue
         if isinstance(detail, str):
             detail = json.loads(detail)
-        if (detail or {}).get("cause") == "import" or pid in firsts:
+        if (detail or {}).get("cause") == "import":
+            continue
+        if born is not None and _is_creation_time(at, born.get(pid)):
             continue
         firsts[pid] = at
     return firsts
@@ -90,12 +109,15 @@ def _bucket(
 
 
 async def _stage_days(
-    db: AsyncSession, projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
+    db: AsyncSession,
+    projects: dict[int, AitoProject],
+    born: dict[int, datetime],
+    start: datetime | None,
+    end: datetime | None,
 ) -> list[AitoStatsStageDays]:
     ids = list(projects)
     stays: dict[str, list[float]] = defaultdict(list)
     if ids:
-        born = await _first_moments(db, ("project.created",), ids)
         stmt = (
             select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes)
             .where(AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(ids))
@@ -112,8 +134,7 @@ async def _stage_days(
             # column in the same request that created it. `created_at` can be
             # backdated (an import carries the Books quote's date), so measure
             # against the `project.created` EVENT and drop that opening move.
-            created = born.get(pid)
-            if created is not None and timedelta(0) <= at - created <= _CREATION_MOVE_GRACE:
+            if _is_creation_time(at, born.get(pid)):
                 continue
             if left in _STAGE_COLUMNS and began is not None and _in_range(at, start, end):
                 stays[left].append(max(0.0, (at - began).total_seconds() / _DAY_SECONDS))
@@ -135,9 +156,12 @@ async def compute_aito_stats(
     projects = await _active_projects(db)
     ids = list(projects)
 
+    # Fetched once and reused: the decision moments and the stage-days maths
+    # both measure "was this still the card's creation?" against it.
+    born = await _first_moments(db, ("project.created",), ids)
     sent = await _first_moments(db, _SENT_KINDS, ids)
-    accepted = await _first_moments(db, ("quote.accepted",), ids)
-    declined = await _first_moments(db, ("quote.declined",), ids)
+    accepted = await _first_moments(db, ("quote.accepted",), ids, born)
+    declined = await _first_moments(db, ("quote.declined",), ids, born)
     # A decision mirrored from Books (reconcile_quote_status -> adopt_quote_status)
     # records only `poll.reconciled`, but it DOES stamp quote_accepted_at, so a
     # client acceptance can exist with no `quote.accepted` event at all. Take
@@ -175,7 +199,7 @@ async def compute_aito_stats(
     return AitoStatsResponse(
         board=_board(projects),
         conversion=conversion,
-        stage_days=await _stage_days(db, projects, start, end),
+        stage_days=await _stage_days(db, projects, born, start, end),
         invoicing=invoicing,
         date_from=date_from,
         date_to=date_to,
