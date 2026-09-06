@@ -10426,3 +10426,238 @@ No runtime behavior change: the regex is byte-identical and both call sites prod
 booleans for every input before and after.
 
 user-approved 2026-09-06 (surface-only)
+
+## Campaign 11 · T-027 + T-031 — 2026-09-06 — user-approved behavior changes
+
+`sweep_invoices` (`backend/app/services/aito_invoice_sweep.py`, T-010's per-project commit from
+loop-6) left the per-project `await db.commit()` bare inside the `for` loop. A failure on that
+specific commit (SQLite "database is locked", for example) had no handler in this function at all,
+so it unwound the whole loop — costing not just the one project mid-flush but every project still
+queued behind it in the same pass, the exact coupling T-010 had already fixed for the *earlier*
+half of the same failure. It also surfaced upstream only as `run_sync_loop`'s generic
+`logger.exception("Aito quote sync tick failed")`, naming neither the sweep nor the project.
+Because the exception escaped the whole function, T-010's end-of-pass `_last_run` stamp was also
+skipped, so a database-locked failure kept the sweep hourly-gate unstamped and re-walked every open
+receivable on the very next 300 s tick — a good trade for a `ZohoRateLimited`, whose sibling
+throttle window already prevents hammering Books again immediately, but not for an ordinary local
+database error with no such throttle.
+
+Fixed both halves as one change, since they share the same failure site:
+
+- Per-project commit skip (T-027): the `await db.commit()` is now wrapped in
+  `try/except SQLAlchemyError`. On failure it logs
+  `logger.warning("Invoice sweep could not commit project %s: %s", project_id, exc)`, calls `await
+  db.rollback()` (itself wrapped in the same quiet `except SQLAlchemyError: pass` pattern the
+  `send_invoice_email`/`send_pickup_sms` routes already use, so a rollback that also fails — a
+  closed connection, say — doesn't take down the pass either), and `continue`s — matching exactly
+  the treatment the upstream/malformed-payload branch above it already gets. The failing project is
+  neither counted in `updated` nor stamped with `invoice_checked_at`; the project already refreshed
+  before it stays committed, and every project still queued behind it is still attempted in the same
+  pass. `id`/`quote_id`/`client_id` are now captured into plain locals (`targets = [(project,
+  project.id, project.quote_id or "", project.client_id or "") for project in projects]`) right
+  after the SELECT, before any commit in the loop can fail — a `db.rollback()` expires every ORM
+  object still held by the session, including projects further down the same list, and re-reading a
+  plain column off an expired object triggers an implicit lazy-load that raises
+  `sqlalchemy.exc.MissingGreenlet` outside of an active greenlet context; pinning the values this
+  loop only ever *reads* to locals avoids that trap entirely, while writes
+  (`project.invoice_status = ...`, `project.invoice_checked_at = _now()`) are untouched since a
+  plain-column *set* does not require loading prior state.
+- Hourly slot spent on every non-429 exit (T-031): the function body is now wrapped in
+  `try: ... except ZohoRateLimited: raise / except Exception: _last_run = time.monotonic(); raise /
+  else: _last_run = time.monotonic()`. A pass that runs to completion (including one that recovered
+  from one or more per-project commit failures via the point above) stamps `_last_run` exactly like
+  before. An exception that still escapes the pass despite that recovery — the SELECT itself
+  failing, or any other unexpected error type — now also stamps `_last_run` before propagating,
+  since the per-project loop no longer needs the hourly gate as a second line of defense against a
+  database error. Only `ZohoRateLimited` remains exempt, preserving T-006/T-010's existing rule:
+  `run_sync_loop`'s own throttle window already prevents hammering Books again immediately on a
+  429, so the sweep should simply resume on the next tick once that window clears rather than also
+  sitting out the rest of an hour.
+
+The module docstring's T-010 paragraph and the function's own T-006 docstring paragraph are updated
+to describe both rules; the dead-code note about the removed end-of-loop 429 commit is left as-is
+(still accurate, untouched by this change).
+
+Tests updated/added in `backend/tests/unit/test_aito_invoice_sweep.py`:
+- `test_a_mid_pass_commit_failure_persists_earlier_projects_and_does_not_spend_the_hour` (loop-6) is
+  renamed to `test_a_mid_pass_commit_failure_skips_that_project_but_keeps_going` and its
+  expectations updated to the new approved behavior: three projects (`EST-GOOD`, `EST-BAD`,
+  `EST-LATER`); the session's `commit` is wrapped so the *second* call raises a real
+  `sqlalchemy.exc.OperationalError` ("database is locked") rather than a bare `RuntimeError` (T-027
+  only catches `SQLAlchemyError`). Asserts, read through a brand-new session against the same
+  `test_engine`: `EST-GOOD` (before the failure) and `EST-LATER` (queued behind it) both persisted
+  their refresh and count toward `updated == 2`; `EST-BAD`'s own row is untouched by the rolled-back
+  commit. Then asserts `_last_run` IS now stamped (non-zero) — the pass ran to completion despite
+  the mid-pass failure — and a following non-forced call returns `0` without calling Zoho again,
+  the mirror image of the old (now-obsolete) "re-enters the pass" assertion.
+- `test_a_commit_failure_survives_a_rollback_that_also_fails` (new) — one project; both `commit` and
+  `rollback` are replaced with functions that each raise `OperationalError`. Asserts the pass still
+  completes cleanly (`updated == 0`, no exception escapes) and `_last_run` is still stamped —
+  exercising the guarded rollback's own `except SQLAlchemyError: pass`.
+- `test_an_exception_outside_the_loop_still_spends_the_hourly_slot` (new) — `db_session.execute` is
+  replaced with a function that raises `RuntimeError` before the per-project loop even starts.
+  Asserts the exception propagates AND `_last_run` is stamped — exercising T-031's `except
+  Exception: stamp; raise` branch for a non-429, non-commit failure.
+- `test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed` (loop-1/loop-6, unchanged) still
+  asserts `_last_run == 0.0` after a `ZohoRateLimited` — the one path this change deliberately does
+  not touch.
+- `test_a_fully_successful_pass_spends_the_hourly_slot` (loop-6, unchanged) still covers the ordinary
+  all-success case.
+
+Verification: `ruff check backend/` / `ruff format --check backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_aito_invoice_sweep.py` (16 passed),
+`backend/tests/unit/test_aito_quote_sync.py` (134 passed, `-n 8`),
+`backend/tests/unit/test_aito_invoice.py backend/tests/unit/test_aito_followup_settings.py` (28
+passed). Targeted coverage (`--cov=backend.app.services.aito_invoice_sweep
+--cov-config=../pyproject.toml`): `aito_invoice_sweep.py` 100% (58 stmts, 6 branches, 0 missed).
+`tools/snapshot.py verify`: 10/10 — none of the ten probes cover this module. `SURFACE.md`:
+unaffected — no top-level def was added or removed, only nested `try`/`except` blocks inside the
+existing `for` loop and function body; confirmed by diffing a fresh `gen_surface_all.sh` regen
+against the tracked file (empty diff).
+
+Rules chosen, per the approved tasks: a per-project commit failure now rolls back, skips, and
+continues (T-027) instead of aborting the pass; the hourly slot is stamped on every exit from the
+pass except `ZohoRateLimited` (T-031), so a database-error pass spends its hourly slot the same way
+a clean pass does while the 429 path keeps relying on the shared throttle window.
+
+Observable changes, quoted verbatim from the approved tasks:
+- T-027: "a commit failure on one project no longer stops the sweep: the remaining projects are
+  refreshed in the same pass and the hourly slot is then spent, so the next tick does not re-run the
+  whole sweep."
+- T-031: "after a sweep that fails on a database error, the invoice status/balance/due-date shown on
+  Aito cards would refresh no sooner than the next hourly slot instead of on the next 300s tick, so a
+  stale invoice figure can persist up to an hour longer after such a failure"
+
+user-approved 2026-09-06
+
+## Campaign 11 · T-026 — 2026-09-06 — user-approved behavior change
+
+`sweep_invoices`'s `SELECT` (`backend/app/services/aito_invoice_sweep.py`) had no `order_by` and no
+filter on `invoice_checked_at`, so its result order was whatever the database happened to return
+(in practice, primary-key order). Because T-031 (this same campaign) leaves the hourly gate
+(`_last_run`) unstamped only on a `ZohoRateLimited` abort, a 429 partway through a pass means the
+NEXT 300 s tick re-selects the identical rows in the identical order and re-calls Books for the head
+projects the previous pass had already refreshed — burning the same request budget on the same
+projects every tick while the tail past the 429 cutoff is never reached at all for as long as the
+limit holds. Their cards keep showing a paid invoice as unpaid and the follow-ups strip keeps
+nagging about it.
+
+Fixed by adding `.order_by(AitoProject.invoice_checked_at.asc().nulls_first(), AitoProject.id)` to
+the SELECT: never-checked projects (`NULL`) sort first, then oldest-checked, with `id` as a stable
+tiebreaker. A pass cut short by a 429 now resumes, on the next tick, with the least-recently-checked
+projects first — exactly the tail the 429 left behind — instead of restarting at the same
+head-of-list rows. Verified against the worktree's SQLite (3.53.0, well past the 3.30 minimum for
+`NULLS FIRST`): the compiled statement reads
+`ORDER BY aito_projects.invoice_checked_at ASC NULLS FIRST, aito_projects.id`.
+
+The "and/or stamp `_last_run` on partial progress" alternative named in the task's `fix` field was
+explicitly NOT taken. T-031 (this same campaign, same file) already decided that a `ZohoRateLimited`
+abort alone should leave the hourly gate unspent, because `run_sync_loop`'s own shared throttle
+window is what governs when the sweep should retry, not this hourly gate — once that window clears,
+the sweep should simply resume on the very next tick rather than also sitting out the rest of an
+hour it never got to finish. This ordering fix is what makes that resumed pass useful: it starts
+with the projects the 429 cut off instead of re-refreshing the ones already committed. Stamping
+`_last_run` on partial progress would reintroduce the exact up-to-an-hour staleness T-031 was
+written to avoid, for no benefit once the SELECT itself resumes in the right place.
+
+Module and function docstrings in `aito_invoice_sweep.py` gained a `T-026 (loop-9)` paragraph each
+explaining the ordering and why the stamping alternative was skipped; a comment sits directly above
+the new `.order_by(...)` call.
+
+Tests added to `backend/tests/unit/test_aito_invoice_sweep.py`:
+- `test_the_selection_visits_least_recently_checked_projects_first` — three projects seeded in a
+  scrambled id order relative to their `invoice_checked_at` (recent, never-checked, old); asserts
+  the Books call order is never-checked, then oldest, then newest, proving the order comes from the
+  `ORDER BY` and not from insertion/id order.
+- `test_a_pass_resumed_after_a_429_starts_with_the_cut_off_tail` — first forced pass: project A is
+  refreshed, then a `ZohoRateLimited` fires on B; C is never reached. Asserts A alone gets a fresh
+  `invoice_checked_at` while B and C do not. Second forced pass: asserts the call order is B, then
+  C, then A — the two unchecked projects the 429 left behind come first, ahead of the one already
+  refreshed.
+
+Verification: `ruff check backend/` / `ruff format backend/` clean.
+`./venv/bin/python3 -m pytest backend/tests/unit/test_aito_invoice_sweep.py` (18 passed).
+Targeted coverage (`--cov=backend.app.services.aito_invoice_sweep --cov-config=../pyproject.toml`):
+`aito_invoice_sweep.py` 100% (58 stmts, 6 branches, 0 missed).
+`backend/tests/unit/test_aito_quote_sync.py` (134 passed, `-n 8`).
+`backend/tests/unit/test_aito_invoice.py backend/tests/unit/test_aito_followup_settings.py` (28
+passed). `tools/snapshot.py verify`: 10/10 — none of the ten probes cover this module's query
+ordering. `SURFACE.md`: unaffected — no top-level def was added or removed, only a chained
+`.order_by(...)` on an existing statement and docstring prose; confirmed by diffing a fresh
+`gen_surface_all.sh` regen against the tracked file (empty diff).
+
+User-visible change, quoted verbatim from the approved task: "after an interrupted sweep the
+projects that refresh first change (least-recently-checked instead of lowest id), and a
+partially-completed pass may no longer retry on the very next tick." The second half of that
+sentence describes the pre-existing T-031 rule (unchanged by this task) rather than something T-026
+itself alters.
+
+user-approved 2026-09-06
+
+## Campaign 11 · T-030 — 2026-09-06 — user-approved behavior change
+
+`routes/websocket.py`'s connect handler called `await ws_manager.connect(websocket)` — which
+admits the socket into `ConnectionManager.active_connections`, the list every broadcast walks —
+*before* resolving the caller's principal and stamping `websocket.state.aito_read`. Resolving the
+principal means an `async with async_session() as db:` block plus a `select(User)` query, both
+awaited, so there was a real window, between admission and the stamp, during which the socket was
+already reachable by `broadcast_aito()` but had no `aito_read` value set yet. `broadcast_aito()`'s
+filter read that missing attribute via `getattr(conn.state, "aito_read", True)` — fail OPEN — so a
+principal without `Permission.AITO_READ` who nonetheless held `Permission.WEBSOCKET_CONNECT` could
+receive any `aito_changed` / `aito_presence_state` message (project ids, actor usernames, the full
+viewer map) broadcast during that window, purely by chance of timing. Round 1 (T-038) had already
+closed the equivalent inbound half — the `aito_presence` message handler — but not this outbound
+race at connect time.
+
+Fixed by moving the principal-resolution block and all three stamps (`websocket.state
+.bambuddy_principal`, `.bambuddy_principal_user_id`, `.aito_read`) to run *before*
+`ws_manager.connect(websocket)`, so the socket is never in `active_connections` without
+`aito_read` already set. The fail-closed shape of the resolution itself is unchanged: a DB
+exception while resolving the principal is still caught and logged, `aito_read` still falls back to
+`not auth_required` in that case, and the socket is still admitted afterward (a resolution failure
+degrades to no per-user routing, it does not refuse the connection) — only the ordering relative to
+`connect()` moved, not the resolution logic, its fail-closed default, or the except-path behaviour.
+With the window closed, `core/websocket.py`'s `broadcast_aito()` filter default was tightened from
+`getattr(conn.state, "aito_read", True)` to `getattr(conn.state, "aito_read", False)`: no code path
+can now reach `active_connections` without an `aito_read` value already set, so the default is pure
+belt-and-braces against an unrelated future bug, and fail-closed is the correct direction for that.
+Docstrings/comments in both files were updated to describe the new ordering and why the default
+changed; `_fan_out()` and `broadcast()` (T-020/T-028) are untouched.
+
+Tests updated/added in `backend/tests/unit/test_ws_aito_read_filter.py`:
+- `test_broadcast_aito_defaults_to_true_for_a_never_stamped_connection` renamed to
+  `test_broadcast_aito_defaults_to_false_for_a_never_stamped_connection` and its assertion flipped
+  — an unstamped connection is now skipped, not delivered to.
+- New "Layer 3b (T-030)" section with a `_RecordingConnectManager` (a real `ConnectionManager`
+  subclass whose `connect()` records `getattr(websocket.state, "aito_read", "UNSET")` at the moment
+  it is entered, before doing the real accept/register work — the only way to observe stamp-before-
+  admit ordering from outside): `test_connect_stamps_aito_read_before_admitting_an_allowed_principal`,
+  `test_connect_stamps_aito_read_before_admitting_a_denied_principal`, and
+  `test_connect_admits_with_fail_closed_aito_read_when_resolution_raises` (monkeypatches
+  `_resolve_principal_and_aito_read` to raise; asserts the socket is still admitted, stamped
+  `False` — `not auth_required` — never the `"UNSET"` sentinel).
+`backend/tests/unit/test_ws_aito_presence.py`'s local `_conn()` fixture now stamps
+`state.aito_read = True`, matching the invariant that any connection able to reach
+`set_aito_presence()` in real usage is, by construction (the inbound handler's own `aito_read`
+gate), already permitted — without this the fixture's connections were relying on the very
+fail-open default this task removes.
+
+Verification: `ruff check backend/` and `ruff format backend/` clean.
+`pytest backend/tests/unit/test_ws_aito_read_filter.py backend/tests/unit/test_ws_aito_presence.py`
+(24 passed, `--cov=backend.app.api.routes.websocket --cov=backend.app.core.websocket`).
+`pytest backend/tests/ -k "websocket or ws_ or broadcast"` (187 passed, `-n 8`).
+`tools/snapshot.py verify`: 10/10 (this reordering touches neither middleware registration nor
+route permission wiring, so `app-middleware-stack` and `app-route-perms` are unaffected).
+`SURFACE.md`: unchanged (confirmed via a fresh `gen_surface_all.sh` regen diffed against the
+tracked file — empty diff; no top-level def was added or removed).
+
+User-visible effect, in the task's own terms: a principal who holds `WEBSOCKET_CONNECT` but not
+`Permission.AITO_READ` can no longer receive an Aito broadcast (`aito_changed` /
+`aito_presence_state`) during the brief connect-time window while their permissions are still being
+looked up — that window no longer exists, because the lookup now completes and the connection is
+stamped before it is ever admitted into the broadcast list. Steady-state fan-out behaviour (once a
+connection is fully connected) is unchanged. A connection that, through some future bug, ends up in
+`active_connections` without ever being stamped is now excluded from Aito broadcasts by default,
+rather than included.
+
+user-approved 2026-09-06

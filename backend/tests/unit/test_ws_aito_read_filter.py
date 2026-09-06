@@ -24,6 +24,12 @@ backpressure handling — it now shares ``ConnectionManager._fan_out`` with
 ``broadcast()``, so a wedged/slow client is dropped after
 ``_BROADCAST_SEND_TIMEOUT`` instead of stalling every other client and the
 manager lock.
+
+A sixth group (T-030, also user-approved) proves the ``aito_read`` stamp
+happens *before* ``ws_manager.connect()`` admits the socket into
+``active_connections`` — not, as before, in the window after — using a
+``ConnectionManager`` subclass that records the state at the moment
+``connect()`` is entered.
 """
 
 from __future__ import annotations
@@ -80,18 +86,19 @@ async def test_broadcast_aito_delivers_the_presence_map_to_a_reader():
 
 
 @pytest.mark.asyncio
-async def test_broadcast_aito_defaults_to_true_for_a_never_stamped_connection():
-    """``connect()`` always stamps ``aito_read`` today, so this should never
-    happen in practice — but the default protects against silently dropping
-    a connection if that ever changes, rather than the filter fail-CLOSED
-    by accident on unrelated code elsewhere stamping nothing."""
+async def test_broadcast_aito_defaults_to_false_for_a_never_stamped_connection():
+    """T-030: ``routes/websocket.py`` now stamps ``aito_read`` before
+    ``connect()`` ever admits the socket, so an unstamped connection should
+    never reach ``active_connections`` in practice — but the default must
+    fail CLOSED, not open, on a connection that somehow gets there anyway
+    (e.g. unrelated code elsewhere stamping nothing)."""
     mgr = ConnectionManager()
     unstamped = _conn(stamped=False)
     mgr.active_connections = [unstamped]
 
     await mgr.broadcast_aito({"type": "aito_changed", "action": "move", "project_id": 2, "actor": None})
 
-    unstamped.send_text.assert_awaited_once()
+    unstamped.send_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -385,6 +392,95 @@ async def test_connect_sends_everything_when_auth_is_disabled(monkeypatch, test_
     verify_spy.assert_not_awaited()
     assert ws.state.aito_read is True
     assert "aito_presence_state" in _sent_types(ws)
+
+
+# ---------------------------------------------------------------------------
+# Layer 3b (T-030): aito_read is stamped BEFORE ws_manager.connect() admits
+# the socket into active_connections, not after — closing the connect-time
+# window broadcast_aito() used to rely on its fail-open default to cover.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingConnectManager(ConnectionManager):
+    """A real ``ConnectionManager`` whose ``connect()`` records whatever
+    ``websocket.state.aito_read`` holds *at the moment connect() is called*
+    — ``"UNSET"`` if the attribute does not exist yet — before doing the
+    real accept/register work. This is the only way to observe ordering:
+    reading the state after ``websocket_endpoint`` returns cannot tell you
+    whether the stamp happened before or after admission."""
+
+    def __init__(self):
+        super().__init__()
+        self.aito_read_at_connect: list[bool | str] = []
+
+    async def connect(self, websocket):
+        self.aito_read_at_connect.append(getattr(websocket.state, "aito_read", "UNSET"))
+        await super().connect(websocket)
+
+
+@pytest.mark.asyncio
+async def test_connect_stamps_aito_read_before_admitting_an_allowed_principal(monkeypatch, test_engine):
+    session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as seed:
+        group = Group(name="T030-allowed", permissions=[Permission.AITO_READ.value])
+        seed.add(group)
+        seed.add(User(username="t030-allowed", groups=[group]))
+        await seed.commit()
+
+    fresh_mgr = _RecordingConnectManager()
+    monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
+    monkeypatch.setattr(ws_route, "async_session", session_maker)
+    monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="t030-allowed"))
+
+    ws = _FakeWebSocket()
+    await ws_route.websocket_endpoint(ws, token="tok")
+
+    assert fresh_mgr.aito_read_at_connect == [True]
+
+
+@pytest.mark.asyncio
+async def test_connect_stamps_aito_read_before_admitting_a_denied_principal(monkeypatch, test_engine):
+    session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as seed:
+        group = Group(name="T030-denied", permissions=[])
+        seed.add(group)
+        seed.add(User(username="t030-denied", groups=[group]))
+        await seed.commit()
+
+    fresh_mgr = _RecordingConnectManager()
+    monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
+    monkeypatch.setattr(ws_route, "async_session", session_maker)
+    monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="t030-denied"))
+
+    ws = _FakeWebSocket()
+    await ws_route.websocket_endpoint(ws, token="tok")
+
+    assert fresh_mgr.aito_read_at_connect == [False]
+
+
+@pytest.mark.asyncio
+async def test_connect_admits_with_fail_closed_aito_read_when_resolution_raises(monkeypatch, test_engine):
+    """A resolution failure (e.g. a DB blip) must still admit the socket —
+    degrading to no per-user routing rather than refusing the connection —
+    but the value it is admitted with must already be the fail-closed
+    ``not auth_required`` default, never the unstamped sentinel: the stamp
+    assignment happens unconditionally after the try/except, before
+    connect() is ever called."""
+    session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    fresh_mgr = _RecordingConnectManager()
+    monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
+    monkeypatch.setattr(ws_route, "async_session", session_maker)
+    monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="whoever"))
+    monkeypatch.setattr(ws_route, "_resolve_principal_and_aito_read", AsyncMock(side_effect=RuntimeError("db blip")))
+
+    ws = _FakeWebSocket()
+    await ws_route.websocket_endpoint(ws, token="tok")
+
+    assert fresh_mgr.aito_read_at_connect == [False]  # not auth_required == False
+    assert ws.state.aito_read is False
 
 
 # ---------------------------------------------------------------------------

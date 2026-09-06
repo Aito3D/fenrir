@@ -18,6 +18,12 @@ def _conn(principal):
     conn.state = SimpleNamespace()
     conn.state.bambuddy_principal = principal
     conn.state.bambuddy_principal_user_id = None
+    # T-030: broadcast_aito() now fails closed on an unstamped connection,
+    # and every connection that can reach set_aito_presence() in real usage
+    # (gated on aito_read by the inbound message handler) is, by
+    # construction, already aito_read-permitted — so these fixtures must
+    # stamp it too, or they'd be testing a shape that can no longer occur.
+    conn.state.aito_read = True
     conn.send_text = AsyncMock()
     return conn
 

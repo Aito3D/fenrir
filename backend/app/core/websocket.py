@@ -118,28 +118,22 @@ class ConnectionManager:
         ``routes/websocket.py`` stamps ``websocket.state.aito_read`` — True
         on auth-disabled installs and for any resolved principal holding
         ``Permission.AITO_READ`` (admins included, via
-        ``User.has_permission``'s short-circuit), False otherwise — a short
-        while *after* ``connect()`` (this class's own method) admits the
-        socket into ``active_connections``: ``connect()`` only accepts and
-        registers the connection, the stamp itself happens roughly thirty
-        lines later in the route handler, once the auth token has been
-        resolved to a principal and (for a non-empty principal) that
-        principal's permissions have been looked up. So there is a brief,
-        real window, between those two points, where a connection is
-        already reachable by ``broadcast_aito`` but has not been stamped
-        yet. The ``getattr(..., True)`` default is what that window relies
-        on: an unstamped connection is treated exactly like a permitted
-        one, matching the same fail-open shape the pre-existing
-        ``bambuddy_principal_user_id`` stamp already has for
-        ``broadcast_to_user``. Defaulting True here is the safe direction —
-        it costs nothing for any non-Aito feature (this method is used ONLY
-        for the two Aito fan-outs, so the window can only ever affect
-        whether an about-to-be-stamped connection catches one extra Aito
-        message, never any other broadcast), and it guarantees that a
-        connection is never silently muted by a stamp that has not run yet.
-        Every other broadcast (printer status, print start/complete,
-        archive events, queue toasts, spool warnings) keeps calling the
-        unfiltered ``broadcast()`` above and is untouched by this filter.
+        ``User.has_permission``'s short-circuit), False otherwise — *before*
+        ``connect()`` (this class's own method) admits the socket into
+        ``active_connections`` (T-030 / audit-security follow-up to T-038:
+        the route handler used to call ``connect()`` first and stamp
+        roughly thirty lines later, once the auth token had been resolved
+        to a principal and, for a non-empty principal, that principal's
+        permissions had been looked up — a real window during which a
+        connection was already reachable by ``broadcast_aito`` but not yet
+        stamped). With the stamp now guaranteed to exist before a
+        connection can ever appear in ``active_connections``, the
+        ``getattr(..., False)`` default below has no window left to
+        cover — it exists only to fail closed on a connection that
+        somehow, through code elsewhere, never gets stamped at all. Every
+        other broadcast (printer status, print start/complete, archive
+        events, queue toasts, spool warnings) keeps calling the unfiltered
+        ``broadcast()`` above and is untouched by this filter.
 
         (T-028) Filtering happens under the lock while building the
         snapshot, then the lock is released before handing off to
@@ -152,7 +146,7 @@ class ConnectionManager:
         response itself. See ``_fan_out`` for the timeout/cleanup details.
         """
         async with self._lock:
-            connections = [conn for conn in self.active_connections if getattr(conn.state, "aito_read", True)]
+            connections = [conn for conn in self.active_connections if getattr(conn.state, "aito_read", False)]
         if not connections:
             return
         data = json.dumps(message)

@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.models.aito_project import AitoProject
@@ -315,22 +316,25 @@ async def test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed(db_se
 
 
 @pytest.mark.asyncio
-async def test_a_mid_pass_commit_failure_persists_earlier_projects_and_does_not_spend_the_hour(
-    db_session, test_engine, monkeypatch
-):
-    """T-010: a per-project commit failure (SQLite "database is locked", or
-    anything else) mid-pass must cost only the project it happened on --
-    every project already refreshed earlier in the same pass stays
-    persisted -- and must not spend the hourly slot, so the next
-    (non-forced) call re-enters the sweep instead of early-returning 0 for
-    another hour."""
+async def test_a_mid_pass_commit_failure_skips_that_project_but_keeps_going(db_session, test_engine, monkeypatch):
+    """T-027: a per-project commit failure (SQLite "database is locked", or
+    anything else) costs only the project it happened on -- both the
+    project already refreshed before it AND the project still queued behind
+    it are refreshed in the same pass. T-031: the pass still ran to
+    completion (the loop itself absorbed the failure), so the hourly slot
+    is spent exactly like an all-success pass -- the very next, non-forced
+    call must return 0 rather than re-entering the sweep."""
     good = await _project(db_session, quote_id="EST-GOOD")
     bad = await _project(db_session, quote_id="EST-BAD")
-    good_id, bad_id = good.id, bad.id  # captured before expire_all(); see note above
+    later = await _project(db_session, quote_id="EST-LATER")
+    good_id, bad_id, later_id = good.id, bad.id, later.id  # captured before expire_all(); see note above
     monkeypatch.setattr(
         zoho_service,
         "list_project_invoices",
-        _fake({"EST-GOOD": [_invoice(10.0)], "EST-BAD": [_invoice(20.0)]}, []),
+        _fake(
+            {"EST-GOOD": [_invoice(10.0)], "EST-BAD": [_invoice(20.0)], "EST-LATER": [_invoice(30.0)]},
+            [],
+        ),
     )
     original_commit = db_session.commit
     commit_n = {"count": 0}
@@ -338,35 +342,87 @@ async def test_a_mid_pass_commit_failure_persists_earlier_projects_and_does_not_
     async def _flaky_commit():
         commit_n["count"] += 1
         if commit_n["count"] == 2:
-            raise RuntimeError("database is locked")
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
         await original_commit()
 
     monkeypatch.setattr(db_session, "commit", _flaky_commit)
 
-    with pytest.raises(RuntimeError):
-        await sweep_invoices(db_session, force=True)
+    updated = await sweep_invoices(db_session, force=True)
+
+    # Only EST-BAD's commit failed -- EST-GOOD (before it) and EST-LATER
+    # (behind it) both count as successful refreshes.
+    assert updated == 2
 
     # Read through a brand-new session against the same engine rather than
-    # db_session itself: db_session's own transaction is still sitting on
-    # top of the failed second commit, so only a fresh session proves what
-    # actually reached the database.
+    # db_session itself: db_session's own transaction may still carry
+    # SQLAlchemy-internal state from the failed second commit, so only a
+    # fresh session proves what actually reached the database.
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as fresh:
         good_row = await fresh.get(AitoProject, good_id)
         assert good_row.invoice_balance == 10.0
         assert good_row.invoice_checked_at is not None
+        # EST-BAD's own row is untouched: the failed commit was rolled back.
         bad_row = await fresh.get(AitoProject, bad_id)
         assert bad_row.invoice_checked_at is None
         assert bad_row.invoice_balance is None
+        # EST-LATER, queued behind the failure, still committed cleanly --
+        # proof the rolled-back project's pending writes did not leak into
+        # the next project's transaction.
+        later_row = await fresh.get(AitoProject, later_id)
+        assert later_row.invoice_balance == 30.0
+        assert later_row.invoice_checked_at is not None
 
-    # The pass never finished, so the hourly slot was never spent -- a
-    # subsequent non-forced call must run again, not early-return 0.
-    assert aito_invoice_sweep._last_run == 0.0
+    # The pass ran to completion despite the mid-pass commit failure, so the
+    # hourly slot was spent exactly like a fully successful pass -- the next
+    # non-forced call must return 0, not re-enter the sweep.
+    assert aito_invoice_sweep._last_run != 0.0
     calls: list[str] = []
-    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST-GOOD": [], "EST-BAD": []}, calls))
-    updated = await sweep_invoices(db_session)
-    assert calls  # re-entered the sweep instead of returning 0 for the hourly gate
-    assert updated == 2
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST-BAD": [_invoice(20.0)]}, calls))
+    assert await sweep_invoices(db_session) == 0
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_an_exception_outside_the_loop_still_spends_the_hourly_slot(db_session, monkeypatch):
+    """T-031: an exception that escapes the pass without ever being a
+    ``ZohoRateLimited`` (the SELECT itself blowing up, here) still stamps
+    ``_last_run`` before propagating -- only the 429 path is exempt."""
+    await _project(db_session, quote_id="EST1")
+
+    async def _boom(stmt):
+        raise RuntimeError("select exploded")
+
+    monkeypatch.setattr(db_session, "execute", _boom)
+
+    with pytest.raises(RuntimeError):
+        await sweep_invoices(db_session, force=True)
+
+    assert aito_invoice_sweep._last_run != 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_commit_failure_survives_a_rollback_that_also_fails(db_session, monkeypatch):
+    """T-027: the rollback issued to recover from a failed commit is itself
+    guarded -- if it also raises (a closed connection, say), the sweep still
+    just skips that one project and moves on rather than letting the
+    rollback failure escape and take down the whole pass."""
+    await _project(db_session, quote_id="EST-BAD")
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST-BAD": [_invoice(10.0)]}, []))
+
+    async def _failing_commit():
+        raise OperationalError("COMMIT", {}, Exception("database is locked"))
+
+    async def _failing_rollback():
+        raise OperationalError("ROLLBACK", {}, Exception("no such savepoint"))
+
+    monkeypatch.setattr(db_session, "commit", _failing_commit)
+    monkeypatch.setattr(db_session, "rollback", _failing_rollback)
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 0
+    assert aito_invoice_sweep._last_run != 0.0
 
 
 @pytest.mark.asyncio
@@ -384,6 +440,84 @@ async def test_a_fully_successful_pass_spends_the_hourly_slot(db_session, monkey
     assert aito_invoice_sweep._last_run != 0.0
     assert await sweep_invoices(db_session) == 0
     assert calls == ["EST1"]  # the second, non-forced call never re-asked
+
+
+@pytest.mark.asyncio
+async def test_the_selection_visits_least_recently_checked_projects_first(db_session, monkeypatch):
+    """T-026: the SELECT is ordered by ``invoice_checked_at`` ascending with
+    nulls first (never-swept projects), id as the tiebreaker -- not left in
+    whatever order the database happens to return. Seeded in a scrambled id
+    order (recent, never-checked, old) to prove the order comes from the
+    ORDER BY and not from insertion/id order."""
+    recent = await _project(db_session, quote_id="EST-RECENT", invoice_checked_at=datetime(2026, 3, 1, 0, 0, 0))
+    never = await _project(db_session, quote_id="EST-NEVER", invoice_checked_at=None)
+    old = await _project(db_session, quote_id="EST-OLD", invoice_checked_at=datetime(2026, 1, 1, 0, 0, 0))
+    assert recent.id < never.id < old.id  # scrambled relative to checked-at order
+    calls: list[str] = []
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake(
+            {
+                "EST-RECENT": [_invoice(10.0)],
+                "EST-NEVER": [_invoice(10.0)],
+                "EST-OLD": [_invoice(10.0)],
+            },
+            calls,
+        ),
+    )
+
+    await sweep_invoices(db_session, force=True)
+
+    assert calls == ["EST-NEVER", "EST-OLD", "EST-RECENT"]
+
+
+@pytest.mark.asyncio
+async def test_a_pass_resumed_after_a_429_starts_with_the_cut_off_tail(db_session, monkeypatch):
+    """T-026: after a 429 aborts a pass part-way through, the projects it
+    never reached (B, C) have the oldest ``invoice_checked_at`` (null, since
+    they were never touched) once the sweep resumes -- so the next pass
+    visits them before re-visiting A, which was just refreshed."""
+    a = await _project(db_session, quote_id="EST-A")
+    b = await _project(db_session, quote_id="EST-B")
+    c = await _project(db_session, quote_id="EST-C")
+    a_id, b_id, c_id = a.id, b.id, c.id  # captured before expire_all(); see note above
+    first_calls: list[str] = []
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake(
+            {
+                "EST-A": [_invoice(10.0)],
+                "EST-B": ZohoRateLimited("Too many requests", retry_after=5.0),
+            },
+            first_calls,
+        ),
+    )
+
+    with pytest.raises(ZohoRateLimited):
+        await sweep_invoices(db_session, force=True)
+
+    # First pass: A (lowest id, all nulls tie) refreshed and stamped, B hit
+    # the 429 before being stamped, C was never reached.
+    assert first_calls == ["EST-A", "EST-B"]
+    db_session.expire_all()
+    assert (await db_session.get(AitoProject, a_id)).invoice_checked_at is not None
+    assert (await db_session.get(AitoProject, b_id)).invoice_checked_at is None
+    assert (await db_session.get(AitoProject, c_id)).invoice_checked_at is None
+
+    second_calls: list[str] = []
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake({"EST-A": [_invoice(10.0)], "EST-B": [_invoice(10.0)], "EST-C": [_invoice(10.0)]}, second_calls),
+    )
+
+    await sweep_invoices(db_session, force=True)
+
+    # B and C (both still null, id tiebreak) come before A, which now has
+    # the freshest invoice_checked_at of the three.
+    assert second_calls == ["EST-B", "EST-C", "EST-A"]
 
 
 @pytest.fixture
