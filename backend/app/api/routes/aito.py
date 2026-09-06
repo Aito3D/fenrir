@@ -2,10 +2,10 @@
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,7 @@ from backend.app.schemas.aito import (
     AitoShippingIsland,
     AitoShippingService,
     AitoShippingServicesResponse,
+    AitoStatsResponse,
     AitoSummarizeRequest,
     AitoSummarizeResponse,
     AitoTaskCreate,
@@ -68,6 +69,7 @@ from backend.app.services.aito_shipping import (
     grouped_islands,
     service_for_island,
 )
+from backend.app.services.aito_stats import compute_aito_stats
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -904,6 +906,22 @@ async def list_trash(
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
     return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names) for p in projects]
+
+
+@router.get("/stats", response_model=AitoStatsResponse)
+async def get_aito_stats(
+    date_from: date | None = Query(default=None, description="Inclusive start day (UTC)."),
+    date_to: date | None = Query(default=None, description="Inclusive end day (UTC)."),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The Stats page's pipeline widget. Read-only aggregates over active
+    projects and their events; gated on AITO_READ alone, like the calculator
+    insights endpoint, so an Aito reader needs nothing else. Declared ahead of
+    the `/{project_id}` routes so `stats` is never parsed as an id."""
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must not be after date_to")
+    return await compute_aito_stats(db, date_from, date_to)
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)

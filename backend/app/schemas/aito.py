@@ -911,3 +911,47 @@ class AitoPickupSmsRequest(BaseModel):
 
 class AitoPickupSmsResponse(BaseModel):
     sent: bool = True
+
+
+class AitoStatsStage(BaseModel):
+    column: AitoColumn
+    count: int
+    total: float
+
+
+class AitoStatsBucket(BaseModel):
+    count: int
+    total: float
+
+
+class AitoStatsConversion(BaseModel):
+    sent: AitoStatsBucket
+    accepted: AitoStatsBucket
+    declined: AitoStatsBucket
+    # accepted / (accepted + declined); None when nothing was decided.
+    acceptance_rate: float | None
+
+
+class AitoStatsStageDays(BaseModel):
+    column: AitoColumn
+    # Median length in days of the stays that CLOSED in the period; None with no sample.
+    median_days: float | None
+    sample: int
+
+
+class AitoStatsInvoicing(BaseModel):
+    invoiced_total: float
+    invoiced_count: int
+    outstanding_balance: float
+    outstanding_count: int
+
+
+class AitoStatsResponse(BaseModel):
+    """The pipeline widget's four blocks — see docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md."""
+
+    board: list[AitoStatsStage]
+    conversion: AitoStatsConversion
+    stage_days: list[AitoStatsStageDays]
+    invoicing: AitoStatsInvoicing
+    date_from: date | None
+    date_to: date | None
