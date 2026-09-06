@@ -22,6 +22,7 @@ interface SummariseCase {
   steps_total: number;
   steps_done: number;
   steps_by_task: { services: string[]; done: string[]; title: string; rush: boolean }[];
+  print_minutes_pending: number;
 }
 
 const SERVICE_IDS: ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage'];
@@ -48,7 +49,11 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
     // sits on an AitoTask row; the mirror reads it off the nested impression
     // draft, which is how it sits on a TaskDraft. This is the one place the
     // two shapes meet.
-    impression: { rush: row.impression_rush === true },
+    impression: {
+      rush: row.impression_rush === true,
+      timeMin: (row.impression_time_min as number | null | undefined) ?? null,
+      quantity: (row.impression_quantity as number | null | undefined) ?? undefined,
+    },
   };
 }
 
@@ -60,7 +65,7 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(14);
+    expect(summariseCases).toHaveLength(16);
   });
 
   it('stages every service exactly once', () => {
@@ -103,6 +108,7 @@ describe('the board-rules contract', () => {
     expect(summary.stepsTotal).toBe(c.steps_total);
     expect(summary.stepsDone).toBe(c.steps_done);
     expect(summary.stepsByTask).toEqual(c.steps_by_task);
+    expect(summary.printMinutesPending).toBe(c.print_minutes_pending);
   });
 });
 
@@ -143,6 +149,26 @@ describe('the rush flag on a task row', () => {
 
   it('is false for a task that says nothing about rush', () => {
     expect(summariseTasks([bare({ impressionCost: 1250 })]).stepsByTask[0].rush).toBe(false);
+  });
+});
+
+describe('printMinutesPending', () => {
+  it('owes minutes x quantity for an unticked print step', () => {
+    const summary = summariseTasks([
+      bare({ impressionCost: 100, impression: { rush: false, timeMin: 90, quantity: 2 } }),
+    ]);
+    expect(summary.printMinutesPending).toBe(180);
+  });
+
+  it('owes nothing once the print step is ticked', () => {
+    const summary = summariseTasks([
+      bare({
+        impressionCost: 100,
+        impression: { rush: false, timeMin: 90, quantity: 2 },
+        done: { scan: false, modelisation: false, impression: true, usinage: false },
+      }),
+    ]);
+    expect(summary.printMinutesPending).toBe(0);
   });
 });
 

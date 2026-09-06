@@ -306,6 +306,10 @@ export default {
     clearSearch: 'Suche löschen',
     inProduction_one: '{{count}} Projekt in Arbeit',
     inProduction_other: '{{count}} Projekte in Arbeit',
+    backlogHours: '{{hours}} h zu drucken',
+    backlogDays_one: '≈ {{days}} T auf {{count}} Drucker',
+    backlogDays_other: '≈ {{days}} T auf {{count}} Druckern',
+    backlogTitle: 'Verbleibende Druckzeit angenommener Aufträge, geteilt durch Ihre Drucker und die Tagesstunden des Rechners',
     allDone_one: 'Nichts in Arbeit — {{count}} abgeschlossenes Projekt liegt unter „Erledigte anzeigen“',
     allDone_other: 'Nichts in Arbeit — {{count}} abgeschlossene Projekte liegen unter „Erledigte anzeigen“',
     columns: {

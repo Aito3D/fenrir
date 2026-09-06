@@ -25,7 +25,7 @@ vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
   client_id: 'z1', client_name: 'ACME SARL', client_phone: '+33 6 12 34 56 78',
-  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, task_steps: [],
+  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, print_minutes_pending: 0, task_steps: [],
   move_lock: null,
   shipping_island: null, shipping_service: null, shipping_first_name: null, shipping_last_name: null,
   shipping_phone: null, shipping_price: null, shipping_service_name: null,
@@ -79,6 +79,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     task_pending: [],
     steps_total: 0,
     steps_done: 0,
+    print_minutes_pending: 0,
     task_steps: [],
     move_lock: null,
     shipping_island: null,
@@ -750,6 +751,7 @@ describe('AitoPage (backend board)', () => {
       task_pending: [],
       steps_total: 0,
       steps_done: 0,
+      print_minutes_pending: 0,
       task_steps: [],
       move_lock: null,
       shipping_island: null,
@@ -1080,6 +1082,7 @@ describe('AitoPage (backend board)', () => {
         task_services: ['impression'],
         steps_total: 1,
         steps_done: 0,
+        print_minutes_pending: 0,
       });
       server.use(http.get('/api/v1/aito/', () => HttpResponse.json([accepted])));
 

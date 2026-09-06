@@ -96,12 +96,13 @@ export interface TaskLike {
   modelisationDiscountPct?: number | null;
   impressionDiscountPct?: number | null;
   usinageDiscountPct?: number | null;
-  /** The print step's rush flag, nested exactly as `TaskDraft.impression`
-   *  nests it so a draft satisfies this structurally with no adapter.
-   *  Optional — absent reads as not rushed, which keeps every existing
-   *  cost/done literal in the suite compiling. Mirrors the `impression_rush`
-   *  attribute `summarise` duck-types off an AitoTask. */
-  impression?: { rush: boolean };
+  /** The print step's rush flag and minute/quantity backlog inputs, nested
+   *  exactly as `TaskDraft.impression` nests them so a draft satisfies this
+   *  structurally with no adapter. Optional — absent reads as not rushed and
+   *  as zero backlog minutes, which keeps every existing cost/done literal
+   *  in the suite compiling. Mirrors the `impression_rush`/`impression_time_min`/
+   *  `impression_quantity` attributes `summarise` duck-types off an AitoTask. */
+  impression?: { rush: boolean; timeMin?: number | null; quantity?: number };
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -235,6 +236,11 @@ export interface TaskSummary {
   stepsDone: number;
   /** One entry per task, in the order given — the card draws a row each. */
   stepsByTask: TaskSteps[];
+  /** Print minutes still owed: Σ over tasks with a priced, UNTICKED print
+   *  step of minutes × quantity (quantity None or 0 reads as 1; minutes None
+   *  reads as 0). The board header's backlog badge sums this across accepted
+   *  cards. Mirrored by `summariseTasks` and pinned by the contract fixture. */
+  printMinutesPending: number;
 }
 
 /** Everything a project's tasks say about it, in one pass.
@@ -250,6 +256,7 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
   let total = 0;
   let stepsTotal = 0;
   let stepsDone = 0;
+  let printMinutesPending = 0;
   const enabled = new Set<ServiceId>();
   const unticked = new Set<ServiceId>();
   const stepsByTask: TaskSteps[] = [];
@@ -270,6 +277,11 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
       } else {
         unticked.add(service);
       }
+      if (service === 'impression' && !task.done[service]) {
+        const minutes = task.impression?.timeMin ?? 0;
+        const quantity = Math.max(1, task.impression?.quantity || 1);
+        printMinutesPending += Math.trunc(minutes) * Math.trunc(quantity);
+      }
     }
     stepsByTask.push({
       services: taskServices,
@@ -287,5 +299,6 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
     stepsTotal,
     stepsDone,
     stepsByTask,
+    printMinutesPending,
   };
 }

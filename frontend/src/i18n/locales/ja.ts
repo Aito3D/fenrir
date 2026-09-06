@@ -306,6 +306,10 @@ export default {
     clearSearch: '検索をクリア',
     inProduction_one: '進行中の案件 {{count}} 件',
     inProduction_other: '進行中の案件 {{count}} 件',
+    backlogHours: '印刷残り {{hours}} 時間',
+    backlogDays_one: '≈ {{days}} 日（プリンター {{count}} 台）',
+    backlogDays_other: '≈ {{days}} 日（プリンター {{count}} 台）',
+    backlogTitle: '受注済み案件の残り印刷時間を、プリンター台数と計算機の1日あたり稼働時間で割った値',
     allDone_one: '進行中の案件はありません — 完了した案件 {{count}} 件は「完了を表示」にあります',
     allDone_other: '進行中の案件はありません — 完了した案件 {{count}} 件は「完了を表示」にあります',
     columns: {

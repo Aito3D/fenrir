@@ -306,6 +306,10 @@ export default {
     clearSearch: '검색 지우기',
     inProduction_one: '진행 중인 프로젝트 {{count}}개',
     inProduction_other: '진행 중인 프로젝트 {{count}}개',
+    backlogHours: '인쇄 잔여 {{hours}}시간',
+    backlogDays_one: '≈ {{days}}일 (프린터 {{count}}대)',
+    backlogDays_other: '≈ {{days}}일 (프린터 {{count}}대)',
+    backlogTitle: '수락된 작업의 남은 인쇄 시간을 프린터 수와 계산기의 일일 가동 시간으로 나눈 값',
     allDone_one: '진행 중인 작업이 없습니다 — 완료된 프로젝트 {{count}}개는 ‘완료 항목 보기’에 있습니다',
     allDone_other: '진행 중인 작업이 없습니다 — 완료된 프로젝트 {{count}}개는 ‘완료 항목 보기’에 있습니다',
     columns: {

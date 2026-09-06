@@ -310,6 +310,10 @@ export default {
     clearSearch: 'Clear search',
     inProduction_one: '{{count}} project in production',
     inProduction_other: '{{count}} projects in production',
+    backlogHours: '{{hours}} h to print',
+    backlogDays_one: '≈ {{days}} d on {{count}} printer',
+    backlogDays_other: '≈ {{days}} d on {{count}} printers',
+    backlogTitle: 'Print time still owed on accepted jobs, divided by your printers and the calculator’s daily hours',
     allDone_one: 'Nothing in production — {{count}} finished project is in Show done',
     allDone_other: 'Nothing in production — {{count}} finished projects are in Show done',
     columns: {

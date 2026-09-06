@@ -4156,6 +4156,9 @@ export interface AitoProject {
    *  total is 0. */
   steps_total: number;
   steps_done: number;
+  /** Print minutes still owed on this project's unticked print steps — see
+   *  TaskSummary.printMinutesPending. The header's backlog badge sums it. */
+  print_minutes_pending: number;
   /** One entry per task, in the order the detail panel lists them. The card
    *  draws a pill row per entry — this is the only per-task detail the board
    *  response carries. */
