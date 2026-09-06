@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
@@ -96,7 +97,11 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
  *  ActivityRail (which fetches events and offers its own note textbox) — both
  *  are stubbed so the panel doesn't perform real network calls, and so
  *  ActivityRail's note input doesn't collide with the description field on a
- *  plain `getByRole('textbox')` query. */
+ *  plain `getByRole('textbox')` query. Wrapped in `BrowserRouter`:
+ *  `TrackingLinkControl` (in the panel's contact row) renders a react-router
+ *  `Link` whenever `tracking_configured` is false, and throws without a
+ *  router in the tree — same reason `ProjectDetailPanel.test.tsx`'s own Hosts
+ *  need one. */
 function renderPanel(project: AitoProject) {
   vi.spyOn(api, 'getAitoTasks').mockResolvedValue([]);
   vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
@@ -107,11 +112,13 @@ function renderPanel(project: AitoProject) {
   client.setQueryData(['aito-projects'], [project]);
   rtlRender(
     <QueryClientProvider client={client}>
-      <AuthProvider>
-        <ToastProvider>
-          <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={() => {}} onDelete={() => {}} />
-        </ToastProvider>
-      </AuthProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <ToastProvider>
+            <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={() => {}} onDelete={() => {}} />
+          </ToastProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </QueryClientProvider>,
   );
   return client;
@@ -266,11 +273,13 @@ function renderPanelReactive(project: AitoProject) {
 
   rtlRender(
     <QueryClientProvider client={client}>
-      <AuthProvider>
-        <ToastProvider>
-          <Harness />
-        </ToastProvider>
-      </AuthProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <ToastProvider>
+            <Harness />
+          </ToastProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </QueryClientProvider>,
   );
   return client;
