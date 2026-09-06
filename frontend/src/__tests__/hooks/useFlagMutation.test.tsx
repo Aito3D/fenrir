@@ -105,6 +105,66 @@ describe('useFlagMutation', () => {
     });
   });
 
+  it('leaves a sibling project on the board untouched when only one card is flagged', async () => {
+    const sibling = { id: 9, flag: null } as AitoProject;
+    let release: (row: AitoProject) => void = () => {};
+    vi.spyOn(api, 'setAitoProjectFlag').mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+    const { client, result } = renderBoardMutationHook(() => useFlagMutation(project), project, {
+      seedCache: false,
+    });
+    // Override the harness's single-project seed: `transform`'s ternary only
+    // rewrites the row matching `project.id` and must leave every other row
+    // in the array exactly as it was.
+    client.setQueryData(['aito-projects'], [project, sibling]);
+
+    act(() => result.current.mutate('urgent'));
+
+    await waitFor(() => {
+      const row = client.getQueryData<AitoProject[]>(['aito-projects'])!.find((p) => p.id === project.id)!;
+      expect(row.flag).toBe('urgent');
+    });
+    expect(client.getQueryData<AitoProject[]>(['aito-projects'])!.find((p) => p.id === sibling.id)).toBe(sibling);
+
+    const serverRow = { ...project, flag: 'urgent', version: 2 } as AitoProject;
+    await act(async () => {
+      release(serverRow);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual([serverRow, sibling]);
+  });
+
+  it('leaves the cache untouched when the board query has never been seeded (cache miss)', async () => {
+    let release: (row: AitoProject) => void = () => {};
+    vi.spyOn(api, 'setAitoProjectFlag').mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+    const { client, result } = renderBoardMutationHook(() => useFlagMutation(project), project, {
+      seedCache: false,
+    });
+
+    act(() => result.current.mutate('urgent'));
+
+    // `transform`'s `previous?.map(...)` short-circuits to `undefined` on a
+    // cache miss, and `setQueryData` treats an `undefined` updater result as
+    // a no-op — so the optimistic write never creates a `['aito-projects']`
+    // entry out of thin air.
+    await waitFor(() => expect(api.setAitoProjectFlag).toHaveBeenCalled());
+    expect(client.getQueryData(['aito-projects'])).toBeUndefined();
+
+    await act(async () => {
+      release({ ...project, flag: 'urgent', version: 2 } as AitoProject);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    // `settleProject`'s `replaceProject(undefined, row)` also falls through
+    // to `undefined` on an empty cache, so the settle is a no-op too.
+    expect(client.getQueryData(['aito-projects'])).toBeUndefined();
+    expect(showToastMock).not.toHaveBeenCalled();
+  });
+
   it('rolls back the optimistic flag and shows the flagFailed toast on failure', async () => {
     vi.spyOn(api, 'setAitoProjectFlag').mockRejectedValue(new Error('network down'));
     const { client, result } = renderFlagHook(project);

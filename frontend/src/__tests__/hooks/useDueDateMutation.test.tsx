@@ -84,6 +84,66 @@ describe('useDueDateMutation', () => {
     });
   });
 
+  it('leaves a sibling project on the board untouched when only one card gets a due date', async () => {
+    const sibling = { id: 9, due_date: null } as AitoProject;
+    let release: (row: AitoProject) => void = () => {};
+    vi.spyOn(api, 'setAitoProjectDueDate').mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+    const { client, result } = renderBoardMutationHook(() => useDueDateMutation(project), project, {
+      seedCache: false,
+    });
+    // Override the harness's single-project seed: `transform`'s ternary only
+    // rewrites the row matching `project.id` and must leave every other row
+    // in the array exactly as it was.
+    client.setQueryData(['aito-projects'], [project, sibling]);
+
+    act(() => result.current.mutate('2026-09-12'));
+
+    await waitFor(() => {
+      const row = client.getQueryData<AitoProject[]>(['aito-projects'])!.find((p) => p.id === project.id)!;
+      expect(row.due_date).toBe('2026-09-12');
+    });
+    expect(client.getQueryData<AitoProject[]>(['aito-projects'])!.find((p) => p.id === sibling.id)).toBe(sibling);
+
+    const serverRow = { ...project, due_date: '2026-09-12', version: 2 } as AitoProject;
+    await act(async () => {
+      release(serverRow);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual([serverRow, sibling]);
+  });
+
+  it('leaves the cache untouched when the board query has never been seeded (cache miss)', async () => {
+    let release: (row: AitoProject) => void = () => {};
+    vi.spyOn(api, 'setAitoProjectDueDate').mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+    const { client, result } = renderBoardMutationHook(() => useDueDateMutation(project), project, {
+      seedCache: false,
+    });
+
+    act(() => result.current.mutate('2026-09-12'));
+
+    // `transform`'s `previous?.map(...)` short-circuits to `undefined` on a
+    // cache miss, and `setQueryData` treats an `undefined` updater result as
+    // a no-op — so the optimistic write never creates a `['aito-projects']`
+    // entry out of thin air.
+    await waitFor(() => expect(api.setAitoProjectDueDate).toHaveBeenCalled());
+    expect(client.getQueryData(['aito-projects'])).toBeUndefined();
+
+    await act(async () => {
+      release({ ...project, due_date: '2026-09-12', version: 2 } as AitoProject);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    // `settleProject`'s `replaceProject(undefined, row)` also falls through
+    // to `undefined` on an empty cache, so the settle is a no-op too.
+    expect(client.getQueryData(['aito-projects'])).toBeUndefined();
+    expect(showToastMock).not.toHaveBeenCalled();
+  });
+
   it('rolls back the optimistic due date and shows the dueDateFailed toast on failure', async () => {
     vi.spyOn(api, 'setAitoProjectDueDate').mockRejectedValue(new Error('network down'));
     const { client, result } = renderDueDateHook(project);
