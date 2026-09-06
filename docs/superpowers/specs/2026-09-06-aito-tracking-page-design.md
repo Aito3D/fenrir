@@ -91,7 +91,8 @@ Response `AitoTrackingResponse`:
   "due_date": "2026-09-20" | null,
   "shipping": {"island": "Rangiroa", "service": "Livraison Avion Tuamotu"} | null,   // labels from _shipping_names / shipping_service
   "done_at": "2026-09-01T18:20:00" | null,  // the latest move-to-Done event's occurred_at; null unless column == 'done' and an event exists
-  "invoice": "paid" | "unpaid" | "overdue" | null   // a STATE, never an amount — see below
+  "invoice": "paid" | "unpaid" | "overdue" | null,  // a STATE, never an amount — see below
+  "reference": "EST-000142" | null          // project.quote_number: the number printed on the client's own quote; null before a quote exists
 }
 ```
 
@@ -191,37 +192,58 @@ import it), not the i18n catalogues. Layout:
 1. **Header**, centred: the Aito3D logo (`src/assets/aito3d_logo.png`, the
    asset the shipping label already imports, 40 px tall, `alt="Aito3D"`)
    and under it the contact line from `utils/shippingLabel.ts`'s sender
-   constant (phone · email · website), reused so the page and the label
-   read as one brand. Below it, `FR.title` = "Suivi de votre commande",
-   centred.
+   constant (phone · email · website) in `aito-muted` at 13.5 px, reused so
+   the page and the label read as one brand. Below it, `FR.title` = "Suivi
+   de votre commande", centred, and when `reference` is set a muted line
+   "Devis n° {reference}" right under it, so the client knows they are
+   looking at THEIR order and can quote the number on the phone.
 2. **Rail** (`components/aito/TrackingRail.tsx`, new, read-only): the seven
-   columns in board order with French labels from `FR.stages` (`devis` →
+   columns in board order with French labels from `TRACK_STAGES` (`devis` →
    "Devis", `waiting` → "Accord", `scan` → "Scan", `model` → "Modélisation",
-   `print` → "Fabrication", `finish` → "Prête", `done` → "Terminé"). Stages
-   before the current get a check, the current is filled, later ones are
-   outlined. Purely presentational; props `{ column: AitoColumnId }`.
-3. **Status sentence** (`statusSentence(data): string` in
-   `utils/aitoTracking.ts`):
-   - `devis` → "Nous préparons votre devis."
-   - `waiting` → "Votre devis vous attend : dites-nous si vous le validez."
-   - `scan`, `model`, `print` → "Votre commande est en cours de fabrication."
-   - `finish` → "Votre commande est prête : contactez-nous ou passez au magasin."
-   - `done` with `shipping` → "Votre commande a été expédiée vers {island} ({service})."
-   - `done` with `done_at` and no shipping → "Votre commande a été récupérée le {date}." (`toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })`)
-   - `done` with neither → "Votre commande est terminée."
-4. **Invoice state** (`components/aito/TrackingInvoice.tsx`, new): drawn
-   only when `invoice` is non-null, directly under the status sentence, as
-   a tinted box with a round glyph and two lines:
-   - `paid` (green, ✓): "Facture réglée" / "Merci pour votre confiance."
-   - `unpaid` (amber, !): "Facture à régler" / "Merci de la régler avant le retrait ou l'expédition."
-   - `overdue` (red, !): "Facture en retard de règlement" / "Contactez-nous si vous avez déjà payé."
+   `print` → "Fabrication", `finish` → "Prête") and a LAST label that says
+   what actually ends the order: "Expédiée" when the card has a shipment,
+   "Récupérée" otherwise. Stages before the current get a check on a cyan
+   disc; the current is a FULL cyan disc with a small white pulsing centre
+   dot and its label in cyan bold, so the current state reads in half a
+   second; later stages are outlined in `aito-line`. Props
+   `{ column: AitoColumnId; shipped: boolean }`. Below 560 px the row is
+   replaced by a compact variant: "Étape {n} sur 7" left, the current label
+   in cyan right, and a thin cyan progress bar under them (same component,
+   two markups toggled by Tailwind's `max-sm:`/`sm:` classes).
+3. **State block** (`statusCopy(data): { title: string; sub: string }` in
+   `utils/aitoTracking.ts`), a cyan-tinted panel (neutral tint for the two
+   pre-order states) holding a bold title, a human one-liner, and, when
+   `due_date` is set, a separated line with a calendar icon:
+   "Disponibilité estimée : **{date}**" (French long date). The date lives
+   HERE, next to the state, not under the parts list: after the state it is
+   what the client most wants to know.
+   - `devis` → "Nous préparons votre devis" / "Vous le recevrez par e-mail dès qu'il est prêt."
+   - `waiting` → "Votre devis vous attend" / "Dites-nous si vous le validez, et nous lançons la fabrication."
+   - `scan`, `model`, `print` → "Votre commande est en fabrication" / "Nous préparons actuellement vos pièces."
+   - `finish` → "Votre commande est prête" / "Contactez-nous ou passez au magasin pour la récupérer."
+   - `done` with `shipping` → "Votre commande a été expédiée" / "Vers {island} par {service}."
+   - `done` with `done_at`, no shipping → "Votre commande a été récupérée" / "Le {date}. Merci pour votre confiance !"
+   - `done` with neither → "Votre commande est terminée" / "Merci pour votre confiance !"
+4. **Tasks**: `FR.tasksHeading` = "Vos pièces" as a small uppercase
+   heading, then a `<ul>` of `tasks` as delivered by the server, thin
+   `aito-line` separators.
+5. **Invoice line** (`components/aito/TrackingInvoice.tsx`, new): drawn
+   only when `invoice` is non-null, UNDER the parts list, compact: a small
+   coloured disc with a glyph, two lines of text, and on the right a
+   disclosure link — no full-width tinted box, so the page does not stack
+   panel inside panel:
+   - `paid` (green ✓): "Facture réglée" / "Merci pour votre confiance." — no link.
+   - `unpaid` (amber !): "Facture à régler" / "Avant le retrait ou l'expédition." — link "Modalités de paiement →".
+   - `overdue` (red !): "Facture en retard" / "Contactez-nous si vous avez déjà payé." — same link.
+   The link toggles an inline paragraph `FR.paymentTerms` under the line
+   (a fixed constant, no request): "Règlement par virement ou au magasin,
+   en indiquant le numéro de votre devis. Répondez à notre message pour
+   toute question." There is no online payment and no invoice PDF on this
+   page (a PDF carries amounts, which the page never shows).
    `data-testid="track-invoice"` with `data-state` = the value.
-5. **Tasks**: `FR.tasksHeading` = "Vos pièces", then a plain `<ul>` of
-   `tasks` as delivered by the server.
-6. **Promised date**: when `due_date` is set, "Date prévue : {date}" with
-   the same French long date; absent otherwise.
-7. **Footer**, centred: `FR.footer` = "Une question ? Répondez à notre
-   message ou appelez-nous." plus the contact line again.
+6. **Footer**, centred, 13.5 px: `FR.footer` = "Une question sur votre
+   commande ? Nous sommes disponibles au {phone} ou à {email}." with the
+   phone and email as cyan `tel:` / `mailto:` links.
 
 States: loading renders the header and a neutral "Chargement…" line. Any
 error (404, network) renders the header, `FR.invalid` = "Ce lien n'est plus
@@ -230,7 +252,7 @@ raw status code. `document.title` is set to "Suivi de commande · Aito 3D".
 
 ## 6. API client
 
-`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null }`;
+`AitoTracking { column: AitoColumnId; tasks: string[]; due_date: string | null; shipping: { island: string; service: string } | null; done_at: string | null; invoice: 'paid' | 'unpaid' | 'overdue' | null; reference: string | null }`;
 `AitoProject.tracking_url: string | null; tracking_configured: boolean`;
 `api.getAitoTracking(token)`, `api.getAitoTrackingLink(id)`,
 `api.regenerateAitoTrackingToken(id)`. Default msw handlers: track → 404,
@@ -246,7 +268,8 @@ Backend (`tests/unit/test_aito_tracking.py`):
   without the token in its detail.
 - Public endpoint: 200 shape (titles in position order with "Pièce n"
   fallback, due_date, shipping labels, done_at, `invoice` mapped from each
-  `invoice_status` value and null without one; no balance key); trashed → 404; unknown →
+  `invoice_status` value and null without one; `reference` = quote_number
+  or null; no balance key); trashed → 404; unknown →
   404; Done 31 days ago → 404; Done 29 days ago → 200; Done with no event →
   200; card that left Done and returned 2 days ago → 200; no client field or
   price key in the body; `Cache-Control: no-store`.
@@ -262,11 +285,15 @@ Backend (`tests/unit/test_aito_tracking.py`):
   `aito:update`, `get_tracking` declares none.
 
 Frontend:
-- `aitoTracking.test.ts`: every branch of `statusSentence`, French dates.
-- `AitoTrackPage.test.tsx`: renders the logo, rail (current stage marked),
-  sentence, tasks, promised date from a fixture; shipped and picked-up
-  variants; the three invoice states and its absence; 404 → the invalid
-  line and the contact line; no login redirect.
+- `aitoTracking.test.ts`: every branch of `statusCopy`, French dates, the
+  last-stage label for shipped vs not.
+- `AitoTrackPage.test.tsx`: renders the logo, the reference line (and its
+  absence when null), rail (current stage `aria-current`, earlier done,
+  later todo, last label "Expédiée" with a shipment / "Récupérée" without),
+  state title + sub-line, the estimated date inside the state block, tasks,
+  from a fixture; shipped and picked-up variants; the three invoice states
+  with the terms disclosure opening on click, and its absence; 404 → the
+  invalid line and the contact line; no login redirect.
 - `TrackingLinkControl.test.tsx`: Copy calls the link endpoint and writes
   the clipboard; disabled with the hint when `tracking_configured` is false;
   Regenerate needs the hold and toasts; buttons absent without
@@ -277,7 +304,7 @@ Frontend:
 
 | Question | Decision |
 |---|---|
-| Page content | Logo, rail, status sentence, invoice state (paid / to pay / overdue, no amount), task titles, promised date; nothing about the client, no prices |
+| Page content | Logo, quote reference, rail (last stage named Expédiée/Récupérée, compact on mobile), state block with human sub-line and the estimated date, task titles, compact invoice line with payment-terms disclosure (no amount, no PDF, no online payment); nothing about the client, no prices |
 | Token life | Computed: active card, and ≤ 30 days after the latest move to Done; Regenerate replaces |
 | Delivery | Copy button, SMS draft line, Zoho estimate notes (Zoho's email body is not writable) |
 | Language | Fixed French constants, no i18n |
