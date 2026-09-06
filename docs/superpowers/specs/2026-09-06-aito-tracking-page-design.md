@@ -188,6 +188,7 @@ whichever preset the operator picks):
 
 ```
 --color-aito-cyan: #04A1E4;        /* accent: current stage, done stages, status box, dates */
+--color-aito-cyan-dim: #11364a;    /* done stepper nodes: 20 % cyan pre-mixed onto the card, OPAQUE so the rail never shows through */
 --color-aito-midnight: #0c1016;    /* page ground = the app's "Midnight Blue" dark preset (--bg-primary) */
 --color-aito-card: #141b23;        /* the card (= that preset's --bg-secondary) */
 --color-aito-line: #212c37;        /* separators, outlined stages (= --bg-tertiary / --border-color) */
@@ -419,6 +420,50 @@ long reference, a multi-line sub-line.
 
 **Performance.** No new library; the logo PNG is the existing 5 KB asset;
 the skeleton reserves the panel's height so nothing shifts when data lands.
+
+**Final pixel pass (desktop is otherwise frozen).**
+- Vertical rhythm: the card starts 64 px from the top (no visual
+  centring); 24 px between the state panel and "Vos pièces" instead of 32;
+  inside the panel, sub-line → hairline 12 px, hairline → label 12 px,
+  label → date 4 px, date → update line 8 px (about 12–16 px saved).
+- Stepper geometry: the rail never crosses a node. It is drawn as
+  SEGMENTS between nodes — each step column carries a left and a right
+  2 px segment that stop 18 px short of the column centre (node radius
+  14 px + 4 px of air), so there is visibly node · gap · segment · gap ·
+  node. Nodes are opaque and above the segments. A segment is cyan (55 %)
+  when it joins two completed nodes or a completed node to the active one,
+  `aito-line` otherwise. Done nodes 28 px, solid `aito-cyan-dim` (`#11364a`,
+  the 20 % cyan tint pre-mixed onto the card so nothing shows through),
+  white check 11 px, stroke 3; active node 32 px solid cyan with a 9 px
+  white centre dot and a 5 px halo at 14 %; future nodes 28 px outlined
+  `aito-line` on `aito-card`. Labels centred under their nodes with 8 px
+  between node and label (6 px under the larger active node so the label
+  baseline stays on the same line); done labels `aito-muted/80`, future
+  labels `aito-muted/70`, active label semibold `aito-ink` 12 px. No
+  continuous track element at all.
+- Secondary text: `aito-muted` stays `#a3b1c0`; the very-secondary level
+  (update line, future stages) is `aito-muted/80`, not /70 — a phone in
+  daylight must still read it.
+- Parts: the quantity column is `min-w-7` (28 px) and top-aligned; a name
+  can wrap on three lines without touching it.
+- Paid invoice: dot 8 px from its text, vertically centred on the first
+  line.
+- Footer: the question in `aito-ink`, the phone and email in `aito-muted`
+  until hover/focus, where they turn `aito-ink`.
+- Radii from two tokens only: 12 px (card, state panel, payment card,
+  skeleton) and 8 px (buttons). Logo 26 px tall.
+- State panel `min-h-[132px]` on desktop and `transition-colors duration-150`,
+  so a move between states does not jump the layout; nothing else animates.
+- Prête copy: "Votre commande est prête" / "Vous pouvez venir la récupérer
+  au magasin ; répondez à notre message pour convenir d'un horaire." The
+  date block is omitted in that state (the order IS ready).
+- Expédiée: no carrier tracking number exists in the data today, so there
+  is no "Suivre l'envoi" action; the sub-line names the island and the
+  service. A tracking number, if it ever lands on the card, becomes the
+  primary line and a button — not in this spec.
+- Mobile 320–430 px: compact timeline, panel padding 16 px, quantity column
+  anchored top-right, payment button full width under 400 px, tap targets
+  44 px, no text under 13 px, no fixed widths.
 
 ## 8. Usage statistics
 
