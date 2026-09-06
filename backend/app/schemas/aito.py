@@ -955,3 +955,28 @@ class AitoStatsResponse(BaseModel):
     invoicing: AitoStatsInvoicing
     date_from: date | None
     date_to: date | None
+
+
+class AitoClientHistorySocial(BaseModel):
+    network: str
+    handle: str
+
+
+class AitoClientHistoryCard(BaseModel):
+    id: int
+    created_at: datetime
+    column: AitoColumn
+    # TaskSummary.total over the card's tasks — the number the board card shows.
+    total: float
+    tasks: list[AitoTaskResponse]
+
+
+class AitoClientHistoryResponse(BaseModel):
+    """A client's newest active cards for the drawer's recall block — see
+    docs/superpowers/specs/2026-09-05-aito-client-history-design.md."""
+
+    cards: list[AitoClientHistoryCard]
+    # The (network, handle) pair of the newest active card that has one, NOT
+    # bounded by `limit`: Zoho never stores the handle, so this is the only
+    # place the drawer can recover it from.
+    latest_social: AitoClientHistorySocial | None

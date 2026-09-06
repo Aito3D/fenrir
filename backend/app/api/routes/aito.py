@@ -19,6 +19,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoClientHistoryResponse,
     AitoContactedUpdate,
     AitoDueDateUpdate,
     AitoEventPage,
@@ -57,6 +58,7 @@ from backend.app.schemas.aito import (
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
+from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_quote_sync import (
@@ -928,6 +930,22 @@ async def get_aito_stats(
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must not be after date_to")
     return await compute_aito_stats(db, date_from, date_to, tz_offset_minutes)
+
+
+@router.get("/clients/{client_id}/history", response_model=AitoClientHistoryResponse)
+async def get_client_history(
+    client_id: str,
+    limit: int = Query(5, ge=1, le=20, description="Newest cards to return"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The drawer's repeat-client recall: a client's newest active cards with
+    their tasks, and the latest social pair (Zoho never stores the handle).
+    Unknown ids and the walk-in default contact return an empty list — the
+    drawer asks for every non-default contact, and most have no history.
+    Declared ahead of the `/{project_id}` routes so `clients` is never parsed
+    as an id."""
+    return await compute_client_history(db, client_id, limit)
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
