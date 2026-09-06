@@ -4042,6 +4042,16 @@ export interface AitoTaskSteps {
   rush?: boolean;
 }
 
+export interface AitoStatsBucket { count: number; total: number }
+export interface AitoStats {
+  board: { column: AitoColumnId; count: number; total: number }[];
+  conversion: { sent: AitoStatsBucket; accepted: AitoStatsBucket; declined: AitoStatsBucket; acceptance_rate: number | null };
+  stage_days: { column: AitoColumnId; median_days: number | null; sample: number }[];
+  invoicing: { invoiced_total: number; invoiced_count: number; outstanding_balance: number; outstanding_count: number };
+  date_from: string | null;
+  date_to: string | null;
+}
+
 export type AitoFlag = 'urgent' | 'sav' | 'pause';
 
 export interface AitoProject {
@@ -7776,6 +7786,14 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ due_date: dueDate }),
     }),
+  /** The Stats page's pipeline widget — see routes/aito.py:get_aito_stats. */
+  getAitoStats: (options?: { dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    const query = params.toString();
+    return request<AitoStats>(`/aito/stats${query ? `?${query}` : ''}`);
+  },
   /** Record — or take back — the fact that the client has been told the job is
    *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to
    *  stamp, and a browser clock that is wrong would otherwise skew both the
