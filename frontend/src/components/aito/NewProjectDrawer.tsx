@@ -6,6 +6,7 @@ import { Check, ChevronDown, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoTask, ZohoContact } from '../../api/client';
 import { AiSummaryPanel } from './AiSummaryPanel';
+import { CLIENT_HISTORY_LIMIT } from './ClientHistory';
 import { ClientSection } from './ClientSection';
 import { CreateChecklist } from './CreateChecklist';
 import { HoldButton } from './HoldButton';
@@ -195,7 +196,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const historyClientId = draft && !draft.isDefault ? draft.id : '';
   const historyQuery = useQuery({
     queryKey: ['aito-client-history', historyClientId],
-    queryFn: () => api.getAitoClientHistory(historyClientId, 5),
+    queryFn: () => api.getAitoClientHistory(historyClientId, CLIENT_HISTORY_LIMIT),
     enabled: historyClientId !== '',
     staleTime: 60_000,
   });
@@ -209,6 +210,13 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // would refill just the same way. Once per client id, for the life of the
   // draft, is only true if this list survives both of those.
   const socialPrefilledForRef = useRef<string[]>(persistence.initial?.socialPrefilledFor ?? []);
+  // Bumped whenever `socialPrefilledForRef` gains an id WITHOUT a paired
+  // `setDraft` call (the prefill didn't apply — the operator already had an
+  // opinion about the social field). The persistence effect below has no
+  // other dependency that changes in that case, so without this the "seen"
+  // marker would never reach localStorage and a later un-pick of the field
+  // would look unprefilled again and get refilled. See the prefill effect.
+  const [socialPrefilledForTick, setSocialPrefilledForTick] = useState(0);
   // Shared with the panel header's pill and ShippingCard's read view — see
   // `islandLabel`'s own doc for why the degrade (catalogue unresolved) has
   // to be the same computation on all three surfaces rather than each
@@ -230,13 +238,21 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
 
   // Zoho never stores the social handle; the client's own past cards do.
   // Fill the EMPTY social field from the newest one, once per client id.
+  //
+  // The client id is recorded as "seen" the FIRST time this effect evaluates
+  // for it with a non-null `latestSocial`, whether or not the prefill ends
+  // up applying below. Otherwise: operator picks a network pill before the
+  // history lands, then un-picks it — the draft is back to null/'', the id
+  // was never recorded (the emptiness check bailed first), and the effect
+  // fills the recalled handle right back in on the next render.
   const latestSocial = historyQuery.data?.latest_social ?? null;
   useEffect(() => {
     if (!draft || draft.isDefault || !latestSocial) return;
     if (socialPrefilledForRef.current.includes(draft.id)) return;
+    socialPrefilledForRef.current = [...socialPrefilledForRef.current, draft.id];
+    setSocialPrefilledForTick((n) => n + 1);
     if (draft.socialNetwork !== null || draft.socialHandle !== '') return;
     if (!isSocialNetwork(latestSocial.network)) return;
-    socialPrefilledForRef.current = [...socialPrefilledForRef.current, draft.id];
     setDraft({ ...draft, socialNetwork: latestSocial.network, socialHandle: latestSocial.handle });
   }, [draft, latestSocial]);
 
@@ -267,10 +283,12 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // as a side effect of some other field changing later. `resetDraft`'s ref
   // clear needs no such proxy: it always lands alongside a tasks/draft/
   // summaryText/summaryEdited/shipping reset, which already reruns this.
-  // `socialPrefilledForRef` needs no proxy of its own either: the only place
-  // that mutates it (the prefill effect above) always pairs the mutation with
-  // a `setDraft` call in the same synchronous block, and `draft` is already a
-  // dependency here.
+  // `socialPrefilledForRef` needs `socialPrefilledForTick` as its proxy: the
+  // prefill effect above mutates the ref whenever it sees a client id for the
+  // first time, but only pairs that with a `setDraft` call when the prefill
+  // actually applies. When it doesn't (the operator already had an opinion
+  // about the social field), nothing else in this dependency list changes,
+  // so without the tick the "seen" marker would never reach localStorage.
   useEffect(() => {
     persistence.save({
       tasks,
@@ -283,7 +301,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       socialPrefilledFor: socialPrefilledForRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, draft, summaryText, summaryEdited, shipping, dueDate, generateNonce]);
+  }, [tasks, draft, summaryText, summaryEdited, shipping, dueDate, generateNonce, socialPrefilledForTick]);
 
   const toggleSection = (id: SectionId) =>
     setOpenSections((current) => {

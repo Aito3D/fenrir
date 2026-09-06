@@ -15,7 +15,7 @@ export interface ClientHistoryProps {
   onReuse: (tasks: AitoTask[]) => void;
 }
 
-const LIMIT = 5;
+export const CLIENT_HISTORY_LIMIT = 5;
 
 /** The repeat-client recall block: the attached client's newest cards, each
  *  with a Reuse button that hands its tasks up to the drawer. Keyed on the
@@ -31,7 +31,7 @@ export function ClientHistory({ clientId, isDefault, onReuse }: ClientHistoryPro
   const enabled = !isDefault && clientId !== '';
   const historyQuery = useQuery({
     queryKey: ['aito-client-history', clientId],
-    queryFn: () => api.getAitoClientHistory(clientId, LIMIT),
+    queryFn: () => api.getAitoClientHistory(clientId, CLIENT_HISTORY_LIMIT),
     enabled,
     staleTime: 60_000,
   });
@@ -52,34 +52,38 @@ export function ClientHistory({ clientId, isDefault, onReuse }: ClientHistoryPro
         {t('aito.pastCards', { count: cards.length })}
       </p>
       <ul className="space-y-1">
-        {cards.map((card) => (
-          <li
-            key={card.id}
-            data-testid="client-history-row"
-            className="flex items-center gap-2 rounded-md bg-bambu-dark px-2.5 py-1.5 text-xs"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-2 text-bambu-gray">
-                <span>{formatDate(card.created_at, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                <span aria-hidden="true">·</span>
-                <span>{stageLabel(card)}</span>
-                <span aria-hidden="true">·</span>
-                <span className="text-white">{formatMoney(card.total, currency)}</span>
-              </p>
-              <p className="truncate text-bambu-gray-light" title={titles(card)}>
-                {titles(card)}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={card.tasks.length === 0}
-              onClick={() => onReuse(card.tasks)}
-              className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium text-bambu-green hover:bg-bambu-dark-tertiary disabled:opacity-40 disabled:hover:bg-transparent ${focusRingCls}`}
+        {cards.map((card) => {
+          const formattedDate = formatDate(card.created_at, { year: 'numeric', month: 'short', day: 'numeric' });
+          return (
+            <li
+              key={card.id}
+              data-testid="client-history-row"
+              className="flex items-center gap-2 rounded-md bg-bambu-dark px-2.5 py-1.5 text-xs"
             >
-              {t('aito.reuseTasks')}
-            </button>
-          </li>
-        ))}
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2 text-bambu-gray">
+                  <span>{formattedDate}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{stageLabel(card)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-white">{formatMoney(card.total, currency)}</span>
+                </p>
+                <p className="truncate text-bambu-gray-light" title={titles(card)}>
+                  {titles(card)}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={card.tasks.length === 0}
+                onClick={() => onReuse(card.tasks)}
+                aria-label={`${t('aito.reuseTasks')} · ${formattedDate}`}
+                className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium text-bambu-green hover:bg-bambu-dark-tertiary disabled:opacity-40 disabled:hover:bg-transparent ${focusRingCls}`}
+              >
+                {t('aito.reuseTasks')}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

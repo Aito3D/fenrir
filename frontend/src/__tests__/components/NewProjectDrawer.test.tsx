@@ -1000,6 +1000,24 @@ describe('repeat-client recall', () => {
     await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(2));
   });
 
+  it('does not regenerate a hand-edited summary after Reuse', async () => {
+    mockHistory(JP_HISTORY);
+    await renderDrawer();
+    await fillOneTask();
+    await openClientSection();
+    await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(1));
+
+    const textarea = await screen.findByLabelText('Project summary');
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, 'Écrit à la main.');
+
+    await userEvent.click(await screen.findByRole('button', { name: /reuse/i }));
+    expect(await screen.findByText(/2 tasks added/)).toBeInTheDocument();
+
+    expect(api.summarizeAitoProject).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Project summary')).toHaveValue('Écrit à la main.');
+  });
+
   it('prefills the social handle once from the latest card and never overwrites a typed one', async () => {
     mockHistory(JP_HISTORY);
     await renderDrawer();
@@ -1030,6 +1048,38 @@ describe('repeat-client recall', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.getByLabelText(/username/i)).toHaveValue('typed');
     expect(screen.getByRole('radio', { name: /whatsapp/i })).toBeChecked();
+  });
+
+  it('does not refill a handle un-picked after the history landed with the field already occupied', async () => {
+    // Regression: the "seen" marker used to be recorded only when the
+    // prefill actually applied. Picking a pill before history lands leaves
+    // the field non-empty, so the prefill effect bails on the emptiness
+    // check before ever recording the id — then un-picking (clearing back
+    // to null/'') looks unprefilled again and the effect fills the recalled
+    // handle right back in.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/history', async () => {
+        await gate;
+        return HttpResponse.json(JP_HISTORY);
+      }),
+    );
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('radio', { name: /whatsapp/i }));
+    await userEvent.type(await screen.findByLabelText(/username/i), 'typed');
+    release();
+    await waitFor(() => expect(screen.getByLabelText(/username/i)).toHaveValue('typed'));
+
+    // The operator's undo: re-picking the SELECTED network clears both
+    // fields at once (see SocialInput's own doc).
+    await userEvent.click(screen.getByRole('radio', { name: /whatsapp/i }));
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { checked: true })).not.toBeInTheDocument();
   });
 
   // A second, distinct client — its own history carries its own
