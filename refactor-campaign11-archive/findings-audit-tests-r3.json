@@ -1,0 +1,34 @@
+{
+  "findings": [
+    {
+      "severity": "medium",
+      "category": "flaky-test",
+      "file": "backend/tests/unit/test_aito_quote_sync.py",
+      "line": 2737,
+      "title": "test_wake_drains_a_pending_project_without_waiting_for_the_interval still races the startup full pass on the shared StaticPool connection",
+      "evidence": "latest failure in /tmp/c11-cov-backend-full.log: 'sqlalchemy.exc.InvalidRequestError: Could not refresh instance ...AitoProject...' raised from `await db_session.refresh(project)` at test_aito_quote_sync.py:2771, a NEW failure mode distinct from the live_sessions race already fixed. The test body (test_aito_quote_sync.py:2735-2750) does `loop_task = asyncio.create_task(run_sync_loop())` then only `await asyncio.sleep(0.05)` before using db_session to add/flush/commit the project -- it never waits for the loop's own startup-pass session (also a TrackedSession, added to the same `live_sessions` set the test already tracks) to close first. db_session and every worker session share ONE physical aiosqlite connection (StaticPool, per the test's own comment at lines 2684-2687: 'on the in-memory StaticPool engine that is THE connection'). If the startup pass's session is still mid-transaction (its own SELECTs autobegin one) when db_session's insert lands on that same connection and commits, the startup session's later rollback-on-close of its now-stale transaction can silently discard the just-committed insert -- db_session's Python-side unit of work never notices, so the subsequent commit() is a no-op and refresh() finds no row.",
+      "fix": "in backend/tests/unit/test_aito_quote_sync.py, before creating/committing the project (around line 2739), add the same wait-for-live_sessions-empty loop that already exists after the drain (lines 2766-2770) so the test blocks until the startup full-pass session has actually closed before any other session writes to the shared connection -- replacing the fixed `await asyncio.sleep(0.05)` at line 2738, which is a sleep-based race, not a synchronization point.",
+      "behavior_change": false
+    },
+    {
+      "severity": "medium",
+      "category": "coverage-gap",
+      "file": "frontend/src/App.tsx",
+      "line": 170,
+      "title": "PermissionRoute's loading / auth-disabled / unauthenticated branches are never exercised through the real /aito route",
+      "evidence": "frontend/src/App.tsx PermissionRoute (lines 161-188) has 4 branches -- `if (loading) return <RouteLoading/>` (170-172), `if (!authEnabled) return children` (175-176), `if (!user) return <Navigate to=\"/login\"/>` (179-180), and the permission allow/deny pair (183-185). frontend/src/__tests__/AppRouterAitoGuard.test.tsx -- the file whose own docstring says it exists specifically to pin the REAL /aito guard, as opposed to the hand-rebuilt one in AitoPageAitoPermissions.test.tsx -- only ever sets mockUseAuth.loading = false and a truthy user (lines 34-49), and its two `it` blocks vary only hasPermission. Re-running that file alone with `npx vitest run src/__tests__/AppRouterAitoGuard.test.tsx --coverage --coverage.include=src/App.tsx` reports 44.51% stmts / 50% branch with Uncovered Line #s including '...155,171,176,180,191-204' -- 171, 176 and 180 are exactly the loading/auth-disabled/unauthenticated return statements of PermissionRoute.",
+      "fix": "in frontend/src/__tests__/AppRouterAitoGuard.test.tsx, add cases that set mockUseAuth.loading = true (expect RouteLoading, i.e. no navigation and no board content while pathname stays /aito), mockUseAuth.authEnabled = false (expect the board to mount at /aito regardless of hasPermission), and mockUseAuth.user = null with authEnabled true (expect a redirect to /login) -- mirroring the existing allow/deny cases in that file.",
+      "behavior_change": false
+    },
+    {
+      "severity": "medium",
+      "category": "coverage-gap",
+      "file": "frontend/src/hooks/useSettledValue.ts",
+      "line": 6,
+      "title": "useSettledValue has no test at all -- its actual settle transition (the setTimeout callback) is never invoked by any test",
+      "evidence": "frontend/src/hooks/useSettledValue.ts backs three production behaviors: the Money remount-tick key in components/calculator/shared.tsx:82, the fill-retrigger key in components/calculator/CostWaterfall.tsx:28, and CalculatorTotalsCard.tsx:52 -- yet there is no useSettledValue.test.ts/.tsx anywhere (find frontend/src/__tests__ -iname '*SettledValue*' -> no matches) and no reference to it, settledTotal, or animate-value-tick in any test file (grep -rn across frontend/src/__tests__ -> no matches). Running the one test that does mount a consumer (npx vitest run src/__tests__/components/calculator/CostWaterfall.test.tsx --coverage --coverage.include=src/hooks/useSettledValue.ts) reports 100% lines but only 75% funcs (3/4) with 100% branches -- the uncounted function is the `() => setSettled(value)` callback passed to setTimeout (useSettledValue.ts line 6), i.e. the hook is only ever seen at its initial render; the delayed state update that is the entire point of the hook -- and the trigger for the tick/fill-retrigger animations on Money and CostWaterfall -- never fires in any test. No calculator test file uses vi.useFakeTimers()/advanceTimersByTime (grep across frontend/src/__tests__/components/calculator and CalculatorPage* -> no matches).",
+      "fix": "add frontend/src/__tests__/hooks/useSettledValue.test.ts using vi.useFakeTimers(): render the hook with an initial value, rerender with a new value, assert the returned value is still the OLD one before `delay` ms, then vi.advanceTimersByTime(delay) and assert it flips to the NEW value; also cover a value changing again before the delay elapses (the setTimeout gets cleared/restarted, never settling on the intermediate value).",
+      "behavior_change": false
+    }
+  ]
+}

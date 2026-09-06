@@ -1,0 +1,41 @@
+{"findings": [
+  {"severity": "medium", "category": "error-handling",
+   "file": "backend/app/services/aito_invoice_sweep.py", "line": 66,
+   "title": "sweep_invoices() swallows a Books 429 and keeps calling for every remaining project",
+   "evidence": "`except (ZohoUpstreamError, ValueError, TypeError, KeyError) as exc: logger.warning(\"Invoice sweep skipped project %s: %s\", project.id, exc); continue` — `ZohoRateLimited` is a subclass of `ZohoUpstreamError` (services/zoho.py:109), so a 429 on the first project is logged as a skip and the loop issues `list_project_invoices` for every remaining open receivable, one 429 at a time. The sweep also neither reads nor sets `aito_quote_sync._throttled_until`: `run_sync_loop` calls `await sweep_invoices(db)` (aito_quote_sync.py:2130) unconditionally right after `run_sync_once`, which itself returns 0 without touching Books while throttled (aito_quote_sync.py:1881). So on a throttled org the tick that spends zero sync calls still spends N invoice calls, deepening the throttle — the exact failure `sync_project`'s `return True` / `break` pair was added to prevent — and a 429 seen only by the sweep never arms the throttle for the sync path either.",
+   "fix": "catch `ZohoRateLimited` ahead of the generic handler and break out of the project loop (committing what is already refreshed), arm `_throttled_until` the same way `sync_project`'s handler does, and have `run_sync_loop` skip `sweep_invoices` while the throttle window is open.",
+   "behavior_change": true,
+   "behavior_change_note": "during a Zoho rate-limit window the invoice cards refresh later than they do today (the sweep stops after the first 429 instead of trying every project), and a 429 observed by the sweep would additionally pause the quote sync for the backoff window."},
+
+  {"severity": "medium", "category": "partial-failure",
+   "file": "backend/app/services/aito_invoice_sweep.py", "line": 56,
+   "title": "sweep_invoices() never clears the cached invoice fields when Books reports no invoice",
+   "evidence": "`invoices = await zoho_service.list_project_invoices(...)` then `if invoices:` guards all three writes, with no `else` — but the row is still stamped `project.invoice_checked_at = _now()` and counted as `updated += 1`. When an invoice is deleted (or its estimate/customer link removed) in Books, Books answers `[]` and the project keeps its last-seen `invoice_status`/`invoice_balance`/`invoice_due_date` forever. Because the selection is `or_(invoice_balance.is_(None), invoice_balance > 0)` (line 49), that row also never drops out of the sweep: it costs one Books call every hour for the life of the card, and the board's `unpaid` follow-up chip keeps chasing a client for an invoice that no longer exists — while `invoice_checked_at` tells the operator it was just verified.",
+   "fix": "add the `else` branch that resets `invoice_status`/`invoice_balance`/`invoice_due_date` to None when `invoices` is empty, and only count/stamp a project the call actually refreshed.",
+   "behavior_change": true,
+   "behavior_change_note": "a card whose Books invoice has been deleted would lose its cached invoice status/balance/due date and disappear from the unpaid follow-up chip, instead of showing the last figures it ever saw."},
+
+  {"severity": "medium", "category": "boundary-validation",
+   "file": "frontend/src/utils/aitoFollowups.ts", "line": 63,
+   "title": "the unpaid follow-up rule compares invoice_due_date as a string without checking it is ISO",
+   "evidence": "`if (!(p.invoice_due_date < today)) return null;` followed by `Math.round((parseLocalDateKey(today).getTime() - parseLocalDateKey(p.invoice_due_date).getTime()) / DAY_MS)`. `invoice_due_date` is whatever Books echoed — `_map_invoice` stores `invoice.get(\"due_date\", \"\")` verbatim (services/zoho.py:237) and the sweep writes it unvalidated — and this repo has already been bitten by a non-ISO Books date: `_backfill_aito_quote_sent_at` in core/database.py guards `quote_date` with a GLOB because \"a non-ISO value like '10/02/2026'\" was real. A `'10/02/2026'` due date sorts lexically below any `'2026-…'` today, so the invoice is flagged overdue on every board no matter its real date; `parseLocalDateKey('10/02/2026')` then yields an Invalid Date, so `days` is NaN, the chip's \"longest wait\" label silently disappears (`NaN > 0` is false) and the bucket's sort comparator returns NaN, making the chase order arbitrary. The sibling consumer `dueDateLevel` (utils/aitoAging.ts) already guards with `ISO_DATE.test(dueDate)`; this rule does not.",
+   "fix": "apply the same `/^\\d{4}-\\d{2}-\\d{2}$/` test to `p.invoice_due_date` before the comparison and return null when it fails, matching `dueDateLevel`.",
+   "behavior_change": true,
+   "behavior_change_note": "an invoice whose Books due date is not in YYYY-MM-DD form would stop appearing in the unpaid follow-up chip instead of always appearing there as overdue."},
+
+  {"severity": "medium", "category": "staleness",
+   "file": "frontend/src/pages/AitoPage.tsx", "line": 100,
+   "title": "the follow-up buckets never re-age: `Date.now()` and today's key are captured inside a useMemo keyed only on board data",
+   "evidence": "`const buckets = useMemo(() => followups(aitoQuery.data ?? [], thresholds, Date.now(), localDateKey(new Date())), [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays]);` — the clock and the calendar day are read inside the memo but are not deps. React Query's default structural sharing keeps `aitoQuery.data` referentially identical across a refetch that returns unchanged rows, so on a board left open with no writes (overnight, a weekend, a wall display) the memo never re-runs: a quote crossing `quoteDays`, a finished job crossing `pickupDays`, and an invoice falling due at midnight never appear, and the counts and `maxDays` shown are those of the last time the board data actually changed. The operator's morning chase list is yesterday's until something else edits the board.",
+   "fix": "drive the memo from a ticking value — e.g. a state holding `Date.now()`/`localDateKey(new Date())` refreshed on an interval (and on visibilitychange) — and list it in the dependency array.",
+   "behavior_change": true,
+   "behavior_change_note": "follow-up chips would appear, change count and update their \"longest wait\" figure on their own while the board sits untouched, where today they only move when the board data changes."},
+
+  {"severity": "low", "category": "partial-failure",
+   "file": "backend/app/services/aito_invoice_sweep.py", "line": 43,
+   "title": "sweep_invoices() burns the hourly slot before doing the work and commits the whole pass at once",
+   "evidence": "`_last_run = time.monotonic()` is assigned at line 43, before a single project is read, and the pass ends with a single `if updated: await db.commit()` (lines 71-72). A SQLite \"database is locked\" at that commit — a failure this codebase treats as real enough to guard for explicitly elsewhere (see the `except SQLAlchemyError` blocks in routes/aito.py's send_invoice_email and send_pickup_sms) — propagates to `run_sync_loop`'s `except Exception: logger.exception(\"Aito quote sync tick failed\")`, discarding every project's refreshed status/balance/due date; because the hourly slot was already spent, nothing retries for another hour and the log entry reads as a whole-tick failure even though the quote sync half succeeded. `run_sync_once` deliberately commits per project to avoid exactly this coupling.",
+   "fix": "commit per project (or set `_last_run` only once the pass has committed) so a locked database costs one project rather than the whole hour.",
+   "behavior_change": true,
+   "behavior_change_note": "after a failed sweep the invoice cache would be retried on the next 300s tick instead of an hour later, and a mid-pass failure would leave the projects already processed persisted rather than discarding all of them."}
+]}

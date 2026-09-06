@@ -1,0 +1,9 @@
+{"findings": [
+  {"severity": "low", "category": "resource exhaustion",
+   "file": "backend/app/api/routes/aito.py", "line": 1108,
+   "title": "the paid OpenRouter routes (proofread_field, summarize_project, generate_pickup_message) carry no rate limit",
+   "evidence": "@router.post(\"/proofread\", response_model=AitoProofreadResponse)\nasync def proofread_field(\n    payload: AitoProofreadRequest,\n    db: AsyncSession = Depends(get_db),\n    _: User | None = Depends(\n        require_any_permission_if_auth_enabled(Permission.AITO_CREATE, Permission.AITO_UPDATE)\n    ),\n): ... corrected, model = await proofread_text(db, payload.text)  — each call is one billed https://openrouter.ai/api/v1/chat/completions completion (services/openrouter.py:15,162); no throttle exists on any of the three routes, while the codebase already has a rate-limit primitive (check_rate_limit / AuthRateLimitEvent, used at backend/app/api/routes/auth.py:473-475)",
+   "fix": "throttle the three OpenRouter-backed routes per principal (and per client IP for the auth-disabled case) with the existing check_rate_limit/AuthRateLimitEvent primitive, or a small in-process token bucket; per-request payload caps are already correct, only the call rate is unbounded",
+   "behavior_change": true,
+   "behavior_change_note": "a user who blurs many fields in quick succession (or any caller on an auth-disabled install) would start getting 429s from /aito/proofread, /aito/summarize and /aito/{id}/pickup-message instead of an answer, so the drawer's spell-check would visibly stop correcting until the window clears"}
+]}

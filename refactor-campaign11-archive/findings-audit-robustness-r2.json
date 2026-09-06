@@ -1,0 +1,32 @@
+{"findings": [
+  {"severity": "medium", "category": "partial-failure",
+   "file": "backend/app/services/aito_invoice_sweep.py", "line": 76,
+   "title": "sweep_invoices() restarts from the head of an unordered selection after an aborted pass, so the tail never refreshes",
+   "evidence": "`stmt = select(AitoProject).where(...)` has no `order_by` and no filter on `invoice_checked_at`, and (T-010) `_last_run = time.monotonic()` now runs only after the loop completes. So an abort part-way through (the `raise` in `except ZohoRateLimited`, or an escaping `db.commit()` error) leaves the hourly gate unspent and the NEXT 300 s tick re-selects the identical rows in the identical order and re-calls Books for the head projects it already refreshed. The project's own test pins this: after the commit failure it asserts `updated == 2`, i.e. EST-GOOD is fetched from Books a second time. With ~40 open receivables and Books cutting the org off at request N, the sweep burns N calls every tick (12x/hour at the default poll, more if `aito_quote_poll_seconds` is lowered to its floor of 10) and projects past N are never refreshed at all for as long as the limit holds — their cards keep showing a paid invoice as unpaid and the follow-ups strip keeps nagging about it.",
+   "fix": "add `.order_by(AitoProject.invoice_checked_at.asc().nulls_first(), AitoProject.id)` so each pass resumes with the least-recently-checked rows, and/or stamp `_last_run` when the pass made partial progress",
+   "behavior_change": true,
+   "behavior_change_note": "after an interrupted sweep the projects that refresh first change (least-recently-checked instead of lowest id), and a partially-completed pass may no longer retry on the very next tick."},
+
+  {"severity": "medium", "category": "error-handling",
+   "file": "backend/app/services/aito_invoice_sweep.py", "line": 125,
+   "title": "the per-project commit in sweep_invoices() is unguarded, so one locked write aborts every project after it",
+   "evidence": "`await db.commit()` sits bare at the end of the loop body under the comment \"A failure on this specific commit (SQLite \\\"database is locked\\\", for example) then costs only this one project instead of discarding every project already refreshed earlier in the same pass.\" Only the *already-committed* half is true: the exception is caught by nothing in this function, so it unwinds the whole loop. On a board of 30 open receivables, a lock contended with the sync worker on project 2 leaves projects 3-30 unrefreshed for that pass and surfaces upstream only as run_sync_loop's generic `logger.exception(\"Aito quote sync tick failed\")`, which names neither the sweep nor the project.",
+   "fix": "wrap the per-project commit in `try/except SQLAlchemyError`, `await db.rollback()`, log the project id, and `continue` — matching the treatment the upstream/malformed-payload branch already gets",
+   "behavior_change": true,
+   "behavior_change_note": "a commit failure on one project no longer stops the sweep: the remaining projects are refreshed in the same pass and the hourly slot is then spent, so the next tick does not re-run the whole sweep."},
+
+  {"severity": "high", "category": "concurrency",
+   "file": "backend/app/core/websocket.py", "line": 135,
+   "title": "broadcast_aito() sends to every client serially while holding the manager lock, with no per-send timeout",
+   "evidence": "```\nasync with self._lock:\n    for connection in self.active_connections:\n        if not getattr(connection.state, \"aito_read\", True):\n            continue\n        try:\n            await connection.send_text(data)\n```\nThis is the exact shape `broadcast()` was hardened away from ten lines above, whose own docstring says why: \"uvicorn applies TCP backpressure, so send_text() to a client whose socket window is full (sleeping laptop, dead cell link) never returns on its own\" and holding the lock across it \"stalls delivery to every other client *and* blocks connect()/disconnect()\". `broadcast_aito` takes neither mitigation — no `asyncio.wait_for(..., self._BROADCAST_SEND_TIMEOUT)` and no snapshot-then-release. One operator whose laptop slept with the board open therefore wedges the whole ConnectionManager lock: printer-status broadcasts, new WS connects and disconnects all block behind it. Worse, this path is awaited inline inside request handlers (`await _broadcast_changed(...)` in routes/aito.py, e.g. line 1626 and after every board mutation), so the HTTP PATCH/POST never returns — the writing operator's card sits in its optimistic state forever, `boardSync.pendingWrites` never decrements, and the board's settle-invalidate and quote poll stay frozen with no error shown. `except Exception` does not help: a backpressured send hangs, it does not raise.",
+   "fix": "give broadcast_aito the same shape as broadcast(): snapshot the permitted connections under the lock, release it, then `asyncio.gather` the sends each wrapped in `asyncio.wait_for(..., self._BROADCAST_SEND_TIMEOUT)`, and re-take the lock only to drop the failures",
+   "behavior_change": true,
+   "behavior_change_note": "a client that cannot accept an Aito message within 5 s is disconnected instead of stalling everyone, so a very slow connection may be dropped where it previously survived."},
+
+  {"severity": "low", "category": "boundary-validation",
+   "file": "frontend/src/hooks/useCalculatorState.ts", "line": 133,
+   "title": "loadState() spreads unvalidated JSON into CalcState, so a non-string field crashes the calculator on render",
+   "evidence": "`const state: CalcState = { ...DEFAULT_STATE, ...legacy };` — `legacy` is a bare cast of `JSON.parse(raw)`, with only `typeof parsed !== 'object'` checked, and the try/catch ends when loadState returns. The `errors` memo then does `const raw = state[key] as string; if (raw.trim() !== '' ...)`, and `num()` does `s.trim()` on the same values. A persisted entry of `{\"weight\":5}` (devtools, a hand-edited profile, any foreign writer of the un-namespaced `calculator-state` key) makes `raw.trim` undefined and throws during CalculatorPage's render, on every load, until localStorage is cleared by hand — despite loadState's own docstring promising that \"hand-edited localStorage) degrades to the fallback instead of crashing\".",
+   "fix": "coerce per field when merging — keep the parsed value only when its `typeof` matches DEFAULT_STATE's, otherwise fall back to the default",
+   "behavior_change": false}
+]}

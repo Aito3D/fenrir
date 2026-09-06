@@ -1,0 +1,188 @@
+=====================================================================
+[2026-09-05 ~18:30] ITERATION 1 — VERIFY #1 (commits 74ffd6afe T-002, 7c5594d94 T-003, 122182ddd T-006)
+VERDICT: FAIL
+BUILD: PASS. LINT: FAIL (backend) — ruff F841 `bad` unused at backend/tests/unit/test_aito_invoice_sweep.py:192 (commit 122182ddd). ruff format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; no frozen file touched; coverage settings untouched.
+COVERAGE: backend 72% -> 72% (71969 stmts/18367 miss/23262 br/3132 partial); frontend lines 60.5 -> 60.51 (stmts 59.59-59.60, branches 55.18, funcs 50.93).
+TESTS: backend 12868 passed / 1 skipped; frontend 5527-5528 passed, only known load-flakes (ArchivesPage 43/43 alone, FileUploadModal 44/44 alone).
+SANCTIONED_CHANGES: 122182ddd T-006 within its BASELINE-CHANGELOG.md entry (line-by-line check).
+UNSANCTIONED_BEHAVIOR_CHANGES: 74ffd6afe T-002 — aito_quote_import._fold was NFD, now delegates to fold_text (NFKD): parse_description("*fichier\xa0non\xa0cede*") kept the row at BASE, drops it as boilerplate at HEAD (NBSP -> space under NFKD). aito_shipping half and T-003 are true no-ops.
+WEAKENED_TESTS: none.
+NOTES: verifier's `npm run build` rewrote static/ in the worktree (61 tracked deletions + new hashed assets) — orchestrator restored via `git checkout -- static && git clean -fdX -- static`. backend/.coverage untracked.
+FAILING_COMMITS: 122182ddd (fix the F841), 74ffd6afe (importer _fold must keep NFD semantics, e.g. fold_text(form=...) with the importer passing "NFD", or sanction via changelog).
+=====================================================================
+[2026-09-05 ~20:25] ITERATION 1 — VERIFY #2 (after fix commits 087a254d9 T-006-fix, 0edf46c1a T-002-fix; range refactor-base..0edf46c1a)
+VERDICT: PASS
+BUILD: PASS (built in 841ms; static/ restored). LINT: PASS (ruff check/format clean, eslint clean).
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen files untouched; coverage settings frozen; no pragma/skip/xfail added.
+COVERAGE: backend 72% -> 72% (71972/18369/23264/3133); frontend lines 60.5 -> 60.5 (stmts 59.59, br 55.17, funcs 50.94).
+TESTS: backend 12869 passed / 1 failed / 1 skipped; frontend 5529/5529. Flaky: tests/unit/test_scheduler_concurrent_dispatch.py::test_freed_slot_is_refilled_on_the_next_tick failed under load (~20), passed 4/4 alone; real asyncio.sleep wall-clock overlap assertions; file + scheduler.py untouched by the diff. NEW load-flake, added to BASELINE.md known_flaky.
+SANCTIONED_CHANGES: 122182ddd T-006 within its entry (sweep except-order, loop guard+arm, verbatim _arm_rate_limit_throttle extraction; single call site).
+UNSANCTIONED_BEHAVIOR_CHANGES: none — T-002 fold_text differentially fuzzed vs both BASE inlines over 20,027 inputs, 0 mismatches on NFD and NFKD paths; T-003 exact dedup of settleProject.
+WEAKENED_TESTS: none (087a254d9 strengthens the 429 test).
+NOTES: verifier process: stalled once at the 600s watchdog (peer-session load + tee|tail buffering); resumed via SendMessage; the orchestrator ran coverage_all.sh detached and handed over the logs (first detached run killed by the verifier's own cleanup; second completed). backend/app/utils/ is a namespace package (no __init__.py).
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-05 ~21:00] ITERATION 2 — VERIFY (range loop-1..d9206c3d0: T-007 5bfe11225, T-008 38d74eea8, T-009 d9206c3d0)
+Orchestrator note: verifier given loop-1 (previous verified squash) as its diff base rather than refactor-base; whole-tree gates unchanged.
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen files + coverage config untouched.
+COVERAGE: backend 72% -> 72% (71975/18369/23264/3132); frontend lines 60.5 -> 60.53 (stmts 59.62, br 55.19, funcs 50.99).
+TESTS: backend 12873 passed / 1 skipped / 0 failed; frontend 5535/5535 (391 files). No flaky re-runs needed.
+SANCTIONED_CHANGES: T-007 (else-branch reset to None, consumers enumerated, HTTP shape unchanged), T-008 (module-private ISO_DATE guard, ISO path identical), T-009 (module-private useFollowupClock, lazy initialisers make first render bit-identical; hook order safe; the followup-filter auto-clear at AitoPage.tsx:214 cannot fire spuriously since time only adds cards). All within their entries.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none (additions only; tests deterministic under fake timers).
+NOTES: new AitoPage tests hardcode FOLLOWUP_CLOCK_TICK_MS = 60_000 locally (kept off SURFACE.md); changing the cadence needs a matching test edit.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-05 ~21:25] ITERATION 3 — VERIFY (range loop-2..e5de7c39c: T-015 64cab11df, T-016 787efda7b, T-017 e5de7c39c; test-only)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen files + coverage config untouched; no test file deleted/renamed.
+COVERAGE: backend 72% -> 72% (71975/18369/23264/3132); frontend lines 60.53 -> 60.56 (stmts 59.66, br 55.22, funcs 51.07).
+TESTS: coverage run under peer load ~24: backend 12871 passed / 2 failed / 1 skipped; frontend 5538 passed / 3 failed (2 files). Re-runs: test_slicer_stall_timeout.py alone 18/18; test_aito_quote_sync.py alone 131/131; wake-drain test 5/5 alone; full backend `pytest tests/ -n 30` on the idle machine 12873 passed / 0 failed; frontend full re-run (orchestrator) 392 files / 5541 tests all passed. All load flakes; slicer stall test is a NEW load-flake (wall-clock progress timing; not touched by the diff).
+SANCTIONED_CHANGES: none (none needed; BASELINE-CHANGELOG.md untouched).
+UNSANCTIONED_BEHAVIOR_CHANGES: none — diff is exactly 3 test files (+9/-6, +52, +116 new).
+WEAKENED_TESTS: none. T-015 = pure reorder, all 3 asserts verbatim, poll budget unchanged. T-016 asserts each payload key + secret-omission invariant, msw, deterministic. T-017 renders the real hook + real useOptimisticBoardMutation; only i18n/toast/useRevertFlash mocked; manually-released promise.
+NOTES: the wake-drain test STILL flaked once under load in this run (traceback lost to coverage_all.sh's tail -15) — T-015 narrowed the race, not proven closed; stays on known_flaky. Consider capturing full pytest output in future gates.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-05 ~21:45] ITERATION 4 — VERIFY (range loop-3..c4e098350: T-018 8d9b1394c, T-019 e41a61380, T-020 c4e098350; test-only, 3 new files +396/-0)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen files + coverage config untouched vs loop-3 AND refactor-base.
+COVERAGE: backend 72% -> 72% (71975/18367/23264/3132); frontend lines 60.56 -> 60.58 (stmts 59.68, br 55.22, funcs 51.15).
+TESTS: backend 12873 passed / 0 failed / 1 skipped; frontend 395 files / 5552 tests all passed. No flaky re-runs needed (full logs captured this time).
+SANCTIONED_CHANGES: none (none needed). UNSANCTIONED_BEHAVIOR_CHANGES: none (zero production code touched).
+WEAKENED_TESTS: none. Anti-hollowing check: only i18n/toast/flashRevert/useCelebration mocked; real useOptimisticBoardMutation, useBoardSync, settleProject, replaceProject, applyColumnMove execute; assertions exact (applyColumnMove computed independently; exact rollback + toast key + flashRevert id). All three hooks now 100% lines.
+NOTES: useFlagMutation.ts:22 and useDueDateMutation.ts:18 remain at 50% branch (the `previous?.map` cache-miss arm never entered — tests always seed the cache). Possible follow-up.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-05 ~23:25] ITERATION 5 — VERIFY (range loop-4..e0373cc1f: T-021 7bed6909d, T-022 70cc24848, T-023 e0373cc1f; test-only, +153/+46)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen files + coverage config untouched vs refactor-base; no test file deleted/renamed.
+COVERAGE: backend 72% -> 72% (71975/18361/23264/3132; 6 fewer missed); frontend lines 60.58 -> 60.58 (stmts 59.68, br 55.23, funcs 51.15). Greenlet concurrency confirmed active (aito routes 97%, quote_sync 98%).
+TESTS: backend 12881 passed / 0 failed / 1 skipped (relaunched gate with --timeout=600 -rfE after the first run hung under load ~130); frontend 395 files / 5552 tests all passed. Anti-no-op check: the 8 new cases collect and pass by -k.
+SANCTIONED_CHANGES: none (none needed). UNSANCTIONED_BEHAVIOR_CHANGES: none (zero production files).
+WEAKENED_TESTS: none. T-021 patches collaborators only (async_session, run_sync_once, sync_enabled, is_configured, sync_interval_seconds, sweep_invoices) and proves CancelledError propagates; T-022 fails only the refresh=True warm-up and asserts a second project still syncs; T-023 pins the literal backdate AND created_at equality. Event/wait_for-gated, tasks cancelled in finally, fixtures reset module state.
+NOTES: cosmetic asyncio.sleep(0.05) in the wake-drain test (not load-bearing); the periodic-tick test spins the loop at sync_interval_seconds=0.01 (bounded, 3.16 s for all 8 cases).
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-05 ~23:50] ITERATION 6 — VERIFY (range loop-5..c80db5085: T-001 3c3acbb89, T-010 2c8fdd351, T-011 c80db5085; three user-approved behavior changes)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen files + coverage config untouched vs loop-5 and refactor-base.
+COVERAGE: backend 72% -> 72% (71972/18351/23260/3131); frontend lines 60.58 -> 60.57 (stmts 59.67, br 55.20, funcs 51.13; the 0.01 dip attributable to the flaked FileUploadModal case aborting early; ZohoSettings.tsx at 100% lines). aito_invoice_sweep.py 100%.
+TESTS: backend 12886 passed / 0 failed / 1 skipped; frontend 5551 passed / 1 failed — FileUploadModal.test.tsx "surfaces a per-file hashing failure" (known load-flake; findByText timeout; 44/44 alone; diff touches nothing it exercises).
+SANCTIONED_CHANGES: T-001 exactly 8 id/htmlFor pairs, nothing else; T-010 exactly the 3 documented code changes, 429 rule matches the entry (no _last_run stamp on a 429-aborted pass); T-011 exactly one branch of the shared websocket.py + comments, other paths byte-identical, core/websocket.py untouched. All within their entries.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none (ZohoSettings test = 1:1 helper swap with every assertion retained; websocket tests wrap a real ConnectionManager and drive the real endpoint; mid-pass commit-failure test is counter-based).
+NOTES: stale comment at aito_quote_sync.py ~2151-2153 ("commits whatever it already refreshed and lets the exception propagate") — after T-010 nothing is left to commit there; comment-only. T-001: label click now focuses its input (inherent to htmlFor). T-010: commit timing shifts to first project; sole caller run_sync_loop has no pending writes at sweep entry.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~00:15] ITERATION 7 — VERIFY (range loop-6..5d070862f: T-012 ae02300f0, T-013 4d4aaed02, T-010 comment follow-up 5d070862f)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10 against committed goldens (fe-router re-recorded in ae02300f0: exactly one line, `81 element=AitoPage` -> `81 element=PermissionRoute`; only that file changed under snapshots/). SURFACE: unchanged; PROBES.json/tools/ untouched; coverage config untouched vs refactor-base; no test file deleted since refactor-base.
+COVERAGE: backend 72% -> 72% (71973/18351/23260/3131); frontend lines 60.57 -> 60.58 (stmts 59.68, br 55.23, funcs 51.13).
+TESTS: backend 12887 passed / 0 failed / 1 skipped; frontend 5552 passed / 2 failed — both PrintModal.test.tsx (known load-flake; 79/79 alone; diff touches nothing it exercises). AitoPageAitoPermissions.test.tsx 17/17 alone.
+SANCTIONED_CHANGES: T-012 one line at App.tsx:272 wrapping AitoPage in the existing PermissionRoute with 'aito:read' (matches Layout.tsx:330 and Permission.AITO_READ); T-013 one line at routes/aito.py:1362 byte-identical to get_quote_pdf's strip + comment; 5d070862f comment-only (every +/- line is a `#` comment). All within their entries.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none (net-additive; test_invoice_pdf_is_served_inline gained exact header equality).
+NOTES: (1) the new /aito guard tests use a local RoutePermissionGate mirror (App.tsx exports neither router nor PermissionRoute; follows ViewTransitionWiring.test.tsx) — they would pass if App.tsx:272 were reverted; the wiring is pinned by the fe-router golden instead. (2) Neither the golden nor the tests pin the permission STRING ('aito:read'), verified by hand. (3) Wording nit: the approved note says "no-permission page"; PermissionRoute redirects to `/` like every other guarded route — mechanism matches the entry.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~02:05] ITERATION 8 — VERIFY (range loop-7..05e93e0ce: T-028 7b7d4aee7, T-024 ada5d20af, T-025 05e93e0ce)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: regen byte-identical to committed; `git diff loop-7..HEAD -- SURFACE.md` exactly +1 (`export function isIsoDateKey`, sanctioned by T-024); PROBES.json/snapshots/tools untouched; coverage config byte-identical.
+COVERAGE: backend 72% -> 72% (71968/18324/23254/3135; 27 fewer missed); frontend lines 60.58 -> 60.58 (stmts 59.68, br 55.22, funcs 51.13). core/websocket.py 89%.
+TESTS: backend 12890 passed / 0 failed / 1 skipped; frontend 395 files / 5556 all passed. No flaky re-runs needed.
+SANCTIONED_CHANGES: T-028 within entry — aito_read filter byte-identical, snapshot under lock then release, _fan_out reuses _BROADCAST_SEND_TIMEOUT=5.0 + gather(return_exceptions) + drop under lock; sibling broadcast() behaviorally identical to loop-7 line-for-line; no caller holds _lock across broadcast_aito (routes/aito.py:807, aito_quote_sync.py:2005, in-class 50/60). T-024 within entry — one export, regex byte-identical, same booleans. T-025 test-only, no entry needed.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none (expect counts 13/10/10/12 unchanged, it() counts 4/3/3/4 unchanged, no skip/only; harness mocks peripherals only; resetBoardMutationHarness adds flashRevertMock.mockClear — stricter).
+NOTES: boardMutationHarness.tsx:66 `seedCache` option never passed false (dead test-helper surface); test_broadcast_aito_lock_is_not_held_across_sends nudges the loop with 5x sleep(0) before asserting slow.started — scheduling-order dependent, watch for flakes.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~02:50] ITERATION 9 — VERIFY (range loop-8..3353f6591: T-027+T-031 d7e06ea2b, T-026 839c5009d, T-030 3353f6591; three user-approved behavior changes)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen paths untouched; coverage config byte-identical vs loop-8 and refactor-base; no deleted files.
+COVERAGE: backend 72% -> 72% (71984/18324/23254/3135); aito_invoice_sweep.py 100%, core/websocket.py 89%, routes/websocket.py 76%. Frontend lines 60.58 -> 60.58 (stmts 59.68, br 55.22, funcs 51.15).
+TESTS: backend 12897 passed / 0 failed / 1 skipped; frontend 395 files / 5556 all passed. No flaky re-runs needed.
+SANCTIONED_CHANGES: T-027+T-031 within entry — guarded per-project commit (rollback guarded, continue, updated counted after success), stamp rule = every exit except ZohoRateLimited (CancelledError uncaught), MissingGreenlet trap addressed by pinning read values before any commit; test uses the REAL commit/rollback and proves EST-LATER still commits after EST-BAD fails. T-026 within entry — ORDER BY invoice_checked_at ASC NULLS FIRST, id; compiled identically on sqlite (3.53.0) and postgresql; WHERE byte-identical; stamping alternative honoured as not taken. T-030 within entry — core/websocket.py: only the getattr default True->False + docstring inside broadcast_aito; _fan_out/broadcast/broadcast_to_user byte-identical; routes: resolution + all three stamps moved above connect(); connect() is the only writer to active_connections and routes:153 its only caller.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none — three legitimately flipped expectations, all renamed: defaults_to_true -> defaults_to_false (assert_not_awaited); mid-pass commit failure test renamed + strengthened (3 projects, real OperationalError, _last_run != 0, next call returns 0); test_ws_aito_presence _conn() now stamps aito_read=True (fixture adaptation).
+NOTES: T-027 assigns invoice_checked_at in memory before the commit attempt; rollback reverts it (entry holds observably). Non-SQLAlchemyError commit failures still abort the pass via the outer except (covered by T-031's entry). T-030 delays accept() by the user lookup; resolution failure still admits (tested).
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~03:15] ITERATION 10 — VERIFY (range loop-9..5e7291b69: T-032 f1cea9d54, T-033 bf1403087, T-034 5e7291b69; test-only, +180/-0)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen paths, changelog and coverage config untouched vs loop-9 and refactor-base.
+COVERAGE: backend 72% -> 72% (71984/18324/23254/3135); frontend lines 60.58 -> 60.58 (stmts 59.68, br 55.23, funcs 51.13). useFlagMutation/useContactedMutation/useDueDateMutation confirmed at 100% branch (absent from the v8 text report, which omits fully-covered files).
+TESTS: backend 12896 passed / 1 failed / 1 skipped (615 s, slow under load); frontend 5559 passed / 3 failed (2 files). Flaky re-runs: test_mfa_api.py::TestTOTPReplay::test_totp_replay_rejected_on_verify (assert 200 == 400) — 154/154 alone, NEW load-flake, outside scope; PrintModal 79/79 alone; ArchivesPage 43/43 alone.
+SANCTIONED_CHANGES: none (none needed). UNSANCTIONED_BEHAVIOR_CHANGES: none (3 test files, 0 deletions). WEAKENED_TESTS: none (it() names preserved; expect counts 10->19, 10->19, 12->21).
+NOTES: informational lead for humans, OUT OF SCOPE (MFA): backend/app/api/routes/mfa.py:1176 persists last_totp_counter with `await db.flush()` and no commit — guard durability depends on the request session committing; plausible cause of the intermittent 200-vs-400 under load. Not filed as a task (out of scope for this campaign).
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~03:40] ITERATION 11 — VERIFY (range loop-10..9dfcc8d1c: T-035 e7ec7bdf3, T-036 775167970, T-037 9dfcc8d1c; test-only, +180/-0)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen paths, changelog, coverage config and App.tsx untouched vs loop-10 (coverage blocks byte-identical to BASE).
+COVERAGE: backend 72% -> 72% (71984/18322/23254/3135); aito_quote_import.py 98% -> 99% (Missing 267-268,294,403,495->494 -> 294,495->494). Frontend lines 60.58 -> 60.77 (stmts 59.86, br 55.28, funcs 51.29) — rendering the real App pulled Layout/PrintersPage into coverage.
+TESTS: backend 12899 passed / 0 failed / 1 skipped; frontend 5563 passed / 1 failed (396 files) — FileUploadModal known load-flake, 44/44 alone.
+SANCTIONED_CHANGES: none (none needed). UNSANCTIONED_BEHAVIOR_CHANGES: none (zero production files). WEAKENED_TESTS: none (zero deletions; test-file counts 395->396 frontend, 577 backend; no skip/only/todo).
+NOTES: verifier's own mutation check — App.tsx:272 changed to calculator:read makes both new cases fail; fully reverted (git status clean, line reads aito:read). New file imports the real App (`await import('../App')`), mocks only useAuth/useWebSocket/usePrintProgressTitle/useStreamTokenSync + msw stubs; 3 standalone runs deterministic. Tracked root .coverage dirtied by a coverage run — restored by the orchestrator, never committed.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~04:00] ITERATION 12 — VERIFY (range loop-11..9a4facb43: T-038 1c036d15b, T-039 8bb806930, T-040 9a4facb43; test-only, 5 files +283/-2)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean (933 files); eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen paths, changelog, coverage config untouched.
+COVERAGE: backend 72% -> 72% (71984/18324/23254/3135); openrouter.py 66% (pre-existing tests only) -> 80% (this iteration's files) -> 99% whole-suite (0 missed, 1 partial). Frontend lines 60.77 -> 60.77 (stmts 59.86, br 55.27, funcs 51.29).
+TESTS: backend 12921 passed / 1 failed / 1 skipped — test_wake_drains_a_pending_project_without_waiting_for_the_interval (known load-flake, 134/134 alone, diff touches nothing it exercises); frontend 396 files / 5566 all passed.
+SANCTIONED_CHANGES: none (none needed). UNSANCTIONED_BEHAVIOR_CHANGES: none (zero production files). WEAKENED_TESTS: none (test counts 12->17, 18->18, 7->7, 4->6; the 2 deleted lines are a render helper signature extended with an optional toastKeys param).
+NOTES: fakes monkeypatched onto openrouter.httpx.AsyncClient only; assertions verified against source (max_tokens 320 = int(300/1.5)+120; single-layer unquote; quote-pair-only fallback to source; truncation opt-in/opt-out paired); component toast tests assert rendered en.ts text incl. the NEGATIVE for the toastKeys override. backend/.coverage.* shards from the -n 30 run are untracked.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~09:15] ITERATION 13 — VERIFY (range loop-12..1c812683e: T-041 d7d731417, T-042(+T-049) 07661f7f6, T-044 1c812683e; three user-approved behavior changes)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean; eslint clean; check:i18n passes (13 locales at 7164).
+SNAPSHOTS: 10/10 against committed goldens (fe-i18n-parity re-recorded in 1c812683e: 13 +/- count lines only, 7177 -> 7164, all mismatch lists still []). SURFACE: unchanged; PROBES.json/tools untouched; coverage config untouched.
+COVERAGE: backend 72% -> 72% (71990/18321/23250/3134); frontend lines 60.77 -> 60.77 (stmts 59.86, br 55.28, funcs 51.29) — met on the nose.
+TESTS: backend 12930 passed / 0 failed / 1 skipped; frontend 5564 passed / 2 failed — both PrintModal.test.tsx (known load-flake; 79/79 alone; diff touches nothing it exercises).
+SANCTIONED_CHANGES: T-041 within entry — _EVICTION_CLOSE_TIMEOUT 2.0 / code 1011, _close_quietly fired via tracked tasks after and outside the lock, bounded, exception-swallowing, never awaited by the caller. T-042(+T-049) within entry — snapshot under lock then _fan_out; filter byte-equivalent (unstamped skipped; user_id None -> broadcast()). Net websocket.py diff touches no other method; routes/websocket.py untouched. T-044 within entry — exactly 13 keys x 13 files, deletions only, keys confirmed unreferenced incl. dynamic construction; same-named keys in other namespaces untouched.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none (+252/-0 in test_ws_broadcast_backpressure.py; Event-driven, instance-level timeouts, drained via gather under wait_for).
+NOTES: broadcast_to_user's sends are now concurrent, so two overlapping targeted sends to one socket are no longer strictly ordered (inherent to _fan_out; same as broadcast()/broadcast_aito()). Frontend coverage sits exactly at the last-verified 60.77 with no margin.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~09:45] ITERATION 14 — VERIFY (range loop-13..79b30f2b9: T-045 a658652b8, T-046 9c8316f21, T-050 79b30f2b9)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean (934 files); eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen paths, changelog, coverage config untouched.
+COVERAGE: backend 72% -> 72% (71994/18321/23250/3134); frontend lines 60.77 -> 60.77 (stmts 59.86, br 55.28, funcs 51.27).
+TESTS: backend 12930 passed / 0 failed / 1 skipped; frontend 396 files / 5566 all passed. No flaky re-runs needed.
+SANCTIONED_CHANGES: none (none expected). UNSANCTIONED_BEHAVIOR_CHANGES: none — T-050 verified by MOVED-CODE RECONSTRUCTION: inlining _validate_create_payload and _record_creation_events back at their call sites reproduces loop-13's create_project line-for-line incl. leading whitespace; decorator/signature/response byte-identical; IntegrityError envelope inline.
+WEAKENED_TESTS: none (openrouter tests 11/19 and 17/25 unchanged; fixture reproduces payload shapes exactly; the three frontend files 6/2/4 its and 14/4/13 expects unchanged, still mock only i18n + toast).
+NOTES: C901 offenders in aito.py 3 -> 2 (create_project gone). `_validate_create_payload` annotated `-> dict` but returns `dict | None` (caller uses `**(shipping or {})`; non-behavioral). Root .coverage dirtied by a coverage run, restored.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~10:05] ITERATION 15 — VERIFY (range loop-14..385287397: T-051 f0fe9d199, T-052 10fc07b16, T-053 385287397; test-only, 3 files)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean (934 files); eslint clean.
+SNAPSHOTS: 10/10. SURFACE: unchanged; frozen paths, changelog, coverage config byte-identical to BASE.
+COVERAGE: backend 72% -> 72% (71994/18321/23250/3134); frontend lines 60.77 -> 60.84 (stmts 59.95, br 55.34, funcs 51.38); App.tsx 77.27% lines.
+TESTS: backend 12930 passed / 0 failed / 1 skipped (the modified wake-drain test passed in-suite, alone, and 134/134 in-file); frontend 5573 passed / 1 failed — ConfigureAmsSlotModal.test.tsx (untouched, unrelated; 37/37 alone; load flake, NEW to the list).
+SANCTIONED_CHANGES: none (none needed). UNSANCTIONED_BEHAVIOR_CHANGES: none (3 test files; removed lines = the old sleep(0.05)+comment and a mock field re-typed nullable).
+WEAKENED_TESTS: none. T-051: all pre-existing assertions verbatim; phase 1 Event (set in TrackedSession.__init__, wait_for 5 s) forecloses the trivial pass, phase 2 bounded 100x10 ms poll; cannot deadlock. T-052: concrete outcomes (spinner+pathname+board absent / board+pathname / /login+board absent); beforeEach resets loading+user. T-053: fake timers, tick-by-tick, intermediate value asserted never observed, unmount cleanup via getTimerCount 1->0; the delay-change restart is a real property (effect deps [value, delay]).
+NOTES: structural-unreachability claim HOLDS — ProtectedRoute (App.tsx:150-156) short-circuits loading and authEnabled&&!user one level up, so PermissionRoute:170 and :179 cannot run at /aito; only the auth-disabled case exercises PermissionRoute (175-177); the commit subject is slightly imprecise about which guard (naming quibble). jsdom canvas getContext noise from CelebrationLayer, pre-existing.
+FAILING_COMMITS: none.
+=====================================================================
+[2026-09-06 ~10:40] ITERATION 16 — VERIFY (range loop-15..024d255e6: T-043 024d255e6; one user-approved behavior change)
+VERDICT: PASS
+BUILD: PASS (static/ restored). LINT: ruff check/format clean (934 files); eslint not re-run (zero frontend files in the diff; tsc -b passed).
+SNAPSHOTS: 10/10 — app-openapi-index byte-identical (no 429 declared; `request: Request` did not leak into the schema). SURFACE: unchanged; frozen paths and coverage config untouched vs refactor-base; no pragma/noqa/skip/xfail added.
+COVERAGE: backend 72% -> 72% (72015/18322/23254/3135); frontend lines 60.84 -> 60.84 (stmts 59.95, br 55.36, funcs 51.35).
+TESTS: backend 12939 passed / 0 failed / 1 skipped; frontend 5573 passed / 1 failed — ArchivesPage known load-flake, 43/43 alone.
+SANCTIONED_CHANGES: T-043 within entry — exactly summarize_project/proofread_field/generate_pickup_message; window 60 s, 30 calls; key user:{id} else ip:{client.host} ("unknown" if no client); 429 detail "Too many AI requests. Please wait a moment and try again.", no Retry-After (matches mfa.py); check first in each handler, permission dependency still precedes it; decorators/paths/response models unchanged; module-private helpers in routes/aito.py; services/ untouched. Tests: exact boundary (Nth 200, N+1 429, no extra upstream call), per-principal isolation via dependency_overrides, expiry via rebound aito_routes.time (_FakeClock), autouse reset.
+UNSANCTIONED_BEHAVIOR_CHANGES: none. WEAKENED_TESTS: none.
+NOTES (for humans): _ai_rate_limit_calls keys are never evicted (per-key lists are pruned) — unbounded dict growth on an auth-disabled install facing many client IPs; budget is consumed before the outcome (409/502/404 still spend); behind a reverse proxy on auth-disabled installs all callers share one ip: bucket. test_aito_permissions.py has no clearing fixture but its calls 403 before the limiter.
+FAILING_COMMITS: none.
