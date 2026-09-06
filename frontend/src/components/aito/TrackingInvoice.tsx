@@ -41,7 +41,7 @@ export function TrackingInvoice({ state }: { state: AitoTrackingInvoice }) {
             type="button"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] border border-aito-cyan/35 px-[16px] text-[13.5px] font-semibold text-aito-cyan transition-colors duration-150 hover:bg-aito-cyan/10 active:bg-aito-cyan/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan sm:w-auto"
+            className="inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] border border-aito-cyan/35 px-[16px] text-[13.5px] font-semibold text-aito-cyan transition-colors duration-150 hover:bg-aito-cyan/10 active:bg-aito-cyan/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan min-[400px]:w-auto"
           >
             {FR.paymentTermsToggle}
           </button>

@@ -4242,10 +4242,13 @@ export interface AitoProject {
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
   /** The client-facing tracking link for this card, and whether it has ever
-   *  been generated. `tracking_url` is null until the first
-   *  `regenerateAitoTrackingToken` call; `tracking_configured` mirrors that
-   *  independently so the UI can render "not yet configured" without
-   *  round-tripping the link itself. */
+   *  been generated. The token behind `tracking_url` can be minted by the
+   *  Copy-link route, the pickup-SMS draft, or the quote sync — not only by
+   *  `regenerateAitoTrackingToken` — so `tracking_url` is null until whichever
+   *  of those runs first. `tracking_configured` instead reflects whether
+   *  `external_url` (the operator's public origin setting) is set, so the UI
+   *  can render "not yet configured" without round-tripping the link
+   *  itself. */
   tracking_url: string | null;
   tracking_configured: boolean;
   /** Content-fields revision — echo back as `expected_version` on updates so
@@ -7855,7 +7858,7 @@ export const api = {
   },
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
-  /** The public tracking page's payload — see routes/aito.py:get_aito_tracking.
+  /** The public tracking page's payload — see routes/aito.py:get_tracking.
    *  No auth: the token in the URL is the credential. */
   getAitoTracking: (token: string) => request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`),
   /** The current tracking link for the project, or null if never generated. */

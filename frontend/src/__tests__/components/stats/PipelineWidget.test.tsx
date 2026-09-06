@@ -40,7 +40,7 @@ const empty: AitoStats = {
 };
 
 describe('PipelineWidget', () => {
-  it('renders the four sections from the stats', async () => {
+  it('renders the five sections from the stats', async () => {
     server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json(stats)));
     render(<PipelineWidget dateFrom="2026-08-01" dateTo="2026-09-05" />);
     const board = await screen.findByTestId('pipeline-board');

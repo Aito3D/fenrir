@@ -14,7 +14,6 @@ export const FR = {
   etaSoon: 'Nous vous communiquerons une date dès que possible.',
   etaUpdating: 'Estimation en cours de mise à jour',
   updated: (when: string) => `Mis à jour ${when}`,
-  loading: 'Chargement…',
   error: 'Impossible de charger le suivi pour le moment.',
   retry: 'Réessayer',
   invalidTitle: "Ce lien de suivi n'est plus valide",

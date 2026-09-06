@@ -46,7 +46,7 @@ from backend.app.services.aito_quote_export import (
 )
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_shipping import island_label
-from backend.app.services.aito_tracking import NOTES_PREFIX, build_tracking_url
+from backend.app.services.aito_tracking import NOTES_PREFIX, build_tracking_url, purge_tracking_views
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -2140,6 +2140,13 @@ async def run_sync_loop() -> None:
                     # Its own hourly gate makes the 300 s tick a no-op most
                     # of the time.
                     await sweep_invoices(db)
+                    # Retention for the tracking-view log, guarded the same
+                    # way the sweep guards each project: a purge failure
+                    # costs this tick, never the loop.
+                    try:
+                        await purge_tracking_views(db)
+                    except Exception as exc:
+                        logger.warning("Tracking-view purge failed: %s", exc)
         except asyncio.CancelledError:
             raise
         except Exception:

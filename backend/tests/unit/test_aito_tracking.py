@@ -11,6 +11,7 @@ from backend.app.services.aito_tracking import (
     build_tracking_url,
     ensure_tracking_token,
     mint_token,
+    purge_tracking_views,
     tracking_url,
     tracking_url_for,
 )
@@ -149,7 +150,8 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
     assert body["column"] == "print"
     assert body["tasks"] == [{"title": "Support GoPro", "quantity": None}, {"title": "Pièce 2", "quantity": None}]
     assert body["due_date"] == "2026-09-20"
-    assert body["shipping"]["island"]  # label resolved server-side (key 'rangiroa' → its label)
+    assert body["shipping"]["island"] == "Rangiroa"  # label resolved server-side, key 'rangiroa' → its real label
+    assert body["shipping"]["service"] == "Livraison Avion Tuamotu"
     assert body["done_at"] is None
     assert body["invoice"] is None
     assert body["reference"] is None
@@ -199,9 +201,25 @@ async def test_public_updated_at_is_the_latest_event_else_the_row_timestamp(asyn
     await _done_event(db_session, pid, 0.5)  # 12 h ago
     body = (await async_client.get(TRACK + token)).json()
     latest = (
-        await db_session.execute(text("SELECT MAX(occurred_at) FROM aito_events WHERE project_id = :pid"), {"pid": pid})
+        await db_session.execute(
+            text("SELECT MAX(COALESCE(occurred_until, occurred_at)) FROM aito_events WHERE project_id = :pid"),
+            {"pid": pid},
+        )
     ).scalar_one()
     assert body["updated_at"].replace("T", " ")[:19] == str(latest)[:19]
+    # A coalesced editing session (occurred_until set by the folding path in
+    # services/aito_events.py) reports the window's END, not its start.
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None, microsecond=0)
+    await db_session.execute(
+        text(
+            "UPDATE aito_events SET occurred_until = :until "
+            "WHERE id = (SELECT id FROM aito_events WHERE project_id = :pid ORDER BY occurred_at DESC LIMIT 1)"
+        ),
+        {"until": until.isoformat(sep=" "), "pid": pid},
+    )
+    await db_session.commit()
+    body = (await async_client.get(TRACK + token)).json()
+    assert body["updated_at"].replace("T", " ")[:19] == until.isoformat(sep=" ")[:19]
     await db_session.execute(text("DELETE FROM aito_events WHERE project_id = :pid"), {"pid": pid})
     await db_session.commit()
     body = (await async_client.get(TRACK + token)).json()
@@ -234,6 +252,37 @@ async def test_public_view_is_logged_once_per_200_and_never_breaks_the_page(asyn
     monkeypatch.setattr(svc, "log_view", boom)
     assert (await async_client.get(TRACK + token)).status_code == 200
     assert (await count()).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_purge_tracking_views_drops_only_rows_past_retention(async_client, db_session):
+    pid = await _create(async_client)
+    old = (datetime.now(timezone.utc) - timedelta(days=401)).replace(tzinfo=None)
+    recent = (datetime.now(timezone.utc) - timedelta(days=399)).replace(tzinfo=None)
+    await db_session.execute(
+        text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"),
+        {"pid": pid, "at": old.isoformat(sep=" ")},
+    )
+    await db_session.execute(
+        text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"),
+        {"pid": pid, "at": recent.isoformat(sep=" ")},
+    )
+    await db_session.commit()
+
+    removed = await purge_tracking_views(db_session)
+    assert removed == 1
+
+    remaining = (
+        (
+            await db_session.execute(
+                text("SELECT viewed_at FROM aito_tracking_views WHERE project_id = :pid"), {"pid": pid}
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(remaining) == 1
+    assert str(remaining[0])[:19] == recent.isoformat(sep=" ")[:19]
 
 
 @pytest.mark.asyncio

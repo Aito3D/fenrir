@@ -960,7 +960,7 @@ class AitoStatsTracking(BaseModel):
 
 
 class AitoStatsResponse(BaseModel):
-    """The pipeline widget's four blocks — see docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md."""
+    """The pipeline widget's five blocks — see docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md."""
 
     board: list[AitoStatsStage]
     conversion: AitoStatsConversion
@@ -1020,7 +1020,9 @@ class AitoTrackingResponse(BaseModel):
     invoice: Literal["paid", "unpaid", "overdue"] | None
     # The quote number the client already holds (EST-000142), for "Devis n° …".
     reference: str | None
-    # project.updated_at — the page's "Mis à jour …" line. Real data only.
+    # The card's last activity: the latest event, else project.updated_at
+    # (services/aito_tracking.py:last_activity) — the page's "Mis à jour …"
+    # line. Real data only.
     updated_at: datetime
 
 

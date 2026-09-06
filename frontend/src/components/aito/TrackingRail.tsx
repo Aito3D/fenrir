@@ -48,7 +48,7 @@ export function TrackingRail({ column, shipped }: { column: AitoColumnId; shippe
       <ol className="hidden grid-cols-7 sm:grid" aria-label="Étapes">
         {stages.map((stage, i) => {
           const state: StageState = i < current ? 'done' : i === current ? 'current' : 'todo';
-          const segment = (on: boolean) => `absolute top-[15px] h-0.5 ${on ? 'bg-aito-cyan/55' : 'bg-aito-line'}`;
+          const segment = (on: boolean) => `absolute top-[15px] h-[2px] ${on ? 'bg-aito-cyan/55' : 'bg-aito-line'}`;
           return (
             <li
               key={stage.id}
@@ -56,7 +56,11 @@ export function TrackingRail({ column, shipped }: { column: AitoColumnId; shippe
               data-state={state}
               aria-current={state === 'current' ? 'step' : undefined}
               className={`relative flex flex-col items-center text-center leading-tight text-[11px] ${
-                state === 'current' ? 'text-[12px] font-semibold text-aito-ink' : 'text-aito-muted/80'
+                state === 'current'
+                  ? 'text-[12px] font-semibold text-aito-ink'
+                  : state === 'done'
+                    ? 'text-aito-muted/80'
+                    : 'text-aito-muted/70'
               }`}
             >
               {i > 0 && <span aria-hidden="true" className={`${segment(i <= current)} left-0 right-[calc(50%+18px)]`} />}
@@ -94,7 +98,11 @@ export function TrackingRail({ column, shipped }: { column: AitoColumnId; shippe
                   key={stage.id}
                   aria-current={state === 'current' ? 'step' : undefined}
                   className={`flex items-center gap-[12px] text-[13px] ${
-                    state === 'current' ? 'font-semibold text-aito-ink' : 'text-aito-muted/80'
+                    state === 'current'
+                      ? 'font-semibold text-aito-ink'
+                      : state === 'done'
+                        ? 'text-aito-muted/80'
+                        : 'text-aito-muted/70'
                   }`}
                 >
                   <StageMark state={state} />

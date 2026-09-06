@@ -38,7 +38,7 @@ function Logo({ className = '' }: { className?: string }) {
 }
 
 function Footer() {
-  const linkCls = `inline-block py-[12px] text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
+  const linkCls = `inline-flex min-h-[44px] items-center text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
   return (
     <footer className="mt-[32px] border-t border-aito-line/60 pt-[24px] text-center text-[13.5px]">
       <p className="text-aito-ink">{FR.footerQuestion}</p>
@@ -87,7 +87,7 @@ export function AitoTrackPage() {
       <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
         <div className={CARD}>
           <header className="text-center">
-            <Logo className="mb-[16px]" />
+            <Logo className="mb-[20px]" />
             <h1 className="text-[23px] font-semibold tracking-tight">{FR.invalidTitle}</h1>
             <p className="mt-[8px] text-[15px] text-aito-muted">{FR.invalidBody}</p>
           </header>
@@ -101,7 +101,7 @@ export function AitoTrackPage() {
     <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
       <div className={CARD}>
         <header className="text-center">
-          <Logo className="mb-[16px]" />
+          <Logo className="mb-[20px]" />
           <h1 className="text-[23px] font-semibold tracking-tight">{FR.title}</h1>
           {data?.reference && <p className="mt-[8px] text-[13.5px] text-aito-muted">{FR.reference(data.reference)}</p>}
         </header>
@@ -109,7 +109,7 @@ export function AitoTrackPage() {
           {query.isPending && (
             <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
               <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
-              <div className="min-h-[132px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
+              <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
             </div>
           )}
           {query.isError && !is404 && (
@@ -118,7 +118,7 @@ export function AitoTrackPage() {
               <button
                 type="button"
                 onClick={() => query.refetch()}
-                className={`mt-[16px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[20px] text-[14px] font-semibold text-aito-cyan transition-colors duration-150 hover:bg-aito-cyan/10 ${FOCUS}`}
+                className={`mt-[16px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan transition-colors duration-150 hover:bg-aito-cyan/10 ${FOCUS}`}
               >
                 {FR.retry}
               </button>
@@ -131,7 +131,7 @@ export function AitoTrackPage() {
               </div>
               <section
                 data-testid="track-state"
-                className={`mt-[32px] rounded-[12px] border px-[16px] py-[16px] transition-colors duration-150 sm:min-h-[132px] sm:px-[20px] sm:py-[20px] ${
+                className={`mt-[32px] rounded-[12px] border px-[16px] py-[16px] transition-colors duration-150 sm:min-h-[132px] sm:px-[24px] sm:py-[16px] ${
                   preOrder ? 'border-aito-line bg-white/[.025]' : 'border-aito-cyan/35 bg-aito-cyan/10'
                 }`}
               >
@@ -139,7 +139,7 @@ export function AitoTrackPage() {
                 <p className="mt-[8px] text-[15px] text-aito-muted">{copy.sub}</p>
                 {eta && eta.kind !== 'none' && (
                   <div className="mt-[12px] border-t border-aito-line/60 pt-[12px]">
-                    <p className="text-[11px] uppercase tracking-[.08em] text-aito-muted">{FR.eta}</p>
+                    <p className="text-[12px] uppercase tracking-[.08em] text-aito-muted">{FR.eta}</p>
                     <p className={eta.kind === 'date' ? 'mt-[4px] text-[17px] font-semibold text-aito-cyan' : 'mt-[4px] text-[15px] text-aito-ink'}>
                       {eta.text}
                     </p>
@@ -148,26 +148,34 @@ export function AitoTrackPage() {
                 <p className="mt-[8px] text-[13px] text-aito-muted/80">{FR.updated(frUpdated(data.updated_at))}</p>
               </section>
               <section className="mt-[24px]">
-                <h3 className="mb-[16px] text-[11px] font-semibold uppercase tracking-[.08em] text-aito-muted">{FR.tasksHeading}</h3>
-                <ul className="divide-y divide-aito-line/60 text-[15px]">
-                  {(showAllParts ? data.tasks : data.tasks.slice(0, PARTS_SHOWN)).map((task, i) => (
-                    <li key={i} className="flex items-start justify-between gap-[12px] py-[12px]">
-                      <span className="min-w-0">{task.title}</span>
-                      {task.quantity !== null && (
-                        <span className="min-w-[28px] shrink-0 text-right tabular-nums text-aito-muted">×{task.quantity}</span>
+                <h3 className="mb-[16px] text-[12px] font-semibold uppercase tracking-[.08em] text-aito-muted">{FR.tasksHeading}</h3>
+                {(() => {
+                  const folded = data.tasks.length > PARTS_FOLD && !showAllParts;
+                  const shown = folded ? data.tasks.slice(0, PARTS_SHOWN) : data.tasks;
+                  return (
+                    <>
+                      <ul className="divide-y divide-aito-line/60 text-[15px]">
+                        {shown.map((task, i) => (
+                          <li key={i} className="flex items-start justify-between gap-[12px] py-[12px]">
+                            <span className="min-w-0">{task.title}</span>
+                            {task.quantity !== null && (
+                              <span className="min-w-[28px] shrink-0 text-right tabular-nums text-aito-muted">×{task.quantity}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                      {folded && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllParts(true)}
+                          className={`mt-[12px] inline-flex min-h-[44px] items-center rounded-[8px] text-[13.5px] font-semibold text-aito-cyan transition-colors duration-150 hover:text-aito-cyan/80 ${FOCUS}`}
+                        >
+                          {FR.showAllParts(data.tasks.length)}
+                        </button>
                       )}
-                    </li>
-                  ))}
-                </ul>
-                {data.tasks.length > PARTS_FOLD && !showAllParts && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllParts(true)}
-                    className={`mt-[12px] inline-flex min-h-[44px] items-center rounded-[8px] text-[13.5px] font-semibold text-aito-cyan transition-colors duration-150 hover:text-aito-cyan/80 ${FOCUS}`}
-                  >
-                    {FR.showAllParts(data.tasks.length)}
-                  </button>
-                )}
+                    </>
+                  );
+                })()}
               </section>
               {data.invoice && (
                 <div className="mt-[32px]">

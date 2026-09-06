@@ -147,6 +147,15 @@ describe('AitoTrackPage', () => {
     expect(screen.getByText('Pièce 11')).toBeInTheDocument();
   });
 
+  it('does not fold a parts list at or under the fold threshold', async () => {
+    const tasks = Array.from({ length: 7 }, (_, i) => ({ title: `Pièce ${i + 1}`, quantity: null }));
+    mockTrack({ ...FIXTURE, tasks });
+    renderAt('seven');
+    await screen.findByText('Pièce 1');
+    expect(screen.getByText('Pièce 7')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Voir les .* pièces/ })).not.toBeInTheDocument();
+  });
+
   it('offers a retry on a server error and a dedicated page on 404', async () => {
     let calls = 0;
     server.use(http.get('/api/v1/aito/track/:token', () => (++calls === 1 ? HttpResponse.error() : HttpResponse.json(FIXTURE))));

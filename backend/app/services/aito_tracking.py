@@ -9,9 +9,9 @@ docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md
 
 import json
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
@@ -19,6 +19,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.schemas.aito import AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
+from backend.app.services.aito_shipping import SERVICE_LABELS
 
 TOKEN_BYTES = 32
 TRACKING_TTL_AFTER_DONE = timedelta(days=30)
@@ -122,9 +123,16 @@ def task_quantity(task: AitoTask) -> int | None:
 
 async def last_activity(db: AsyncSession, project: AitoProject) -> datetime:
     """The card's latest event moment, or its row timestamp for a card that
-    has no events — the honest "Mis à jour" value."""
+    has no events — the honest "Mis à jour" value. Coalesced to
+    `occurred_until` first: a repeated-edit session that got folded into one
+    event (services/aito_events.py) reports the window's END, not when it
+    started."""
     latest = (
-        await db.execute(select(func.max(AitoEvent.occurred_at)).where(AitoEvent.project_id == project.id))
+        await db.execute(
+            select(func.max(func.coalesce(AitoEvent.occurred_until, AitoEvent.occurred_at))).where(
+                AitoEvent.project_id == project.id
+            )
+        )
     ).scalar_one()
     return latest or project.updated_at
 
@@ -134,6 +142,17 @@ async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
     the log must never break the page it measures."""
     db.add(AitoTrackingView(project_id=project_id, viewed_at=now))
     await db.commit()
+
+
+async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedelta(days=400)) -> int:
+    """Retention for the view log: the Stats pipeline widget only ever reads
+    a recent window (services/aito_tracking.py's callers), so rows past
+    `older_than` have no reader left and would just grow the table forever.
+    Returns the number of rows removed."""
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - older_than
+    result = await db.execute(delete(AitoTrackingView).where(AitoTrackingView.viewed_at < cutoff))
+    await db.commit()
+    return result.rowcount or 0
 
 
 async def compute_tracking(
@@ -166,18 +185,23 @@ async def compute_tracking(
     ]
     shipping = None
     if project.shipping_island:
+        service = project.shipping_service or ""
+        # `_shipping_names` is a cache-only read (routes/aito.py) and can be
+        # cold — fall back to our own static labels before the raw key, so a
+        # cold cache never leaks an internal service key to the client.
         shipping = AitoTrackingShipping(
             island=island_labels.get(project.shipping_island, project.shipping_island),
-            service=shipping_names.get(project.shipping_service or "", project.shipping_service or ""),
+            service=shipping_names.get(service, SERVICE_LABELS.get(service, service)),
         )
+    updated_at = (await last_activity(db, project)).replace(microsecond=0)
     data = AitoTrackingResponse(
         column=project.board_column,
         tasks=titles,
         due_date=date.fromisoformat(project.due_date) if project.due_date else None,
         shipping=shipping,
-        done_at=finished_at,
+        done_at=finished_at.replace(microsecond=0) if finished_at else None,
         invoice=invoice_state(project.invoice_status),
         reference=project.quote_number or None,
-        updated_at=await last_activity(db, project),
+        updated_at=updated_at,
     )
     return project.id, data
