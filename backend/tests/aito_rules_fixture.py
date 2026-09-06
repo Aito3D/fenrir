@@ -48,6 +48,8 @@ class _Task:
         # un-rushed task emits rather than leaving the mirror free to read a
         # missing attribute however it likes.
         self.impression_rush = kwargs.get("impression_rush", False)
+        self.impression_time_min = kwargs.get("impression_time_min")
+        self.impression_quantity = kwargs.get("impression_quantity")
 
 
 def _powerset(items: tuple[str, ...]) -> list[list[str]]:
@@ -177,6 +179,18 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
             {"scan_cost": 6.0, "modelisation_cost": 7.0, "impression_cost": 8.0, "usinage_cost": 9.0},
         ],
     ),
+    (
+        # Print backlog: minutes × quantity on the unticked print step only.
+        "a pending print of 90 min x 2 owes 180 minutes",
+        [{"impression_cost": 100.0, "impression_time_min": 90, "impression_quantity": 2}],
+    ),
+    (
+        "a ticked print owes nothing, and a scan-only task owes nothing",
+        [
+            {"impression_cost": 100.0, "impression_time_min": 90, "impression_done": True},
+            {"scan_cost": 10.0, "impression_time_min": 60},
+        ],
+    ),
 )
 
 
@@ -190,6 +204,8 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
         payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
     payload["title"] = shape.get("title", "")
     payload["impression_rush"] = shape.get("impression_rush", False)
+    payload["impression_time_min"] = shape.get("impression_time_min")
+    payload["impression_quantity"] = shape.get("impression_quantity")
     return payload
 
 
@@ -207,6 +223,7 @@ def _summarise_cases() -> list[dict[str, Any]]:
                 "pending": list(summary.pending),
                 "steps_total": summary.steps_total,
                 "steps_done": summary.steps_done,
+                "print_minutes_pending": summary.print_minutes_pending,
                 "steps_by_task": [
                     {
                         "services": list(steps.services),

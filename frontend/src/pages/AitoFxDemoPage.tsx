@@ -102,6 +102,7 @@ function demoProject(card: (typeof DEMO_CARDS)[number]): AitoProject {
     task_pending: [],
     steps_total: 4,
     steps_done: 4,
+    print_minutes_pending: 0,
     task_steps: [],
     move_lock: null,
     shipping_island: card.shipping ? 'RAIATEA' : null,

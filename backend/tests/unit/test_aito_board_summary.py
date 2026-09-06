@@ -21,6 +21,8 @@ class _Task:
     modelisation_done: bool = False
     impression_done: bool = False
     usinage_done: bool = False
+    impression_time_min: int | None = None
+    impression_quantity: int | None = None
 
 
 def test_no_tasks_is_all_empty():
@@ -190,3 +192,20 @@ def test_steps_by_task_preserves_task_order():
         TaskSteps(services=("impression",), done=()),
         TaskSteps(services=("scan",), done=("scan",)),
     )
+
+
+def test_print_minutes_pending_sums_unticked_print_steps_times_quantity():
+    summary = summarise(
+        [
+            _Task(impression_cost=100.0, impression_time_min=90, impression_quantity=2),
+            _Task(impression_cost=50.0, impression_time_min=30),  # quantity None reads as 1
+            _Task(impression_cost=70.0, impression_time_min=45, impression_done=True),  # ticked: 0
+            _Task(scan_cost=10.0, impression_time_min=999),  # no print step: 0
+            _Task(impression_cost=20.0, impression_time_min=None),  # minutes missing: 0
+        ]
+    )
+    assert summary.print_minutes_pending == 210
+
+
+def test_print_minutes_pending_is_zero_with_no_tasks():
+    assert summarise([]).print_minutes_pending == 0

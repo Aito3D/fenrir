@@ -80,6 +80,9 @@ class TaskSummary:
     reads. A service priced at 0 is a real step; a service priced ``None`` is
     absent from the job and is not counted at all, done flag or no.
 
+    ``print_minutes_pending`` is the print-minute backlog: minutes × quantity
+    summed across tasks with an unticked print step.
+
     This whole dataclass is mirrored by ``summariseTasks`` in
     frontend/src/utils/aitoBoardRules.ts and pinned by the contract fixture —
     see backend/tests/aito_rules_fixture.py. Changing it here without
@@ -97,6 +100,11 @@ class TaskSummary:
     # This is what makes the card's pill grid possible without shipping every
     # task row on GET /aito/.
     steps_by_task: tuple[TaskSteps, ...] = ()
+    # Print minutes still owed: Σ over tasks with a priced, UNTICKED print
+    # step of minutes × quantity (quantity None or 0 reads as 1; minutes None
+    # reads as 0). The board header's backlog badge sums this across accepted
+    # cards. Mirrored by `summariseTasks` and pinned by the contract fixture.
+    print_minutes_pending: int = 0
 
 
 def net_cost(task: Any, service: str) -> float | None:
@@ -135,6 +143,7 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
     unticked: set[str] = set()
     steps_total = 0
     steps_done = 0
+    print_minutes_pending = 0
     by_task: list[TaskSteps] = []
     for task in rows:
         task_services: list[str] = []
@@ -152,6 +161,10 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 task_done.append(service)
             else:
                 unticked.add(service)
+            if service == "impression" and not getattr(task, f"{service}_done"):
+                minutes = getattr(task, "impression_time_min", None) or 0
+                quantity = max(1, getattr(task, "impression_quantity", None) or 1)
+                print_minutes_pending += int(minutes) * int(quantity)
         by_task.append(
             TaskSteps(
                 services=tuple(task_services),
@@ -168,6 +181,7 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
         steps_total=steps_total,
         steps_done=steps_done,
         steps_by_task=tuple(by_task),
+        print_minutes_pending=print_minutes_pending,
     )
 
 

@@ -61,6 +61,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   task_pending: [],
   steps_total: 0,
   steps_done: 0,
+  print_minutes_pending: 0,
   task_steps: [],
   move_lock: 'quote',
   shipping_island: null,
@@ -100,6 +101,7 @@ describe('applyQuoteStatus', () => {
         task_pending: ['impression'],
         steps_total: 2,
         steps_done: 1,
+        print_minutes_pending: 0,
       }),
     ];
     expect(find(applyQuoteStatus(projects, 1, 'accepted'), 1).column).toBe('print');

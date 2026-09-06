@@ -302,6 +302,10 @@ export default {
     clearSearch: '清除搜索',
     inProduction_one: '进行中 {{count}} 个项目',
     inProduction_other: '进行中 {{count}} 个项目',
+    backlogHours: '待打印 {{hours}} 小时',
+    backlogDays_one: '≈ {{days}} 天（{{count}} 台打印机）',
+    backlogDays_other: '≈ {{days}} 天（{{count}} 台打印机）',
+    backlogTitle: '已接受作业的剩余打印时间，除以打印机数量和计算器的每日工时',
     allDone_one: '没有进行中的项目 — {{count}} 个已完成的项目在“查看已完成”里',
     allDone_other: '没有进行中的项目 — {{count}} 个已完成的项目在“查看已完成”里',
     columns: {

@@ -302,6 +302,10 @@ export default {
     clearSearch: '清除搜尋',
     inProduction_one: '進行中 {{count}} 個專案',
     inProduction_other: '進行中 {{count}} 個專案',
+    backlogHours: '待列印 {{hours}} 小時',
+    backlogDays_one: '≈ {{days}} 天（{{count}} 台印表機）',
+    backlogDays_other: '≈ {{days}} 天（{{count}} 台印表機）',
+    backlogTitle: '已接受作業的剩餘列印時間，除以印表機數量和計算器的每日工時',
     allDone_one: '沒有進行中的專案 — {{count}} 個已完成的專案在「檢視已完成」中',
     allDone_other: '沒有進行中的專案 — {{count}} 個已完成的專案在「檢視已完成」中',
     columns: {

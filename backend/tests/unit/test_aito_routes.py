@@ -1042,6 +1042,7 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "task_services": [],
         "steps_total": 0,
         "steps_done": 0,
+        "print_minutes_pending": 0,
         "task_steps": [],
         "task_pending": [],
         "move_lock": None,

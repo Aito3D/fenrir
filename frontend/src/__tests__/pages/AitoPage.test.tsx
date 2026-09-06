@@ -25,7 +25,7 @@ vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
   client_id: 'z1', client_name: 'ACME SARL', client_phone: '+33 6 12 34 56 78',
-  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, task_steps: [],
+  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, print_minutes_pending: 0, task_steps: [],
   move_lock: null,
   shipping_island: null, shipping_service: null, shipping_first_name: null, shipping_last_name: null,
   shipping_phone: null, shipping_price: null, shipping_service_name: null,
@@ -79,6 +79,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     task_pending: [],
     steps_total: 0,
     steps_done: 0,
+    print_minutes_pending: 0,
     task_steps: [],
     move_lock: null,
     shipping_island: null,
@@ -750,6 +751,7 @@ describe('AitoPage (backend board)', () => {
       task_pending: [],
       steps_total: 0,
       steps_done: 0,
+      print_minutes_pending: 0,
       task_steps: [],
       move_lock: null,
       shipping_island: null,
@@ -1080,6 +1082,7 @@ describe('AitoPage (backend board)', () => {
         task_services: ['impression'],
         steps_total: 1,
         steps_done: 0,
+        print_minutes_pending: 0,
       });
       server.use(http.get('/api/v1/aito/', () => HttpResponse.json([accepted])));
 
@@ -2006,5 +2009,51 @@ describe('follow-ups strip', () => {
     expect(screen.getByRole('button', { name: /show done \(1\)/i })).toBeInTheDocument();
     expect(screen.getByTestId('aito-followup-quoteOut')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+  });
+});
+
+describe('print backlog badge', () => {
+  const printer = (id: number, name: string) => ({
+    id,
+    name,
+    serial_number: `00M0${id}A000000000`,
+    ip_address: `192.168.1.${id}`,
+    is_active: true,
+    model: 'X1C',
+    nozzle_count: 1,
+    auto_archive: true,
+    location: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
+
+  it('shows the print backlog and drops it when the board empties of accepted work', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([printer(1, 'Printer A'), printer(2, 'Printer B')])),
+      http.get('/api/v1/calculator/printers/', () =>
+        HttpResponse.json([
+          {
+            id: 1,
+            name: 'H2S',
+            purchase_price: 347000,
+            lifetime_years: 2,
+            daily_usage_hours: 8,
+            power_watts: 400,
+            repair_rate_pct: 30,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ]),
+      ),
+      http.get('/api/v1/aito/', () =>
+        HttpResponse.json([
+          { ...project, quote_status: 'accepted', column: 'print', print_minutes_pending: 240, move_lock: null },
+        ]),
+      ),
+    );
+    render(<AitoPage />);
+    const badge = await screen.findByTestId('aito-print-backlog');
+    expect(badge).toHaveTextContent('4.0 h to print');
+    expect(badge).toHaveTextContent('≈ 0.3 d on 2 printers');
   });
 });

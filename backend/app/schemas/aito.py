@@ -620,6 +620,9 @@ class AitoProjectResponse(BaseModel):
     # 0 — an unpriced project has nothing to measure.
     steps_total: int
     steps_done: int
+    # Print minutes still owed on this project's unticked print steps — see
+    # TaskSummary.print_minutes_pending. The header's backlog badge sums it.
+    print_minutes_pending: int
     # One entry per task, in the same order the detail panel lists them, so
     # the card's pill rows and the panel's task rows line up. This is the only
     # per-task detail GET /aito/ ships; everything else stays an aggregate.

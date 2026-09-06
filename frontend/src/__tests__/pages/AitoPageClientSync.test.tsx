@@ -48,6 +48,7 @@ function createdProject(overrides: Record<string, unknown>) {
     task_pending: [],
     steps_total: 0,
     steps_done: 0,
+    print_minutes_pending: 0,
     task_steps: [],
     shipping_island: null,
     shipping_service: null,

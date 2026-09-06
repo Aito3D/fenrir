@@ -56,6 +56,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   task_pending: [],
   steps_total: 0,
   steps_done: 0,
+  print_minutes_pending: 0,
   task_steps: [],
   move_lock: null,
   shipping_island: null,

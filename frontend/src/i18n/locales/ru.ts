@@ -302,6 +302,10 @@ export default {
     clearSearch: 'Очистить поиск',
     inProduction_one: '{{count}} проект в работе',
     inProduction_other: '{{count}} проектов в работе',
+    backlogHours: '{{hours}} ч печати',
+    backlogDays_one: '≈ {{days}} дн. на {{count}} принтере',
+    backlogDays_other: '≈ {{days}} дн. на {{count}} принтерах',
+    backlogTitle: 'Оставшееся время печати по принятым заказам, делённое на число принтеров и дневные часы калькулятора',
     allDone_one: 'В работе ничего нет — {{count}} завершённый проект лежит в разделе «Показать завершённые»',
     allDone_other: 'В работе ничего нет — {{count}} завершённых проектов лежат в разделе «Показать завершённые»',
     columns: {

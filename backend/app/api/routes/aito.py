@@ -426,6 +426,7 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         task_pending=list(summary.pending),
         steps_total=summary.steps_total,
         steps_done=summary.steps_done,
+        print_minutes_pending=summary.print_minutes_pending,
         task_steps=[
             AitoTaskStepsResponse(
                 services=list(steps.services), done=list(steps.done), title=steps.title, rush=steps.rush

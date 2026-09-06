@@ -34,6 +34,8 @@ import { useQuotePendingPoll } from '../hooks/useQuotePendingPoll';
 import { useAitoPageMutations } from '../hooks/useAitoPageMutations';
 import { placeholderProject } from '../utils/aitoOptimistic';
 import { toTaskLike } from '../utils/aitoBoardRules';
+import { PrintBacklogBadge } from '../components/aito/PrintBacklogBadge';
+import { printBacklog } from '../utils/aitoBacklog';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -93,6 +95,17 @@ export function AitoPage() {
   // Thresholds ride the same settings query the rest of the app shares; the
   // defaults below only cover the instant before it resolves.
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
+  // Feed the header's print-backlog badge — see PrintBacklogBadge. Same
+  // query key as every other page that reads calculator printers
+  // (CalculatorPage, ImpressionFields, ...), so the cache is shared rather
+  // than duplicated.
+  const printersQuery = useQuery({ queryKey: ['printers'], queryFn: api.getPrinters, staleTime: 60_000 });
+  const calcPrintersQuery = useQuery({
+    queryKey: ['calculatorPrinters'],
+    queryFn: api.getCalculatorPrinters,
+    staleTime: 60_000,
+  });
+  const backlogMinutes = useMemo(() => printBacklog(aitoQuery.data ?? []), [aitoQuery.data]);
   const thresholds = {
     quoteDays: settingsQuery.data?.aito_followup_quote_days ?? 5,
     pickupDays: settingsQuery.data?.aito_followup_pickup_days ?? 7,
@@ -333,6 +346,11 @@ export function AitoPage() {
             <span aria-hidden="true">{inProduction}</span>
             <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
           </span>
+          <PrintBacklogBadge
+            minutes={backlogMinutes}
+            printerCount={printersQuery.data?.length}
+            dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
+          />
         </h1>
         <BoardSearch value={search} onChange={setSearch} className="w-full lg:flex-1 lg:min-w-0" />
         <div className="flex flex-wrap items-center gap-2 flex-none">

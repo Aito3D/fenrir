@@ -302,6 +302,10 @@ export default {
     clearSearch: 'Aramayı temizle',
     inProduction_one: 'üretimde {{count}} proje',
     inProduction_other: 'üretimde {{count}} proje',
+    backlogHours: '{{hours}} sa basılacak',
+    backlogDays_one: '≈ {{count}} yazıcıda {{days}} gün',
+    backlogDays_other: '≈ {{count}} yazıcıda {{days}} gün',
+    backlogTitle: 'Kabul edilen işlerde kalan baskı süresi, yazıcı sayınıza ve hesaplayıcının günlük saatlerine bölünmüş',
     allDone_one: 'Üretimde bir şey yok — {{count}} tamamlanmış proje “Tamamlananları göster” bölümünde',
     allDone_other: 'Üretimde bir şey yok — {{count}} tamamlanmış proje “Tamamlananları göster” bölümünde',
     columns: {

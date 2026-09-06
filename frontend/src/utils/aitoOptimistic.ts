@@ -147,6 +147,7 @@ export function applyTaskSummary(
     task_pending: [...summary.pending],
     steps_total: summary.stepsTotal,
     steps_done: summary.stepsDone,
+    print_minutes_pending: summary.printMinutesPending,
     // Shallow copy: each row is a fresh object, but its `services`/`done`
     // arrays are still the same references `summary` holds. Harmless in
     // practice — nothing here or downstream mutates those arrays, and
@@ -450,6 +451,7 @@ export function placeholderProject(fields: {
     task_pending: [...summary.pending],
     steps_total: summary.stepsTotal,
     steps_done: summary.stepsDone,
+    print_minutes_pending: summary.printMinutesPending,
     // Shallow copy — see applyTaskSummary's own comment on the identical line.
     task_steps: summary.stepsByTask.map((steps) => ({ ...steps })),
     move_lock: lock,

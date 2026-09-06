@@ -302,6 +302,10 @@ export default {
     clearSearch: 'Effacer la recherche',
     inProduction_one: '{{count}} projet en production',
     inProduction_other: '{{count}} projets en production',
+    backlogHours: '{{hours}} h à imprimer',
+    backlogDays_one: '≈ {{days}} j sur {{count}} imprimante',
+    backlogDays_other: '≈ {{days}} j sur {{count}} imprimantes',
+    backlogTitle: 'Temps d’impression restant sur les travaux acceptés, divisé par vos imprimantes et les heures quotidiennes du calculateur',
     allDone_one: 'Rien en production — {{count}} projet terminé se trouve dans « Voir les terminés »',
     allDone_other: 'Rien en production — {{count}} projets terminés se trouvent dans « Voir les terminés »',
     columns: {
