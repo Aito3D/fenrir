@@ -115,6 +115,43 @@ async def test_stage_days_median_from_stays_closed_in_range(async_client, db_ses
 
 
 @pytest.mark.asyncio
+async def test_events_strictly_after_the_range_end_are_invisible_to_every_block(async_client, db_session):
+    """Regression for the SQL-side upper bound: rows past `end` must change
+    nothing, whether they are the row a bucket would have counted, the row
+    `_stage_days` would have used to open/close a stay, or the project's own
+    `project.created` (the `born` anchor `_is_creation_time` compares against).
+    Baseline body is captured first so this also pins that adding
+    strictly-later history is a no-op, not just that specific fields survive.
+    """
+    a = await _create(async_client, description="a")
+    b = await _create(async_client, description="b")
+    await _set(db_session, a, created_at="2026-08-01 00:00:00", quote_total=1000.0)
+    await _set(db_session, b, created_at="2026-08-01 00:00:00", quote_total=500.0)
+    await _event(db_session, a, "stage.changed", "2026-08-05 00:00:00", _stage("devis", "waiting"))
+    await _event(db_session, a, "quote.sent", "2026-08-06 09:00:00")
+    await _event(db_session, a, "quote.accepted", "2026-08-10 09:00:00")
+
+    params = {"date_from": "2026-08-01", "date_to": "2026-08-31"}
+    baseline = (await async_client.get(STATS, params=params)).json()
+
+    # Noise strictly after `end` (2026-09-01 00:00:00 UTC is the first instant
+    # excluded by `date_to=2026-08-31`): a fresh `project.created` for `b`
+    # (the `born` anchor), a `stage.changed` on `b` that would otherwise open
+    # a stay, and a second `stage.changed` on `a` that would otherwise close
+    # `waiting` and open `scan`. Plus late sent/accepted/declined so every
+    # `_first_moments` caller is exercised.
+    await _move_event(db_session, b, "project.created", "2026-09-05 00:00:00")
+    await _event(db_session, b, "stage.changed", "2026-09-05 00:00:05", _stage("devis", "waiting"))
+    await _event(db_session, a, "stage.changed", "2026-09-06 00:00:00", _stage("waiting", "scan"))
+    await _event(db_session, a, "quote.sent", "2026-09-07 09:00:00")
+    await _event(db_session, b, "quote.accepted", "2026-09-08 09:00:00")
+    await _event(db_session, b, "quote.declined", "2026-09-09 09:00:00")
+
+    after = (await async_client.get(STATS, params=params)).json()
+    assert after == baseline
+
+
+@pytest.mark.asyncio
 async def test_invoicing_period_total_and_snapshot_outstanding(async_client, db_session):
     a = await _create(async_client, description="a")
     b = await _create(async_client, description="b")

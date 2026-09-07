@@ -10907,3 +10907,9 @@ backend/tests/unit/test_aito_pickup_sms.py` (45 passed).
 file — empty diff).
 
 user-approved 2026-09-06
+
+## Campaign 12 · Round 1 (approved 2026-09-06)
+
+T-003 — log_view dedups the tracking-view log: a repeat open of the same project within 5 minutes
+writes no new AitoTrackingView row (the Stats pipeline widget's views count reads lower for repeat
+opens). No rate limit and no 429 were added — user-approved, narrowed, 2026-09-06.

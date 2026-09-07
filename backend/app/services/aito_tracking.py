@@ -11,8 +11,9 @@ import json
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
@@ -46,11 +47,33 @@ def tracking_url_for(base: str, token: str | None) -> str | None:
 
 async def ensure_tracking_token(db: AsyncSession, project: AitoProject) -> str:
     """The card's token, minting one if it has none. Flushes, never commits:
-    the caller's transaction owns that."""
-    if not project.tracking_token:
-        project.tracking_token = mint_token()
-        await db.flush()
-    return project.tracking_token
+    the caller's transaction owns that.
+
+    The mint is a conditional `UPDATE ... WHERE tracking_token IS NULL`, not a
+    check-then-act on the in-memory attribute: two concurrent mints for the
+    same card (routes/aito.py's tracking-link and pickup-message paths both
+    call this) would otherwise race, with the slower one silently overwriting
+    a token that may already have been handed out. Here only one UPDATE can
+    match the NULL guard, so the loser re-reads the row and returns the
+    winner's token instead of replacing it."""
+    if project.tracking_token:
+        return project.tracking_token
+    new_token = mint_token()
+    result = await db.execute(
+        update(AitoProject)
+        .where(AitoProject.id == project.id, AitoProject.tracking_token.is_(None))
+        .values(tracking_token=new_token)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount:
+        won_token = new_token
+    else:
+        won_token = (
+            await db.execute(select(AitoProject.tracking_token).where(AitoProject.id == project.id))
+        ).scalar_one()
+    set_committed_value(project, "tracking_token", won_token)
+    await db.flush()
+    return won_token
 
 
 async def tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
@@ -137,9 +160,26 @@ async def last_activity(db: AsyncSession, project: AitoProject) -> datetime:
     return latest or project.updated_at
 
 
+VIEW_DEDUP_WINDOW = timedelta(minutes=5)
+
+
 async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
-    """One row per successful open. The route wraps this in a try/except:
-    the log must never break the page it measures."""
+    """One row per open, deduped within `VIEW_DEDUP_WINDOW`: a repeat open of
+    the same project (a refresh, a link-scanner refetch) that lands inside
+    the window writes nothing. The route wraps this in a try/except: the log
+    must never break the page it measures."""
+    recent = (
+        await db.execute(
+            select(AitoTrackingView.id)
+            .where(
+                AitoTrackingView.project_id == project_id,
+                AitoTrackingView.viewed_at > now - VIEW_DEDUP_WINDOW,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if recent is not None:
+        return
     db.add(AitoTrackingView(project_id=project_id, viewed_at=now))
     await db.commit()
 

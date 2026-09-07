@@ -67,6 +67,7 @@ async def _first_moments(
     kinds: tuple[str, ...],
     project_ids: list[int],
     born: dict[int, datetime] | None = None,
+    end: datetime | None = None,
 ) -> dict[int, datetime]:
     """project_id -> earliest occurred_at among ``kinds``, active projects only.
 
@@ -81,14 +82,23 @@ async def _first_moments(
 
     That pair of checks is why the ordered scan + first-eligible-row runs in
     Python instead of a SQL ``MIN``.
+
+    ``end`` narrows the scan to rows that could possibly be "the first" within
+    the requested window: every caller only ever reads this result through
+    ``_in_range(..., end)`` (directly via ``_bucket``, or via
+    ``_is_creation_time`` where a value beyond ``end`` and a missing value
+    behave identically, since every row it is compared against is itself
+    bounded to ``<= end``). There is no lower bound: history before ``start``
+    is still needed to find the true first moment.
     """
     if not project_ids:
         return {}
-    stmt = (
-        select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.detail)
-        .where(AitoEvent.kind.in_(kinds), AitoEvent.project_id.in_(project_ids))
-        .order_by(AitoEvent.occurred_at, AitoEvent.id)
+    stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.detail).where(
+        AitoEvent.kind.in_(kinds), AitoEvent.project_id.in_(project_ids)
     )
+    if end is not None:
+        stmt = stmt.where(AitoEvent.occurred_at <= end)
+    stmt = stmt.order_by(AitoEvent.occurred_at, AitoEvent.id)
     firsts: dict[int, datetime] = {}
     for pid, at, detail in (await db.execute(stmt)).all():
         if pid in firsts:
@@ -120,11 +130,16 @@ async def _stage_days(
     ids = list(projects)
     stays: dict[str, list[float]] = defaultdict(list)
     if ids:
-        stmt = (
-            select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes)
-            .where(AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(ids))
-            .order_by(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.id)
+        stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(
+            AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(ids)
         )
+        # A row past `end` can only ever fail `_in_range` below, and the
+        # `opened_at` it would record is read only by later rows for the same
+        # project (rows are ordered by occurred_at), which are also past
+        # `end` — so dropping it here changes nothing but what SQLite reads.
+        if end is not None:
+            stmt = stmt.where(AitoEvent.occurred_at <= end)
+        stmt = stmt.order_by(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.id)
         opened_at: dict[int, datetime] = {}
         for pid, at, changes in (await db.execute(stmt)).all():
             if isinstance(changes, str):
@@ -176,10 +191,10 @@ async def compute_aito_stats(
 
     # Fetched once and reused: the decision moments and the stage-days maths
     # both measure "was this still the card's creation?" against it.
-    born = await _first_moments(db, ("project.created",), ids)
-    sent = await _first_moments(db, _SENT_KINDS, ids)
-    accepted = await _first_moments(db, ("quote.accepted",), ids, born)
-    declined = await _first_moments(db, ("quote.declined",), ids, born)
+    born = await _first_moments(db, ("project.created",), ids, end=end)
+    sent = await _first_moments(db, _SENT_KINDS, ids, end=end)
+    accepted = await _first_moments(db, ("quote.accepted",), ids, born, end=end)
+    declined = await _first_moments(db, ("quote.declined",), ids, born, end=end)
     # A decision mirrored from Books (reconcile_quote_status -> adopt_quote_status)
     # records only `poll.reconciled`, but it DOES stamp quote_accepted_at, so a
     # client acceptance can exist with no `quote.accepted` event at all. Take

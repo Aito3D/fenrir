@@ -10,6 +10,7 @@ from backend.app.models.settings import Settings
 from backend.app.services.aito_tracking import (
     build_tracking_url,
     ensure_tracking_token,
+    log_view,
     mint_token,
     purge_tracking_views,
     tracking_url,
@@ -58,6 +59,27 @@ async def test_ensure_mints_once_and_is_stable(async_client, db_session):
     assert first == second == (await _project(db_session, pid)).tracking_token
     other = await _project(db_session, await _create(async_client, description="other"))
     assert await ensure_tracking_token(db_session, other) != first
+
+
+@pytest.mark.asyncio
+async def test_ensure_token_race_loser_returns_winners_token(async_client, db_session):
+    """Interleaving from T-007: operator A holds a `project` instance loaded
+    before operator B minted and committed a token, so A's in-memory
+    attribute is still None when A's own mint runs. The conditional UPDATE
+    must lose to B's already-stored token instead of overwriting it, and A
+    must walk away with B's token, not a second one."""
+    pid = await _create(async_client)
+    project = await _project(db_session, pid)
+    assert project.tracking_token is None
+    await _set(db_session, pid, tracking_token="tokenA")
+    assert project.tracking_token is None  # A's stale in-memory view
+
+    won = await ensure_tracking_token(db_session, project)
+    await db_session.commit()
+
+    assert won == "tokenA"
+    assert project.tracking_token == "tokenA"
+    assert (await _project(db_session, pid)).tracking_token == "tokenA"
 
 
 @pytest.mark.asyncio
@@ -230,19 +252,70 @@ async def test_public_updated_at_is_the_latest_event_else_the_row_timestamp(asyn
 
 
 @pytest.mark.asyncio
-async def test_public_view_is_logged_once_per_200_and_never_breaks_the_page(async_client, db_session, monkeypatch):
+async def test_log_view_dedups_within_5min_but_not_across_projects_or_past_the_window(async_client, db_session):
+    pid = await _create(async_client)
+    other_pid = await _create(async_client, description="other")
+
+    def count(project_id):
+        return db_session.execute(
+            text("SELECT COUNT(*) FROM aito_tracking_views WHERE project_id = :pid"), {"pid": project_id}
+        )
+
+    base = datetime(2026, 9, 6, 12, 0, 0)
+    await log_view(db_session, pid, base)
+    assert (await count(pid)).scalar_one() == 1
+
+    # A repeat open 4 minutes later — inside the window — writes nothing.
+    await log_view(db_session, pid, base + timedelta(minutes=4))
+    assert (await count(pid)).scalar_one() == 1
+
+    # A different project inside the same window still writes.
+    await log_view(db_session, other_pid, base + timedelta(minutes=4))
+    assert (await count(other_pid)).scalar_one() == 1
+
+    # An open 5+ minutes after the first write is outside the window.
+    await log_view(db_session, pid, base + timedelta(minutes=5, seconds=1))
+    assert (await count(pid)).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_public_view_is_logged_once_per_open_deduped_within_5min_and_never_breaks_the_page(
+    async_client, db_session, monkeypatch
+):
     pid = await _create(async_client)
     token = await _token(async_client, db_session, pid)
 
-    def count():
+    def count(project_id=pid):
         return db_session.execute(
-            text("SELECT COUNT(*) FROM aito_tracking_views WHERE project_id = :pid"), {"pid": pid}
+            text("SELECT COUNT(*) FROM aito_tracking_views WHERE project_id = :pid"), {"pid": project_id}
         )
 
+    # A repeat open of the same project inside the 5-minute dedup window
+    # (a refresh, a link-scanner refetch) writes no new row.
     assert (await async_client.get(TRACK + token)).status_code == 200
     assert (await async_client.get(TRACK + token)).status_code == 200
     assert (await async_client.get(TRACK + "nope")).status_code == 404
+    assert (await count()).scalar_one() == 1
+
+    # A different project opened inside the same window still writes.
+    other_pid = await _create(async_client, description="other")
+    other_token = await _token(async_client, db_session, other_pid)
+    assert (await async_client.get(TRACK + other_token)).status_code == 200
+    assert (await count()).scalar_one() == 1
+    assert (await count(other_pid)).scalar_one() == 1
+
+    # An open 5+ minutes later writes a second row for the original project.
+    from backend.app.api.routes import aito as aito_routes
+
+    class _ShiftedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(minutes=6)
+
+    monkeypatch.setattr(aito_routes, "datetime", _ShiftedDatetime)
+    assert (await async_client.get(TRACK + token)).status_code == 200
     assert (await count()).scalar_one() == 2
+    monkeypatch.undo()
 
     from backend.app.services import aito_tracking as svc
 
