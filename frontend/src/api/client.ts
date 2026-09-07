@@ -4090,7 +4090,8 @@ export interface AitoTracking {
   column: AitoColumnId;
   tasks: AitoTrackingTask[];
   due_date: string | null;
-  shipping: { island: string; service: string } | null;
+  /** `lta` is the air waybill number, null until the parcel is handed over. */
+  shipping: { island: string; service: string; lta: string | null } | null;
   done_at: string | null;
   invoice: AitoTrackingInvoice | null;
   reference: string | null;
@@ -4239,6 +4240,8 @@ export interface AitoProject {
   shipping_last_name: string | null;
   shipping_phone: string | null;
   shipping_price: number | null;
+  /** Air waybill (LTA) number, null until the parcel is handed to Air Tahiti. */
+  shipping_lta: string | null;
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
   /** The client-facing tracking link for this card, and whether it has ever
@@ -4274,6 +4277,9 @@ export interface AitoProjectUpdate {
   shipping_last_name?: string | null;
   shipping_phone?: string | null;
   shipping_price?: number | null;
+  /** Sent ALONE, after the parcel is handed over. Null clears; the server
+   *  422s when the card carries no shipment. */
+  shipping_lta?: string | null;
   /** The `version` the client last rendered. Server 409s (code
    *  `version_conflict`) on mismatch. Omit to skip the check. */
   expected_version?: number;

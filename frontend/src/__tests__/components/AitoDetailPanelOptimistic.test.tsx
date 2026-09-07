@@ -76,6 +76,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_last_name: null,
     shipping_phone: null,
     shipping_price: null,
+    shipping_lta: null,
     shipping_service_name: null,
     tracking_url: null,
     tracking_configured: false,
@@ -328,6 +329,7 @@ describe('F2 — self-conflict on back-to-back saves from one client (empirical)
       shipping_last_name: 'Pierre',
       shipping_phone: '+689-89645864',
       shipping_price: 3200,
+      shipping_lta: null,
     });
     renderPanelReactive(project);
 
@@ -536,6 +538,7 @@ describe('T-047 — a stale session left open across a peer\'s write does not in
       shipping_last_name: 'Pierre',
       shipping_phone: '+689-89645864',
       shipping_price: 3200,
+      shipping_lta: null,
     });
     serverProject = project;
     const client = renderPanelReactive(project);
@@ -704,6 +707,7 @@ describe('T-047 — a stale session left open across a peer\'s write does not in
       shipping_last_name: 'Pierre',
       shipping_phone: '+689-89645864',
       shipping_price: 3200,
+      shipping_lta: null,
     });
     serverProject = project;
     const client = renderPanelReactive(project);

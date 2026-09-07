@@ -96,6 +96,35 @@ function readDraft(): PersistedDraft | null {
   }
 }
 
+/** The stored draft, repaired, without mounting the hook.
+ *
+ *  Exists for the duplicate-a-card flow, which has to know whether the drawer
+ *  would open onto work the operator has not finished BEFORE it decides to
+ *  overwrite it — a decision taken on the board, where no drawer is mounted. */
+export function readNewProjectDraft(): PersistedDraft | null {
+  return readDraft();
+}
+
+/** Seed the drawer's storage from outside it (duplicate-a-card).
+ *
+ *  Writes the very blob the drawer itself writes, so the seed goes home
+ *  through `readDraft`'s own repairs on the next mount and can never become a
+ *  second, drifting restore path.
+ *
+ *  Bumps `clearEpoch` for the same reason `clearNewProjectDraft` does: a
+ *  drawer that was open a moment ago may still hold a debounced write or an
+ *  unmount flush carrying the PREVIOUS draft, and either would otherwise land
+ *  after this one and quietly resurrect what the seed replaced. */
+export function writeNewProjectDraft(draft: PersistedDraft): void {
+  clearEpoch += 1;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+  } catch {
+    // Storage unavailable (private mode, quota) — persistence is best-effort.
+    // The caller still opens the drawer; it simply opens unseeded.
+  }
+}
+
 /** Best-effort local persistence for the new-project drawer. `initial` is read
  *  once on mount; `save` debounces writes; `clear` wipes synchronously (reset
  *  and successful create). */

@@ -470,6 +470,10 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
+    # The air waybill number, on the PATCH schema only: it never exists at
+    # create time, and it is validated against the MERGED row (a card must
+    # already carry a shipment) in update_project rather than here.
+    shipping_lta: str | None = Field(default=None, max_length=50)
     # Optimistic-concurrency token: the AitoProject.version the client last
     # rendered. Mismatch -> 409 version_conflict, nothing written. Optional so
     # API-key callers that never fetched a version keep working; the frontend
@@ -650,6 +654,8 @@ class AitoProjectResponse(BaseModel):
     shipping_last_name: str | None
     shipping_phone: str | None
     shipping_price: float | None
+    # Air waybill number, None until the parcel is handed to the carrier.
+    shipping_lta: str | None
     # The Books item's display name, resolved from the cached catalogue so the
     # board list does not force the frontend to join every card against the
     # services endpoint. None when the catalogue has never resolved; the panel
@@ -999,6 +1005,9 @@ class AitoClientHistoryResponse(BaseModel):
 class AitoTrackingShipping(BaseModel):
     island: str
     service: str
+    # The air waybill number the client quotes at the freight counter — the
+    # one operational identifier the page shares, verbatim, once it exists.
+    lta: str | None
 
 
 class AitoTrackingTask(BaseModel):

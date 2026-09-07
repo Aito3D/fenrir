@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Pencil, Phone, Plane, Trash2 } from 'lucide-react';
+import { Check, Copy, Pencil, Phone, Plane, Trash2 } from 'lucide-react';
 import { ShippingFields } from './ShippingFields';
 import { HoldButton } from './HoldButton';
 import { SHIPPING_HEADER_CELL, ShippingLabelButton } from './ShippingLabelButton';
@@ -10,6 +10,7 @@ import { emptyShippingDraft, islandLabel, isShippingComplete, shippingPayload } 
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import { formatPhoneDisplay, parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { api, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
@@ -199,6 +200,31 @@ export function ShippingCard({
     shippingMutation.mutate({ shipping_island: null });
   };
 
+  // The air waybill (LTA) number lives on the READ view as an inline field,
+  // not in the Add/Edit form: it is typed once the parcel is handed to Air
+  // Tahiti, days after the shipment was entered, and opening a four-field
+  // form to add one number is the busywork this row exists to avoid. It
+  // commits on blur or Enter, trimmed, and only when the value actually
+  // changed — a re-committed identical number sends nothing, matching the
+  // server's own silent no-op. Not routed through `onWrite`: the number is
+  // not a quote line, so Books has nothing new to hear.
+  const [ltaDraft, setLtaDraft] = useState(project.shipping_lta ?? '');
+  const [ltaCopied, setLtaCopied] = useState(false);
+  useEffect(() => {
+    setLtaDraft(project.shipping_lta ?? '');
+  }, [project.shipping_lta]);
+  useEffect(() => {
+    if (!ltaCopied) return;
+    const id = setTimeout(() => setLtaCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [ltaCopied]);
+  const commitLta = () => {
+    const next = ltaDraft.trim() || null;
+    setLtaDraft(next ?? '');
+    if (next === (project.shipping_lta ?? null)) return;
+    shippingMutation.mutate({ shipping_lta: next });
+  };
+
   if (project.shipping_island === null && !editing) {
     return (
       <button
@@ -308,6 +334,46 @@ export function ShippingCard({
           <dt className="text-bambu-gray">{t('aito.shippingRate')}</dt>
           <dd className="text-right min-w-0 text-white">
             <Money currency={currency} value={project.shipping_price ?? 0} />
+          </dd>
+          <dt className="text-bambu-gray">{t('aito.shippingLta')}</dt>
+          <dd className="flex min-w-0 items-center justify-end gap-0.5">
+            <input
+              type="text"
+              value={ltaDraft}
+              onChange={(e) => setLtaDraft(e.target.value)}
+              onBlur={commitLta}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitLta();
+                }
+              }}
+              aria-label={t('aito.shippingLta')}
+              placeholder={t('aito.shippingLtaPlaceholder')}
+              maxLength={50}
+              disabled={shippingMutation.isPending}
+              // Reads as plain text until hovered or focused, like the rows
+              // above it — a bordered input would make one fact in a list of
+              // facts look like a form.
+              className={`min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-right text-sm text-white placeholder:text-bambu-gray/60 hover:border-bambu-dark-tertiary focus:border-sky-400/40 disabled:opacity-50 ${focusRingCls}`}
+            />
+            {project.shipping_lta && (
+              <button
+                type="button"
+                aria-label={`${t('aito.shippingLta')}: ${project.shipping_lta} — ${t('common.copy')}`}
+                title={ltaCopied ? t('common.copied') : t('common.copy')}
+                onClick={async () => {
+                  if (await copyTextToClipboard(project.shipping_lta ?? '')) setLtaCopied(true);
+                }}
+                className={SHIPPING_HEADER_CELL}
+              >
+                {ltaCopied ? (
+                  <Check className="h-3.5 w-3.5 text-bambu-green animate-tick-in" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
           </dd>
         </dl>
       )}

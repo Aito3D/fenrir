@@ -227,20 +227,23 @@
    225	# Migration: three-state board flag on Aito projects (2026-08-06).
    226	# Migration: the comment mirror's fetch policy needs to know when it last
    227	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
-   228	# Migration: an optional social-network handle on an Aito card, standing in
-   229	# Migration: the Finish column's "client has been told to collect" mark.
-   230	# Migration: promised delivery date and per-task rush flag (2026-09-04).
-   231	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   232	# Migration: per-file print progress inside a project (#1897).
-   233	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   234	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   235	# Migration: variant grouping for library files (#671 / #2570). The
-   236	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   237	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   238	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   239	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   240	# Migration: drop the AMS slot markers an older Bambuddy wrote into
-   241	# Migration: whether Books has been directly observed to agree with an
+   228	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
+   229	# Migration: an optional social-network handle on an Aito card, standing in
+   230	# Migration: the Finish column's "client has been told to collect" mark.
+   231	# Migration: promised delivery date and per-task rush flag (2026-09-04).
+   232	# Migration: public tracking link token (2026-09-06). Nullable, minted on
+   233	# Migration: tracking page view log (2026-09-06). A row is a card and a
+   234	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   235	# Migration: per-file print progress inside a project (#1897).
+   236	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   237	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   238	# Migration: variant grouping for library files (#671 / #2570). The
+   239	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   240	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   241	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   242	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   243	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+   244	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 

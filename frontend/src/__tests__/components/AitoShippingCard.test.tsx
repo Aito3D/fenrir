@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -463,5 +463,67 @@ describe('ShippingCard — Save', () => {
     // Same shipment one column earlier: nothing to print yet.
     render(<ShippingCard project={{ ...shipped, column: 'print' } as AitoProject} currency="XPF" />);
     expect(screen.queryByRole('button', { name: /print shipping label/i })).not.toBeInTheDocument();
+  });
+});
+
+// The air waybill (LTA) number is typed once the parcel is handed to Air
+// Tahiti, days after the shipment was entered — so it lives on the READ view
+// as an inline field, not inside the Add/Edit form, and saves on its own.
+describe('ShippingCard LTA number', () => {
+  // Spied like the Save/Remove suites above (an earlier spy in this file is
+  // what a msw handler would otherwise be sitting behind), and restored so
+  // nothing leaks forward.
+  afterEach(() => vi.restoreAllMocks());
+  const patchSpy = () =>
+    vi
+      .spyOn(api, 'updateAitoProject')
+      .mockImplementation(async (_id, patch) => ({ ...shipped, shipping_lta: patch.shipping_lta ?? null, version: 5 }));
+
+  it('shows the stored number and offers to copy it', () => {
+    const withLta = { ...shipped, shipping_lta: '123-4567 8901' } as AitoProject;
+    render(<ShippingCard project={withLta} currency="XPF" />);
+    expect(screen.getByRole('textbox', { name: /lta number/i })).toHaveValue('123-4567 8901');
+    expect(screen.getByRole('button', { name: /lta number: 123-4567 8901 — copy/i })).toBeInTheDocument();
+  });
+
+  it('offers no copy before a number exists, and no field at all without a shipment', () => {
+    const { unmount } = render(<ShippingCard project={{ ...shipped, shipping_lta: null } as AitoProject} currency="XPF" />);
+    expect(screen.getByRole('textbox', { name: /lta number/i })).toHaveValue('');
+    expect(screen.queryByRole('button', { name: /lta number.*copy/i })).not.toBeInTheDocument();
+    unmount();
+    render(<ShippingCard project={unshipped} currency="XPF" />);
+    expect(screen.queryByRole('textbox', { name: /lta number/i })).not.toBeInTheDocument();
+  });
+
+  it('saves the typed number, trimmed, when the field is left', async () => {
+    const spy = patchSpy();
+    render(<ShippingCard project={{ ...shipped, shipping_lta: null } as AitoProject} currency="XPF" />);
+    await userEvent.type(screen.getByRole('textbox', { name: /lta number/i }), '  123-4567 ');
+    await userEvent.tab();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(spy).toHaveBeenCalledWith(7, { shipping_lta: '123-4567', expected_version: 4 });
+  });
+
+  it('saves on Enter, and sends nothing when the number is unchanged', async () => {
+    const spy = patchSpy();
+    render(<ShippingCard project={{ ...shipped, shipping_lta: '123-4567' } as AitoProject} currency="XPF" />);
+    const field = screen.getByRole('textbox', { name: /lta number/i });
+    await userEvent.click(field);
+    await userEvent.keyboard('{Enter}');
+    await userEvent.tab();
+    // Same value, twice committed: no request at all.
+    expect(spy).not.toHaveBeenCalled();
+    await userEvent.type(field, '-X{Enter}');
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(spy).toHaveBeenCalledWith(7, expect.objectContaining({ shipping_lta: '123-4567-X' }));
+  });
+
+  it('clearing the field sends a null', async () => {
+    const spy = patchSpy();
+    render(<ShippingCard project={{ ...shipped, shipping_lta: '123-4567' } as AitoProject} currency="XPF" />);
+    await userEvent.clear(screen.getByRole('textbox', { name: /lta number/i }));
+    await userEvent.tab();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(spy).toHaveBeenCalledWith(7, expect.objectContaining({ shipping_lta: null }));
   });
 });

@@ -241,7 +241,7 @@ export function applyShipping(
   id: number,
   patch: Pick<
     AitoProjectUpdate,
-    'shipping_island' | 'shipping_first_name' | 'shipping_last_name' | 'shipping_phone' | 'shipping_price'
+    'shipping_island' | 'shipping_first_name' | 'shipping_last_name' | 'shipping_phone' | 'shipping_price' | 'shipping_lta'
   >,
 ): AitoProject[] | undefined {
   if (!projects) return undefined;
@@ -256,6 +256,7 @@ export function applyShipping(
         shipping_last_name: null,
         shipping_phone: null,
         shipping_price: null,
+        shipping_lta: null,
         shipping_service_name: null,
       };
     }
@@ -266,6 +267,10 @@ export function applyShipping(
       shipping_last_name: patch.shipping_last_name ?? project.shipping_last_name,
       shipping_phone: patch.shipping_phone ?? project.shipping_phone,
       shipping_price: patch.shipping_price ?? project.shipping_price,
+      // Presence, not `??`: the LTA is posted alone and null means CLEARED
+      // (the server clears on blank), unlike the five fields above where an
+      // omitted key means "unchanged".
+      shipping_lta: 'shipping_lta' in patch ? (patch.shipping_lta ?? null) : project.shipping_lta,
     };
   });
 }
@@ -469,6 +474,7 @@ export function placeholderProject(fields: {
     shipping_last_name: null,
     shipping_phone: null,
     shipping_price: null,
+    shipping_lta: null,
     shipping_service_name: null,
     tracking_url: null,
     tracking_configured: false,

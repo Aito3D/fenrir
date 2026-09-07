@@ -68,6 +68,7 @@ const project: AitoProject = {
   shipping_last_name: null,
   shipping_phone: null,
   shipping_price: null,
+  shipping_lta: null,
   shipping_service_name: null,
   tracking_url: null,
   tracking_configured: false,
@@ -1649,6 +1650,44 @@ describe('ProjectDetailPanel quote row', () => {
     await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
     expect(screen.queryByText('Seller')).not.toBeInTheDocument();
     expect(screen.getByTestId('record-created')).toHaveTextContent('· unknown');
+  });
+
+  // "Same thing again" lives on the Record card, beside who made the original
+  // and when. It creates nothing itself — it fills the drawer, which is why
+  // the page has to be the one to open it.
+  it('offers Duplicate on the record card only when the page can act on it', async () => {
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate
+        canDelete
+        project={project}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+        onDuplicate={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole('button', { name: /duplicate/i })).toBeInTheDocument();
+  });
+
+  it('hides Duplicate without the create permission, and when the page offers no handler', async () => {
+    const { unmount } = render(
+      <ProjectDetailPanel
+        canCreate={false}
+        canUpdate
+        canDelete
+        project={project}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+        onDuplicate={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /duplicate/i })).not.toBeInTheDocument();
+    unmount();
+    show();
+    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /duplicate/i })).not.toBeInTheDocument();
   });
 });
 

@@ -261,3 +261,123 @@ async def test_restore_response_carries_the_shipping_service_name(async_client, 
     response = await async_client.post(f"/api/v1/aito/{project_id}/restore")
     assert response.status_code == 200
     assert response.json()["shipping_service_name"] == "Livraison Avion Tuamotu"
+
+
+# --- LTA (air waybill) number -------------------------------------------------
+#
+# Typed once the parcel is handed to Air Tahiti, days after the shipment was
+# entered, so it is a field of its own on PATCH — never part of the create
+# payload — and it rides on the shipment: no shipment, no LTA.
+
+
+async def _shipped(async_client):
+    return (await _create(async_client, **SHIPPING)).json()
+
+
+async def test_patch_sets_and_trims_the_lta(async_client, resolved_catalogue):
+    project = await _shipped(async_client)
+    assert project["shipping_lta"] is None
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "  123-4567 8901 "})
+    assert response.status_code == 200
+    assert response.json()["shipping_lta"] == "123-4567 8901"
+    # Read back, not just echoed.
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert next(p for p in board if p["id"] == project["id"])["shipping_lta"] == "123-4567 8901"
+
+
+async def test_patch_blank_lta_clears_it(async_client, resolved_catalogue):
+    project = await _shipped(async_client)
+    await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "123"})
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "   "})
+    assert response.status_code == 200
+    assert response.json()["shipping_lta"] is None
+
+
+async def test_patch_lta_without_a_shipment_is_422(async_client, resolved_catalogue):
+    project = (await _create(async_client)).json()
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "123"})
+    assert response.status_code == 422
+    assert "shipment" in response.json()["detail"].lower()
+
+
+async def test_patch_lta_too_long_is_422(async_client, resolved_catalogue):
+    project = await _shipped(async_client)
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "x" * 51})
+    assert response.status_code == 422
+
+
+async def test_removing_the_shipment_clears_the_lta(async_client, resolved_catalogue):
+    project = await _shipped(async_client)
+    await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "123"})
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_island": None})
+    assert response.status_code == 200
+    assert response.json()["shipping_lta"] is None
+
+
+async def test_lta_edit_bumps_the_version_and_lands_in_the_timeline(async_client, resolved_catalogue):
+    project = await _shipped(async_client)
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "123-4567"})
+    assert response.json()["version"] == project["version"] + 1
+    events = (await async_client.get(f"/api/v1/aito/{project['id']}/events")).json()["events"]
+    updated = [e for e in events if e["kind"] == "project.updated"]
+    assert any(
+        change["field"] == "shipping_lta" and change["from"] is None and change["to"] == "123-4567"
+        for event in updated
+        for change in event["changes"] or []
+    )
+
+
+async def test_repeating_the_same_lta_is_a_silent_no_op(async_client, resolved_catalogue):
+    project = await _shipped(async_client)
+    await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "123-4567"})
+    before = (await async_client.get(f"/api/v1/aito/{project['id']}/events")).json()["events"]
+    response = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"shipping_lta": "123-4567"})
+    assert response.status_code == 200
+    after = (await async_client.get(f"/api/v1/aito/{project['id']}/events")).json()["events"]
+    assert len(after) == len(before)
+
+
+async def _settle(db_session, project_id: int, state: str = "idle"):
+    """Drive a freshly-created project out of its unconditional 'pending' so a
+    PATCH's effect on sync state is observable at all — same trick, and same
+    reason, as test_patch_attaches_shipping_and_requeues_the_quote."""
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    project.quote_sync_state = state
+    await db_session.commit()
+
+
+async def test_setting_only_the_lta_does_not_queue_a_zoho_push(async_client, resolved_catalogue, db_session):
+    """Books has no field for a waybill number, so an LTA-only edit must not
+    re-send the quote — and on a LOCKED (invoiced) quote, queueing one would
+    trade a purely local note for a sync error. Same reasoning as
+    set_project_flag's dedicated route."""
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    await _settle(db_session, project_id)
+
+    body = (await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "123-4567"})).json()
+    assert body["shipping_lta"] == "123-4567"
+    assert body["quote_sync_state"] == "idle"
+
+
+async def test_an_lta_edit_alongside_a_real_change_still_queues(async_client, resolved_catalogue, db_session):
+    """The exemption is for an LTA-ONLY payload. A body that also moves
+    something Books mirrors must still queue, or the exemption would become a
+    way to smuggle an unsynced description past the worker."""
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    await _settle(db_session, project_id)
+
+    body = (
+        await async_client.patch(
+            f"/api/v1/aito/{project_id}", json={"shipping_lta": "123-4567", "description": "Nouveau libellé"}
+        )
+    ).json()
+    assert body["quote_sync_state"] == "pending"
+
+
+async def test_an_lta_edit_leaves_a_locked_quote_locked(async_client, resolved_catalogue, db_session):
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    await _settle(db_session, project_id, state="locked")
+
+    body = (await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "123-4567"})).json()
+    assert body["shipping_lta"] == "123-4567"
+    assert body["quote_sync_state"] == "locked"

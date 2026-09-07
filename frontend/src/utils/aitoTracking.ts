@@ -35,7 +35,12 @@ export const FR = {
     waiting: { title: 'En attente de votre accord', sub: 'Dites-nous si vous validez le devis, et nous lançons la fabrication.' },
     working: { title: 'En fabrication', sub: 'Nous préparons actuellement vos pièces.' },
     finish: { title: 'Votre commande est prête', sub: "Vous pouvez venir la récupérer au magasin ; répondez à notre message pour convenir d'un horaire." },
-    shipped: (island: string, service: string) => ({ title: 'Expédiée', sub: `Vers ${island} par ${service}.` }),
+    // The waybill number is quoted verbatim once it exists — it is what the
+    // client hands over at the Air Tahiti freight counter.
+    shipped: (island: string, service: string, lta: string | null) => ({
+      title: 'Expédiée',
+      sub: `Vers ${island} par ${service}.${lta ? ` N° LTA ${lta}.` : ''}`,
+    }),
     pickedUp: (date: string) => ({ title: 'Récupérée', sub: `Le ${date}. Merci pour votre confiance !` }),
     doneBare: { title: 'Terminée', sub: 'Merci pour votre confiance !' },
   },
@@ -95,7 +100,7 @@ export function statusCopy(data: AitoTracking): { title: string; sub: string } {
     case 'finish':
       return FR.status.finish;
     case 'done':
-      if (data.shipping) return FR.status.shipped(data.shipping.island, data.shipping.service);
+      if (data.shipping) return FR.status.shipped(data.shipping.island, data.shipping.service, data.shipping.lta);
       if (data.done_at) return FR.status.pickedUp(frLongDate(data.done_at));
       return FR.status.doneBare;
     default:

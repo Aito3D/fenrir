@@ -593,6 +593,15 @@ export function AitoPage() {
           // panel's delete button away with it. Deleting a deleted project is a
           // no-op the server accepts, so the button would look live, do
           // nothing, and still ask you to hold it down to be sure.
+          // The panel has already written the seed into the drawer's own
+          // storage by the time this fires; all that is left is to get out of
+          // the way and mount the drawer, which reads it. Closed without the
+          // card morph (`toCard: false` is the default here): the panel is
+          // not returning to its card, it is handing over to another surface.
+          onDuplicate={() => {
+            closeCard(expandedProject.id);
+            setShowModal(true);
+          }}
           onDelete={
             expandedProject.status === 'deleted' || !canDelete
               ? undefined

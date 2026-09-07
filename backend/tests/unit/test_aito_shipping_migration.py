@@ -31,6 +31,7 @@ SHIPPING_COLUMNS = (
     "shipping_last_name",
     "shipping_phone",
     "shipping_price",
+    "shipping_lta",
 )
 
 EXPECTED_TYPES = {
@@ -40,6 +41,7 @@ EXPECTED_TYPES = {
     "shipping_last_name": "VARCHAR(100)",
     "shipping_phone": "VARCHAR(50)",
     "shipping_price": "FLOAT",
+    "shipping_lta": "VARCHAR(50)",
 }
 
 
@@ -161,7 +163,7 @@ async def _column_info(conn, table, column):
 
 
 @pytest.mark.asyncio
-async def test_migration_adds_all_six_columns_to_a_legacy_schema(engine):
+async def test_migration_adds_every_shipping_column_to_a_legacy_schema(engine):
     """Drives the real `ALTER TABLE` statements against a schema that, like
     every existing installation, predates the shipping columns — the ORM
     tests above never touch this path since `db_session` builds its schema

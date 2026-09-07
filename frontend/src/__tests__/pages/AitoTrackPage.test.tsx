@@ -83,15 +83,32 @@ describe('AitoTrackPage', () => {
   });
 
   it('shows the shipped and picked-up variants, naming the last stage accordingly', async () => {
-    mockTrack({ ...FIXTURE, column: 'done', due_date: null, shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu' } });
+    mockTrack({ ...FIXTURE, column: 'done', due_date: null, shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: null } });
     const { unmount } = renderAt('a');
     expect(await screen.findByRole('heading', { level: 2, name: 'Expédiée' })).toBeInTheDocument();
     expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Expédiée');
+    expect(screen.getByText('Vers Rangiroa par Livraison Avion Tuamotu.')).toBeInTheDocument();
+    expect(screen.queryByText(/N° LTA/)).not.toBeInTheDocument();
     unmount();
     mockTrack({ ...FIXTURE, column: 'done', due_date: null, done_at: '2026-09-01T18:20:00' });
     renderAt('b');
     expect(await screen.findByRole('heading', { level: 2, name: 'Récupérée' })).toBeInTheDocument();
     expect(screen.getByText(/Le 1 septembre 2026/)).toBeInTheDocument();
+  });
+
+  // The waybill number is the one thing the client needs at the Air Tahiti
+  // freight counter, so once it exists it is quoted verbatim in the shipped
+  // line — and while the parcel is still being made it is shown nowhere.
+  it('quotes the LTA number in the shipped line once it exists', async () => {
+    mockTrack({
+      ...FIXTURE,
+      column: 'done',
+      due_date: null,
+      shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: '123-4567 8901' },
+    });
+    renderAt('a');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Expédiée' })).toBeInTheDocument();
+    expect(screen.getByText('Vers Rangiroa par Livraison Avion Tuamotu. N° LTA 123-4567 8901.')).toBeInTheDocument();
   });
 
   it('shows the payment card without any amount, with terms behind its button', async () => {

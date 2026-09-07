@@ -5137,6 +5137,10 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_phone VARCHAR(50)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_price FLOAT")
 
+    # Migration: Aito shipping LTA (air waybill) number. One nullable column;
+    # every existing shipment correctly reads as "not yet handed over".
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_lta VARCHAR(50)")
+
     # Migration: an optional social-network handle on an Aito card, standing in
     # for a phone or an email. Two nullable columns written as a pair; every
     # existing row correctly reads as "no social channel" with no backfill.

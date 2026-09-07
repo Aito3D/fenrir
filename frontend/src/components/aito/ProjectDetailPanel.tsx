@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
+import { DuplicateProjectButton } from './DuplicateProjectButton';
 import { ActivityRail } from './history/ActivityRail';
 import { PanelAgeStat } from './PanelAgeStat';
 import { UnacceptHoldPill } from './UnacceptHoldPill';
@@ -111,6 +112,12 @@ interface ProjectDetailPanelProps {
    *  enforces Permission.AITO_DELETE, independent of `onDelete` above (which
    *  gates deleting the whole PROJECT, not one of its tasks). */
   canDelete: boolean;
+  /** Start a new project from this one. The panel seeds the drawer's stored
+   *  draft and calls this; the HOST closes the panel and opens the drawer,
+   *  because the drawer is the page's to own. Omitted by a host that has no
+   *  drawer to open — the action then does not appear. Also gated on
+   *  `canCreate`: the create it leads to enforces Permission.AITO_CREATE. */
+  onDuplicate?: () => void;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -623,7 +630,18 @@ const ACTOR_FALLBACK_KEY: Record<string, string> = {
   system: 'aito.actorAutomatic',
 };
 
-function RecordCard({ project, latestEvent }: { project: AitoProject; latestEvent: AitoEvent | undefined }) {
+function RecordCard({
+  project,
+  latestEvent,
+  onDuplicate,
+}: {
+  project: AitoProject;
+  latestEvent: AitoEvent | undefined;
+  /** Absent when the operator cannot create projects, or when the host has
+   *  nowhere to open the drawer — the action is then not rendered at all
+   *  rather than shown dead. */
+  onDuplicate?: () => void;
+}) {
   const { t, i18n } = useTranslation();
   const created = parseUTCDate(project.created_at);
   // Both halves from the same event. A mirrored Zoho comment carries Books'
@@ -668,7 +686,13 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
     );
 
   return (
-    <PanelCard title={t('aito.recordLabel')}>
+    <PanelCard
+      title={t('aito.recordLabel')}
+      // On the Record card rather than the footer: this is where the card's
+      // provenance already lives ("made on the 3rd, by paul"), and unlike the
+      // footer's transitions it changes nothing about THIS card.
+      action={onDuplicate && <DuplicateProjectButton project={project} onDuplicate={onDuplicate} />}
+    >
       {/* Same shape and type as the Quote card above — label left, value
           right, one row each. These were stacked pairs while the left column
           was 17rem and `{when} · {who}` could not fit a line; at the column's
@@ -726,7 +750,15 @@ function SaveIndicator({ state }: { state: SaveState }) {
 /** Everything a card cannot fit: the untruncated description, the timestamps
  *  and the stage. Shares AITO_CARD_VT_NAME with the card it grew out of, so the
  *  browser morphs one into the other (see useCardMorph). */
-export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canUpdate, canDelete }: ProjectDetailPanelProps) {
+export function ProjectDetailPanel({
+  project,
+  onClose,
+  onDelete,
+  canCreate,
+  canUpdate,
+  canDelete,
+  onDuplicate,
+}: ProjectDetailPanelProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -1342,7 +1374,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
                   the same way the Quote card gates SendQuoteButton above. */}
               <InvoiceCard project={project} canUpdate={canUpdate} />
 
-              <RecordCard project={project} latestEvent={latestEvent} />
+              <RecordCard
+                project={project}
+                latestEvent={latestEvent}
+                onDuplicate={canCreate ? onDuplicate : undefined}
+              />
 
               <ShippingCard project={project} currency={currency} onWrite={markExternalWrite} />
             </div>

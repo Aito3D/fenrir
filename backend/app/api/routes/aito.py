@@ -477,6 +477,7 @@ def _to_response(
         shipping_last_name=p.shipping_last_name,
         shipping_phone=p.shipping_phone,
         shipping_price=p.shipping_price,
+        shipping_lta=p.shipping_lta,
         shipping_service_name=shipping_names.get(p.shipping_service or ""),
         created_at=p.created_at,
         updated_at=p.updated_at,
@@ -2608,6 +2609,10 @@ async def update_project(
     fields = payload.model_dump(exclude_unset=True)
     # A guard token, not a column — it must not reach diff_fields or setattr.
     fields.pop("expected_version", None)
+    # Normalised BEFORE the diff so a re-sent "  123 " against a stored "123"
+    # stays the silent no-op every other repeated write is. Blank clears.
+    if "shipping_lta" in fields:
+        fields["shipping_lta"] = (fields["shipping_lta"] or "").strip() or None
     # Captured before anything is applied, or diff_fields would compare the
     # new value against itself and return [].
     changes = diff_fields(project, fields)
@@ -2649,6 +2654,19 @@ async def update_project(
     if shipping is not None:
         for key, value in shipping.items():
             setattr(project, key, value)
+        if shipping["shipping_island"] is None:
+            # A detached shipment takes its waybill with it — the number is
+            # meaningless without the parcel, and a later re-attach must not
+            # inherit a stale one.
+            project.shipping_lta = None
+
+    # Checked on the MERGED row, after the shipping columns above have been
+    # applied: a PATCH that attaches a shipment and its LTA in one body is
+    # fine, one that sets an LTA on a card with no shipment is a client bug.
+    if fields.get("shipping_lta") is not None and project.shipping_island is None:
+        raise HTTPException(status_code=422, detail="shipping_lta needs a shipment on the card")
+    if "shipping_lta" in fields and project.shipping_island is not None:
+        project.shipping_lta = fields["shipping_lta"]
 
     if "description" in fields:
         project.description = fields["description"].strip()
@@ -2672,7 +2690,17 @@ async def update_project(
     # — see test_patch_attaches_shipping_and_requeues_the_quote, which drives
     # a project to idle first and asserts the transition back into pending.
     was_pending = project.quote_sync_state == "pending"
-    _mark_pending_if_ours(project)
+    # Books mirrors the quote's CONTENT — description, client, and the shipping
+    # line. It has no field for the waybill number, so a payload whose ONLY
+    # field is `shipping_lta` must not queue a push: it would re-send an
+    # unchanged quote, and on a LOCKED (invoiced) quote `_mark_pending` would
+    # trade a purely local note for a 'pending' state the worker can only turn
+    # into a sync error. Same reasoning that gave `set_project_flag` its own
+    # route; kept as a one-field exemption here because, unlike a flag, the
+    # waybill belongs to the shipment this endpoint already owns. A body that
+    # ALSO moves something Books mirrors still queues, exactly as before.
+    if set(fields) - {"shipping_lta"}:
+        _mark_pending_if_ours(project)
     await record(
         db,
         project.id,

@@ -111,6 +111,7 @@ function demoProject(card: (typeof DEMO_CARDS)[number]): AitoProject {
     shipping_last_name: null,
     shipping_phone: null,
     shipping_price: null,
+    shipping_lta: null,
     shipping_service_name: null,
     tracking_url: null,
     tracking_configured: false,
