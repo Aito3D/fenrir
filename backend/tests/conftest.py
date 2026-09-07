@@ -93,6 +93,10 @@ atexit.register(_cleanup_test_plate_cal_dir)
 
 from backend.app.core.database import Base, engine as _app_engine  # noqa: E402
 
+# Registers and loads the bounded, derandomised hypothesis profile every
+# property test in this suite runs under. Imported for its side effect.
+from backend.tests import conftest_hypothesis  # noqa: F401,E402
+
 # The engine is built at import time from the URL above, so this catches the
 # case where that override did not take effect for whatever reason.
 _assert_disposable_database(_app_engine.url, "backend.app.core.database.engine")
