@@ -544,9 +544,9 @@ describe('hybrid card anatomy', () => {
     expect(icon.getAttribute('class')).toContain('text-white');
   });
 
-  it('clamps the description to one line', () => {
+  it('clamps the description to three lines', () => {
     renderCard();
-    expect(screen.getByTestId('aito-card-description').className).toContain('line-clamp-1');
+    expect(screen.getByTestId('aito-card-description').className).toContain('line-clamp-3');
   });
 
   it('totals the steps in one summary line and drops the edge progress bar', () => {
@@ -653,9 +653,9 @@ describe('CardView — hover to read a clamped description', () => {
     setCardHeight(card, 180);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
 
-    expect(description).not.toHaveClass('line-clamp-1');
+    expect(description).not.toHaveClass('line-clamp-3');
 
     // The invariant the whole design exists for: the shell pins the
     // collapsed height inline so the column does not reflow, and the card
@@ -691,7 +691,7 @@ describe('CardView — hover to read a clamped description', () => {
 
     const shell = screen.getByTestId('aito-card-shell');
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
 
     const rows = screen.getAllByTestId('aito-task-row');
     expect(rows[0]).toHaveTextContent('Support principal');
@@ -712,16 +712,16 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(1800));
+    act(() => vi.advanceTimersByTime(900));
     // Asserted BEFORE the pointer leaves, or this passes for the wrong reason:
     // a leave collapses the card anyway, so checking only afterwards would hold
     // for any dwell at all and pin nothing.
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
 
     fireEvent.mouseLeave(shell);
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
   });
 
   it('collapses again when the pointer leaves', () => {
@@ -731,10 +731,10 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
     fireEvent.mouseLeave(shell);
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
   });
 
   it('does not move a card whose description is not clamped', () => {
@@ -745,9 +745,9 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, false);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
     // Not "did not pin 0px" — jsdom's unmocked offsetHeight happens to BE 0,
     // which happens to stringify to '0px'; asserting against that is coupled
     // to a test-environment artifact, not to the invariant. The real
@@ -762,9 +762,9 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
   });
 
   it('never expands a placeholder card', () => {
@@ -776,9 +776,9 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
   });
 
   it('keeps the morph anchor on the card, not on the shell', () => {
@@ -803,11 +803,11 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(1500));
+    act(() => vi.advanceTimersByTime(700));
     fireEvent.pointerDown(shell);
     act(() => vi.advanceTimersByTime(5000));
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
   });
 
   it('collapses an already-open reveal when the pointer goes down', () => {
@@ -822,12 +822,12 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(2000));
-    expect(description).not.toHaveClass('line-clamp-1');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(description).not.toHaveClass('line-clamp-3');
 
     fireEvent.pointerDown(shell);
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
     expect(card).not.toHaveClass('absolute');
     expect(shell.style.height).toBe('');
   });
@@ -842,11 +842,11 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
     fireEvent.pointerDown(shell);
     act(() => vi.advanceTimersByTime(10000));
 
-    expect(description).toHaveClass('line-clamp-1');
+    expect(description).toHaveClass('line-clamp-3');
   });
 });
 

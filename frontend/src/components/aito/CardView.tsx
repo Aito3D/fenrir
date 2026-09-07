@@ -39,13 +39,14 @@ export interface CardViewProps {
 
 /** How long the pointer must rest on a card before its description opens.
  *
- *  Two seconds, not one. A second sounds deliberate but is shorter than the
+ *  One second. It started at two because a shorter dwell was firing on the
  *  ordinary act of moving onto a card and clicking it, so every click was
  *  preceded by the card growing and then — the instant the panel took the
- *  pointer — shrinking back. The dwell has to be longer than aiming takes, or
- *  the reveal stops being something you ask for and becomes something that
- *  happens to you. Pressing cancels it outright; see `cancelHoverIntent`. */
-const HOVER_REVEAL_MS = 2000;
+ *  pointer — shrinking back. That flash is now prevented by the press itself:
+ *  pointerdown cancels a pending reveal outright (see `cancelHoverIntent`),
+ *  which is what lets the dwell come back down to something that feels
+ *  responsive rather than reluctant. */
+const HOVER_REVEAL_MS = 1000;
 
 /** Static lookups, not interpolated class names. These are hand-written CSS
  *  classes (index.css) rather than Tailwind utilities, so interpolation would
@@ -177,10 +178,10 @@ export function CardView({
     setShellHeight(null);
   }, [clearTimer]);
 
-  // Grow into the reveal instead of jumping to it. The dwell is two seconds
-  // long — deliberately longer than aiming at the card takes — so by the time
-  // this fires the user is holding still and looking straight at it, which is
-  // the worst possible moment to teleport. `shellHeight` is the collapsed
+  // Grow into the reveal instead of jumping to it. The dwell is a full second
+  // — a press cancels it, so by the time this fires the user is holding still
+  // and looking straight at the card, which is the worst possible moment to
+  // teleport. `shellHeight` is the collapsed
   // height, already measured by the timer above before the state flipped, so
   // both ends of the tween are known and nothing has to be guessed.
   //
@@ -395,13 +396,13 @@ export function CardView({
               <p
                 ref={descriptionRef}
                 data-testid="aito-card-description"
-                // One line collapsed, not two: the description is the card's
-                // accessible name and its first line is nearly always enough
-                // to recognise the job; the second line was costing every
-                // card in every column a row of height for the few that
-                // needed it. The hover reveal shows the rest.
+                // Three lines collapsed: the description is the card's
+                // accessible name, and three lines is enough to recognise the
+                // job from most descriptions without opening the card. Short
+                // ones cost nothing extra — the clamp is a ceiling, not a
+                // fixed height. The hover reveal shows the rest.
                 className={`text-sm text-white whitespace-pre-wrap break-words ${
-                  expanded ? '' : 'line-clamp-1'
+                  expanded ? '' : 'line-clamp-3'
                 }`}
               >
                 {project.description}
