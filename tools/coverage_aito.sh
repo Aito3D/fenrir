@@ -23,6 +23,7 @@ FE_FILES=(
   frontend/src/utils/aitoOptimistic.ts
   frontend/src/utils/aitoSearch.ts
   frontend/src/utils/aitoSummary.ts
+  frontend/src/utils/projectSeed.ts
 )
 FE_GLOBS=( 'src/components/aito/**' )
 
