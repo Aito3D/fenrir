@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, Eye, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
-import { TaskMiniRows } from './TaskMiniRows';
+import { TaskMiniRows, TaskStepsSummary } from './TaskMiniRows';
 import type { AitoFlag, AitoProject } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAitoViewers } from '../../hooks/useAitoPresence';
@@ -82,8 +82,8 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  no header band beneath it; everything below it — description, per-task
  *  rows, money, quote number, sync indicator, the steps count, and the
  *  padding between them — is a single click region that opens the detail
- *  panel. There is no edge progress bar; the footer's steps count carries
- *  that total instead. The click handler lives on that region's wrapper
+ *  panel. There is no edge progress bar; the body's one-line steps summary
+ *  carries that total instead. The click handler lives on that region's wrapper
  *  `<div>`, not on a `<button>` wrapping the content: the footer holds the
  *  parent-injected action buttons, and a `<button>` may not contain another.
  *  Every click inside the region — on text, on a task row, or on bare
@@ -117,6 +117,7 @@ export function CardView({
   // whole board, not just that card. Degrading to "no step rows" is the cheap
   // half of that trade.
   const taskSteps = project.task_steps ?? [];
+  const hasTasks = taskSteps.length > 0;
 
   // Same building/person distinction the expanded card's header makes.
   const ClientIcon = project.client_is_company ? Building2 : User;
@@ -127,7 +128,9 @@ export function CardView({
   const { user } = useAuth();
   const viewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
 
-  // Hover-intent reveal of a clamped description. The card floats over its
+  // Hover-intent reveal of a clamped description and of the per-task rows
+  // (collapsed, the card shows one summary line for all its tasks — see
+  // TaskStepsSummary). The card floats over its
   // neighbours rather than growing in place: the shell holds the collapsed
   // height so the column never reflows, which is what stops the cards below
   // jumping out from under the pointer that is resting on this one.
@@ -158,12 +161,15 @@ export function CardView({
       const card = cardRef.current;
       if (!description || !card) return;
       // Nothing hidden means nothing to reveal. The +1 absorbs the sub-pixel
-      // rounding a fractional line-height leaves behind.
-      if (description.scrollHeight <= description.clientHeight + 1) return;
+      // rounding a fractional line-height leaves behind. Tasks always have
+      // something hidden: their names and per-task progress sit behind the
+      // summary line until the card grows.
+      const clipped = description.scrollHeight > description.clientHeight + 1;
+      if (!clipped && !hasTasks) return;
       setShellHeight(card.offsetHeight);
       setExpanded(true);
     }, HOVER_REVEAL_MS);
-  }, [clearTimer, overlay, placeholder]);
+  }, [clearTimer, overlay, placeholder, hasTasks]);
 
   const endHoverIntent = useCallback(() => {
     clearTimer();
@@ -389,8 +395,13 @@ export function CardView({
               <p
                 ref={descriptionRef}
                 data-testid="aito-card-description"
+                // One line collapsed, not two: the description is the card's
+                // accessible name and its first line is nearly always enough
+                // to recognise the job; the second line was costing every
+                // card in every column a row of height for the few that
+                // needed it. The hover reveal shows the rest.
                 className={`text-sm text-white whitespace-pre-wrap break-words ${
-                  expanded ? '' : 'line-clamp-2'
+                  expanded ? '' : 'line-clamp-1'
                 }`}
               >
                 {project.description}
@@ -401,25 +412,24 @@ export function CardView({
                   totals competes with the task rows for exactly the attention
                   the rows are there to get. `TaskEditor` shows the project
                   total in the detail panel. */}
-              <TaskMiniRows tasks={taskSteps} />
+              {expanded ? (
+                <TaskMiniRows tasks={taskSteps} />
+              ) : (
+                <TaskStepsSummary tasks={taskSteps} done={project.steps_done} total={project.steps_total} />
+              )}
             </div>
 
             <div className="px-3 pb-2 flex items-center justify-between gap-2">
               <div className="flex items-baseline gap-2 min-w-0">
-                {/* One slot, two facts, whichever is the live one.
-                    Normally the done/total step count — the same fact the old
-                    edge progress bar carried, read as a number instead of a
-                    sliver of fill along the card's bottom border, and omitted
-                    at zero because a project with no steps has nothing to
-                    count.
-                    On a finished card waiting on a phone call it is that call
-                    instead: there are no steps left to report, and the one
-                    thing outstanding is that nobody has rung the client.
-                    REPLACING the count rather than sitting beside it is what
-                    keeps the card exactly as tall as it was — a Finish column
+                {/* On a finished card waiting on a phone call, the one thing
+                    outstanding is that nobody has rung the client, so it sits
+                    here in the footer rather than as a banner: a Finish column
                     is long, and a banner per card would cost a screenful of
-                    scrolling. */}
-                {awaitingContact ? (
+                    scrolling. The done/total step count used to share this
+                    slot; it now lives in the body's summary line (see
+                    TaskStepsSummary), because showing it here as well as
+                    beside the task rows was the same number twice per card. */}
+                {awaitingContact && (
                   <span
                     data-testid="aito-card-contact"
                     className="text-xs font-semibold text-cyan-400 tabular-nums flex-shrink-0"
@@ -431,12 +441,6 @@ export function CardView({
                         "3 days ago". The cyan carries the urgency. */}
                     {t('aito.awaitingContact')}
                   </span>
-                ) : (
-                  project.steps_total > 0 && (
-                    <span className="text-xs text-bambu-gray tabular-nums flex-shrink-0">
-                      {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
-                    </span>
-                  )
                 )}
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {project.quote_number && (

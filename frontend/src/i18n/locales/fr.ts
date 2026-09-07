@@ -299,6 +299,7 @@ export default {
       unpaid: 'Impayé',
       longest: '{{days}} j',
       clear: 'Retirer le filtre de relance',
+      hint: 'Cliquez une tuile pour n’afficher que ces projets',
     },
     clearSearch: 'Effacer la recherche',
     inProduction_one: '{{count}} projet en production',

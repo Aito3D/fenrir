@@ -1934,3 +1934,18 @@ tbody .calc-table-row:hover {
   .fp-rise { animation: none; }
   .fp-ink { transition: none; }
 }
+
+/* The Aito page lifts its secondary text one shade.
+
+   The app's default `--text-muted` sits at roughly 3.4:1 on a card surface in
+   the dark themes (#808080 on #2d2d2d), under the 4.5:1 minimum for small
+   text, and the board is a screen someone reads all day: task names, step
+   counts and quote numbers are all set in it. Remapping the two Tailwind
+   colour tokens here — muted takes the secondary value, secondary moves
+   halfway to primary — lifts every `text-bambu-gray` / `-light` on the page
+   (cards, panel, drawers) without touching the rest of the app, and keeps
+   the three-step hierarchy (tertiary < muted < secondary) intact. */
+.aito-page {
+  --color-bambu-gray: var(--text-secondary);
+  --color-bambu-gray-light: color-mix(in srgb, var(--text-secondary) 55%, var(--text-primary));
+}

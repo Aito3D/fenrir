@@ -300,6 +300,7 @@ export default {
       unpaid: 'Не оплачено',
       longest: '{{days}} дн.',
       clear: 'Зняти фільтр нагадувань',
+      hint: 'Натисніть плитку, щоб показати лише ці проєкти',
     },
     clearSearch: 'Очистити пошук',
     inProduction_one: '{{count}} проєкт у роботі',

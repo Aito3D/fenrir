@@ -299,6 +299,7 @@ export default {
       unpaid: '未付款',
       longest: '{{days}} 天',
       clear: '清除跟進篩選',
+      hint: '點選卡片僅顯示這些專案',
     },
     clearSearch: '清除搜尋',
     inProduction_one: '進行中 {{count}} 個專案',

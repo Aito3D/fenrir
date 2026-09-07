@@ -303,6 +303,7 @@ export default {
       unpaid: 'Unpaid',
       longest: '{{days}} d',
       clear: 'Clear the follow-up filter',
+      hint: 'Click a tile to show only those projects',
     },
     clearSearch: 'Clear search',
     inProduction_one: '{{count}} project in production',

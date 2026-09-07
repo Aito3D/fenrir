@@ -358,13 +358,14 @@ export function AitoPage() {
           `min-[1024px]:` not `lg:` — Tailwind v4 emits every arbitrary min-[…]
           block before the named-breakpoint blocks, so a `lg:` height here would
           override `min-[1144px]:h-dvh` and bring the dead band back. */}
-      <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
+      <div className="aito-page p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
       {/* Header — one row at lg+ so the board gets every remaining pixel of
-          height: title, search (which flexes to fill the middle and gives up
-          width first when the window narrows), the two view switches, then
-          the actions that CREATE work. Below lg it stacks: title, search,
-          controls. The subtitle sentence is gone — the page title plus the
-          column names already say what this screen is. */}
+          height: title, then the search box pushed to the right (a fixed
+          16rem — it used to flex across the whole middle of the row, which
+          made a box for a few words the widest thing on the screen), the two
+          view switches, then the actions that CREATE work. Below lg it
+          stacks: title, search, controls. The subtitle sentence is gone — the
+          page title plus the column names already say what this screen is. */}
       <div className="flex flex-col lg:flex-row lg:items-center gap-4 animate-rise-lg vt-page-title">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3 flex-none">
           <Kanban className="w-7 h-7 text-bambu-green" />
@@ -389,7 +390,7 @@ export function AitoPage() {
             dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
           />
         </h1>
-        <BoardSearch value={search} onChange={setSearch} className="w-full lg:flex-1 lg:min-w-0" />
+        <BoardSearch value={search} onChange={setSearch} className="w-full lg:ml-auto lg:w-64" />
         <div className="flex flex-wrap items-center gap-2 flex-none">
           {/* Each toggle returns to the board, so switching straight from one
               archive to the other is not possible — and does not need to be.
@@ -422,7 +423,9 @@ export function AitoPage() {
         </div>
       </div>
 
-      {view === 'board' && <FollowupStrip buckets={buckets} active={followup} onChange={setFollowup} />}
+      {view === 'board' && (
+        <FollowupStrip buckets={buckets} active={followup} onChange={setFollowup} projects={aitoQuery.data ?? []} />
+      )}
 
       {/* Error state */}
       {aitoQuery.isError && (

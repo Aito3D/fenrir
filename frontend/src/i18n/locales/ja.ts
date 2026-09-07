@@ -299,6 +299,7 @@ export default {
       unpaid: '未払い',
       longest: '{{days}}日',
       clear: 'フォローフィルターを解除',
+      hint: 'タイルをクリックすると該当プロジェクトのみ表示します',
     },
     clearSearch: '検索をクリア',
     inProduction_one: '進行中の案件 {{count}} 件',

@@ -299,6 +299,7 @@ export default {
       unpaid: 'Non pagato',
       longest: '{{days}} gg',
       clear: 'Rimuovi il filtro solleciti',
+      hint: 'Clicca una scheda per mostrare solo quei progetti',
     },
     clearSearch: 'Cancella ricerca',
     inProduction_one: '{{count}} progetto in produzione',

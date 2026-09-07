@@ -299,6 +299,7 @@ export default {
       unpaid: 'Не оплачено',
       longest: '{{days}} дн.',
       clear: 'Снять фильтр напоминаний',
+      hint: 'Нажмите на плитку, чтобы показать только эти проекты',
     },
     clearSearch: 'Очистить поиск',
     inProduction_one: '{{count}} проект в работе',

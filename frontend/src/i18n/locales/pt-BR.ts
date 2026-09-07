@@ -299,6 +299,7 @@ export default {
       unpaid: 'Não pago',
       longest: '{{days}} dias',
       clear: 'Remover o filtro de cobrança',
+      hint: 'Clique em um cartão para mostrar apenas esses projetos',
     },
     clearSearch: 'Limpar busca',
     inProduction_one: '{{count}} projeto em produção',

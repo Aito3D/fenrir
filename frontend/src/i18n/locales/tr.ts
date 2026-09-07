@@ -299,6 +299,7 @@ export default {
       unpaid: 'Ödenmedi',
       longest: '{{days}} gün',
       clear: 'Takip filtresini kaldır',
+      hint: 'Yalnızca bu projeleri göstermek için bir kutucuğa tıklayın',
     },
     clearSearch: 'Aramayı temizle',
     inProduction_one: 'üretimde {{count}} proje',

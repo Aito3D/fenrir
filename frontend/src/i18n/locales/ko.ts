@@ -299,6 +299,7 @@ export default {
       unpaid: '미결제',
       longest: '{{days}}일',
       clear: '후속 조치 필터 해제',
+      hint: '타일을 클릭하면 해당 프로젝트만 표시됩니다',
     },
     clearSearch: '검색 지우기',
     inProduction_one: '진행 중인 프로젝트 {{count}}개',

@@ -299,6 +299,7 @@ export default {
       unpaid: 'Unbezahlt',
       longest: '{{days}} T',
       clear: 'Nachfass-Filter aufheben',
+      hint: 'Kachel anklicken, um nur diese Projekte anzuzeigen',
     },
     clearSearch: 'Suche löschen',
     inProduction_one: '{{count}} Projekt in Arbeit',

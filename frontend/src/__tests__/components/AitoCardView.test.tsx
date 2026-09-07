@@ -123,13 +123,15 @@ describe('CardView', () => {
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
   });
 
-  it('shows a task row per task, and no task count', async () => {
+  it('collapses every task into one summary line — a combined bar and the count — and no per-task rows', async () => {
     render(
       <CardView
         project={{
           ...project,
           task_count: 2,
           tasks_total: 20200,
+          steps_total: 3,
+          steps_done: 1,
           task_services: ['modelisation', 'impression'],
           task_steps: [
             { services: ['modelisation', 'impression'], done: ['modelisation'] },
@@ -139,8 +141,17 @@ describe('CardView', () => {
         onExpand={vi.fn()}
       />,
     );
-    expect(await screen.findAllByTestId('aito-task-row')).toHaveLength(2);
-    // The count line is gone: the rows themselves say how many tasks there are.
+    const summary = await screen.findByTestId('aito-steps-summary');
+    expect(summary).toHaveTextContent('1/3 steps');
+    // One segment per (task, service) pair, laid end to end; only the done
+    // one carries its stage colour.
+    const segments = screen.getAllByTestId('aito-summary-segment');
+    expect(segments).toHaveLength(3);
+    expect(segments[0].className).toContain('bg-violet-400');
+    expect(segments[1].className).toContain('bg-bambu-dark-tertiary');
+    // The rows are the hover reveal's, not the collapsed card's: a column of
+    // cards each listing its tasks showed six cards per screen.
+    expect(screen.queryByTestId('aito-task-row')).not.toBeInTheDocument();
     expect(screen.queryByText(/2 tasks|2 tâches/i)).not.toBeInTheDocument();
   });
 
@@ -157,23 +168,26 @@ describe('CardView', () => {
           ...project,
           task_count: 2,
           tasks_total: 20200,
+          steps_total: 1,
+          steps_done: 0,
           task_steps: [{ services: ['impression'], done: [] }],
         }}
         onExpand={vi.fn()}
       />,
     );
-    expect(await screen.findAllByTestId('aito-task-row')).toHaveLength(1);
+    expect(await screen.findByTestId('aito-steps-summary')).toBeInTheDocument();
     expect(screen.queryByText(/20[,\s.]?200/)).not.toBeInTheDocument();
   });
 
   it('renders no task rows and no total for a project with no tasks', () => {
     render(
       <CardView
-        project={{ ...project, task_count: 0, tasks_total: 0, task_services: [], task_steps: [] }}
+        project={{ ...project, task_count: 0, tasks_total: 0, steps_total: 0, steps_done: 0, task_services: [], task_steps: [] }}
         onExpand={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('aito-task-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-steps-summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Scan')).not.toBeInTheDocument();
   });
 
@@ -196,35 +210,37 @@ describe('CardView', () => {
     expect(screen.queryByTestId('aito-task-row')).not.toBeInTheDocument();
   });
 
-  it('shows the same task rows in the drag overlay, which has no buttons', async () => {
+  it('shows the same steps summary in the drag overlay, which has no buttons', async () => {
     // The overlay clone gets no `onExpand`. Without this test that branch
-    // could lose its rows and the suite would stay green while a dragged
-    // card visibly lost its per-task detail.
+    // could lose its summary and the suite would stay green while a dragged
+    // card visibly lost its progress.
     render(
       <CardView
         project={{
           ...project,
           task_count: 1,
           tasks_total: 20200,
+          steps_total: 2,
+          steps_done: 1,
           task_steps: [{ services: ['modelisation', 'impression'], done: ['modelisation'] }],
         }}
         overlay
       />,
     );
-    expect(await screen.findByTestId('aito-task-row')).toHaveTextContent('1/2');
+    expect(await screen.findByTestId('aito-steps-summary')).toHaveTextContent('1/2 steps');
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('keeps the task rows inside the click target, so a row opens the panel', async () => {
+  it('keeps the steps summary inside the click target, so it opens the panel', async () => {
     const onExpand = vi.fn();
     const user = userEvent.setup();
     render(
       <CardView
-        project={{ ...project, task_count: 1, tasks_total: 4000, task_steps: [{ services: ['scan'], done: [] }] }}
+        project={{ ...project, task_count: 1, tasks_total: 4000, steps_total: 1, steps_done: 0, task_steps: [{ services: ['scan'], done: [] }] }}
         onExpand={onExpand}
       />,
     );
-    await user.click(await screen.findByTestId('aito-task-row'));
+    await user.click(await screen.findByTestId('aito-steps-summary'));
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
@@ -375,9 +391,12 @@ describe('CardView', () => {
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   });
 
-  it('shows the steps count in the footer once the project has steps', () => {
-    render(<CardView project={{ ...project, steps_total: 4, steps_done: 1 }} onExpand={vi.fn()} />);
-    expect(screen.getByText('1/4 steps')).toBeInTheDocument();
+  it('still shows the steps count, without a bar, when the server sent no task_steps', () => {
+    // An older server sends the totals but not the per-task shape; the number
+    // is the fact that matters and must not vanish with the bar.
+    render(<CardView project={{ ...project, steps_total: 4, steps_done: 1, task_steps: [] }} onExpand={vi.fn()} />);
+    expect(screen.getByTestId('aito-steps-summary')).toHaveTextContent('1/4 steps');
+    expect(screen.queryByTestId('aito-summary-segment')).not.toBeInTheDocument();
     // No edge progress bar anymore — the count above is the whole story.
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
@@ -525,28 +544,19 @@ describe('hybrid card anatomy', () => {
     expect(icon.getAttribute('class')).toContain('text-white');
   });
 
-  it('clamps the description to two lines', () => {
+  it('clamps the description to one line', () => {
     renderCard();
-    expect(screen.getByTestId('aito-card-description').className).toContain('line-clamp-2');
+    expect(screen.getByTestId('aito-card-description').className).toContain('line-clamp-1');
   });
 
-  it('renders one task row per task with title and count', () => {
-    renderCard({ task_steps: [
-      { services: ['scan', 'impression'], done: ['scan'], title: 'Support principal' },
-      { services: ['impression'], done: [], title: '' },
-    ]});
-    const rows = screen.getAllByTestId('aito-task-row');
-    expect(rows[0]).toHaveTextContent('Support principal');
-    expect(rows[0]).toHaveTextContent('1/2');
-    expect(rows[1]).toHaveTextContent('Task 2');
-  });
-
-  it('totals the steps in the footer and drops the edge progress bar', () => {
+  it('totals the steps in one summary line and drops the edge progress bar', () => {
     renderCard({ steps_total: 3, steps_done: 1, task_steps: [
       { services: ['scan', 'impression'], done: ['scan'], title: '' },
       { services: ['impression'], done: [], title: '' },
     ]});
     expect(screen.getByText('1/3 steps')).toBeInTheDocument();
+    // Once, not twice: the footer used to repeat the body's count.
+    expect(screen.getAllByText(/\d+\/\d+ steps/)).toHaveLength(1);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
@@ -645,7 +655,7 @@ describe('CardView — hover to read a clamped description', () => {
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
     act(() => vi.advanceTimersByTime(2000));
 
-    expect(description).not.toHaveClass('line-clamp-2');
+    expect(description).not.toHaveClass('line-clamp-1');
 
     // The invariant the whole design exists for: the shell pins the
     // collapsed height inline so the column does not reflow, and the card
@@ -654,6 +664,45 @@ describe('CardView — hover to read a clamped description', () => {
     expect(shell).toHaveStyle({ height: '180px' });
     expect(card).toHaveClass('absolute');
     expect(card).toHaveClass('z-30');
+  });
+
+  it('grows the summary line into one row per task after the dwell, even with nothing clipped', () => {
+    // The rows carry the task NAMES, which the summary bar cannot; so a card
+    // with tasks always has something to reveal, clipped description or not.
+    render(
+      <CardView
+        project={{
+          ...project,
+          steps_total: 3,
+          steps_done: 1,
+          task_steps: [
+            { services: ['scan', 'impression'], done: ['scan'], title: 'Support principal' },
+            { services: ['impression'], done: [], title: '' },
+          ],
+        }}
+        onExpand={vi.fn()}
+      />,
+    );
+    setClamped(screen.getByTestId('aito-card-description'), false);
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    setCardHeight(card, 120);
+    expect(screen.getByTestId('aito-steps-summary')).toBeInTheDocument();
+    expect(screen.queryByTestId('aito-task-row')).not.toBeInTheDocument();
+
+    const shell = screen.getByTestId('aito-card-shell');
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(2000));
+
+    const rows = screen.getAllByTestId('aito-task-row');
+    expect(rows[0]).toHaveTextContent('Support principal');
+    expect(rows[0]).toHaveTextContent('1/2');
+    expect(rows[1]).toHaveTextContent('Task 2');
+    expect(screen.queryByTestId('aito-steps-summary')).not.toBeInTheDocument();
+    expect(shell).toHaveStyle({ height: '120px' });
+
+    fireEvent.mouseLeave(shell);
+    expect(screen.getByTestId('aito-steps-summary')).toBeInTheDocument();
+    expect(screen.queryByTestId('aito-task-row')).not.toBeInTheDocument();
   });
 
   it('does not expand on a hover shorter than the dwell', () => {
@@ -667,12 +716,12 @@ describe('CardView — hover to read a clamped description', () => {
     // Asserted BEFORE the pointer leaves, or this passes for the wrong reason:
     // a leave collapses the card anyway, so checking only afterwards would hold
     // for any dwell at all and pin nothing.
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
 
     fireEvent.mouseLeave(shell);
     act(() => vi.advanceTimersByTime(2000));
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
   });
 
   it('collapses again when the pointer leaves', () => {
@@ -685,7 +734,7 @@ describe('CardView — hover to read a clamped description', () => {
     act(() => vi.advanceTimersByTime(2000));
     fireEvent.mouseLeave(shell);
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
   });
 
   it('does not move a card whose description is not clamped', () => {
@@ -698,7 +747,7 @@ describe('CardView — hover to read a clamped description', () => {
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
     act(() => vi.advanceTimersByTime(2000));
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
     // Not "did not pin 0px" — jsdom's unmocked offsetHeight happens to BE 0,
     // which happens to stringify to '0px'; asserting against that is coupled
     // to a test-environment artifact, not to the invariant. The real
@@ -715,7 +764,7 @@ describe('CardView — hover to read a clamped description', () => {
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
     act(() => vi.advanceTimersByTime(2000));
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
   });
 
   it('never expands a placeholder card', () => {
@@ -729,7 +778,7 @@ describe('CardView — hover to read a clamped description', () => {
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
     act(() => vi.advanceTimersByTime(2000));
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
   });
 
   it('keeps the morph anchor on the card, not on the shell', () => {
@@ -758,7 +807,7 @@ describe('CardView — hover to read a clamped description', () => {
     fireEvent.pointerDown(shell);
     act(() => vi.advanceTimersByTime(5000));
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
   });
 
   it('collapses an already-open reveal when the pointer goes down', () => {
@@ -774,11 +823,11 @@ describe('CardView — hover to read a clamped description', () => {
 
     fireEvent.mouseEnter(shell);
     act(() => vi.advanceTimersByTime(2000));
-    expect(description).not.toHaveClass('line-clamp-2');
+    expect(description).not.toHaveClass('line-clamp-1');
 
     fireEvent.pointerDown(shell);
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
     expect(card).not.toHaveClass('absolute');
     expect(shell.style.height).toBe('');
   });
@@ -797,7 +846,7 @@ describe('CardView — hover to read a clamped description', () => {
     fireEvent.pointerDown(shell);
     act(() => vi.advanceTimersByTime(10000));
 
-    expect(description).toHaveClass('line-clamp-2');
+    expect(description).toHaveClass('line-clamp-1');
   });
 });
 
