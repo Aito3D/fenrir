@@ -3148,6 +3148,7 @@ export default {
     accentGreen: 'グリーン',
     accentTeal: 'ティール',
     accentBlue: 'ブルー',
+    accentCyan: 'シアン',
     accentOrange: 'オレンジ',
     accentPurple: 'パープル',
     accentRed: 'レッド',

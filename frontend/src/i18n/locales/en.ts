@@ -3173,6 +3173,7 @@ export default {
     accentGreen: 'Green',
     accentTeal: 'Teal',
     accentBlue: 'Blue',
+    accentCyan: 'Cyan',
     accentOrange: 'Orange',
     accentPurple: 'Purple',
     accentRed: 'Red',

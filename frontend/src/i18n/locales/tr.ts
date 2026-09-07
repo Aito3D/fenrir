@@ -3152,6 +3152,7 @@ export default {
     accentGreen: 'Yeşil',
     accentTeal: 'Camgöbeği',
     accentBlue: 'Mavi',
+    accentCyan: 'Camgöbeği',
     accentOrange: 'Turuncu',
     accentPurple: 'Mor',
     accentRed: 'Kırmızı',

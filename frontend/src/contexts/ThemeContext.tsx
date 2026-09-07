@@ -6,7 +6,7 @@ type ThemeMode = 'light' | 'dark' | 'system';
 type ThemeStyle = 'classic' | 'glow' | 'vibrant';
 type DarkBackground = 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest' | 'midnight';
 type LightBackground = 'neutral' | 'warm' | 'cool';
-type ThemeAccent = 'green' | 'teal' | 'blue' | 'orange' | 'purple' | 'red';
+type ThemeAccent = 'green' | 'teal' | 'blue' | 'cyan' | 'orange' | 'purple' | 'red';
 
 interface ThemeContextType {
   mode: ThemeMode;
@@ -150,7 +150,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       'dark',
       'style-classic', 'style-glow', 'style-vibrant',
       'bg-neutral', 'bg-warm', 'bg-cool', 'bg-oled', 'bg-slate', 'bg-forest',
-      'accent-green', 'accent-teal', 'accent-blue', 'accent-orange', 'accent-purple', 'accent-red'
+      'accent-green', 'accent-teal', 'accent-blue', 'accent-cyan', 'accent-orange', 'accent-purple', 'accent-red'
     );
 
     // Apply based on resolved mode

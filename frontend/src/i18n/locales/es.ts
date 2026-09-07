@@ -3151,6 +3151,7 @@ export default {
     accentGreen: 'Verde',
     accentTeal: 'Verde azulado',
     accentBlue: 'Azul',
+    accentCyan: 'Cian',
     accentOrange: 'Naranja',
     accentPurple: 'Morado',
     accentRed: 'Rojo',

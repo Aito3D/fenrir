@@ -3023,6 +3023,7 @@ export default {
     accentGreen: "Зелений",
     accentTeal: "Чирок",
     accentBlue: "Синій",
+    accentCyan: "Блакитний",
     accentOrange: "Помаранчевий",
     accentPurple: "Фіолетовий",
     accentRed: "Червоний",

@@ -144,6 +144,7 @@ function isAlwaysAllowedIdentical(value) {
 const DE_COGNATES = [
   'in {{folder}}',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
+  'Cyan',  // settings.accentCyan — the colour is spelled "Cyan" in German too
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
   'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
@@ -194,6 +195,7 @@ const FR_COGNATES = [
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
   'Urgent',  // aito.urgent — same word in French (adjectif : « urgent »)
+  'Cyan',  // settings.accentCyan — « cyan » is the French name of the colour
   'Minimum',  // calculator.floorGroup — same spelling/meaning in French
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name

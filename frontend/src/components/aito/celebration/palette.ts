@@ -1,6 +1,6 @@
 /** Colours for a celebration, read from the live theme.
  *
- *  The app ships six accents (green, teal, blue, orange, purple, red — see
+ *  The app ships seven accents (green, teal, blue, cyan, orange, purple, red — see
  *  `--accent` in index.css) and the user picks one. A firework hard-coded to
  *  Bambu green would be the only thing on the screen that ignores that choice,
  *  so the palette is read from the document at burst time rather than baked in.

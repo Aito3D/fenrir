@@ -3019,6 +3019,7 @@ export default {
     accentGreen: "Зелёный",
     accentTeal: "Бирюзовый",
     accentBlue: "Синий",
+    accentCyan: "Голубой",
     accentOrange: "Оранжевый",
     accentPurple: "Фиолетовый",
     accentRed: "Красный",

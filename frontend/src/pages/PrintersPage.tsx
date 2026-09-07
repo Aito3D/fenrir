@@ -8557,6 +8557,7 @@ export function PrintersPage() {
     teal: 'bg-teal-500 text-white hover:bg-teal-400 border-teal-400/60',
     blue: 'bg-blue-500 text-white hover:bg-blue-400 border-blue-400/60',
     orange: 'bg-orange-500 text-white hover:bg-orange-400 border-orange-400/60',
+    cyan: 'bg-[#04a1e4] text-white hover:bg-[#2fb6ee] border-[#2fb6ee]/60',
     purple: 'bg-purple-500 text-white hover:bg-purple-400 border-purple-400/60',
     red: 'bg-red-500 text-white hover:bg-red-400 border-red-400/60',
   }[activeAccent];

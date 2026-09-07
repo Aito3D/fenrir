@@ -451,6 +451,12 @@ html {
   --accent-dark: #2563eb;
 }
 
+.accent-cyan {
+  --accent: #04a1e4;
+  --accent-light: #2fb6ee;
+  --accent-dark: #0388c2;
+}
+
 .accent-orange {
   --accent: #f97316;
   --accent-light: #fb923c;

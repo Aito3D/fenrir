@@ -3148,6 +3148,7 @@ export default {
     accentGreen: '绿色',
     accentTeal: '青色',
     accentBlue: '蓝色',
+    accentCyan: '青色',
     accentOrange: '橙色',
     accentPurple: '紫色',
     accentRed: '红色',

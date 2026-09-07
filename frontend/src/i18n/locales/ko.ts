@@ -3017,6 +3017,7 @@ export default {
     accentGreen: '그린',
     accentTeal: '틸',
     accentBlue: '블루',
+    accentCyan: '시안',
     accentOrange: '오렌지',
     accentPurple: '퍼플',
     accentRed: '레드',

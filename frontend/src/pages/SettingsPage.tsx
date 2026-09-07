@@ -1883,6 +1883,7 @@ export function SettingsPage() {
                       <option value="green">{t('settings.accentGreen')}</option>
                       <option value="teal">{t('settings.accentTeal')}</option>
                       <option value="blue">{t('settings.accentBlue')}</option>
+                      <option value="cyan">{t('settings.accentCyan')}</option>
                       <option value="orange">{t('settings.accentOrange')}</option>
                       <option value="purple">{t('settings.accentPurple')}</option>
                       <option value="red">{t('settings.accentRed')}</option>
@@ -1932,6 +1933,7 @@ export function SettingsPage() {
                       <option value="green">{t('settings.accentGreen')}</option>
                       <option value="teal">{t('settings.accentTeal')}</option>
                       <option value="blue">{t('settings.accentBlue')}</option>
+                      <option value="cyan">{t('settings.accentCyan')}</option>
                       <option value="orange">{t('settings.accentOrange')}</option>
                       <option value="purple">{t('settings.accentPurple')}</option>
                       <option value="red">{t('settings.accentRed')}</option>
