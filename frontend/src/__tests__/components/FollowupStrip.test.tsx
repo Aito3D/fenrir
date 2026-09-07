@@ -56,7 +56,7 @@ describe('FollowupStrip', () => {
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 
-  it('names the worst offender under each tile from the bucket\'s first id', () => {
+  it('names the worst offender in each pill\'s tooltip and accessible name, from the bucket\'s first id', () => {
     // `followups()` sorts ids longest wait first, so ids[0] is who to ring.
     render(
       <FollowupStrip
@@ -70,18 +70,23 @@ describe('FollowupStrip', () => {
         ]}
       />,
     );
-    expect(screen.getByTestId('aito-followup-quoteOut-worst')).toHaveTextContent('Dupont SARL · Support de caméra');
-    expect(screen.getByTestId('aito-followup-quoteOut')).toHaveAccessibleName(/Quotes out 2 — Dupont SARL/);
+    const quote = screen.getByTestId('aito-followup-quoteOut');
+    // The name is not printed in the pill — that is the point of a pill —
+    // so it must reach the eye through the tooltip and the ear through the
+    // accessible name.
+    expect(quote).not.toHaveTextContent('Dupont');
+    expect(quote).toHaveAttribute('title', 'Dupont SARL · Support de caméra\nClick a tile to show only those projects');
+    expect(quote).toHaveAccessibleName(/Quotes out 2 — Dupont SARL/);
     // No client: just the description, no dangling separator.
-    expect(screen.getByTestId('aito-followup-unpaid-worst')).toHaveTextContent(/^Boîtier$/);
+    expect(screen.getByTestId('aito-followup-unpaid')).toHaveAttribute('title', 'Boîtier\nClick a tile to show only those projects');
   });
 
-  it('says the tiles are filters: a hint beside the heading and a title on each tile', () => {
+  it('says the pills are filters: the hint is the tooltip on each pill', () => {
     render(
       <FollowupStrip buckets={buckets({ notTold: { key: 'notTold', ids: [1], maxDays: 2 } })} active={null} onChange={vi.fn()} />,
     );
-    expect(screen.getByRole('group', { name: 'To chase' })).toHaveTextContent('Click a tile to show only those projects');
     expect(screen.getByTestId('aito-followup-notTold')).toHaveAttribute('title', 'Click a tile to show only those projects');
+    expect(screen.getByRole('group', { name: 'To chase' })).not.toHaveTextContent('Click a tile');
   });
 
   it('Escape clears an active filter', () => {
