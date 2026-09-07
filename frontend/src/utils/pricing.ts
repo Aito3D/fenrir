@@ -186,9 +186,15 @@ export function qtyFactor(quantity: number, d: PricingDefaults): number {
 }
 
 /** 1 + (sizeMargin − 1) × qtyFactor — the discount only touches the margin
- *  above cost, so the multiplier is never below 1. */
+ *  above cost, so the multiplier is never below 1. sizeMargin itself makes no
+ *  such promise (a misconfigured margin_min_mult below 1 is a valid `number`
+ *  as far as the type goes, even though the settings API rejects it — see
+ *  backend/app/schemas/calculator.py, margin_min_mult: ge=1), so any margin
+ *  below cost is clamped to "no margin to discount" here rather than let a
+ *  negative contribution drag the multiplier under 1. */
 export function unitMultiplier(unitCost: number, quantity: number, d: PricingDefaults): number {
-  return 1 + (sizeMargin(unitCost, d) - 1) * qtyFactor(quantity, d);
+  const marginAboveCost = Math.max(0, sizeMargin(unitCost, d) - 1);
+  return 1 + marginAboveCost * qtyFactor(quantity, d);
 }
 
 /** Quote-style filament line (sale price × difficulty × filament markup) —
