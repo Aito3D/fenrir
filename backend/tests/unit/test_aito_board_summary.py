@@ -127,7 +127,7 @@ def test_to_response_carries_the_step_counters():
     response = _to_response(project, summary, {}, "")  # no shipment, no external_url on this in-memory project
     assert response.steps_total == 2
     assert response.steps_done == 1
-    assert response.tracking_url is None
+    assert "tracking_url" not in response.model_dump()
     assert response.tracking_configured is False
 
 

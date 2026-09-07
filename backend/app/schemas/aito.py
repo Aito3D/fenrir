@@ -600,10 +600,9 @@ class AitoProjectResponse(BaseModel):
     # ISO `YYYY-MM-DD` promised to the client, or null. Local only — see the
     # column comment on AitoProject.due_date.
     due_date: str | None
-    # Public tracking link (services/aito_tracking.py). None until the card
-    # has a token AND `external_url` is set; `tracking_configured` tells the
-    # panel which of the two is missing.
-    tracking_url: str | None
+    # Whether the card has a public tracking link configured (services/aito_tracking.py):
+    # true only when the card has a token AND `external_url` is set. The URL itself is not
+    # embedded here — fetch it from the AITO_UPDATE-gated GET /aito/{id}/tracking-link route.
     tracking_configured: bool
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when

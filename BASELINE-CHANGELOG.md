@@ -10929,3 +10929,9 @@ T-014 — calculator reads (Permission.CALCULATOR_READ: GET /calculator/filament
 /printers, /insights, ...) are user-token only; an API key now gets 403 "API keys cannot be used
 for administrative operations" there, matching the existing AITO_READ carve-out. User-approved
 2026-09-06.
+
+T-015 — AitoProjectResponse no longer carries tracking_url (the public page's bearer credential);
+every board response (GET /aito/, /aito/trash, PATCH/move/restore) drops the field while
+tracking_configured stays. The URL is served only by the AITO_UPDATE-gated GET
+/aito/{id}/tracking-link and POST /aito/{id}/tracking-token. app-openapi-index golden re-recorded
+for the removed schema property. User-approved 2026-09-06.

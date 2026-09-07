@@ -11551,7 +11551,6 @@
     "task_steps": "[AitoTaskStepsResponse]",
     "tasks_total": "number",
     "tracking_configured": "boolean",
-    "tracking_url": "anyOf(string,null)",
     "updated_at": "string",
     "version": "integer"
    },
@@ -11608,7 +11607,6 @@
     "task_steps",
     "tasks_total",
     "tracking_configured",
-    "tracking_url",
     "updated_at",
     "version"
    ]

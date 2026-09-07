@@ -60,7 +60,6 @@ function project(overrides: Partial<AitoProject>): AitoProject {
     shipping_phone: null,
     shipping_price: null,
     shipping_service_name: null,
-    tracking_url: null,
     tracking_configured: false,
     version: 1,
     created_at: ago(30),

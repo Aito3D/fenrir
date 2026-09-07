@@ -103,17 +103,22 @@ async def test_build_mints_even_when_external_url_is_empty(async_client, db_sess
 
 
 @pytest.mark.asyncio
-async def test_project_responses_carry_tracking_fields(async_client, db_session):
+async def test_project_responses_carry_tracking_configured_but_not_the_url(async_client, db_session):
+    """The board response exposes `tracking_configured` so the panel can show
+    the right state, but never the URL itself — that bearer credential is
+    served only by the AITO_UPDATE-gated /tracking-link and /tracking-token
+    routes."""
     pid = await _create(async_client)
     body = (await async_client.get("/api/v1/aito/")).json()[0]
-    assert body["tracking_url"] is None and body["tracking_configured"] is False
+    assert body["tracking_configured"] is False
+    assert "tracking_url" not in body
     await _set_external_url(db_session, "https://aito.example")
     project = await _project(db_session, pid)
     await ensure_tracking_token(db_session, project)
     await db_session.commit()
     body = (await async_client.get("/api/v1/aito/")).json()[0]
     assert body["tracking_configured"] is True
-    assert body["tracking_url"] == f"https://aito.example/track/{project.tracking_token}"
+    assert "tracking_url" not in body
 
 
 TRACK = "/api/v1/aito/track/"

@@ -79,7 +79,6 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_phone: null,
     shipping_price: null,
     shipping_service_name: null,
-    tracking_url: null,
     tracking_configured: false,
     version: 1,
     created_at: '2026-07-27T00:00:00',
@@ -88,7 +87,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
   return { ...base, ...overrides };
 }
 
-const project = makeProject({ id: 7, tracking_url: null, tracking_configured: true });
+const project = makeProject({ id: 7, tracking_configured: true });
 
 // `holdButton` below calls `userEvent.setup(...)`, which — once a hold test
 // runs — replaces jsdom's `navigator.clipboard` with its own getter-only

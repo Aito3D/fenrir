@@ -84,7 +84,6 @@ from backend.app.services.aito_tracking import (
     external_url as tracking_external_url,
     mint_token,
     tracking_url,
-    tracking_url_for,
 )
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
@@ -449,7 +448,6 @@ def _to_response(
         # unflushed in-memory row reads None, which IS "nobody told them yet".
         client_contacted_at=p.client_contacted_at,
         due_date=p.due_date,
-        tracking_url=tracking_url_for(external_url, p.tracking_token),
         tracking_configured=external_url != "",
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.

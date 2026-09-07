@@ -78,7 +78,6 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_phone: null,
     shipping_price: null,
     shipping_service_name: null,
-    tracking_url: null,
     tracking_configured: false,
     version: 1,
     created_at: '2026-07-27T00:00:00',
