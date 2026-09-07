@@ -90,6 +90,17 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
 
 const project = makeProject({ id: 7, tracking_url: null, tracking_configured: true });
 
+// `holdButton` below calls `userEvent.setup(...)`, which — once a hold test
+// runs — replaces jsdom's `navigator.clipboard` with its own getter-only
+// stub (an own accessor property, not just the prototype's). A later
+// `Object.assign(navigator, { clipboard: ... })` then throws ("Cannot set
+// property clipboard of #<Navigator> which has only a getter") for every
+// test that follows, because `Object.assign` does a plain `[[Set]]` rather
+// than defining a fresh own property. Capturing and restoring the original
+// descriptor around `Object.defineProperty` — PrinterInfoModal.test.tsx's
+// pattern — undoes that stub after each test instead of accumulating it.
+let originalClipboard: PropertyDescriptor | undefined;
+
 beforeEach(() => {
   // `copyTextToClipboard` only takes the `navigator.clipboard` branch inside
   // a secure context; jsdom's default `http://localhost:3000` test origin
@@ -97,11 +108,20 @@ beforeEach(() => {
   // see `clipboard.test.ts` and `PrinterInfoModal.test.tsx` for the same
   // pattern.
   vi.stubGlobal('isSecureContext', true);
-  Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+  originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    configurable: true,
+  });
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  if (originalClipboard) {
+    Object.defineProperty(navigator, 'clipboard', originalClipboard);
+  } else {
+    delete (navigator as { clipboard?: unknown }).clipboard;
+  }
 });
 
 /** Holds a button through HoldButton's confirm delay under fake timers,
@@ -144,6 +164,36 @@ describe('TrackingLinkControl', () => {
 
     await waitFor(() => expect(calls).toEqual(['regen']));
     expect(await screen.findByText(/new tracking link/i)).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('toasts an error and does not copy when the link endpoint fails', async () => {
+    server.use(http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    render(<TrackingLinkControl project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+
+    expect(await screen.findByText(/error loading data/i)).toBeInTheDocument();
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(screen.queryByText(/copied/i)).not.toBeInTheDocument();
+  });
+
+  it('toasts an error and does not regenerate when the token endpoint fails on a completed hold', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const calls: string[] = [];
+    server.use(
+      http.post('/api/v1/aito/7/tracking-token', () => {
+        calls.push('regen');
+        return HttpResponse.json({ detail: 'boom' }, { status: 500 });
+      }),
+    );
+    render(<TrackingLinkControl project={project} />);
+
+    await holdButton(screen.getByRole('button', { name: /new tracking link/i }));
+
+    await waitFor(() => expect(calls).toEqual(['regen']));
+    expect(await screen.findByText(/error loading data/i)).toBeInTheDocument();
+    expect(screen.queryByText(/new tracking link/i)).not.toBeInTheDocument();
     vi.useRealTimers();
   });
 });

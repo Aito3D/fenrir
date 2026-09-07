@@ -40,6 +40,27 @@ const empty: AitoStats = {
 };
 
 describe('PipelineWidget', () => {
+  it('degrades to zeros instead of throwing when the backend omits the tracking block', async () => {
+    const { tracking: _tracking, ...statsWithoutTracking } = stats;
+    server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json(statsWithoutTracking)));
+    render(<PipelineWidget dateFrom="2026-08-01" dateTo="2026-09-05" />);
+    const board = await screen.findByTestId('pipeline-board');
+    expect(board).toHaveTextContent('Done 12');
+
+    const tracking = screen.getByTestId('pipeline-tracking');
+    expect(tracking).toHaveTextContent('Client tracking');
+    const values = within(tracking).getAllByText('0');
+    expect(values).toHaveLength(3);
+  });
+
+  it('treats a payload without tracking or any other activity as the empty pipeline', async () => {
+    const { tracking: _tracking, ...emptyWithoutTracking } = empty;
+    server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json(emptyWithoutTracking)));
+    render(<PipelineWidget />);
+    expect(await screen.findByText('Nothing on the Aito board in this period')).toBeInTheDocument();
+    expect(screen.queryByTestId('pipeline-tracking')).not.toBeInTheDocument();
+  });
+
   it('renders the five sections from the stats', async () => {
     server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json(stats)));
     render(<PipelineWidget dateFrom="2026-08-01" dateTo="2026-09-05" />);

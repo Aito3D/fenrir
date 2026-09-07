@@ -41,6 +41,7 @@ export function PipelineWidget({ dateFrom, dateTo }: { dateFrom?: string; dateTo
   const label = (column: string) => t(ALL_COLUMNS.find((c) => c.id === column)?.labelKey ?? column);
   const dot = (column: string) => ALL_COLUMNS.find((c) => c.id === column)?.dot ?? 'bg-bambu-gray';
   const rate = data.conversion.acceptance_rate;
+  const tracking = trackingOf(data);
 
   return (
     <div data-testid="aito-pipeline-widget" className="space-y-5">
@@ -122,9 +123,9 @@ export function PipelineWidget({ dateFrom, dateTo }: { dateFrom?: string; dateTo
       <section data-testid="pipeline-tracking" className="space-y-2">
         <Heading>{t('stats.pipelineTracking')}</Heading>
         <div className="grid grid-cols-3 gap-2">
-          <CountTile label={t('stats.pipelineTrackingViews')} value={data.tracking.views} />
-          <CountTile label={t('stats.pipelineTrackingCards')} value={data.tracking.cards_viewed} />
-          <CountTile label={t('stats.pipelineTrackingLinks')} value={data.tracking.cards_with_link} />
+          <CountTile label={t('stats.pipelineTrackingViews')} value={tracking.views} />
+          <CountTile label={t('stats.pipelineTrackingCards')} value={tracking.cards_viewed} />
+          <CountTile label={t('stats.pipelineTrackingLinks')} value={tracking.cards_with_link} />
         </div>
       </section>
     </div>
@@ -144,7 +145,7 @@ function isEmpty(d: AitoStats): boolean {
 /** The tracking block, or zeros when the backend predates it (a deployed
  *  server behind this bundle): the widget must degrade to an empty block,
  *  never throw on an older payload. */
-function trackingOf(d: AitoStats): AitoStats['tracking'] {
+function trackingOf(d: AitoStats): NonNullable<AitoStats['tracking']> {
   return d.tracking ?? { views: 0, cards_viewed: 0, cards_with_link: 0 };
 }
 
