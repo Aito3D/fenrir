@@ -152,6 +152,10 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
     assert body["due_date"] == "2026-09-20"
     assert body["shipping"]["island"] == "Rangiroa"  # label resolved server-side, key 'rangiroa' → its real label
     assert body["shipping"]["service"] == "Livraison Avion Tuamotu"
+    # The air waybill is null until the parcel is handed over, then quoted verbatim.
+    assert body["shipping"]["lta"] is None
+    await _set(db_session, pid, shipping_lta="123-4567")
+    assert (await async_client.get(TRACK + token)).json()["shipping"]["lta"] == "123-4567"
     assert body["done_at"] is None
     assert body["invoice"] is None
     assert body["reference"] is None

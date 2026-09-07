@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { clearNewProjectDraft, useNewProjectDraft } from '../../hooks/useNewProjectDraft';
+import {
+  clearNewProjectDraft,
+  readNewProjectDraft,
+  useNewProjectDraft,
+  writeNewProjectDraft,
+} from '../../hooks/useNewProjectDraft';
 import { emptyTaskDraft } from '../../utils/taskDraft';
 import { defaultClientDraft } from '../../utils/clientDraft';
 import { emptyShippingDraft } from '../../utils/shippingDraft';
@@ -27,6 +32,52 @@ describe('useNewProjectDraft', () => {
     const { result: second } = renderHook(() => useNewProjectDraft());
     expect(second.current.initial?.tasks[0].title).toBe('Capot');
     expect(second.current.initial?.summaryEdited).toBe(true);
+  });
+
+  // The duplicate-a-card flow seeds the drawer by writing the blob the drawer
+  // would have written itself, then mounting it: same key, same reader, same
+  // repairs — so a seed can never be a second, drifting restore path.
+  it('writeNewProjectDraft() is read back by the next mount and by readNewProjectDraft()', () => {
+    expect(readNewProjectDraft()).toBeNull();
+    writeNewProjectDraft({
+      tasks: [{ ...emptyTaskDraft(), title: 'Capot' }],
+      client: defaultClientDraft('walk-in', 'Client de passage'),
+      summaryText: 'Résumé.',
+      summaryEdited: true,
+      summarySignature: '',
+      shipping: null,
+      dueDate: '',
+    });
+    expect(readNewProjectDraft()?.tasks[0].title).toBe('Capot');
+    expect(readNewProjectDraft()?.client?.name).toBe('Client de passage');
+    const { result } = renderHook(() => useNewProjectDraft());
+    expect(result.current.initial?.summaryText).toBe('Résumé.');
+  });
+
+  it('writeNewProjectDraft() outlives a save that was still pending on the previous mount', () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useNewProjectDraft());
+    act(() =>
+      result.current.save({
+        tasks: [{ ...emptyTaskDraft(), title: 'Ancien' }],
+        client: null,
+        summaryText: '',
+        summaryEdited: false,
+        summarySignature: '',
+      }),
+    );
+    // The seed lands while that write is still debounced; the stale write
+    // must not resurrect the old draft over it.
+    writeNewProjectDraft({
+      tasks: [{ ...emptyTaskDraft(), title: 'Copie' }],
+      client: null,
+      summaryText: '',
+      summaryEdited: false,
+      summarySignature: '',
+    });
+    act(() => void vi.advanceTimersByTime(500));
+    unmount();
+    expect(readNewProjectDraft()?.tasks[0].title).toBe('Copie');
   });
 
   it('clear() and clearNewProjectDraft() both wipe the key', () => {

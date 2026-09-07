@@ -70,6 +70,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   shipping_last_name: null,
   shipping_phone: null,
   shipping_price: null,
+  shipping_lta: null,
   shipping_service_name: null,
   tracking_url: null,
   tracking_configured: false,
@@ -386,9 +387,10 @@ describe('applyShipping', () => {
       shipping_last_name: 'DUPONT',
       shipping_phone: '+689-89645864',
       shipping_price: 3200,
+      shipping_lta: '123-4567',
     });
 
-  it('shipping_island: null clears all seven shipping_* properties, including the two the request never posts', () => {
+  it('shipping_island: null clears all eight shipping_* properties, including the ones the request never posts', () => {
     const after = applyShipping([shipped()], 1, { shipping_island: null });
     const p = find(after, 1);
     expect(p.shipping_island).toBeNull();
@@ -398,6 +400,22 @@ describe('applyShipping', () => {
     expect(p.shipping_phone).toBeNull();
     expect(p.shipping_price).toBeNull();
     expect(p.shipping_service_name).toBeNull();
+    expect(p.shipping_lta).toBeNull();
+  });
+
+  // Unlike the five posted fields, the LTA is sent ALONE and null means
+  // "cleared", not "unchanged" — mirroring the server, which clears on blank.
+  it('an LTA patch sets or clears the number without touching the shipment', () => {
+    const set = find(applyShipping([shipped()], 1, { shipping_lta: '999' }), 1);
+    expect(set.shipping_lta).toBe('999');
+    expect(set.shipping_island).toBe('rangiroa');
+    expect(set.shipping_price).toBe(3200);
+    const cleared = find(applyShipping([shipped()], 1, { shipping_lta: null }), 1);
+    expect(cleared.shipping_lta).toBeNull();
+    expect(cleared.shipping_island).toBe('rangiroa');
+    // An edit that never mentions the LTA leaves it alone.
+    const untouched = find(applyShipping([shipped()], 1, { shipping_first_name: 'Paul' }), 1);
+    expect(untouched.shipping_lta).toBe('123-4567');
   });
 
   it('an add/edit merges the five posted fields and leaves the two server-derived ones untouched', () => {
@@ -407,6 +425,7 @@ describe('applyShipping', () => {
       shipping_last_name: 'DUPONT',
       shipping_phone: '+689-89645864',
       shipping_price: 3200,
+      shipping_lta: null,
     });
     const p = find(after, 1);
     expect(p.shipping_island).toBe('rangiroa');
@@ -427,6 +446,7 @@ describe('applyShipping', () => {
       shipping_last_name: 'DUPONT',
       shipping_phone: '+689-89645864',
       shipping_price: 0,
+      shipping_lta: null,
     });
     expect(find(after, 1).shipping_price).toBe(0);
   });

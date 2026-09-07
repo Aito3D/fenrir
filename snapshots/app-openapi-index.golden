@@ -1095,6 +1095,20 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/clients/{client_id}/history": {
+   "operationId": "get_client_history_api_v1_aito_clients__client_id__history_get",
+   "params": [
+    "header:X-API-Key",
+    "path:client_id!",
+    "query:limit"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoClientHistoryResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/aito/shipping/services": {
    "operationId": "list_shipping_services_api_v1_aito_shipping_services_get",
    "params": [
@@ -1106,6 +1120,33 @@
     "422": "HTTPValidationError"
    },
    "security": true
+  },
+  "GET /api/v1/aito/stats": {
+   "operationId": "get_aito_stats_api_v1_aito_stats_get",
+   "params": [
+    "header:X-API-Key",
+    "query:date_from",
+    "query:date_to",
+    "query:tz_offset_minutes"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoStatsResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/track/{token}": {
+   "operationId": "get_tracking_api_v1_aito_track__token__get",
+   "params": [
+    "path:token!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoTrackingResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": false
   },
   "GET /api/v1/aito/trash": {
    "operationId": "list_trash_api_v1_aito_trash_get",
@@ -1212,6 +1253,19 @@
    "requestBody": {},
    "responses": {
     "200": "[AitoTaskResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/{project_id}/tracking-link": {
+   "operationId": "get_tracking_link_api_v1_aito__project_id__tracking_link_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoTrackingLinkResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -6419,6 +6473,19 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/tracking-token": {
+   "operationId": "regenerate_tracking_token_api_v1_aito__project_id__tracking_token_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoTrackingLinkResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/api-keys/": {
    "operationId": "create_api_key_api_v1_api_keys__post",
    "params": [
@@ -11183,6 +11250,42 @@
    },
    "required": []
   },
+  "AitoClientHistoryCard": {
+   "properties": {
+    "column": "string",
+    "created_at": "string",
+    "id": "integer",
+    "tasks": "[AitoTaskResponse]",
+    "total": "number"
+   },
+   "required": [
+    "column",
+    "created_at",
+    "id",
+    "tasks",
+    "total"
+   ]
+  },
+  "AitoClientHistoryResponse": {
+   "properties": {
+    "cards": "[AitoClientHistoryCard]",
+    "latest_social": "anyOf(AitoClientHistorySocial,null)"
+   },
+   "required": [
+    "cards",
+    "latest_social"
+   ]
+  },
+  "AitoClientHistorySocial": {
+   "properties": {
+    "handle": "string",
+    "network": "string"
+   },
+   "required": [
+    "handle",
+    "network"
+   ]
+  },
   "AitoContactedUpdate": {
    "properties": {
     "contacted": "boolean"
@@ -11417,6 +11520,7 @@
     "invoice_status": "anyOf(string,null)",
     "move_lock": "anyOf(string,null)",
     "position": "integer",
+    "print_minutes_pending": "integer",
     "quote_accepted_at": "anyOf(string,null)",
     "quote_date": "anyOf(string,null)",
     "quote_id": "anyOf(string,null)",
@@ -11434,6 +11538,7 @@
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
+    "shipping_lta": "anyOf(string,null)",
     "shipping_phone": "anyOf(string,null)",
     "shipping_price": "anyOf(number,null)",
     "shipping_service": "anyOf(string,null)",
@@ -11446,6 +11551,8 @@
     "task_services": "[string]",
     "task_steps": "[AitoTaskStepsResponse]",
     "tasks_total": "number",
+    "tracking_configured": "boolean",
+    "tracking_url": "anyOf(string,null)",
     "updated_at": "string",
     "version": "integer"
    },
@@ -11471,6 +11578,7 @@
     "invoice_status",
     "move_lock",
     "position",
+    "print_minutes_pending",
     "quote_accepted_at",
     "quote_date",
     "quote_id",
@@ -11488,6 +11596,7 @@
     "shipping_first_name",
     "shipping_island",
     "shipping_last_name",
+    "shipping_lta",
     "shipping_phone",
     "shipping_price",
     "shipping_service",
@@ -11500,6 +11609,8 @@
     "task_services",
     "task_steps",
     "tasks_total",
+    "tracking_configured",
+    "tracking_url",
     "updated_at",
     "version"
    ]
@@ -11518,6 +11629,7 @@
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
+    "shipping_lta": "anyOf(string,null)",
     "shipping_phone": "anyOf(string,null)",
     "shipping_price": "anyOf(number,null)"
    },
@@ -11636,6 +11748,100 @@
    "required": [
     "catalogue_resolved",
     "services"
+   ]
+  },
+  "AitoStatsBucket": {
+   "properties": {
+    "count": "integer",
+    "total": "number"
+   },
+   "required": [
+    "count",
+    "total"
+   ]
+  },
+  "AitoStatsConversion": {
+   "properties": {
+    "acceptance_rate": "anyOf(number,null)",
+    "accepted": "AitoStatsBucket",
+    "declined": "AitoStatsBucket",
+    "sent": "AitoStatsBucket"
+   },
+   "required": [
+    "acceptance_rate",
+    "accepted",
+    "declined",
+    "sent"
+   ]
+  },
+  "AitoStatsInvoicing": {
+   "properties": {
+    "invoiced_count": "integer",
+    "invoiced_total": "number",
+    "outstanding_balance": "number",
+    "outstanding_count": "integer"
+   },
+   "required": [
+    "invoiced_count",
+    "invoiced_total",
+    "outstanding_balance",
+    "outstanding_count"
+   ]
+  },
+  "AitoStatsResponse": {
+   "properties": {
+    "board": "[AitoStatsStage]",
+    "conversion": "AitoStatsConversion",
+    "date_from": "anyOf(string,null)",
+    "date_to": "anyOf(string,null)",
+    "invoicing": "AitoStatsInvoicing",
+    "stage_days": "[AitoStatsStageDays]",
+    "tracking": "AitoStatsTracking"
+   },
+   "required": [
+    "board",
+    "conversion",
+    "date_from",
+    "date_to",
+    "invoicing",
+    "stage_days",
+    "tracking"
+   ]
+  },
+  "AitoStatsStage": {
+   "properties": {
+    "column": "string",
+    "count": "integer",
+    "total": "number"
+   },
+   "required": [
+    "column",
+    "count",
+    "total"
+   ]
+  },
+  "AitoStatsStageDays": {
+   "properties": {
+    "column": "string",
+    "median_days": "anyOf(number,null)",
+    "sample": "integer"
+   },
+   "required": [
+    "column",
+    "median_days",
+    "sample"
+   ]
+  },
+  "AitoStatsTracking": {
+   "properties": {
+    "cards_viewed": "integer",
+    "cards_with_link": "integer",
+    "views": "integer"
+   },
+   "required": [
+    "cards_viewed",
+    "cards_with_link",
+    "views"
    ]
   },
   "AitoSummarizeRequest": {
@@ -11782,6 +11988,58 @@
     "usinage_quantity": "anyOf(integer,null)"
    },
    "required": []
+  },
+  "AitoTrackingLinkResponse": {
+   "properties": {
+    "tracking_url": "anyOf(string,null)"
+   },
+   "required": [
+    "tracking_url"
+   ]
+  },
+  "AitoTrackingResponse": {
+   "properties": {
+    "column": "string",
+    "done_at": "anyOf(string,null)",
+    "due_date": "anyOf(string,null)",
+    "invoice": "anyOf(string,null)",
+    "reference": "anyOf(string,null)",
+    "shipping": "anyOf(AitoTrackingShipping,null)",
+    "tasks": "[AitoTrackingTask]",
+    "updated_at": "string"
+   },
+   "required": [
+    "column",
+    "done_at",
+    "due_date",
+    "invoice",
+    "reference",
+    "shipping",
+    "tasks",
+    "updated_at"
+   ]
+  },
+  "AitoTrackingShipping": {
+   "properties": {
+    "island": "string",
+    "lta": "anyOf(string,null)",
+    "service": "string"
+   },
+   "required": [
+    "island",
+    "lta",
+    "service"
+   ]
+  },
+  "AitoTrackingTask": {
+   "properties": {
+    "quantity": "anyOf(integer,null)",
+    "title": "string"
+   },
+   "required": [
+    "quantity",
+    "title"
+   ]
   },
   "AmsLabelBody": {
    "properties": {

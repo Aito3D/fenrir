@@ -89,6 +89,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_last_name: null,
     shipping_phone: null,
     shipping_price: null,
+    shipping_lta: null,
     shipping_service_name: null,
     tracking_url: null,
     tracking_configured: false,
@@ -763,6 +764,7 @@ describe('AitoPage (backend board)', () => {
       shipping_last_name: null,
       shipping_phone: null,
       shipping_price: null,
+      shipping_lta: null,
       shipping_service_name: null,
       tracking_url: null,
       tracking_configured: false,
@@ -1302,6 +1304,9 @@ describe('AitoPage (backend board)', () => {
         );
         const body = createSpy.mock.calls[0][0] as Record<string, unknown>;
         expect(body).not.toHaveProperty('shipping_service');
+        // The waybill number is a PATCH-only field, typed once the parcel is
+        // handed over — a create never carries one.
+        expect(body).not.toHaveProperty('shipping_lta');
       });
 
       it('sends none of the shipping fields when the preview carries no shipment', async () => {
@@ -2131,4 +2136,73 @@ describe('print backlog badge', () => {
     expect(badge).toHaveTextContent('4.0 h to print');
     expect(badge).toHaveTextContent('≈ 0.3 d on 2 printers');
   });
+  // Duplicate belongs to the panel, but only the page can act on it: it closes
+  // the panel and opens the new-project drawer, which reads the seed the
+  // button just wrote (DuplicateProjectButton -> writeNewProjectDraft).
+  it('closes the panel and opens the drawer seeded from the duplicated card', async () => {
+    const duplicated: AitoTask = {
+      id: 501,
+      project_id: 12,
+      position: 0,
+      title: 'Capot moteur',
+      scan_cost: 500,
+      modelisation_cost: null,
+      usinage_cost: null,
+      impression_printer_id: null,
+      impression_filament_id: null,
+      impression_weight_g: null,
+      impression_time_min: null,
+      impression_quantity: 1,
+      impression_color: null,
+      impression_cost: null,
+      scan_done: true,
+      modelisation_done: false,
+      impression_done: false,
+      usinage_done: false,
+      created_at: '2026-07-27T00:00:00',
+      updated_at: '2026-07-27T00:00:00',
+    };
+    server.use(
+      http.get('/api/v1/aito/', () => HttpResponse.json([project])),
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([duplicated])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, connected: true, default_contact_id: 'walk-in', default_contact_name: 'Client de passage' }),
+      ),
+    );
+    // This file's beforeEach pins localStorage.getItem to null, which is right
+    // for every other test here and fatal for this one: the seed reaches the
+    // drawer THROUGH storage, so it needs a store that actually remembers.
+    const store: Record<string, string> = {};
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => store[key] ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key: string, value: string) => {
+      store[key] = String(value);
+    });
+    vi.mocked(localStorage.removeItem).mockImplementation((key: string) => {
+      delete store[key];
+    });
+
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await openCard(user);
+
+    const panel = await screen.findByRole('dialog');
+    await user.click(within(panel).getByRole('button', { name: /duplicate/i }));
+    await waitFor(() => expect(screen.getByTestId('drawer-section-work')).toBeInTheDocument());
+
+    // Panel gone, drawer up, carrying the card's work.
+    await waitFor(() => expect(screen.getByTestId('drawer-section-work')).toBeInTheDocument());
+    expect(screen.queryByTestId('record-created')).not.toBeInTheDocument();
+    // Restored rows open collapsed, naming themselves — same as any other
+    // draft the drawer restores from storage.
+    // Named in the row header and again in the right-hand rail's receipt.
+    expect(screen.getAllByText('Capot moteur').length).toBeGreaterThan(0);
+
+    // The description rides along as an already-hand-edited summary, so
+    // opening the Client section does NOT ask the AI to rewrite it — no
+    // /aito/summarize stub is registered here, and one would be needed if it
+    // did (see the createProject helper above).
+    await user.click(screen.getByTestId('drawer-section-client'));
+    expect(screen.getByLabelText('Project summary')).toHaveValue('Support GoPro');
+  });
+
 });

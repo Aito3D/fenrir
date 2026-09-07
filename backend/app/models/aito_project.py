@@ -228,6 +228,12 @@ class AitoProject(Base):
     # Frozen at attach time exactly like a task's cost. The Zoho rate is a
     # default, not a live figure: the quote bills what the operator was shown.
     shipping_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The Air Tahiti air waybill (lettre de transport aérien) number, typed
+    # once the parcel is handed over — days after the shipment was entered.
+    # Free text the client quotes at the freight counter; there is no carrier
+    # tracking site to link it to. Rides on the shipment: cleared with the
+    # other six columns when the shipment is detached, never set without one.
+    shipping_lta: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     # Content-fields revision, backing the detail panel's optimistic-
@@ -258,6 +264,7 @@ VERSIONED_FIELDS: frozenset[str] = frozenset(
         "shipping_last_name",
         "shipping_phone",
         "shipping_price",
+        "shipping_lta",
     }
 )
 

@@ -192,6 +192,7 @@ async def compute_tracking(
         shipping = AitoTrackingShipping(
             island=island_labels.get(project.shipping_island, project.shipping_island),
             service=shipping_names.get(service, SERVICE_LABELS.get(service, service)),
+            lta=project.shipping_lta,
         )
     updated_at = (await last_activity(db, project)).replace(microsecond=0)
     data = AitoTrackingResponse(

@@ -32,6 +32,7 @@ CREATE TABLE aito_projects (
 	client_is_company BOOLEAN, 
 	client_social_network VARCHAR(20), 
 	client_social_handle VARCHAR(100), 
+	tracking_token VARCHAR(64), 
 	quote_id VARCHAR(50), 
 	quote_number VARCHAR(50), 
 	quote_date VARCHAR(10), 
@@ -66,10 +67,12 @@ CREATE TABLE aito_projects (
 	shipping_last_name VARCHAR(100), 
 	shipping_phone VARCHAR(50), 
 	shipping_price FLOAT, 
+	shipping_lta VARCHAR(50), 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	version INTEGER DEFAULT '0' NOT NULL, 
-	PRIMARY KEY (id)
+	PRIMARY KEY (id), 
+	UNIQUE (tracking_token)
 );
 CREATE TABLE aito_tasks (
 	id INTEGER NOT NULL, 
@@ -104,6 +107,12 @@ CREATE TABLE aito_tasks (
 	usinage_done BOOLEAN DEFAULT '0' NOT NULL, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+CREATE TABLE aito_tracking_views (
+	id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	viewed_at DATETIME NOT NULL, 
 	PRIMARY KEY (id)
 );
 CREATE TABLE ams_labels (

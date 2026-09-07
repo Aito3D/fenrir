@@ -1106,6 +1106,7 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "shipping_last_name": None,
         "shipping_phone": None,
         "shipping_price": None,
+        "shipping_lta": None,
         "shipping_service_name": None,
         "version": 1,
         "created_at": now,
