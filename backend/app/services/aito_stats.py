@@ -166,7 +166,12 @@ async def _stage_days(
 async def _tracking(
     db: AsyncSession, projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
 ) -> AitoStatsTracking:
-    stmt = select(func.count(AitoTrackingView.id), func.count(func.distinct(AitoTrackingView.project_id)))
+    cards_with_link = sum(1 for p in projects.values() if p.tracking_token)
+    if not projects:
+        return AitoStatsTracking(views=0, cards_viewed=0, cards_with_link=cards_with_link)
+    stmt = select(func.count(AitoTrackingView.id), func.count(func.distinct(AitoTrackingView.project_id))).where(
+        AitoTrackingView.project_id.in_(projects)
+    )
     if start is not None:
         stmt = stmt.where(AitoTrackingView.viewed_at >= start)
     if end is not None:
@@ -175,7 +180,7 @@ async def _tracking(
     return AitoStatsTracking(
         views=int(views or 0),
         cards_viewed=int(cards or 0),
-        cards_with_link=sum(1 for p in projects.values() if p.tracking_token),
+        cards_with_link=cards_with_link,
     )
 
 

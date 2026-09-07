@@ -2872,11 +2872,13 @@ async def set_project_contacted(
 @router.get("/{project_id}/tracking-link", response_model=AitoTrackingLinkResponse)
 async def get_tracking_link(
     project_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """The panel's Copy button. An UPDATE, not a read: the first call mints
     the token. Null while `external_url` is unset."""
+    response.headers["Cache-Control"] = "no-store"
     project = await _get_active_project_or_404(db, project_id)
     url = await build_tracking_url(db, project)
     await db.commit()
@@ -2886,11 +2888,13 @@ async def get_tracking_link(
 @router.post("/{project_id}/tracking-token", response_model=AitoTrackingLinkResponse)
 async def regenerate_tracking_token(
     project_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Kill a leaked link: a new token, the old one 404s at once. The event
     carries no token — the log is readable by every aito:read holder."""
+    response.headers["Cache-Control"] = "no-store"
     project = await _get_active_project_or_404(db, project_id)
     project.tracking_token = mint_token()
     await record(db, project.id, "tracking.regenerated", actor_class="user", actor_name=_actor(current_user), detail={})

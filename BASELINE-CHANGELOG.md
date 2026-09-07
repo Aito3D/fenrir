@@ -10913,3 +10913,12 @@ user-approved 2026-09-06
 T-003 — log_view dedups the tracking-view log: a repeat open of the same project within 5 minutes
 writes no new AitoTrackingView row (the Stats pipeline widget's views count reads lower for repeat
 opens). No rate limit and no 429 were added — user-approved, narrowed, 2026-09-06.
+
+T-010 — the Stats pipeline widget's tracking views and cards-viewed counts exclude trashed cards
+(the query now filters on the active project ids, matching cards-with-link and the module's
+trashed-excluded rule); both numbers drop where a viewed card was trashed. User-approved 2026-09-06.
+
+T-004 — GET /aito/{id}/tracking-link and POST /aito/{id}/tracking-token respond with
+Cache-Control: no-store (the tracking URL is the public page's sole credential). The GET stays a
+GET and still mints the token on first read; the proposed POST conversion was declined.
+User-approved, narrowed, 2026-09-06.

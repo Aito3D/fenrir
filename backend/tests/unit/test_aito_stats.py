@@ -318,3 +318,24 @@ async def test_tracking_block_counts_views_in_range_distinct_cards_and_cards_wit
     assert body["tracking"] == {"views": 3, "cards_viewed": 2, "cards_with_link": 2}
     empty = (await async_client.get(f"{STATS}?date_from=2026-07-01&date_to=2026-07-31")).json()
     assert empty["tracking"] == {"views": 0, "cards_viewed": 0, "cards_with_link": 2}
+
+
+@pytest.mark.asyncio
+async def test_tracking_block_excludes_views_of_a_trashed_card(async_client, db_session):
+    """A card the client had already opened can later be trashed — a routine
+    board action — and the trashed card's views must not count towards `views`
+    or `cards_viewed`, matching `cards_with_link` (computed from active
+    projects only) and the module's trashed-excluded rule."""
+    a = await _create(async_client, description="a")
+    b = await _create(async_client, description="b")
+    trashed = await _create(async_client, description="trashed")
+    await _set(db_session, a, tracking_token="tok-a")
+    await _set(db_session, b, tracking_token="tok-b")
+    await _set(db_session, trashed, tracking_token="tok-trashed", status="deleted")
+    await _view(db_session, a, "2026-08-10 09:00:00")
+    await _view(db_session, b, "2026-08-12 09:00:00")
+    await _view(db_session, trashed, "2026-08-13 09:00:00")
+    await _view(db_session, trashed, "2026-08-14 09:00:00")
+
+    body = (await async_client.get(f"{STATS}?date_from=2026-08-01&date_to=2026-08-31")).json()
+    assert body["tracking"] == {"views": 2, "cards_viewed": 2, "cards_with_link": 2}

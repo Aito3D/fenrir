@@ -430,13 +430,17 @@ async def test_public_never_leaks_client_or_money(async_client, db_session):
 async def test_link_route_mints_and_regenerate_replaces(async_client, db_session):
     await _set_external_url(db_session, "https://aito.example")
     pid = await _create(async_client)
-    first = (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"]
+    first_resp = await async_client.get(f"/api/v1/aito/{pid}/tracking-link")
+    first = first_resp.json()["tracking_url"]
     assert first.startswith("https://aito.example/track/")
+    assert first_resp.headers["cache-control"] == "no-store"
     assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"] == first
     old_token = first.rsplit("/", 1)[1]
     assert (await async_client.get(TRACK + old_token)).status_code == 200
 
-    second = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()["tracking_url"]
+    second_resp = await async_client.post(f"/api/v1/aito/{pid}/tracking-token")
+    second = second_resp.json()["tracking_url"]
+    assert second_resp.headers["cache-control"] == "no-store"
     assert second != first
     assert (await async_client.get(TRACK + old_token)).status_code == 404
     assert (await async_client.get(TRACK + second.rsplit("/", 1)[1])).status_code == 200
@@ -449,7 +453,9 @@ async def test_link_route_mints_and_regenerate_replaces(async_client, db_session
 @pytest.mark.asyncio
 async def test_link_route_without_external_url_returns_null_but_mints(async_client, db_session):
     pid = await _create(async_client)
-    assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json() == {"tracking_url": None}
+    resp = await async_client.get(f"/api/v1/aito/{pid}/tracking-link")
+    assert resp.json() == {"tracking_url": None}
+    assert resp.headers["cache-control"] == "no-store"
     assert (await _project(db_session, pid)).tracking_token is not None
 
 
