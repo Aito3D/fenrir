@@ -64,18 +64,18 @@ def test_project_create_never_raises_anything_but_validation_error(
 
 
 @given(
-    quote_id=st.one_of(st.none(), NASTY),
+    client_email=st.one_of(st.none(), NASTY),
     description=st.one_of(st.none(), NASTY),
     expected_version=st.one_of(st.none(), st.integers()),
     shipping_lta=st.one_of(st.none(), NASTY),
 )
 def test_project_update_never_raises_anything_but_validation_error(
-    quote_id, description, expected_version, shipping_lta
+    client_email, description, expected_version, shipping_lta
 ):
     _accepts_or_rejects(
         AitoProjectUpdate,
         {
-            "quote_id": quote_id,
+            "client_email": client_email,
             "description": description,
             "expected_version": expected_version,
             "shipping_lta": shipping_lta,
@@ -124,7 +124,9 @@ def test_a_validated_quote_id_is_always_url_path_safe(value: str):
     AitoShippingInput's ``extra="ignore"`` config, so
     ``AitoProjectUpdate(quote_id=value)`` silently drops the kwarg instead of
     validating it, which is a property-wrote-the-wrong-model bug, not a
-    schema bug. See docs/superpowers/plans/PHASE1-FINDINGS.md.
+    schema bug — the earlier version of this file's AitoProjectUpdate
+    property asserted exactly that no-op by generating a quote_id kwarg,
+    which is why this test targets AitoProjectCreate instead.
     """
     try:
         model = AitoProjectCreate(description="d", client_id="c", client_name="n", quote_id=value)

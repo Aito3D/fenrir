@@ -5,6 +5,7 @@ added with a typo'd service key, or a duplicated label, fails here rather than
 at a freight counter.
 """
 
+import pytest
 from hypothesis import given, strategies as st
 
 from backend.app.services.aito_shipping import (
@@ -37,7 +38,7 @@ def test_every_service_has_a_label_and_at_least_one_island():
         assert grouped.get(service), f"{service} has no islands"
 
 
-@given(st.sampled_from(ISLAND_KEYS))
+@pytest.mark.parametrize("key", ISLAND_KEYS)
 def test_service_for_island_is_total_over_the_table(key: str):
     assert service_for_island(key) is not None
 

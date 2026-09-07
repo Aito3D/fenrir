@@ -9,7 +9,7 @@
 // generator without ever being collected or executed themselves.
 
 import fc from 'fast-check';
-import type { PricingDefaults } from '../../utils/pricing';
+import type { PricingDefaults, PricingFilament, PricingInputs, PricingPrinter } from '../../utils/pricing';
 
 /** Every field the engine reads, generated across its hostile range: the
  *  curve params are optional in the type and the engine is documented to
@@ -37,4 +37,39 @@ export const arbDefaults = (): fc.Arbitrary<PricingDefaults> =>
     qty_k: fc.double({ min: -10, max: 100, noNaN: true }),
     min_task_price: fc.double({ min: 0, max: 5000, noNaN: true }),
     rush_pct: fc.double({ min: 0, max: 100, noNaN: true }),
+  });
+
+export const arbFilament = (): fc.Arbitrary<PricingFilament> =>
+  fc.record({
+    cost_per_kg: fc.double({ min: 0, max: 20000, noNaN: true }),
+    sale_price_per_kg: fc.double({ min: 0, max: 40000, noNaN: true }),
+    difficulty_pct: fc.double({ min: 1, max: 400, noNaN: true }),
+  });
+
+export const arbPrinter = (): fc.Arbitrary<PricingPrinter> =>
+  fc.record({
+    purchase_price: fc.double({ min: 0, max: 1e6, noNaN: true }),
+    lifetime_years: fc.double({ min: 0.1, max: 20, noNaN: true }),
+    daily_usage_hours: fc.double({ min: 0.1, max: 24, noNaN: true }),
+    power_watts: fc.double({ min: 0, max: 3000, noNaN: true }),
+    repair_rate_pct: fc.double({ min: 0, max: 200, noNaN: true }),
+  });
+
+export const arbInputs = (): fc.Arbitrary<PricingInputs> =>
+  fc.record({
+    weight_g: fc.double({ min: 0, max: 20000, noNaN: true }),
+    printing_time_h: fc.double({ min: 0, max: 500, noNaN: true }),
+    quantity: fc.integer({ min: 1, max: 500 }),
+    modeling_hours: fc.double({ min: 0, max: 100, noNaN: true }),
+    modeling_base_price: fc.double({ min: 0, max: 50000, noNaN: true }),
+    prep_model_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    prep_slicing_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    prep_transfer_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    post_removal_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    post_support_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    post_additional_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    post_fulfillment_min: fc.double({ min: 0, max: 600, noNaN: true }),
+    stuff_amount: fc.double({ min: 0, max: 100000, noNaN: true }),
+    stuff_markup_pct: fc.double({ min: 0, max: 200, noNaN: true }),
+    rush: fc.boolean(),
   });

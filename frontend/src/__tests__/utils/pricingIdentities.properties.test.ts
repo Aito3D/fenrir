@@ -5,7 +5,7 @@
 // pricing.properties.test.ts; this file is about the promises between them.
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { arbDefaults } from './pricingArbitraries';
+import { arbDefaults, arbFilament, arbInputs, arbPrinter } from './pricingArbitraries';
 import {
   computePricing,
   filamentLineCost,
@@ -13,47 +13,9 @@ import {
   unitPriceCurve,
   breakEvenDiscount,
   CURVE_QUANTITIES,
-  type PricingFilament,
-  type PricingInputs,
-  type PricingPrinter,
 } from '../../utils/pricing';
 
 const RUNS = { seed: 42, numRuns: 150 } as const;
-
-const arbFilament = (): fc.Arbitrary<PricingFilament> =>
-  fc.record({
-    cost_per_kg: fc.double({ min: 0, max: 20000, noNaN: true }),
-    sale_price_per_kg: fc.double({ min: 0, max: 40000, noNaN: true }),
-    difficulty_pct: fc.double({ min: 1, max: 400, noNaN: true }),
-  });
-
-const arbPrinter = (): fc.Arbitrary<PricingPrinter> =>
-  fc.record({
-    purchase_price: fc.double({ min: 0, max: 1e6, noNaN: true }),
-    lifetime_years: fc.double({ min: 0.1, max: 20, noNaN: true }),
-    daily_usage_hours: fc.double({ min: 0.1, max: 24, noNaN: true }),
-    power_watts: fc.double({ min: 0, max: 3000, noNaN: true }),
-    repair_rate_pct: fc.double({ min: 0, max: 200, noNaN: true }),
-  });
-
-const arbInputs = (): fc.Arbitrary<PricingInputs> =>
-  fc.record({
-    weight_g: fc.double({ min: 0, max: 20000, noNaN: true }),
-    printing_time_h: fc.double({ min: 0, max: 500, noNaN: true }),
-    quantity: fc.integer({ min: 1, max: 500 }),
-    modeling_hours: fc.double({ min: 0, max: 100, noNaN: true }),
-    modeling_base_price: fc.double({ min: 0, max: 50000, noNaN: true }),
-    prep_model_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    prep_slicing_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    prep_transfer_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    post_removal_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    post_support_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    post_additional_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    post_fulfillment_min: fc.double({ min: 0, max: 600, noNaN: true }),
-    stuff_amount: fc.double({ min: 0, max: 100000, noNaN: true }),
-    stuff_markup_pct: fc.double({ min: 0, max: 200, noNaN: true }),
-    rush: fc.boolean(),
-  });
 
 const MONEY_FIELDS = [
   'filament_cost', 'depreciation_cost', 'energy_cost', 'repairs_cost',
@@ -82,7 +44,7 @@ describe('computePricing is total', () => {
   it('never charges less tax-inclusive than pre-tax', () => {
     fc.assert(
       fc.property(arbInputs(), arbFilament(), arbPrinter(), arbDefaults(), (i, f, p, d) => {
-        const r = computePricing(i, f, p, { ...d, tax_pct: Math.abs(d.tax_pct) });
+        const r = computePricing(i, f, p, d);
         expect(r.total_ttc).toBeGreaterThanOrEqual(r.total_ht - 1e-6);
         expect(r.total_ttc_qty).toBeGreaterThanOrEqual(r.total_ht_qty - 1e-6);
       }),
@@ -105,6 +67,33 @@ describe('computePricing is total', () => {
         const floor = d.min_task_price ?? 0;
         if (r.floor_applied) {
           expect(r.total_ht_qty).toBeGreaterThanOrEqual(floor - 1e-6);
+        }
+      }),
+      RUNS,
+    );
+  });
+
+  // Converse of the property above: `floor_applied` isn't just true whenever
+  // it's safe to be true (a mutation pinning it to `false` unconditionally
+  // would still pass "applies the floor whenever it says it did" — that
+  // property only checks the true branch). pricing.ts computes
+  // `floor_shortfall = max(0, min_task_price - pre_floor_ht * quantity)` and
+  // `floor_applied = floor_shortfall > 0`, i.e. floor_applied must be true
+  // whenever the PRE-floor task total falls short of min_task_price.
+  // `margin_global` on the returned result is already post-floor (the lift
+  // is added in place), so the pre-floor value is rebuilt from
+  // `margin_multiplier`, which computePricing never adjusts for the floor:
+  // pre-floor margin_global ≡ total_cost * (margin_multiplier - 1).
+  it('applies the floor whenever the pre-floor task total genuinely falls short of it', () => {
+    fc.assert(
+      fc.property(arbInputs(), arbFilament(), arbPrinter(), arbDefaults(), (i, f, p, d) => {
+        const r = computePricing(i, f, p, d);
+        const floor = d.min_task_price ?? 0;
+        const preFloorMarginGlobal = r.total_cost * (r.margin_multiplier - 1);
+        const preFloorHt = r.total_cost + preFloorMarginGlobal + r.margin_filament + r.margin_stuff;
+        const preFloorTotal = preFloorHt * r.quantity;
+        if (preFloorTotal < floor - 1e-6) {
+          expect(r.floor_applied).toBe(true);
         }
       }),
       RUNS,
@@ -165,6 +154,31 @@ describe('discount and quantity curves are monotone', () => {
         expect(be).toBeLessThanOrEqual(1);
         const priceAtBe = r.total_ht * (1 - be);
         expect(Math.abs(priceAtBe - r.total_cost) / Math.max(1, r.total_cost)).toBeLessThan(1e-6);
+      }),
+      RUNS,
+    );
+  });
+
+  // breakEvenDiscount's null return is behaviour-bearing now — it decides
+  // whether CalculatorDiscountTable shows the break-even line and (via
+  // belowCost's fallback) whether every column gets tinted red — so pin
+  // WHEN it is null, not just what holds when it isn't. pricing.ts:
+  // null iff total_ht <= 0 OR total_cost > total_ht; a number otherwise. An
+  // unconditional-null mutation of breakEvenDiscount fails the `else`
+  // branch here (be would never be a number even when total_ht > total_cost
+  // > 0), and a never-null mutation fails the `if` branch.
+  it('breakEvenDiscount is null exactly when total_ht <= 0 or total_cost > total_ht', () => {
+    fc.assert(
+      fc.property(arbInputs(), arbFilament(), arbPrinter(), arbDefaults(), (i, f, p, d) => {
+        const r = computePricing(i, f, p, d);
+        const be = breakEvenDiscount(r);
+        const shouldBeNull = r.total_ht <= 0 || r.total_cost > r.total_ht;
+        if (shouldBeNull) {
+          expect(be).toBeNull();
+        } else {
+          expect(be).not.toBeNull();
+          expect(typeof be).toBe('number');
+        }
       }),
       RUNS,
     );

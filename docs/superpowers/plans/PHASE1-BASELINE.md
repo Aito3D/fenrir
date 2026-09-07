@@ -4,6 +4,15 @@ Recorded 2026-09-07 on commit `ef8194bbc74db308031eefb76be99914b16e7383` (tip
 of `worktree-aito-calc-test-hardening` at the time of this task, before the
 Task 7 commit). No later phase may lower any number here.
 
+The Aito frontend row (92.13% / 90.92%) was produced by the `coverage_aito.sh`
+that ALREADY includes `frontend/src/utils/projectSeed.ts` in its
+`--coverage.include` scope — that scope-hole fix landed in this same baseline
+commit, ahead of (and independent from) the code-side Task 7 commit this
+baseline otherwise predates. A future ratchet must diff against a
+`coverage_aito.sh` run with `projectSeed.ts` in scope, not against the older
+pre-scope-fix script described in "Pre-phase-1 reference" below, or the
+denominators won't match.
+
 | Scope | Statements | Branches | Command |
 | --- | --- | --- | --- |
 | Aito backend | 99.05% (2926/2954) | 95.97% (739/770) | `bash tools/coverage_aito.sh backend` |
