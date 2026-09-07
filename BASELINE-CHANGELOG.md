@@ -10922,3 +10922,10 @@ T-004 — GET /aito/{id}/tracking-link and POST /aito/{id}/tracking-token respon
 Cache-Control: no-store (the tracking URL is the public page's sole credential). The GET stays a
 GET and still mints the token on first read; the proposed POST conversion was declined.
 User-approved, narrowed, 2026-09-06.
+
+## Campaign 12 · Round 2 (approved 2026-09-06)
+
+T-014 — calculator reads (Permission.CALCULATOR_READ: GET /calculator/filaments, /defaults,
+/printers, /insights, ...) are user-token only; an API key now gets 403 "API keys cannot be used
+for administrative operations" there, matching the existing AITO_READ carve-out. User-approved
+2026-09-06.
