@@ -373,10 +373,19 @@ export interface DiscountColumn {
 
 /** Largest discount that still covers total_cost on the pre-tax price
  *  (collected tax is owed to the tax authority, not profit) — beyond it every
- *  sale loses money. Returns null when there is no price yet. */
+ *  sale loses money. Returns null when there is no price yet, or when the
+ *  job is already selling below cost at 0% discount (e.g. a filament sale
+ *  price backfilled under its own cost, see margin_filament above): no
+ *  discount, not even 0%, breaks even, so there is no meaningful answer.
+ *  Previously this clamped to 0 via Math.max, which claimed "0% discount
+ *  breaks even" for an already-underwater price — CalculatorDiscountTable
+ *  hides the break-even line entirely on null, which is the correct
+ *  behavior here (the below-cost state is still shown via potential_profit
+ *  in the discount table, independent of this function). */
 export function breakEvenDiscount(result: PricingResult): number | null {
   if (result.total_ht <= 0) return null;
-  return Math.max(0, 1 - result.total_cost / result.total_ht);
+  if (result.total_cost > result.total_ht) return null;
+  return 1 - result.total_cost / result.total_ht;
 }
 
 /** Profit implied by a customer-facing target price (tax included): the net
