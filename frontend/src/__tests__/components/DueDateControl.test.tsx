@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { render } from '../utils';
 import { DueDateControl } from '../../components/aito/DueDateControl';
-import { addWorkingDays, localDateKey } from '../../utils/date';
+import { addWorkingDays, localDateKey, parseLocalDateKey } from '../../utils/date';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
@@ -67,43 +67,129 @@ const baseProject: AitoProject = {
   updated_at: '2026-07-27T00:00:00',
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  window.matchMedia = fineMatchMedia;
+});
+
+// The setup file's matchMedia matches nothing, which is a fine pointer as far
+// as the control is concerned. Tests that want a phone swap in this one.
+const fineMatchMedia = window.matchMedia;
+function pretendCoarsePointer() {
+  window.matchMedia = (query: string) => ({ ...fineMatchMedia(query), matches: query === '(pointer: coarse)' });
+}
+
+const suggestion = () => addWorkingDays(new Date(), 2);
+const cellName = (key: string) =>
+  parseLocalDateKey(key).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' });
+const pill = () => screen.getByRole('button', { name: /set a date/i });
+const stat = () => screen.getByRole('button', { name: /promised date/i });
+const picker = () => screen.getByRole('dialog', { name: /promised date/i });
+
 
 describe('DueDateControl', () => {
-  it('saves a picked date through the due-date route', async () => {
-    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: '2026-09-12' });
+  it('offers one action when nothing is promised: a Set-a-date pill', () => {
+    // No em dash over a helper line — the pill is the whole empty state, and
+    // it is a button, so it reads as the thing to press.
     render(<DueDateControl project={baseProject} />);
-    expect(screen.queryByRole('button', { name: /clear the date/i })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: '2026-09-12' } });
+    expect(pill()).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(pill()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('due-date-value')).not.toBeInTheDocument();
+    expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'none');
+  });
+
+  it('opens the in-page picker on the suggestion two working days out, without promising anything', async () => {
+    // The browser would open on today, which is the one day the answer is
+    // never. The suggestion is where focus lands — outlined, not filled —
+    // and no PATCH goes out until a day is actually picked.
+    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue(baseProject);
+    render(<DueDateControl project={baseProject} />);
+    fireEvent.click(pill());
+    expect(picker()).toBeInTheDocument();
+    expect(pill()).toHaveAttribute('aria-expanded', 'true');
+    const suggested = screen.getByRole('gridcell', { name: new RegExp(`${cellName(suggestion())} \\(suggested\\)`) });
+    expect(suggested).toHaveFocus();
+    expect(suggested).toHaveAttribute('aria-selected', 'false');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('suggests a weekday: two working days from a Friday is Tuesday', () => {
+    // The rule the user asked for, pinned through the component rather than
+    // only through `addWorkingDays`, so wiring the wrong helper here fails.
+    // shouldAdvanceTime, so React's own scheduling still runs under the
+    // frozen clock rather than deadlocking on a timer that never fires.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 8, 4, 9, 0, 0)); // Friday 2026-09-04
+    render(<DueDateControl project={baseProject} />);
+    fireEvent.click(pill());
+    expect(screen.getByRole('gridcell', { name: /Sep 8, 2026 \(suggested\)/ })).toHaveFocus();
+    vi.useRealTimers();
+  });
+
+  it('saves a picked day through the due-date route, closes, and hands focus to the stat', async () => {
+    const key = suggestion();
+    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: key });
+    const { rerender } = render(<DueDateControl project={baseProject} />);
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole('gridcell', { name: new RegExp(cellName(key)) }));
     // `waitFor` absorbs useOptimisticBoardMutation's own microtask chain
     // (onMutate awaits cancelQueries before mutationFn runs) — same reason
     // AitoQuoteStatusActions.test.tsx waits rather than asserting inline.
-    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, '2026-09-12'));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, key));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The board row comes back with the date; the trigger is now the stat,
+    // and that is what takes the focus the picker gave up.
+    rerender(<DueDateControl project={{ ...baseProject, due_date: key }} />);
+    expect(stat()).toHaveFocus();
   });
 
-  it('shows the stored date and clears it with null', async () => {
+  it('reopens from the stat and clears from the picker', async () => {
     const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: null });
     render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
-    expect(screen.getByLabelText(/promised date/i)).toHaveValue('2026-09-12');
-    fireEvent.click(screen.getByRole('button', { name: /clear the date/i }));
+    expect(screen.queryByRole('button', { name: /clear the date/i })).not.toBeInTheDocument();
+    fireEvent.click(stat());
+    expect(screen.getByRole('gridcell', { name: 'Sep 12, 2026' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /^clear$/i }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, null));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('does not call the API when the picker is re-picked to the stored date', async () => {
     const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue(baseProject);
     render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
-    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: '2026-09-12' } });
+    fireEvent.click(stat());
+    fireEvent.click(screen.getByRole('gridcell', { name: 'Sep 12, 2026' }));
     // A negative needs a beat: the mutation's own onMutate awaits
     // cancelQueries, so an inline assertion would pass even if the call HAD
     // been made. One macrotask is past that microtask chain.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(spy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('reads the promise back as a formatted date, not as the browser field', () => {
-    // The native input is still there — it is the picker — but at opacity 0
-    // over the stat. What the operator reads is this, and it is the whole
-    // point of the overlay: the field itself renders "mm/dd/yyyy".
+  it('closes on Escape and gives focus back to the trigger', () => {
+    render(<DueDateControl project={baseProject} />);
+    fireEvent.click(pill());
+    fireEvent.keyDown(picker(), { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(pill()).toHaveFocus();
+  });
+
+  it('closes on a press outside, and a press on the trigger toggles rather than reopens', () => {
+    render(<DueDateControl project={baseProject} />);
+    fireEvent.click(pill());
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(pill());
+    expect(picker()).toBeInTheDocument();
+    fireEvent.pointerDown(pill());
+    fireEvent.click(pill());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('reads the promise back as a formatted date under the countdown', () => {
     render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
     expect(screen.getByTestId('due-date-date')).toHaveTextContent('Sep 12, 2026');
   });
@@ -124,38 +210,6 @@ describe('DueDateControl', () => {
     expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'today');
   });
 
-  it('opens the picker two working days out, without promising anything', async () => {
-    // The browser would open an empty date field on today, which is the one
-    // day the answer is never. The suggestion lives in the input — so the
-    // picker lands on it — while the stat still reads "—" and "Set a date",
-    // and no PATCH goes out until a day is actually picked.
-    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue(baseProject);
-    render(<DueDateControl project={baseProject} />);
-    expect(screen.getByLabelText(/promised date/i)).toHaveValue(addWorkingDays(new Date(), 2));
-    expect(screen.getByTestId('due-date-value')).toHaveTextContent('—');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it('suggests a weekday: two working days from a Friday is Tuesday', () => {
-    // The rule the user asked for, pinned through the component rather than
-    // only through `addWorkingDays`, so wiring the wrong helper here fails.
-    // shouldAdvanceTime, so React's own scheduling still runs under the
-    // frozen clock rather than deadlocking on a timer that never fires.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(2026, 8, 4, 9, 0, 0)); // Friday 2026-09-04
-    render(<DueDateControl project={baseProject} />);
-    expect(screen.getByLabelText(/promised date/i)).toHaveValue('2026-09-08');
-    vi.useRealTimers();
-  });
-
-  it('asks for a date when none is set', () => {
-    render(<DueDateControl project={baseProject} />);
-    expect(screen.getByTestId('due-date-value')).toHaveTextContent('—');
-    expect(screen.getByTestId('due-date-empty')).toHaveTextContent(/set a date/i);
-    expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'none');
-  });
-
   it('carries the board ramp: a promise in the past is late, and red', () => {
     // Same `dueDateLevel` the card badge uses, so "late" is one colour across
     // the board and the panel rather than two components' private opinions.
@@ -173,21 +227,39 @@ describe('DueDateControl', () => {
     // know when the job was promised. What goes is the picker and the clear.
     render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} canUpdate={false} />);
     expect(screen.getByTestId('due-date-date')).toHaveTextContent('Sep 12, 2026');
-    expect(screen.queryByLabelText(/promised date/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /clear the date/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('ignores the part-typed years a date input emits while a year is typed', async () => {
-    // Typing "2026" into the year field emits a change per digit, each one a
-    // syntactically valid date. Only the last is a promise; the rest would be
-    // three extra PATCHes, three story events and a card drawn overdue.
-    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: '2026-09-12' });
-    render(<DueDateControl project={baseProject} />);
-    const input = screen.getByLabelText(/promised date/i);
-    for (const value of ['0002-09-12', '0020-09-12', '0202-09-12', '2026-09-12']) {
-      fireEvent.change(input, { target: { value } });
-    }
-    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, '2026-09-12'));
-    expect(spy).toHaveBeenCalledTimes(1);
+  describe('on a coarse pointer', () => {
+    // A phone keeps the OS picker: a transparent native input over the stat,
+    // prefilled with the suggestion so the picker lands on a weekday, and an
+    // always-visible clear, since there is no popover to clear from.
+    it('keeps the native input, prefilled with the suggestion and saving on change', async () => {
+      pretendCoarsePointer();
+      const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: '2026-09-12' });
+      render(<DueDateControl project={baseProject} />);
+      const input = await screen.findByLabelText(/promised date/i);
+      expect(input).toHaveValue(suggestion());
+      fireEvent.click(pill());
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      fireEvent.change(input, { target: { value: '2026-09-12' } });
+      await waitFor(() => expect(spy).toHaveBeenCalledWith(12, '2026-09-12'));
+    });
+
+    it('clears with the X and ignores the part-typed years a date input emits', async () => {
+      pretendCoarsePointer();
+      const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: null });
+      render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
+      const input = await screen.findByLabelText(/promised date/i);
+      // Typing "2027" into the year field emits a change per digit, each one
+      // a syntactically valid date. Only the last is a promise.
+      for (const value of ['0002-09-12', '0020-09-12', '0202-09-12']) {
+        fireEvent.change(input, { target: { value } });
+      }
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(spy).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: /clear the date/i }));
+      await waitFor(() => expect(spy).toHaveBeenCalledWith(12, null));
+    });
   });
 });

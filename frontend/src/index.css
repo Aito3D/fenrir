@@ -726,6 +726,24 @@ body {
   }
 }
 
+/* The Aito date-picker popover: scales in from its top-right anchor on the
+   signature curve. 160 ms, because a popover that arrives slower than the
+   click that asked for it reads as lag, not as motion. */
+@keyframes aito-pop-in {
+  from { opacity: 0; transform: scale(0.98) translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+.animate-aito-pop-in {
+  animation: aito-pop-in 0.16s var(--ease-signature);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aito-pop-in {
+    animation: none;
+  }
+}
+
 /* Modal entrance — referenced by SpoolBuddy modals and the calculator
    settings modal. Tailwind v4 does not load tailwind.config.js (no @config
    directive), so these utilities must live here. */

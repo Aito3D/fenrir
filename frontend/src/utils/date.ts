@@ -627,3 +627,24 @@ export function addWorkingDays(from: Date, count: number): string {
   }
   return localDateKey(date);
 }
+
+/** Which weekday a locale starts its week on, as `Date#getDay()` numbers
+ *  (0 = Sunday). The browser's own week data is asked first — that is what
+ *  makes a French operator see Monday first and an American one Sunday
+ *  without a table of our own — and a runtime without it (jsdom, an old
+ *  Safari) falls back to Sunday for English and Monday for everything else,
+ *  which is the right answer for every language the app ships. */
+export function weekStartFor(lang: string): number {
+  try {
+    const locale = new Intl.Locale(lang) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay?: number };
+      weekInfo?: { firstDay?: number };
+    };
+    const info = locale.getWeekInfo?.() ?? locale.weekInfo;
+    // Intl counts 1 = Monday … 7 = Sunday; getDay() counts 0 = Sunday.
+    if (info?.firstDay) return info.firstDay % 7;
+  } catch {
+    /* an unknown tag — fall through to the language rule */
+  }
+  return lang.startsWith('en') ? 0 : 1;
+}
