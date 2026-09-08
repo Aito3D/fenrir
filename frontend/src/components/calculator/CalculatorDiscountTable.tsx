@@ -24,8 +24,13 @@ export function CalculatorDiscountTable({
   const { t } = useTranslation();
   const matrix = useMemo(() => discountMatrix(result), [result]);
   const breakEven = breakEvenDiscount(result);
-  // Columns discounted past break-even sell below cost — tint them.
-  const belowCost = (discount: number) => breakEven !== null && discount > breakEven + 1e-9;
+  // Columns discounted past break-even sell below cost — tint them. When
+  // breakEven is null because the job is ALREADY selling below cost at 0%
+  // discount (total_cost > total_ht — see breakEvenDiscount), every column
+  // is below cost, not none: falling back to total_cost > total_ht keeps
+  // the red tinting visible in exactly the case the operator most needs it.
+  const belowCost = (discount: number) =>
+    breakEven === null ? result.total_cost > result.total_ht : discount > breakEven + 1e-9;
   const colCls = (discount: number) => (belowCost(discount) ? ' bg-status-error/5' : '');
 
   return (

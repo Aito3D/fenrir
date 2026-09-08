@@ -131,7 +131,10 @@ export function CardView({
 
   // Hover-intent reveal of a clamped description and of the per-task rows
   // (collapsed, the card shows one summary line for all its tasks — see
-  // TaskStepsSummary). The card floats over its
+  // TaskStepsSummary). The dwell starts from the name row or the body only —
+  // never from the footer, whose buttons must not move under a pointer that
+  // is about to press them — and ends when the pointer leaves the whole
+  // card. The card floats over its
   // neighbours rather than growing in place: the shell holds the collapsed
   // height so the column never reflows, which is what stops the cards below
   // jumping out from under the pointer that is resting on this one.
@@ -171,6 +174,13 @@ export function CardView({
       setExpanded(true);
     }, HOVER_REVEAL_MS);
   }, [clearTimer, overlay, placeholder, hasTasks]);
+
+  // Leaving a trigger zone drops a PENDING dwell but leaves an open reveal
+  // alone: a pointer that crossed the description on its way to a footer
+  // button must not get the reveal a moment later, on the button; while one
+  // that read the description, got the reveal, and then moved down to the
+  // button must keep it (`endHoverIntent`, on the shell, handles the leave).
+  const cancelHoverIntent = clearTimer;
 
   const endHoverIntent = useCallback(() => {
     clearTimer();
@@ -244,7 +254,11 @@ export function CardView({
   return (
     <div
       data-testid="aito-card-shell"
-      onMouseEnter={startHoverIntent}
+      // The dwell STARTS only from the name row and the body (see
+      // `startHoverIntent` on those two zones), but it ENDS here: once open,
+      // the reveal lives until the pointer leaves the whole card, so moving
+      // down onto the footer's buttons does not collapse it and pull the
+      // footer back up out from under the pointer.
       onMouseLeave={endHoverIntent}
       // A press states an intent to OPEN the card, which is the opposite of
       // wanting to read it where it lies — so it abandons the reveal outright,
@@ -287,7 +301,12 @@ export function CardView({
           paintedFlag ? FLAG_CARD_CLS[paintedFlag] : ''
         } ${awaitingContact ? 'contact-pending' : ''}`}
       >
-        <div className="flex items-center gap-2 px-3 pt-2.5">
+        <div
+          data-testid="aito-card-name-row"
+          className="flex items-center gap-2 px-3 pt-2.5"
+          onMouseEnter={startHoverIntent}
+          onMouseLeave={cancelHoverIntent}
+        >
           {/* `aria-hidden` with the label carried in text beside it, so the
               split is not sighted-users-only; null reads as an individual,
               matching the panel. strokeWidth 2.5 to match the medium weight
@@ -392,7 +411,12 @@ export function CardView({
           )}
 
           <div className="relative z-10">
-            <div className="px-3 pt-2.5 pb-1.5">
+            <div
+              data-testid="aito-card-body"
+              className="px-3 pt-2.5 pb-1.5"
+              onMouseEnter={startHoverIntent}
+              onMouseLeave={cancelHoverIntent}
+            >
               <p
                 ref={descriptionRef}
                 data-testid="aito-card-description"
@@ -420,7 +444,18 @@ export function CardView({
               )}
             </div>
 
-            <div className="px-3 pb-2 flex items-center justify-between gap-2">
+            {/* Not a trigger zone, on purpose. The footer holds the injected
+                action buttons, and a hold-to-confirm press takes about as long
+                as the dwell — its pointerdown stops propagation, so the shell
+                never hears the press and cannot cancel the reveal. With the
+                dwell running from the footer, the card grew mid-hold, the
+                footer slid down out from under the pointer, and the hold was
+                cancelled by its own success. Hovering a button must never
+                move the button. */}
+            <div
+              data-testid="aito-card-footer"
+              className="px-3 pb-2 flex items-center justify-between gap-2"
+            >
               <div className="flex items-baseline gap-2 min-w-0">
                 {/* On a finished card waiting on a phone call, the one thing
                     outstanding is that nobody has rung the client, so it sits

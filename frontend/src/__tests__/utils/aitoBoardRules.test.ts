@@ -65,7 +65,7 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(16);
+    expect(summariseCases).toHaveLength(316);
   });
 
   it('stages every service exactly once', () => {

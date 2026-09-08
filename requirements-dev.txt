@@ -8,6 +8,11 @@ pytest-timeout>=2.4.0
 # shards via --splits/--group; falls back to test-name hashing on the first
 # run, and uses recorded durations on subsequent runs (.test_durations).
 pytest-split>=0.9.0
+# Property-based testing for the pure cores (pricing/board-rule mirrors,
+# schema validators). Seeded and bounded via the `ci` profile registered in
+# backend/tests/conftest_hypothesis.py — see that file for why the deadline
+# is disabled.
+hypothesis>=6.100
 httpx>=0.27.0
 # Exact pin, deliberately. A floor lets a contributor's older ruff enforce rules
 # the current one has retired (UP038 was removed — PEP 604 in isinstance() is

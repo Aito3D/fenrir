@@ -14,6 +14,7 @@ regenerated, and regenerating fails the frontend test until the mirror is
 updated. Neither language can move alone.
 """
 
+import random
 from itertools import combinations
 from typing import Any
 
@@ -194,6 +195,38 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
 )
 
 
+def _generated_shapes(count: int = 300) -> list[tuple[str, list[dict[str, Any]]]]:
+    """A seeded pseudo-random corpus of task shapes.
+
+    The hand-written `_SUMMARISE_SHAPES` cover the cases someone thought of.
+    This covers the ones nobody did: every combination of null-vs-zero costs,
+    done flags, discounts, rush and print minutes, across multi-task cards.
+
+    `random.Random(20260907)` — a fixed seed, so regenerating the fixture on
+    another machine produces byte-identical JSON and the frontend replay test
+    stays deterministic. Bump the seed only to deliberately re-roll the
+    corpus, never as a way to make a failing case disappear.
+    """
+    rng = random.Random(20260907)
+    shapes: list[tuple[str, list[dict[str, Any]]]] = []
+    for n in range(count):
+        tasks = []
+        for _ in range(rng.randint(1, 3)):
+            shape: dict[str, Any] = {"title": rng.choice(["", "Capot", "Pièce 2"])}
+            for service in SERVICES:
+                # None (service absent) vs 0 (quoted free) is the distinction
+                # the mirror most often gets wrong, so both are common draws.
+                shape[f"{service}_cost"] = rng.choice([None, None, 0, 0.0, 1250.0, 99.99])
+                shape[f"{service}_done"] = rng.choice([True, False])
+                shape[f"{service}_discount_pct"] = rng.choice([None, 0, 10, 50, 100])
+            shape["impression_rush"] = rng.choice([True, False])
+            shape["impression_time_min"] = rng.choice([None, 0, 45, 180])
+            shape["impression_quantity"] = rng.choice([None, 1, 2, 5])
+            tasks.append(shape)
+        shapes.append((f"gen-{n}", tasks))
+    return shapes
+
+
 def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
     """The shape written to JSON — every field explicit, so the TS side never
     has to guess a default."""
@@ -211,7 +244,7 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
 
 def _summarise_cases() -> list[dict[str, Any]]:
     cases = []
-    for name, shapes in _SUMMARISE_SHAPES:
+    for name, shapes in list(_SUMMARISE_SHAPES) + _generated_shapes():
         summary = summarise([_Task(**shape) for shape in shapes])
         cases.append(
             {

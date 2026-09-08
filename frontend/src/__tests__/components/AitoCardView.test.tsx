@@ -653,7 +653,7 @@ describe('CardView — hover to read a clamped description', () => {
     const card = document.querySelector('[data-aito-card]') as HTMLElement;
     setCardHeight(card, 180);
 
-    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).not.toHaveClass('line-clamp-3');
@@ -691,7 +691,7 @@ describe('CardView — hover to read a clamped description', () => {
     expect(screen.queryByTestId('aito-task-row')).not.toBeInTheDocument();
 
     const shell = screen.getByTestId('aito-card-shell');
-    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
 
     const rows = screen.getAllByTestId('aito-task-row');
@@ -712,7 +712,7 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
     const shell = screen.getByTestId('aito-card-shell');
 
-    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(900));
     // Asserted BEFORE the pointer leaves, or this passes for the wrong reason:
     // a leave collapses the card anyway, so checking only afterwards would hold
@@ -731,7 +731,7 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
     const shell = screen.getByTestId('aito-card-shell');
 
-    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
     fireEvent.mouseLeave(shell);
 
@@ -745,7 +745,7 @@ describe('CardView — hover to read a clamped description', () => {
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, false);
 
-    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).toHaveClass('line-clamp-3');
@@ -762,7 +762,7 @@ describe('CardView — hover to read a clamped description', () => {
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
 
-    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).toHaveClass('line-clamp-3');
@@ -776,7 +776,7 @@ describe('CardView — hover to read a clamped description', () => {
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
 
-    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).toHaveClass('line-clamp-3');
@@ -803,7 +803,7 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
     const shell = screen.getByTestId('aito-card-shell');
 
-    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(700));
     fireEvent.pointerDown(shell);
     act(() => vi.advanceTimersByTime(5000));
@@ -822,7 +822,7 @@ describe('CardView — hover to read a clamped description', () => {
     setCardHeight(card, 180);
     const shell = screen.getByTestId('aito-card-shell');
 
-    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
     expect(description).not.toHaveClass('line-clamp-3');
 
@@ -842,12 +842,98 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
     const shell = screen.getByTestId('aito-card-shell');
 
-    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-body'));
     act(() => vi.advanceTimersByTime(1000));
     fireEvent.pointerDown(shell);
     act(() => vi.advanceTimersByTime(10000));
 
     expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('starts the dwell from the name row as well as the body', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-name-row'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).not.toHaveClass('line-clamp-3');
+  });
+
+  it('never grows a card whose pointer is resting on the footer', () => {
+    // The footer holds the injected action buttons. A hold-to-confirm button
+    // takes about as long as the dwell, and its pointerdown stops propagation
+    // so the shell never hears about the press: the reveal used to fire
+    // mid-hold, push the footer down out from under the pointer and cancel
+    // the hold. The footer is therefore not a trigger zone at all.
+    const action = (
+      <button type="button" onPointerDown={(e) => e.stopPropagation()}>
+        hold
+      </button>
+    );
+    render(<CardView project={project} onExpand={vi.fn()} actions={action} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-footer'));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'hold' }));
+    act(() => vi.advanceTimersByTime(5000));
+
+    expect(description).toHaveClass('line-clamp-3');
+    expect(shell.style.height).toBe('');
+  });
+
+  it('abandons a pending dwell when the pointer moves from the body to the footer', () => {
+    // Otherwise a pointer that crossed the description on its way to a button
+    // would still get the reveal a moment later, while it sits on the button.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const body = screen.getByTestId('aito-card-body');
+
+    const footer = screen.getByTestId('aito-card-footer');
+
+    fireEvent.mouseEnter(body);
+    act(() => vi.advanceTimersByTime(700));
+    // `relatedTarget` matters: React derives onMouseLeave from mouseout, and a
+    // mouseout with no relatedTarget reads as the pointer leaving the window,
+    // which fires the SHELL's leave too and would clear the timer for the
+    // wrong reason. A pointer sliding body → footer names the footer.
+    fireEvent.mouseLeave(body, { relatedTarget: footer });
+    fireEvent.mouseEnter(footer);
+    act(() => vi.advanceTimersByTime(5000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('keeps an open reveal while the pointer moves down to the footer', () => {
+    // Collapsing the moment the pointer leaves the body would pull the footer
+    // back up out from under it. The reveal lives until the pointer leaves the
+    // whole card.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    setCardHeight(card, 180);
+    const shell = screen.getByTestId('aito-card-shell');
+    const body = screen.getByTestId('aito-card-body');
+
+    const footer = screen.getByTestId('aito-card-footer');
+
+    fireEvent.mouseEnter(body);
+    act(() => vi.advanceTimersByTime(1000));
+    fireEvent.mouseLeave(body, { relatedTarget: footer });
+    fireEvent.mouseEnter(footer);
+
+    expect(description).not.toHaveClass('line-clamp-3');
+    expect(card).toHaveClass('absolute');
+
+    fireEvent.mouseLeave(shell);
+    expect(description).toHaveClass('line-clamp-3');
+    expect(shell.style.height).toBe('');
   });
 });
 
