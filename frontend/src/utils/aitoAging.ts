@@ -104,10 +104,20 @@ export function isIsoDateKey(value: string): boolean {
   return ISO_DATE.test(value);
 }
 
-export function dueDateLevel(dueDate: string | null, today: string): DueLevel {
-  if (!dueDate || !ISO_DATE.test(dueDate)) return 'none';
+/** Whole days from `today` to `dueDate`: positive ahead, 0 today, negative
+ *  late. `null` for the same inputs `dueDateLevel` calls 'none' — unset, or a
+ *  non-ISO string Books occasionally echoes — so a caller that renders the
+ *  count and a caller that renders the colour can never disagree about which
+ *  day a promise falls on. */
+export function dueDateDays(dueDate: string | null, today: string): number | null {
+  if (!dueDate || !ISO_DATE.test(dueDate)) return null;
   const days = Math.round((parseLocalDateKey(dueDate).getTime() - parseLocalDateKey(today).getTime()) / DAY_MS);
-  if (Number.isNaN(days)) return 'none';
+  return Number.isNaN(days) ? null : days;
+}
+
+export function dueDateLevel(dueDate: string | null, today: string): DueLevel {
+  const days = dueDateDays(dueDate, today);
+  if (days === null) return 'none';
   if (days < 0) return 'past';
   if (days === 0) return 'today';
   if (days <= 3) return 'soon';
