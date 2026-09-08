@@ -1,110 +1,90 @@
+import type { TFunction } from 'i18next';
 import type { AitoColumnId, AitoTracking } from '../api/client';
 
-/** Fixed French copy for the public page — deliberately outside the i18n
- *  catalogues: the audience is the client in Tahiti, not the operator.
- *  Titles are SHORT: the client scans "En fabrication" faster than a
- *  sentence; the sub-line carries the human voice. */
-export const FR = {
-  title: 'Suivi de votre commande',
-  brand: 'Aito3D',
-  reference: (ref: string) => `Devis n° ${ref}`,
-  stepOf: (n: number, total: number) => `Étape ${n} sur ${total}`,
-  tasksHeading: 'Vos pièces',
-  eta: 'Disponibilité estimée',
-  etaSoon: 'Nous vous communiquerons une date dès que possible.',
-  etaUpdating: 'Estimation en cours de mise à jour',
-  updated: (when: string) => `Mis à jour ${when}`,
-  error: 'Impossible de charger le suivi pour le moment.',
-  retry: 'Réessayer',
-  invalidTitle: "Ce lien de suivi n'est plus valide",
-  invalidBody: 'Il a peut-être expiré ou été remplacé. Contactez-nous et nous vous enverrons un nouveau lien.',
-  showSteps: 'Voir les étapes',
-  stepsList: 'Détail des étapes',
-  showAllParts: (n: number) => `Voir les ${n} pièces`,
-  footerQuestion: 'Une question sur votre commande ?',
-  invoice: {
-    paid: { title: 'Facture réglée', sub: 'Merci pour votre confiance.', terms: false },
-    unpaid: { title: 'Facture à régler', sub: "À régler avant le retrait ou l'expédition.", terms: true },
-    overdue: { title: 'Facture en retard', sub: 'Contactez-nous si vous avez déjà payé.', terms: true },
-  },
-  paymentTermsToggle: 'Voir les modalités',
-  paymentTerms:
-    'Règlement par virement ou au magasin, en indiquant le numéro de votre devis. Répondez à notre message pour toute question.',
-  status: {
-    devis: { title: 'Devis en préparation', sub: "Vous le recevrez par e-mail dès qu'il est prêt." },
-    waiting: { title: 'En attente de votre accord', sub: 'Dites-nous si vous validez le devis, et nous lançons la fabrication.' },
-    working: { title: 'En fabrication', sub: 'Nous préparons actuellement vos pièces.' },
-    finish: { title: 'Votre commande est prête', sub: "Vous pouvez venir la récupérer au magasin ; répondez à notre message pour convenir d'un horaire." },
-    // The waybill number is quoted verbatim once it exists — it is what the
-    // client hands over at the Air Tahiti freight counter.
-    shipped: (island: string, service: string, lta: string | null) => ({
-      title: 'Expédiée',
-      sub: `Vers ${island} par ${service}.${lta ? ` N° LTA ${lta}.` : ''}`,
-    }),
-    pickedUp: (date: string) => ({ title: 'Récupérée', sub: `Le ${date}. Merci pour votre confiance !` }),
-    doneBare: { title: 'Terminée', sub: 'Merci pour votre confiance !' },
-  },
-} as const;
+/** The public tracking page speaks the app's i18n (`aito.track.*` in every
+ *  locale) — but its audience is the client, not the operator, and most
+ *  clients are in Tahiti: when the browser asks for no language the app
+ *  ships, the page falls back to French, not to i18next's English. */
+export const TRACKING_FALLBACK_LANGUAGE = 'fr';
 
-const STAGE_LABELS: Record<Exclude<AitoColumnId, 'done'>, string> = {
-  devis: 'Devis',
-  waiting: 'Accord',
-  scan: 'Scan',
-  model: 'Modélisation',
-  print: 'Fabrication',
-  finish: 'Prête',
-};
+/** The language the page should switch to on mount, or null to keep the
+ *  detector's choice. A remembered choice (`stored`) always wins; then any
+ *  browser language the app supports, matched on the full tag or its base
+ *  (`fr-PF` → `fr`); only when nothing matches does French step in. */
+export function trackingDefaultLanguage(
+  stored: string | null,
+  navigatorLanguages: readonly string[],
+  supported: readonly string[],
+): string | null {
+  if (stored && supported.includes(stored)) return null;
+  const matches = navigatorLanguages.some((tag) => supported.includes(tag) || supported.includes(tag.split('-')[0]));
+  return matches ? null : TRACKING_FALLBACK_LANGUAGE;
+}
+
+const STAGE_KEYS: Exclude<AitoColumnId, 'done'>[] = ['devis', 'waiting', 'scan', 'model', 'print', 'finish'];
 
 /** The seven stages in board order. The LAST one is named by how this order
- *  ends — "Expédiée" for a shipment, "Récupérée" otherwise — because
- *  "Terminé" tells the client nothing they can picture. */
-export function trackStages(shipped: boolean): { id: AitoColumnId; label: string }[] {
+ *  ends — "Shipped" for a shipment, "Collected" otherwise — because "Done"
+ *  tells the client nothing they can picture. */
+export function trackStages(shipped: boolean, t: TFunction): { id: AitoColumnId; label: string }[] {
   return [
-    ...(Object.keys(STAGE_LABELS) as Exclude<AitoColumnId, 'done'>[]).map((id) => ({ id, label: STAGE_LABELS[id] })),
-    { id: 'done', label: shipped ? 'Expédiée' : 'Récupérée' },
+    ...STAGE_KEYS.map((id) => ({ id, label: t(`aito.track.stages.${id}`) })),
+    { id: 'done', label: t(shipped ? 'aito.track.stages.shipped' : 'aito.track.stages.pickedUp') },
   ];
 }
 
-const FR_LONG = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-const FR_DAY_MONTH = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' });
-const FR_TIME = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-/** A day (`2026-09-20`) or a naive UTC timestamp, as "20 septembre 2026".
- *  A bare day is pinned to noon so no timezone can roll it over. */
-export function frLongDate(iso: string): string {
+/** A day (`2026-09-20`) or a naive UTC timestamp, as "20 septembre 2026" /
+ *  "20 September 2026" in the page's language. A bare day is pinned to
+ *  noon so no timezone can roll it over. */
+export function longDate(iso: string, lng: string): string {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(iso);
-  return FR_LONG.format(new Date(day ? `${iso}T12:00:00` : `${iso}Z`));
+  return new Intl.DateTimeFormat(lng, { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date(day ? `${iso}T12:00:00` : `${iso}Z`),
+  );
 }
 
 const sameLocalDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 /** "aujourd'hui à 09:42" / "hier à 18:20" / "le 3 septembre à 11:05", in
- *  the browser's local time, from a naive UTC timestamp. */
-export function frUpdated(isoUtc: string, now: Date = new Date()): string {
+ *  the browser's local time and the page's language, from a naive UTC
+ *  timestamp. */
+export function updatedAt(isoUtc: string, t: TFunction, lng: string, now: Date = new Date()): string {
   const at = new Date(`${isoUtc}Z`);
-  const time = FR_TIME.format(at);
-  if (sameLocalDay(at, now)) return `aujourd'hui à ${time}`;
+  const time = new Intl.DateTimeFormat(lng, { hour: '2-digit', minute: '2-digit' }).format(at);
+  if (sameLocalDay(at, now)) return t('aito.track.updatedToday', { time });
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (sameLocalDay(at, yesterday)) return `hier à ${time}`;
-  return `le ${FR_DAY_MONTH.format(at)} à ${time}`;
+  if (sameLocalDay(at, yesterday)) return t('aito.track.updatedYesterday', { time });
+  const date = new Intl.DateTimeFormat(lng, { day: 'numeric', month: 'long' }).format(at);
+  return t('aito.track.updatedOn', { date, time });
 }
 
-export function statusCopy(data: AitoTracking): { title: string; sub: string } {
+/** Titles are SHORT: the client scans "En fabrication" faster than a
+ *  sentence; the sub-line carries the human voice. The waybill number is
+ *  quoted verbatim once it exists — it is what the client hands over at
+ *  the Air Tahiti freight counter. */
+export function statusCopy(data: AitoTracking, t: TFunction, lng: string): { title: string; sub: string } {
+  const pair = (key: string) => ({ title: t(`aito.track.status.${key}Title`), sub: t(`aito.track.status.${key}Sub`) });
   switch (data.column) {
     case 'devis':
-      return FR.status.devis;
+      return pair('devis');
     case 'waiting':
-      return FR.status.waiting;
+      return pair('waiting');
     case 'finish':
-      return FR.status.finish;
+      return pair('finish');
     case 'done':
-      if (data.shipping) return FR.status.shipped(data.shipping.island, data.shipping.service, data.shipping.lta);
-      if (data.done_at) return FR.status.pickedUp(frLongDate(data.done_at));
-      return FR.status.doneBare;
+      if (data.shipping) {
+        const { island, service, lta } = data.shipping;
+        const sub = t('aito.track.status.shippedSub', { island, service });
+        return { title: t('aito.track.status.shippedTitle'), sub: lta ? `${sub} ${t('aito.track.status.shippedLta', { lta })}` : sub };
+      }
+      if (data.done_at) {
+        return { title: t('aito.track.status.pickedUpTitle'), sub: t('aito.track.status.pickedUpSub', { date: longDate(data.done_at, lng) }) };
+      }
+      return pair('done');
     default:
-      return FR.status.working;
+      return pair('working');
   }
 }
 
@@ -116,11 +96,40 @@ const BEFORE_FINISH: readonly AitoColumnId[] = ['devis', 'waiting', 'scan', 'mod
  *  were well, never a fabricated one. Once the order is ready or over
  *  (Finish / Done), the date is dropped entirely — the state already
  *  says it all. */
-export function etaCopy(data: AitoTracking, today: Date = new Date()): { kind: 'date' | 'updating' | 'soon' | 'none'; text: string } {
+export function etaCopy(
+  data: AitoTracking,
+  t: TFunction,
+  lng: string,
+  today: Date = new Date(),
+): { kind: 'date' | 'updating' | 'soon' | 'none'; text: string } {
   if (!BEFORE_FINISH.includes(data.column)) return { kind: 'none', text: '' }; // ready or over: the state says it all
   if (data.due_date) {
     const passed = new Date(`${data.due_date}T23:59:59`) < today;
-    return passed ? { kind: 'updating', text: FR.etaUpdating } : { kind: 'date', text: frLongDate(data.due_date) };
+    return passed ? { kind: 'updating', text: t('aito.track.etaUpdating') } : { kind: 'date', text: longDate(data.due_date, lng) };
   }
-  return PRODUCTION.includes(data.column) ? { kind: 'soon', text: FR.etaSoon } : { kind: 'none', text: '' };
+  return PRODUCTION.includes(data.column) ? { kind: 'soon', text: t('aito.track.etaSoon') } : { kind: 'none', text: '' };
 }
+
+/** The first-load choreography's clock, in ms — one rail node per beat,
+ *  then the state card, then the details. Read by TrackingRail and
+ *  AitoTrackPage so the two can never drift; the shapes live in index.css
+ *  (`.animate-track-*`). */
+export const TRACK_MOTION = {
+  start: 80, // the first node pops here
+  beat: 90, // each next node, one beat later
+  land: 60, // the current node lands this much after its beat
+  state: 260, // the state card rises this much after the current node's beat
+  parts: 100, // the parts list starts this much after the state card
+  partStep: 50, // …and cascades at this step (capped at 7 steps)
+  invoice: 250, // the invoice rises this much after the state card
+  halo: 280, // the done halo fires this much after the state card
+  reveal: 40, // "Voir les n pièces": step between revealed parts
+  footer: 400, // the footer drops in this much after the state card
+  footerAlone: 200, // …or this much after a 404 / error page paints
+} as const;
+
+/** When rail node `i` pops, in ms after the data lands. */
+export const trackNodeDelay = (i: number) => TRACK_MOTION.start + i * TRACK_MOTION.beat;
+
+/** When the state card rises, for a rail whose current node is `current`. */
+export const trackStateDelay = (current: number) => trackNodeDelay(current) + TRACK_MOTION.state;
