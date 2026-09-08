@@ -865,10 +865,9 @@ describe('ProjectDetailPanel tasks', () => {
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
     const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
-    // Wrapped in a Router: `acceptedProject` is not in a finished column, so
-    // the contact row renders `TrackingLinkControl` (see Task 5), which
-    // renders a react-router `Link` to Settings while untracked — and throws
-    // without a router in the tree, same as the Host below.
+    // Wrapped in a Router: the Record card renders `TrackingLinkControl`,
+    // which renders a react-router `Link` to Settings while untracked — and
+    // throws without a router in the tree, same as the Host below.
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
         <BrowserRouter>
@@ -2882,6 +2881,42 @@ describe('ProjectDetailPanel record card age echo', () => {
   });
 });
 
+describe('ProjectDetailPanel record card tracking row', () => {
+  it('keeps the public link with the record rather than among the header pills', () => {
+    show();
+    const row = screen.getByTestId('record-tracking');
+    expect(within(row).getByRole('button', { name: /copy tracking link/i })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: /new tracking link/i })).toBeInTheDocument();
+    // Exactly one of each in the whole panel: the header rendered these twice
+    // — once per branch of the finished/live slot — and moving them left both
+    // copies behind at first.
+    expect(screen.getAllByRole('button', { name: /copy tracking link/i })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /new tracking link/i })).toHaveLength(1);
+  });
+
+  it('is present on a finished project too, where the link is most useful', () => {
+    show({ column: 'finish', move_lock: null, client_contacted_at: null });
+    expect(within(screen.getByTestId('record-tracking')).getByRole('button', { name: /copy tracking link/i })).toBeInTheDocument();
+  });
+
+  it('withholds the row from a user who may not edit the project', () => {
+    // Same gate the header slot applied before the move: minting or revoking
+    // a public URL is an edit, whichever card the buttons sit on.
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate={false}
+        canDelete
+        project={project}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('record-tracking')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /copy tracking link/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('ProjectDetailPanel presence', () => {
   beforeEach(() => __resetAitoPresence());
   afterEach(() => __resetAitoPresence());
@@ -2933,6 +2968,28 @@ describe('ProjectDetailPanel — the header pill follows the project', () => {
     expect(screen.getByTestId('due-date-control')).toBeInTheDocument();
     cleanup();
     show({ column: 'done', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' });
+    expect(screen.queryByTestId('due-date-control')).not.toBeInTheDocument();
+  });
+
+  it('keeps a promise on screen for a user who may not edit it, but not an empty one', () => {
+    // The stat is information first and a control second: a viewer still
+    // needs to know when the job was promised. With no date there is nothing
+    // to inform them of, and the "Set a date" affordance would be a lie.
+    const readOnly = (overrides: Partial<AitoProject>) =>
+      render(
+        <ProjectDetailPanel
+          canCreate
+          canUpdate={false}
+          canDelete
+          project={{ ...project, ...overrides }}
+          onClose={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      );
+    readOnly({ column: 'print', move_lock: 'steps', due_date: '2026-09-20' });
+    expect(screen.getByTestId('due-date-control')).toBeInTheDocument();
+    cleanup();
+    readOnly({ column: 'print', move_lock: 'steps', due_date: null });
     expect(screen.queryByTestId('due-date-control')).not.toBeInTheDocument();
   });
 

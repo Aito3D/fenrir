@@ -329,6 +329,12 @@ function PanelHeader({
   // display gate and the affordance's icon swap can't drift on what counts as
   // "has a handle".
   const socialNetwork = isSocialNetwork(project.client_social_network) ? project.client_social_network : null;
+  // Editable on every live card and still in Finish — a late pickup is a fact
+  // worth correcting. Done is an archive: nothing there is scheduled.
+  // A promise already made is still information to a reader who may not edit
+  // it, so the stat survives without `canUpdate` — it is only the empty,
+  // "Set a date" version of it that would then be offering nothing.
+  const showDue = project.column !== 'done' && (canUpdate || project.due_date !== null);
   return (
     <div
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
@@ -439,10 +445,6 @@ function PanelHeader({
               or island label squeezes "Marquer urgent" out of shape. */}
           {canUpdate && (
             <span className="flex-shrink-0 flex items-center gap-1.5">
-              {/* The promise sits beside the flag on every live card and stays
-                  editable in Finish (a late pickup is still a fact worth
-                  correcting). Done is an archive: nothing there is scheduled. */}
-              {project.column !== 'done' && <DueDateControl project={project} />}
               {/* One slot, two controls, chosen by whether the work is over.
                   A finished project has no use for a production flag — see
                   `isFinished` — so showing the flag editor there would be
@@ -461,13 +463,9 @@ function PanelHeader({
                     <SmsPickupButton project={project} />
                   )}
                   <ContactedControl project={project} />
-                  <TrackingLinkControl project={project} />
                 </>
               ) : (
-                <>
-                  <FlagControl project={project} />
-                  <TrackingLinkControl project={project} />
-                </>
+                <FlagControl project={project} />
               )}
             </span>
           )}
@@ -598,6 +596,20 @@ function PanelHeader({
       <div className="hidden md:flex flex-shrink-0">
         <PanelAgeStat project={project} />
       </div>
+      {/* Two time stats side by side, each behind its own divider: how long
+          this has been open, and how long is left. The promise used to sit in
+          the pill row beside the flag, where it read as another status among
+          five and its native field was the only unstyled control in the band.
+          Stacked UNDER the age stat instead, it made the masthead a row
+          taller for one field; as a peer it costs nothing in height.
+          Unlike the age stat this one keeps its place below md — on a phone
+          the deadline is the half of the pair that matters. */}
+      {showDue && (
+        <>
+          <div className="w-px self-stretch bg-bambu-dark-tertiary" />
+          <DueDateControl project={project} canUpdate={canUpdate} />
+        </>
+      )}
       <div className="w-px self-stretch bg-bambu-dark-tertiary" />
 
       <div className="flex items-center gap-3 flex-shrink-0">
@@ -633,10 +645,14 @@ const ACTOR_FALLBACK_KEY: Record<string, string> = {
 function RecordCard({
   project,
   latestEvent,
+  canUpdate,
   onDuplicate,
 }: {
   project: AitoProject;
   latestEvent: AitoEvent | undefined;
+  /** Gates the tracking-link row, which mints and revokes a public URL. Same
+   *  permission the header row gated it on before it moved down here. */
+  canUpdate: boolean;
   /** Absent when the operator cannot create projects, or when the host has
    *  nowhere to open the drawer — the action is then not rendered at all
    *  rather than shown dead. */
@@ -729,6 +745,27 @@ function RecordCard({
           {actor && ` · ${actor}`}
         </dd>
       </dl>
+      {/* The public link belongs to the card's provenance, not to its status:
+          it is a thing this record HAS, like its author and its dates, and in
+          the header pill row it was two unlabelled glyphs sitting among five
+          status pills with nothing to say what they addressed. Below the
+          hairline, under a label, "copy" and "issue a new one" are obvious.
+          `flex-wrap` because the unconfigured state adds a Settings link to
+          the row, and this rail is narrower than the header ever was. */}
+      {canUpdate && (
+        <div
+          data-testid="record-tracking"
+          className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-bambu-dark-tertiary pt-2.5 text-sm"
+        >
+          <span className="text-bambu-gray">{t('aito.trackingLabel')}</span>
+          {/* -mr-1 pulls the icon buttons' own padding off the card's right
+              edge so the glyphs line up with the values above them, which are
+              flush to it. */}
+          <div className="-my-1 -mr-1">
+            <TrackingLinkControl project={project} />
+          </div>
+        </div>
+      )}
     </PanelCard>
   );
 }
@@ -1377,6 +1414,7 @@ export function ProjectDetailPanel({
               <RecordCard
                 project={project}
                 latestEvent={latestEvent}
+                canUpdate={canUpdate}
                 onDuplicate={canCreate ? onDuplicate : undefined}
               />
 

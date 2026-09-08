@@ -605,3 +605,25 @@ export function parseLocalDateKey(key: string): Date {
   const [y, m, d] = key.slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d);
 }
+
+/**
+ * `count` WORKING days after `from`, as a `localDateKey`. Saturdays and
+ * Sundays are not counted and are never the answer: Friday + 2 is Tuesday,
+ * not Sunday.
+ *
+ * The workshop's own closures (holidays, a week off) are not modelled — this
+ * is a suggested starting point for a human to adjust, not a scheduling
+ * engine. Counting forward one day at a time rather than by arithmetic on
+ * week numbers keeps it correct across DST changes, where a day is not
+ * always 24 hours.
+ */
+export function addWorkingDays(from: Date, count: number): string {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  let left = count;
+  while (left > 0) {
+    date.setDate(date.getDate() + 1);
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) left -= 1;
+  }
+  return localDateKey(date);
+}

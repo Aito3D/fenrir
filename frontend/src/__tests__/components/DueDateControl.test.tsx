@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { DueDateControl } from '../../components/aito/DueDateControl';
+import { addWorkingDays, localDateKey } from '../../utils/date';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
@@ -97,6 +98,83 @@ describe('DueDateControl', () => {
     // been made. One macrotask is past that microtask chain.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('reads the promise back as a formatted date, not as the browser field', () => {
+    // The native input is still there — it is the picker — but at opacity 0
+    // over the stat. What the operator reads is this, and it is the whole
+    // point of the overlay: the field itself renders "mm/dd/yyyy".
+    render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
+    expect(screen.getByTestId('due-date-date')).toHaveTextContent('Sep 12, 2026');
+  });
+
+  it('leads with the countdown, because that is the question a promise raises', () => {
+    // Relative to today, not a fixed string: the stat is a countdown, so a
+    // hard-coded "in 13d" would start failing the day after it was written.
+    const in13 = new Date();
+    in13.setDate(in13.getDate() + 13);
+    render(<DueDateControl project={{ ...baseProject, due_date: localDateKey(in13) }} />);
+    expect(screen.getByTestId('due-date-value')).toHaveTextContent('in 13d');
+    expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'far');
+  });
+
+  it('says a promise due today is due today, not "in 0 days"', () => {
+    render(<DueDateControl project={{ ...baseProject, due_date: localDateKey(new Date()) }} />);
+    expect(screen.getByTestId('due-date-value')).toHaveTextContent(/today/i);
+    expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'today');
+  });
+
+  it('opens the picker two working days out, without promising anything', async () => {
+    // The browser would open an empty date field on today, which is the one
+    // day the answer is never. The suggestion lives in the input — so the
+    // picker lands on it — while the stat still reads "—" and "Set a date",
+    // and no PATCH goes out until a day is actually picked.
+    const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue(baseProject);
+    render(<DueDateControl project={baseProject} />);
+    expect(screen.getByLabelText(/promised date/i)).toHaveValue(addWorkingDays(new Date(), 2));
+    expect(screen.getByTestId('due-date-value')).toHaveTextContent('—');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('suggests a weekday: two working days from a Friday is Tuesday', () => {
+    // The rule the user asked for, pinned through the component rather than
+    // only through `addWorkingDays`, so wiring the wrong helper here fails.
+    // shouldAdvanceTime, so React's own scheduling still runs under the
+    // frozen clock rather than deadlocking on a timer that never fires.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 8, 4, 9, 0, 0)); // Friday 2026-09-04
+    render(<DueDateControl project={baseProject} />);
+    expect(screen.getByLabelText(/promised date/i)).toHaveValue('2026-09-08');
+    vi.useRealTimers();
+  });
+
+  it('asks for a date when none is set', () => {
+    render(<DueDateControl project={baseProject} />);
+    expect(screen.getByTestId('due-date-value')).toHaveTextContent('—');
+    expect(screen.getByTestId('due-date-empty')).toHaveTextContent(/set a date/i);
+    expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'none');
+  });
+
+  it('carries the board ramp: a promise in the past is late, and red', () => {
+    // Same `dueDateLevel` the card badge uses, so "late" is one colour across
+    // the board and the panel rather than two components' private opinions.
+    // "late", never "ago": a missed promise is not an event that happened.
+    const late = new Date();
+    late.setDate(late.getDate() - 3);
+    render(<DueDateControl project={{ ...baseProject, due_date: localDateKey(late) }} />);
+    expect(screen.getByTestId('due-date-control')).toHaveAttribute('data-due-level', 'past');
+    expect(screen.getByTestId('due-date-value')).toHaveTextContent('3 d late');
+    expect(screen.getByTestId('due-date-value')).toHaveClass('text-red-400');
+  });
+
+  it('shows a promise to a reader who may not edit it, without the controls', () => {
+    // The date is information, not only a control: a viewer still needs to
+    // know when the job was promised. What goes is the picker and the clear.
+    render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} canUpdate={false} />);
+    expect(screen.getByTestId('due-date-date')).toHaveTextContent('Sep 12, 2026');
+    expect(screen.queryByLabelText(/promised date/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /clear the date/i })).not.toBeInTheDocument();
   });
 
   it('ignores the part-typed years a date input emits while a year is typed', async () => {

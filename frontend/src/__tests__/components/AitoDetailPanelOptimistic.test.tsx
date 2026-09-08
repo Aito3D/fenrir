@@ -99,7 +99,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
  *  are stubbed so the panel doesn't perform real network calls, and so
  *  ActivityRail's note input doesn't collide with the description field on a
  *  plain `getByRole('textbox')` query. Wrapped in `BrowserRouter`:
- *  `TrackingLinkControl` (in the panel's contact row) renders a react-router
+ *  `TrackingLinkControl` (in the panel's Record card) renders a react-router
  *  `Link` whenever `tracking_configured` is false, and throws without a
  *  router in the tree — same reason `ProjectDetailPanel.test.tsx`'s own Hosts
  *  need one. */

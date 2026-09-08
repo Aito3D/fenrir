@@ -21,6 +21,7 @@ import {
   formatElapsedTime,
   elapsedDays,
   localDateKey,
+  addWorkingDays,
 } from '../../utils/date';
 
 describe('getDatePlaceholder', () => {
@@ -662,5 +663,38 @@ describe('elapsedDays', () => {
   it('returns null for a missing or unparseable stamp', () => {
     expect(elapsedDays(null)).toBeNull();
     expect(elapsedDays('not-a-date')).toBeNull();
+  });
+});
+
+describe('addWorkingDays', () => {
+  // Local midnight, so the result is read in the timezone it was built in.
+  const on = (y: number, m: number, d: number) => new Date(y, m - 1, d);
+
+  it('skips the weekend rather than counting through it', () => {
+    // Fri 2026-09-04 + 2 working days is Tuesday, not Sunday — the case that
+    // prompted the rule.
+    expect(addWorkingDays(on(2026, 9, 4), 2)).toBe('2026-09-08');
+    // Thu + 2 lands on Monday: one weekday left in the week, then the weekend.
+    expect(addWorkingDays(on(2026, 9, 3), 2)).toBe('2026-09-07');
+    // Mon + 2 stays inside the week and needs no skipping at all.
+    expect(addWorkingDays(on(2026, 9, 7), 2)).toBe('2026-09-09');
+  });
+
+  it('never lands on a weekend, even counting from one', () => {
+    // Sat and Sun both start counting from the following Monday.
+    expect(addWorkingDays(on(2026, 9, 5), 2)).toBe('2026-09-08');
+    expect(addWorkingDays(on(2026, 9, 6), 2)).toBe('2026-09-08');
+    expect(addWorkingDays(on(2026, 9, 5), 1)).toBe('2026-09-07');
+  });
+
+  it('returns the day itself for a zero count, and crosses a month end', () => {
+    expect(addWorkingDays(on(2026, 9, 7), 0)).toBe('2026-09-07');
+    // Mon 2026-08-31 + 2 → Wed 2026-09-02.
+    expect(addWorkingDays(on(2026, 8, 31), 2)).toBe('2026-09-02');
+  });
+
+  it('counts a full working week without drifting', () => {
+    // Mon + 5 working days is the next Monday, not the Saturday five days on.
+    expect(addWorkingDays(on(2026, 9, 7), 5)).toBe('2026-09-14');
   });
 });

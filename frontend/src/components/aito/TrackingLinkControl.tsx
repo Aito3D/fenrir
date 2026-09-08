@@ -13,7 +13,7 @@ import { focusRingCls } from '../formStyles';
 const ICON_BUTTON_CLS = `p-2 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-bambu-gray ${focusRingCls}`;
 
 /** Copy / Regenerate for the card's public tracking link, in the panel's
- *  contact row next to `ContactedControl` / `FlagControl`.
+ *  Record card, under the provenance rows it belongs with.
  *
  *  Copy goes through the link endpoint rather than reading `project.tracking_url`
  *  straight from the board cache — the first call is also what mints the
