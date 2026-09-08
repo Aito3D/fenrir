@@ -241,100 +241,6 @@ async def test_impression_discount_round_trips_through_task_responses(async_clie
 
 
 @pytest.mark.asyncio
-async def test_impression_rush_round_trips_and_defaults_false(async_client):
-    """Rush is a priced fact and rides the ordinary task routes. Absent on
-    create reads False; the board's per-task steps carry it so the card can
-    mark the row without a second fetch."""
-    project_id = (await _create(async_client)).json()["id"]
-
-    plain = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"impression_cost": 1000})
-    assert plain.status_code == 201
-    assert plain.json()["impression_rush"] is False
-
-    rushed = await async_client.post(
-        f"/api/v1/aito/{project_id}/tasks", json={"impression_cost": 1250, "impression_rush": True}
-    )
-    assert rushed.status_code == 201
-    assert rushed.json()["impression_rush"] is True
-    task_id = rushed.json()["id"]
-
-    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
-    assert [t["impression_rush"] for t in listed.json() if t["id"] == task_id] == [True]
-
-    board = (await async_client.get("/api/v1/aito/")).json()
-    steps = next(p for p in board if p["id"] == project_id)["task_steps"]
-    assert [s["rush"] for s in steps] == [False, True]
-
-    cleared = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"impression_rush": False})
-    assert cleared.status_code == 200
-    assert cleared.json()["impression_rush"] is False
-
-
-def test_export_has_no_rush_field_so_a_rushed_task_still_emits_one_ordinary_impression_line():
-    """Pins the 'folded in' decision from the export's side: there is nowhere
-    for an 'Urgence' line to come from, because `ExportTask` carries no rush
-    field at all. The surcharge is already inside `impression_cost` by the
-    time anything is exported, so the Books line is the ordinary one — same
-    item, rate = cost / quantity.
-
-    The dataclass assertion is the load-bearing half. Building a task without
-    the field and checking the output would pass identically whether the
-    field existed or not, which is exactly what an earlier version of this
-    test did.
-    """
-    from backend.app.services.aito_quote_export import ExportTask, build_line_items
-    from backend.tests.unit.test_aito_quote_export import CATALOGUE, task
-
-    assert "impression_rush" not in ExportTask.__dataclass_fields__
-    assert not hasattr(ExportTask, "impression_rush")
-
-    t = task(impression_cost=1800.0, impression_quantity=3)
-    lines = build_line_items([t], [], CATALOGUE)
-    impression = [line for line in lines if line["item_id"] == CATALOGUE.impression_item_id]
-    assert len(impression) == 1
-    assert impression[0]["rate"] == 600
-    assert impression[0]["quantity"] == 3
-    # Exactly one priced line for a one-service task: nothing else rode along.
-    assert [line for line in lines if "item_id" in line] == impression
-
-
-@pytest.mark.asyncio
-async def test_patching_impression_rush_to_null_leaves_the_stored_flag_alone(async_client):
-    """`impression_rush` is NOT NULL on the row but nullable on the update
-    schema — null is how a partial PATCH says "not sending this field", and
-    the frontend's diff-based saver omits nothing, it sends nulls. Writing
-    that null through would violate the column; the route drops the key
-    instead, so the stored flag survives untouched rather than 500ing."""
-    project_id = (await _create(async_client)).json()["id"]
-    task_id = (
-        await async_client.post(
-            f"/api/v1/aito/{project_id}/tasks", json={"impression_cost": 1250, "impression_rush": True}
-        )
-    ).json()["id"]
-
-    patched = await async_client.patch(
-        f"/api/v1/aito/tasks/{task_id}", json={"impression_rush": None, "title": "Toujours urgent"}
-    )
-    assert patched.status_code == 200, patched.text
-    assert patched.json()["impression_rush"] is True
-    assert patched.json()["title"] == "Toujours urgent"
-
-    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
-    assert [t["impression_rush"] for t in listed.json() if t["id"] == task_id] == [True]
-
-
-@pytest.mark.asyncio
-async def test_rush_step_flag_needs_a_print_step(async_client):
-    """A rushed task with no print step is stored but not a rushed STEP: the
-    card marks print rows only."""
-    project_id = (await _create(async_client)).json()["id"]
-    await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"scan_cost": 500, "impression_rush": True})
-    board = (await async_client.get("/api/v1/aito/")).json()
-    steps = next(p for p in board if p["id"] == project_id)["task_steps"]
-    assert steps[0]["rush"] is False
-
-
-@pytest.mark.asyncio
 async def test_create_requires_client(async_client):
     r = await _create(async_client, client_id=None, client_name=None)
     assert r.status_code == 422
@@ -2930,8 +2836,8 @@ async def test_board_ships_a_step_row_per_task(async_client, db_session):
     board = (await async_client.get("/api/v1/aito/")).json()
     card = next(p for p in board if p["description"] == "steps per task")
     assert card["task_steps"] == [
-        {"services": ["scan", "impression"], "done": ["scan"], "title": "t1", "rush": False},
-        {"services": ["usinage"], "done": [], "title": "t2", "rush": False},
+        {"services": ["scan", "impression"], "done": ["scan"], "title": "t1"},
+        {"services": ["usinage"], "done": [], "title": "t2"},
     ]
 
 

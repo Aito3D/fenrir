@@ -45,12 +45,4 @@ describe('TaskMiniRows', () => {
     render(<TaskMiniRows tasks={[]} />);
     expect(screen.queryByTestId('aito-task-rows')).not.toBeInTheDocument();
   });
-
-  it('marks a rushed print row with the rush glyph and its text', () => {
-    render(<TaskMiniRows tasks={[{ ...tasks[0], rush: true }, tasks[1]]} />);
-    const rows = screen.getAllByTestId('aito-task-row');
-    expect(rows[0].querySelector('[data-testid="aito-task-rush"]')).not.toBeNull();
-    expect(rows[0]).toHaveAttribute('aria-label', expect.stringContaining('Rush'));
-    expect(rows[1].querySelector('[data-testid="aito-task-rush"]')).toBeNull();
-  });
 });

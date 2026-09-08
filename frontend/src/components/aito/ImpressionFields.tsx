@@ -110,8 +110,7 @@ export interface ImpressionFieldsProps {
   discountField: React.ReactNode;
   /** The note affordance, same fragment contract as `costField`: a `<label>`
    *  and the button that reveals the textarea. It takes the price column's
-   *  fourth row, above the rush checkbox (row 5) and the computed price
-   *  (row 6). The revealed textarea is NOT here — TaskStepFields
+   *  fourth row, above the computed price (row 5). The revealed textarea is NOT here — TaskStepFields
    *  renders it after this component, i.e. below the band, where a two-row
    *  field has the width it needs. */
   noteField: React.ReactNode;
@@ -379,17 +378,7 @@ export function ImpressionFields({
           {noteField}
         </div>
 
-        <GridRow side="price" row={5} htmlFor={`${reactId}-rush`} label={t('aito.rush')}>
-          <input
-            id={`${reactId}-rush`}
-            type="checkbox"
-            checked={value.rush}
-            onChange={(e) => handleChange({ ...value, rush: e.target.checked })}
-            className="h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-          />
-        </GridRow>
-
-        <GridRow side="price" row={6} label={t('aito.computedPrice')}>
+        <GridRow side="price" row={5} label={t('aito.computedPrice')}>
           {computedUnit === null ? (
             // An em dash, not a sentence: the row already says whose price
             // this is, and "Not computable" only ever prompted "computable by

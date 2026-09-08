@@ -43,7 +43,7 @@ const MONEY_CEILING = 100_000_000;
 /** Input ids keep their historical prefixes (`calc-def-*` for the former
  *  Defaults fields, `calc-curve-*` for the curve) so deep links and tests
  *  written against either tab still resolve. */
-const CURVE_KEYS = new Set<FieldKey>(['margin_min_mult', 'margin_max_mult', 'margin_k', 'qty_min_factor', 'qty_k', 'min_task_price', 'rush_pct']);
+const CURVE_KEYS = new Set<FieldKey>(['margin_min_mult', 'margin_max_mult', 'margin_k', 'qty_min_factor', 'qty_k', 'min_task_price']);
 const inputId = (key: FieldKey) => `${CURVE_KEYS.has(key) ? 'calc-curve' : 'calc-def'}-${key}`;
 
 const RATES: Field[] = [
@@ -81,10 +81,6 @@ const MARGIN_GROUPS: Array<{ labelKey: string; fields: Field[] }> = [
   {
     labelKey: 'calculator.floorGroup',
     fields: [{ key: 'min_task_price', labelKey: 'calculator.minTaskPrice', min: 0, max: MONEY_CEILING }],
-  },
-  {
-    labelKey: 'calculator.rushGroup',
-    fields: [{ key: 'rush_pct', labelKey: 'calculator.rushPct', min: 0, max: 500 }],
   },
 ];
 const MARGIN: Field[] = MARGIN_GROUPS.flatMap((g) => g.fields);
@@ -310,7 +306,6 @@ function SettingsForm({
       ) : (
         after
       )}
-      {key === 'rush_pct' && <p className="mt-1 text-xs text-bambu-gray">{t('calculator.rushHint')}</p>}
     </div>
   );
   // Explicit lambdas, not `fields.map(field)` — Array#map passes the index

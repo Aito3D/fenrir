@@ -83,8 +83,5 @@ class CalculatorDefaults(Base):
     qty_min_factor: Mapped[float] = mapped_column(Float, default=0.4)
     qty_k: Mapped[float] = mapped_column(Float, default=5.0)
     min_task_price: Mapped[float] = mapped_column(Float, default=12.0)  # app currency
-    # Rush surcharge percent on the pre-tax price, applied after the floor and
-    # only when a job is marked rush. 0 = the toggle does nothing.
-    rush_pct: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

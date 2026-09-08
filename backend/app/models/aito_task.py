@@ -54,10 +54,6 @@ class AitoTask(Base):
     # impression_cost — that stays the pre-discount rate x quantity, so the
     # two never double-count. None = no discount.
     impression_discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # The print step is quoted at the rush rate (calculator_defaults.rush_pct
-    # on the pre-tax price, after the floor). A priced field: it changes the
-    # Books line rate, so it rides through the ordinary task routes.
-    impression_rush: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
     # Optional free text per service ("subtask"), emitted on the quote as an
     # `Info:` row on that service's line. Replaces the task-level description:
     # the title lives only in the quote's header, prose lives on the service

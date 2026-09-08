@@ -217,7 +217,6 @@ const row: AitoTask = {
   impression_color: 'Noir',
   impression_cost: 4200,
   impression_discount_pct: 15,
-  impression_rush: true,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 };
@@ -247,7 +246,6 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
       impression_color: row.impression_color,
       impression_cost: row.impression_cost,
       impression_discount_pct: row.impression_discount_pct,
-      impression_rush: row.impression_rush,
       scan_quantity: 1,
       modelisation_quantity: 1,
       usinage_quantity: 1,
@@ -410,20 +408,6 @@ describe('roundUpTo50', () => {
   });
 });
 
-describe('impression.rush', () => {
-  it('defaults to false on an empty draft and survives normalisation', () => {
-    expect(emptyTaskDraft().impression.rush).toBe(false);
-    const raw = { ...emptyTaskDraft(), impression: { ...emptyTaskDraft().impression, rush: true } };
-    expect(normaliseTaskDraft(JSON.parse(JSON.stringify(raw))).impression.rush).toBe(true);
-    expect(normaliseTaskDraft({ impression: { rush: 'yes' } }).impression.rush).toBe(false);
-  });
-
-  it('reads a server row with no rush field as not rushed', () => {
-    const { impression_rush: _dropped, ...legacy } = row;
-    expect(taskDraftFromAitoTask(legacy as typeof row).impression.rush).toBe(false);
-  });
-});
-
 describe('isBlankTaskDraft', () => {
   it('is true for a fresh empty draft whatever its uid', () => {
     expect(isBlankTaskDraft(emptyTaskDraft())).toBe(true);
@@ -437,7 +421,6 @@ describe('isBlankTaskDraft', () => {
     const base = emptyTaskDraft();
     expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, weightG: 12 } })).toBe(false);
     expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, color: 'red' } })).toBe(false);
-    expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, rush: true } })).toBe(false);
     expect(isBlankTaskDraft({ ...base, impression: { ...base.impression, quantity: 2 } })).toBe(false);
     expect(isBlankTaskDraft({ ...base, scanQuantity: 2 })).toBe(false);
     expect(isBlankTaskDraft({ ...base, usinageDiscountPct: 10 })).toBe(false);
@@ -455,7 +438,7 @@ describe('freshenTaskDraft', () => {
       impressionCost: 2500,
       impressionDiscountPct: 10,
       scanQuantity: 3,
-      impression: { printerId: 1, filamentId: 2, weightG: 30, timeMin: 90, quantity: 2, color: 'black', rush: true },
+      impression: { printerId: 1, filamentId: 2, weightG: 30, timeMin: 90, quantity: 2, color: 'black' },
       done: { scan: true, modelisation: false, impression: true, usinage: false },
     };
     const fresh = freshenTaskDraft(source);

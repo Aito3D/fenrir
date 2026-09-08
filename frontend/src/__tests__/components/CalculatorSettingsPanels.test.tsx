@@ -132,7 +132,6 @@ const baseDefaults: CalculatorDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
-  rush_pct: 0,
   failure_rate_pct: 30,
   prototype_rate_pct: 30,
   ads_rate_pct: 5,

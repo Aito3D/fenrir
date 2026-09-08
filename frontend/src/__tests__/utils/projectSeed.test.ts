@@ -49,7 +49,6 @@ const task = {
   impression_time_min: 180,
   impression_quantity: 2,
   impression_color: 'noir',
-  impression_rush: true,
   impression_cost: 3400,
   impression_done: true,
 } as unknown as AitoTask;
@@ -62,12 +61,11 @@ const seed = () =>
   seedFromProject({ project, tasks: [taskDraftFromAitoTask(task)], services, defaultContactId: 'walk-in' });
 
 describe('seedFromProject', () => {
-  it('copies every task as a fresh, unticked, non-rush draft with its quoted figures intact', () => {
+  it('copies every task as a fresh, unticked draft with its quoted figures intact', () => {
     const [copy] = seed().tasks;
     expect(copy.id).toBeNull();
     expect(copy.uid).not.toBe('server-41');
     expect(copy.done).toEqual({ scan: false, modelisation: false, impression: false, usinage: false });
-    expect(copy.impression.rush).toBe(false);
     expect(copy.title).toBe('Support GoPro');
     expect(copy.scanCost).toBe(1000);
     expect(copy.impression).toMatchObject({ printerId: 3, filamentId: 7, weightG: 42, timeMin: 180, quantity: 2, color: 'noir' });

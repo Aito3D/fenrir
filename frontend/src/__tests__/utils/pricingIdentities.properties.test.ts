@@ -24,7 +24,7 @@ const MONEY_FIELDS = [
   'modeling_cost_total', 'prep_cost_total', 'modeling_cost', 'prep_cost',
   'post_processing_cost', 'stuff_cost', 'labor_total', 'risk_base',
   'total_cost', 'margin_global', 'margin_filament', 'margin_stuff',
-  'margin_rush', 'marge', 'total_ht', 'total_ttc', 'total_ht_qty',
+  'marge', 'total_ht', 'total_ttc', 'total_ht_qty',
   'total_ttc_qty',
 ] as const;
 

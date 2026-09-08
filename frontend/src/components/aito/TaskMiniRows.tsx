@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { Zap } from 'lucide-react';
 import { serviceDotCls } from './services';
 import type { AitoTaskSteps } from '../../api/client';
 
@@ -69,19 +68,15 @@ export function TaskMiniRows({ tasks }: { tasks: AitoTaskSteps[] }) {
         // Index keys: task_steps is positional and replaced wholesale on
         // every refetch, never spliced — same reasoning the old pill grid used.
         const name = task.title?.trim() || t('aito.taskFallbackName', { n: index + 1 });
-        const rushText = task.rush ? ` · ${t('aito.rush')}` : '';
         return (
           <span
             key={index}
             data-testid="aito-task-row"
             role="img"
-            aria-label={`${name} — ${t('aito.stepsCount', { done: task.done.length, total: task.services.length })}${rushText}`}
+            aria-label={`${name} — ${t('aito.stepsCount', { done: task.done.length, total: task.services.length })}`}
             className="flex items-center gap-2"
           >
             <span className="flex-1 min-w-0 truncate text-xs text-bambu-gray-light">{name}</span>
-            {task.rush && (
-              <Zap data-testid="aito-task-rush" className="w-3 h-3 flex-shrink-0 text-amber-400" aria-hidden="true" />
-            )}
             <span aria-hidden="true" className="flex gap-[2px] w-[4.2rem] flex-shrink-0">
               {task.services.map((service) => (
                 <span

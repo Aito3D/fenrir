@@ -1092,7 +1092,6 @@ describe('ProjectDetailPanel tasks', () => {
       impression_color: null,
       impression_cost: null,
       impression_discount_pct: null,
-      impression_rush: false,
       scan_quantity: 1,
       modelisation_quantity: 1,
       usinage_quantity: 1,

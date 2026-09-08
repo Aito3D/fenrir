@@ -33,7 +33,6 @@ const task = {
   scan_done: true,
   scan_quantity: 1,
   impression_quantity: 1,
-  impression_rush: true,
   impression_cost: 3400,
   impression_done: true,
 } as unknown as AitoTask;

@@ -67,7 +67,6 @@ const baseDefaults: PricingDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
-  rush_pct: 0,
 };
 
 /** Wraps MarginCurvePreview with the bit of state a real caller (the

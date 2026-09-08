@@ -186,7 +186,6 @@ def test_printer_update_never_raises_anything_but_validation_error(
     qty_min_factor=MONEY,
     qty_k=MONEY,
     min_task_price=MONEY,
-    rush_pct=MONEY,
 )
 def test_defaults_update_never_raises_anything_but_validation_error(
     electricity_tariff,
@@ -199,7 +198,6 @@ def test_defaults_update_never_raises_anything_but_validation_error(
     qty_min_factor,
     qty_k,
     min_task_price,
-    rush_pct,
 ):
     """Covers a representative subset of CalculatorDefaultsUpdate's ~18
     optional float fields, including the two (`margin_min_mult`,
@@ -220,6 +218,5 @@ def test_defaults_update_never_raises_anything_but_validation_error(
             "qty_min_factor": qty_min_factor,
             "qty_k": qty_k,
             "min_task_price": min_task_price,
-            "rush_pct": rush_pct,
         },
     )

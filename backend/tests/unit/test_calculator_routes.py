@@ -626,19 +626,6 @@ class TestCalculatorDefaults:
         assert defaults["min_task_price"] == 12.0
 
     @pytest.mark.asyncio
-    async def test_rush_pct_defaults_to_zero(self, async_client):
-        resp = await async_client.get("/api/v1/calculator/defaults")
-        assert resp.status_code == 200
-        assert resp.json()["rush_pct"] == 0.0
-
-    @pytest.mark.asyncio
-    async def test_rush_pct_round_trips(self, async_client):
-        resp = await async_client.patch("/api/v1/calculator/defaults", json={"rush_pct": 25.0})
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["rush_pct"] == 25.0
-        assert (await async_client.get("/api/v1/calculator/defaults")).json()["rush_pct"] == 25.0
-
-    @pytest.mark.asyncio
     async def test_patch_curve_fields_round_trip(self, async_client):
         payload = {
             "margin_min_mult": 1.2,
@@ -669,8 +656,6 @@ class TestCalculatorDefaults:
             ("qty_min_factor", 1.01),
             ("qty_k", 0),
             ("min_task_price", -1),
-            ("rush_pct", -1),
-            ("rush_pct", 501),
         ],
     )
     async def test_patch_rejects_out_of_range_curve_values(self, async_client, field, value):

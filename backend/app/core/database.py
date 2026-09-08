@@ -4756,10 +4756,6 @@ async def run_migrations(conn):
     ):
         await _safe_execute(conn, f"ALTER TABLE calculator_defaults ADD COLUMN {column} FLOAT DEFAULT {default}")
 
-    # Migration: rush surcharge percent (2026-09-04). Default 0 so the new
-    # toggle is a no-op until the shop sets a rate.
-    await _safe_execute(conn, "ALTER TABLE calculator_defaults ADD COLUMN rush_pct FLOAT DEFAULT 0")
-
     # Migration: calculator filament profiles split the single free-text name
     # into brand + material (searchable dropdowns in the UI); name stays as the
     # derived display label. Backfill copies the legacy name into material so
@@ -5158,11 +5154,15 @@ async def run_migrations(conn):
     # legacy Done card stays draggable back to Finish either way.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_contacted_at DATETIME")
 
-    # Migration: promised delivery date and per-task rush flag (2026-09-04).
-    # Both nullable/defaulted, so no backfill: an existing card promised
-    # nothing and an existing print step was not rushed.
+    # Migration: promised delivery date (2026-09-04). Nullable, so no
+    # backfill: an existing card promised nothing.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN due_date VARCHAR(10)")
-    await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN impression_rush BOOLEAN NOT NULL DEFAULT 0")
+
+    # Migration: the rush surcharge was removed (2026-09-07). Drop the columns
+    # it added on 2026-09-04 where they exist; _safe_execute ignores a DB that
+    # never had them or a SQLite too old for DROP COLUMN.
+    await _safe_execute(conn, "ALTER TABLE calculator_defaults DROP COLUMN rush_pct")
+    await _safe_execute(conn, "ALTER TABLE aito_tasks DROP COLUMN impression_rush")
 
     # Migration: public tracking link token (2026-09-06). Nullable, minted on
     # first use, so no backfill. The unique index is what the public lookup

@@ -76,7 +76,6 @@ export function CalculatorBreakdownCard({
         ],
         ['calculator.marginFilament', result.margin_filament],
         ['calculator.marginStuff', result.margin_stuff],
-        ...(result.margin_rush > 0.005 ? [['calculator.rush', result.margin_rush] as BreakdownLine] : []),
       ],
     },
   ];

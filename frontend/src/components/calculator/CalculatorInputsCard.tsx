@@ -192,16 +192,6 @@ export function CalculatorInputsCard({
             error={errors.timeD || errors.timeH || errors.timeM}
           />
         </div>
-        <label htmlFor="calc-rush" className="flex items-center gap-2 cursor-pointer w-fit">
-          <input
-            id="calc-rush"
-            type="checkbox"
-            checked={state.rush}
-            onChange={(e) => set({ rush: e.target.checked })}
-            className="h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-          />
-          <span className="text-sm text-white">{t('calculator.rushToggle')}</span>
-        </label>
         {showTimeCorrection && timeAccuracy && (
           <div className="animate-calc-badge-pop flex items-center gap-2 text-xs rounded-full bg-blue-500/10 text-blue-400 px-3 py-1.5 w-fit">
             <Timer className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />

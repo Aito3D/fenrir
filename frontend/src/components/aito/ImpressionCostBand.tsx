@@ -128,12 +128,9 @@ export function ImpressionCostBand({
                     ['calculator.costConsumables', result.consumables_flat],
                     ['calculator.costBaseFee', result.base_fee],
                     ['calculator.costAds', result.ads_cost],
-                    ['calculator.marge', result.marge - result.margin_rush],
-                    ['calculator.rush', result.margin_rush],
+                    ['calculator.marge', result.marge],
                   ] as const
-                )
-                  .filter(([labelKey, lineValue]) => labelKey !== 'calculator.rush' || lineValue > 0.005)
-                  .map(([labelKey, lineValue]) => (
+                ).map(([labelKey, lineValue]) => (
                     <div key={labelKey} className="flex justify-between gap-2 text-sm">
                       <span className="text-bambu-gray-light">{t(labelKey)}</span>
                       <Money currency={currency} value={lineValue} className="text-white" />

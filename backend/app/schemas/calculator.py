@@ -183,7 +183,6 @@ class CalculatorDefaultsUpdate(BaseModel):
     qty_min_factor: float | None = Field(default=None, gt=0, le=1)
     qty_k: float | None = Field(default=None, gt=0, le=1_000_000)
     min_task_price: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
-    rush_pct: float | None = Field(default=None, ge=0, le=500)
 
     @model_validator(mode="after")
     def _margin_pair_ordered(self) -> "CalculatorDefaultsUpdate":
@@ -219,7 +218,6 @@ class CalculatorDefaultsResponse(BaseModel):
     qty_min_factor: float
     qty_k: float
     min_task_price: float
-    rush_pct: float
     updated_at: datetime
 
     model_config = {"from_attributes": True}

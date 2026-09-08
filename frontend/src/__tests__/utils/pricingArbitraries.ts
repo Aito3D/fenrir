@@ -36,7 +36,6 @@ export const arbDefaults = (): fc.Arbitrary<PricingDefaults> =>
     qty_min_factor: fc.double({ min: -1, max: 2, noNaN: true }),
     qty_k: fc.double({ min: -10, max: 100, noNaN: true }),
     min_task_price: fc.double({ min: 0, max: 5000, noNaN: true }),
-    rush_pct: fc.double({ min: 0, max: 100, noNaN: true }),
   });
 
 export const arbFilament = (): fc.Arbitrary<PricingFilament> =>
@@ -71,5 +70,4 @@ export const arbInputs = (): fc.Arbitrary<PricingInputs> =>
     post_fulfillment_min: fc.double({ min: 0, max: 600, noNaN: true }),
     stuff_amount: fc.double({ min: 0, max: 100000, noNaN: true }),
     stuff_markup_pct: fc.double({ min: 0, max: 200, noNaN: true }),
-    rush: fc.boolean(),
   });

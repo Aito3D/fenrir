@@ -60,9 +60,6 @@ class TaskSteps:
     # now, and an anonymous row cannot say WHICH task is stuck. The frontend
     # renders "" through its existing fallback name ("Task N").
     title: str = ""
-    # True only when the task HAS a print step and it is rushed — a rush flag
-    # on a scan-only task marks nothing.
-    rush: bool = False
 
 
 @dataclass(frozen=True)
@@ -170,7 +167,6 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 services=tuple(task_services),
                 done=tuple(task_done),
                 title=(getattr(task, "title", "") or ""),
-                rush=bool(getattr(task, "impression_rush", False)) and "impression" in task_services,
             )
         )
     return TaskSummary(

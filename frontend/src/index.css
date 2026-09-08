@@ -373,10 +373,10 @@ html {
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) 1px minmax(0, auto) minmax(0, 1fr);
     /* One source of truth for the row count: the rule's `grid-row: 1 / -1`
        below spans to the last line of this EXPLICIT grid, so bumping this
-       number is the only change a new part OR price row requires. Six rows:
-       the rush toggle occupies row 5, and the computed-price readout moved
-       to row 6 to make room for it (see ImpressionFields' price column). */
-    grid-template-rows: repeat(6, auto);
+       number is the only change a new part OR price row requires. Five
+       rows: the price column ends with the computed-price readout on row 5
+       (see ImpressionFields' price column). */
+    grid-template-rows: repeat(5, auto);
     column-gap: 0.7rem;
   }
   /* `--ip-row` is set inline, per row, by ImpressionFields. The assignment
@@ -1954,4 +1954,128 @@ tbody .calc-table-row:hover {
 .aito-page {
   --color-bambu-gray: var(--text-secondary);
   --color-bambu-gray-light: color-mix(in srgb, var(--text-secondary) 55%, var(--text-primary));
+}
+
+/* ==========================================================================
+   Aito tracking page — the client's one choreographed moment.
+
+   The public /track page is opened a handful of times per order, from an
+   SMS, usually on a phone: the rare, emotional tier where the app's delight
+   budget lives. It gets exactly ONE piece of theatre, on first data only:
+   the rail draws itself to where the order is, one node per beat, then the
+   state card lands a beat later and the details cascade under it. Every
+   delay is set inline from the node index (see TrackingRail / AitoTrackPage
+   and TRACK_MOTION in utils/aitoTracking.ts); these classes only carry the
+   shapes. `backwards` fill keeps each piece hidden through its delay.
+   Refetches never replay it — the page keys the classes to the first data.
+   ========================================================================== */
+
+/* Skeleton → content: a short fade so nothing pops. */
+@keyframes track-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-track-fade {
+  animation: track-fade 150ms linear backwards;
+}
+
+/* A rail half-segment drawing left → right. Two halves span one 90ms beat. */
+@keyframes track-draw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.animate-track-draw {
+  transform-origin: left center;
+  animation: track-draw 45ms linear backwards;
+}
+
+/* A done mark popping in behind the head of the draw. */
+@keyframes track-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-track-pop {
+  animation: track-pop 220ms var(--ease-signature) backwards;
+}
+
+/* The current node landing — slower and from further away than a done
+   mark, because it is the answer. Its ring is a separate span growing from
+   half size on the same clock. */
+@keyframes track-land {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-track-land {
+  animation: track-land 320ms var(--ease-signature) backwards;
+}
+@keyframes track-ring {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-track-ring {
+  animation: track-ring 320ms var(--ease-signature) backwards;
+}
+
+/* Phone: the thin bar grows to its width instead of the node walk. */
+.animate-track-bar {
+  transform-origin: left center;
+  animation: track-draw 600ms var(--ease-signature) backwards;
+}
+
+/* The order is over: the last node's check draws its stroke instead of
+   popping. The path carries pathLength="1" so the dash maths is unit-free. */
+@keyframes track-check {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.animate-track-check {
+  stroke-dasharray: 1;
+  animation: track-check 350ms var(--ease-signature) backwards;
+}
+
+/* …and the state card gets one soft cyan halo once it has landed. Not
+   confetti: the brand is crisp. Delay comes in through --track-halo-delay
+   because a pseudo-element cannot take an inline style. */
+@keyframes track-halo {
+  from { opacity: 0.6; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.05); }
+}
+.animate-track-halo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--color-aito-cyan);
+  pointer-events: none;
+  opacity: 0;
+  animation: track-halo 700ms var(--ease-exit) var(--track-halo-delay, 0ms) forwards;
+}
+
+/* The footer drops in from above once everything else has landed — the
+   only piece that travels downward, so the eye is handed from the content
+   to the contact line instead of chasing another rise. */
+@keyframes track-drop {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-track-drop {
+  animation: track-drop 320ms var(--ease-signature) backwards;
+}
+
+/* Less motion, same story: the rail renders finished and the content
+   crossfades in over 200ms. The check is simply there. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-track-drop,
+  .animate-track-draw,
+  .animate-track-pop,
+  .animate-track-land,
+  .animate-track-ring,
+  .animate-track-bar,
+  .animate-track-check,
+  .animate-track-halo::after {
+    animation: none;
+  }
+  .animate-track-fade {
+    animation-duration: 200ms;
+  }
 }

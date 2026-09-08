@@ -3949,7 +3949,6 @@ export interface CalculatorDefaults {
   qty_min_factor: number;
   qty_k: number;
   min_task_price: number;
-  rush_pct: number;
   updated_at: string;
 }
 
@@ -4037,9 +4036,6 @@ export interface AitoTaskSteps {
    *  than this bundle omits it, and the card must degrade to the fallback
    *  name rather than throw (same posture as `task_steps ?? []`). */
   title?: string;
-  /** The task's print step is quoted at the rush rate. Optional: an older
-   *  server omits it and the card simply draws no glyph. */
-  rush?: boolean;
 }
 
 export interface AitoStatsBucket { count: number; total: number }
@@ -4384,7 +4380,6 @@ export interface AitoTask {
   impression_color: string | null;
   impression_cost: number | null;
   impression_discount_pct: number | null;
-  impression_rush: boolean;
   /** Per-service unit count. `null` reads as 1. */
   scan_quantity: number | null;
   modelisation_quantity: number | null;
@@ -4413,13 +4408,11 @@ export type AitoTaskCreate = Omit<
   | 'modelisation_done'
   | 'impression_done'
   | 'usinage_done'
-  | 'impression_rush'
 > & {
   scan_done?: boolean;
   modelisation_done?: boolean;
   impression_done?: boolean;
   usinage_done?: boolean;
-  impression_rush?: boolean;
 };
 export type AitoTaskUpdate = Partial<AitoTaskCreate>;
 

@@ -687,7 +687,6 @@ describe('buildWaterfall', () => {
     floor_applied: false,
     margin_filament: 0,
     margin_stuff: 0,
-    margin_rush: 0,
     marge: 0,
     total_ht: 0,
     total_ttc: 0,
@@ -753,47 +752,5 @@ describe('buildWaterfall', () => {
     const margeStep = steps.find((s) => s.key === 'marge');
     expect(margeStep).toBeDefined();
     expect(margeStep!.value).toBeCloseTo(-0.006, 6);
-  });
-});
-
-describe('rush surcharge', () => {
-  const rushDefaults: PricingDefaults = { ...defaults, rush_pct: 20 };
-
-  it('is a no-op when the job is not rushed or the rate is zero', () => {
-    const base = computePricing(referenceInputs, filament, printer, defaults);
-    const notRushed = computePricing({ ...referenceInputs, rush: false }, filament, printer, rushDefaults);
-    const zeroRate = computePricing({ ...referenceInputs, rush: true }, filament, printer, { ...defaults, rush_pct: 0 });
-    expect(notRushed).toEqual(base);
-    expect(zeroRate).toEqual(base);
-    expect(base.margin_rush).toBe(0);
-    expect(CURVE_DEFAULTS.rush_pct).toBe(0);
-  });
-
-  it('adds rush_pct of the pre-rush pre-tax price as its own margin line', () => {
-    const base = computePricing(referenceInputs, filament, printer, defaults);
-    const rushed = computePricing({ ...referenceInputs, rush: true }, filament, printer, rushDefaults);
-    expect(rushed.margin_rush).toBeCloseTo(base.total_ht * 0.2, 6);
-    expect(rushed.total_ht).toBeCloseTo(base.total_ht * 1.2, 6);
-    expect(rushed.marge).toBeCloseTo(base.marge + rushed.margin_rush, 6);
-    expect(rushed.total_cost).toBe(base.total_cost);
-  });
-
-  it('applies after the floor: a floored task rushes at floor x (1 + rate)', () => {
-    const floored: PricingDefaults = { ...defaults, min_task_price: 1_000_000, rush_pct: 20 };
-    const r = computePricing({ ...referenceInputs, rush: true }, filament, printer, floored);
-    expect(r.floor_applied).toBe(true);
-    expect(r.total_ht).toBeCloseTo(1_000_000 * 1.2, 4);
-  });
-
-  it('shows up in the waterfall as its own step and still sums to total_ttc', () => {
-    const rushed = computePricing({ ...referenceInputs, rush: true }, filament, printer, rushDefaults);
-    const steps = buildWaterfall(rushed);
-    const rush = steps.find((s) => s.key === 'rush');
-    expect(rush?.value).toBeCloseTo(rushed.margin_rush, 6);
-    expect(steps.find((s) => s.key === 'marge')?.value).toBeCloseTo(rushed.marge - rushed.margin_rush, 6);
-    expect(steps.map((s) => s.key)).toEqual(['filament', 'printer', 'energy', 'provisions', 'other', 'marge', 'rush', 'tax']);
-    expect(steps[steps.length - 1].cumulative).toBeCloseTo(rushed.total_ttc, 6);
-    const plain = buildWaterfall(computePricing(referenceInputs, filament, printer, defaults));
-    expect(plain.some((s) => s.key === 'rush')).toBe(false);
   });
 });

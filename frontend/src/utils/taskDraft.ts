@@ -10,7 +10,6 @@ export interface ImpressionDraft {
   timeMin: number | null;
   quantity: number;
   color: string;
-  rush: boolean;
 }
 
 /** One task of a project. `id` is null until the row exists server-side, which
@@ -87,7 +86,7 @@ export function emptyTaskDraft(): TaskDraft {
     scanCost: null,
     modelisationCost: null,
     usinageCost: null,
-    impression: { printerId: null, filamentId: null, weightG: null, timeMin: null, quantity: 1, color: '', rush: false },
+    impression: { printerId: null, filamentId: null, weightG: null, timeMin: null, quantity: 1, color: '' },
     impressionCost: null,
     impressionDiscountPct: null,
     scanQuantity: 1,
@@ -168,7 +167,6 @@ export function normaliseTaskDraft(raw: unknown): TaskDraft {
       // this function exists to prevent.
       quantity: Math.max(1, num(impression.quantity) ?? 1),
       color: str(impression.color),
-      rush: bool(impression.rush),
     },
     impressionCost: num(task.impressionCost),
     impressionDiscountPct: num(task.impressionDiscountPct),
@@ -245,7 +243,6 @@ export function computeImpressionCost(
       post_fulfillment_min: 0,
       stuff_amount: 0,
       stuff_markup_pct: 0,
-      rush: impression.rush,
     },
     filament,
     printer,
@@ -279,7 +276,6 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
       timeMin: task.impression_time_min,
       quantity: task.impression_quantity ?? 1,
       color: task.impression_color ?? '',
-      rush: task.impression_rush ?? false,
     },
     impressionCost: task.impression_cost,
     impressionDiscountPct: task.impression_discount_pct ?? null,
@@ -300,7 +296,7 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
 
 /** A saved task turned back into a brand-new draft: no id, a fresh uid, no
  *  done ticks — and everything that was QUOTED (prices, quantities, discounts,
- *  descriptions, print parameters, rush) kept exactly as it was. This is what
+ *  descriptions, print parameters) kept exactly as it was. This is what
  *  the drawer's "Reuse" appends, so a regular's reorder starts from the last
  *  card rather than from scratch. */
 export function freshenTaskDraft(draft: TaskDraft): TaskDraft {
@@ -358,7 +354,6 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
     impression_color: t.impression.color.trim() || null,
     impression_cost: t.impressionCost,
     impression_discount_pct: t.impressionDiscountPct,
-    impression_rush: t.impression.rush,
     scan_quantity: t.scanQuantity,
     modelisation_quantity: t.modelisationQuantity,
     usinage_quantity: t.usinageQuantity,

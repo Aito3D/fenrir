@@ -58,7 +58,6 @@ const mockDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
-  rush_pct: 0,
   failure_rate_pct: 30,
   prototype_rate_pct: 30,
   ads_rate_pct: 5,
@@ -408,42 +407,6 @@ describe('CalculatorQuotePage', () => {
     const money = (s: string) => Number(s.replace(/[^\d.-]/g, ''));
     const minorUnits = (s: string) => Math.round(money(s) * scale);
     expect(minorUnits(htCellText) + minorUnits(taxCellText)).toBe(minorUnits(ttcCellText));
-  });
-
-  // Regression: the calculator flushes the live `rush` flag via
-  // persistCalculatorStateNow right before navigating to the quote page,
-  // which re-reads it via loadCalculatorState. That read must preserve
-  // `rush` exactly as written (unlike the calculator hook's own mount path,
-  // which deliberately forgets it) — otherwise the printed quote silently
-  // drops the rush surcharge the customer agreed to.
-  it('prices the rush surcharge into the printed quote (rush flag survives the calculator to quote hop)', async () => {
-    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json({ ...mockDefaults, rush_pct: 25 })));
-    vi.mocked(localStorage.getItem).mockImplementation((key) =>
-      key === 'calculator-state' ? JSON.stringify({ weight: '40', timeH: '2', timeM: '', rush: true }) : null,
-    );
-
-    render(<CalculatorQuotePage />);
-    await screen.findByText('Quote');
-
-    const rushedDefaults = { ...mockDefaults, rush_pct: 25 };
-    const rushedResult = computePricing(
-      { ...quoteFixtureInputs(40, 2, 1), rush: true },
-      mockFilaments[0],
-      mockPrinters[0],
-      rushedDefaults,
-    );
-    const notRushedResult = computePricing(quoteFixtureInputs(40, 2, 1), mockFilaments[0], mockPrinters[0], rushedDefaults);
-    // Sanity: the fixture actually exercises the surcharge.
-    expect(rushedResult.margin_rush).toBeGreaterThan(0);
-    expect(rushedResult.total_ttc_qty).toBeCloseTo(notRushedResult.total_ttc_qty * 1.25, 0);
-
-    // Quantity is 1 (no quantity in the stored state, DEFAULT_STATE falls
-    // back to '1'), so the unit price equals the rounded task price and the
-    // "for N units" task figure isn't rendered at all (the
-    // `result.quantity > 1` guard above quote-task-ttc) — the headline unit
-    // price is the only figure to check here.
-    const taskRounded = Math.round(rushedResult.total_ttc_qty);
-    expect(screen.getByTestId('quote-unit-ttc').textContent).toBe(formatMoney(taskRounded, 'XPF'));
   });
 
   it('shows the empty hint when no job is stored', async () => {

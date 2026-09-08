@@ -96,13 +96,13 @@ export interface TaskLike {
   modelisationDiscountPct?: number | null;
   impressionDiscountPct?: number | null;
   usinageDiscountPct?: number | null;
-  /** The print step's rush flag and minute/quantity backlog inputs, nested
-   *  exactly as `TaskDraft.impression` nests them so a draft satisfies this
-   *  structurally with no adapter. Optional — absent reads as not rushed and
-   *  as zero backlog minutes, which keeps every existing cost/done literal
-   *  in the suite compiling. Mirrors the `impression_rush`/`impression_time_min`/
-   *  `impression_quantity` attributes `summarise` duck-types off an AitoTask. */
-  impression?: { rush: boolean; timeMin?: number | null; quantity?: number };
+  /** The print step's minute/quantity backlog inputs, nested exactly as
+   *  `TaskDraft.impression` nests them so a draft satisfies this structurally
+   *  with no adapter. Optional — absent reads as zero backlog minutes, which
+   *  keeps every existing cost/done literal in the suite compiling. Mirrors
+   *  the `impression_time_min`/`impression_quantity` attributes `summarise`
+   *  duck-types off an AitoTask. */
+  impression?: { timeMin?: number | null; quantity?: number };
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -174,7 +174,6 @@ export function toTaskLike(task: AitoTaskCreate): TaskLike {
     impressionDiscountPct: task.impression_discount_pct,
     usinageDiscountPct: task.usinage_discount_pct,
     impression: {
-      rush: task.impression_rush ?? false,
       timeMin: task.impression_time_min ?? null,
       quantity: task.impression_quantity ?? undefined,
     },
@@ -226,10 +225,6 @@ export interface TaskSteps {
   services: ServiceId[];
   done: ServiceId[];
   title: string;
-  /** True only when the task HAS a print step AND it is rushed — a rush flag
-   *  on a scan-only task marks nothing. Same rule as `TaskSteps.rush` in the
-   *  Python, and pinned by the same fixture. */
-  rush: boolean;
 }
 
 export interface TaskSummary {
@@ -292,7 +287,6 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
       services: taskServices,
       done: taskDone,
       title: task.title ?? '',
-      rush: !!task.impression?.rush && taskServices.includes('impression'),
     });
   }
 

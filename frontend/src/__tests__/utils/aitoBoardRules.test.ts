@@ -21,7 +21,7 @@ interface SummariseCase {
   pending: string[];
   steps_total: number;
   steps_done: number;
-  steps_by_task: { services: string[]; done: string[]; title: string; rush: boolean }[];
+  steps_by_task: { services: string[]; done: string[]; title: string }[];
   print_minutes_pending: number;
 }
 
@@ -45,12 +45,11 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
       usinage: row.usinage_done === true,
     },
     title: row.title as string,
-    // The wire keeps rush flat (`impression_rush`) because that is how it
-    // sits on an AitoTask row; the mirror reads it off the nested impression
-    // draft, which is how it sits on a TaskDraft. This is the one place the
-    // two shapes meet.
+    // The wire keeps the print inputs flat (`impression_time_min`) because
+    // that is how they sit on an AitoTask row; the mirror reads them off the
+    // nested impression draft, which is how they sit on a TaskDraft. This is
+    // the one place the two shapes meet.
     impression: {
-      rush: row.impression_rush === true,
       timeMin: (row.impression_time_min as number | null | undefined) ?? null,
       quantity: (row.impression_quantity as number | null | undefined) ?? undefined,
     },
@@ -65,7 +64,7 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(316);
+    expect(summariseCases).toHaveLength(314);
   });
 
   it('stages every service exactly once', () => {
@@ -131,31 +130,10 @@ const bare = (over: Partial<TaskLike> = {}): TaskLike => ({
   ...over,
 });
 
-describe('the rush flag on a task row', () => {
-  // The mirror is what the panel's optimistic writes rebuild `task_steps`
-  // from (projectOntoBoard in hooks/useProjectTasks.ts, placeholderProject in
-  // utils/aitoOptimistic.ts). Dropping rush here meant ticking Rush showed no
-  // bolt on the card until the close-time refetch, and editing any other
-  // field wiped the bolts a refetch had put there.
-  it('marks a rushed print step', () => {
-    const summary = summariseTasks([bare({ impressionCost: 1250, impression: { rush: true } })]);
-    expect(summary.stepsByTask[0].rush).toBe(true);
-  });
-
-  it('marks nothing when the rushed task has no print step', () => {
-    const summary = summariseTasks([bare({ scanCost: 500, impression: { rush: true } })]);
-    expect(summary.stepsByTask[0].rush).toBe(false);
-  });
-
-  it('is false for a task that says nothing about rush', () => {
-    expect(summariseTasks([bare({ impressionCost: 1250 })]).stepsByTask[0].rush).toBe(false);
-  });
-});
-
 describe('printMinutesPending', () => {
   it('owes minutes x quantity for an unticked print step', () => {
     const summary = summariseTasks([
-      bare({ impressionCost: 100, impression: { rush: false, timeMin: 90, quantity: 2 } }),
+      bare({ impressionCost: 100, impression: { timeMin: 90, quantity: 2 } }),
     ]);
     expect(summary.printMinutesPending).toBe(180);
   });
@@ -164,7 +142,7 @@ describe('printMinutesPending', () => {
     const summary = summariseTasks([
       bare({
         impressionCost: 100,
-        impression: { rush: false, timeMin: 90, quantity: 2 },
+        impression: { timeMin: 90, quantity: 2 },
         done: { scan: false, modelisation: false, impression: true, usinage: false },
       }),
     ]);
@@ -173,7 +151,7 @@ describe('printMinutesPending', () => {
 
   // toTaskLike (the AitoTaskCreate adapter, not this file's fixture-row
   // adapter above) used to map no `impression` fields at all, so an import
-  // placeholder card reported printMinutesPending 0 and rush false until the
+  // placeholder card reported printMinutesPending 0 until the
   // server row arrived and replaced it.
   it('carries through an import placeholder built by toTaskLike', () => {
     const minimalWireTask = {
@@ -207,11 +185,9 @@ describe('printMinutesPending', () => {
         impression_cost: 100,
         impression_time_min: 90,
         impression_quantity: 2,
-        impression_rush: true,
       }),
     ]);
     expect(summary.printMinutesPending).toBe(180);
-    expect(summary.stepsByTask[0].rush).toBe(true);
   });
 });
 

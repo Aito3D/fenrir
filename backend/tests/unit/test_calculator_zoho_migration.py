@@ -297,10 +297,6 @@ async def test_a_sale_price_far_above_cost_backfills_a_margin_past_1000(raw_conn
 async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
     """Pre-migration table (no curve columns) gets them added back with the
     documented defaults, and re-running the migration is a no-op."""
-    # rush_pct (2026-09-04 rush surcharge column) is dropped alongside the
-    # curve columns: it's a later migration-added column that follows the
-    # same "ALTER TABLE ... FLOAT DEFAULT ..." pattern and is likewise
-    # NOT NULL with no DB-level default.
     for column in (
         "margin_min_mult",
         "margin_max_mult",
@@ -308,7 +304,6 @@ async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
         "qty_min_factor",
         "qty_k",
         "min_task_price",
-        "rush_pct",
     ):
         await raw_conn.execute(text(f"ALTER TABLE calculator_defaults DROP COLUMN {column}"))
     # Every other column on this table is NOT NULL with no DB-level default, so
@@ -330,11 +325,35 @@ async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
     row = (
         await raw_conn.execute(
             text(
-                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price, "
-                "rush_pct FROM calculator_defaults WHERE id = 1"
+                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price "
+                "FROM calculator_defaults WHERE id = 1"
             )
         )
     ).one()
-    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0, 0.0)
+    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0)
 
     await run_migrations(raw_conn)  # idempotent
+
+
+async def _columns(raw_conn, table: str) -> set[str]:
+    rows = (await raw_conn.execute(text(f"PRAGMA table_info({table})"))).all()
+    return {row[1] for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_removed_rush_columns_are_dropped(raw_conn):
+    """A DB that ran the 2026-09-04 rush migration carries `rush_pct` and
+    `impression_rush`; the 2026-09-07 removal drops both. A DB that never had
+    them (this one, built from the model) migrates unchanged, and re-running
+    is a no-op either way."""
+    await raw_conn.execute(text("ALTER TABLE calculator_defaults ADD COLUMN rush_pct FLOAT DEFAULT 0"))
+    await raw_conn.execute(text("ALTER TABLE aito_tasks ADD COLUMN impression_rush BOOLEAN NOT NULL DEFAULT 0"))
+    assert "rush_pct" in await _columns(raw_conn, "calculator_defaults")
+    assert "impression_rush" in await _columns(raw_conn, "aito_tasks")
+
+    await run_migrations(raw_conn)
+
+    assert "rush_pct" not in await _columns(raw_conn, "calculator_defaults")
+    assert "impression_rush" not in await _columns(raw_conn, "aito_tasks")
+
+    await run_migrations(raw_conn)  # idempotent: the columns are already gone

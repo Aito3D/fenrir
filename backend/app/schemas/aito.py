@@ -201,9 +201,6 @@ class AitoTaskBase(BaseModel):
     impression_cost: float | None = Field(default=None, ge=0)
     # gt=0: a 0% discount is expressed as null, never stored — see the model.
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100)
-    # Quoted at the rush rate. Plain bool with a default, on the base class:
-    # a response must read it back and a create may omit it (False).
-    impression_rush: bool = False
     # ge=1: there is no zero-unit line. None reads as 1.
     scan_quantity: int | None = Field(default=None, ge=1)
     modelisation_quantity: int | None = Field(default=None, ge=1)
@@ -261,8 +258,6 @@ class AitoTaskUpdate(AitoTaskBase):
     impression_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
-    # `None` = leave alone, matching every other field's exclude_unset read.
-    impression_rush: bool | None = None
 
 
 class AitoTaskResponse(AitoTaskBase):
@@ -543,9 +538,6 @@ class AitoTaskStepsResponse(BaseModel):
     services: list[str]
     done: list[str]
     title: str = ""
-    # True when the task carries a print step quoted at the rush rate. The
-    # card draws a glyph on that row; nothing else reads it.
-    rush: bool = False
 
 
 class AitoProjectResponse(BaseModel):

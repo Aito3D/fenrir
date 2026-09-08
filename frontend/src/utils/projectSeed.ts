@@ -106,18 +106,7 @@ function shippingFromProject(project: AitoProject, services: AitoShippingService
  *  changes the work — but only if they have not edited the text themselves,
  *  which the flag above says they have. */
 export function seedFromProject({ project, tasks, services, defaultContactId }: ProjectSeedInput): PersistedDraft {
-  // `freshenTaskDraft` drops the ids and the done ticks but deliberately KEEPS
-  // rush — right for the drawer's Reuse, which appends to a quote being typed
-  // now, wrong here: rush is a surcharge for the urgency of the job that
-  // carried it, and a duplicate is a different job whose urgency nobody has
-  // stated yet. Cleared here rather than in the shared helper so Reuse keeps
-  // the behaviour it was built with.
-  const fresh = tasks
-    .filter((task) => !isBlankTaskDraft(task))
-    .map((task) => {
-      const copy = freshenTaskDraft(task);
-      return { ...copy, impression: { ...copy.impression, rush: false } };
-    });
+  const fresh = tasks.filter((task) => !isBlankTaskDraft(task)).map(freshenTaskDraft);
   return {
     // The drawer reads `tasks[0]` unguarded in places; a card whose tasks were
     // all blank still opens on the one empty row a new draft would have.

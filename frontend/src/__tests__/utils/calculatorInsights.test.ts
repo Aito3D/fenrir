@@ -394,8 +394,7 @@ describe('realityCheckImpact', () => {
     // pin. Disabling the floor here isolates the size-margin/quantity-curve
     // sensitivity under test from that unrelated floor behavior.
     min_task_price: 0,
-    rush_pct: 0,
-  };
+    };
   const impact = (check: Partial<RealityCheck> & Pick<RealityCheck, 'kind' | 'assumed' | 'measured'>) =>
     realityCheckImpact(
       { sample: 10, scope: null, severity: 'minor', ...check },

@@ -322,29 +322,4 @@ describe('TaskStepFields', () => {
     expect(screen.queryByLabelText(/Modeling.*[Dd]escription/)).toBeNull();
     expect(screen.queryByLabelText(/Printing.*[Dd]escription/)).toBeNull();
   });
-
-  it('printing: the rush checkbox sits in the price column and toggles impression.rush', () => {
-    const onChange = vi.fn();
-    render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={onChange} />);
-    const grid = within(screen.getByTestId('impression-grid'));
-    const rush = grid.getByLabelText(/^rush$/i);
-    expect(rush).not.toBeChecked();
-
-    fireEvent.click(rush);
-    expect(onChange.mock.calls.at(-1)?.[0].impression.rush).toBe(true);
-    // A hand-typed cost is never rescaled by the toggle — only the
-    // calculator-linked path reprices, and that path is exercised in
-    // pricing.test.ts through computeImpressionCost.
-    expect(onChange.mock.calls.at(-1)?.[0].impressionCost).toBe(500);
-  });
-
-  it('printing: a rushed draft renders its checkbox checked', () => {
-    render(
-      <TaskStepFields
-        task={{ ...emptyTaskDraft(), impressionCost: 500, impression: { ...emptyTaskDraft().impression, rush: true } }}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(within(screen.getByTestId('impression-grid')).getByLabelText(/^rush$/i)).toBeChecked();
-  });
 });

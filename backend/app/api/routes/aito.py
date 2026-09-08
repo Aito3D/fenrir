@@ -465,9 +465,7 @@ def _to_response(
         steps_done=summary.steps_done,
         print_minutes_pending=summary.print_minutes_pending,
         task_steps=[
-            AitoTaskStepsResponse(
-                services=list(steps.services), done=list(steps.done), title=steps.title, rush=steps.rush
-            )
+            AitoTaskStepsResponse(services=list(steps.services), done=list(steps.done), title=steps.title)
             for steps in summary.steps_by_task
         ],
         move_lock=lock,
@@ -525,7 +523,6 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
         impression_color=t.impression_color,
         impression_cost=t.impression_cost,
         impression_discount_pct=t.impression_discount_pct,
-        impression_rush=t.impression_rush,
         scan_quantity=t.scan_quantity,
         modelisation_quantity=t.modelisation_quantity,
         usinage_quantity=t.usinage_quantity,
@@ -2241,9 +2238,6 @@ async def update_task(
     """
     task = await _get_task_or_404(db, task_id)
     fields = payload.model_dump(exclude_unset=True)
-    # A null rush is "leave alone", never "clear": the column is NOT NULL.
-    if fields.get("impression_rush", False) is None:
-        fields.pop("impression_rush")
 
     # Loaded before the write, not after: the guard needs the parent's quote
     # status, and one load then serves the pending mark and _apply_rules too.

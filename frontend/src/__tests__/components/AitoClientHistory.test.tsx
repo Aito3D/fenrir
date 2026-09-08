@@ -28,7 +28,6 @@ function makeTask(overrides: Partial<AitoTask> = {}): AitoTask {
     impression_color: null,
     impression_cost: null,
     impression_discount_pct: null,
-    impression_rush: false,
     scan_quantity: null,
     modelisation_quantity: null,
     usinage_quantity: null,

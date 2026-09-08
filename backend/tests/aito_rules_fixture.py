@@ -45,10 +45,6 @@ class _Task:
             setattr(self, f"{service}_quantity", kwargs.get(f"{service}_quantity"))
             setattr(self, f"{service}_discount_pct", kwargs.get(f"{service}_discount_pct"))
         self.title = kwargs.get("title", "")
-        # Always present, defaulting False, so the fixture pins what an
-        # un-rushed task emits rather than leaving the mirror free to read a
-        # missing attribute however it likes.
-        self.impression_rush = kwargs.get("impression_rush", False)
         self.impression_time_min = kwargs.get("impression_time_min")
         self.impression_quantity = kwargs.get("impression_quantity")
 
@@ -151,17 +147,6 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         ],
     ),
     (
-        # Rush is a property of the PRINT step, and the card marks that row.
-        "a rushed print step is flagged on its task",
-        [{"title": "Urgent", "impression_cost": 1250.0, "impression_rush": True}],
-    ),
-    (
-        # ...and a rush flag with no print step marks nothing: the task is
-        # stored as the operator left it, but there is no print row to mark.
-        "a rush flag without a print step marks nothing",
-        [{"scan_cost": 500.0, "impression_rush": True}],
-    ),
-    (
         # The design doc's headline example, pinned exactly: three tasks
         # carrying ten steps between them with three ticked is the 30% the
         # card's progress bar must show. The free scan on the second task is
@@ -200,7 +185,7 @@ def _generated_shapes(count: int = 300) -> list[tuple[str, list[dict[str, Any]]]
 
     The hand-written `_SUMMARISE_SHAPES` cover the cases someone thought of.
     This covers the ones nobody did: every combination of null-vs-zero costs,
-    done flags, discounts, rush and print minutes, across multi-task cards.
+    done flags, discounts and print minutes, across multi-task cards.
 
     `random.Random(20260907)` — a fixed seed, so regenerating the fixture on
     another machine produces byte-identical JSON and the frontend replay test
@@ -219,7 +204,6 @@ def _generated_shapes(count: int = 300) -> list[tuple[str, list[dict[str, Any]]]
                 shape[f"{service}_cost"] = rng.choice([None, None, 0, 0.0, 1250.0, 99.99])
                 shape[f"{service}_done"] = rng.choice([True, False])
                 shape[f"{service}_discount_pct"] = rng.choice([None, 0, 10, 50, 100])
-            shape["impression_rush"] = rng.choice([True, False])
             shape["impression_time_min"] = rng.choice([None, 0, 45, 180])
             shape["impression_quantity"] = rng.choice([None, 1, 2, 5])
             tasks.append(shape)
@@ -236,7 +220,6 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
         payload[f"{service}_done"] = shape.get(f"{service}_done", False)
         payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
     payload["title"] = shape.get("title", "")
-    payload["impression_rush"] = shape.get("impression_rush", False)
     payload["impression_time_min"] = shape.get("impression_time_min")
     payload["impression_quantity"] = shape.get("impression_quantity")
     return payload
@@ -262,7 +245,6 @@ def _summarise_cases() -> list[dict[str, Any]]:
                         "services": list(steps.services),
                         "done": list(steps.done),
                         "title": steps.title,
-                        "rush": steps.rush,
                     }
                     for steps in summary.steps_by_task
                 ],
