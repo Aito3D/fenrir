@@ -23,6 +23,31 @@ describe('QuantityInput', () => {
     await userEvent.type(screen.getByRole('spinbutton'), '2');
     expect(onChange).toHaveBeenLastCalledWith(12);
   });
+
+  // The reason this field holds a draft at all: floor-on-every-keystroke put
+  // "1" back the instant the field was emptied, so raising a count to 2 meant
+  // typing "12" and deleting the leading 1.
+  it('can be emptied, so a new count replaces the old one', async () => {
+    const onChange = vi.fn();
+    render(<QuantityInput id="q" value={1} onChange={onChange} />);
+    const field = screen.getByRole('spinbutton');
+    await userEvent.clear(field);
+    expect(field).toHaveValue(null);
+    await userEvent.type(field, '2');
+    expect(onChange).toHaveBeenLastCalledWith(2);
+  });
+
+  // Leaving the field blank is not a count of zero: the stored value comes
+  // back on blur, and no change is reported for the empty pass through.
+  it('restores the stored count when left empty', async () => {
+    const onChange = vi.fn();
+    render(<QuantityInput id="q" value={3} onChange={onChange} />);
+    const field = screen.getByRole('spinbutton');
+    await userEvent.clear(field);
+    expect(onChange).not.toHaveBeenCalled();
+    await userEvent.tab();
+    expect(field).toHaveValue(3);
+  });
 });
 
 describe('DiscountSelect', () => {

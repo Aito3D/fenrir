@@ -1009,20 +1009,29 @@ describe('TaskRow', () => {
     // A typed '0': `Number('0')` is falsy, so without the `|| 1` fallback the
     // stored quantity would be zero pieces.
     fireEvent.change(quantityInput, { target: { value: '0' } });
-    await waitFor(() => expect(quantityInput).toHaveValue(1));
+    // The field goes on showing what was typed until focus leaves it — see
+    // QuantityInput's doc on the draft — so the report, not the display, is
+    // what says the value was floored. Blur is what normalizes the display.
+    await waitFor(() =>
+      expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impressionCost).toBe(expectedCostAtOne),
+    );
     let lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
     expect(lastTask.impression?.quantity).toBe(1);
-    expect(lastTask.impressionCost).toBe(expectedCostAtOne);
+    fireEvent.blur(quantityInput);
+    expect(quantityInput).toHaveValue(1);
 
     onChangeSpy.mockClear();
 
     // A typed '1.5': without `Math.floor`, the stored quantity would be a
     // fractional piece count.
     fireEvent.change(quantityInput, { target: { value: '1.5' } });
-    await waitFor(() => expect(quantityInput).toHaveValue(1));
+    await waitFor(() =>
+      expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impressionCost).toBe(expectedCostAtOne),
+    );
     lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
     expect(lastTask.impression?.quantity).toBe(1);
-    expect(lastTask.impressionCost).toBe(expectedCostAtOne);
+    fireEvent.blur(quantityInput);
+    expect(quantityInput).toHaveValue(1);
   });
 
   it('printing: every print parameter is on screen, with no disclosure to open', async () => {

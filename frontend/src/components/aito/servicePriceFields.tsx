@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { inputCls } from '../formStyles';
 import { Money } from '../calculator/shared';
@@ -28,6 +29,14 @@ const DISCOUNT_STEPS: readonly number[] = [5, 10, 15, 20, 25, 30];
  *  Floors at 1 and reports an integer: there is no zero-unit line and no
  *  half-part, and every consumer divides a stored total by this number.
  *
+ *  What the operator has typed is held in a draft until focus leaves, the
+ *  same arrangement `DurationInput` uses. Flooring on every keystroke put
+ *  "1" straight back into an emptied field, so the field could never be
+ *  blank and raising a count to 2 meant typing "12" and then deleting the
+ *  leading 1. The draft lets it sit empty mid-edit; nothing is reported for
+ *  a blank field, and blur falls back to the stored count, so an abandoned
+ *  edit leaves the line as it was rather than at 1.
+ *
  *  `ariaLabel`, when given, qualifies the ACCESSIBLE name only — the
  *  visible `<label>` a caller places beside this input stays the bare
  *  "Quantity" text, so the narrow label column doesn't widen for a longer
@@ -52,6 +61,7 @@ export function QuantityInput({
   onChange: (next: number) => void;
   ariaLabel?: string;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <div className="max-w-20">
       <input
@@ -61,10 +71,20 @@ export function QuantityInput({
         min={1}
         step={1}
         inputMode="numeric"
-        value={value}
-        onChange={(e) =>
-          onChange(e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)))
-        }
+        value={draft ?? String(value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setDraft(raw);
+          // A blank field reports nothing: it is a count on its way to being
+          // retyped, not a count of one. Anything else still floors to a
+          // whole 1+, so no consumer ever sees a zero or a fraction even
+          // while the entry is mid-flight.
+          if (raw !== '') onChange(Math.max(1, Math.floor(Number(raw) || 1)));
+        }}
+        // Dropping the draft is what normalizes: the field falls back to the
+        // stored count. That count never changed here, so no onChange fires
+        // and a blur cannot mark the task dirty.
+        onBlur={() => setDraft(null)}
         className={inputCls}
       />
     </div>
