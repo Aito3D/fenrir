@@ -259,6 +259,7 @@ export default {
     trackingCopied: '복사됨',
     trackingRegenerate: '새 추적 링크',
     trackingRegenerated: '새 추적 링크가 생성되었습니다 — 이전 링크는 더 이상 작동하지 않습니다',
+    trackingQuoteNotUpdated: '견적서를 새 링크로 업데이트하지 못했습니다 — 다음 동기화 시 반영됩니다',
     trackingNeedsExternalUrl: '추적 링크를 사용하려면 설정에서 외부 URL을 지정하세요',
     trackingSettingsLink: '설정',
     trackingLabel: '추적 링크',

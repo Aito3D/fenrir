@@ -49,8 +49,12 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
 
   const regenerate = useMutation({
     mutationFn: () => api.regenerateAitoTrackingToken(project.id),
-    onSuccess: () => {
+    onSuccess: (data) => {
       showToast(t('aito.trackingRegenerated'), 'success');
+      // The old link is on the quote too; the server rewrites the notes
+      // as part of the regenerate. When Books was unreachable the local
+      // link still changed, so say so — the next sync fixes the quote.
+      if (data.quote_notes === 'failed') showToast(t('aito.trackingQuoteNotUpdated'), 'error');
       invalidate();
     },
     onError: () => showToast(t('common.errorLoading'), 'error'),

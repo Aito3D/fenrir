@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'コピーしました',
     trackingRegenerate: '新しい追跡リンク',
     trackingRegenerated: '新しい追跡リンクを作成しました — 以前のリンクは無効です',
+    trackingQuoteNotUpdated: '見積書を新しいリンクで更新できませんでした — 次回の同期時に更新されます',
     trackingNeedsExternalUrl: '追跡リンクを有効にするには、設定で外部 URL を指定してください',
     trackingSettingsLink: '設定',
     trackingLabel: '追跡リンク',

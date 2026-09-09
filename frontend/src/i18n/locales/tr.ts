@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'Kopyalandı',
     trackingRegenerate: 'Yeni takip bağlantısı',
     trackingRegenerated: 'Yeni takip bağlantısı oluşturuldu — eskisi artık çalışmıyor',
+    trackingQuoteNotUpdated: 'Teklif yeni bağlantıyla güncellenemedi — bir sonraki eşitlemede yapılacak',
     trackingNeedsExternalUrl: 'Takip bağlantılarını etkinleştirmek için Ayarlar’da dış URL’yi girin',
     trackingSettingsLink: 'Ayarlar',
     trackingLabel: 'Takip bağlantısı',

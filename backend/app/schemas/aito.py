@@ -1029,3 +1029,11 @@ class AitoTrackingResponse(BaseModel):
 
 class AitoTrackingLinkResponse(BaseModel):
     tracking_url: str | None
+    # Regenerate only: whether the Zoho estimate's notes were rewritten with
+    # the new link ('updated'), could not be ('failed' — the panel warns), or
+    # there was no quote / no public URL to write (None).
+    quote_notes: Literal["updated", "failed"] | None = None
+    # Regenerate only: whether the Zoho estimate's notes were rewritten with
+    # the new link ('updated'), could not be ('failed' — the panel warns), or
+    # there was no quote / no public URL to write (None).
+    quote_notes: Literal["updated", "failed"] | None = None

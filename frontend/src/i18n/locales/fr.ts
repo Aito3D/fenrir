@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'Copié',
     trackingRegenerate: 'Nouveau lien de suivi',
     trackingRegenerated: "Nouveau lien de suivi créé — l'ancien ne fonctionne plus",
+    trackingQuoteNotUpdated: "Le devis n'a pas pu être mis à jour avec le nouveau lien — ce sera fait à la prochaine synchro",
     trackingNeedsExternalUrl: "Renseignez l'URL externe dans les réglages pour activer les liens de suivi",
     trackingSettingsLink: 'Réglages',
     trackingLabel: 'Lien de suivi',

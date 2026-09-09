@@ -61,7 +61,7 @@ from backend.app.services.zoho import (
 logger = logging.getLogger(__name__)
 
 
-async def _notes_with_tracking(db: AsyncSession, project: AitoProject, existing: str | None) -> str | None:
+async def notes_with_tracking(db: AsyncSession, project: AitoProject, existing: str | None) -> str | None:
     """The estimate's customer notes as they should read — Books' own text
     with this card's tracking block under it — or None when there is nothing
     to write: no public URL configured (build_tracking_url), or the notes
@@ -609,8 +609,8 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     # totals), and sending ours would replace it. Read the default back and
     # append the tracking block under it in a second call. A failure there
     # must not cost the quote just created — the next line sync writes the
-    # notes again, since _notes_with_tracking sees they are still missing.
-    notes = await _notes_with_tracking(db, project, estimate.get("notes"))
+    # notes again, since notes_with_tracking sees they are still missing.
+    notes = await notes_with_tracking(db, project, estimate.get("notes"))
     if notes and estimate.get("estimate_id"):
         try:
             await zoho_service.update_estimate_notes(db, estimate["estimate_id"], notes)
@@ -1160,7 +1160,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         shipping=load_export_shipping(project, catalogue),
     )
     updated = await zoho_service.update_estimate_lines(
-        db, project.quote_id, line_items, notes=await _notes_with_tracking(db, project, estimate.get("notes"))
+        db, project.quote_id, line_items, notes=await notes_with_tracking(db, project, estimate.get("notes"))
     )
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,

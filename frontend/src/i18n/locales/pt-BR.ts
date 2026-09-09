@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'Copiado',
     trackingRegenerate: 'Novo link de acompanhamento',
     trackingRegenerated: 'Novo link de acompanhamento criado — o anterior não funciona mais',
+    trackingQuoteNotUpdated: 'Não foi possível atualizar o orçamento com o novo link — será feito na próxima sincronização',
     trackingNeedsExternalUrl: 'Defina a URL externa em Configurações para ativar os links de acompanhamento',
     trackingSettingsLink: 'Configurações',
     trackingLabel: 'Link de acompanhamento',

@@ -98,7 +98,12 @@ beforeEach(() => {
   // see `clipboard.test.ts` and `PrinterInfoModal.test.tsx` for the same
   // pattern.
   vi.stubGlobal('isSecureContext', true);
-  Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+  // defineProperty, not Object.assign: after a user-event test navigator
+  // exposes `clipboard` as a getter-only property, and assignment throws.
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    configurable: true,
+  });
 });
 
 afterEach(() => {
@@ -145,6 +150,19 @@ describe('TrackingLinkControl', () => {
 
     await waitFor(() => expect(calls).toEqual(['regen']));
     expect(await screen.findByText(/new tracking link/i)).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('warns when the quote could not take the new link', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    server.use(
+      http.post('/api/v1/aito/7/tracking-token', () =>
+        HttpResponse.json({ tracking_url: 'https://x.pf/t/new', quote_notes: 'failed' }),
+      ),
+    );
+    render(<TrackingLinkControl project={project} />);
+    await holdButton(screen.getByRole('button', { name: /new tracking link/i }));
+    expect(await screen.findByText(/quote could not be updated/i)).toBeInTheDocument();
     vi.useRealTimers();
   });
 });

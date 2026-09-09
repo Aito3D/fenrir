@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'Скопировано',
     trackingRegenerate: 'Новая ссылка отслеживания',
     trackingRegenerated: 'Создана новая ссылка отслеживания — старая больше не работает',
+    trackingQuoteNotUpdated: 'Не удалось обновить смету новой ссылкой — это произойдёт при следующей синхронизации',
     trackingNeedsExternalUrl: 'Укажите внешний URL в настройках, чтобы включить ссылки отслеживания',
     trackingSettingsLink: 'Настройки',
     trackingLabel: 'Ссылка отслеживания',

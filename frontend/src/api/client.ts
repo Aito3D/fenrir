@@ -4096,6 +4096,8 @@ export interface AitoTracking {
 
 export interface AitoTrackingLink {
   tracking_url: string | null;
+  /** Regenerate only: whether the Zoho quote's notes took the new link. */
+  quote_notes?: 'updated' | 'failed' | null;
 }
 
 export type AitoFlag = 'urgent' | 'sav' | 'pause';

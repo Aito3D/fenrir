@@ -411,7 +411,7 @@ async def test_link_route_mints_and_regenerate_replaces(async_client, db_session
 @pytest.mark.asyncio
 async def test_link_route_without_external_url_returns_null_but_mints(async_client, db_session):
     pid = await _create(async_client)
-    assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json() == {"tracking_url": None}
+    assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"] is None
     assert (await _project(db_session, pid)).tracking_token is not None
 
 
@@ -521,3 +521,69 @@ async def test_public_route_rate_limit_unwraps_a_trusted_proxy_and_forgets_idle_
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.7"})
     assert r.status_code == 404
     assert set(aito_routes._track_rate_ip_calls) == {"203.0.113.7"}
+
+
+@pytest.mark.asyncio
+async def test_regenerate_rewrites_the_quote_notes_with_the_new_link(async_client, db_session, monkeypatch):
+    from backend.app.services.zoho import zoho_service
+
+    await _set_external_url(db_session, "https://aito.example")
+    pid = await _create(async_client)
+    old = await _token(async_client, db_session, pid)
+    await _set(db_session, pid, quote_id="E1")
+    remote = {
+        "notes": f"Signature du client\n\nLien de suivi de votre projet : https://aito.example/t/{old}\nCode de suivi : {old}"
+    }
+    written = []
+
+    async def fake_get_estimate(db, estimate_id):
+        return {"estimate_id": estimate_id, **remote}
+
+    async def fake_update_estimate_notes(db, estimate_id, notes):
+        written.append((estimate_id, notes))
+        return {}
+
+    monkeypatch.setattr(zoho_service, "get_estimate", fake_get_estimate)
+    monkeypatch.setattr(zoho_service, "update_estimate_notes", fake_update_estimate_notes)
+
+    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
+    new = body["tracking_url"].rsplit("/", 1)[1]
+    assert new != old and body["quote_notes"] == "updated"
+    assert written == [
+        (
+            "E1",
+            f"Signature du client\n\nLien de suivi de votre projet : https://aito.example/t/{new}\nCode de suivi : {new}",
+        )
+    ]
+    # "detail" depth: the regenerate is filed there (services/aito_events.py), below the story.
+    events = (await async_client.get(f"/api/v1/aito/{pid}/events?depth=detail")).json()["events"]
+    regen = next(e for e in events if e["kind"] == "tracking.regenerated")
+    assert regen["detail"] == {"quote_notes": "updated"}
+
+
+@pytest.mark.asyncio
+async def test_regenerate_still_replaces_the_token_when_books_is_away(async_client, db_session, monkeypatch):
+    from backend.app.services.zoho import zoho_service
+
+    await _set_external_url(db_session, "https://aito.example")
+    pid = await _create(async_client)
+    old = await _token(async_client, db_session, pid)
+    await _set(db_session, pid, quote_id="E1")
+
+    async def failing_get_estimate(db, estimate_id):
+        raise RuntimeError("Books is away")
+
+    monkeypatch.setattr(zoho_service, "get_estimate", failing_get_estimate)
+    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
+    assert body["quote_notes"] == "failed"
+    assert body["tracking_url"].rsplit("/", 1)[1] != old
+    # The old link is dead regardless.
+    assert (await async_client.get(TRACK + old)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_regenerate_without_a_quote_reports_no_notes(async_client, db_session):
+    await _set_external_url(db_session, "https://aito.example")
+    pid = await _create(async_client)
+    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
+    assert body["quote_notes"] is None

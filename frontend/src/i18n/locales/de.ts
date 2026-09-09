@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'Kopiert',
     trackingRegenerate: 'Neuer Tracking-Link',
     trackingRegenerated: 'Neuer Tracking-Link erstellt — der alte funktioniert nicht mehr',
+    trackingQuoteNotUpdated: 'Das Angebot konnte nicht mit dem neuen Link aktualisiert werden — das passiert bei der nächsten Synchronisierung',
     trackingNeedsExternalUrl: 'Externe URL in den Einstellungen setzen, um Tracking-Links zu aktivieren',
     trackingSettingsLink: 'Einstellungen',
     trackingLabel: 'Tracking-Link',

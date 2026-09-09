@@ -69,6 +69,7 @@ from backend.app.services.aito_events import diff_fields, kinds_for_depth, recor
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
+    notes_with_tracking,
     request_debounced_sync,
     request_immediate_sync,
 )
@@ -2959,12 +2960,37 @@ async def regenerate_tracking_token(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Kill a leaked link: a new token, the old one 404s at once. The event
-    carries no token — the log is readable by every aito:read holder."""
+    carries no token — the log is readable by every aito:read holder.
+
+    The old link is printed on the quote too, so the estimate's notes are
+    rewritten here and now rather than at the next line sync, which may be
+    days away. Books being unreachable never blocks the local change — the
+    leaked link must die regardless — but the response says so, and the
+    next sync rewrites the notes anyway (notes_with_tracking sees the
+    stale block)."""
     project = await _get_active_project_or_404(db, project_id)
     project.tracking_token = await mint_unique_token(db)
-    await record(db, project.id, "tracking.regenerated", actor_class="user", actor_name=_actor(current_user), detail={})
+    quote_notes: str | None = None
+    if project.quote_id:
+        try:
+            estimate = await zoho_service.get_estimate(db, project.quote_id)
+            notes = await notes_with_tracking(db, project, estimate.get("notes"))
+            if notes:
+                await zoho_service.update_estimate_notes(db, project.quote_id, notes)
+                quote_notes = "updated"
+        except Exception:  # noqa: BLE001 — logged and reported, never fatal
+            logger.warning("tracking notes not rewritten on estimate %s", project.quote_id, exc_info=True)
+            quote_notes = "failed"
+    await record(
+        db,
+        project.id,
+        "tracking.regenerated",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        detail={"quote_notes": quote_notes} if quote_notes else {},
+    )
     await db.commit()
-    return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project))
+    return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project), quote_notes=quote_notes)
 
 
 async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:

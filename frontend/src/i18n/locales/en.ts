@@ -262,6 +262,7 @@ export default {
     trackingCopied: 'Copied',
     trackingRegenerate: 'New tracking link',
     trackingRegenerated: 'New tracking link created — the old one no longer works',
+    trackingQuoteNotUpdated: 'The quote could not be updated with the new link — it will be on the next sync',
     trackingNeedsExternalUrl: 'Set the external URL in Settings to enable tracking links',
     trackingSettingsLink: 'Settings',
     trackingLabel: 'Tracking link',

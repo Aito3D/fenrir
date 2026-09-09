@@ -259,6 +259,7 @@ export default {
     trackingCopied: 'Copiato',
     trackingRegenerate: 'Nuovo link di tracciamento',
     trackingRegenerated: 'Nuovo link di tracciamento creato — il precedente non funziona più',
+    trackingQuoteNotUpdated: 'Impossibile aggiornare il preventivo con il nuovo link — verrà fatto alla prossima sincronizzazione',
     trackingNeedsExternalUrl: "Imposta l'URL esterno nelle Impostazioni per attivare i link di tracciamento",
     trackingSettingsLink: 'Impostazioni',
     trackingLabel: 'Link di tracciamento',

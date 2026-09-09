@@ -260,6 +260,7 @@ export default {
     trackingCopied: 'Скопійовано',
     trackingRegenerate: 'Нове посилання відстеження',
     trackingRegenerated: 'Створено нове посилання відстеження — старе більше не працює',
+    trackingQuoteNotUpdated: 'Не вдалося оновити кошторис новим посиланням — це станеться під час наступної синхронізації',
     trackingNeedsExternalUrl: 'Вкажіть зовнішню URL-адресу в налаштуваннях, щоб увімкнути посилання відстеження',
     trackingSettingsLink: 'Налаштування',
     trackingLabel: 'Посилання відстеження',

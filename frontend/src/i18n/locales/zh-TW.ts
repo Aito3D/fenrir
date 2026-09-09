@@ -259,6 +259,7 @@ export default {
     trackingCopied: '已複製',
     trackingRegenerate: '新的追蹤連結',
     trackingRegenerated: '已建立新的追蹤連結 — 舊連結已失效',
+    trackingQuoteNotUpdated: '無法以新連結更新報價單 — 將在下次同步時更新',
     trackingNeedsExternalUrl: '請在設定中填寫外部 URL 以啟用追蹤連結',
     trackingSettingsLink: '設定',
     trackingLabel: '追蹤連結',
