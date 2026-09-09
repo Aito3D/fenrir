@@ -168,6 +168,78 @@ describe('LoginPage', () => {
       // Release the login request
       resolveLogin!();
     });
+
+    // T-038: loginMutation.onError (LoginPage.tsx `showToast(error.message ||
+    // t('login.loginFailed'), 'error')`) had no test hitting the 401 branch of
+    // the mock handler above — wire it up with mismatched credentials.
+    it('shows an error toast with the backend detail on invalid credentials and does not navigate away', async () => {
+      const user = userEvent.setup();
+      mockNavigate.mockClear();
+      // A prior test in this file (e.g. the successful "shows loading state"
+      // login) can leave a session token behind, which would otherwise trip
+      // the #1889 already-authenticated redirect before we even submit.
+      setAuthToken(null);
+      sessionStorage.clear();
+
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json(
+            { detail: 'Incorrect username or password' },
+            { status: 401 }
+          )
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'wronguser');
+      await user.type(screen.getByLabelText(/Password/i), 'wrongpass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Positive evidence first: the 401's `detail` string surfaces verbatim
+      // as the error toast (client.ts passes it through as error.message).
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect username or password')).toBeInTheDocument();
+      });
+
+      // Only now check the negative: a failed login must never navigate
+      // anywhere, and the credentials form must still be on screen.
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+    });
+
+    it('falls back to the generic login-failed message when the error has no detail text', async () => {
+      const user = userEvent.setup();
+      setAuthToken(null);
+      sessionStorage.clear();
+
+      server.use(
+        // An empty-string `detail` is the one shape client.ts's request()
+        // turns into a falsy error.message, exercising the `|| t('login.loginFailed')`
+        // fallback in onError rather than the plain 401 detail branch above.
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({ detail: '' }, { status: 401 })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'someuser');
+      await user.type(screen.getByLabelText(/Password/i), 'somepass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Login failed')).toBeInTheDocument();
+      });
+    });
   });
 
   describe('2FA flow', () => {
@@ -640,6 +712,103 @@ describe('LoginPage', () => {
     });
   });
 
+  // T-037: sanitizeRedirectTarget() guards the sessionStorage stash consumed
+  // by resolvePostLoginRedirect() after a successful OIDC round-trip — the
+  // one path where React state (router `location.state.from`) doesn't
+  // survive, so a tampered `auth_post_login_redirect` value is the only way
+  // in. Drive it end-to-end: seed sessionStorage, complete the OIDC
+  // exchange, and assert where the post-login navigate() call actually goes.
+  describe('post-login redirect sanitization (T-037)', () => {
+    const mockUser = {
+      id: 1,
+      username: 'oidcuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    let originalMatchMedia: typeof window.matchMedia;
+
+    beforeEach(() => {
+      sessionStorage.clear();
+      mockNavigate.mockClear();
+      // Force reduced motion so exitToDashboard() calls navigate() synchronously
+      // (inside the OIDC-exchange .then()) instead of behind its normal 700ms
+      // setTimeout. That keeps this test's assertion free of two hazards: (1) a
+      // real, uncleared 700ms window.setTimeout left over from an *earlier*
+      // test's render — LoginPage never clears it on unmount, so it can fire
+      // mid-way through a later test and pollute mockNavigate's call list —
+      // and (2) the unrelated #1889 "already authenticated" effect, which also
+      // calls navigate('/', ...) the moment loginWithToken() sets the user,
+      // but only on the *next* render (after this synchronous call). Reading
+      // mockNavigate's first call therefore isolates exitToDashboard's own,
+      // resolved-target call.
+      originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => true,
+      })) as typeof window.matchMedia;
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+    });
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      sessionStorage.clear();
+    });
+
+    async function waitForFirstNavigateCall() {
+      await waitFor(
+        () => {
+          expect(mockNavigate.mock.calls.length).toBeGreaterThanOrEqual(1);
+        },
+        { timeout: 3000 }
+      );
+      return mockNavigate.mock.calls[0];
+    }
+
+    it.each([
+      ['//evil.com', 'protocol-relative'],
+      ['https://evil.com', 'absolute URL'],
+      ['/login', 'the login page itself (would loop)'],
+    ])('falls back to "/" for a tampered redirect stash: %s (%s)', async (tampered) => {
+      sessionStorage.setItem('auth_post_login_redirect', tampered);
+      window.location.hash = '#oidc_token=test-exchange-token';
+
+      render(<LoginPage />);
+
+      const firstNavigateCall = await waitForFirstNavigateCall();
+      expect(firstNavigateCall).toEqual(['/', { replace: true }]);
+      // Belt-and-braces: the tampered value itself must never reach navigate().
+      expect(firstNavigateCall[0]).not.toBe(tampered);
+    });
+
+    it('honours a safe stashed redirect target after OIDC login', async () => {
+      sessionStorage.setItem('auth_post_login_redirect', '/archives');
+      window.location.hash = '#oidc_token=test-exchange-token';
+
+      render(<LoginPage />);
+
+      const firstNavigateCall = await waitForFirstNavigateCall();
+      expect(firstNavigateCall).toEqual(['/archives', { replace: true }]);
+    });
+  });
+
   // #1333: icon proxy — login page renders <img src> from /icon endpoint
   // rather than the upstream icon_url, so the strict img-src CSP holds.
   describe('OIDC icon proxy (#1333)', () => {
@@ -840,6 +1009,183 @@ describe('LoginPage', () => {
       });
       // …but Beta's icon stays put. If state leaks to the parent, this fails.
       expect(screen.getByRole('button', { name: /BetaIdP/i }).querySelector('img')).not.toBeNull();
+    });
+  });
+
+  // T-039: the forgot-password / reset-password flow (forgotPasswordMutation,
+  // resetPasswordMutation, and the client-side validation in the reset step's
+  // handleResetSubmit) had zero frontend coverage.
+  describe('forgot password', () => {
+    beforeEach(() => {
+      // The email-entry form only renders when advanced auth is enabled —
+      // otherwise the modal shows the static "contact your admin" message.
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: true,
+            local_login_enabled: true,
+            autologin_provider_id: null,
+          })
+        )
+      );
+    });
+
+    it('submits the forgot-password form, shows a success toast, and resets the form', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.post('/api/v1/auth/forgot-password', () =>
+          HttpResponse.json({ message: 'If that email is registered, a reset link has been sent.' })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Forgot your password/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /Forgot your password/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Forgot Password/i })).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Email Address/i), 'user@example.com');
+      await user.click(screen.getByRole('button', { name: /Send Reset Email/i }));
+
+      // Positive evidence: the handler's own message surfaces verbatim in the toast.
+      await waitFor(() => {
+        expect(screen.getByText('If that email is registered, a reset link has been sent.')).toBeInTheDocument();
+      });
+
+      // The modal closes on success...
+      await waitFor(() => {
+        expect(screen.queryByRole('heading', { name: /Forgot Password/i })).not.toBeInTheDocument();
+      });
+      // ...and the email field was cleared — reopening shows it blank.
+      await user.click(screen.getByRole('button', { name: /Forgot your password/i }));
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Email Address/i)).toHaveValue('');
+      });
+    });
+
+    it('shows an error toast and keeps the modal open when the forgot-password request fails', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.post('/api/v1/auth/forgot-password', () =>
+          HttpResponse.json({ detail: 'Too many reset requests, try again later' }, { status: 429 })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Forgot your password/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /Forgot your password/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Forgot Password/i })).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Email Address/i), 'user@example.com');
+      await user.click(screen.getByRole('button', { name: /Send Reset Email/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Too many reset requests, try again later')).toBeInTheDocument();
+      });
+      // A failed request must not close the modal — the user can retry.
+      expect(screen.getByRole('heading', { name: /Forgot Password/i })).toBeInTheDocument();
+    });
+
+    describe('reset-password step', () => {
+      afterEach(() => {
+        window.location.hash = '';
+        window.history.pushState({}, '', '/login');
+      });
+
+      async function renderResetStep() {
+        // M-B: the page reads #reset_token=... from the URL fragment on mount
+        // and switches straight to the reset-password step.
+        window.location.hash = '#reset_token=test-reset-token';
+        render(<LoginPage />);
+        await waitFor(() => {
+          expect(screen.getByRole('heading', { name: /Set New Password/i })).toBeInTheDocument();
+        });
+      }
+
+      it('rejects mismatched passwords client-side without calling the API', async () => {
+        const user = userEvent.setup();
+        let confirmCalled = false;
+        server.use(
+          http.post('/api/v1/auth/forgot-password/confirm', () => {
+            confirmCalled = true;
+            return HttpResponse.json({ message: 'Password reset successfully' });
+          })
+        );
+
+        await renderResetStep();
+
+        await user.type(screen.getByLabelText(/New Password/i), 'password123');
+        await user.type(screen.getByLabelText(/Confirm Password/i), 'password124');
+        await user.click(screen.getByRole('button', { name: /Set New Password/i }));
+
+        // Positive evidence first: the client-side mismatch message appears.
+        await waitFor(() => {
+          expect(screen.getByText('Passwords do not match')).toBeInTheDocument();
+        });
+        // Only now assert the negative: the confirm endpoint was never hit.
+        expect(confirmCalled).toBe(false);
+      });
+
+      it('rejects a too-short password client-side without calling the API', async () => {
+        const user = userEvent.setup();
+        let confirmCalled = false;
+        server.use(
+          http.post('/api/v1/auth/forgot-password/confirm', () => {
+            confirmCalled = true;
+            return HttpResponse.json({ message: 'Password reset successfully' });
+          })
+        );
+
+        await renderResetStep();
+
+        await user.type(screen.getByLabelText(/New Password/i), 'short1');
+        await user.type(screen.getByLabelText(/Confirm Password/i), 'short1');
+        await user.click(screen.getByRole('button', { name: /Set New Password/i }));
+
+        await waitFor(() => {
+          expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument();
+        });
+        expect(confirmCalled).toBe(false);
+      });
+
+      it('submits the reset token and new password, then returns to the credentials step on success', async () => {
+        const user = userEvent.setup();
+        let confirmBody: unknown;
+        server.use(
+          http.post('/api/v1/auth/forgot-password/confirm', async ({ request }) => {
+            confirmBody = await request.json();
+            return HttpResponse.json({ message: 'Password reset successfully' });
+          })
+        );
+
+        await renderResetStep();
+
+        await user.type(screen.getByLabelText(/New Password/i), 'newpassword1');
+        await user.type(screen.getByLabelText(/Confirm Password/i), 'newpassword1');
+        await user.click(screen.getByRole('button', { name: /Set New Password/i }));
+
+        await waitFor(() => {
+          expect(screen.getByText('Password reset successfully')).toBeInTheDocument();
+        });
+        expect(confirmBody).toEqual({ token: 'test-reset-token', new_password: 'newpassword1' });
+
+        // Success returns to the credentials step: brand logo, no step heading.
+        await waitFor(() => {
+          expect(screen.getByAltText('AITO3D')).toBeInTheDocument();
+        });
+      });
     });
   });
 
