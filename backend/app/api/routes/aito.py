@@ -1,5 +1,6 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
+import contextlib
 import logging
 import re
 import time
@@ -1017,10 +1018,14 @@ def _reset_track_rate_limits() -> None:
     _track_rate_global_misses.clear()
 
 
-def _track_rate_limited(request: Request) -> str | None:
-    """The visitor's address when the call may proceed (the call is counted
-    here; a miss is counted by `_track_rate_miss` once the lookup says so),
-    or None when it is over a cap.
+def _track_rate_limited(request: Request) -> tuple[str, float] | None:
+    """The visitor's address and this call's stamp when the call may
+    proceed, or None when it is over a cap. The call is counted here and a
+    miss is RESERVED here too — the lookup that decides hit or miss is an
+    await, and every request in flight at once would otherwise pass the
+    pre-check together, so a scanner spreading addresses could fire a whole
+    window's worth of guesses concurrently. A hit hands its reservation back
+    through `_track_rate_hit`, so a real client still pays nothing.
 
     The address is auth.py's proxy-aware `_get_client_ip`, not
     `request.client.host`: behind nginx the latter is the proxy for every
@@ -1045,18 +1050,23 @@ def _track_rate_limited(request: Request) -> str | None:
     ):
         return None
     calls.append(now)
+    misses.append(now)
     _track_rate_ip_calls[host] = calls
-    if misses:
-        _track_rate_ip_misses[host] = misses
-    else:
-        _track_rate_ip_misses.pop(host, None)
-    return host
-
-
-def _track_rate_miss(host: str) -> None:
-    now = time.monotonic()
-    _track_rate_ip_misses.setdefault(host, []).append(now)
+    _track_rate_ip_misses[host] = misses
     _track_rate_global_misses.append(now)
+    return host, now
+
+
+def _track_rate_hit(host: str, stamp: float) -> None:
+    """Release the miss reserved at arrival: the code was real."""
+    bucket = _track_rate_ip_misses.get(host)
+    if bucket is not None:
+        with contextlib.suppress(ValueError):
+            bucket.remove(stamp)
+        if not bucket:
+            del _track_rate_ip_misses[host]
+    with contextlib.suppress(ValueError):
+        _track_rate_global_misses.remove(stamp)
 
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
@@ -1070,8 +1080,8 @@ async def get_tracking(
     `track` is never parsed as an id. Unknown, trashed, closed and expired
     links all get the same 404; past the rate limit everything is a 429."""
     response.headers["Cache-Control"] = "no-store"
-    host = _track_rate_limited(request)
-    if host is None:
+    admitted = _track_rate_limited(request)
+    if admitted is None:
         return JSONResponse(
             status_code=429,
             content={"detail": "Trop de tentatives"},
@@ -1080,7 +1090,7 @@ async def get_tracking(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
     if found is None:
-        _track_rate_miss(host)
+        # The miss reserved at arrival stands.
         # Not `raise HTTPException`: FastAPI's exception handler builds a
         # fresh JSONResponse that drops the `response` object's headers
         # entirely, so the no-store guarantee would silently vanish on the
@@ -1088,6 +1098,7 @@ async def get_tracking(
         return JSONResponse(
             status_code=404, content={"detail": "Lien introuvable"}, headers={"Cache-Control": "no-store"}
         )
+    _track_rate_hit(*admitted)
     project_id, data = found
     try:
         await tracking_service.log_view(db, project_id, now)

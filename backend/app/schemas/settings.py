@@ -904,10 +904,17 @@ class AppSettingsUpdate(BaseModel):
         from urllib.parse import urlsplit
 
         parts = urlsplit(candidate)
-        if parts.scheme not in ("http", "https") or not parts.netloc or any(ch.isspace() for ch in candidate):
+        if parts.scheme not in ("http", "https") or not parts.hostname or any(ch.isspace() for ch in candidate):
             raise ValueError("External URL must be an absolute http(s) address, e.g. https://aito.example")
         if parts.query or parts.fragment:
             raise ValueError("External URL must not carry a query string or fragment")
+        # Credentials in the base would be printed on every quote and SMS.
+        if parts.username is not None or parts.password is not None:
+            raise ValueError("External URL must not carry credentials")
+        try:
+            parts.port  # noqa: B018 — raises ValueError on a non-numeric or out-of-range port
+        except ValueError:
+            raise ValueError("External URL has an invalid port") from None
         return candidate.rstrip("/")
 
     @field_validator("docker_compose_dir")

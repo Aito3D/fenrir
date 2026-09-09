@@ -213,6 +213,15 @@ describe('AitoTrackPage', () => {
     unmount();
   });
 
+  it('tells a throttled client to wait rather than to try again at once', async () => {
+    mockTrack(null);
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ detail: 'Trop de tentatives' }, { status: 429 })));
+    renderAt('throttled');
+    expect(await screen.findByText('Trop de tentatives. Patientez une minute.')).toBeInTheDocument();
+    expect(screen.queryByText('Impossible de charger le suivi pour le moment.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+  });
+
   it('shows the retry being heard, and re-delivers the message when it fails again', async () => {
     let calls = 0;
     server.use(

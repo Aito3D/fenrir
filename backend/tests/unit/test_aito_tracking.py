@@ -777,6 +777,47 @@ async def test_public_route_hits_never_count_against_the_caps(async_client, db_s
     aito_routes._reset_track_rate_limits()
 
 
+def test_public_route_reserves_the_miss_at_arrival_and_releases_it_on_a_hit(monkeypatch):
+    """The caps are enforced when a call ARRIVES, not after its lookup: with
+    the miss counted afterwards, every request in flight at once passed the
+    pre-check together, and a scanner spreading addresses could fire a whole
+    window's worth of guesses concurrently. A hit releases what it reserved,
+    so a client still pays nothing."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    aito_routes._reset_track_rate_limits()
+    request = SimpleNamespace(client=SimpleNamespace(host="203.0.113.9"), headers={})
+    # Three arrivals, none looked up yet: the fourth is already refused.
+    stamps = [aito_routes._track_rate_limited(request) for _ in range(3)]
+    assert all(stamps)
+    assert aito_routes._track_rate_limited(request) is None
+    # One of them turns out to be a hit and hands its slot back.
+    aito_routes._track_rate_hit(*stamps[0])
+    assert aito_routes._track_rate_limited(request) is not None
+    assert aito_routes._track_rate_limited(request) is None
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_global_cap_holds_under_concurrent_misses(async_client, monkeypatch):
+    import asyncio
+
+    from backend.app.api.routes import aito as aito_routes
+
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    aito_routes._reset_track_rate_limits()
+    codes = [await async_client.get(TRACK + "ZZZZZZ") for _ in range(0)]  # warm nothing
+    results = await asyncio.gather(*(async_client.get(TRACK + "ZZZZZZ") for _ in range(12)))
+    codes = sorted(r.status_code for r in results)
+    assert codes.count(404) == 3 and codes.count(429) == 9
+    aito_routes._reset_track_rate_limits()
+
+
 @pytest.mark.asyncio
 async def test_public_route_backstops_a_single_address_whatever_it_sends(async_client, db_session, monkeypatch):
     """Hits are uncapped by the miss windows, not free: one address looping

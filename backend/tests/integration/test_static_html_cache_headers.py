@@ -130,6 +130,9 @@ TRACKING_HTML_PATHS = [
     pytest.param("/t/K7F3XQ", id="short-link"),
     pytest.param("/track", id="legacy-entry"),
     pytest.param("/track/lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4", id="legacy-link"),
+    # React Router matches case-insensitively, so this renders the page too.
+    pytest.param("/T/K7F3XQ", id="uppercase-path"),
+    pytest.param("/Track", id="uppercase-entry"),
 ]
 
 

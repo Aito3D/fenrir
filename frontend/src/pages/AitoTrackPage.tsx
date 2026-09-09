@@ -86,6 +86,9 @@ export function AitoTrackPage() {
   const moving = origin !== undefined;
   const stateAt = trackStateDelay(current, origin ?? 0);
   const is404 = query.error instanceof ApiError && query.error.status === 404;
+  // Past the route's rate limit: say "wait", as the code-entry page does —
+  // "cannot load, try again" would only send the client straight back into it.
+  const is429 = query.error instanceof ApiError && query.error.status === 429;
   const showContent = data !== undefined && copy !== null && settled;
   const showError = (query.isError || retrying) && !is404 && data === undefined;
   const retry = () => {
@@ -148,7 +151,7 @@ export function AitoTrackPage() {
                   the same words with a fade instead of leaving them frozen —
                   the client must see that their tap was heard. */}
               <p key={query.errorUpdatedAt} className="animate-track-fade text-[15px] text-aito-muted" data-testid="track-error">
-                {t('aito.track.error')}
+                {t(is429 ? 'aito.track.codeTooMany' : 'aito.track.error')}
               </p>
               <button
                 type="button"

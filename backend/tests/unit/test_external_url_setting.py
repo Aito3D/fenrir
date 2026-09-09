@@ -46,6 +46,10 @@ def test_none_is_left_alone():
         "https://aito.pf/?utm=1",  # a query string cannot be a base
         "https://aito.pf/#top",
         "https://aito.pf/t/K7F3XQ ok",  # whitespace inside
+        "https://user:pw@aito.pf",  # credentials would be printed on every quote and SMS
+        "https://user@aito.pf",
+        "https://aito.pf:99999",  # not a port
+        "https://aito.pf:abc",
     ],
 )
 def test_rejects_what_cannot_be_a_link_base(value: str):

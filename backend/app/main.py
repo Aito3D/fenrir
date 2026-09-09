@@ -9470,7 +9470,9 @@ _TRACKING_HTML_HEADERS = {**_HTML_CACHE_HEADERS, "X-Robots-Tag": "noindex, nofol
 
 
 def _is_tracking_page(full_path: str) -> bool:
-    return full_path in ("t", "track") or full_path.startswith(("t/", "track/"))
+    # Lower-cased: React Router matches routes case-insensitively, so /T/… renders the page too.
+    path = full_path.lower()
+    return path in ("t", "track") or path.startswith(("t/", "track/"))
 
 
 @app.get("/health")
