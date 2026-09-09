@@ -462,6 +462,58 @@ class TestForgotPasswordAPI:
         )
         assert login_resp.status_code == 200
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_confirm_rejects_expired_token(
+        self, async_client: AsyncClient, admin_token: str, db_session
+    ):
+        """An expired (but not yet consumed) reset token must be rejected.
+
+        T-034: covers the `now > expires_at` branch in forgot_password_confirm,
+        distinct from the already-consumed (row is None) branch.
+        """
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+        from backend.app.models.user import User
+
+        # admin_token's fixture already called /auth/setup, enabling auth.
+        user = User(
+            username="expiredreset",
+            email="expiredreset@test.com",
+            password_hash=get_password_hash("Originalpass1!"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(user)
+        await db_session.flush()
+
+        expired_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken.new_password_reset(
+                token=expired_token,
+                username="expiredreset",
+                expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": expired_token, "new_password": "Newpass456!"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid or expired password reset token"
+
+        # Password must remain unchanged
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "expiredreset", "password": "Originalpass1!"},
+        )
+        assert login_resp.status_code == 200
+
 
 class TestAdminResetPasswordAPI:
     """Integration tests for admin password reset endpoint."""

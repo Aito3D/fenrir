@@ -29,6 +29,7 @@ from httpx import AsyncClient
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import mfa as mfa_module
 from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.user import User
 
@@ -521,6 +522,110 @@ class TestTwoFAVerifyTOTP:
 
 
 # ===========================================================================
+# 2FA Verify — per-method precondition failures
+# ===========================================================================
+
+
+class TestTwoFAVerifyPreconditions:
+    """Tests for POST /api/v1/auth/2fa/verify precondition failures.
+
+    Each 2FA method has its own "not actually usable right now" branch that
+    is distinct from a wrong code: TOTP/backup require an *enabled* UserTOTP
+    row, and email requires an outstanding, unexpired UserOTPCode row (i.e.
+    /2fa/email/send was actually called before /2fa/verify).
+    """
+
+    async def _enable_email_otp(self, client: AsyncClient, db_session: AsyncSession, username: str, token: str) -> None:
+        """Give the user an email address and enable email 2FA (DB injection,
+        mirroring TestEmailOTPFlow.test_email_otp_send_and_verify)."""
+        from sqlalchemy import select as sa_select
+
+        result = await db_session.execute(sa_select(User).where(User.username == username))
+        user = result.scalar_one()
+        user.email = f"{username}@example.com"
+        await db_session.commit()
+
+        setup_code = "444444"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username=username,
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        confirm_resp = await client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+        assert confirm_resp.status_code == 200, confirm_resp.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_email_with_no_outstanding_otp_returns_401(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """method=email with a valid pre_auth_token but no UserOTPCode row ever
+        created (i.e. /2fa/email/send was never called) must be rejected —
+        not silently treated as a wrong-code case."""
+        token = await _setup_and_login(async_client, "emailnootp", "emailnootp1")
+        await self._enable_email_otp(async_client, db_session, "emailnootp", token)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "emailnootp", "emailnootp1")
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "email", "code": "123456"},
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "No valid OTP code found. Request a new one."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_totp_when_totp_not_enabled_returns_400(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """method=totp for a user whose only enabled 2FA method is email (i.e.
+        TOTP was never set up) must be rejected with a distinct 400, not
+        treated as an invalid-code 401."""
+        token = await _setup_and_login(async_client, "totpnotenabled", "totpnotenabled1")
+        await self._enable_email_otp(async_client, db_session, "totpnotenabled", token)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "totpnotenabled", "totpnotenabled1")
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": "123456"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "TOTP is not enabled for this user"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_backup_when_totp_not_enabled_returns_400(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """method=backup shares the TOTP-enabled precondition (backup codes
+        are only ever issued alongside TOTP); a user with only email 2FA
+        must get the same distinct 400, not an invalid-code 401."""
+        token = await _setup_and_login(async_client, "backupnotenabled", "backupnotenabled1")
+        await self._enable_email_otp(async_client, db_session, "backupnotenabled", token)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "backupnotenabled", "backupnotenabled1")
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "backup", "code": "12345678"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "TOTP is not enabled for this user"
+
+
+# ===========================================================================
 # 2FA Verify — Backup code path
 # ===========================================================================
 
@@ -603,6 +708,115 @@ class TestTwoFAVerifyBackup:
         # Status is readable with the original full token (still valid)
         status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(token))
         assert status_resp.json()["backup_codes_remaining"] == 9
+
+
+# ===========================================================================
+# 2FA Verify — anti-replay guard (concurrent pre-auth-token consumption)
+# ===========================================================================
+
+
+class TestTwoFAVerifyAntiReplayGuard:
+    """T-036: verify_2fa() peeks the pre_auth_token (non-consuming) up front,
+    then consumes it for real only after the method-specific code check
+    passes. If a concurrent request wins the race and consumes the token in
+    between, the code's own comment (C-1 / M1) says the loser must be
+    rejected with 401 rather than silently granted a session.
+
+    These tests reproduce that race deterministically (no flaky
+    asyncio.gather) by patching ``peek_pre_auth_token`` so that, after it
+    reports the token as still valid (exactly as it would moments before a
+    concurrent winner deletes it), it immediately performs the real
+    out-of-band ``consume_pre_auth_token`` call that a concurrent request
+    would have made. By the time verify_2fa() reaches its own consume call,
+    the row is already gone — triggering the guard.
+    """
+
+    async def _patched_peek_that_loses_the_race(self, db, token, challenge_id=None):
+        """Behaves exactly like the real peek_pre_auth_token, except a
+        concurrent request is simulated to consume the token right after
+        this peek succeeds (and before verify_2fa's own consume call)."""
+        username = await self._real_peek(db, token, challenge_id=challenge_id)
+        if username is not None:
+            await self._real_consume(db, token, challenge_id=challenge_id)
+        return username
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_totp_verify_rejects_token_consumed_by_concurrent_request(self, async_client: AsyncClient):
+        """method=totp: a valid code plus a valid pre_auth_token must still be
+        rejected with 401 if a concurrent request already consumed the
+        pre_auth_token — this proves the guard at mfa.py:~1256 fires."""
+        token = await _setup_and_login(async_client, "antireplaytotp", "antireplaytotp1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "antireplaytotp", "antireplaytotp1")
+
+        self._real_peek = mfa_module.peek_pre_auth_token
+        self._real_consume = mfa_module.consume_pre_auth_token
+        with patch(
+            "backend.app.api.routes.mfa.peek_pre_auth_token",
+            self._patched_peek_that_loses_the_race,
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/2fa/verify",
+                json={
+                    "pre_auth_token": pre_auth_token,
+                    "method": "totp",
+                    "code": pyotp.TOTP(secret).now(),
+                },
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired pre-auth token"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backup_verify_rejects_token_consumed_by_concurrent_request(self, async_client: AsyncClient):
+        """method=backup: a valid backup code plus a valid pre_auth_token must
+        still be rejected with 401 if a concurrent request already consumed
+        the pre_auth_token — this proves the guard at mfa.py:~1235 fires,
+        and that the backup code itself is NOT burned in that case (the
+        route consumes the token before removing the code)."""
+        token = await _setup_and_login(async_client, "antireplaybackup", "antireplaybackup1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        enable_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+        backup_code = enable_resp.json()["backup_codes"][0]
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "antireplaybackup", "antireplaybackup1")
+
+        self._real_peek = mfa_module.peek_pre_auth_token
+        self._real_consume = mfa_module.consume_pre_auth_token
+        with patch(
+            "backend.app.api.routes.mfa.peek_pre_auth_token",
+            self._patched_peek_that_loses_the_race,
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/2fa/verify",
+                json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired pre-auth token"
+
+        # The backup code must still be usable — proof the route consumed the
+        # pre_auth_token (and rejected) BEFORE removing the backup code.
+        pre_auth_token2 = await _login_get_pre_auth_token(async_client, "antireplaybackup", "antireplaybackup1")
+        retry_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token2, "method": "backup", "code": backup_code},
+        )
+        assert retry_resp.status_code == 200
 
 
 # ===========================================================================
