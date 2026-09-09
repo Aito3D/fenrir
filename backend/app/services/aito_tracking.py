@@ -36,6 +36,17 @@ TOKEN_LENGTH = 6
 LEGACY_TOKEN_MIN_LENGTH = 20
 _TOKEN_ALIASES = str.maketrans({"I": "1", "L": "1", "O": "0"})
 TRACKING_TTL_AFTER_DONE = timedelta(days=30)
+# A card still waiting for its go-ahead (Devis / Waiting) goes dark after
+# this much silence. Every quoted card is minted a code — the sync prints it
+# on the estimate — and with only Done expiring, abandoned quotes kept live
+# codes forever and the guessable space slowly filled with them. Any
+# activity on the card (an edit, a status from Books) restarts the clock.
+TRACKING_TTL_DORMANT = timedelta(days=180)
+DORMANT_COLUMNS = frozenset({"devis", "waiting"})
+# A quote settled the other way has no story for the page to tell. The rules
+# park a declined quote in Done, which the page would otherwise read as
+# "collected" — on the link printed on the very quote the client declined.
+CLOSED_QUOTE_STATUSES = frozenset({"declined", "expired"})
 NOTES_PREFIX = "Lien de suivi de votre projet : "
 NOTES_CODE_PREFIX = "Code de suivi : "
 # Wordings this app wrote before 2026-09-08. Stripped on merge, so a card
@@ -157,8 +168,16 @@ async def done_at(db: AsyncSession, project_id: int) -> datetime | None:
     return None
 
 
-def is_expired(column: str, finished_at: datetime | None, now: datetime) -> bool:
-    return column == "done" and finished_at is not None and finished_at + TRACKING_TTL_AFTER_DONE < now
+def is_expired(column: str, finished_at: datetime | None, last_active: datetime, now: datetime) -> bool:
+    """Done: 30 days after the move into Done — or, for a card that got
+    there without a stage.changed event (imported straight into Done, or
+    older than the event log), after its last activity, so no card is
+    without a clock. Devis / Waiting: TRACKING_TTL_DORMANT of silence."""
+    if column == "done":
+        return (finished_at or last_active) + TRACKING_TTL_AFTER_DONE < now
+    if column in DORMANT_COLUMNS:
+        return last_active + TRACKING_TTL_DORMANT < now
+    return False
 
 
 TASK_FALLBACK = "Pièce {n}"
@@ -233,20 +252,21 @@ async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedel
 async def compute_tracking(
     db: AsyncSession, token: str, shipping_names: dict[str, str], island_labels: dict[str, str], now: datetime
 ) -> tuple[int, AitoTrackingResponse] | None:
-    """None for unknown, trashed and expired alike — the caller turns all
-    three into the same 404, so a guesser learns nothing. Otherwise the
-    project id rides along with the payload so the route can log the view
-    without a second lookup."""
+    """None for unknown, trashed, closed (declined / expired quote) and
+    expired alike — the caller turns them all into the same 404, so a
+    guesser learns nothing. Otherwise the project id rides along with the
+    payload so the route can log the view without a second lookup."""
     code = normalize_token(token)
     if code is None:
         return None
     project = (
         await db.execute(select(AitoProject).where(AitoProject.tracking_token == code, AitoProject.status == "active"))
     ).scalar_one_or_none()
-    if project is None:
+    if project is None or project.quote_status in CLOSED_QUOTE_STATUSES:
         return None
     finished_at = await done_at(db, project.id) if project.board_column == "done" else None
-    if is_expired(project.board_column, finished_at, now):
+    last_active = await last_activity(db, project)
+    if is_expired(project.board_column, finished_at, last_active, now):
         return None
     tasks = (
         (
@@ -272,7 +292,7 @@ async def compute_tracking(
             service=shipping_names.get(service, SERVICE_LABELS.get(service, service)),
             lta=project.shipping_lta,
         )
-    updated_at = (await last_activity(db, project)).replace(microsecond=0)
+    updated_at = last_active.replace(microsecond=0)
     data = AitoTrackingResponse(
         column=project.board_column,
         tasks=titles,

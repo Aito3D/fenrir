@@ -927,8 +927,6 @@ def _reset_tracking_rate_limits():
     for no reason of its own. Empty both buckets around every test."""
     from backend.app.api.routes import aito as aito_routes
 
-    aito_routes._track_rate_ip_calls.clear()
-    aito_routes._track_rate_global_calls.clear()
+    aito_routes._reset_track_rate_limits()
     yield
-    aito_routes._track_rate_ip_calls.clear()
-    aito_routes._track_rate_global_calls.clear()
+    aito_routes._reset_track_rate_limits()

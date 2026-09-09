@@ -9462,6 +9462,15 @@ async def serve_frontend():
 # without ever knowing why. ``no-cache`` (revalidate every time, but a
 # 304 is cheap) is the correct setting for an SPA's entry HTML.
 _HTML_CACHE_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
+# Fork: the Aito client tracking pages (/t, /t/<code> and the legacy /track
+# alias) are reached by a code printed on the client's quote. A link pasted
+# somewhere public must not end up in a search index, so their HTML serve
+# carries a noindex on top of the cache contract above.
+_TRACKING_HTML_HEADERS = {**_HTML_CACHE_HEADERS, "X-Robots-Tag": "noindex, nofollow"}
+
+
+def _is_tracking_page(full_path: str) -> bool:
+    return full_path in ("t", "track") or full_path.startswith(("t/", "track/"))
 
 
 @app.get("/health")
@@ -9524,6 +9533,7 @@ async def serve_spa(full_path: str):
 
     index_file = app_settings.static_dir / "index.html"
     if index_file.exists():
-        return FileResponse(index_file, headers=_HTML_CACHE_HEADERS)
+        headers = _TRACKING_HTML_HEADERS if _is_tracking_page(full_path) else _HTML_CACHE_HEADERS
+        return FileResponse(index_file, headers=headers)
 
     return {"error": "Frontend not built"}

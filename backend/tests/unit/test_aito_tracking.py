@@ -371,7 +371,8 @@ async def test_public_expires_30_days_after_the_latest_move_to_done(async_client
     expired = await async_client.get(TRACK + await _token(async_client, db_session, stale))
     assert expired.status_code == 404
     assert expired.headers["cache-control"] == "no-store"
-    # No stage.changed-to-done event at all (pre-event-log card): never expires.
+    # No stage.changed-to-done event at all (pre-event-log card): the clock
+    # runs from its last activity instead, and it was created just now.
     assert (await async_client.get(TRACK + await _token(async_client, db_session, never))).status_code == 200
     # Left Done and came back 2 days ago → fresh window, and done_at is that move.
     await _done_event(db_session, stale, 2)
@@ -465,9 +466,8 @@ async def test_public_route_is_rate_limited_per_ip_and_recovers(async_client, mo
 
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
-    aito_routes._track_rate_ip_calls.clear()
-    aito_routes._track_rate_global_calls.clear()
-    for _ in range(aito_routes._TRACK_RATE_MAX_PER_IP):
+    aito_routes._reset_track_rate_limits()
+    for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP):
         assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ")
     assert r.status_code == 429
@@ -475,8 +475,7 @@ async def test_public_route_is_rate_limited_per_ip_and_recovers(async_client, mo
     assert r.headers["retry-after"] == "60"
     clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
     assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
-    aito_routes._track_rate_ip_calls.clear()
-    aito_routes._track_rate_global_calls.clear()
+    aito_routes._reset_track_rate_limits()
 
 
 @pytest.mark.asyncio
@@ -485,16 +484,14 @@ async def test_public_route_global_cap_holds_across_addresses(async_client, monk
 
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_GLOBAL", 3)
-    aito_routes._track_rate_ip_calls.clear()
-    aito_routes._track_rate_global_calls.clear()
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    aito_routes._reset_track_rate_limits()
     # Three calls fill the global window even though no single IP is near
     # its own cap; the fourth is refused whoever sends it.
     for _ in range(3):
         assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
     assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 429
-    aito_routes._track_rate_ip_calls.clear()
-    aito_routes._track_rate_global_calls.clear()
+    aito_routes._reset_track_rate_limits()
 
 
 @pytest.mark.asyncio
@@ -506,21 +503,21 @@ async def test_public_route_rate_limit_unwraps_a_trusted_proxy_and_forgets_idle_
     # The test client's TCP peer is the trusted proxy; the real visitor is
     # whoever X-Forwarded-For names, so two visitors get two buckets.
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
-    for _ in range(aito_routes._TRACK_RATE_MAX_PER_IP):
+    for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP):
         r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
         assert r.status_code == 404
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
     assert r.status_code == 429
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.6"})
     assert r.status_code == 404
-    assert set(aito_routes._track_rate_ip_calls) == {"203.0.113.5", "203.0.113.6"}
+    assert set(aito_routes._track_rate_ip_misses) == {"203.0.113.5", "203.0.113.6"}
     # Once the dict is bigger than a window can justify, hosts whose calls
     # have all aged out are swept — including ones that never come back.
     monkeypatch.setattr(aito_routes, "_TRACK_RATE_SWEEP_ABOVE", 1)
     clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.7"})
     assert r.status_code == 404
-    assert set(aito_routes._track_rate_ip_calls) == {"203.0.113.7"}
+    assert set(aito_routes._track_rate_ip_misses) == {"203.0.113.7"}
 
 
 @pytest.mark.asyncio
@@ -587,3 +584,163 @@ async def test_regenerate_without_a_quote_reports_no_notes(async_client, db_sess
     pid = await _create(async_client)
     body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
     assert body["quote_notes"] is None
+
+
+# ── Review follow-ups (2026-09-08 security review) ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_public_404s_once_the_quote_is_declined_or_expired(async_client, db_session):
+    """The rules park a declined quote in Done (aito_board_rules.evaluate),
+    and the page used to read that as "Récupérée le …" — on the link printed
+    on the very quote the client just declined. A settled-the-other-way
+    quote has no story to tell: same 404 as an unknown link."""
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    await _set(db_session, pid, quote_status="declined", board_column="done")
+    r = await async_client.get(TRACK + token)
+    assert r.status_code == 404 and r.headers["cache-control"] == "no-store"
+    await _set(db_session, pid, quote_status="expired", board_column="waiting")
+    assert (await async_client.get(TRACK + token)).status_code == 404
+    # Derived, never destroyed: an acceptance in Books brings the link back.
+    await _set(db_session, pid, quote_status="accepted", board_column="scan")
+    assert (await async_client.get(TRACK + token)).status_code == 200
+
+
+async def _age(db_session, pid: int, days: float) -> None:
+    """Push every trace of activity on the card `days` into the past — its
+    events and its row timestamp — so last_activity reads that old."""
+    at = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None).isoformat(sep=" ")
+    await db_session.execute(
+        text("UPDATE aito_events SET occurred_at = :at, occurred_until = NULL WHERE project_id = :pid"),
+        {"pid": pid, "at": at},
+    )
+    await _set(db_session, pid, updated_at=at)
+
+
+@pytest.mark.asyncio
+async def test_public_expires_a_dormant_card_that_never_got_the_go_ahead(async_client, db_session):
+    """Every quoted card gets a code (the sync prints it on the estimate), and
+    only Done ever expired — so an abandoned quote kept a live code forever
+    and the guessable space filled up with them. A card still waiting for
+    its go-ahead goes dark after TRACKING_TTL_DORMANT of silence; any
+    activity on it — an edit, a status from Books — is a fresh clock."""
+    from backend.app.services.aito_tracking import TRACKING_TTL_DORMANT
+
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    await _age(db_session, pid, TRACKING_TTL_DORMANT.days - 1)
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    await _age(db_session, pid, TRACKING_TTL_DORMANT.days + 1)
+    assert (await async_client.get(TRACK + token)).status_code == 404
+    await _set(db_session, pid, quote_status="sent", board_column="waiting")
+    assert (await async_client.get(TRACK + token)).status_code == 404
+    # A card in production is never dormant, however quiet.
+    await _set(db_session, pid, quote_status="accepted", board_column="print")
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    # Back to waiting, but with fresh activity: alive again.
+    await _set(db_session, pid, quote_status="sent", board_column="waiting")
+    await _done_event(db_session, pid, 0)  # any event is activity; the kind is irrelevant here
+    assert (await async_client.get(TRACK + token)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_public_done_without_a_stage_event_expires_from_its_last_activity(async_client, db_session):
+    """A card that reached Done without a stage.changed event (imported
+    straight into Done, or older than the event log) had no expiry clock at
+    all. Its last activity stands in — but only for the clock: done_at on
+    the page stays null, because "collected on <some edit's date>" would
+    be a made-up fact."""
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    await _set(db_session, pid, quote_status="accepted", board_column="done")
+    r = await async_client.get(TRACK + token)
+    assert r.status_code == 200 and r.json()["done_at"] is None
+    await _age(db_session, pid, 29)
+    r = await async_client.get(TRACK + token)
+    assert r.status_code == 200 and r.json()["done_at"] is None
+    await _age(db_session, pid, 31)
+    assert (await async_client.get(TRACK + token)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_public_route_hits_never_count_against_the_caps(async_client, db_session, monkeypatch):
+    """A guesser only ever produces misses and a real client only ever
+    produces hits, so the caps count misses. Otherwise a promo SMS to a
+    carrier-grade-NAT town, or one scanner at the global cap, locked every
+    client out of their own page."""
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 2)
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    aito_routes._reset_track_rate_limits()
+    for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
+        assert (await async_client.get(TRACK + token)).status_code == 200
+    # Misses are still capped — globally here. Past a tripped miss cap
+    # EVERYTHING is a 429, hits included: a hit cannot be told apart before
+    # the lookup runs, and answering hits through the cap would hand a
+    # guesser exactly the oracle the cap exists to hide.
+    assert (await async_client.get(TRACK + "ZZZZZZ")).status_code == 404
+    assert (await async_client.get(TRACK + "ZZZZZZ")).status_code == 404
+    assert (await async_client.get(TRACK + "ZZZZZZ")).status_code == 429
+    assert (await async_client.get(TRACK + token)).status_code == 429
+    clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_backstops_a_single_address_whatever_it_sends(async_client, db_session, monkeypatch):
+    """Hits are uncapped by the miss windows, not free: one address looping
+    on a valid code still meets a generous per-address ceiling."""
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_IP", 4)
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    aito_routes._reset_track_rate_limits()
+    for _ in range(4):
+        assert (await async_client.get(TRACK + token)).status_code == 200
+    r = await async_client.get(TRACK + token)
+    assert r.status_code == 429 and r.headers["retry-after"] == "60"
+    clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
+    assert (await async_client.get(TRACK + token)).status_code == 200
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_regenerate_commits_the_new_token_before_talking_to_books(async_client, db_session, monkeypatch):
+    """The new token is committed BEFORE the estimate is fetched. Otherwise
+    the dirty row autoflushed on the first settings read inside the Zoho
+    client and SQLite's write lock was held across two HTTP round trips —
+    longer than the busy timeout when Books is slow, so unrelated writers
+    (MQTT status, the sync worker) failed with "database is locked"."""
+    from backend.app.services.zoho import zoho_service
+
+    await _set_external_url(db_session, "https://aito.example")
+    pid = await _create(async_client)
+    old = await _token(async_client, db_session, pid)
+    await _set(db_session, pid, quote_id="E1")
+    seen: dict[str, str | None] = {}
+
+    async def fake_get_estimate(db, estimate_id):
+        # A different session sees only what is committed.
+        seen["token"] = (
+            await db_session.execute(select(AitoProject.tracking_token).where(AitoProject.id == pid))
+        ).scalar_one()
+        return {"estimate_id": estimate_id, "notes": ""}
+
+    async def fake_update_estimate_notes(db, estimate_id, notes):
+        return {}
+
+    monkeypatch.setattr(zoho_service, "get_estimate", fake_get_estimate)
+    monkeypatch.setattr(zoho_service, "update_estimate_notes", fake_update_estimate_notes)
+    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
+    new = body["tracking_url"].rsplit("/", 1)[1]
+    assert new != old and seen["token"] == new

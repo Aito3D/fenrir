@@ -117,3 +117,35 @@ async def test_api_routes_unaffected_by_html_cache_headers(async_client: AsyncCl
         f"If a 'no-cache' directive is intentional on an API endpoint it should be "
         f"set per-route, not inherited from the SPA HTML path."
     )
+
+
+# ── Fork: the public tracking pages must not be indexed ─────────────────────
+#
+# /t/<code> is a client's page reached by a code printed on their quote; a
+# link pasted somewhere public would otherwise be crawled and indexed. The
+# header rides on the HTML serve (the page itself is the SPA shell), so it
+# covers every route the page answers at, including the legacy /track alias.
+TRACKING_HTML_PATHS = [
+    pytest.param("/t", id="code-entry"),
+    pytest.param("/t/K7F3XQ", id="short-link"),
+    pytest.param("/track", id="legacy-entry"),
+    pytest.param("/track/lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4", id="legacy-link"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("path",), TRACKING_HTML_PATHS)
+async def test_tracking_pages_are_noindex(async_client: AsyncClient, fake_static_index, path: str):
+    response = await async_client.get(path)
+    assert response.status_code == 200
+    assert response.headers.get("x-robots-tag") == "noindex, nofollow"
+    # …and still the same HTML cache contract as every other index.html serve.
+    assert "no-cache" in response.headers.get("cache-control", "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("path",), [pytest.param("/", id="root"), pytest.param("/tracking", id="prefix-only")])
+async def test_other_pages_stay_indexable(async_client: AsyncClient, fake_static_index, path: str):
+    response = await async_client.get(path)
+    assert response.status_code == 200
+    assert "x-robots-tag" not in response.headers

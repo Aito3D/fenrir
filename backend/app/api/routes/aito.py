@@ -985,42 +985,80 @@ async def get_client_history(
 
 
 # The public tracking route: a 6-character code (services/aito_tracking.py)
-# is guessable in principle, so the route is throttled twice — per client
-# IP, and across all clients so a spread of addresses buys nothing. Both
-# count every call, hits included: a client opening their page a few times
-# is dozens of requests short of either. Same sliding window and the same
-# `time` indirection as the AI limiter above, so a test can drive the clock.
+# is guessable in principle, so the route is throttled — per client IP, and
+# across all clients so a spread of addresses buys nothing. The caps count
+# MISSES (404s): a guesser only ever produces misses, a real client only ever
+# produces hits, so counting hits bought no security and cost availability —
+# one scanner sitting at the global cap, or a promo SMS to a town behind
+# carrier-grade NAT, locked every client out of their own page. Hits are not
+# free either: a generous per-address ceiling on all calls backstops one
+# client looping on a valid code. Past a tripped cap everything is a 429,
+# hits included: a hit cannot be told apart before the lookup runs, and
+# answering hits through the cap would hand a guesser exactly the oracle the
+# cap exists to hide. Same sliding window and the same `time` indirection as
+# the AI limiter above, so a test can drive the clock.
+#
+# In-process state, so it assumes the single uvicorn worker the Dockerfile
+# starts: `--workers N` would multiply every cap by N.
 _TRACK_RATE_WINDOW_S = 60.0
-_TRACK_RATE_MAX_PER_IP = 30
-_TRACK_RATE_MAX_GLOBAL = 600
+_TRACK_RATE_MAX_MISSES_PER_IP = 30
+_TRACK_RATE_MAX_MISSES_GLOBAL = 600
+_TRACK_RATE_MAX_CALLS_PER_IP = 120
 # More host keys than this and the stale ones are swept: only addresses that
-# called inside the window can be live, and the global cap bounds those.
-_TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_GLOBAL
+# called inside the window can be live.
+_TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_MISSES_GLOBAL
 _track_rate_ip_calls: dict[str, list[float]] = {}
-_track_rate_global_calls: list[float] = []
+_track_rate_ip_misses: dict[str, list[float]] = {}
+_track_rate_global_misses: list[float] = []
 
 
-def _track_rate_limited(request: Request) -> bool:
-    """The client's address is auth.py's proxy-aware `_get_client_ip`, not
+def _reset_track_rate_limits() -> None:
+    """Empty every window — tests/conftest.py runs this around each test."""
+    _track_rate_ip_calls.clear()
+    _track_rate_ip_misses.clear()
+    _track_rate_global_misses.clear()
+
+
+def _track_rate_limited(request: Request) -> str | None:
+    """The visitor's address when the call may proceed (the call is counted
+    here; a miss is counted by `_track_rate_miss` once the lookup says so),
+    or None when it is over a cap.
+
+    The address is auth.py's proxy-aware `_get_client_ip`, not
     `request.client.host`: behind nginx the latter is the proxy for every
     visitor, and the per-IP cap would silently become a per-shop cap. Once
-    the dict outgrows what the window can hold, every host whose calls have
+    a dict outgrows what the window can hold, every host whose entries have
     all aged out is dropped, so a scanner cycling addresses cannot grow it
     without bound on a public route."""
     now = time.monotonic()
     host = _get_client_ip(request)
     live = lambda calls: [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]  # noqa: E731
-    if len(_track_rate_ip_calls) > _TRACK_RATE_SWEEP_ABOVE:
-        for stale in [h for h, calls in _track_rate_ip_calls.items() if not live(calls)]:
-            del _track_rate_ip_calls[stale]
-    per_ip = live(_track_rate_ip_calls.get(host, ()))
-    _track_rate_global_calls[:] = live(_track_rate_global_calls)
-    if len(per_ip) >= _TRACK_RATE_MAX_PER_IP or len(_track_rate_global_calls) >= _TRACK_RATE_MAX_GLOBAL:
-        return True
-    per_ip.append(now)
-    _track_rate_ip_calls[host] = per_ip
-    _track_rate_global_calls.append(now)
-    return False
+    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses):
+        if len(bucket) > _TRACK_RATE_SWEEP_ABOVE:
+            for stale in [h for h, calls in bucket.items() if not live(calls)]:
+                del bucket[stale]
+    calls = live(_track_rate_ip_calls.get(host, ()))
+    misses = live(_track_rate_ip_misses.get(host, ()))
+    _track_rate_global_misses[:] = live(_track_rate_global_misses)
+    if (
+        len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP
+        or len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP
+        or len(_track_rate_global_misses) >= _TRACK_RATE_MAX_MISSES_GLOBAL
+    ):
+        return None
+    calls.append(now)
+    _track_rate_ip_calls[host] = calls
+    if misses:
+        _track_rate_ip_misses[host] = misses
+    else:
+        _track_rate_ip_misses.pop(host, None)
+    return host
+
+
+def _track_rate_miss(host: str) -> None:
+    now = time.monotonic()
+    _track_rate_ip_misses.setdefault(host, []).append(now)
+    _track_rate_global_misses.append(now)
 
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
@@ -1031,10 +1069,11 @@ async def get_tracking(
     credential (a 6-character code, unique-indexed, normalised on lookup
     so case and look-alike letters never matter), and the auth middleware
     exempts this prefix. Declared ahead of the `/{project_id}` routes so
-    `track` is never parsed as an id. Unknown, trashed and expired links
-    all get the same 404; past the rate limit everything is a 429."""
+    `track` is never parsed as an id. Unknown, trashed, closed and expired
+    links all get the same 404; past the rate limit everything is a 429."""
     response.headers["Cache-Control"] = "no-store"
-    if _track_rate_limited(request):
+    host = _track_rate_limited(request)
+    if host is None:
         return JSONResponse(
             status_code=429,
             content={"detail": "Trop de tentatives"},
@@ -1043,6 +1082,7 @@ async def get_tracking(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
     if found is None:
+        _track_rate_miss(host)
         # Not `raise HTTPException`: FastAPI's exception handler builds a
         # fresh JSONResponse that drops the `response` object's headers
         # entirely, so the no-store guarantee would silently vanish on the
@@ -2960,16 +3000,24 @@ async def regenerate_tracking_token(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Kill a leaked link: a new token, the old one 404s at once. The event
-    carries no token — the log is readable by every aito:read holder.
+    carries no token; the link itself is on every project response
+    (`_to_response`), so the log adds nothing a reader could not already see.
+
+    The new token is committed BEFORE Books is contacted. Two reasons: the
+    leaked link must die whatever Books does next, and the row must not sit
+    dirty across the HTTP round trips — the first settings read inside the
+    Zoho client would autoflush it and hold SQLite's write lock for up to
+    two request timeouts, longer than the busy timeout, so unrelated writers
+    (MQTT status, the sync worker) failed with "database is locked".
 
     The old link is printed on the quote too, so the estimate's notes are
     rewritten here and now rather than at the next line sync, which may be
-    days away. Books being unreachable never blocks the local change — the
-    leaked link must die regardless — but the response says so, and the
-    next sync rewrites the notes anyway (notes_with_tracking sees the
-    stale block)."""
+    days away. Books being unreachable never blocks the local change, but
+    the response says so, and the next sync rewrites the notes anyway
+    (notes_with_tracking sees the stale block)."""
     project = await _get_active_project_or_404(db, project_id)
     project.tracking_token = await mint_unique_token(db)
+    await db.commit()
     quote_notes: str | None = None
     if project.quote_id:
         try:

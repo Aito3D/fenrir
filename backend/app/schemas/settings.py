@@ -885,6 +885,31 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError(str(exc)) from exc
         return v
 
+    @field_validator("external_url")
+    @classmethod
+    def validate_external_url(cls, v: str | None) -> str | None:
+        """The base of every link Bambuddy hands out — notification images,
+        OIDC redirects, the tracking link printed on every Zoho estimate —
+        so it must be an absolute http(s) origin, optionally with a path.
+        Without a scheme the quote carried ``aito.pf/t/K7F3XQ``, a relative
+        path nobody can click; with a query or fragment the token would be
+        appended to them. Empty stays empty: it is the documented "not
+        configured" state. The trailing slash is dropped once here, so
+        every consumer can append ``/…`` without a doubled slash."""
+        if v is None:
+            return v
+        candidate = v.strip()
+        if not candidate:
+            return ""
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(candidate)
+        if parts.scheme not in ("http", "https") or not parts.netloc or any(ch.isspace() for ch in candidate):
+            raise ValueError("External URL must be an absolute http(s) address, e.g. https://aito.example")
+        if parts.query or parts.fragment:
+            raise ValueError("External URL must not carry a query string or fragment")
+        return candidate.rstrip("/")
+
     @field_validator("docker_compose_dir")
     @classmethod
     def validate_docker_compose_dir(cls, v: str | None) -> str | None:
