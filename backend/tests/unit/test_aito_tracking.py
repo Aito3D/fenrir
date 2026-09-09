@@ -8,9 +8,11 @@ from sqlalchemy import select, text
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.settings import Settings
 from backend.app.services.aito_tracking import (
+    TOKEN_ALPHABET,
     build_tracking_url,
     ensure_tracking_token,
     mint_token,
+    normalize_token,
     purge_tracking_views,
     tracking_url,
     tracking_url_for,
@@ -35,16 +37,45 @@ async def _set_external_url(db_session, value: str):
     await db_session.commit()
 
 
-def test_mint_token_is_43_urlsafe_chars_and_unique():
+def test_mint_token_is_six_crockford_chars_and_unique():
+    # Six from the 32-symbol alphabet: no I, L, O, U, no lowercase, no
+    # punctuation — a code that survives handwriting and a small QR.
     a, b = mint_token(), mint_token()
-    assert len(a) == 43 and a != b
-    assert all(c.isalnum() or c in "-_" for c in a)
+    assert len(a) == 6 and a != b
+    assert all(c in TOKEN_ALPHABET for c in a)
+    assert not set("ILOU-_") & set(TOKEN_ALPHABET)
+    assert "".join(sorted(set(TOKEN_ALPHABET))) == TOKEN_ALPHABET
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("K7F3XQ", "K7F3XQ"),
+        ("k7f3xq", "K7F3XQ"),  # case folded
+        ("k7f-3xq", "K7F3XQ"),  # hyphen and space dropped
+        (" K7F 3XQ ", "K7F3XQ"),
+        ("kof3lq", "K0F31Q"),  # O → 0, L → 1
+        ("KIF3XQ", "K1F3XQ"),  # I → 1
+        ("K7F3X", None),  # too short
+        ("K7F3XQ9", None),  # too long
+        ("K7F3XU", None),  # U is not in the alphabet
+        ("K7F3X!", None),
+        ("", None),
+    ],
+)
+def test_normalize_token_reads_what_a_client_typed(raw, expected):
+    assert normalize_token(raw) == expected
+
+
+def test_normalize_token_passes_a_legacy_long_token_through():
+    legacy = "lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4"
+    assert normalize_token(legacy) == legacy
 
 
 def test_tracking_url_for_needs_both_halves():
     assert tracking_url_for("", "abc") is None
     assert tracking_url_for("https://x.pf", None) is None
-    assert tracking_url_for("https://x.pf", "abc") == "https://x.pf/track/abc"
+    assert tracking_url_for("https://x.pf", "abc") == "https://x.pf/t/abc"
 
 
 @pytest.mark.asyncio
@@ -69,7 +100,7 @@ async def test_tracking_url_follows_external_url_without_minting(async_client, d
     await _set_external_url(db_session, "https://aito.example/")
     assert await tracking_url(db_session, project) is None  # still no token
     url = await build_tracking_url(db_session, project)
-    assert url == f"https://aito.example/track/{project.tracking_token}"
+    assert url == f"https://aito.example/t/{project.tracking_token}"
     assert await tracking_url(db_session, project) == url
 
 
@@ -91,7 +122,7 @@ async def test_project_responses_carry_tracking_fields(async_client, db_session)
     await db_session.commit()
     body = (await async_client.get("/api/v1/aito/")).json()[0]
     assert body["tracking_configured"] is True
-    assert body["tracking_url"] == f"https://aito.example/track/{project.tracking_token}"
+    assert body["tracking_url"] == f"https://aito.example/t/{project.tracking_token}"
 
 
 TRACK = "/api/v1/aito/track/"
@@ -362,7 +393,7 @@ async def test_link_route_mints_and_regenerate_replaces(async_client, db_session
     await _set_external_url(db_session, "https://aito.example")
     pid = await _create(async_client)
     first = (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"]
-    assert first.startswith("https://aito.example/track/")
+    assert first.startswith("https://aito.example/t/")
     assert (await async_client.get(f"/api/v1/aito/{pid}/tracking-link")).json()["tracking_url"] == first
     old_token = first.rsplit("/", 1)[1]
     assert (await async_client.get(TRACK + old_token)).status_code == 200
@@ -402,3 +433,91 @@ def test_permissions():
     assert _declared_permissions("regenerate_tracking_token") == ["aito:update"]
     route = next(r for r in app.routes if getattr(r, "name", "") == "get_tracking")
     assert all(d.name != "current_user" for d in route.dependant.dependencies)
+
+
+@pytest.mark.asyncio
+async def test_public_route_accepts_a_typed_code_in_any_case(async_client, db_session):
+    pid = await _create(async_client)
+    project = await _project(db_session, pid)
+    token = await ensure_tracking_token(db_session, project)
+    await db_session.commit()
+    assert len(token) == 6
+    typed = token.lower().replace("0", "o").replace("1", "l")
+    r = await async_client.get(f"/api/v1/aito/track/{typed}")
+    assert r.status_code == 200, r.text
+    r = await async_client.get(f"/api/v1/aito/track/{token}x")
+    assert r.status_code == 404
+
+
+class _Clock:
+    """Stands in for routes/aito.py's `time` name — see test_aito_proofread_route."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+@pytest.mark.asyncio
+async def test_public_route_is_rate_limited_per_ip_and_recovers(async_client, monkeypatch):
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    aito_routes._track_rate_ip_calls.clear()
+    aito_routes._track_rate_global_calls.clear()
+    for _ in range(aito_routes._TRACK_RATE_MAX_PER_IP):
+        assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ")
+    assert r.status_code == 429
+    assert r.headers["cache-control"] == "no-store"
+    assert r.headers["retry-after"] == "60"
+    clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
+    assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
+    aito_routes._track_rate_ip_calls.clear()
+    aito_routes._track_rate_global_calls.clear()
+
+
+@pytest.mark.asyncio
+async def test_public_route_global_cap_holds_across_addresses(async_client, monkeypatch):
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_GLOBAL", 3)
+    aito_routes._track_rate_ip_calls.clear()
+    aito_routes._track_rate_global_calls.clear()
+    # Three calls fill the global window even though no single IP is near
+    # its own cap; the fourth is refused whoever sends it.
+    for _ in range(3):
+        assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
+    assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 429
+    aito_routes._track_rate_ip_calls.clear()
+    aito_routes._track_rate_global_calls.clear()
+
+
+@pytest.mark.asyncio
+async def test_public_route_rate_limit_unwraps_a_trusted_proxy_and_forgets_idle_hosts(async_client, monkeypatch):
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    # The test client's TCP peer is the trusted proxy; the real visitor is
+    # whoever X-Forwarded-For names, so two visitors get two buckets.
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+    for _ in range(aito_routes._TRACK_RATE_MAX_PER_IP):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 404
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
+    assert r.status_code == 429
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.6"})
+    assert r.status_code == 404
+    assert set(aito_routes._track_rate_ip_calls) == {"203.0.113.5", "203.0.113.6"}
+    # Once the dict is bigger than a window can justify, hosts whose calls
+    # have all aged out are swept — including ones that never come back.
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_SWEEP_ABOVE", 1)
+    clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.7"})
+    assert r.status_code == 404
+    assert set(aito_routes._track_rate_ip_calls) == {"203.0.113.7"}

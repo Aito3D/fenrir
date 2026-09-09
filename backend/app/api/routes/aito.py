@@ -12,6 +12,7 @@ from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.auth import _get_client_ip
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -82,7 +83,7 @@ from backend.app.services.aito_tracking import (
     build_tracking_url,
     compute_tracking,
     external_url as tracking_external_url,
-    mint_token,
+    mint_unique_token,
     tracking_url,
     tracking_url_for,
 )
@@ -982,16 +983,62 @@ async def get_client_history(
     return await compute_client_history(db, client_id, limit)
 
 
+# The public tracking route: a 6-character code (services/aito_tracking.py)
+# is guessable in principle, so the route is throttled twice — per client
+# IP, and across all clients so a spread of addresses buys nothing. Both
+# count every call, hits included: a client opening their page a few times
+# is dozens of requests short of either. Same sliding window and the same
+# `time` indirection as the AI limiter above, so a test can drive the clock.
+_TRACK_RATE_WINDOW_S = 60.0
+_TRACK_RATE_MAX_PER_IP = 30
+_TRACK_RATE_MAX_GLOBAL = 600
+# More host keys than this and the stale ones are swept: only addresses that
+# called inside the window can be live, and the global cap bounds those.
+_TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_GLOBAL
+_track_rate_ip_calls: dict[str, list[float]] = {}
+_track_rate_global_calls: list[float] = []
+
+
+def _track_rate_limited(request: Request) -> bool:
+    """The client's address is auth.py's proxy-aware `_get_client_ip`, not
+    `request.client.host`: behind nginx the latter is the proxy for every
+    visitor, and the per-IP cap would silently become a per-shop cap. Once
+    the dict outgrows what the window can hold, every host whose calls have
+    all aged out is dropped, so a scanner cycling addresses cannot grow it
+    without bound on a public route."""
+    now = time.monotonic()
+    host = _get_client_ip(request)
+    live = lambda calls: [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]  # noqa: E731
+    if len(_track_rate_ip_calls) > _TRACK_RATE_SWEEP_ABOVE:
+        for stale in [h for h, calls in _track_rate_ip_calls.items() if not live(calls)]:
+            del _track_rate_ip_calls[stale]
+    per_ip = live(_track_rate_ip_calls.get(host, ()))
+    _track_rate_global_calls[:] = live(_track_rate_global_calls)
+    if len(per_ip) >= _TRACK_RATE_MAX_PER_IP or len(_track_rate_global_calls) >= _TRACK_RATE_MAX_GLOBAL:
+        return True
+    per_ip.append(now)
+    _track_rate_ip_calls[host] = per_ip
+    _track_rate_global_calls.append(now)
+    return False
+
+
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
 async def get_tracking(
-    token: str, response: Response, db: AsyncSession = Depends(get_db)
+    token: str, request: Request, response: Response, db: AsyncSession = Depends(get_db)
 ) -> AitoTrackingResponse | JSONResponse:
     """The client's public tracking page. No auth: the token IS the
-    credential (43 random urlsafe chars, unique-indexed), and the auth
-    middleware exempts this prefix. Declared ahead of the `/{project_id}`
-    routes so `track` is never parsed as an id. Unknown, trashed and expired
-    links all get the same 404."""
+    credential (a 6-character code, unique-indexed, normalised on lookup
+    so case and look-alike letters never matter), and the auth middleware
+    exempts this prefix. Declared ahead of the `/{project_id}` routes so
+    `track` is never parsed as an id. Unknown, trashed and expired links
+    all get the same 404; past the rate limit everything is a 429."""
     response.headers["Cache-Control"] = "no-store"
+    if _track_rate_limited(request):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Trop de tentatives"},
+            headers={"Cache-Control": "no-store", "Retry-After": "60"},
+        )
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
     if found is None:
@@ -2914,7 +2961,7 @@ async def regenerate_tracking_token(
     """Kill a leaked link: a new token, the old one 404s at once. The event
     carries no token — the log is readable by every aito:read holder."""
     project = await _get_active_project_or_404(db, project_id)
-    project.tracking_token = mint_token()
+    project.tracking_token = await mint_unique_token(db)
     await record(db, project.id, "tracking.regenerated", actor_class="user", actor_name=_actor(current_user), detail={})
     await db.commit()
     return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project))

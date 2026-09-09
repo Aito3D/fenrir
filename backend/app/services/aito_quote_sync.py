@@ -46,7 +46,7 @@ from backend.app.services.aito_quote_export import (
 )
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_shipping import island_label
-from backend.app.services.aito_tracking import NOTES_PREFIX, build_tracking_url, purge_tracking_views
+from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -61,11 +61,17 @@ from backend.app.services.zoho import (
 logger = logging.getLogger(__name__)
 
 
-async def _tracking_notes(db: AsyncSession, project: AitoProject) -> str | None:
-    """The customer-notes string for this project's estimate, or None while
-    the tracking link isn't configured — see build_tracking_url."""
+async def _notes_with_tracking(db: AsyncSession, project: AitoProject, existing: str | None) -> str | None:
+    """The estimate's customer notes as they should read — Books' own text
+    with this card's tracking block under it — or None when there is nothing
+    to write: no public URL configured (build_tracking_url), or the notes
+    already carry exactly this block. Never the block alone: that would
+    replace the org default printed beside the totals."""
     url = await build_tracking_url(db, project)
-    return f"{NOTES_PREFIX}{url}" if url else None
+    if not url:
+        return None
+    merged = with_tracking_notes(existing, url, project.tracking_token or "")
+    return None if merged == (existing or "") else merged
 
 
 # Consecutive upstream failures before a project's push is escalated to
@@ -597,10 +603,19 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         "is_inclusive_tax": True,
         "line_items": line_items,
     }
-    notes = await _tracking_notes(db, project)
-    if notes:
-        payload["notes"] = notes
     estimate = await zoho_service.create_estimate(db, payload)
+    # Notes are deliberately NOT in the create payload: Books fills them
+    # from the org default (the signature line the PDF prints beside the
+    # totals), and sending ours would replace it. Read the default back and
+    # append the tracking block under it in a second call. A failure there
+    # must not cost the quote just created — the next line sync writes the
+    # notes again, since _notes_with_tracking sees they are still missing.
+    notes = await _notes_with_tracking(db, project, estimate.get("notes"))
+    if notes and estimate.get("estimate_id"):
+        try:
+            await zoho_service.update_estimate_notes(db, estimate["estimate_id"], notes)
+        except Exception:  # noqa: BLE001 — logged, retried by the next sync
+            logger.warning("tracking notes not written on estimate %s", estimate["estimate_id"], exc_info=True)
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
@@ -1145,7 +1160,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         shipping=load_export_shipping(project, catalogue),
     )
     updated = await zoho_service.update_estimate_lines(
-        db, project.quote_id, line_items, notes=await _tracking_notes(db, project)
+        db, project.quote_id, line_items, notes=await _notes_with_tracking(db, project, estimate.get("notes"))
     )
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,

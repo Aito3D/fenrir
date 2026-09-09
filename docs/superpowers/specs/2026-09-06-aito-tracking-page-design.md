@@ -9,7 +9,8 @@ client where their order stands, without a login.
 
 ## Goal
 
-1. A per-card random token and a link `<external_url>/track/<token>`.
+1. A per-card random token and a link `<external_url>/t/<token>` (was
+   `/track/` until 2026-09-08; that path stays as an alias for links already sent).
 2. A public read endpoint, `GET /api/v1/aito/track/{token}`, returning only
    what the page draws.
 3. A standalone French page at `/track/:token`: the Aito3D logo, stage

@@ -21,14 +21,59 @@ from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.schemas.aito import AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
 from backend.app.services.aito_shipping import SERVICE_LABELS
 
-TOKEN_BYTES = 32
+# Crockford's base32: digits and capitals minus I, L, O and U, so no symbol
+# looks like another when read off a quote PDF or typed from a phone. Six of
+# them is 30 bits — a billion codes — which the owner chose over the earlier
+# 43-character token on purpose (2026-09-08): the page shows a job's stage,
+# parts and pickup island, nothing secret, and a code a client can copy by
+# hand or scan from a small QR was worth more than an unguessable one. The
+# public route's rate limits (routes/aito.py, per IP and global) are the
+# compensating control; tokens also die 30 days after the job is done.
+TOKEN_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+TOKEN_LENGTH = 6
+# Links minted before the short codes are 43 urlsafe characters and keep
+# working as sent: anything this long is looked up verbatim.
+LEGACY_TOKEN_MIN_LENGTH = 20
+_TOKEN_ALIASES = str.maketrans({"I": "1", "L": "1", "O": "0"})
 TRACKING_TTL_AFTER_DONE = timedelta(days=30)
-NOTES_PREFIX = "Suivez votre commande : "
+NOTES_PREFIX = "Lien de suivi de votre projet : "
+NOTES_CODE_PREFIX = "Code de suivi : "
+# Wordings this app wrote before 2026-09-08. Stripped on merge, so a card
+# re-synced after the change carries one tracking block, not two.
+_LEGACY_NOTES_PREFIXES = ("Suivez votre commande : ",)
 SMS_PREFIX = "\n\nSuivi : "
 
 
 def mint_token() -> str:
-    return secrets.token_urlsafe(TOKEN_BYTES)
+    return "".join(secrets.choice(TOKEN_ALPHABET) for _ in range(TOKEN_LENGTH))
+
+
+def normalize_token(raw: str) -> str | None:
+    """What a typed or pasted code means, or None when it cannot be a code.
+
+    Case is folded, spaces and hyphens dropped, and the letters Crockford
+    leaves out are read as the digits they resemble (I and L as 1, O as 0),
+    so `k7f3-xq9w`, `K7F3XQ9W` and `K7F3XQ9W ` all name the same card and
+    a client never loses to their own handwriting. A legacy long token
+    passes through untouched."""
+    if len(raw) >= LEGACY_TOKEN_MIN_LENGTH:
+        return raw
+    code = "".join(ch for ch in raw.upper().translate(_TOKEN_ALIASES) if ch.isalnum())
+    if len(code) != TOKEN_LENGTH or any(ch not in TOKEN_ALPHABET for ch in code):
+        return None
+    return code
+
+
+async def mint_unique_token(db: AsyncSession) -> str:
+    """A fresh code no active-or-trashed card holds. A billion codes against
+    a few hundred cards makes a clash a once-a-decade event, but the column
+    is unique-indexed and a clash there would be a 500 on a Copy click."""
+    for _ in range(10):
+        token = mint_token()
+        taken = (await db.execute(select(AitoProject.id).where(AitoProject.tracking_token == token))).first()
+        if taken is None:
+            return token
+    raise RuntimeError("could not mint a unique tracking token")  # pragma: no cover — 32^6 space
 
 
 async def external_url(db: AsyncSession) -> str:
@@ -39,16 +84,46 @@ async def external_url(db: AsyncSession) -> str:
 
 
 def tracking_url_for(base: str, token: str | None) -> str | None:
+    """`/t/`, not `/track/`: the link goes on quote PDFs and into QR codes,
+    where every character costs. The page still answers at `/track/` for
+    links already sent (App.tsx keeps that route as an alias)."""
     if not base or not token:
         return None
-    return f"{base}/track/{token}"
+    return f"{base}/t/{token}"
+
+
+def tracking_notes(url: str, token: str) -> str:
+    """The customer notes printed on the Zoho estimate, in French: the link,
+    and — for a short code — the code on its own line, because a client
+    reading the PDF on paper types it into /t rather than clicking. A legacy
+    long token is a link only; nobody is typing 43 characters."""
+    text = f"{NOTES_PREFIX}{url}"
+    if len(token) == TOKEN_LENGTH:
+        text += f"\n{NOTES_CODE_PREFIX}{token}"
+    return text
+
+
+def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
+    """The estimate's customer notes with this card's tracking block under
+    them. Books fills the notes from the org default on create — the
+    "Signature du client (précédée de la mention « Bon pour accord »)" line
+    printed beside the totals — and an operator may have typed more in
+    Books; both are kept. Only lines this app wrote (any wording it has
+    ever used) are dropped before the current block is appended, so the
+    result is the same whether the card is synced once or fifty times, or
+    its link was regenerated in between."""
+    prefixes = (NOTES_PREFIX, NOTES_CODE_PREFIX, *_LEGACY_NOTES_PREFIXES)
+    kept = [line for line in (existing or "").splitlines() if not line.startswith(prefixes)]
+    head = "\n".join(kept).rstrip()
+    block = tracking_notes(url, token)
+    return f"{head}\n\n{block}" if head else block
 
 
 async def ensure_tracking_token(db: AsyncSession, project: AitoProject) -> str:
     """The card's token, minting one if it has none. Flushes, never commits:
     the caller's transaction owns that."""
     if not project.tracking_token:
-        project.tracking_token = mint_token()
+        project.tracking_token = await mint_unique_token(db)
         await db.flush()
     return project.tracking_token
 
@@ -162,8 +237,11 @@ async def compute_tracking(
     three into the same 404, so a guesser learns nothing. Otherwise the
     project id rides along with the payload so the route can log the view
     without a second lookup."""
+    code = normalize_token(token)
+    if code is None:
+        return None
     project = (
-        await db.execute(select(AitoProject).where(AitoProject.tracking_token == token, AitoProject.status == "active"))
+        await db.execute(select(AitoProject).where(AitoProject.tracking_token == code, AitoProject.status == "active"))
     ).scalar_one_or_none()
     if project is None:
         return None

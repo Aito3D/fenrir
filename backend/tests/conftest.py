@@ -917,3 +917,18 @@ def assert_no_log_errors(capture_logs):
     errors = capture_logs.get_errors()
     if errors:
         pytest.fail(f"Unexpected log errors:\n{capture_logs.format_errors()}")
+
+
+@pytest.fixture(autouse=True)
+def _reset_tracking_rate_limits():
+    """The public tracking route's sliding windows (routes/aito.py) live in
+    module dicts and count every call; a file that opens the page thirty
+    times across its tests would trip the per-IP cap on the thirty-first
+    for no reason of its own. Empty both buckets around every test."""
+    from backend.app.api.routes import aito as aito_routes
+
+    aito_routes._track_rate_ip_calls.clear()
+    aito_routes._track_rate_global_calls.clear()
+    yield
+    aito_routes._track_rate_ip_calls.clear()
+    aito_routes._track_rate_global_calls.clear()

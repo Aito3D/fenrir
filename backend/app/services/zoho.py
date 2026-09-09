@@ -574,6 +574,14 @@ class ZohoService:
             body["notes"] = notes
         return (await self._request(db, "PUT", f"/estimates/{_seg(estimate_id)}", json=body)).get("estimate", {})
 
+    async def update_estimate_notes(self, db: AsyncSession, estimate_id: str, notes: str) -> dict:
+        """Customer notes and nothing else — the same partial PUT contract as
+        update_estimate_lines, for the create path, which must read Books'
+        default notes back before it can append the tracking block."""
+        return (await self._request(db, "PUT", f"/estimates/{_seg(estimate_id)}", json={"notes": notes})).get(
+            "estimate", {}
+        )
+
     async def set_estimate_status(self, db: AsyncSession, estimate_id: str, status: str) -> None:
         """`sent`, `accepted` or `declined`. There is no `draft`: Books offers
         no way back, so declining an estimate is one-way through the API."""
