@@ -7,8 +7,7 @@
   "margin_k": 33,
   "qty_min_factor": 0.4,
   "qty_k": 5,
-  "min_task_price": 12,
-  "rush_pct": 0
+  "min_task_price": 12
  },
  "CURVE_QUANTITIES": [
   1,
@@ -288,7 +287,6 @@
   "floor_applied": false,
   "margin_filament": 4.2749999999999995,
   "margin_stuff": 1.5,
-  "margin_rush": 0,
   "marge": 24.57163522273652,
   "total_ht": 105.48789209944886,
   "total_ttc": 126.58547051933863,

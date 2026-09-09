@@ -96,7 +96,6 @@ CREATE TABLE aito_tasks (
 	impression_color VARCHAR(100), 
 	impression_cost FLOAT, 
 	impression_discount_pct FLOAT, 
-	impression_rush BOOLEAN DEFAULT '0' NOT NULL, 
 	scan_description TEXT, 
 	modelisation_description TEXT, 
 	impression_description TEXT, 
@@ -227,7 +226,6 @@ CREATE TABLE calculator_defaults (
 	qty_min_factor FLOAT NOT NULL, 
 	qty_k FLOAT NOT NULL, 
 	min_task_price FLOAT NOT NULL, 
-	rush_pct FLOAT NOT NULL, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)

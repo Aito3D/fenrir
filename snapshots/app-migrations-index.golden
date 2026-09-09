@@ -207,42 +207,43 @@
    205	# Migration: default margin over cost, used to prefill new calculator filaments.
    206	# Migration: one-time per-job base fee (quotation time, order handling).
    207	# Migration: hyperbolic margin curves (size margin × quantity discount)
-   208	# Migration: rush surcharge percent (2026-09-04). Default 0 so the new
-   209	# Migration: calculator filament profiles split the single free-text name
-   210	# Migration: calculator filaments can be linked to a Zoho product, whose
-   211	# Migration: Aito cards snapshot the client's email alongside the phone so
-   212	# Migration: Aito cards record whether the attached client is a company, so
-   213	# Migration: Aito cards imported from a Zoho quote snapshot the quote's
-   214	# Migration: the outbox for pushing a project into its Zoho quote. The
-   215	# Migration: the quote's acceptance moment, so an accepted card's age can
-   216	# Migration: when the quote first left the shop, plus the cached newest
-   217	# Migration: backfill the explicit 'unmanaged' ownership marker (Critical
-   218	# Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
-   219	# Migration: per-line percent discount on the Impression3D service
-   220	# Migration: per-service quantity and percent discount on the other three
-   221	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
-   222	# Migration: invoiced flag on Aito projects (2026-08-03).
-   223	# Migration: urgent flag on Aito projects (2026-08-04).
-   224	# Migration: content-fields revision counter for optimistic concurrency
-   225	# Migration: three-state board flag on Aito projects (2026-08-06).
-   226	# Migration: the comment mirror's fetch policy needs to know when it last
-   227	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
+   208	# Migration: calculator filament profiles split the single free-text name
+   209	# Migration: calculator filaments can be linked to a Zoho product, whose
+   210	# Migration: Aito cards snapshot the client's email alongside the phone so
+   211	# Migration: Aito cards record whether the attached client is a company, so
+   212	# Migration: Aito cards imported from a Zoho quote snapshot the quote's
+   213	# Migration: the outbox for pushing a project into its Zoho quote. The
+   214	# Migration: the quote's acceptance moment, so an accepted card's age can
+   215	# Migration: when the quote first left the shop, plus the cached newest
+   216	# Migration: backfill the explicit 'unmanaged' ownership marker (Critical
+   217	# Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
+   218	# Migration: per-line percent discount on the Impression3D service
+   219	# Migration: per-service quantity and percent discount on the other three
+   220	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
+   221	# Migration: invoiced flag on Aito projects (2026-08-03).
+   222	# Migration: urgent flag on Aito projects (2026-08-04).
+   223	# Migration: content-fields revision counter for optimistic concurrency
+   224	# Migration: three-state board flag on Aito projects (2026-08-06).
+   225	# Migration: the comment mirror's fetch policy needs to know when it last
+   226	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
+   227	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
    228	# Migration: an optional social-network handle on an Aito card, standing in
    229	# Migration: the Finish column's "client has been told to collect" mark.
-   230	# Migration: promised delivery date and per-task rush flag (2026-09-04).
-   231	# Migration: public tracking link token (2026-09-06). Nullable, minted on
-   232	# Migration: tracking page view log (2026-09-06). A row is a card and a
-   233	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   234	# Migration: per-file print progress inside a project (#1897).
-   235	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   236	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   237	# Migration: variant grouping for library files (#671 / #2570). The
-   238	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   239	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   240	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   241	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   242	# Migration: drop the AMS slot markers an older Bambuddy wrote into
-   243	# Migration: whether Books has been directly observed to agree with an
+   230	# Migration: promised delivery date (2026-09-04). Nullable, so no
+   231	# Migration: the rush surcharge was removed (2026-09-07). Drop the columns
+   232	# Migration: public tracking link token (2026-09-06). Nullable, minted on
+   233	# Migration: tracking page view log (2026-09-06). A row is a card and a
+   234	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   235	# Migration: per-file print progress inside a project (#1897).
+   236	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   237	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   238	# Migration: variant grouping for library files (#671 / #2570). The
+   239	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   240	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   241	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   242	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   243	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+   244	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 

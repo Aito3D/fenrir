@@ -1093,7 +1093,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def load_progress(db: AsyncSession, batch: PrintBatch) -> BatchProgress:
 1 async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
 1 async def maybe_sync_spoolman_locations(db: AsyncSession, *, client=None) -> bool:
+1 async def mint_unique_token(db: AsyncSession) -> str:
 1 async def mirror_comments(db: AsyncSession, project: AitoProject, comments: list[dict]) -> int:
+1 async def notes_with_tracking(db: AsyncSession, project: AitoProject, existing: str | None) -> str | None:
 1 async def notify_missing_spool_assignments_on_print_start(
 1 async def on_layer_change(printer_id: int, layer_num: int):
 1 async def on_print_complete(
@@ -1434,7 +1436,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def is_bed_slinger(model: str | None) -> bool:
 1 def is_captcha_challenge(response) -> bool:
 1 def is_chamber_image_model(model: str | None) -> bool:
-1 def is_expired(column: str, finished_at: datetime | None, now: datetime) -> bool:
+1 def is_expired(column: str, finished_at: datetime | None, last_active: datetime, now: datetime) -> bool:
 1 def is_expiry_401(response: httpx.Response) -> bool:
 1 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
 1 def is_plate_detection_available() -> bool:
@@ -1465,6 +1467,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def normalize_am_unit_id(ams_id: int) -> int:
 1 def normalize_display_name(first_name: str, last_name: str) -> str:
 1 def normalize_location_name(name: str) -> str:
+1 def normalize_token(raw: str) -> str | None:
 1 def note_captcha_challenge(base_url: str) -> None:
 1 def overrides_for_plate(
 1 def overrides_from_config(config: Any) -> list[DesignOverride]:
@@ -1545,6 +1548,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def task_quantity(task: AitoTask) -> int | None:
 1 def test_ldap_connection(config: LDAPConfig) -> tuple[bool, str]:
 1 def thresholds(sensitivity: str) -> tuple[float, float]:
+1 def tracking_notes(url: str, token: str) -> str:
 1 def tracking_url_for(base: str, token: str | None) -> str | None:
 1 def transaction_affects_personal_balance(
 1 def uniform_tray_filament_hint(loaded_types: list[str]) -> str | None:
@@ -1552,6 +1556,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def url_is_external_storage(project_url: str | None) -> bool | None:
 1 def verify_3mf_candidate(
 1 def waiting_reason_for_codes(codes: list[int]) -> str:
+1 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
 ```
 
 ## Frontend exported symbols — utils + hooks
@@ -1566,12 +1571,15 @@ export const AWAY_STATUSES
 export const BAMBU_COLOR_CODE_FALLBACK
 export const BAMBU_FILAMENT_COLORS
 export const BED_TEMP_DEFAULTS
+export const BRAND
 export const BUSINESS_FLEET_THRESHOLD
 export const CALIBRATION_MODE_ACTIVE
 export const CALIBRATION_MODE_INACTIVE
 export const CALIBRATION_MODES
+export const CARD
 export const CHAMBER_TEMP_DEFAULTS
 export const checkKey
+export const CODE_LENGTH
 export const COLOR_FAMILY_ORDER
 export const COLUMN_IDS
 export const COLUMN_ORDER
@@ -1582,15 +1590,17 @@ export const CURVE_QUANTITIES
 export const DEFAULT_COUNTRY_CODE
 export const DEFAULT_PREHEAT_FILAMENT_TARGETS
 export const DEFAULT_STATE
+export const delayAt
 export const DISCOUNT_COLUMNS
 export const EMPTY_COMPATIBILITY_INDEX
 export const emptyBoard
+export const ENTRY_MOTION
 export const FAN_SPEED_DEFAULTS
 export const FILAMENT_BRANDS
 export const FILAMENT_MATERIALS
 export const filamentLineCost
+export const FOCUS
 export const FOLLOWUP_KEYS
-export const FR
 export const FTS_INLET_SIDE
 export const inventoryLocationsQueryKey
 export const libraryTagsQueryKey
@@ -1603,6 +1613,7 @@ export const num
 export const PAGE_TABS
 export const PREHEAT_FILAMENT_ORDER
 export const PRESET_CATEGORIES
+export const PRESS
 export const printerDepreciationPerHour
 export const printerLifetimeHours
 export const printerRepairsPerHour
@@ -1625,10 +1636,16 @@ export const STREAM_DEGRADED_MS
 export const STREAM_ERROR_MS
 export const STREAM_STALE_MS
 export const SUPPORTED_CURRENCIES
+export const TRACK_MOTION
+export const TRACKING_FALLBACK_LANGUAGE
+export const trackNodeDelay
+export const trackStageIndex
+export const trackStateDelay
 export function __resetAitoPresence
 export function __resetBoardSync
 export function __resetColorCatalogForTests
 export function addDays
+export function addWorkingDays
 export function ageAnchor
 export function aggregateGroupSpool
 export function agingColorCls
@@ -1696,7 +1713,9 @@ export function discountMatrix
 export function downloadTextFile
 export function draftFromContact
 export function dueDateCls
+export function dueDateDays
 export function dueDateLevel
+export function dueRelativeLabel
 export function effectivePreferLowest
 export function elapsedDays
 export function eligibleParents
@@ -1746,8 +1765,6 @@ export function formatTimeOnly
 export function formatUptime
 export function formatWeight
 export function freshenTaskDraft
-export function frLongDate
-export function frUpdated
 export function genericFilamentIdForMaterial
 export function getAmsLabel
 export function getBambuColorName
@@ -1781,6 +1798,7 @@ export function invalidateSpoolAndLocationQueries
 export function isApiSliceableFilename
 export function isApiSliceableFileType
 export function isBambuLabSpool
+export function isBlankPersistedDraft
 export function isBlankTaskDraft
 export function isExternalSidebarItemId
 export function isExternalSpoolHidden
@@ -1801,6 +1819,7 @@ export function joinMinutes
 export function latestProjectVersion
 export function loadCalculatorState
 export function localDateKey
+export function longDate
 export function maskVisibleErrors
 export function matchCalculatorFilament
 export function matchCalculatorPrinter
@@ -1813,6 +1832,7 @@ export function netCost
 export function nextPlaceholderId
 export function normaliseClientDraft
 export function normaliseTaskDraft
+export function normalizeCode
 export function normalizeColor
 export function normalizeColorForCompare
 export function normalizePreheatFilamentType
@@ -1857,6 +1877,7 @@ export function rankBySourceColumn
 export function readBrandFilter
 export function readGridSize
 export function readMaterialFilter
+export function readNewProjectDraft
 export function realityCheckImpact
 export function registerPresenceSender
 export function replaceProject
@@ -1871,6 +1892,7 @@ export function roundUpTo50
 export function rowKey
 export function saveHiddenSidebarSystemItemIds
 export function saveSidebarOrder
+export function seedFromProject
 export function selectRealityChecks
 export function sendAitoPresence
 export function serializePreheatFilamentTargets
@@ -1905,9 +1927,11 @@ export function toDateTimeLocalValue
 export function toOptimisticProjects
 export function toSafeExternalUrl
 export function toTaskLike
+export function trackingDefaultLanguage
 export function trackStages
 export function unitMultiplier
 export function unitPriceCurve
+export function updatedAt
 export function useAitoPageMutations
 export function useAitoViewers
 export function useBoardDrag
@@ -1961,6 +1985,7 @@ export function useSpoolBuddyState
 export function useStaggeredEntrance
 export function useStreamReconnect
 export function useStreamTokenSync
+export function useTrackingLanguage
 export function useUnknownTagPrompt
 export function useWebRTCStream
 export function useWebSocket
@@ -1969,9 +1994,11 @@ export function validateEmail
 export function validatePhone
 export function visibleClientDraftErrors
 export function visibleShippingDraftErrors
+export function weekStartFor
 export function writeBrandFilter
 export function writeGridSize
 export function writeMaterialFilter
+export function writeNewProjectDraft
 export interface AmsTrayLike
 export interface AmsUnitLike
 export interface ArchivePriceEstimate
@@ -2017,6 +2044,7 @@ export interface PricingResult
 export interface PrinterCompatibilityIndex
 export interface PrinterMappingResult
 export interface ProgressStatus
+export interface ProjectSeedInput
 export interface RealityCheck
 export interface RealityCheckOverrides
 export interface ShippingDraft
@@ -2040,6 +2068,7 @@ export interface WebRTCPrinterStats
 export type AgeAnchor
 export type AgingLevel
 export type Board
+export type CodeState
 export type ColorFamily
 export type ColumnId
 export type DateFormat
@@ -2772,6 +2801,7 @@ xyJog
 ```
 AitoFxDemoPage.tsx
 AitoPage.tsx
+AitoTrackEntryPage.tsx
 AitoTrackPage.tsx
 ArchivesPage.tsx
 CalculatorPage.tsx
@@ -2808,8 +2838,8 @@ UsersPage.tsx
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "import backend.app.main; from backend.app.core.database import Base; [print(n, len(t.columns)) for n, t in sorted(Base.metadata.tables.items())]" 2>/dev/null```
 ```
 aito_events 15
-aito_projects 50
-aito_tasks 32
+aito_projects 51
+aito_tasks 31
 aito_tracking_views 3
 ams_labels 6
 ams_sensor_history 7
@@ -2818,7 +2848,7 @@ auth_ephemeral_tokens 10
 auth_rate_limit_events 4
 budget_reservations 9
 bug_reports 9
-calculator_defaults 23
+calculator_defaults 22
 calculator_filaments 15
 calculator_printers 9
 color_catalog 9

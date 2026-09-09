@@ -20,114 +20,123 @@
     18	path="/overlay/:printerId"
     19	element=StreamOverlayPage
     20	<Route
-    21	path="/track/:token"
-    22	element=AitoTrackPage
+    21	path="/t"
+    22	element=AitoTrackEntryPage
     23	<Route
-    24	path="/calculator/quote"
-    25	<Route
-    26	element=ProtectedRoute
-    27	<Route
-    28	path="spoolbuddy"
-    29	element=SpoolBuddyDashboard
-    30	<Route
-    31	path="spoolbuddy/ams"
-    32	element=SpoolBuddyAmsPage
-    33	<Route
-    34	path="spoolbuddy/write-tag"
-    35	element=SpoolBuddyWriteTagPage
+    24	path="/track"
+    25	element=AitoTrackEntryPage
+    26	<Route
+    27	path="/t/:token"
+    28	element=AitoTrackPage
+    29	<Route
+    30	path="/track/:token"
+    31	element=AitoTrackPage
+    32	<Route
+    33	path="/calculator/quote"
+    34	<Route
+    35	element=ProtectedRoute
     36	<Route
-    37	path="spoolbuddy/inventory"
-    38	element=SpoolBuddyInventoryPage
+    37	path="spoolbuddy"
+    38	element=SpoolBuddyDashboard
     39	<Route
-    40	path="spoolbuddy/settings"
-    41	element=SpoolBuddySettingsPage
+    40	path="spoolbuddy/ams"
+    41	element=SpoolBuddyAmsPage
     42	<Route
-    43	path="spoolbuddy/calibration"
-    44	element=SpoolBuddyCalibrationPage
+    43	path="spoolbuddy/write-tag"
+    44	element=SpoolBuddyWriteTagPage
     45	<Route
-    46	element=ProtectedRoute
-    47	<Route
-    48	element=PrintersPage
-    49	<Route
-    50	path="archives"
-    51	element=ArchivesPage
-    52	<Route
-    53	path="queue"
-    54	element=QueuePage
-    55	<Route
-    56	path="pipelines/runs"
-    57	element=Navigate
+    46	path="spoolbuddy/inventory"
+    47	element=SpoolBuddyInventoryPage
+    48	<Route
+    49	path="spoolbuddy/settings"
+    50	element=SpoolBuddySettingsPage
+    51	<Route
+    52	path="spoolbuddy/calibration"
+    53	element=SpoolBuddyCalibrationPage
+    54	<Route
+    55	element=ProtectedRoute
+    56	<Route
+    57	element=PrintersPage
     58	<Route
-    59	path="stats"
-    60	element=StatsPage
+    59	path="archives"
+    60	element=ArchivesPage
     61	<Route
-    62	path="profiles"
-    63	element=ProfilesPage
+    62	path="queue"
+    63	element=QueuePage
     64	<Route
-    65	path="filament-profiles"
-    66	element=FilamentProfilesPage
+    65	path="pipelines/runs"
+    66	element=Navigate
     67	<Route
-    68	path="finance"
-    69	element=PermissionRoute
+    68	path="stats"
+    69	element=StatsPage
     70	<Route
-    71	path="maintenance"
-    72	element=MaintenancePage
+    71	path="profiles"
+    72	element=ProfilesPage
     73	<Route
-    74	path="calculator"
-    75	element=PermissionRoute
+    74	path="filament-profiles"
+    75	element=FilamentProfilesPage
     76	<Route
-    77	path="projects"
-    78	element=ProjectsPage
+    77	path="finance"
+    78	element=PermissionRoute
     79	<Route
-    80	path="projects/:id"
-    81	element=ProjectDetailPage
+    80	path="maintenance"
+    81	element=MaintenancePage
     82	<Route
-    83	path="aito"
+    83	path="calculator"
     84	element=PermissionRoute
     85	<Route
-    86	path="inventory"
-    87	element=InventoryPage
+    86	path="projects"
+    87	element=ProjectsPage
     88	<Route
-    89	path="files"
-    90	element=FileManagerPage
+    89	path="projects/:id"
+    90	element=ProjectDetailPage
     91	<Route
-    92	path="files/trash"
-    93	element=LibraryTrashPage
+    92	path="aito"
+    93	element=PermissionRoute
     94	<Route
-    95	path="makerworld"
-    96	element=PermissionRoute
+    95	path="inventory"
+    96	element=InventoryPage
     97	<Route
-    98	path="settings"
-    99	element=PermissionRoute
+    98	path="files"
+    99	element=FileManagerPage
    100	<Route
-   101	path="groups/new"
-   102	element=PermissionRoute
+   101	path="files/trash"
+   102	element=LibraryTrashPage
    103	<Route
-   104	path="groups/:id/edit"
+   104	path="makerworld"
    105	element=PermissionRoute
    106	<Route
-   107	path="users"
-   108	element=Navigate
+   107	path="settings"
+   108	element=PermissionRoute
    109	<Route
-   110	path="groups"
-   111	element=Navigate
+   110	path="groups/new"
+   111	element=PermissionRoute
    112	<Route
-   113	path="system"
-   114	element=SystemInfoPage
+   113	path="groups/:id/edit"
+   114	element=PermissionRoute
    115	<Route
-   116	path="notifications"
-   117	element=NotificationsPage
+   116	path="users"
+   117	element=Navigate
    118	<Route
-   119	path="gcode-viewer"
-   120	element=GCodeViewerPage
+   119	path="groups"
+   120	element=Navigate
    121	<Route
-   122	path="external/:id"
-   123	element=ExternalLinkPage
+   122	path="system"
+   123	element=SystemInfoPage
    124	<Route
-   125	path="camera-tokens"
-   126	element=Navigate
+   125	path="notifications"
+   126	element=NotificationsPage
    127	<Route
-   128	<Route
+   128	path="gcode-viewer"
+   129	element=GCodeViewerPage
+   130	<Route
+   131	path="external/:id"
+   132	element=ExternalLinkPage
+   133	<Route
+   134	path="camera-tokens"
+   135	element=Navigate
+   136	<Route
+   137	<Route
 
 ### stderr:
 
