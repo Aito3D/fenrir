@@ -133,3 +133,15 @@ export const trackNodeDelay = (i: number) => TRACK_MOTION.start + i * TRACK_MOTI
 
 /** When the state card rises, for a rail whose current node is `current`. */
 export const trackStateDelay = (current: number) => trackNodeDelay(current) + TRACK_MOTION.state;
+
+/** The code-entry page's clock (ms). Title and hint rise first, the six
+ *  squares follow one 55 ms beat apart from `cells`, and `leaveAt` is when a
+ *  recognised code may navigate: the squares fill one after another
+ *  (45 ms apart, 260 ms each) and the row lifts away over the last 260 ms —
+ *  the CSS delays under "tracking code entry" in index.css add up to it. */
+export const ENTRY_MOTION = {
+  title: 0,
+  hint: 60,
+  cells: 180,
+  leaveAt: 760,
+} as const;

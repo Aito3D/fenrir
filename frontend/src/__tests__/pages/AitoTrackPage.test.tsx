@@ -22,9 +22,9 @@ function renderAt(token: string) {
 
   return rtlRender(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/track/${token}`]}>
+      <MemoryRouter initialEntries={[`/t/${token}`]}>
         <Routes>
-          <Route path="/track/:token" element={<AitoTrackPage />} />
+          <Route path="/t/:token" element={<AitoTrackPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

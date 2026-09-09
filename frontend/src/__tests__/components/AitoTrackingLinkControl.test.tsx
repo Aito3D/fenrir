@@ -116,11 +116,11 @@ async function holdButton(button: HTMLElement) {
 describe('TrackingLinkControl', () => {
   it('copies the link from the link endpoint', async () => {
     server.use(
-      http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: 'https://x.pf/track/abc' })),
+      http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: 'https://x.pf/t/abc' })),
     );
     render(<TrackingLinkControl project={project} />);
     await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
-    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://x.pf/track/abc'));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://x.pf/t/abc'));
     expect(await screen.findByText(/copied/i)).toBeInTheDocument();
   });
 
@@ -136,7 +136,7 @@ describe('TrackingLinkControl', () => {
     server.use(
       http.post('/api/v1/aito/7/tracking-token', () => {
         calls.push('regen');
-        return HttpResponse.json({ tracking_url: 'https://x.pf/track/new' });
+        return HttpResponse.json({ tracking_url: 'https://x.pf/t/new' });
       }),
     );
     render(<TrackingLinkControl project={project} />);

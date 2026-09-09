@@ -145,6 +145,27 @@ describe('DueDateControl', () => {
     expect(stat()).toHaveFocus();
   });
 
+  it('lands the new value after a change, but never on the panel\'s first paint', () => {
+    // The panel has its own entrance; a countdown that also dropped in on
+    // open would be two motions for one event. After a pick the value is
+    // new information, and that is what drops in — the pill too, on a clear.
+    const { rerender } = render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);
+    expect(screen.getByTestId('due-date-value')).not.toHaveClass('animate-aito-due-land');
+    rerender(<DueDateControl project={{ ...baseProject, due_date: '2026-09-19' }} />);
+    expect(screen.getByTestId('due-date-value')).toHaveClass('animate-aito-due-land');
+    // A re-render with the same date keeps the class on the same element, so
+    // nothing replays; only a new value mounts a new one.
+    rerender(<DueDateControl project={{ ...baseProject, due_date: '2026-09-19' }} />);
+    expect(screen.getByTestId('due-date-value')).toHaveClass('animate-aito-due-land');
+    rerender(<DueDateControl project={baseProject} />);
+    expect(pill()).toHaveClass('animate-aito-due-land');
+  });
+
+  it('opens the pill without a landing when nothing was ever promised', () => {
+    render(<DueDateControl project={baseProject} />);
+    expect(pill()).not.toHaveClass('animate-aito-due-land');
+  });
+
   it('reopens from the stat and clears from the picker', async () => {
     const spy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue({ ...baseProject, due_date: null });
     render(<DueDateControl project={{ ...baseProject, due_date: '2026-09-12' }} />);

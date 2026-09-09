@@ -138,3 +138,19 @@ describe('isIsoDateKey', () => {
     expect(isIsoDateKey('2026-09-06T00:00')).toBe(false);
   });
 });
+
+describe('dueRelativeLabel', () => {
+  const t = ((key: string, opts?: { count?: number }) => `${key}:${opts?.count}`) as unknown as import('i18next').TFunction;
+  it('speaks the language handed to it and rounds to the unit a glance wants', async () => {
+    const { dueRelativeLabel } = await import('../../utils/aitoAging');
+    expect(dueRelativeLabel(0, 'en', t)).toBe('today');
+    expect(dueRelativeLabel(1, 'en', t)).toBe('tomorrow');
+    expect(dueRelativeLabel(6, 'en', t)).toBe('in 6 days');
+    expect(dueRelativeLabel(7, 'en', t)).toBe('in 1 week');
+    expect(dueRelativeLabel(27, 'en', t)).toBe('in 4 weeks');
+    expect(dueRelativeLabel(28, 'en', t)).toBe('in 1 month');
+    expect(dueRelativeLabel(3, 'fr', t)).toBe('dans 3 jours');
+    expect(dueRelativeLabel(1, 'fr', t)).toBe('demain');
+    expect(dueRelativeLabel(-2, 'fr', t)).toBe('aito.dueLateDays:2');
+  });
+});

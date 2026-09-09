@@ -6,6 +6,7 @@
  *  and trashed cards are exempt: a finished or discarded job is not late.
  */
 
+import type { TFunction } from 'i18next';
 import { parseLocalDateKey, parseUTCDateStrict } from './date';
 
 const DAY_MS = 86_400_000;
@@ -137,4 +138,20 @@ const DUE_CLS: Record<DueLevel, string> = {
 
 export function dueDateCls(level: DueLevel): string {
   return DUE_CLS[level];
+}
+
+/** The promise as a distance, not a date: "tomorrow", "in 3 days", "in 2
+ *  weeks", "in 1 month" — what a glance at the board actually asks, with the
+ *  date itself left to the tooltip. Days up to a week are exact, then weeks
+ *  (rounded, so 10 days reads "in 1 week"), then months from four weeks.
+ *  Intl.RelativeTimeFormat carries the wording in every shipped language;
+ *  the one hand-written case is a missed promise, which is "late", never
+ *  "3 days ago" — a promise that has passed is not an event that happened. */
+export function dueRelativeLabel(days: number, lang: string, t: TFunction): string {
+  if (days < 0) return t('aito.dueLateDays', { count: -days });
+  const rtf = (numeric: 'auto' | 'always') => new Intl.RelativeTimeFormat(lang, { numeric });
+  if (days < 2) return rtf('auto').format(days, 'day');
+  if (days < 7) return rtf('always').format(days, 'day');
+  if (days < 28) return rtf('always').format(Math.round(days / 7), 'week');
+  return rtf('always').format(Math.round(days / 30), 'month');
 }

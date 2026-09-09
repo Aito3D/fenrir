@@ -744,6 +744,51 @@ body {
   }
 }
 
+/* The date-picker's page turn: the month grid (and its title) remounts and
+   slides in from the side the month came from — next month from the right,
+   previous from the left — so the eye reads a direction, not a blink. 10px,
+   not a full-width slide: the outgoing month is not kept, so a long travel
+   would be a slide out of nowhere. 180ms on the signature curve; the popover
+   itself arrives in 160, and its pages should not feel heavier than it. */
+@keyframes aito-page-next {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes aito-page-prev {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.animate-aito-page-next {
+  animation: aito-page-next 0.18s var(--ease-signature);
+}
+
+.animate-aito-page-prev {
+  animation: aito-page-prev 0.18s var(--ease-signature);
+}
+
+/* The promised-date stat after a pick or clear: the new countdown (or the
+   returning "Set a date" pill) drops the few pixels the popover just closed
+   over and settles — the picker's answer landing where it was asked. Never
+   on the panel's own first paint; the control gates that. */
+@keyframes aito-due-land {
+  from { opacity: 0; transform: translateY(5px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+.animate-aito-due-land {
+  animation: aito-due-land 0.24s var(--ease-signature);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aito-page-next,
+  .animate-aito-page-prev,
+  .animate-aito-due-land {
+    animation: none;
+  }
+}
+
 /* Modal entrance — referenced by SpoolBuddy modals and the calculator
    settings modal. Tailwind v4 does not load tailwind.config.js (no @config
    directive), so these utilities must live here. */
@@ -2095,5 +2140,187 @@ tbody .calc-table-row:hover {
   }
   .animate-track-fade {
     animation-duration: 200ms;
+  }
+}
+
+/* ==========================================================================
+   Aito tracking code entry — six squares at /t.
+
+   The other end of the short tracking code: a client types the six
+   characters from their quote and the sixth one opens their page. The
+   squares are `.code-slot` (entrance only, never re-animated) wrapping
+   `.code-cell` (the state animations), so a state change can never replay
+   the arrival. The row's `data-state` — idle / checking / found / error —
+   is the whole contract with TrackingCodeInput; delays index off `--i`.
+   The cell size steps down with the viewport so six always fit inside the
+   card: 338 px wide at 48 px cells, 280 at 40, 234 at 34 (a 320 px phone's
+   card leaves 240).
+   ========================================================================== */
+.code-row {
+  --code-cell: 48px;
+  --code-gap: 10px;
+  --code-radius: 10px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: var(--code-gap);
+  width: max-content;
+  margin-inline: auto;
+}
+@media (max-width: 479px) {
+  .code-row { --code-cell: 40px; --code-gap: 8px; --code-radius: 9px; }
+}
+@media (max-width: 399px) {
+  .code-row { --code-cell: 34px; --code-gap: 6px; --code-radius: 8px; }
+}
+
+/* Arrival: each square rises into place one beat after the last. */
+@keyframes code-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+.code-slot {
+  animation: code-in 340ms var(--ease-signature) both;
+  animation-delay: calc(180ms + var(--i) * 55ms);
+}
+
+.code-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--code-cell);
+  height: calc(var(--code-cell) * 1.2);
+  border-radius: var(--code-radius);
+  border: 1.5px solid var(--color-aito-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-aito-ink);
+  font-size: calc(var(--code-cell) * 0.5);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color 180ms var(--ease-signature),
+    background-color 180ms var(--ease-signature),
+    color 180ms var(--ease-signature);
+}
+.code-cell[data-filled] {
+  border-color: color-mix(in srgb, var(--color-aito-muted) 55%, transparent);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* A glyph pops in as it is typed — from small, a hair past full, settle. */
+@keyframes code-glyph {
+  from { opacity: 0; transform: scale(0.4) translateY(4px); }
+  70% { opacity: 1; transform: scale(1.12) translateY(0); }
+  to { opacity: 1; transform: none; }
+}
+.code-glyph {
+  display: inline-block;
+  animation: code-glyph 200ms var(--ease-signature) both;
+}
+
+/* The caret: a cyan frame that glides to the next square and breathes
+   while the field waits. The wrapper carries position and the fade, the
+   frame carries its arrival and the breathing, so hiding it never fights
+   an animation's fill value. Arrives once the last square has. */
+.code-caret-wrap {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: var(--code-cell);
+  height: calc(var(--code-cell) * 1.2);
+  pointer-events: none;
+  transition:
+    transform 220ms var(--ease-signature),
+    opacity 180ms var(--ease-signature);
+}
+.code-caret-wrap[data-hidden] { opacity: 0; }
+@keyframes code-caret-in {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes code-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(4, 161, 228, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(4, 161, 228, 0.18); }
+}
+.code-caret {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--code-radius);
+  border: 2px solid var(--color-aito-cyan);
+  animation:
+    code-caret-in 240ms var(--ease-signature) 640ms both,
+    code-breathe 1800ms ease-in-out 880ms infinite;
+}
+
+/* Checking: a ripple runs along the row while the server answers — the
+   squares lift one after another and flash cyan at the crest. Fast answers
+   show it once; a slow one keeps it going. */
+@keyframes code-wave {
+  0%, 100% { transform: translateY(0); border-color: var(--color-aito-line); }
+  50% { transform: translateY(-4px); border-color: var(--color-aito-cyan); }
+}
+.code-row[data-state='checking'] .code-cell {
+  animation: code-wave 900ms ease-in-out infinite;
+  animation-delay: calc(var(--i) * 70ms);
+}
+
+/* Found: the squares fill cyan left to right, then the whole row lifts
+   away as the page hands over to the tracking page's own choreography.
+   45 × 5 + 260 = 485 ms of filling; the leave starts at 480 and runs 260;
+   ENTRY_MOTION.leaveAt (760) is when the page navigates. */
+@keyframes code-fill {
+  from { transform: scale(1); }
+  55% { transform: scale(1.08); }
+  to {
+    transform: scale(1);
+    background: var(--color-aito-cyan);
+    border-color: var(--color-aito-cyan);
+    color: var(--color-aito-midnight);
+  }
+}
+.code-row[data-state='found'] .code-cell {
+  animation: code-fill 260ms var(--ease-signature) forwards;
+  animation-delay: calc(var(--i) * 45ms);
+}
+@keyframes code-leave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-10px) scale(1.03); }
+}
+.code-row[data-state='found'] {
+  animation: code-leave 260ms var(--ease-exit) 480ms forwards;
+}
+
+/* Error: the row shakes, the squares turn red until the next keystroke. */
+@keyframes code-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-6px); }
+  40%, 60% { transform: translateX(6px); }
+}
+.code-row[data-state='error'] {
+  animation: code-shake 420ms var(--ease-signature);
+}
+.code-row[data-state='error'] .code-cell {
+  border-color: rgba(248, 113, 113, 0.7);
+  color: #fca5a5;
+}
+
+/* Less motion: the squares are simply there, a found code fills without
+   the sweep and the page leaves at once (AitoTrackEntryPage skips the
+   wait); the caret still marks the square but does not breathe. */
+@media (prefers-reduced-motion: reduce) {
+  .code-slot,
+  .code-glyph,
+  .code-caret,
+  .code-row[data-state='checking'] .code-cell,
+  .code-row[data-state='found'] .code-cell,
+  .code-row[data-state='found'],
+  .code-row[data-state='error'] {
+    animation: none;
+  }
+  .code-caret-wrap { transition: none; }
+  .code-row[data-state='found'] .code-cell {
+    background: var(--color-aito-cyan);
+    border-color: var(--color-aito-cyan);
+    color: var(--color-aito-midnight);
   }
 }

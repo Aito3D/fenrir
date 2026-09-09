@@ -83,12 +83,47 @@ describe('DatePicker', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('offers today, one week and two weeks as one-click promises', () => {
+  it('offers two working days, one week and two weeks as one-click promises', () => {
+    // No Today chip: a job accepted now is never finished today, and today
+    // is already one click away under its dot in the grid.
     const { onChange } = mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(screen.queryByRole('button', { name: 'Today' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+2 days' }));
     fireEvent.click(screen.getByRole('button', { name: '+1 week' }));
     fireEvent.click(screen.getByRole('button', { name: '+2 weeks' }));
-    expect(onChange.mock.calls.map((c) => c[0])).toEqual(['2026-09-08', '2026-09-15', '2026-09-22']);
+    expect(onChange.mock.calls.map((c) => c[0])).toEqual(['2026-09-10', '2026-09-15', '2026-09-22']);
+  });
+
+  it('counts the +2 days chip in working days, so a Friday promises Tuesday', () => {
+    const { onChange } = mount({ today: '2026-09-11' }); // a Friday
+    const chip = screen.getByRole('button', { name: '+2 days' });
+    // The tooltip says where the chip lands, since "+2 days" alone would
+    // read as Sunday.
+    expect(chip).toHaveAttribute('title', 'Sep 15, 2026');
+    fireEvent.click(chip);
+    expect(onChange).toHaveBeenCalledWith('2026-09-15');
+  });
+
+  it('turns the page in the direction of travel, and not on open', () => {
+    // The grid remounts per month with a slide from the side the month came
+    // from; the first paint leaves motion to the popover's own pop-in.
+    mount({ value: '2026-09-20' });
+    const grid = () => screen.getByRole('grid');
+    expect(grid()).not.toHaveClass('animate-aito-page-next');
+    expect(grid()).not.toHaveClass('animate-aito-page-prev');
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'PageDown' });
+    expect(grid()).toHaveClass('animate-aito-page-next');
+    fireEvent.click(screen.getByRole('button', { name: /previous month/i }));
+    expect(grid()).toHaveClass('animate-aito-page-prev');
+    // A move that stays inside the month leaves the page where it is.
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' });
+    expect(grid()).toHaveClass('animate-aito-page-prev');
+    // Home from two months out is a backward turn, however far.
+    fireEvent.keyDown(dialog, { key: 'PageDown' });
+    fireEvent.keyDown(dialog, { key: 'PageDown' });
+    fireEvent.click(title());
+    expect(grid()).toHaveClass('animate-aito-page-prev');
   });
 
   it('shows Clear only once there is something to clear, and clears with null', () => {

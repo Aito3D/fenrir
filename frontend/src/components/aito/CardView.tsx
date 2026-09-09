@@ -359,18 +359,11 @@ export function CardView({
               {viewers.length}
             </span>
           )}
-          {/* Moved up from the footer: the name row is where a person's eye
-              already lands, and an aging job is exactly the fact that belongs
-              beside the name, not buried under a description. Heat ramp with
-              age — see utils/aitoAging. */}
+          {/* The promise sits beside the name, where the eye already lands:
+              "in 3 days" is the one fact about a card that changes what the
+              reader does next. The job's age moved down to the footer
+              (2026-09-08) so the name keeps the row. */}
           <DueDateBadge dueDate={project.due_date ?? null} column={project.column} />
-          <span
-            data-testid="aito-card-elapsed"
-            title={dateTitle}
-            className={`text-xs flex-shrink-0 ${agingTextCls(project, age.at)}`}
-          >
-            {elapsed}
-          </span>
           {dragHandleProps && !placeholder ? (
             <button
               type="button"
@@ -456,7 +449,7 @@ export function CardView({
               data-testid="aito-card-footer"
               className="px-3 pb-2 flex items-center justify-between gap-2"
             >
-              <div className="flex items-baseline gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 {/* On a finished card waiting on a phone call, the one thing
                     outstanding is that nobody has rung the client, so it sits
                     here in the footer rather than as a banner: a Finish column
@@ -470,18 +463,25 @@ export function CardView({
                     data-testid="aito-card-contact"
                     className="text-xs font-semibold text-cyan-400 tabular-nums flex-shrink-0"
                   >
-                    {/* No age here on purpose. The name row already shows this
-                        card's elapsed time, three lines up and to the right,
-                        and putting a second relative date in the footer made
-                        one card read "To contact · 3 days ago" beside its own
-                        "3 days ago". The cyan carries the urgency. */}
+                    {/* No age of its own: the card's elapsed time is the next
+                        thing on this row, and "To contact · 3 days ago" beside
+                        a second "3 days ago" was one number twice. The cyan
+                        carries the urgency. */}
                     {t('aito.awaitingContact')}
                   </span>
                 )}
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
-                {project.quote_number && (
-                  <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
-                )}
+                {/* How long the job has been open, on the heat ramp
+                    (utils/aitoAging). This is the footer's fact; the quote
+                    number that used to sit here is on the panel, where a
+                    person who needs it is already looking (2026-09-08). */}
+                <span
+                  data-testid="aito-card-elapsed"
+                  title={dateTitle}
+                  className={`text-xs tabular-nums whitespace-nowrap ${agingTextCls(project, age.at)}`}
+                >
+                  {elapsed}
+                </span>
                 {/* A project whose quote the worker has not created yet. Without
                     this the card is indistinguishable from one that will never
                     have a quote, which is exactly the wrong thing to say for a
@@ -493,7 +493,9 @@ export function CardView({
                   <span
                     aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
                     title={project.quote_sync_error || undefined}
-                    className="flex-shrink-0 text-bambu-gray"
+                    // inline-flex so the glyph centres on the quote number's
+                    // line instead of sitting on its baseline a notch too high.
+                    className="inline-flex items-center flex-shrink-0 text-bambu-gray"
                   >
                     {project.quote_sync_state === 'error' ? (
                       <AlertTriangle className="w-3.5 h-3.5" />

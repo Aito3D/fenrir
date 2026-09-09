@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { focusRingCls } from '../formStyles';
-import { localDateKey, parseLocalDateKey, weekStartFor } from '../../utils/date';
+import { addWorkingDays, localDateKey, parseLocalDateKey, weekStartFor } from '../../utils/date';
 
 function addDays(from: Date, count: number): Date {
   return new Date(from.getFullYear(), from.getMonth(), from.getDate() + count);
@@ -67,6 +67,11 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
 
   const [focusKey, setFocusKey] = useState(home);
   const [view, setView] = useState(() => monthStart(home));
+  /** Which way the last page turn went, or null until the first one. The
+   *  grid is keyed by month, so a turn remounts it, and this picks the side
+   *  it slides in from. Null on open: the popover's pop-in is the entrance,
+   *  and a page sliding under it would be two motions for one click. */
+  const [pageDir, setPageDir] = useState<'next' | 'prev' | null>(null);
   // Roving tabindex: exactly one cell is tabbable, and after a keyboard move
   // (or on open) it must also BE focused. Set before a move and consumed by
   // the effect below, so a mouse hover re-render never yanks focus.
@@ -101,7 +106,10 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
     focusPending.current = true;
     setFocusKey(next);
     const nextView = monthStart(next);
-    if (nextView.getTime() !== view.getTime()) setView(nextView);
+    if (nextView.getTime() !== view.getTime()) {
+      setPageDir(nextView > view ? 'next' : 'prev');
+      setView(nextView);
+    }
   };
   const moveMonth = (delta: number) => moveFocus(shiftMonth(focusKey, delta));
   const goHome = () => moveFocus(home);
@@ -130,15 +138,19 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
     onChange(next);
     onClose();
   };
-  const chip = (days: number, text: string) => (
+  // The tooltip names the day a chip lands on: "+2 days" from a Friday is
+  // Tuesday, which the label alone would not say.
+  const chip = (key: string, text: string) => (
     <button
       type="button"
-      onClick={() => pick(localDateKey(addDays(todayDate, days)))}
+      title={fmt.day.format(parseLocalDateKey(key))}
+      onClick={() => pick(key)}
       className={`rounded-md bg-bambu-green/[.08] px-2 py-1 text-xs font-medium leading-tight text-bambu-green transition-colors hover:bg-bambu-green/[.16] ${focusRingCls}`}
     >
       {text}
     </button>
   );
+  const pageCls = pageDir === null ? '' : pageDir === 'next' ? 'animate-aito-page-next' : 'animate-aito-page-prev';
   const navBtnCls = `inline-flex h-[26px] w-[26px] items-center justify-center rounded-md text-bambu-gray-light transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`;
 
   return (
@@ -158,7 +170,10 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
           title={t('aito.datePickerBackToSelected')}
           className={`-ml-1.5 rounded-md px-1.5 py-0.5 text-[13.5px] font-semibold text-white transition-colors hover:bg-bambu-dark-tertiary ${focusRingCls}`}
         >
-          {fmt.title.format(view)}
+          {/* Keyed with the grid, so the title turns the page with it. */}
+          <span key={view.getTime()} className={`inline-block ${pageCls}`}>
+            {fmt.title.format(view)}
+          </span>
         </button>
         <div className="flex gap-0.5">
           <button type="button" aria-label={t('aito.datePickerPrev')} onClick={() => moveMonth(-1)} className={navBtnCls}>
@@ -178,7 +193,7 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
         ))}
       </div>
 
-      <div ref={gridRef} role="grid" className="mt-0.5">
+      <div key={view.getTime()} ref={gridRef} role="grid" className={`mt-0.5 ${pageCls}`}>
         {Array.from({ length: 6 }, (_, row) => (
           <div key={row} role="row" className="grid grid-cols-[repeat(7,32px)] justify-between pb-0.5">
             {cells.slice(row * 7, row * 7 + 7).map((d) => {
@@ -215,7 +230,7 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
                   aria-label={isSuggested ? `${fmt.day.format(d)} (${t('aito.datePickerSuggested')})` : fmt.day.format(d)}
                   tabIndex={key === focusKey ? 0 : -1}
                   onClick={() => pick(key)}
-                  className={`relative inline-flex h-[32px] w-[32px] items-center justify-center rounded-[7px] text-[13px] tabular-nums transition-colors focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/55 ${tone} ${dot} ${hint}`}
+                  className={`relative inline-flex h-[32px] w-[32px] items-center justify-center rounded-[7px] text-[13px] tabular-nums transition-[color,background-color,scale] duration-150 active:scale-[.92] active:duration-75 motion-reduce:active:scale-100 focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/55 ${tone} ${dot} ${hint}`}
                 >
                   {d.getDate()}
                 </button>
@@ -239,9 +254,13 @@ export function DatePicker({ value, today, suggested = null, label, onChange, on
           <span aria-hidden="true" />
         )}
         <div className="flex gap-1">
-          {chip(0, t('time.today'))}
-          {chip(7, t('aito.datePickerPlusOneWeek'))}
-          {chip(14, t('aito.datePickerPlusTwoWeeks'))}
+          {/* Working days, so a Friday proposes Tuesday: the same rule as the
+              caller's suggestion, which this chip therefore coincides with.
+              No Today chip — a job accepted now is never finished today, and
+              today is one click away under its dot in the grid. */}
+          {chip(addWorkingDays(todayDate, 2), t('aito.datePickerPlusTwoDays'))}
+          {chip(localDateKey(addDays(todayDate, 7)), t('aito.datePickerPlusOneWeek'))}
+          {chip(localDateKey(addDays(todayDate, 14)), t('aito.datePickerPlusTwoWeeks'))}
         </div>
       </div>
     </div>

@@ -245,22 +245,16 @@ describe('CardView', () => {
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the quote number in the footer for an imported card', () => {
+  it('shows no quote number on the card — the age has that slot; the panel has the number', () => {
     render(
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_id: 'e2' }}
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
-    // The chip is not a link — the card body is a <button> and the footer
-    // already carries hold-to-delete.
-    expect(document.querySelector('a[href*="zoho"]')).toBeNull();
-  });
-
-  it('shows no quote chip on a manually created card', () => {
-    render(<CardView project={project} onExpand={vi.fn()} />);
     expect(screen.queryByText(/DEV26-/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('aito-card-footer')).toContainElement(screen.getByTestId('aito-card-elapsed'));
+    expect(document.querySelector('a[href*="zoho"]')).toBeNull();
   });
 
   it('shows a placeholder chip while the quote is being created', () => {
@@ -283,7 +277,6 @@ describe('CardView', () => {
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
     expect(screen.queryByText(/devis en cours|quote…/i)).not.toBeInTheDocument();
   });
 
@@ -304,7 +297,6 @@ describe('CardView', () => {
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.getByText('DEV26-2471')).toBeInTheDocument();
     expect(screen.getByLabelText(/facturé|invoiced|locked/i)).toBeInTheDocument();
   });
 
@@ -329,7 +321,7 @@ describe('CardView', () => {
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
+    expect(screen.getByTestId('aito-card-footer')).toBeInTheDocument();
     expect(screen.queryByText(/sent/i)).not.toBeInTheDocument();
   });
 
@@ -413,7 +405,7 @@ describe('CardView', () => {
     render(
       <CardView project={{ ...project, quote_number: 'DEV26-2462' }} onExpand={onExpand} />,
     );
-    await user.click(screen.getByText('DEV26-2462'));
+    await user.click(screen.getByTestId('aito-card-elapsed'));
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
@@ -509,10 +501,27 @@ describe('CardView', () => {
       expect(screen.queryByTestId('aito-card-due')).not.toBeInTheDocument();
     });
 
-    it('shows the short date, coloured by proximity', () => {
+    it('shows the promise as a distance, coloured by proximity, with the date in the tooltip', () => {
       renderCard({ due_date: '2026-09-20' });
       expect(screen.getByTestId('aito-card-due').className).toContain('text-bambu-gray');
-      expect(screen.getByTestId('aito-card-due')).toHaveTextContent(/20/);
+      expect(screen.getByTestId('aito-card-due')).toHaveTextContent('in 1 week');
+      expect(screen.getByTestId('aito-card-due')).toHaveAttribute('title', 'Due Sep 20');
+    });
+
+    it('reads today, tomorrow, days, weeks, months — and "late", never "ago"', () => {
+      const label = (due: string) => {
+        renderCard({ due_date: due });
+        const text = screen.getByTestId('aito-card-due').textContent;
+        cleanup();
+        return text;
+      };
+      expect(label('2026-09-10')).toBe('today');
+      expect(label('2026-09-11')).toBe('tomorrow');
+      expect(label('2026-09-13')).toBe('in 3 days');
+      expect(label('2026-09-17')).toBe('in 1 week');
+      expect(label('2026-09-24')).toBe('in 2 weeks');
+      expect(label('2026-10-25')).toBe('in 2 months');
+      expect(label('2026-09-07')).toBe('3 d late');
     });
 
     it('turns amber within three days, orange today, red past', () => {
@@ -559,6 +568,14 @@ describe('hybrid card anatomy', () => {
     // Once, not twice: the footer used to repeat the body's count.
     expect(screen.getAllByText(/\d+\/\d+ steps/)).toHaveLength(1);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('keeps the age in the footer, where the quote number used to be, not in the name row', () => {
+    render(<CardView project={{ ...project, quote_number: 'DEV26-2607' }} onExpand={vi.fn()} />);
+    const elapsed = screen.getByTestId('aito-card-elapsed');
+    expect(screen.getByTestId('aito-card-footer')).toContainElement(elapsed);
+    expect(screen.getByTestId('aito-card-name-row')).not.toContainElement(elapsed);
+    expect(screen.getByTestId('aito-card-footer')).not.toHaveTextContent('DEV26-2607');
   });
 
   it('walks the timestamp through the heat ramp with age', () => {

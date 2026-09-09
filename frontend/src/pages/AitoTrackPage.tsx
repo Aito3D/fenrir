@@ -1,107 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../api/client';
-import aito3dLogo from '../assets/aito3d_logo.png';
-import { availableLanguages } from '../i18n';
 import { TrackingInvoice } from '../components/aito/TrackingInvoice';
 import { TrackingLanguageSelect } from '../components/aito/TrackingLanguageSelect';
 import { TrackingRail } from '../components/aito/TrackingRail';
-import { TRACK_MOTION, etaCopy, statusCopy, trackStages, trackStateDelay, trackingDefaultLanguage, updatedAt } from '../utils/aitoTracking';
-import { AITO3D_SENDER } from '../utils/shippingLabel';
-
-const TEL = `tel:${AITO3D_SENDER.phone.replace(/[^\d+]/g, '')}`;
-const BRAND = 'Aito3D';
+import { Footer, Logo } from '../components/aito/trackingShell';
+import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
+import { CARD, FOCUS, PRESS, delayAt } from '../utils/trackingShell';
+import { TRACK_MOTION, etaCopy, statusCopy, trackStages, trackStateDelay, updatedAt } from '../utils/aitoTracking';
 
 // Above this many parts, fold to the first six behind a "Voir les n pièces"
 // button — a 60-character name and a 10+ item list must still hold (§7b).
 const PARTS_FOLD = 8;
 const PARTS_SHOWN = 6;
-
-// The card: fluid below 620 px (`calc(100% - 32px)` on phones), capped at
-// 620 px and centred from `sm:` up — the finishing pass's own numbers
-// (§7b "Composition and spacing" + "Final pixel pass"), not a redesign.
-// `relative` anchors the language pill in its top-right corner.
-const CARD =
-  'relative mx-auto w-[calc(100%-32px)] max-w-[620px] rounded-[12px] border border-aito-line bg-aito-card px-[24px] py-[24px] sm:w-auto sm:px-[32px] sm:py-[32px]';
-const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan';
-// Press feedback for the page's few buttons: a 3 % squeeze, under the
-// vestibular threshold so it stays on under reduced motion. Tailwind v4's
-// `hover:` is already gated on (hover: hover), so a tap never sticks.
-const PRESS = 'active:scale-[0.97] transition-[color,background-color,transform] duration-150';
-
-const delayAt = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` });
-
-/** The asset is black + cyan; invert + hue-rotate turns the black white and
- *  brings the cyan back to cyan on the dark card. 26 px tall (§7b final
- *  pixel pass) — pixel-exact because this repo's 14.4 px root shorts
- *  Tailwind's rem-based height utilities. */
-function Logo({ className = '' }: { className?: string }) {
-  return (
-    <img
-      src={aito3dLogo}
-      alt={BRAND}
-      className={`mx-auto h-[26px] w-auto ${className}`}
-      style={{ filter: 'invert(1) hue-rotate(180deg)' }}
-    />
-  );
-}
-
-/** Drops in from above once the content has landed (`at` ms after the
- *  page's clock starts); mounted only when there is something above it,
- *  so it never plays over the skeleton and then again over the content. */
-function Footer({ at }: { at: number }) {
-  const { t } = useTranslation();
-  const linkCls = `inline-flex min-h-[44px] items-center text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
-  return (
-    <footer className="animate-track-drop mt-[32px] border-t border-aito-line/60 pt-[24px] text-center text-[13.5px]" style={delayAt(at)} data-testid="track-footer">
-      <p className="text-aito-ink">{t('aito.track.footerQuestion')}</p>
-      <p className="mt-[8px]">
-        <a className={linkCls} href={TEL}>
-          {AITO3D_SENDER.phone}
-        </a>
-        {/* The dot only makes sense while both links share a line; below
-            360 px the email wraps, and a dangling dot would trail the phone. */}
-        <span className="mx-[4px] max-[359px]:hidden" aria-hidden="true">
-          ·
-        </span>
-        <a className={linkCls} href={`mailto:${AITO3D_SENDER.email}`}>
-          {AITO3D_SENDER.email}
-        </a>
-      </p>
-    </footer>
-  );
-}
-
-const SUPPORTED = availableLanguages.map((l) => l.code);
-
-/** The page's language: the app's i18next, with one twist — a browser
- *  that asks for nothing the app ships gets French, not English (see
- *  trackingDefaultLanguage). Runs once on mount, before the first paint of
- *  data; the pill's own changes go straight through i18next, which
- *  remembers them in localStorage like the operator's picker does. Also
- *  keeps <html lang> and the tab title in step for screen readers. */
-function useTrackingLanguage() {
-  const { t, i18n, ready } = useTranslation();
-  useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = window.localStorage.getItem('bambutrack_language');
-    } catch {
-      /* private mode: no memory, the browser language decides */
-    }
-    const lng = trackingDefaultLanguage(stored, navigator.languages ?? [navigator.language], SUPPORTED);
-    if (lng && lng !== i18n.resolvedLanguage) void i18n.changeLanguage(lng);
-  }, [i18n]);
-  const lng = i18n.resolvedLanguage ?? i18n.language;
-  useEffect(() => {
-    document.documentElement.lang = lng;
-    document.title = t('aito.track.pageTitle');
-  }, [lng, t]);
-  return { t, lng, ready };
-}
 
 /** The client's public tracking page: standalone, no app chrome, always
  *  dark (Midnight Blue + cyan) whatever the operator's theme, in the
@@ -155,6 +68,14 @@ export function AitoTrackPage() {
             <Logo className="mb-[20px]" />
             <h1 className="text-[23px] font-semibold tracking-tight">{t('aito.track.invalidTitle')}</h1>
             <p className="mt-[8px] text-[15px] text-aito-muted">{t('aito.track.invalidBody')}</p>
+            {/* A code printed on the quote outlives any one link: the way
+                back in is to type it. */}
+            <Link
+              to="/t"
+              className={`mt-[20px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan hover:bg-aito-cyan/10 ${PRESS} ${FOCUS}`}
+            >
+              {t('aito.track.invalidEnterCode')}
+            </Link>
           </header>
           <Footer at={TRACK_MOTION.footerAlone} />
         </div>

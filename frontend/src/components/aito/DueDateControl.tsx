@@ -64,6 +64,23 @@ export function DueDateControl({ project, canUpdate = true }: { project: AitoPro
     }
   }, []);
 
+  /** The landing motion plays when the value on screen is NEW — after a pick
+   *  or a clear — and never on the panel's own first paint, which has its
+   *  own entrance. `armed` flips after that paint. The class is decided once
+   *  per value and remembered by it, because a later re-render (opening the
+   *  picker, say) that added the class to the live element would replay the
+   *  animation on nothing. A new value remounts the element by key, so it
+   *  plays exactly once. */
+  const armed = useRef(false);
+  useEffect(() => {
+    armed.current = true;
+  }, []);
+  const landing = useRef<{ value: string | null; cls: string } | null>(null);
+  if (landing.current === null || landing.current.value !== current) {
+    landing.current = { value: current, cls: armed.current ? 'animate-aito-due-land' : '' };
+  }
+  const landCls = landing.current.cls;
+
   const today = localDateKey(new Date());
   const level = dueDateLevel(current, today);
   const days = dueDateDays(current, today);
@@ -156,9 +173,10 @@ export function DueDateControl({ project, canUpdate = true }: { project: AitoPro
   const stat = (
     <>
       <span
+        key={current ?? ''}
         id={valueId}
         data-testid="due-date-value"
-        className={`flex items-center justify-end gap-1.5 text-[1.15rem] leading-tight font-semibold tracking-[-0.01em] tabular-nums ${toneCls} ${
+        className={`flex items-center justify-end gap-1.5 text-[1.15rem] leading-tight font-semibold tracking-[-0.01em] tabular-nums ${landCls} ${toneCls} ${
           interactive ? 'decoration-[color-mix(in_srgb,currentColor_35%,transparent)] underline-offset-[3px] group-hover/stat:underline' : ''
         }`}
       >
@@ -202,7 +220,7 @@ export function DueDateControl({ project, canUpdate = true }: { project: AitoPro
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className={`mt-1 inline-flex items-center gap-1.5 rounded-[.4rem] border border-bambu-green/40 bg-bambu-green/10 px-2.5 py-[5px] text-xs font-semibold leading-none text-bambu-green transition-colors hover:border-bambu-green/60 hover:bg-bambu-green/20 ${focusRingCls}`}
+          className={`mt-1 inline-flex items-center gap-1.5 rounded-[.4rem] border border-bambu-green/40 bg-bambu-green/10 px-2.5 py-[5px] text-xs font-semibold leading-none text-bambu-green transition-colors hover:border-bambu-green/60 hover:bg-bambu-green/20 ${landCls} ${focusRingCls}`}
         >
           <CalendarDays className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden="true" />
           {t('aito.dueDateEmpty')}

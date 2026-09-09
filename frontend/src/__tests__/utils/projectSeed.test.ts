@@ -21,7 +21,7 @@ const project = {
   flag: 'urgent',
   due_date: '2026-09-20',
   client_contacted_at: '2026-09-01T10:00:00',
-  tracking_url: 'https://x/track/abc',
+  tracking_url: 'https://x/t/abc',
   shipping_island: 'rangiroa',
   shipping_service: 'tuamotu',
   shipping_first_name: 'Jean-Pierre',
@@ -146,7 +146,7 @@ describe('seedFromProject', () => {
     expect(out.dueDate).toBe('');
     expect(out.socialPrefilledFor).toEqual([]);
     // The persisted shape has no room for these — pin that none leaks in.
-    expect(JSON.stringify(out)).not.toMatch(/EST-|urgent|2026-09-20|track\/abc|123-4567/);
+    expect(JSON.stringify(out)).not.toMatch(/EST-|urgent|2026-09-20|x\/t\/abc|123-4567/);
   });
 });
 
