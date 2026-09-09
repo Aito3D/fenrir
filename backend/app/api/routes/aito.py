@@ -86,7 +86,6 @@ from backend.app.services.aito_tracking import (
     external_url as tracking_external_url,
     mint_unique_token,
     tracking_url,
-    tracking_url_for,
 )
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
@@ -451,7 +450,6 @@ def _to_response(
         # unflushed in-memory row reads None, which IS "nobody told them yet".
         client_contacted_at=p.client_contacted_at,
         due_date=p.due_date,
-        tracking_url=tracking_url_for(external_url, p.tracking_token),
         tracking_configured=external_url != "",
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.
@@ -2982,11 +2980,13 @@ async def set_project_contacted(
 @router.get("/{project_id}/tracking-link", response_model=AitoTrackingLinkResponse)
 async def get_tracking_link(
     project_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """The panel's Copy button. An UPDATE, not a read: the first call mints
     the token. Null while `external_url` is unset."""
+    response.headers["Cache-Control"] = "no-store"
     project = await _get_active_project_or_404(db, project_id)
     url = await build_tracking_url(db, project)
     await db.commit()
@@ -2996,12 +2996,14 @@ async def get_tracking_link(
 @router.post("/{project_id}/tracking-token", response_model=AitoTrackingLinkResponse)
 async def regenerate_tracking_token(
     project_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Kill a leaked link: a new token, the old one 404s at once. The event
-    carries no token; the link itself is on every project response
-    (`_to_response`), so the log adds nothing a reader could not already see.
+    carries no token — the log is readable by every aito:read holder, and
+    since T-015 board responses do not carry the link either: the URL is
+    served only by the two AITO_UPDATE routes here, both no-store.
 
     The new token is committed BEFORE Books is contacted. Two reasons: the
     leaked link must die whatever Books does next, and the row must not sit
@@ -3015,6 +3017,7 @@ async def regenerate_tracking_token(
     days away. Books being unreachable never blocks the local change, but
     the response says so, and the next sync rewrites the notes anyway
     (notes_with_tracking sees the stale block)."""
+    response.headers["Cache-Control"] = "no-store"
     project = await _get_active_project_or_404(db, project_id)
     project.tracking_token = await mint_unique_token(db)
     await db.commit()

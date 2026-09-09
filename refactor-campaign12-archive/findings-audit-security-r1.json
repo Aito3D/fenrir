@@ -1,0 +1,22 @@
+{"findings": [
+  {"severity": "medium", "category": "denial-of-service",
+   "file": "backend/app/api/routes/aito.py", "line": 1009,
+   "title": "get_tracking() writes an unthrottled DB row per unauthenticated request",
+   "evidence": "backend/app/api/routes/aito.py:1009 `await tracking_service.log_view(db, project_id, now)` -> backend/app/services/aito_tracking.py:143 `db.add(AitoTrackingView(project_id=project_id, viewed_at=now))` followed by `await db.commit()`. The route has no rate limit, no per-viewer cooldown and no dedup window; the only bound is `purge_tracking_views(older_than=timedelta(days=400))`. Every successful open of a link that is deliberately distributed by SMS and by the Zoho quote notes (`NOTES_PREFIX = \"Suivez votre commande : \"`) therefore costs one INSERT + COMMIT against the single-writer SQLite file, with no authentication in front of it.",
+   "fix": "throttle the view log: keep at most one AitoTrackingView per (project_id, coarse time bucket) — check for a recent row before inserting — and add a per-token/per-IP sliding-window limit on the route itself, reusing the `_check_ai_rate_limit` primitive already in this module",
+   "behavior_change": true,
+   "behavior_change_note": "the Stats pipeline widget's \"Suivi client\" views count will report fewer views for the same client behaviour (repeat opens and link-scanner fetches stop counting), and a client refreshing the page rapidly can start receiving 429s instead of the page."},
+  {"severity": "low", "category": "authorization",
+   "file": "backend/app/api/routes/aito.py", "line": 2872,
+   "title": "get_tracking_link() is a state-changing GET that returns a bearer credential with no Cache-Control",
+   "evidence": "@router.get(\"/{project_id}/tracking-link\", ...) whose own docstring says \"An UPDATE, not a read: the first call mints the token\", and whose body is `url = await build_tracking_url(db, project)` then `await db.commit()`. The 200 response body carries the tracking URL — the token in it is the sole credential for the public page — and unlike get_tracking() this handler sets no `Cache-Control: no-store`, so the response is heuristically cacheable by the browser disk cache and any intermediary.",
+   "fix": "make the minting endpoint a POST (leave a read-only GET that returns the existing token without minting, if the panel still needs one) and set `Cache-Control: no-store` on whichever handler returns the URL; update `getAitoTrackingLink` in frontend/src/api/client.ts to match",
+   "behavior_change": true,
+   "behavior_change_note": "any caller or bookmark that currently issues GET /api/v1/aito/{id}/tracking-link stops working and must switch to POST; a card that has never had a link generated will no longer get a token minted as a side effect of a read."},
+  {"severity": "low", "category": "information-disclosure",
+   "file": "backend/app/api/routes/aito.py", "line": 1549,
+   "title": "get_invoice_pdf() and get_quote_pdf() return client financial PDFs with no Cache-Control",
+   "evidence": "backend/app/api/routes/aito.py:1549 `return Response(content=pdf, media_type=\"application/pdf\", headers={\"Content-Disposition\": build_content_disposition(filename, disposition=\"inline\")})` — and the identical shape at line 1848 for the quote PDF. Neither sets `Cache-Control`, so these 200 GET responses containing a named client's invoice/quote are heuristically cacheable; get_tracking() in the same module sets `response.headers[\"Cache-Control\"] = \"no-store\"` for exactly this reason.",
+   "fix": "add \"Cache-Control\": \"no-store\" to the headers dict of both Response constructions",
+   "behavior_change": false}
+]}

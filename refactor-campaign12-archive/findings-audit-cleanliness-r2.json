@@ -1,0 +1,8 @@
+{"findings": [
+  {"severity": "medium", "category": "dead-code",
+   "file": "frontend/src/components/aito/celebration/render.ts", "line": 61,
+   "title": "clearSpriteCache() is defined but never called",
+   "evidence": "rg -n '\\bclearSpriteCache\\b' across frontend/src -> only its own definition at render.ts:61; the barrel `celebration/index.ts` re-exports only `CelebrationProvider`, `useCelebration`, and `VARIANTS`, not `clearSpriteCache`; `CelebrationLayer.tsx` (the only consumer of `./render`) imports just `{ draw }`. The function's own doc claims it should run 'when the theme accent changes', but no theme-change hook, effect, or listener in the celebration/ directory or ThemeContext calls it. It is also moot: `glowSprite()` (the cache it clears) is already keyed by the CSS colour string itself, and `readPalette()` (celebration/palette.ts) is re-read fresh from `getComputedStyle` on every burst (CelebrationLayer.tsx:127), so a theme change simply produces new cache keys — nothing ever needs an explicit clear. Orchestrator check: the name does not appear in SURFACE.md, so removing it moves no golden.",
+   "fix": "delete clearSpriteCache and the stale doc comment above it describing the (never-wired) theme-change trigger",
+   "behavior_change": false}
+]}

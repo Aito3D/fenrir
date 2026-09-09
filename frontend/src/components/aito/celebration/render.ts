@@ -56,12 +56,6 @@ function glowSprite(color: string): HTMLCanvasElement | null {
   return canvas;
 }
 
-/** Dropped when the theme accent changes, so a recoloured burst is not drawn
- *  with the previous theme's sprites. */
-export function clearSpriteCache(): void {
-  sprites.clear();
-}
-
 function drawGlow(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number): void {
   const sprite = glowSprite(color);
   if (!sprite) return;

@@ -121,7 +121,6 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # working (they need the UI-language setting via API key).
     Permission.SETTINGS_READ: "can_read_status",
     Permission.MAKERWORLD_VIEW: "can_read_status",
-    Permission.CALCULATOR_READ: "can_read_status",
     # Pipeline definitions and run history are configuration + status: listing
     # pipelines, reading a run, and the (write-free) POST check-eligibility
     # pre-flight. Authoring stays admin-only under PIPELINES_WRITE.
@@ -337,6 +336,12 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # it via API key, so it stays user-token only rather than riding
         # along on the can_read_status default-on scope.
         Permission.AITO_READ,
+        # CALCULATOR_READ (T-014) — the calculator routes expose the shop's
+        # cost base (filament cost/margin, labor rate, markup curve, measured
+        # failure rates, energy tariff). Like AITO_READ, no kiosk or
+        # automation reads them via API key, so it stays user-token only
+        # rather than riding along on the can_read_status default-on scope.
+        Permission.CALCULATOR_READ,
     }
 )
 

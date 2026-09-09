@@ -10,12 +10,15 @@ file is a change to the app's public contract and fails the iteration.
 / ['GET']
 /api/v1/aito/ ['GET']
 /api/v1/aito/ ['POST']
+/api/v1/aito/clients/{client_id}/history ['GET']
 /api/v1/aito/import ['POST']
 /api/v1/aito/proofread ['POST']
 /api/v1/aito/shipping/services ['GET']
+/api/v1/aito/stats ['GET']
 /api/v1/aito/summarize ['POST']
 /api/v1/aito/tasks/{task_id} ['PATCH']
 /api/v1/aito/tasks/{task_id} ['DELETE']
+/api/v1/aito/track/{token} ['GET']
 /api/v1/aito/trash ['GET']
 /api/v1/aito/{project_id} ['PATCH']
 /api/v1/aito/{project_id} ['DELETE']
@@ -40,6 +43,8 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/aito/{project_id}/tasks ['GET']
 /api/v1/aito/{project_id}/tasks ['POST']
 /api/v1/aito/{project_id}/tasks/reorder ['PATCH']
+/api/v1/aito/{project_id}/tracking-link ['GET']
+/api/v1/aito/{project_id}/tracking-token ['POST']
 /api/v1/ams-history/{printer_id} ['DELETE']
 /api/v1/ams-history/{printer_id}/{ams_id} ['GET']
 /api/v1/api-keys/ ['GET']
@@ -990,6 +995,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def build_printer_file(
 1 async def build_printer_files_zip(
 1 async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMaterial]:
+1 async def build_tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
 1 async def calculate_personal_balance(db: AsyncSession, user_id: int) -> float:
 1 async def calibrate_plate(
 1 async def cancel_printer_files_job(job_id: str, printer_id: int) -> bool:
@@ -1005,7 +1011,10 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def close_spoolman_client():
 1 async def collect_diagnostic_snapshot(db: AsyncSession) -> dict[str, Any]:
 1 async def collect_sensitive_strings(db: AsyncSession) -> dict[str, str]:
+1 async def compute_aito_stats(
+1 async def compute_client_history(db: AsyncSession, client_id: str, limit: int) -> AitoClientHistoryResponse:
 1 async def compute_deficit_for_queue_item(
+1 async def compute_tracking(
 1 async def count_internal_spools_at_location(db: AsyncSession, location_id: int) -> int:
 1 async def count_spools_at_location_by_name(db: AsyncSession, name: str) -> int:
 1 async def create_budget_reservation(
@@ -1025,15 +1034,18 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def discard_session(db: AsyncSession, printer_id: int) -> None:
 1 async def dismiss(db: AsyncSession, user_id: int | None, milestone: str) -> None:
 1 async def dispatch_remaining(
+1 async def done_at(db: AsyncSession, project_id: int) -> datetime | None:
 1 async def download_file_async(
 1 async def download_file_bytes_async(
 1 async def download_file_try_paths_async(
 1 async def energy_plug_candidates(db: AsyncSession, printer_id: int | None) -> list[SmartPlug]:
 1 async def enrich_spool_dicts_with_location_id(db: AsyncSession, spools: list[dict]) -> None:
+1 async def ensure_tracking_token(db: AsyncSession, project: AitoProject) -> str:
 1 async def ensure_user_finance_defaults(db: AsyncSession, user: User) -> bool:
 1 async def estimate_queue_source_cost(
 1 async def evaluate(db: AsyncSession, user_id: int | None) -> Trigger | None:
 1 async def execute_action(printer_id: int, action: str, task_name: str, score: float) -> None:
+1 async def external_url(db: AsyncSession) -> str:
 1 async def extract_video_last_frame(video_path: Path, output_path: Path) -> bool:
 1 async def fetch_and_cache_base_profile(name: str, profile_type: str, db: AsyncSession) -> dict | None:
 1 async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[FilamentProduct]:
@@ -1071,6 +1083,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def is_personal_transaction(db: AsyncSession, user_id: int, cost_center_id: int | None) -> bool:
 1 async def is_printer_kill_switch_enabled(db: AsyncSession) -> bool:
 1 async def iter_subscriber(
+1 async def last_activity(db: AsyncSession, project: AitoProject) -> datetime:
 1 async def link_tag_to_inventory_spool(db: AsyncSession, spool: Spool, tray_data: dict) -> None:
 1 async def list_all_tokens(db: AsyncSession) -> list[LongLivedToken]:
 1 async def list_files_async(
@@ -1078,6 +1091,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def list_user_tokens(db: AsyncSession, user_id: int) -> list[LongLivedToken]:
 1 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
 1 async def load_progress(db: AsyncSession, batch: PrintBatch) -> BatchProgress:
+1 async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
 1 async def maybe_sync_spoolman_locations(db: AsyncSession, *, client=None) -> bool:
 1 async def mirror_comments(db: AsyncSession, project: AitoProject, comments: list[dict]) -> int:
 1 async def notify_missing_spool_assignments_on_print_start(
@@ -1093,6 +1107,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def prepare_internal_spool_payload(db: AsyncSession, data: dict, fields_set: set[str]) -> dict:
 1 async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
 1 async def prune_stale_printer_file_bundles() -> None:
+1 async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedelta(days=400)) -> int:
 1 async def read_chamber_image_frame(
 1 async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float = 10.0) -> bytes | None:
 1 async def reclassify_presets(db: AsyncSession) -> dict:
@@ -1139,6 +1154,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
 1 async def test_camera_connection(
 1 async def test_connection(url: str, camera_type: str) -> dict:
+1 async def tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
 1 async def upload_file_async(
 1 async def upsert_slot_preset_for_spool(
 1 async def upsert_slot_preset_for_spoolman_spool(
@@ -1412,11 +1428,13 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def http_exception_to_job_error(exc) -> _SliceJobError:
 1 def inject_plate_thumbnails_if_missing(threemf_bytes: bytes) -> bytes:
 1 def invalidate_validation_cache(token: str | None = None) -> None:
+1 def invoice_state(status: str | None) -> str | None:
 1 def is_ams_slot_location(name: str) -> bool:
 1 def is_bambu_tag(tag_uid: str, tray_uuid: str, tray_info_idx: str) -> bool:
 1 def is_bed_slinger(model: str | None) -> bool:
 1 def is_captcha_challenge(response) -> bool:
 1 def is_chamber_image_model(model: str | None) -> bool:
+1 def is_expired(column: str, finished_at: datetime | None, now: datetime) -> bool:
 1 def is_expiry_401(response: httpx.Response) -> bool:
 1 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
 1 def is_plate_detection_available() -> bool:
@@ -1439,6 +1457,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def match_profile(
 1 def merge_plate_3mfs(
 1 def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict[str, dict]:
+1 def mint_token() -> str:
 1 def missing_start_gcode_message(printer_preset_name: str) -> str:
 1 def net_cost(task: Any, service: str) -> float | None:
 1 def normalise_process_overrides(overrides: dict[str, object]) -> dict[str, str | list[str]]:
@@ -1523,8 +1542,10 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def supports_rtsp(model: str | None) -> bool:
 1 def swap_plate_suffix(name: str | None, target_plate: int) -> str | None:
 1 def systemd_unit_name() -> str | None:
+1 def task_quantity(task: AitoTask) -> int | None:
 1 def test_ldap_connection(config: LDAPConfig) -> tuple[bool, str]:
 1 def thresholds(sensitivity: str) -> tuple[float, float]:
+1 def tracking_url_for(base: str, token: str | None) -> str | None:
 1 def transaction_affects_personal_balance(
 1 def uniform_tray_filament_hint(loaded_types: list[str]) -> str | None:
 1 def uploaded_base_presets_dir() -> Path:
@@ -1569,6 +1590,7 @@ export const FILAMENT_BRANDS
 export const FILAMENT_MATERIALS
 export const filamentLineCost
 export const FOLLOWUP_KEYS
+export const FR
 export const FTS_INLET_SIDE
 export const inventoryLocationsQueryKey
 export const libraryTagsQueryKey
@@ -1664,6 +1686,7 @@ export function computePopoverPosition
 export function computePricing
 export function computeSkuForecasts
 export function correctedTimeH
+export function dailyCapacityHours
 export function daysSince
 export function defaultClientDraft
 export function deriveChamberTargetForTrays
@@ -1681,6 +1704,7 @@ export function emptyShippingDraft
 export function emptyTaskDraft
 export function estimateArchiveSalePrice
 export function estimateFilamentCost
+export function etaCopy
 export function evaluate
 export function filamentTypesCompatible
 export function filterCompatibleQueueItems
@@ -1696,6 +1720,7 @@ export function fleetAudience
 export function flightDuration
 export function foldSessionOverrides
 export function followups
+export function formatBacklogHours
 export function formatDate
 export function formatDateInput
 export function formatDateOnly
@@ -1720,6 +1745,9 @@ export function formatTimeInput
 export function formatTimeOnly
 export function formatUptime
 export function formatWeight
+export function freshenTaskDraft
+export function frLongDate
+export function frUpdated
 export function genericFilamentIdForMaterial
 export function getAmsLabel
 export function getBambuColorName
@@ -1753,6 +1781,7 @@ export function invalidateSpoolAndLocationQueries
 export function isApiSliceableFilename
 export function isApiSliceableFileType
 export function isBambuLabSpool
+export function isBlankTaskDraft
 export function isExternalSidebarItemId
 export function isExternalSpoolHidden
 export function isFinished
@@ -1815,6 +1844,7 @@ export function preferLowestSortKey
 export function prefersReducedMotion
 export function presetCompatibility
 export function presetDisplayName
+export function printBacklog
 export function projectHasPricedService
 export function projectTotal
 export function qtyFactor
@@ -1860,6 +1890,7 @@ export function sponsorHref
 export function spoolColorString
 export function spoolMatchesQuery
 export function startCountdown
+export function statusCopy
 export function subscribeColorCatalog
 export function summariseTasks
 export function supportsRtsp
@@ -1874,6 +1905,7 @@ export function toDateTimeLocalValue
 export function toOptimisticProjects
 export function toSafeExternalUrl
 export function toTaskLike
+export function trackStages
 export function unitMultiplier
 export function unitPriceCurve
 export function useAitoPageMutations
@@ -2250,6 +2282,7 @@ forgotPasswordConfirm
 generateAitoPickupMessage
 get2FAStatus
 getAdvancedAuthStatus
+getAitoClientHistory
 getAitoEvents
 getAitoInvoice
 getAitoInvoiceEmail
@@ -2258,7 +2291,10 @@ getAitoProjects
 getAitoQuoteEmail
 getAitoQuotePdf
 getAitoShippingServices
+getAitoStats
 getAitoTasks
+getAitoTracking
+getAitoTrackingLink
 getAitoTrash
 getAllCloudFields
 getAllTransactions
@@ -2542,6 +2578,7 @@ refreshAmsSlot
 refreshBaseProfileCache
 refreshOIDCProviderIcon
 refreshPrinterStatus
+regenerateAitoTrackingToken
 regenerateBackupCodes
 removeArchivesFromProject
 removeCostCenterMember
@@ -2735,6 +2772,7 @@ xyJog
 ```
 AitoFxDemoPage.tsx
 AitoPage.tsx
+AitoTrackPage.tsx
 ArchivesPage.tsx
 CalculatorPage.tsx
 CalculatorQuotePage.tsx
@@ -2770,8 +2808,9 @@ UsersPage.tsx
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "import backend.app.main; from backend.app.core.database import Base; [print(n, len(t.columns)) for n, t in sorted(Base.metadata.tables.items())]" 2>/dev/null```
 ```
 aito_events 15
-aito_projects 49
+aito_projects 50
 aito_tasks 32
+aito_tracking_views 3
 ams_labels 6
 ams_sensor_history 7
 api_keys 20

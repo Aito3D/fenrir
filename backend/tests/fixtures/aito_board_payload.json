@@ -63,7 +63,6 @@
     ],
     "tasks_total": 0.0,
     "tracking_configured": false,
-    "tracking_url": null,
     "version": 0
   },
   {
@@ -118,7 +117,6 @@
     "task_steps": [],
     "tasks_total": 0.0,
     "tracking_configured": false,
-    "tracking_url": null,
     "version": 0
   },
   {
@@ -185,7 +183,6 @@
     ],
     "tasks_total": 3000.0,
     "tracking_configured": false,
-    "tracking_url": null,
     "version": 0
   },
   {
@@ -265,7 +262,6 @@
     ],
     "tasks_total": 8400.0,
     "tracking_configured": false,
-    "tracking_url": null,
     "version": 0
   },
   {
@@ -332,7 +328,6 @@
     ],
     "tasks_total": 0.0,
     "tracking_configured": false,
-    "tracking_url": null,
     "version": 0
   }
 ]

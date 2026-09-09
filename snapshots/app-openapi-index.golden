@@ -11538,7 +11538,6 @@
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
-    "shipping_lta": "anyOf(string,null)",
     "shipping_phone": "anyOf(string,null)",
     "shipping_price": "anyOf(number,null)",
     "shipping_service": "anyOf(string,null)",
@@ -11552,7 +11551,6 @@
     "task_steps": "[AitoTaskStepsResponse]",
     "tasks_total": "number",
     "tracking_configured": "boolean",
-    "tracking_url": "anyOf(string,null)",
     "updated_at": "string",
     "version": "integer"
    },
@@ -11596,7 +11594,6 @@
     "shipping_first_name",
     "shipping_island",
     "shipping_last_name",
-    "shipping_lta",
     "shipping_phone",
     "shipping_price",
     "shipping_service",
@@ -11610,7 +11607,6 @@
     "task_steps",
     "tasks_total",
     "tracking_configured",
-    "tracking_url",
     "updated_at",
     "version"
    ]
@@ -11629,7 +11625,6 @@
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
-    "shipping_lta": "anyOf(string,null)",
     "shipping_phone": "anyOf(string,null)",
     "shipping_price": "anyOf(number,null)"
    },
@@ -12022,12 +12017,10 @@
   "AitoTrackingShipping": {
    "properties": {
     "island": "string",
-    "lta": "anyOf(string,null)",
     "service": "string"
    },
    "required": [
     "island",
-    "lta",
     "service"
    ]
   },

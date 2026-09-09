@@ -4044,7 +4044,7 @@ export interface AitoStats {
   conversion: { sent: AitoStatsBucket; accepted: AitoStatsBucket; declined: AitoStatsBucket; acceptance_rate: number | null };
   stage_days: { column: AitoColumnId; median_days: number | null; sample: number }[];
   invoicing: { invoiced_total: number; invoiced_count: number; outstanding_balance: number; outstanding_count: number };
-  tracking: { views: number; cards_viewed: number; cards_with_link: number };
+  tracking?: { views: number; cards_viewed: number; cards_with_link: number };
   date_from: string | null;
   date_to: string | null;
 }
@@ -4242,15 +4242,13 @@ export interface AitoProject {
   shipping_lta: string | null;
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
-  /** The client-facing tracking link for this card, and whether it has ever
-   *  been generated. The token behind `tracking_url` can be minted by the
-   *  Copy-link route, the pickup-SMS draft, or the quote sync — not only by
-   *  `regenerateAitoTrackingToken` — so `tracking_url` is null until whichever
-   *  of those runs first. `tracking_configured` instead reflects whether
-   *  `external_url` (the operator's public origin setting) is set, so the UI
-   *  can render "not yet configured" without round-tripping the link
-   *  itself. */
-  tracking_url: string | null;
+  /** Whether this card has a public tracking link configured. The token
+   *  itself is minted by the Copy-link route, the pickup-SMS draft, or the
+   *  quote sync — not only by `regenerateAitoTrackingToken` — but it is
+   *  never embedded here; fetch it from `GET /aito/{id}/tracking-link`.
+   *  `tracking_configured` reflects whether `external_url` (the operator's
+   *  public origin setting) is set, so the UI can render "not yet
+   *  configured" without round-tripping the link itself. */
   tracking_configured: boolean;
   /** Content-fields revision — echo back as `expected_version` on updates so
    *  a concurrent edit 409s instead of being silently overwritten. */

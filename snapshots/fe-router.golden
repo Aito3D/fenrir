@@ -20,111 +20,114 @@
     18	path="/overlay/:printerId"
     19	element=StreamOverlayPage
     20	<Route
-    21	path="/calculator/quote"
-    22	<Route
-    23	element=ProtectedRoute
-    24	<Route
-    25	path="spoolbuddy"
-    26	element=SpoolBuddyDashboard
+    21	path="/track/:token"
+    22	element=AitoTrackPage
+    23	<Route
+    24	path="/calculator/quote"
+    25	<Route
+    26	element=ProtectedRoute
     27	<Route
-    28	path="spoolbuddy/ams"
-    29	element=SpoolBuddyAmsPage
+    28	path="spoolbuddy"
+    29	element=SpoolBuddyDashboard
     30	<Route
-    31	path="spoolbuddy/write-tag"
-    32	element=SpoolBuddyWriteTagPage
+    31	path="spoolbuddy/ams"
+    32	element=SpoolBuddyAmsPage
     33	<Route
-    34	path="spoolbuddy/inventory"
-    35	element=SpoolBuddyInventoryPage
+    34	path="spoolbuddy/write-tag"
+    35	element=SpoolBuddyWriteTagPage
     36	<Route
-    37	path="spoolbuddy/settings"
-    38	element=SpoolBuddySettingsPage
+    37	path="spoolbuddy/inventory"
+    38	element=SpoolBuddyInventoryPage
     39	<Route
-    40	path="spoolbuddy/calibration"
-    41	element=SpoolBuddyCalibrationPage
+    40	path="spoolbuddy/settings"
+    41	element=SpoolBuddySettingsPage
     42	<Route
-    43	element=ProtectedRoute
-    44	<Route
-    45	element=PrintersPage
-    46	<Route
-    47	path="archives"
-    48	element=ArchivesPage
+    43	path="spoolbuddy/calibration"
+    44	element=SpoolBuddyCalibrationPage
+    45	<Route
+    46	element=ProtectedRoute
+    47	<Route
+    48	element=PrintersPage
     49	<Route
-    50	path="queue"
-    51	element=QueuePage
+    50	path="archives"
+    51	element=ArchivesPage
     52	<Route
-    53	path="pipelines/runs"
-    54	element=Navigate
+    53	path="queue"
+    54	element=QueuePage
     55	<Route
-    56	path="stats"
-    57	element=StatsPage
+    56	path="pipelines/runs"
+    57	element=Navigate
     58	<Route
-    59	path="profiles"
-    60	element=ProfilesPage
+    59	path="stats"
+    60	element=StatsPage
     61	<Route
-    62	path="filament-profiles"
-    63	element=FilamentProfilesPage
+    62	path="profiles"
+    63	element=ProfilesPage
     64	<Route
-    65	path="finance"
-    66	element=PermissionRoute
+    65	path="filament-profiles"
+    66	element=FilamentProfilesPage
     67	<Route
-    68	path="maintenance"
-    69	element=MaintenancePage
+    68	path="finance"
+    69	element=PermissionRoute
     70	<Route
-    71	path="calculator"
-    72	element=PermissionRoute
+    71	path="maintenance"
+    72	element=MaintenancePage
     73	<Route
-    74	path="projects"
-    75	element=ProjectsPage
+    74	path="calculator"
+    75	element=PermissionRoute
     76	<Route
-    77	path="projects/:id"
-    78	element=ProjectDetailPage
+    77	path="projects"
+    78	element=ProjectsPage
     79	<Route
-    80	path="aito"
-    81	element=PermissionRoute
+    80	path="projects/:id"
+    81	element=ProjectDetailPage
     82	<Route
-    83	path="inventory"
-    84	element=InventoryPage
+    83	path="aito"
+    84	element=PermissionRoute
     85	<Route
-    86	path="files"
-    87	element=FileManagerPage
+    86	path="inventory"
+    87	element=InventoryPage
     88	<Route
-    89	path="files/trash"
-    90	element=LibraryTrashPage
+    89	path="files"
+    90	element=FileManagerPage
     91	<Route
-    92	path="makerworld"
-    93	element=PermissionRoute
+    92	path="files/trash"
+    93	element=LibraryTrashPage
     94	<Route
-    95	path="settings"
+    95	path="makerworld"
     96	element=PermissionRoute
     97	<Route
-    98	path="groups/new"
+    98	path="settings"
     99	element=PermissionRoute
    100	<Route
-   101	path="groups/:id/edit"
+   101	path="groups/new"
    102	element=PermissionRoute
    103	<Route
-   104	path="users"
-   105	element=Navigate
+   104	path="groups/:id/edit"
+   105	element=PermissionRoute
    106	<Route
-   107	path="groups"
+   107	path="users"
    108	element=Navigate
    109	<Route
-   110	path="system"
-   111	element=SystemInfoPage
+   110	path="groups"
+   111	element=Navigate
    112	<Route
-   113	path="notifications"
-   114	element=NotificationsPage
+   113	path="system"
+   114	element=SystemInfoPage
    115	<Route
-   116	path="gcode-viewer"
-   117	element=GCodeViewerPage
+   116	path="notifications"
+   117	element=NotificationsPage
    118	<Route
-   119	path="external/:id"
-   120	element=ExternalLinkPage
+   119	path="gcode-viewer"
+   120	element=GCodeViewerPage
    121	<Route
-   122	path="camera-tokens"
-   123	element=Navigate
+   122	path="external/:id"
+   123	element=ExternalLinkPage
    124	<Route
-   125	<Route
+   125	path="camera-tokens"
+   126	element=Navigate
+   127	<Route
+   128	<Route
 
 ### stderr:
 

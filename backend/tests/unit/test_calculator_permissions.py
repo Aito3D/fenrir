@@ -205,3 +205,54 @@ async def test_zoho_sync_makes_no_outbound_call_when_rejected(async_client, calc
         assert r.status_code == 403
 
     assert calls == []
+
+
+# ------------------------------------------ T-014: CALCULATOR_READ is user-token only
+
+
+@pytest.fixture
+async def t014_read_status_api_key(db_session):
+    """A real, persisted API key with `can_read_status=True` -- the flag
+    CALCULATOR_READ used to map to, same as every other read permission
+    (PRINTERS_READ, SETTINGS_READ, ...). Also turns auth on. Mirrors
+    test_aito_permissions.py's `t024_read_status_api_key` fixture."""
+    from backend.app.core.auth import generate_api_key
+    from backend.app.models.api_key import APIKey
+    from backend.app.models.settings import Settings
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+
+    full_key, key_hash, key_prefix = generate_api_key()
+    db_session.add(
+        APIKey(
+            name="t014-read-status",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            can_read_status=True,
+            enabled=True,
+        )
+    )
+    await db_session.commit()
+    return full_key
+
+
+@pytest.mark.asyncio
+async def test_read_status_api_key_cannot_read_calculator_defaults(async_client, t014_read_status_api_key):
+    """T-014: an API key holding only `can_read_status` (the flag it used to
+    map to) must now be refused GET /api/v1/calculator/defaults -- the
+    response carries the shop's confidential cost base (labor rate, margin
+    curve, markups), so it is no longer on the default API-key scope."""
+    r = await async_client.get("/api/v1/calculator/defaults", headers={"X-API-Key": t014_read_status_api_key})
+    assert r.status_code == 403
+    assert "administrative operations" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_calculator_read_user_token_can_still_read_defaults(async_client, calculator_tokens):
+    """T-014 is scoped to the API-key allowlist only -- a genuine user token
+    holding `calculator:read` is unaffected and still gets 200."""
+    r = await async_client.get(
+        "/api/v1/calculator/defaults",
+        headers={"Authorization": f"Bearer {calculator_tokens['read_only']}"},
+    )
+    assert r.status_code == 200
