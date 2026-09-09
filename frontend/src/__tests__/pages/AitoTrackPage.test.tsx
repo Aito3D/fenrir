@@ -276,15 +276,17 @@ describe('AitoTrackPage language', () => {
 
   it('falls back to French when the browser asks for nothing the app ships', async () => {
     await i18n.changeLanguage('en');
+    // changeLanguage above is cached by the detector as a remembered choice
+    // (under Node 22's jsdom the write reaches the localStorage mock; under
+    // Node 25 it does not, which is why this only ever failed on CI). A
+    // first visit has no remembered choice, and that is the case under test.
+    window.localStorage.removeItem('bambutrack_language');
     const languages = Object.getOwnPropertyDescriptor(Navigator.prototype, 'languages');
     Object.defineProperty(navigator, 'languages', { configurable: true, value: ['ty', 'pt-PT'] });
     try {
       mockTrack(FIXTURE);
       renderAt('tahiti');
-      // A language switch on a loaded CI runner can outlast findBy's default
-      // second; both this and the expired-page test failed exactly at ~1 s
-      // on every CI run since 2026-09-08 while passing locally.
-      expect(await screen.findByRole('heading', { level: 2, name: 'En fabrication' }, { timeout: 5000 })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
     } finally {
       if (languages) Object.defineProperty(Navigator.prototype, 'languages', languages);
       delete (navigator as unknown as Record<string, unknown>).languages;
@@ -294,8 +296,8 @@ describe('AitoTrackPage language', () => {
   it('translates the expired-link page too', async () => {
     mockTrack(null);
     renderAt('gone');
-    expect(await screen.findByText("Ce lien de suivi n'est plus valide", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText("Ce lien de suivi n'est plus valide")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByTestId('track-language'), 'es');
-    expect(await screen.findByText('Este enlace de seguimiento ya no es válido', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText('Este enlace de seguimiento ya no es válido')).toBeInTheDocument();
   });
 });
