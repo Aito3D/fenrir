@@ -16,6 +16,7 @@ Security model
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -1097,7 +1098,8 @@ async def send_email_otp(
     # If the send fails we raise an exception here; the session is uncommitted so
     # the OTP record is discarded and the original token remains valid for retry.
     try:
-        send_email(
+        await asyncio.to_thread(
+            send_email,
             smtp_settings=smtp_settings,
             to_email=user.email,
             subject="Your Bambuddy verification code",

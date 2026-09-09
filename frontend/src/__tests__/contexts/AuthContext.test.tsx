@@ -498,4 +498,204 @@ describe('AuthContext', () => {
       expect(result.current.user).toBeNull();
     });
   });
+
+  describe('canModify() ownership logic (T-041)', () => {
+    // Auth enabled, non-admin user — the only path that exercises the
+    // *_own / *_all branching (the early returns for auth-disabled and
+    // admin are covered elsewhere).
+    const mockUser = (permissions: Permission[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            is_admin: false,
+            permissions,
+            groups: [],
+          })
+        )
+      );
+    };
+
+    beforeEach(() => {
+      setAuthToken('valid-token', 'persistent');
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('*_own permission + matching owner id → true', async () => {
+      mockUser(['queue:update_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Positive evidence: wait for the real user (id: 1) to load.
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('queue', 'update', 1)).toBe(true);
+    });
+
+    it('*_own permission + a different owner id → false', async () => {
+      mockUser(['queue:update_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('queue', 'update', 999)).toBe(false);
+    });
+
+    it('*_own permission + ownerless item (null createdById) → false', async () => {
+      mockUser(['archives:delete_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('archives', 'delete', null)).toBe(false);
+    });
+
+    it('*_own permission + ownerless item (undefined createdById) → false', async () => {
+      mockUser(['library:update_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('library', 'update', undefined)).toBe(false);
+    });
+
+    it('*_all permission → true regardless of owner (own, other, ownerless)', async () => {
+      mockUser(['archives:reprint_all' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('archives', 'reprint', 1)).toBe(true);
+      expect(result.current.canModify('archives', 'reprint', 999)).toBe(true);
+      expect(result.current.canModify('archives', 'reprint', null)).toBe(true);
+    });
+
+    it('neither *_own nor *_all permission → false', async () => {
+      mockUser(['queue:read' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('queue', 'update', 1)).toBe(false);
+      expect(result.current.canModify('queue', 'update', null)).toBe(false);
+    });
+
+    it('admin short-circuit: grants modify access with no matching permission at all', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'admin',
+            is_active: true,
+            is_admin: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.isAdmin).toBe(true);
+      expect(result.current.canModify('queue', 'delete', 999)).toBe(true);
+      expect(result.current.canModify('library', 'delete', null)).toBe(true);
+    });
+  });
+
+  describe('kiosk ?token= URL bootstrap (L-4 session-fixation defense)', () => {
+    beforeEach(() => {
+      // No prior session: start with a clean slate and a URL carrying a
+      // kiosk token, the way SpoolBuddy links to the app on first load.
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      setAuthToken(null);
+      window.history.replaceState({}, '', '/?token=kiosk-abc');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      // Restore the URL so later tests in this file aren't affected.
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('stores the URL token session-only and strips it from the URL (not yet server-confirmed)', async () => {
+      // /auth/me fails transiently (never a definitive 401) so the token is
+      // neither promoted nor cleared — isolates the bootstrap step itself.
+      server.use(http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 })));
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 4000 });
+
+      // Session-only: readable via sessionStorage, absent from localStorage.
+      expect(sessionStorage.getItem('auth_token')).toBe('kiosk-abc');
+      expect(localStorage.getItem('auth_token')).toBeNull();
+      // The token param is stripped from the visible URL immediately, before
+      // the server has had any chance to confirm it.
+      expect(window.location.search).not.toContain('token=');
+    });
+
+    it('promotes the token to persistent storage once /auth/me confirms it is valid', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 7,
+            username: 'kiosk',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Positive evidence: the server confirmed the token before we check promotion.
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+      expect(result.current.user?.username).toBe('kiosk');
+
+      // Only now — after confirmation — does it land in persistent storage.
+      expect(localStorage.getItem('auth_token')).toBe('kiosk-abc');
+      expect(sessionStorage.getItem('auth_token')).toBe('kiosk-abc');
+    });
+
+    it('never promotes the token when /auth/me returns a definitive 401', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Positive evidence: wait for the auth check to settle to unauthenticated
+      // before asserting on the (lack of) promotion.
+      await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 4000 });
+      expect(result.current.user).toBeNull();
+
+      // Negative assertion: a forged/stolen URL token that fails server
+      // verification must never reach persistent storage.
+      expect(localStorage.getItem('auth_token')).toBeNull();
+    });
+  });
 });

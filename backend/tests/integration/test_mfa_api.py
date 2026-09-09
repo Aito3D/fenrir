@@ -17,6 +17,7 @@ Tests the full request/response cycle for:
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -1756,6 +1757,71 @@ class TestEmailOTPSendVerify:
             json={"pre_auth_token": fresh_token, "method": "email", "code": captured["otp"]},
         )
         assert good.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_otp_send_runs_off_event_loop(self, async_client: AsyncClient, db_session: AsyncSession):
+        """The blocking SMTP send must run in a worker thread, not on the event loop.
+
+        Regression guard for T-043: send_email is a synchronous smtplib call and
+        must be offloaded (e.g. via asyncio.to_thread) so it cannot stall the
+        single uvicorn event loop.
+        """
+        import threading
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(async_client, "emailoffloop", "emailoffloop1")
+
+        result = await db_session.execute(sa_select(User).where(User.username == "emailoffloop"))
+        user = result.scalar_one()
+        user.email = "emailoffloop@example.com"
+        await db_session.commit()
+
+        setup_code = "666666"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="emailoffloop",
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "emailoffloop", "emailoffloop1")
+
+        smtp_mock = MagicMock()
+        observed: dict[str, bool] = {}
+
+        def _record_thread(smtp_settings, to_email, subject, body_text, body_html):
+            observed["off_main_thread"] = threading.current_thread() is not threading.main_thread()
+            try:
+                asyncio.get_running_loop()
+                observed["no_running_loop"] = False
+            except RuntimeError:
+                observed["no_running_loop"] = True
+
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_record_thread),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+
+        assert send_resp.status_code == 200, send_resp.text
+        assert observed.get("off_main_thread") is True, "send_email must run in a worker thread, not the event loop"
+        assert observed.get("no_running_loop") is True, "send_email's thread must have no running asyncio loop"
 
 
 # ===========================================================================
