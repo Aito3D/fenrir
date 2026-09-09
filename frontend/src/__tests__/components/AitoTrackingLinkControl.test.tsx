@@ -126,7 +126,13 @@ describe('TrackingLinkControl', () => {
     render(<TrackingLinkControl project={project} />);
     await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://x.pf/t/abc'));
-    expect(await screen.findByText(/copied/i)).toBeInTheDocument();
+    // The confirmation rises in with the panel's tick vocabulary, then
+    // fades out before it unmounts instead of vanishing in one frame.
+    const copied = await screen.findByTestId('tracking-copied');
+    expect(copied).toHaveClass('animate-rise-sm');
+    expect(screen.getByRole('button', { name: /copy tracking link/i }).querySelector('svg')).toHaveClass('animate-tick-in');
+    await waitFor(() => expect(screen.getByTestId('tracking-copied')).toHaveClass('animate-fade-out-sm'), { timeout: 2500 });
+    await waitFor(() => expect(screen.queryByTestId('tracking-copied')).not.toBeInTheDocument());
   });
 
   it('is disabled with a settings hint when the external URL is not configured', () => {

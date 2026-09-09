@@ -23,6 +23,9 @@ export function trackingDefaultLanguage(
 
 const STAGE_KEYS: Exclude<AitoColumnId, 'done'>[] = ['devis', 'waiting', 'scan', 'model', 'print', 'finish'];
 
+/** A column's index on the rail (0 = Devis … 6 = Done), -1 for an unknown one. */
+export const trackStageIndex = (column: AitoColumnId): number => [...STAGE_KEYS, 'done'].indexOf(column);
+
 /** The seven stages in board order. The LAST one is named by how this order
  *  ends — "Shipped" for a shipment, "Collected" otherwise — because "Done"
  *  tells the client nothing they can picture. */
@@ -126,13 +129,19 @@ export const TRACK_MOTION = {
   reveal: 40, // "Voir les n pièces": step between revealed parts
   footer: 400, // the footer drops in this much after the state card
   footerAlone: 200, // …or this much after a 404 / error page paints
+  invalidTitle: 0, // the invalid-link page: title, then body, then the way back in
+  invalidBody: 60,
+  invalidLink: 120,
 } as const;
 
-/** When rail node `i` pops, in ms after the data lands. */
-export const trackNodeDelay = (i: number) => TRACK_MOTION.start + i * TRACK_MOTION.beat;
+/** When rail node `i` pops, in ms after the data lands. `origin` is the
+ *  first node that moves: 0 on the first load (the whole walk), or the
+ *  node that was current before an advance — a refetch that brought a
+ *  later stage replays the walk from there only, never from Devis. */
+export const trackNodeDelay = (i: number, origin = 0) => TRACK_MOTION.start + (i - origin) * TRACK_MOTION.beat;
 
 /** When the state card rises, for a rail whose current node is `current`. */
-export const trackStateDelay = (current: number) => trackNodeDelay(current) + TRACK_MOTION.state;
+export const trackStateDelay = (current: number, origin = 0) => trackNodeDelay(current, origin) + TRACK_MOTION.state;
 
 /** The code-entry page's clock (ms). Title and hint rise first, the six
  *  squares follow one 55 ms beat apart from `cells`, and `leaveAt` is when a

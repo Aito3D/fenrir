@@ -1610,8 +1610,20 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   transform-origin: center;
 }
 
+/* The exit half of a small confirmation (TrackingLinkControl's "Copié"):
+   it rose in with .animate-rise-sm and leaves on the exit curve, `forwards`
+   so it stays gone through the frame before its unmount. */
+@keyframes fade-out-sm {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.animate-fade-out-sm {
+  animation: fade-out-sm 150ms var(--ease-exit) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-tick-in {
+  .animate-tick-in,
+  .animate-fade-out-sm {
     animation: none;
   }
 }
@@ -2125,9 +2137,49 @@ tbody .calc-table-row:hover {
   animation: track-drop 320ms var(--ease-signature) backwards;
 }
 
+/* The phone's progress bar after the first load: an order advancing while
+   the page is open slides the bar to its new width instead of jumping. */
+.track-bar {
+  transition: width 600ms var(--ease-signature);
+}
+
+/* The page's two disclosures ("Voir les étapes", "Voir les modalités"):
+   one symmetric path. The body is a grid row growing 0fr → 1fr with a fade,
+   and closes the same way but faster and on the exit curve, so the footer
+   glides up instead of being yanked. Content stays mounted (TrackCollapse
+   sets inert + aria-hidden while closed); `min-height: 0` lets the row
+   actually reach zero, `overflow: hidden` clips it while it does. */
+.track-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 150ms var(--ease-exit),
+    opacity 150ms var(--ease-exit);
+}
+.track-collapse[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 200ms var(--ease-signature),
+    opacity 150ms var(--ease-signature) 50ms;
+}
+.track-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Less motion, same story: the rail renders finished and the content
-   crossfades in over 200ms. The check is simply there. */
+   crossfades in over 200ms. The check is simply there. The disclosures
+   still fade, the bar just sits at its width. */
 @media (prefers-reduced-motion: reduce) {
+  .track-bar {
+    transition: none;
+  }
+  .track-collapse,
+  .track-collapse[data-open] {
+    transition: opacity 150ms linear;
+  }
   .animate-track-drop,
   .animate-track-draw,
   .animate-track-pop,

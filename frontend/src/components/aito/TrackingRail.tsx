@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoColumnId } from '../../api/client';
 import { TRACK_MOTION, trackNodeDelay, trackStages } from '../../utils/aitoTracking';
+import { TrackCollapse } from './TrackCollapse';
 
 type StageState = 'done' | 'current' | 'todo';
 
@@ -76,18 +77,23 @@ function StageMark({ state, finished = false, delay }: { state: StageState; fini
  *  560 px, a "Voir les étapes" disclosure lists all seven stages
  *  vertically for anyone who wants the detail.
  *
- *  `animate` plays the first-load choreography: the cyan segments draw
- *  left → right one beat per node, each done mark pops behind the head of
- *  the draw, and the current node lands last. The page passes it only on
- *  the first data, never on a refetch. */
-export function TrackingRail({ column, shipped, animate = false }: { column: AitoColumnId; shipped: boolean; animate?: boolean }) {
+ *  `animateFrom` plays the choreography from that node on: the cyan
+ *  segments draw left → right one beat per node, each done mark pops behind
+ *  the head of the draw, and the current node lands last. 0 on the first
+ *  data is the whole walk; on a refetch that brought a later stage the page
+ *  passes the node that WAS current, so only the new ground is walked —
+ *  the client watching their order advance sees it advance, not restart.
+ *  Undefined plays nothing. */
+export function TrackingRail({ column, shipped, animateFrom }: { column: AitoColumnId; shipped: boolean; animateFrom?: number }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const stages = trackStages(shipped, t);
   const current = stages.findIndex((s) => s.id === column);
   const currentLabel = stages[current]?.label ?? '';
   const finished = column === 'done';
-  const markDelay = (i: number) => (animate ? trackNodeDelay(i) : undefined);
+  const animate = animateFrom !== undefined;
+  const origin = animateFrom ?? 0;
+  const markDelay = (i: number) => (animate && i >= origin ? trackNodeDelay(i, origin) : undefined);
   return (
     <>
       {/* The rail is SEGMENTS between nodes, never a line through them: each
@@ -101,11 +107,13 @@ export function TrackingRail({ column, shipped, animate = false }: { column: Ait
           const segment = (on: boolean) => `absolute top-[15px] h-[2px] ${on ? 'bg-aito-cyan/55' : 'bg-aito-line'}`;
           // The two halves between node i-1 and node i fill node i's beat:
           // the right half of i-1 first, the left half of i second, so the
-          // head of the draw reaches node i exactly as its mark pops.
-          const drawing = (on: boolean) => (animate && on ? 'animate-track-draw' : '');
-          const halfAt = (ms: number) => (animate ? { animationDelay: `${ms}ms` } : undefined);
+          // head of the draw reaches node i exactly as its mark pops. Ground
+          // before the origin node is already drawn and stays still.
+          const halfAt = (ms: number) => ({ animationDelay: `${ms}ms` });
           const leftOn = i <= current;
           const rightOn = i < current;
+          const leftDraws = animate && leftOn && i > origin;
+          const rightDraws = animate && rightOn && i >= origin;
           return (
             <li
               key={stage.id}
@@ -120,20 +128,20 @@ export function TrackingRail({ column, shipped, animate = false }: { column: Ait
                     : 'text-aito-muted/70'
               }`}
             >
-              {i > 0 && animate && leftOn && <span aria-hidden="true" className={`${segment(false)} left-0 right-[calc(50%+18px)]`} />}
+              {i > 0 && leftDraws && <span aria-hidden="true" className={`${segment(false)} left-0 right-[calc(50%+18px)]`} />}
               {i > 0 && (
                 <span
                   aria-hidden="true"
-                  className={`${segment(leftOn)} ${drawing(leftOn)} left-0 right-[calc(50%+18px)]`}
-                  style={leftOn ? halfAt(trackNodeDelay(i) - TRACK_MOTION.beat / 2) : undefined}
+                  className={`${segment(leftOn)} ${leftDraws ? 'animate-track-draw' : ''} left-0 right-[calc(50%+18px)]`}
+                  style={leftDraws ? halfAt(trackNodeDelay(i, origin) - TRACK_MOTION.beat / 2) : undefined}
                 />
               )}
-              {i < stages.length - 1 && animate && rightOn && <span aria-hidden="true" className={`${segment(false)} left-[calc(50%+18px)] right-0`} />}
+              {i < stages.length - 1 && rightDraws && <span aria-hidden="true" className={`${segment(false)} left-[calc(50%+18px)] right-0`} />}
               {i < stages.length - 1 && (
                 <span
                   aria-hidden="true"
-                  className={`${segment(rightOn)} ${drawing(rightOn)} left-[calc(50%+18px)] right-0`}
-                  style={rightOn ? halfAt(trackNodeDelay(i)) : undefined}
+                  className={`${segment(rightOn)} ${rightDraws ? 'animate-track-draw' : ''} left-[calc(50%+18px)] right-0`}
+                  style={rightDraws ? halfAt(trackNodeDelay(i, origin)) : undefined}
                 />
               )}
               <span className={`relative z-10 flex items-center justify-center ${state === 'current' ? 'mb-[6px] -mt-px' : 'mb-[8px] mt-px'}`}>
@@ -149,10 +157,13 @@ export function TrackingRail({ column, shipped, animate = false }: { column: Ait
           <span>{t('aito.track.stepOf', { n: current + 1, total: stages.length })}</span>
           <b className="font-semibold">{currentLabel}</b>
         </div>
+        {/* First load: the bar grows from nothing. Later: it slides to the
+            new width (`.track-bar`, index.css) — an order advancing while
+            the page is open is shown advancing, on the phone too. */}
         <div className="h-[3px] overflow-hidden rounded bg-aito-line">
           <span
-            className={`block h-full bg-aito-cyan ${animate ? 'animate-track-bar' : ''}`}
-            style={{ width: `${((current + 1) / stages.length) * 100}%`, ...(animate ? { animationDelay: `${TRACK_MOTION.start}ms` } : {}) }}
+            className={`track-bar block h-full bg-aito-cyan ${animate && origin === 0 ? 'animate-track-bar' : ''}`}
+            style={{ width: `${((current + 1) / stages.length) * 100}%`, ...(animate && origin === 0 ? { animationDelay: `${TRACK_MOTION.start}ms` } : {}) }}
           />
         </div>
         <button
@@ -161,17 +172,19 @@ export function TrackingRail({ column, shipped, animate = false }: { column: Ait
           onClick={() => setOpen((v) => !v)}
           className="mt-[8px] min-h-[44px] rounded-[8px] text-[13px] font-semibold text-aito-cyan transition-[color,transform] duration-150 hover:text-aito-cyan/80 active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan"
         >
-          {t('aito.track.showSteps')}
+          {t(open ? 'aito.track.hideSteps' : 'aito.track.showSteps')}
         </button>
-        {open && (
-          <ol aria-label={t('aito.track.stepsList')} className="stagger-children mt-[8px] space-y-[12px]">
+        <TrackCollapse open={open}>
+          {/* -mx/px 6 px: the current mark's ring reaches 5 px past the
+              node, and the collapse clips at its box. */}
+          <ol aria-label={t('aito.track.stepsList')} className="stagger-children -mx-[6px] mt-[8px] space-y-[12px] px-[6px] pb-[6px]">
             {stages.map((stage, i) => {
               const state: StageState = i < current ? 'done' : i === current ? 'current' : 'todo';
               return (
                 <li
                   key={stage.id}
                   aria-current={state === 'current' ? 'step' : undefined}
-                  className={`animate-rise flex items-center gap-[12px] text-[13px] ${
+                  className={`${open ? 'animate-rise' : ''} flex items-center gap-[12px] text-[13px] ${
                     state === 'current'
                       ? 'font-semibold text-aito-ink'
                       : state === 'done'
@@ -185,7 +198,7 @@ export function TrackingRail({ column, shipped, animate = false }: { column: Ait
               );
             })}
           </ol>
-        )}
+        </TrackCollapse>
       </div>
     </>
   );

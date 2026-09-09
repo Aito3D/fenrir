@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -11,6 +11,8 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { focusRingCls } from '../formStyles';
 
 const ICON_BUTTON_CLS = `p-2 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-bambu-gray ${focusRingCls}`;
+const COPIED_HOLD_MS = 1500;
+const COPIED_EXIT_MS = 150; // matches .animate-fade-out-sm
 
 /** Copy / Regenerate for the card's public tracking link, in the panel's
  *  Record card, under the provenance rows it belongs with.
@@ -30,7 +32,13 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [copied, setCopied] = useState(false);
+  // The "Copié" confirmation: rises in (`animate-rise-sm`), holds, fades out
+  // (`animate-fade-out-sm`, index.css) and only then unmounts — the same
+  // tick-in vocabulary the panel's other confirmations use, instead of a
+  // label that appears and vanishes in one frame.
+  const [copied, setCopied] = useState<'in' | 'out' | null>(null);
+  const copiedTimers = useRef<number[]>([]);
+  useEffect(() => () => copiedTimers.current.forEach((id) => window.clearTimeout(id)), []);
   const configured = project.tracking_configured;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
 
@@ -39,8 +47,12 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
     onSuccess: async ({ tracking_url }) => {
       if (!tracking_url) return;
       if (await copyTextToClipboard(tracking_url)) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+        copiedTimers.current.forEach((id) => window.clearTimeout(id));
+        setCopied('in');
+        copiedTimers.current = [
+          window.setTimeout(() => setCopied('out'), COPIED_HOLD_MS),
+          window.setTimeout(() => setCopied(null), COPIED_HOLD_MS + COPIED_EXIT_MS),
+        ];
       }
       invalidate();
     },
@@ -77,9 +89,13 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
         onClick={() => copy.mutate()}
         className={ICON_BUTTON_CLS}
       >
-        {copied ? <Check className="w-4 h-4 text-bambu-green" /> : <Link2 className="w-4 h-4" />}
+        {copied ? <Check className="w-4 h-4 text-bambu-green animate-tick-in" /> : <Link2 className="w-4 h-4" />}
       </button>
-      {copied && <span className="text-xs text-bambu-green">{t('aito.trackingCopied')}</span>}
+      {copied && (
+        <span className={`text-xs text-bambu-green ${copied === 'out' ? 'animate-fade-out-sm' : 'animate-rise-sm'}`} data-testid="tracking-copied">
+          {t('aito.trackingCopied')}
+        </span>
+      )}
       <HoldButton
         onHold={() => regenerate.mutate()}
         durationMs={500}

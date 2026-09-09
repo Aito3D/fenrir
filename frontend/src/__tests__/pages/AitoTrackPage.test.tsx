@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
 import i18n from '../../i18n';
 import { screen, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -20,7 +20,7 @@ function renderAt(token: string) {
     },
   });
 
-  return rtlRender(
+  const utils = rtlRender(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/t/${token}`]}>
         <Routes>
@@ -29,6 +29,7 @@ function renderAt(token: string) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...utils, queryClient };
 }
 
 const FIXTURE: AitoTracking = {
@@ -138,10 +139,21 @@ describe('AitoTrackPage', () => {
       const toggle = within(box).queryByRole('button', { name: 'Voir les modalités' });
       expect(!!toggle).toBe(hasTerms);
       if (toggle) {
-        expect(screen.queryByText(/Règlement par virement/)).not.toBeInTheDocument();
+        // The terms stay mounted for the symmetric collapse; closed means
+        // out of the accessibility tree and the tab order, not absent.
+        const terms = screen.getByText(/Règlement par virement/);
+        const collapse = terms.closest('[data-testid="track-collapse"]')!;
+        expect(collapse).toHaveAttribute('aria-hidden', 'true');
+        expect(collapse).toHaveAttribute('inert');
+        expect(terms).not.toHaveClass('animate-rise');
         await userEvent.click(toggle);
-        expect(screen.getByText(/Règlement par virement/)).toBeInTheDocument();
+        expect(collapse).toHaveAttribute('aria-hidden', 'false');
+        expect(collapse).not.toHaveAttribute('inert');
+        expect(terms).toHaveClass('animate-rise');
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await userEvent.click(toggle);
+        expect(collapse).toHaveAttribute('aria-hidden', 'true');
+        expect(terms).not.toHaveClass('animate-rise');
       }
       unmount();
     }
@@ -201,14 +213,54 @@ describe('AitoTrackPage', () => {
     unmount();
   });
 
+  it('shows the retry being heard, and re-delivers the message when it fails again', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/aito/track/:token', async () => {
+        calls += 1;
+        await delay(300); // long enough for the in-flight state to be observed
+        return HttpResponse.error();
+      }),
+    );
+    renderAt('down');
+    const first = await screen.findByTestId('track-error');
+    expect(first).toHaveClass('animate-track-fade');
+    const retry = screen.getByRole('button', { name: 'Réessayer' });
+    expect(retry).toBeEnabled();
+    await userEvent.click(retry);
+    // While the retry is in flight the message stays put (no skeleton
+    // flash) and the button is out of action and says so.
+    const busy = await screen.findByRole('button', { name: 'Nouvel essai…' });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveClass('disabled:opacity-60');
+    expect(screen.getByTestId('track-error')).toBe(first);
+    expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeNull();
+    // The second failure remounts the message (keyed on the failure), so the
+    // same words fade in again rather than sitting frozen.
+    const again = await screen.findByRole('button', { name: 'Réessayer' });
+    expect(again).toBeEnabled();
+    expect(calls).toBe(2);
+    expect(screen.getByTestId('track-error')).not.toBe(first);
+    expect(screen.getByTestId('track-error')).toHaveClass('animate-track-fade');
+  });
+
   it('exposes the timeline to assistive tech and lists the steps on demand', async () => {
     mockTrack(FIXTURE);
     renderAt('a11y');
     await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
     expect(screen.getByText('Étape 5 sur 7 : Fabrication')).toBeInTheDocument(); // visually hidden
+    // Closed: the list is mounted (for the collapse) but hidden from AT.
+    expect(screen.queryByRole('list', { name: 'Détail des étapes' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Voir les étapes' }));
     const list = screen.getByRole('list', { name: 'Détail des étapes' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(7);
+    expect(within(list).getAllByRole('listitem')[0]).toHaveClass('animate-rise');
+    // The label follows the state: it now offers to close.
+    const hide = screen.getByRole('button', { name: 'Masquer les étapes' });
+    expect(hide).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(hide);
+    expect(screen.queryByRole('list', { name: 'Détail des étapes' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Voir les étapes' })).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -240,6 +292,64 @@ describe('AitoTrackPage first-load choreography', () => {
     const state = screen.getByTestId('track-state');
     expect(state).toHaveClass('animate-track-halo');
     expect(state.style.getPropertyValue('--track-halo-delay')).toBe(`${80 + 6 * 90 + 260 + 280}ms`);
+  });
+
+  it('walks only the new ground when a refetch brings a later stage', async () => {
+    let column: AitoTracking['column'] = 'print';
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column })));
+    const { queryClient } = renderAt('adv');
+    await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
+    // The order advances while the tab is open: print (4) → finish (5).
+    column = 'finish';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'adv'] });
+    await screen.findByRole('heading', { level: 2, name: 'Votre commande est prête' });
+    // Not the first entrance any more…
+    expect(screen.getByTestId('track-content')).not.toHaveAttribute('data-entrance');
+    // …but the rail replays from the old current node: it pops as done, the
+    // new current lands one beat later, everything before stays still.
+    expect(screen.getByTestId('track-stage-print').querySelector('.animate-track-pop')).not.toBeNull();
+    expect(screen.getByTestId('track-stage-finish').querySelector('.animate-track-land')).not.toBeNull();
+    expect(screen.getByTestId('track-stage-model').querySelector('[class*="animate-track"]')).toBeNull();
+    expect(screen.getByTestId('track-stage-devis').querySelector('[class*="animate-track"]')).toBeNull();
+    // The state card rises on the advance clock: origin 4, current 5.
+    const state = screen.getByTestId('track-state');
+    expect(state).toHaveClass('animate-rise');
+    expect(state.style.animationDelay).toBe(`${80 + 1 * 90 + 260}ms`);
+    // The parts did not change and do not move again.
+    expect(screen.getByText('Support GoPro').closest('li')).not.toHaveClass('animate-rise');
+    // A step re-opened: the column goes back, nothing is celebrated.
+    column = 'model';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'adv'] });
+    await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
+    expect(screen.getByTestId('track-state')).not.toHaveClass('animate-rise');
+    expect(screen.getByTestId('track-stage-model').querySelector('[class*="animate-track"]')).toBeNull();
+  });
+
+  it('fires the halo when the advance lands on done', async () => {
+    let column: AitoTracking['column'] = 'finish';
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column, due_date: null })));
+    const { queryClient } = renderAt('over-adv');
+    await screen.findByRole('heading', { level: 2, name: 'Votre commande est prête' });
+    column = 'done';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'over-adv'] });
+    await screen.findByRole('heading', { level: 2, name: 'Terminée' });
+    const state = screen.getByTestId('track-state');
+    expect(state).toHaveClass('animate-track-halo');
+    expect(state.style.getPropertyValue('--track-halo-delay')).toBe(`${80 + 1 * 90 + 260 + 280}ms`);
+    expect(screen.getByTestId('track-check')).toHaveClass('animate-track-check');
+  });
+
+  it('fades and rises the invalid-link page in like every other state', async () => {
+    mockTrack(null);
+    renderAt('gone-motion');
+    const title = await screen.findByRole('heading', { level: 1, name: "Ce lien de suivi n'est plus valide" });
+    expect(screen.getByTestId('track-invalid')).toHaveClass('animate-track-fade');
+    expect(title).toHaveClass('animate-rise');
+    expect(title.style.animationDelay).toBe('0ms');
+    expect(screen.getByText(/nous vous enverrons un nouveau lien/).style.animationDelay).toBe('60ms');
+    const link = screen.getByRole('link', { name: 'Saisir un code de suivi' });
+    expect(link).toHaveClass('animate-rise');
+    expect(link.style.animationDelay).toBe('120ms');
   });
 
   it('rises only the newly revealed parts when the fold opens', async () => {

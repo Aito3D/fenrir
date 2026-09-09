@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingInvoice } from '../../api/client';
+import { TrackCollapse } from './TrackCollapse';
 
 const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid: 'bg-amber-500', overdue: 'bg-red-500' };
 
@@ -48,7 +49,11 @@ export function TrackingInvoice({ state }: { state: AitoTrackingInvoice }) {
           </button>
         )}
       </div>
-      {copy.terms && open && <p className="animate-rise mt-[12px] px-[16px] text-[13px] text-aito-muted">{t('aito.track.paymentTerms')}</p>}
+      {copy.terms && (
+        <TrackCollapse open={open}>
+          <p className={`${open ? 'animate-rise' : ''} mt-[12px] px-[16px] text-[13px] text-aito-muted`}>{t('aito.track.paymentTerms')}</p>
+        </TrackCollapse>
+      )}
     </div>
   );
 }

@@ -9,7 +9,8 @@ import { TrackingRail } from '../components/aito/TrackingRail';
 import { Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { CARD, FOCUS, PRESS, delayAt } from '../utils/trackingShell';
-import { TRACK_MOTION, etaCopy, statusCopy, trackStages, trackStateDelay, updatedAt } from '../utils/aitoTracking';
+import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStages, trackStateDelay, updatedAt } from '../utils/aitoTracking';
+import type { AitoColumnId } from '../api/client';
 
 // Above this many parts, fold to the first six behind a "Voir les n pièces"
 // button — a 60-character name and a 10+ item list must still hold (§7b).
@@ -26,6 +27,11 @@ export function AitoTrackPage() {
   const { token = '' } = useParams<{ token: string }>();
   const { t, lng, ready } = useTrackingLanguage();
   const [showAllParts, setShowAllParts] = useState(false);
+  // "Réessayer" in flight. Tracked here, not read off the query: a refetch
+  // of an errored query with no data drops back to `pending` (TanStack v5),
+  // which would swap the error for the skeleton and back — a flash where
+  // the client needs to see the button they pressed doing something.
+  const [retrying, setRetrying] = useState(false);
   const query = useQuery({
     queryKey: ['aito-track', token],
     queryFn: () => api.getAitoTracking(token),
@@ -50,29 +56,64 @@ export function AitoTrackPage() {
   const firstData = useRef<typeof data>(undefined);
   if (data && settled && firstData.current === undefined) firstData.current = data;
   const entrance = data !== undefined && data === firstData.current;
+  // The story's next chapter: a refetch (window focus, past the stale time)
+  // that brings a LATER stage — the client left the tab open and their
+  // order advanced. The rail replays its walk from the node that was
+  // current, and the state card rises again; the parts and the footer did
+  // not change and stay still. Same render-time ref gate as `firstData`, so
+  // React's double render in dev sees the same answer twice. A column that
+  // went BACK (a step re-opened) simply re-renders: nothing to celebrate.
+  const lastColumn = useRef<AitoColumnId | undefined>(undefined);
+  const advanceRef = useRef<{ from: number; seq: number } | null>(null);
+  if (data && settled) {
+    if (lastColumn.current === undefined) lastColumn.current = data.column;
+    else if (lastColumn.current !== data.column) {
+      const from = trackStageIndex(lastColumn.current);
+      const to = trackStageIndex(data.column);
+      advanceRef.current = to > from ? { from, seq: (advanceRef.current?.seq ?? 0) + 1 } : null;
+      lastColumn.current = data.column;
+    }
+  }
+  const advance = entrance ? null : advanceRef.current;
   const copy = data ? statusCopy(data, t, lng) : null;
   const eta = data ? etaCopy(data, t, lng) : null;
   const preOrder = data?.column === 'devis' || data?.column === 'waiting';
   const finished = data?.column === 'done';
   const current = data ? trackStages(data.shipping !== null, t).findIndex((s) => s.id === data.column) : 0;
-  const stateAt = trackStateDelay(current);
+  // Where the rail's choreography starts: node 0 on the first data, the old
+  // current node on an advance, nowhere otherwise.
+  const origin = entrance ? 0 : advance?.from;
+  const moving = origin !== undefined;
+  const stateAt = trackStateDelay(current, origin ?? 0);
   const is404 = query.error instanceof ApiError && query.error.status === 404;
   const showContent = data !== undefined && copy !== null && settled;
+  const showError = (query.isError || retrying) && !is404 && data === undefined;
+  const retry = () => {
+    setRetrying(true);
+    void query.refetch().finally(() => setRetrying(false));
+  };
 
   if (is404 && settled) {
     return (
       <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
         <div className={CARD}>
           <TrackingLanguageSelect />
-          <header className="text-center">
+          {/* The same fade-and-rise contract as every other state of the
+              page: the skeleton must never be swapped for this in one frame. */}
+          <header className="animate-track-fade text-center" data-testid="track-invalid">
             <Logo className="mb-[20px]" />
-            <h1 className="text-[23px] font-semibold tracking-tight">{t('aito.track.invalidTitle')}</h1>
-            <p className="mt-[8px] text-[15px] text-aito-muted">{t('aito.track.invalidBody')}</p>
+            <h1 className="animate-rise text-[23px] font-semibold tracking-tight" style={delayAt(TRACK_MOTION.invalidTitle)}>
+              {t('aito.track.invalidTitle')}
+            </h1>
+            <p className="animate-rise mt-[8px] text-[15px] text-aito-muted" style={delayAt(TRACK_MOTION.invalidBody)}>
+              {t('aito.track.invalidBody')}
+            </p>
             {/* A code printed on the quote outlives any one link: the way
                 back in is to type it. */}
             <Link
               to="/t"
-              className={`mt-[20px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan hover:bg-aito-cyan/10 ${PRESS} ${FOCUS}`}
+              style={delayAt(TRACK_MOTION.invalidLink)}
+              className={`animate-rise mt-[20px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan hover:bg-aito-cyan/10 ${PRESS} ${FOCUS}`}
             >
               {t('aito.track.invalidEnterCode')}
             </Link>
@@ -95,35 +136,44 @@ export function AitoTrackPage() {
           )}
         </header>
         <main>
-          {(query.isPending || !settled) && !query.isError && (
+          {(query.isPending || !settled) && !query.isError && !retrying && (
             <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
               <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
               <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
             </div>
           )}
-          {query.isError && !is404 && (
+          {showError && (
             <div className="mt-[32px] text-center">
-              <p className="text-[15px] text-aito-muted">{t('aito.track.error')}</p>
+              {/* Keyed on the failure, so a retry that fails again re-delivers
+                  the same words with a fade instead of leaving them frozen —
+                  the client must see that their tap was heard. */}
+              <p key={query.errorUpdatedAt} className="animate-track-fade text-[15px] text-aito-muted" data-testid="track-error">
+                {t('aito.track.error')}
+              </p>
               <button
                 type="button"
-                onClick={() => query.refetch()}
-                className={`mt-[16px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan hover:bg-aito-cyan/10 ${PRESS} ${FOCUS}`}
+                disabled={retrying}
+                onClick={retry}
+                className={`mt-[16px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan transition-[color,background-color,transform,opacity] duration-150 hover:bg-aito-cyan/10 active:scale-[0.97] disabled:opacity-60 ${FOCUS}`}
               >
-                {t('aito.track.retry')}
+                {t(retrying ? 'aito.track.retrying' : 'aito.track.retry')}
               </button>
             </div>
           )}
           {showContent && (
             <div className={entrance ? 'animate-track-fade' : undefined} data-testid="track-content" data-entrance={entrance || undefined}>
               <div className="mt-[32px]">
-                <TrackingRail column={data.column} shipped={data.shipping !== null} animate={entrance} />
+                <TrackingRail column={data.column} shipped={data.shipping !== null} animateFrom={origin} />
               </div>
+              {/* Keyed on the advance, so the card remounts and rises again
+                  for each new stage — the classes alone would not replay. */}
               <section
+                key={advance?.seq ?? 0}
                 data-testid="track-state"
                 className={`relative mt-[32px] rounded-[12px] border px-[16px] py-[16px] transition-colors duration-150 sm:min-h-[132px] sm:px-[24px] sm:py-[16px] ${
                   preOrder ? 'border-aito-line bg-white/[.025]' : 'border-aito-cyan/35 bg-aito-cyan/10'
-                } ${entrance ? 'animate-rise' : ''} ${entrance && finished ? 'animate-track-halo' : ''}`}
-                style={entrance ? ({ ...delayAt(stateAt), '--track-halo-delay': `${stateAt + TRACK_MOTION.halo}ms` } as CSSProperties) : undefined}
+                } ${moving ? 'animate-rise' : ''} ${moving && finished ? 'animate-track-halo' : ''}`}
+                style={moving ? ({ ...delayAt(stateAt), '--track-halo-delay': `${stateAt + TRACK_MOTION.halo}ms` } as CSSProperties) : undefined}
               >
                 <h2 className="text-[19px] font-semibold tracking-tight">{copy.title}</h2>
                 <p className="mt-[8px] text-[15px] text-aito-muted">{copy.sub}</p>
@@ -198,7 +248,7 @@ export function AitoTrackPage() {
           )}
         </main>
         {showContent && <Footer at={entrance ? stateAt + TRACK_MOTION.footer : 0} />}
-        {query.isError && !is404 && <Footer at={TRACK_MOTION.footerAlone} />}
+        {showError && <Footer at={TRACK_MOTION.footerAlone} />}
       </div>
     </div>
   );
