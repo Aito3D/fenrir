@@ -1709,7 +1709,13 @@ async def refresh_oidc_provider_icon(
 # `time` is looked up through the module attribute (not `from time import
 # monotonic`) so a test can swap the whole name for a fake clock.
 _OIDC_AUTHORIZE_RATE_WINDOW_S = 60.0
-_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP = 30
+# On a default install (TRUSTED_PROXY_IPS unset) `_get_client_ip` cannot see
+# past a reverse proxy, so every visitor behind it shares one key — this cap
+# is really a site-wide budget, not a per-visitor one. Sized to match
+# aito.py's public tracking route (`_TRACK_RATE_MAX_CALLS_PER_IP`) rather than
+# a per-client rate, so a busy office reloading the login page doesn't 429
+# itself.
+_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP = 120
 # More host keys than this and the stale ones are swept: only addresses that
 # called inside the window can be live.
 _OIDC_AUTHORIZE_RATE_SWEEP_ABOVE = 2 * _OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP
@@ -1754,7 +1760,10 @@ async def _fetch_oidc_discovery(issuer_url: str) -> dict:
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(discovery_url)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("OIDC discovery document is not a JSON object")
+        return data
 
 
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)

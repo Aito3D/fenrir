@@ -11047,6 +11047,7 @@ replaces an already-signed-in session on any page — the stored session simply 
 SpoolBuddy kiosk link visited from a fresh browser (no token stored yet) still authenticates
 exactly as before. No kiosk marker or dedicated entry point was added (declined) — the
 distinguishing signal is solely "was a token already stored", per the narrowed approval.
+User-approved, narrowed, 2026-09-09.
 
 T-058 — `send_email_otp()` (`POST /2fa/email/send` in `mfa.py`) now gains `response: Response` and,
 right after re-issuing the fresh pre-auth token bound to the existing challenge_id
@@ -11067,4 +11068,35 @@ sent rather than 5 minutes after the password was entered. Nothing else changed:
 token TTL, the OTP code TTL, the cookie's `max_age` value, the response body, status codes, error
 messages, rate limiting and the email content are all untouched, and the cookie is not refreshed
 anywhere else (e.g. on a failed `/2fa/verify`). User-approved 2026-09-09.
-User-approved, narrowed, 2026-09-09.
+
+T-059 — `_fetch_oidc_discovery()` in `mfa.py` now rejects a discovery document whose parsed JSON
+body is not an object: after `data = resp.json()`, `if not isinstance(data, dict): raise
+ValueError("OIDC discovery document is not a JSON object")` before returning it. Previously any
+JSON value the provider's `/.well-known/openid-configuration` responded with 200 for — `null`, a
+list, a string, a number — was returned as-is (the helper is annotated `-> dict` but never checked
+its return value), and both callers' subsequent `.get("...")` call on that value raised an
+uncaught `AttributeError` instead of taking the discovery-failure branch the code around it
+clearly intends. Both callers already wrap the helper call in a bare `except Exception`, so the new
+`ValueError` is caught by the existing handling with no new branches, messages, or codes added.
+User-visible effect: a provider whose discovery endpoint serves a non-object body now surfaces the
+existing 502 "Failed to fetch OIDC discovery document" on `GET /oidc/authorize/{provider_id}`
+(previously an unhandled 500) and redirects to the existing `discovery_failed` code on `GET
+/oidc/callback` (previously `internal_error`, from the outer catch-all). No other route,
+detail message, status code, or redirect code changed. User-approved 2026-09-09.
+
+T-060 — `_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP` in `mfa.py` is raised from 30 to 120, matching
+aito.py's public tracking-route cap (`_TRACK_RATE_MAX_CALLS_PER_IP`). `_oidc_authorize_rate_limited()`
+keys this per-IP sliding-window limiter off `_get_client_ip(request)` (auth.py), which only trusts
+`X-Forwarded-For` when the direct TCP peer is in `_TRUSTED_PROXY_IPS` — an env var that is empty by
+default. On a default install with a public `external_url` sitting behind a reverse proxy, every
+visitor is therefore keyed by the proxy's own address, so the cap is really a site-wide budget
+shared by every visitor rather than a per-visitor one. At 30 calls/minute for the whole site, the
+existing #1589 autologin effect (one `getOIDCAuthorizeUrl` call per unauthenticated `/login` mount)
+meant an office reloading the login page ~30 times a minute could push every visitor onto the 429
+path. The window (60s), the sweep threshold (`2 * cap`), the 429 status code, its body, and the
+`Retry-After: 60` header are all unchanged; only the cap's numeric value and its explanatory comment
+changed. User-visible effect: `GET /oidc/authorize/{id}` now starts answering 429 at 120 calls per
+source address per minute instead of 30. Declined, per the narrowed approval: re-keying the limiter
+off `X-Forwarded-For` regardless of `_TRUSTED_PROXY_IPS`, a startup warning when
+`TRUSTED_PROXY_IPS` is unset, and a dedicated global (not per-key) cap — the limiter's keying and
+logic are otherwise untouched. User-approved, narrowed, 2026-09-09.

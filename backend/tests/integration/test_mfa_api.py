@@ -3766,6 +3766,63 @@ class TestOIDCIssuerUrlTrailingSlash:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "raw_body",
+        ["null", "[1, 2]"],
+        ids=["null-body", "list-body"],
+    )
+    async def test_discovery_non_object_body_returns_502(self, async_client: AsyncClient, raw_body: str):
+        """A 200 discovery response whose body is not a JSON object (e.g.
+        ``null`` or a list) must surface as the existing 502, not a raw
+        AttributeError from ``discovery.get(...)`` crashing as a 500.
+        """
+        from unittest.mock import patch
+
+        import httpx
+
+        admin_token = await _setup_and_login(async_client, "oidcnonobjadm", "oidcnonobjadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DiscoveryNonObject",
+                "issuer_url": "https://idp.discovery-non-object-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        class _MockNonObjectClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(
+                    200,
+                    request=httpx.Request("GET", url),
+                    content=raw_body.encode(),
+                    headers={"content-type": "application/json"},
+                )
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockNonObjectClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_private_authorization_endpoint_rejected(self, async_client: AsyncClient):
         """T-050: a discovery document declaring a private-address
         authorization_endpoint must be rejected the same way an invalid
@@ -3956,9 +4013,18 @@ class TestOIDCAuthorizeRateLimit:
     sliding-window cap as aito.py's public tracking route — see
     routes/mfa.py's `_oidc_authorize_rate_limited`."""
 
+    def test_cap_matches_the_tracking_routes_cap(self):
+        # Both are public, per-IP-keyed limiters that collapse to one
+        # site-wide bucket on a default install (no TRUSTED_PROXY_IPS), so
+        # they're deliberately sized the same. If one changes without the
+        # other, that's drift worth seeing.
+        from backend.app.api.routes import aito as aito_module
+
+        assert mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP == aito_module._TRACK_RATE_MAX_CALLS_PER_IP
+
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_31st_call_from_one_ip_is_429_with_retry_after(self, async_client: AsyncClient, monkeypatch):
+    async def test_cap_plus_one_call_from_one_ip_is_429_with_retry_after(self, async_client: AsyncClient, monkeypatch):
         clock = _Clock()
         monkeypatch.setattr(mfa_module, "time", clock)
 

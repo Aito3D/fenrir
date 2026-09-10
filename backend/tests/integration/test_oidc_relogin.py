@@ -408,6 +408,108 @@ class TestOidcCallbackDiscoveryFailure:
         location = callback_resp.headers.get("location", "")
         assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "raw_body",
+        ["null", "[1, 2]"],
+        ids=["null-body", "list-body"],
+    )
+    async def test_discovery_non_object_body_redirects_to_discovery_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession, raw_body: str
+    ):
+        """A 200 discovery response whose body is not a JSON object (e.g.
+        ``null`` or a list) must land on the existing ``discovery_failed``
+        redirect — not the outer catch-all's ``internal_error`` — and must
+        never reach the token exchange POST.
+        """
+        issuer = "https://idp.discovery-non-object-test.example.com"
+        client_id = "discovery-non-object-client"
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "discnonobjadm",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "discnonobjadm", "password": "AdminPass1!"},
+        )
+        admin_token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DiscoveryNonObjectIdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "test-secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=headers,
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        token_post_called = False
+
+        class _MockHttpxNonObjectClient:
+            """Discovery GET returns a real 200 whose body is not a JSON
+            object, so the helper's own isinstance check is what's under
+            test, not a stubbed exception."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(
+                    200,
+                    request=httpx.Request("GET", url),
+                    content=raw_body.encode(),
+                    headers={"content-type": "application/json"},
+                )
+
+            async def post(self, url, **kwargs):
+                nonlocal token_post_called
+                token_post_called = True
+                raise AssertionError("Token exchange must not be attempted after a discovery failure")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxNonObjectClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"
+        assert not token_post_called, "Token exchange POST must not be attempted after a discovery failure"
+
 
 class TestOidcCallbackDiscoveryEndpointSSRFGuard:
     """T-050: token_endpoint and jwks_uri declared by the discovery document

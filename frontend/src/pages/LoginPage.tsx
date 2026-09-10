@@ -123,6 +123,18 @@ export function LoginPage() {
     armShellIntro();
   }, []);
 
+  // Holds the pending exit-navigation timer id so it can be cancelled if
+  // LoginPage unmounts before the 700ms delay elapses (e.g. the user is
+  // routed away, or navigates elsewhere, before the exit animation finishes).
+  const exitTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (exitTimeoutRef.current !== null) {
+        window.clearTimeout(exitTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Resolve the post-login destination, preferring router state (set by
   // ProtectedRoute when it redirects an unauthed visit) over the sessionStorage
   // stash (used to survive the OIDC provider round-trip, which kills React
@@ -146,8 +158,11 @@ export function LoginPage() {
       return;
     }
     setIsExiting(true);
+    if (exitTimeoutRef.current !== null) {
+      window.clearTimeout(exitTimeoutRef.current);
+    }
     // 0.5s exit animation + ~0.2s empty-screen beat before the dashboard mounts.
-    window.setTimeout(() => navigate(target, { replace: true }), 700);
+    exitTimeoutRef.current = window.setTimeout(() => navigate(target, { replace: true }), 700);
   }
 
   // Credentials step state

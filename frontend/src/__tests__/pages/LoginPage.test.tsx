@@ -299,6 +299,76 @@ describe('LoginPage', () => {
     });
   });
 
+  // T-061: exitToDashboard()'s `window.setTimeout(() => navigate(...), 700)`
+  // used to store no id, so LoginPage registered no cleanup and a pending
+  // exit-navigate could still fire after the component unmounted. This block
+  // deliberately runs OUTSIDE the "login flow" describe above (which forces
+  // reduced motion in its own beforeEach) so the real, un-reduced 700ms timer
+  // arms — setup.ts's global window.matchMedia mock already defaults to
+  // `matches: false`, so no override is needed here.
+  describe('exit-timer cleanup on unmount (T-061)', () => {
+    it('does not navigate after unmount once the 700ms exit timer would have fired', async () => {
+      const user = userEvent.setup();
+      setAuthToken(null);
+      sessionStorage.clear();
+      mockNavigate.mockClear();
+
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'test-token',
+            token_type: 'bearer',
+            user: {
+              id: 1,
+              username: 'validuser',
+              role: 'admin',
+              is_active: true,
+              created_at: new Date().toISOString(),
+            },
+          })
+        )
+      );
+
+      const { unmount, container } = render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'validuser');
+      await user.type(screen.getByLabelText(/Password/i), 'validpass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Positive evidence first: the login succeeded and exitToDashboard()
+      // began its exit choreography (isExiting flips synchronously, before
+      // the 700ms timer fires, swapping in the exit-animation class).
+      await waitFor(() => {
+        expect(container.querySelector('.animate-login-card-out')).toBeInTheDocument();
+      });
+
+      // A successful login also flips `user` in AuthContext, which can
+      // independently trigger LoginPage's unrelated #1889 "already
+      // authenticated" effect (`navigate('/', { replace: true })`) on the
+      // very same tick as exitToDashboard() arms its own 700ms timer. Clear
+      // that out here — same isolation the T-055 guard test above uses —
+      // so the check below is solely about the 700ms exit timer, not this
+      // separate, immediate redirect.
+      mockNavigate.mockClear();
+
+      // Unmount right away — before the 700ms delay elapses — so any pending
+      // timer must be cancelled by LoginPage's cleanup effect, not left to
+      // fire against a gone component.
+      unmount();
+
+      // Wait out (with margin) the 700ms delay the pending timer would have
+      // used to call navigate(). Bounded and deliberate, mirroring the T-055
+      // guard test's own documented 800ms wait for the same timer.
+      await new Promise(r => setTimeout(r, 800));
+
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('2FA flow', () => {
     // Helper: login as a 2FA user and get to the 2FA step
     async function loginWith2FA(twoFAMethods = ['totp', 'backup']) {
