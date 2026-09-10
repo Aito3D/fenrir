@@ -25,6 +25,7 @@ from backend.app.api.routes import aito as aito_routes
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.settings import Settings
 from backend.app.services import openrouter as openrouter_service, pushcut as pushcut_service
+from backend.tests.aito_card_fixture import _create, _create_finished
 
 
 class _FakeClock:
@@ -46,28 +47,6 @@ def _reset_ai_rate_limit():
     aito_routes._ai_rate_limit_calls.clear()
     yield
     aito_routes._ai_rate_limit_calls.clear()
-
-
-async def _create(client, **overrides):
-    payload = {
-        "description": "Pièce en aluminium de 50mm pour Renault Clio",
-        "client_id": "z1",
-        "client_name": "ACME",
-        "client_phone": "87 12 34 56",
-    }
-    payload.update(overrides)
-    # None means "leave the field out" — the create schema validates present
-    # fields, and a test that wants a phoneless client simply never sends one.
-    payload = {k: v for k, v in payload.items() if v is not None}
-    return await client.post("/api/v1/aito/", json=payload)
-
-
-async def _create_finished(client, **overrides):
-    """A hand-made card accepted through the dedicated route, which lands it —
-    with no tasks — unlocked in `finish`. Same helper as test_aito_contacted."""
-    created = (await _create(client, **overrides)).json()
-    accepted = await client.post(f"/api/v1/aito/{created['id']}/quote-status", json={"status": "accepted"})
-    return accepted.json()["project"]
 
 
 def _patch_pickup_message(monkeypatch, fake):

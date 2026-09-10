@@ -8,6 +8,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.settings import Settings
 from backend.app.services.aito_quote_sync import _create_quote, _update_quote
 from backend.app.services.zoho import zoho_service
+from backend.tests.aito_card_fixture import _create, _create_finished
 
 
 async def _set_external_url(db_session, value: str):
@@ -31,27 +32,10 @@ async def _configure_zoho(db) -> None:
 
 
 # ------------------------------------------------------------- pickup SMS
-# Same helpers as test_aito_pickup_sms.py: a hand-made card accepted through
-# the dedicated route lands, with no tasks, unlocked in `finish`, and the
-# route's own `pickup_message` import is what monkeypatch must target.
-
-
-async def _create(client, **overrides):
-    payload = {
-        "description": "Pièce en aluminium de 50mm pour Renault Clio",
-        "client_id": "z1",
-        "client_name": "ACME",
-        "client_phone": "87 12 34 56",
-    }
-    payload.update(overrides)
-    payload = {k: v for k, v in payload.items() if v is not None}
-    return await client.post("/api/v1/aito/", json=payload)
-
-
-async def _create_finished(client, **overrides):
-    created = (await _create(client, **overrides)).json()
-    accepted = await client.post(f"/api/v1/aito/{created['id']}/quote-status", json={"status": "accepted"})
-    return accepted.json()["project"]
+# _create/_create_finished come from aito_card_fixture (same helpers as
+# test_aito_pickup_sms.py uses): a hand-made card accepted through the
+# dedicated route lands, with no tasks, unlocked in `finish`, and the route's
+# own `pickup_message` import is what monkeypatch must target.
 
 
 def _patch_pickup_message(monkeypatch, fake):

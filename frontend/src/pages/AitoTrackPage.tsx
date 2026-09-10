@@ -17,6 +17,12 @@ import type { AitoColumnId } from '../api/client';
 const PARTS_FOLD = 8;
 const PARTS_SHOWN = 6;
 
+// A request accepted but never answered — a stalled mobile connection —
+// must not leave the skeleton spinning forever: abort after this long and
+// fall into the same retryable error state a network failure already shows.
+// Same deadline as the /t entry page's identical call (its CHECK_TIMEOUT_MS).
+const TRACK_TIMEOUT_MS = 10_000;
+
 /** The client's public tracking page: standalone, no app chrome, always
  *  dark (Midnight Blue + cyan) whatever the operator's theme, in the
  *  client's language. The current state is the hero; the brand is a small
@@ -34,7 +40,22 @@ export function AitoTrackPage() {
   const [retrying, setRetrying] = useState(false);
   const query = useQuery({
     queryKey: ['aito-track', token],
-    queryFn: () => api.getAitoTracking(token),
+    // Composes the deadline with TanStack's own abort signal (unmount,
+    // refetch superseded) so both cancellation paths still work: whichever
+    // fires first aborts the request, and the timer is always cleared so a
+    // late abort can never fire after the request has already settled.
+    queryFn: async ({ signal }) => {
+      const controller = new AbortController();
+      const onAbort = () => controller.abort();
+      signal.addEventListener('abort', onAbort);
+      const timeout = window.setTimeout(() => controller.abort(), TRACK_TIMEOUT_MS);
+      try {
+        return await api.getAitoTracking(token, controller.signal);
+      } finally {
+        window.clearTimeout(timeout);
+        signal.removeEventListener('abort', onAbort);
+      }
+    },
     enabled: token !== '',
     retry: false,
     staleTime: 30_000,

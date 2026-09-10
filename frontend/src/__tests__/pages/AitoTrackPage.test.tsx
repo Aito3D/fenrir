@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import i18n from '../../i18n';
-import { screen, within, render as rtlRender } from '@testing-library/react';
+import { screen, within, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -251,6 +251,54 @@ describe('AitoTrackPage', () => {
     expect(calls).toBe(2);
     expect(screen.getByTestId('track-error')).not.toBe(first);
     expect(screen.getByTestId('track-error')).toHaveClass('animate-track-fade');
+  });
+
+  // T-086: a client on a flaky connection whose request is accepted but
+  // never answered used to leave the skeleton pulsing forever — no error
+  // text, no Réessayer, nothing but a reload. The query now aborts after
+  // the same 10 s deadline AitoTrackEntryPage's identical check already
+  // uses, landing on the existing retryable error branch.
+  it('aborts a hung request after the deadline and lands on the retryable error state', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let calls = 0;
+      server.use(
+        http.get('/api/v1/aito/track/:token', async () => {
+          calls += 1;
+          await delay('infinite');
+          return HttpResponse.json(FIXTURE);
+        }),
+      );
+      renderAt('hung');
+      // Comfortably inside the deadline: still the skeleton, no error yet.
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(screen.queryByTestId('track-error')).not.toBeInTheDocument();
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeNull();
+      // Cross the deadline: the abort fires and the catch takes over.
+      await vi.advanceTimersByTimeAsync(1_001);
+      await waitFor(() => expect(screen.getByTestId('track-error')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the deadline timer on a normal success, so no stray abort follows it', async () => {
+    // Timer-count assertions are unreliable here (React's own scheduler can
+    // leave unrelated timers pending), so pin the exact 10 s deadline timer
+    // instead: it must be armed on the request and cleared once it settles.
+    const setSpy = vi.spyOn(window, 'setTimeout');
+    const clearSpy = vi.spyOn(window, 'clearTimeout');
+    mockTrack(FIXTURE);
+    renderAt('fast');
+    await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
+    const call = setSpy.mock.calls.find(([, ms]) => ms === 10_000);
+    expect(call).toBeDefined();
+    const timerId = setSpy.mock.results[setSpy.mock.calls.indexOf(call!)].value;
+    expect(clearSpy.mock.calls.some(([id]) => id === timerId)).toBe(true);
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
   });
 
   it('exposes the timeline to assistive tech and lists the steps on demand', async () => {

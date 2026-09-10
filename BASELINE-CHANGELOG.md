@@ -11262,3 +11262,36 @@ and silently bouncing back to an empty form with a dead token in storage. The `r
 calls `login()` or `checkAuthStatus()`) are both unaffected. A successful `/auth/me` confirmation —
 the common case — is unchanged: `login()` still resolves the same `LoginResponse` it always did.
 User-approved 2026-09-09.
+
+## T-086 — 2026-09-10 — user-approved behavior change
+
+`AitoTrackPage.tsx`'s `useQuery` for the public tracking payload (`api.getAitoTracking(token)`)
+carried no deadline of its own: no `AbortSignal`, and `request()` in `api/client.ts` sets no
+timeout on the underlying `fetch`. A client who opened `/t/<code>` over a flaky mobile connection
+that stalled after the request went out never got a settled promise — `query.isPending` stayed
+`true` forever, so the page showed the pulsing skeleton with no error text and no Réessayer button,
+nothing but a reload to escape. The sibling code-entry page, `AitoTrackEntryPage.tsx`, already
+aborts the identical `getAitoTracking` call after `CHECK_TIMEOUT_MS = 10_000` (T-072).
+
+Fixed by giving the tracking page's `queryFn` the same 10s deadline. It now composes two abort
+paths into one request: TanStack Query's own `signal` (fired on unmount or on a superseded
+refetch) is forwarded to a local `AbortController` via a listener, and a `window.setTimeout` on
+that same controller fires the deadline; whichever comes first aborts the `fetch`, and the timer
+is always cleared in a `finally` block so a request that settles before the deadline can never
+trigger a late, stray abort. The deadline value (10 000 ms) matches `AitoTrackEntryPage.tsx`'s
+`CHECK_TIMEOUT_MS` exactly, defined locally with a comment naming that sibling rather than
+importing it (exporting a non-component constant from a page module would trip the
+`react-refresh/only-export-components` lint rule already flagged as a landmine for this file).
+On abort, `fetch` rejects with a `DOMException` named `AbortError`, which is neither an `ApiError`
+with status `404` nor `429`, so the page's existing `showError = (query.isError || retrying) &&
+!is404 && data === undefined` branch already catches it — no new state, no new text, no new i18n
+key, the same branch `AitoTrackEntryPage`'s abort already lands on.
+
+User-visible effect: a tracking-page load whose request is accepted by the server but never
+answered (a stalled mobile connection) no longer leaves the pulsing skeleton on screen forever;
+after 10s it now shows the same error message and Réessayer button the page already shows for an
+ordinary network failure, and pressing Réessayer issues a fresh request exactly like the existing
+retry path. `AitoTrackEntryPage.tsx` and its own `CHECK_TIMEOUT_MS` timeout are untouched, as are
+the existing 404 (dedicated invalid-link page) and 429 ("too many attempts, wait") branches — a
+request that resolves or rejects inside the 10s window behaves exactly as before. User-approved
+2026-09-10.
