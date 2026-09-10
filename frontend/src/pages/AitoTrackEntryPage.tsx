@@ -13,6 +13,12 @@ import { CARD, delayAt } from '../utils/trackingShell';
 
 type Failure = 'notFound' | 'tooMany' | 'error';
 
+/** A hung check (request accepted, never answered — a flaky mobile link)
+ *  must not leave the squares in "checking" forever with no way out: after
+ *  this long, abort and fall into the same retryable error state a network
+ *  failure already shows. */
+const CHECK_TIMEOUT_MS = 10_000;
+
 /** The front door of client tracking: `/t` with no code. A client holding
  *  the six characters from a quote or a message types them into six
  *  squares; the sixth one sends the code, and a recognised code carries
@@ -51,8 +57,10 @@ export function AitoTrackEntryPage() {
     const seq = ++sequence.current;
     setState('checking');
     setFailure(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
     try {
-      const data = await api.getAitoTracking(value);
+      const data = await api.getAitoTracking(value, controller.signal);
       if (seq !== sequence.current) return;
       queryClient.setQueryData(['aito-track', value], data);
       setState('found');
@@ -61,7 +69,17 @@ export function AitoTrackEntryPage() {
     } catch (err) {
       if (seq !== sequence.current) return;
       setState('error');
-      setFailure(err instanceof ApiError && err.status === 404 ? 'notFound' : err instanceof ApiError && err.status === 429 ? 'tooMany' : 'error');
+      setFailure(
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'error'
+          : err instanceof ApiError && err.status === 404
+            ? 'notFound'
+            : err instanceof ApiError && err.status === 429
+              ? 'tooMany'
+              : 'error',
+      );
+    } finally {
+      window.clearTimeout(timeout);
     }
   };
   const onChange = (next: string) => {

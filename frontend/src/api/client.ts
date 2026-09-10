@@ -7866,8 +7866,10 @@ export const api = {
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
   /** The public tracking page's payload — see routes/aito.py:get_tracking.
-   *  No auth: the token in the URL is the credential. */
-  getAitoTracking: (token: string) => request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`),
+   *  No auth: the token in the URL is the credential. An optional signal
+   *  lets a caller (the /t entry page) abort a hung check on a timeout. */
+  getAitoTracking: (token: string, signal?: AbortSignal) =>
+    request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`, { signal }),
   /** The current tracking link for the project, or null if never generated. */
   getAitoTrackingLink: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-link`),
   /** Mints (or re-mints) the project's tracking token, invalidating any

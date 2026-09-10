@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes import mfa as mfa_module
 from backend.app.models.auth_ephemeral import AuthEphemeralToken
-from backend.app.models.oidc_provider import UserOIDCLink
+from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.user import User
 
 
@@ -1182,3 +1182,221 @@ class TestOidcCallbackTokenExchangeFailure:
         assert location.endswith("oidc_error=no_id_token"), f"Expected no_id_token redirect, got: {location}"
         assert mock_jwt_decode.call_count == 0, "JWT decode must not be attempted when id_token is missing"
         assert not any("jwks" in url for url in get_calls), "JWKS must not be fetched when id_token is missing"
+
+
+# ---------------------------------------------------------------------------
+# T-077: account-resolution failure branches (no auto-create, account
+# deactivated) — both reached only *after* a successful token exchange +
+# id_token validation, so these tests drive the full mocked discovery +
+# token POST + JWKS + RS256-signed id_token path (same fixtures as
+# ``_trigger_oidc_callback`` above), rather than the ``jwt.decode`` patching
+# style used by the M-NEW-6 auto-link-hijack test in test_mfa_api.py.
+# ---------------------------------------------------------------------------
+
+
+class TestOidcCallbackAccountResolutionFailures:
+    """No UserOIDCLink + no auto-create, and an existing link to a
+    deactivated user, must both fail closed without creating a user or
+    issuing a session."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_matching_account_and_auto_create_disabled_redirects_no_linked_account(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """No existing UserOIDCLink, no matching local account by email, and
+        ``auto_create_users=False`` on the provider → redirect to
+        ``oidc_error=no_linked_account`` on ``/login``, and no User row is
+        created."""
+        private_pem, jwks = _make_rsa_key()
+        issuer = "https://idp.noautocreate-test.example.com"
+        client_id = "noautocreate-client"
+        sub = "oidc-sub-no-auto-create"
+        email = "nolink-noautocreate@example.com"
+
+        provider = OIDCProvider(
+            name="NoAutoCreateIdP",
+            issuer_url=issuer,
+            client_id=client_id,
+            _client_secret_enc="test-secret",
+            scopes="openid email profile",
+            is_enabled=True,
+            auto_link_existing_accounts=False,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+        provider_id = provider.id
+
+        nonce = secrets.token_urlsafe(16)
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": sub,
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": email,
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        token_response = {"access_token": "mock-access", "token_type": "Bearer", "id_token": id_token}
+
+        with patch(
+            "backend.app.api.routes.mfa.httpx.AsyncClient",
+            _mock_httpx_factory(discovery, jwks, token_response),
+        ):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        expected_external_url = "http://localhost:5173"
+        assert location.startswith(f"{expected_external_url}/login?oidc_error="), (
+            f"Expected redirect to {expected_external_url}/login?oidc_error=..., got: {location}"
+        )
+        assert location.endswith("oidc_error=no_linked_account"), (
+            f"Expected no_linked_account redirect, got: {location}"
+        )
+        assert "oidc_token=" not in location, "No session must be issued when there is no linked account"
+
+        user_row = await db_session.execute(select(User).where(User.email == email))
+        assert user_row.scalar_one_or_none() is None, "No User row should be created when auto_create_users is False"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_existing_link_to_deactivated_user_redirects_account_inactive(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A ``UserOIDCLink`` that resolves to a local user whose
+        ``is_active`` is False must redirect to ``oidc_error=account_inactive``
+        instead of issuing a session, even though the link itself is valid."""
+        private_pem, jwks = _make_rsa_key()
+        issuer = "https://idp.inactive-test.example.com"
+        client_id = "inactive-client"
+        sub = "oidc-sub-inactive-user"
+        email = "inactive-oidc-user@example.com"
+
+        provider = OIDCProvider(
+            name="InactiveUserIdP",
+            issuer_url=issuer,
+            client_id=client_id,
+            _client_secret_enc="test-secret",
+            scopes="openid email profile",
+            is_enabled=True,
+            auto_link_existing_accounts=False,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        deactivated_user = User(
+            username="oidcInactiveUser",
+            email=email,
+            auth_source="oidc",
+            password_hash=None,
+            role="user",
+            is_active=False,
+        )
+        db_session.add(deactivated_user)
+        await db_session.flush()
+
+        db_session.add(
+            UserOIDCLink(
+                user_id=deactivated_user.id,
+                provider_id=provider.id,
+                provider_user_id=sub,
+                provider_email=email,
+            )
+        )
+
+        nonce = secrets.token_urlsafe(16)
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": sub,
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": email,
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        token_response = {"access_token": "mock-access", "token_type": "Bearer", "id_token": id_token}
+
+        with patch(
+            "backend.app.api.routes.mfa.httpx.AsyncClient",
+            _mock_httpx_factory(discovery, jwks, token_response),
+        ):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        expected_external_url = "http://localhost:5173"
+        assert location.startswith(f"{expected_external_url}/login?oidc_error="), (
+            f"Expected redirect to {expected_external_url}/login?oidc_error=..., got: {location}"
+        )
+        assert location.endswith("oidc_error=account_inactive"), f"Expected account_inactive redirect, got: {location}"
+        assert "oidc_token=" not in location, "No session/exchange token must be issued for a deactivated account"
+
+        exchange_tokens = await db_session.execute(
+            select(AuthEphemeralToken).where(AuthEphemeralToken.token_type == "oidc_exchange")
+        )
+        assert exchange_tokens.scalar_one_or_none() is None, (
+            "No OIDC exchange token row should be created for a deactivated account"
+        )

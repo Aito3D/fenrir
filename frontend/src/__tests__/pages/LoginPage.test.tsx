@@ -297,6 +297,61 @@ describe('LoginPage', () => {
         expect(screen.getByText('Login failed')).toBeInTheDocument();
       });
     });
+
+    // T-073: login() used to ignore checkAuthStatus()'s outcome, so a
+    // transient /auth/me failure right after a valid login still resolved
+    // the mutation and reported success — even though `user` never got set,
+    // meaning ProtectedRoute would immediately bounce the visitor back here.
+    // login() now rejects when the fresh token can't be confirmed, so this
+    // must surface the error toast and stay on the credentials form.
+    it('shows an error toast and stays on the form when /auth/me cannot confirm the fresh login token', async () => {
+      const user = userEvent.setup();
+      setAuthToken(null);
+      sessionStorage.clear();
+
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'test-token',
+            token_type: 'bearer',
+            user: {
+              id: 1,
+              username: 'validuser',
+              role: 'admin',
+              is_active: true,
+              created_at: new Date().toISOString(),
+            },
+          })
+        ),
+        // Every /auth/me attempt fails — checkAuthStatus()'s retries never
+        // confirm the fresh token.
+        http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 }))
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'validuser');
+      await user.type(screen.getByLabelText(/Password/i), 'validpass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Positive evidence first: the error toast appears (empty-message
+      // rejection falls back to the localized generic failure text, same
+      // fallback path already covered above).
+      await waitFor(() => {
+        expect(screen.getByText('Login failed')).toBeInTheDocument();
+      }, { timeout: 4000 });
+
+      // Negative-after: no navigation happened, and the credentials form is
+      // still on screen instead of having announced success and bounced
+      // back to an empty form.
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+    });
   });
 
   // T-061: exitToDashboard()'s `window.setTimeout(() => navigate(...), 700)`

@@ -11216,3 +11216,49 @@ trickling bytes to keep resetting the 10s per-phase timer) now fails with the sa
 `discovery_failed` redirect) once the new 15s overall deadline elapses; a discovery document larger
 than 256 KiB — far beyond any real IdP's few-KB response — now fails the same way instead of being
 buffered and parsed in full. User-approved 2026-09-09.
+
+T-072 — `check()` in `AitoTrackEntryPage.tsx` (the `/t` code-entry page) now arms an
+`AbortController` with a 10s deadline (`CHECK_TIMEOUT_MS`) around the tracking-code fetch, instead
+of awaiting `api.getAitoTracking()` with no deadline at all. `getAitoTracking()` (`api/client.ts`)
+gained a second, optional `signal?: AbortSignal` parameter, forwarded into `request()`'s existing
+`RequestInit` spread (`AitoTrackPage.tsx`'s call site is unchanged and passes no signal). The timer
+is cleared in a `finally` block on both the success and error paths. On abort, `fetch` rejects with
+a `DOMException` named `AbortError`, which is not an `ApiError` and is now matched explicitly ahead
+of the existing 404/429 checks in the `catch` block, so it cannot be misread as either and instead
+falls into the same generic `state='error'` / `failure='error'` branch a definite network failure
+already produced — no new state, no new text, no new i18n key. User-visible effect: a tracking-code
+check whose request is accepted by the server but never answered (a flaky mobile link) no longer
+leaves the six squares frozen in "checking" with the input locked (`readOnly`) forever; after 10s it
+now shows the same retryable error message ("Impossible de vérifier le code" in French) the page
+already shows for an ordinary network failure, the input becomes editable again, and Enter (or a
+fresh six characters) issues a new check, exactly like the existing retry path for any other error.
+A check that succeeds or fails inside the 10s window is unaffected. User-approved 2026-09-09.
+
+T-073 — `AuthContext.tsx`'s `login()` used to ignore whether `checkAuthStatus()` actually confirmed
+the freshly stored token: `setAuthToken(response.access_token, persistence); await
+checkAuthStatus();` then unconditionally returned the `LoginResponse`. `checkAuthStatus()`
+deliberately swallows every non-401 `/auth/me` failure — after its existing 3-attempt retry it
+calls `setUser(null)` and returns normally, by design, so a slow/transient backend blip doesn't
+force a re-login on page reload. But when that swallowing happened right after a fresh password
+login, `login()` still resolved successfully, so `LoginPage.tsx`'s `onSuccess` took the
+`resp.access_token && resp.user` branch, toasted `login.loginSuccess`, and called
+`exitToDashboard()` — while `user` was still `null`, so `ProtectedRoute` immediately bounced the
+browser straight back to `/login`, with a now-unconfirmed token left sitting in storage.
+`checkAuthStatus()` now returns `Promise<UserResponse | null>` — the confirmed user (or `null`) —
+at every one of its existing exit points, with no change to its side effects, its 3-attempt
+retry/backoff, the 401-only token-clearing behavior, or the kiosk `?token=` bootstrap (T-040/T-052).
+`login()` reads that return value: when the response carries a fresh (non-2FA) `access_token` and
+the follow-up `checkAuthStatus()` call returns `null` (token not confirmed), `login()` now clears
+the just-stored token (`setAuthToken(null)`) and throws `new Error('')` — an empty message so
+`LoginPage.tsx`'s existing `onError: (error) => showToast(error.message || t('login.loginFailed'),
+'error')` falls through to the already-shipped, localized generic failure text rather than a new
+ad hoc string. User-visible effect: a login whose follow-up `/auth/me` call keeps failing (all 3
+retries) now shows the same "Login failed" error toast an invalid-password attempt shows, and stays
+on the credentials form with the token cleared for a clean retry — instead of announcing success
+and silently bouncing back to an empty form with a dead token in storage. The `requires_2fa` branch
+(which never called `checkAuthStatus()` before and still doesn't — `login()`'s
+`!response.requires_2fa && response.access_token` guard is untouched) and the OIDC exchange path
+(`loginWithToken()`, used by both 2FA verification and OIDC callback, sets `user` directly and never
+calls `login()` or `checkAuthStatus()`) are both unaffected. A successful `/auth/me` confirmation —
+the common case — is unchanged: `login()` still resolves the same `LoginResponse` it always did.
+User-approved 2026-09-09.

@@ -32,7 +32,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasRedirectedRef = useRef(false);
   const mountedRef = useRef(true);
 
-  const checkAuthStatus = async () => {
+  // Returns the confirmed user (or null if the stored token could not be
+  // validated / auth is disabled / no token present) so callers — namely
+  // login() — can tell a confirmed sign-in apart from one whose token never
+  // got validated (T-073). Side effects (state updates, retry/backoff,
+  // 401-only token clearing, kiosk ?token= handling) are unchanged.
+  const checkAuthStatus = async (): Promise<UserResponse | null> => {
     try {
       // Bootstrap: if URL has ?token= param, store it session-only first and
       // strip it from the URL. Allows SpoolBuddy kiosk to pass an API key via
@@ -59,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const status = await api.getAuthStatus();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return null;
       setAuthEnabled(status.auth_enabled);
       setRequiresSetup(status.requires_setup);
 
@@ -82,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               currentUser = await api.getCurrentUser();
               break;
             } catch (err) {
-              if (!mountedRef.current) return;
+              if (!mountedRef.current) return null;
               // 401 invalid-token → genuinely logged out. `request()` has
               // already cleared the token; stop retrying.
               if (err instanceof ApiError && err.status === 401) {
@@ -96,13 +101,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
           }
-          if (!mountedRef.current) return;
+          if (!mountedRef.current) return null;
           if (currentUser) {
             setUser(currentUser);
             // Persist kiosk token only after the server confirms it is valid.
             if (urlToken && token === urlToken) {
               setAuthToken(urlToken, 'persistent');
             }
+            return currentUser;
           } else {
             // No user: either a definitive 401 (token already cleared by
             // request()) or transient failures exhausted their retries. In the
@@ -112,18 +118,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setAuthToken(null);
             }
             setUser(null);
+            return null;
           }
         } else {
           setUser(null);
+          return null;
         }
       } else {
         // Auth not enabled, allow access
         setUser(null);
+        return null;
       }
     } catch {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return null;
       setAuthEnabled(false);
       setUser(null);
+      return null;
     } finally {
       if (mountedRef.current) {
         setLoading(false);
@@ -178,7 +188,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await api.login({ username, password });
     if (!response.requires_2fa && response.access_token) {
       setAuthToken(response.access_token, persistence);
-      await checkAuthStatus();
+      const confirmedUser = await checkAuthStatus();
+      // T-073: checkAuthStatus() swallows transient /auth/me failures (by
+      // design, so a slow reload doesn't lose a valid session — see the
+      // comment above). But here, right after a fresh login, an unconfirmed
+      // token means the caller is about to report success on a session that
+      // never actually took. Reject so LoginPage's onError runs instead of
+      // treating this response as a successful login, and drop the token —
+      // otherwise it's left sitting in storage for a form the visitor was
+      // just told to retry.
+      if (!confirmedUser) {
+        setAuthToken(null);
+        throw new Error('');
+      }
     }
     return response;
   };

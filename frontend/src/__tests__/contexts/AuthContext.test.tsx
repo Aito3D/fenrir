@@ -11,7 +11,7 @@ import { server } from '../mocks/server';
 import { AuthProvider, useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { getAuthToken, setAuthToken, type Permission } from '../../api/client';
+import { getAuthToken, setAuthToken, type LoginResponse, type Permission } from '../../api/client';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -852,6 +852,121 @@ describe('AuthContext', () => {
       expect(localStorage.getItem('auth_token')).toBeNull();
 
       expect(window.location.search).not.toContain('token=');
+    });
+  });
+
+  // T-073: login() used to ignore checkAuthStatus()'s outcome entirely — it
+  // stored the fresh token and resolved the LoginResponse regardless of
+  // whether the follow-up /auth/me call ever confirmed that token. A
+  // transient /auth/me failure therefore reported a successful login that
+  // hadn't actually taken (user still null), and LoginPage bounced the
+  // visitor straight back to the credentials form. checkAuthStatus() now
+  // reports the confirmed user (or null) and login() rejects when a fresh
+  // token can't be confirmed, clearing the unconfirmed token.
+  describe('login() confirms the fresh token before resolving (T-073)', () => {
+    beforeEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+    });
+
+    it('rejects and clears the token when /auth/me keeps failing after a fresh login', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'fresh-token',
+            token_type: 'bearer',
+            user: { id: 1, username: 'alice', is_active: true, permissions: [], groups: [] },
+          })
+        ),
+        // checkAuthStatus() retries transient failures up to 3 times — fail
+        // every attempt so the retries are exhausted with no confirmed user.
+        http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 }))
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let caught: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.login('alice', 'password');
+        } catch (err) {
+          caught = err as Error;
+        }
+      });
+
+      // Positive evidence first: login() actually threw.
+      expect(caught).toBeInstanceOf(Error);
+      // Negative-after: no user was set, and the unconfirmed token was
+      // cleared rather than left sitting in storage for a retry.
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+    });
+
+    it('resolves and sets the user when /auth/me confirms the fresh token', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'fresh-token',
+            token_type: 'bearer',
+            user: { id: 1, username: 'alice', is_active: true, permissions: [], groups: [] },
+          })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let response: LoginResponse | undefined;
+      await act(async () => {
+        response = await result.current.login('alice', 'password');
+      });
+
+      expect(response?.access_token).toBe('fresh-token');
+      expect(result.current.user?.username).toBe('alice');
+    });
+
+    it('resolves without calling /auth/me when the login response requires 2FA', async () => {
+      let meCalled = false;
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'pre-token',
+            two_fa_methods: ['totp'],
+          })
+        ),
+        http.get('/api/v1/auth/me', () => {
+          meCalled = true;
+          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let response: LoginResponse | undefined;
+      await act(async () => {
+        response = await result.current.login('alice', 'password');
+      });
+
+      expect(response?.requires_2fa).toBe(true);
+      expect(meCalled).toBe(false);
     });
   });
 });
