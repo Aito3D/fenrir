@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import secrets
 import time
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -70,6 +71,23 @@ class _MockResp:
 
     def raise_for_status(self):
         pass
+
+
+class _MockErrorResp:
+    """A non-2xx httpx-response stand-in for the token endpoint, with an
+    optional non-JSON body (``json_data=None`` makes ``.json()`` raise, the
+    same as httpx does on a malformed/empty body)."""
+
+    def __init__(self, status_code: int, json_data: dict | None = None, text: str = ""):
+        self.status_code = status_code
+        self.is_success = False
+        self._json_data = json_data
+        self.text = text if json_data is None else str(json_data)
+
+    def json(self):
+        if self._json_data is None:
+            raise ValueError("Response body is not valid JSON")
+        return self._json_data
 
 
 def _mock_httpx_factory(discovery_doc, jwks_data, token_response):
@@ -541,3 +559,298 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
             f"Expected invalid_discovery_document redirect, got: {location}"
         )
         assert post_calls == [], "token endpoint POST must not have been attempted"
+
+
+class TestOidcCallbackTokenExchangeFailure:
+    """T-056: oidc_callback()'s post-discovery failure branches.
+
+    Covers the branches left untested after T-050 added the discovery-document
+    SSRF guard (private-IP token_endpoint/jwks_uri already covered by
+    ``TestOidcCallbackDiscoveryEndpointSSRFGuard``):
+
+    - discovery document missing ``token_endpoint`` or ``jwks_uri`` entirely
+      (a plain scheme/shape validation, distinct from the SSRF guard)
+    - the token-exchange POST raising a network error
+    - the token endpoint responding with a non-2xx status and a JSON error body
+    - the token endpoint responding with a non-2xx status and a non-JSON body
+
+    Each case must redirect to the documented error code and must not
+    proceed past the step under test (no token POST for discovery failures,
+    no id_token/JWKS handling for token-exchange failures).
+    """
+
+    async def _setup_provider_and_state(self, async_client: AsyncClient, db_session: AsyncSession, *, tag: str):
+        issuer = f"https://idp.{tag}-test.example.com"
+        client_id = f"{tag}-client"
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": f"{tag}adm",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": f"{tag}adm", "password": "AdminPass1!"},
+        )
+        admin_token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"{tag}-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "test-secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=headers,
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+        return issuer, state
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_missing_token_endpoint_redirects_to_invalid_discovery_document(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="notokenep")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            # token_endpoint intentionally absent.
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        post_calls: list[str] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                post_calls.append(url)
+                raise AssertionError("token exchange POST must never be attempted")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith("oidc_error=invalid_discovery_document"), (
+            f"Expected invalid_discovery_document redirect, got: {location}"
+        )
+        assert post_calls == [], "token endpoint POST must not have been attempted"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_missing_jwks_uri_redirects_to_invalid_discovery_document(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="nojwksuri")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            # jwks_uri intentionally absent.
+        }
+
+        post_calls: list[str] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                post_calls.append(url)
+                raise AssertionError("token exchange POST must never be attempted")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith("oidc_error=invalid_discovery_document"), (
+            f"Expected invalid_discovery_document redirect, got: {location}"
+        )
+        assert post_calls == [], "token endpoint POST must not have been attempted"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_network_error_redirects_to_token_exchange_network_error(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="netfail")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                raise httpx.ConnectError("simulated connection failure")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith("oidc_error=token_exchange_network_error"), (
+            f"Expected token_exchange_network_error redirect, got: {location}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_non_2xx_json_error_body_redirects_with_urlencoded_code(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="jsonerr")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        # A space in the error code proves the redirect target is actually
+        # URL-encoded (safe="") rather than interpolated raw, which would
+        # otherwise let a malicious IdP inject extra query parameters.
+        oidc_error_code = "invalid grant"
+        expected_suffix = f"oidc_error=token_exchange_{urllib.parse.quote(oidc_error_code, safe='')}"
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                return _MockErrorResp(
+                    400,
+                    {"error": oidc_error_code, "error_description": "The authorization code is invalid."},
+                )
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith(expected_suffix), f"Expected {expected_suffix!r} redirect, got: {location}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_non_2xx_non_json_body_redirects_with_status_code(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="nonjsonerr")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                # A non-JSON body (e.g. an upstream proxy's plain-text error
+                # page) falls through the inner try/except, so oidc_err stays
+                # empty and the redirect falls back to the HTTP status code.
+                return _MockErrorResp(503, None, text="<html>Service Unavailable</html>")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith("oidc_error=token_exchange_503"), (
+            f"Expected token_exchange_503 redirect, got: {location}"
+        )

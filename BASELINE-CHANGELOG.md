@@ -11047,4 +11047,24 @@ replaces an already-signed-in session on any page — the stored session simply 
 SpoolBuddy kiosk link visited from a fresh browser (no token stored yet) still authenticates
 exactly as before. No kiosk marker or dedicated entry point was added (declined) — the
 distinguishing signal is solely "was a token already stored", per the narrowed approval.
+
+T-058 — `send_email_otp()` (`POST /2fa/email/send` in `mfa.py`) now gains `response: Response` and,
+right after re-issuing the fresh pre-auth token bound to the existing challenge_id
+(`fresh_token = await create_pre_auth_token(db, username, challenge_id=challenge_id)`), re-sets the
+HttpOnly `2fa_challenge` binding cookie for that same challenge_id with the exact attributes
+`_issue_2fa_challenge()` already uses (httponly, `secure=` derived from the request scheme,
+samesite="lax", `max_age=300`, `path="/api/v1/auth/2fa"`) via a new shared helper,
+`_set_2fa_challenge_cookie()`, extracted from `_issue_2fa_challenge()` without changing what that
+function emits. Previously the cookie was only ever written once, by `_issue_2fa_challenge()` at
+login time, so its 300-second lifetime was always measured from login — while the re-issued
+pre-auth token from `/2fa/email/send` got a full fresh `PRE_AUTH_TOKEN_TTL` (5 minutes) and the OTP
+email itself advertises a 10-minute code lifetime. A user who logged in, picked the email method,
+and did not submit the code within 5 minutes of the *login* (even if well within 5 minutes of the
+code being *sent*) got a 401 "Invalid or expired pre-auth token" on `/2fa/verify` and had to
+re-enter username and password. User-visible effect: the `2fa_challenge` cookie's expiry is now
+extended on every OTP send, so the email-2FA step stays usable for 5 minutes after the code is
+sent rather than 5 minutes after the password was entered. Nothing else changed: the pre-auth
+token TTL, the OTP code TTL, the cookie's `max_age` value, the response body, status codes, error
+messages, rate limiting and the email content are all untouched, and the cookie is not refreshed
+anywhere else (e.g. on a failed `/2fa/verify`). User-approved 2026-09-09.
 User-approved, narrowed, 2026-09-09.

@@ -268,6 +268,27 @@ async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: s
     return token
 
 
+def _set_2fa_challenge_cookie(response: Response, raw_request: Request, challenge_id: str) -> None:
+    """Set (or refresh) the HttpOnly ``2fa_challenge`` cookie that binds a pre-auth token.
+
+    Shared by ``_issue_2fa_challenge`` (login/oidc_exchange) and
+    ``send_email_otp`` (T-058: re-sending the code refreshes the cookie's
+    max_age alongside the fresh pre-auth token it re-issues).
+    """
+    response.set_cookie(
+        key="2fa_challenge",
+        value=challenge_id,
+        httponly=True,
+        # only transmit over HTTPS so the binding cookie can't be intercepted
+        # on mixed-content deployments.  Falls back to False on plain HTTP so
+        # tests and local development still work.
+        secure=raw_request.url.scheme == "https",
+        samesite="lax",
+        max_age=300,
+        path="/api/v1/auth/2fa",
+    )
+
+
 async def _issue_2fa_challenge(
     db: AsyncSession,
     response: Response,
@@ -287,18 +308,7 @@ async def _issue_2fa_challenge(
     """
     challenge_id = secrets.token_urlsafe(32)
     pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
-    response.set_cookie(
-        key="2fa_challenge",
-        value=challenge_id,
-        httponly=True,
-        # only transmit over HTTPS so the binding cookie can't be intercepted
-        # on mixed-content deployments.  Falls back to False on plain HTTP so
-        # tests and local development still work.
-        secure=raw_request.url.scheme == "https",
-        samesite="lax",
-        max_age=300,
-        path="/api/v1/auth/2fa",
-    )
+    _set_2fa_challenge_cookie(response, raw_request, challenge_id)
     methods: list[str] = []
     if totp_enabled:
         methods.append("totp")
@@ -1088,6 +1098,7 @@ async def disable_email_otp(
 @router.post("/2fa/email/send")
 async def send_email_otp(
     request: Request,
+    response: Response,
     body: EmailOTPSendRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -1170,6 +1181,11 @@ async def send_email_otp(
     # Re-issue a fresh pre-auth token bound to the same cookie so the binding
     # carries forward through the email → verify step.
     fresh_token = await create_pre_auth_token(db, username, challenge_id=challenge_id)
+
+    # T-058: refresh the binding cookie's max_age alongside the fresh token so
+    # the 5-minute window restarts from "code sent" rather than "logged in".
+    if challenge_id:
+        _set_2fa_challenge_cookie(response, request, challenge_id)
 
     # Return the fresh pre-auth token so the frontend can proceed to verify
     return {"message": "Code sent to your email address", "pre_auth_token": fresh_token}

@@ -83,6 +83,35 @@ describe('LoginPage', () => {
   });
 
   describe('login flow', () => {
+    // T-055: the successful-login tests below drive exitToDashboard(), which
+    // (per LoginPage.tsx) either navigates synchronously under reduced motion
+    // or, by default, schedules a raw `window.setTimeout(..., 700)` that is
+    // never cleared on unmount. Left alone, that real timer survives into
+    // later tests in this file and can call mockNavigate mid-test, corrupting
+    // an unrelated assertion (see the T-038 test below and its own comment).
+    // Force reduced motion here — same mechanism the T-037 block below uses —
+    // so exitToDashboard() always takes the synchronous branch and leaves no
+    // pending timer to leak.
+    let originalMatchMedia: typeof window.matchMedia;
+
+    beforeEach(() => {
+      originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => true,
+      })) as typeof window.matchMedia;
+    });
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+    });
+
     it('submits login request with credentials', async () => {
       const user = userEvent.setup();
       let loginCalled = false;
@@ -167,6 +196,34 @@ describe('LoginPage', () => {
 
       // Release the login request
       resolveLogin!();
+    });
+
+    // T-055 regression guard: without the reduced-motion hardening above, the
+    // previous two tests' successful logins would each leave a raw, uncleared
+    // 700ms window.setTimeout pending (see LoginPage.tsx's exitToDashboard),
+    // which fires during whichever later test happens to still be running and
+    // pollutes mockNavigate's call list (confirmed: this exact test fails if
+    // the beforeEach/afterEach above is removed). Waiting out that window here
+    // and asserting no stray navigate call proves nothing leaked across the
+    // test boundary. The 800ms real-time wait is deliberate and bounded — it
+    // mirrors the hazard's own timer plus margin, not a general sleep.
+    it('does not leak a navigate() call from an earlier successful login', async () => {
+      // Let the previous test's own render settle first: a successful login's
+      // checkAuthStatus() round-trip can still be resolving a follow-up
+      // render (the unrelated #1889 "already authenticated" effect) a few ms
+      // after the test function itself returned — that's expected, near-
+      // instant, and not the hazard T-055 is guarding against. Clear it out
+      // before arming the real check.
+      await new Promise(r => setTimeout(r, 50));
+      mockNavigate.mockClear();
+      // Now wait out (with margin) LoginPage's own 700ms exitToDashboard
+      // delay. If the reduced-motion hardening above weren't applied, the
+      // previous tests' successful logins would each leave a raw, uncleared
+      // window.setTimeout(..., 700) pending, which would fire in here and
+      // call navigate() again — this is the actual T-055 regression this
+      // test guards against (confirmed: fails without the hardening above).
+      await new Promise(r => setTimeout(r, 800));
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
 
     // T-038: loginMutation.onError (LoginPage.tsx `showToast(error.message ||

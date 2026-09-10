@@ -1899,6 +1899,140 @@ class TestEmailOTPSendVerify:
         assert observed.get("no_running_loop") is True, "send_email's thread must have no running asyncio loop"
 
 
+class TestEmailOTPSendCookieRefresh:
+    """T-058: POST /2fa/email/send must re-set the 2fa_challenge cookie (same
+    binding value, same attributes, fresh max_age=300) alongside the fresh
+    pre-auth token it issues, so the 5-minute binding window restarts from
+    "code sent" rather than "logged in"."""
+
+    async def _enable_email_otp_and_login(
+        self, client: AsyncClient, db_session: AsyncSession, username: str, password: str
+    ) -> str:
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(client, username, password)
+
+        result = await db_session.execute(sa_select(User).where(User.username == username))
+        user = result.scalar_one()
+        user.email = f"{username}@example.com"
+        await db_session.commit()
+
+        setup_code = "123456"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username=username,
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+        return token
+
+    @staticmethod
+    def _parse_2fa_challenge_cookie(headers):
+        from http.cookies import SimpleCookie
+
+        for raw in headers.get_list("set-cookie"):
+            jar: SimpleCookie = SimpleCookie()
+            jar.load(raw)
+            if "2fa_challenge" in jar:
+                return jar["2fa_challenge"]
+        raise AssertionError(f"no 2fa_challenge Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_send_refreshes_2fa_challenge_cookie(self, async_client: AsyncClient, db_session: AsyncSession):
+        """The send response's Set-Cookie for 2fa_challenge must carry the same
+        binding value as the login cookie, with the same path/httponly/samesite
+        and a fresh max_age=300."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        await self._enable_email_otp_and_login(async_client, db_session, "cookierefresh1", "cookierefresh1a")
+
+        login_resp = await async_client.post(
+            LOGIN_URL, json={"username": "cookierefresh1", "password": "Cookierefresh1a!"}
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        login_cookie = self._parse_2fa_challenge_cookie(login_resp.headers)
+        pre_auth_token = login_resp.json()["pre_auth_token"]
+
+        smtp_mock = MagicMock()
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email"),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert send_resp.status_code == 200, send_resp.text
+
+        send_cookie = self._parse_2fa_challenge_cookie(send_resp.headers)
+        assert send_cookie.value == login_cookie.value, "cookie binding value must be unchanged by the refresh"
+        assert send_cookie["path"] == login_cookie["path"] == "/api/v1/auth/2fa"
+        assert send_cookie["max-age"] == login_cookie["max-age"] == "300"
+        assert send_cookie["samesite"] == login_cookie["samesite"]
+        assert bool(send_cookie["httponly"]) == bool(login_cookie["httponly"]) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_send_cookie_refresh_lets_late_verify_succeed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """End-to-end proof of the user-visible fix: once the login-time cookie
+        is gone (simulating that its max_age=300 window, timed from login, has
+        elapsed), the cookie re-issued by /2fa/email/send is what /2fa/verify
+        needs to succeed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        await self._enable_email_otp_and_login(async_client, db_session, "cookierefresh2", "cookierefresh2a")
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "cookierefresh2", "cookierefresh2a")
+
+        captured: dict[str, str] = {}
+        smtp_mock = MagicMock()
+
+        def _capture(smtp_settings, to_email, subject, body_text, body_html):
+            import re
+
+            m = re.search(r"login code is: (\d{6})", body_text)
+            if m:
+                captured["otp"] = m.group(1)
+
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert send_resp.status_code == 200, send_resp.text
+        fresh_token = send_resp.json()["pre_auth_token"]
+        refreshed_cookie = self._parse_2fa_challenge_cookie(send_resp.headers)
+
+        # Simulate the login-time cookie having already expired (dropped from
+        # the client's jar) by the time the user finally types the code, and
+        # keep only the cookie that /2fa/email/send re-issued.
+        async_client.cookies.delete("2fa_challenge", path="/api/v1/auth/2fa")
+        async_client.cookies.set("2fa_challenge", refreshed_cookie.value, path="/api/v1/auth/2fa")
+
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": fresh_token, "method": "email", "code": captured["otp"]},
+        )
+        assert verify_resp.status_code == 200, verify_resp.text
+        assert verify_resp.json()["user"]["username"] == "cookierefresh2"
+
+
 # ===========================================================================
 # OIDC end-to-end (coverage gap C4)
 # ===========================================================================
