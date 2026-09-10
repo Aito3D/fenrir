@@ -119,6 +119,15 @@ class _MockErrorResp:
             raise ValueError("Response body is not valid JSON")
         return self._json_data
 
+    async def aiter_bytes(self):
+        # T-089: the token exchange is now read via client.stream(), so the
+        # mock must support the streamed-bytes read too — mirror whatever
+        # .json()/.text would have produced.
+        if self._json_data is None:
+            yield self.text.encode()
+        else:
+            yield json.dumps(self._json_data).encode()
+
 
 def _mock_httpx_factory(discovery_doc, jwks_data, token_response):
     class _MockHttpxClient:
@@ -140,6 +149,8 @@ def _mock_httpx_factory(discovery_doc, jwks_data, token_response):
             return _MockResp(token_response)
 
         def stream(self, method, url, **kwargs):
+            if method == "POST":
+                return _StreamCtx(self.post(url, **kwargs))
             return _StreamCtx(self.get(url, **kwargs))
 
     return _MockHttpxClient
@@ -443,6 +454,8 @@ class TestOidcCallbackDiscoveryFailure:
                 return httpx.Response(500, request=httpx.Request("GET", url), json={})
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpx500Client):
@@ -485,6 +498,8 @@ class TestOidcCallbackDiscoveryFailure:
                 return httpx.Response(500, request=httpx.Request("GET", url), json={})
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpx500Client):
@@ -552,6 +567,8 @@ class TestOidcCallbackDiscoveryFailure:
                 raise AssertionError("Token exchange must not be attempted after a discovery failure")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxNonObjectClient):
@@ -730,6 +747,8 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
                 raise AssertionError("token exchange POST must never be attempted")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -778,6 +797,8 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
                 raise AssertionError("token exchange POST must never be attempted")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -846,6 +867,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 raise AssertionError("token exchange POST must never be attempted")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -895,6 +918,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 raise AssertionError("token exchange POST must never be attempted")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -941,6 +966,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 raise httpx.ConnectError("simulated connection failure")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -994,6 +1021,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 )
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -1040,6 +1069,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 return _MockErrorResp(503, None, text="<html>Service Unavailable</html>")
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -1082,6 +1113,10 @@ class TestOidcCallbackTokenExchangeFailure:
             def json(self):
                 raise ValueError("Response body is not valid JSON")
 
+            async def aiter_bytes(self):
+                # T-089: the token exchange is now read via client.stream().
+                yield self.text.encode()
+
         get_calls: list[str] = []
 
         class _MockHttpxClient:
@@ -1102,6 +1137,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 return _Mock2xxNonJsonResp()
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -1162,6 +1199,8 @@ class TestOidcCallbackTokenExchangeFailure:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with (
@@ -1486,6 +1525,8 @@ class TestOidcCallbackTokenFormOmissions:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -1577,6 +1618,8 @@ class TestOidcCallbackTokenFormOmissions:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):

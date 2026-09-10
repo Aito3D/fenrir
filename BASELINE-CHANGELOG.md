@@ -11295,3 +11295,121 @@ retry path. `AitoTrackEntryPage.tsx` and its own `CHECK_TIMEOUT_MS` timeout are 
 the existing 404 (dedicated invalid-link page) and 429 ("too many attempts, wait") branches — a
 request that resolves or rejects inside the 10s window behaves exactly as before. User-approved
 2026-09-10.
+
+## T-088 — 2026-09-10 — user-approved behavior change
+
+`LoginPage.tsx`'s "Resend code" handler on the email-2FA step cleared `emailOTPSent` back to
+`false` *before* firing `sendEmailOTPMutation.mutate()`. `sendEmailOTPMutation.onError` only shows
+a toast — it never restored the flag — while the code input's `disabled` prop and the submit
+button's `disabled` prop both read `twoFAMethod === 'email' && !emailOTPSent`. A user who tapped
+Resend and hit the backend's rate limit (`MAX_EMAIL_OTP_SENDS = 3` per 10 minutes, `mfa.py:448`,
+a 429) got an error toast and a permanently disabled code field: the OTP already sitting in their
+inbox was still valid for minutes, but they could no longer type it, and the only remaining
+control ("Send code" is hidden once `emailOTPSent` is true, so the visible control was "Resend
+code" itself) kept 429ing for the rest of the rate-limit window.
+
+Fixed by no longer clearing `emailOTPSent` in the Resend `onClick` — it now only calls
+`sendEmailOTPMutation.mutate()`. `sendEmailOTPMutation.onSuccess` already sets `emailOTPSent(true)`
+on every successful send (first or resend), so the flag transitioning correctly on success was
+never in question; the only change is that a *failed* resend no longer touches the flag at all,
+leaving it at whatever value it already had (`true`, since Resend only renders once a prior send
+succeeded).
+
+User-visible effect: after a failed resend the 2FA code field stays enabled and the "code sent"
+instructions remain, instead of reverting to the not-sent state. The first-send path is
+unaffected — `emailOTPSent` starts `false` and a failed *first* send still leaves the field
+disabled exactly as before, since nothing sets it to `true` until `onSuccess` fires. TOTP and
+backup-code 2FA methods don't read `emailOTPSent` at all and are untouched. User-approved
+2026-09-10.
+
+## T-087 — 2026-09-10 — user-approved behavior change
+
+`_track_rate_limited` (`routes/aito.py`) keys its per-IP caps on `_get_client_ip`
+(`auth.py`), which the docstring above it called "proxy-aware": behind nginx,
+`request.client.host` is the proxy for every visitor, so the address it returns is
+supposed to be the real caller unwrapped from `X-Forwarded-For`. But `_get_client_ip`
+only does that unwrapping when `TRUSTED_PROXY_IPS` is set (`auth.py:153`), and that env
+var is empty by default. Any install that publishes the tracking page through a reverse
+proxy without setting it had every visitor resolve to the proxy's one address, so the
+per-IP miss cap (`_TRACK_RATE_MAX_MISSES_PER_IP = 30`) silently collapsed into a second,
+much tighter, site-wide budget — 20x tighter than the 600-miss global cap that was meant
+to be the site-wide one. Thirty unknown/expired codes in a minute (a link scanner
+walking an old link, one client mistyping) tripped it, and since a tripped cap answers
+every request with 429 including hits, every real client's tracking page answered 429
+"Trop de tentatives" for the rest of the window.
+
+Fixed by detecting the collapsed bucket in `_track_rate_limited`: when
+`auth_routes._TRUSTED_PROXY_IPS` is empty (read through the `auth` module at call time,
+not imported by value, so tests can monkeypatch it) but the request still carries an
+`X-Forwarded-For` header, the per-IP MISS cap is suspended for that call — no miss is
+reserved against it either — and the request falls through to the global miss cap alone.
+The per-IP CALLS cap (`_TRACK_RATE_MAX_CALLS_PER_IP = 120`), still keyed on the same
+collapsed proxy address, is untouched and keeps bounding one address's total traffic.
+`_track_rate_hit`'s release on a real code already tolerated a missing per-IP
+reservation (`contextlib.suppress(ValueError)`), so no change was needed there.
+
+User-visible change, quoting the approved finding verbatim: "the tracking route's
+effective throttle changes on proxied installs — clients who are 429'd today after 30
+site-wide misses would be served." Trade-off, disclosed and accepted: on a genuinely
+DIRECT install (no proxy at all), a client can send its own `X-Forwarded-For` header to
+trigger the same fallback and escape the 30-miss per-IP cap, which raises that one
+address's own ceiling to the 120-call cap instead. The operator fix for both the
+collapsed bucket and the direct-install spoof is the same: set `TRUSTED_PROXY_IPS`.
+
+Unaffected: installs with `TRUSTED_PROXY_IPS` configured (the existing trusted-proxy
+unwrap path, and its test, are untouched); direct installs that never receive an
+`X-Forwarded-For` header (the 31st miss from one address still 429s exactly as before);
+the per-IP CALLS cap; and the global miss cap — both still apply at their existing
+values regardless of the collapsed-bucket fallback. No cap constant changed. User-approved
+2026-09-10.
+
+## T-089 — 2026-09-10 — user-approved behavior change
+
+`oidc_callback()`'s token-exchange POST (`routes/mfa.py`) and its JWKS GET carried the
+same hazard T-071 fixed for the discovery fetch, but neither had received that fix:
+`httpx.AsyncClient(timeout=15)`/`timeout=10` bounds each phase (connect/read/write/pool)
+independently, not the call as a whole, and both bodies were read via the old
+non-streaming `client.post()`/`client.get()` + `.json()`, buffering the whole response
+before anything validated it. An IdP (or an overloaded/hostile one) that trickled a byte
+every few seconds to either endpoint could hold the unauthenticated `/oidc/callback`
+request open indefinitely — each stuck request pinning a task and its `Depends(get_db)`
+session — and a multi-megabyte token or JWKS body would be buffered whole into memory
+before parsing.
+
+Fixed by extracting a new helper, `_bounded_fetch(method, url, *, timeout_s, max_bytes,
+**kwargs)`, next to `_fetch_oidc_discovery()` — it streams the request via
+`client.stream(method, url, **kwargs)` and caps the bytes read exactly the way
+`_fetch_oidc_discovery` already does (reusing `_OIDC_DISCOVERY_MAX_BYTES` as the default
+cap, looked up at call time so tests can monkeypatch it — not bound as a Python
+default-argument value, which would freeze the original module-load-time value), wrapped
+in `asyncio.wait_for(..., timeout=timeout_s)` for the overall deadline. It returns
+`(status_code, body)` instead of a parsed response so both call sites keep their exact
+existing success/error handling: the token-exchange site still parses `error`/
+`error_description` out of a non-2xx JSON body (or falls back to the first 200 bytes of
+raw text) and still checks for a missing `id_token`; the JWKS site still fetches the key
+set before `PyJWKClient`/`jwt.decode`. Two new named constants, `_OIDC_TOKEN_TIMEOUT_S =
+15.0` and `_OIDC_JWKS_TIMEOUT_S = 10.0`, mirror the per-phase numbers each site already
+used — the only new behavior is enforcing that number as an OVERALL deadline (previously
+only a per-phase one) and capping the body size. `PyJWKClient`/`fetch_data` and the
+`jwt.decode` call that follows the JWKS fetch are unchanged.
+
+User-visible change, quoting the approved finding verbatim: "a very slow or very large
+IdP response now redirects to `/login?oidc_error=token_exchange_network_error` (or
+`token_validation_failed`) instead of hanging." Concretely: a token endpoint that
+trickles past 15s, or whose body exceeds the 256 KiB cap, now redirects to
+`token_exchange_network_error` (previously it would eventually succeed or hang); a JWKS
+endpoint that trickles past 10s, exceeds the cap, or returns a non-2xx status (the
+streamed helper doesn't call `raise_for_status()` itself, so the JWKS call site now
+checks the status code explicitly) now redirects to `token_validation_failed`.
+
+Unaffected: fast/normal IdPs — both endpoints' existing timeout *values* are untouched,
+only how they're enforced; the discovery fetch, which already had this guard (T-071); the
+error-code mapping on every existing path (non-2xx token response, non-JSON token body,
+missing `id_token`, JWT validation failure) — all unchanged, just now fed by streamed
+bytes instead of a buffered response object. `test_mfa_api.py` gained
+`TestOIDCTokenAndJWKSFetchGuards` (deadline/oversized-body/non-2xx-status coverage for
+both endpoints); pre-existing full-callback tests in `test_mfa_api.py` and
+`test_oidc_relogin.py` needed their hand-rolled `httpx.AsyncClient` mocks' `stream()`
+methods updated to route `POST` calls to their existing `post()` fakes (previously
+`stream()` was only ever called for discovery `GET`s) — no assertions were weakened, only
+the mock plumbing was extended to match the new call shape. User-approved 2026-09-10.

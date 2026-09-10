@@ -1823,6 +1823,50 @@ async def _fetch_oidc_discovery(issuer_url: str) -> dict:
     return await asyncio.wait_for(_do_fetch(), timeout=_OIDC_DISCOVERY_TIMEOUT_S)
 
 
+# T-089: the token-exchange POST and JWKS GET in oidc_callback had the same
+# per-phase-timeout-resets-on-every-byte hazard T-071 fixed above for discovery,
+# plus no cap on how much a hostile/misconfigured IdP could make us buffer before
+# parsing. Timeout values match what each call site already used (httpx's
+# per-phase `timeout=15` / `timeout=10`); the only new behaviour is enforcing
+# that number as an OVERALL deadline via asyncio.wait_for and capping the body.
+_OIDC_TOKEN_TIMEOUT_S = 15.0
+_OIDC_JWKS_TIMEOUT_S = 10.0
+
+
+async def _bounded_fetch(
+    method: str,
+    url: str,
+    *,
+    timeout_s: float,
+    max_bytes: int | None = None,
+    **kwargs: object,
+) -> tuple[int, bytes]:
+    """Stream *method url* with an overall deadline and a byte cap.
+
+    Returns ``(status_code, body)`` instead of a parsed response so callers can
+    keep their own success/error handling exactly as before. Raises on network
+    error, overall timeout, or an oversized body — callers catch the exception.
+    ``max_bytes`` defaults to ``_OIDC_DISCOVERY_MAX_BYTES``, looked up here
+    (rather than bound as a default-argument value) so tests can monkeypatch
+    the module attribute the same way they already do for discovery.
+    """
+    if max_bytes is None:
+        max_bytes = _OIDC_DISCOVERY_MAX_BYTES
+
+    async def _do_fetch() -> tuple[int, bytes]:
+        async with httpx.AsyncClient(timeout=timeout_s) as client, client.stream(method, url, **kwargs) as resp:
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(f"{method} {url} response too large")
+                chunks.append(chunk)
+            return resp.status_code, b"".join(chunks)
+
+    return await asyncio.wait_for(_do_fetch(), timeout=timeout_s)
+
+
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
 async def oidc_authorize(
     provider_id: int,
@@ -2003,27 +2047,28 @@ async def oidc_callback(
             token_form["code_verifier"] = code_verifier
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                token_resp = await client.post(
-                    token_endpoint,
-                    data=token_form,
-                    headers={"Accept": "application/json"},
-                )
+            token_status, token_body = await _bounded_fetch(
+                "POST",
+                token_endpoint,
+                timeout_s=_OIDC_TOKEN_TIMEOUT_S,
+                data=token_form,
+                headers={"Accept": "application/json"},
+            )
         except Exception as exc:
             logger.error("OIDC token exchange request failed for provider %d: %s", provider_id, exc)
             return RedirectResponse(url=f"{frontend_error_url}token_exchange_network_error", status_code=302)
 
-        if not token_resp.is_success:
+        if not (200 <= token_status < 300):
             try:
-                err_body = token_resp.json()
+                err_body = json.loads(token_body)
                 oidc_err = err_body.get("error", "")
                 oidc_desc = err_body.get("error_description", "")
             except Exception:
                 oidc_err = ""
-                oidc_desc = token_resp.text[:200]
+                oidc_desc = token_body.decode("utf-8", errors="replace")[:200]
             logger.error(
                 "OIDC token exchange HTTP %d for provider %d. redirect_uri=%r error=%r desc=%r",
-                token_resp.status_code,
+                token_status,
                 provider_id,
                 redirect_uri,
                 oidc_err,
@@ -2031,7 +2076,7 @@ async def oidc_callback(
             )
             # Encode the OIDC error code into the redirect so the user sees it in the toast.
             # URL-encode the value to prevent query-parameter injection from provider responses.
-            raw_err = oidc_err[:40] if oidc_err else str(token_resp.status_code)
+            raw_err = oidc_err[:40] if oidc_err else str(token_status)
             safe_err = urllib.parse.quote(raw_err, safe="")
             return RedirectResponse(
                 url=f"{frontend_error_url}token_exchange_{safe_err}",
@@ -2039,7 +2084,7 @@ async def oidc_callback(
             )
 
         try:
-            token_data = token_resp.json()
+            token_data = json.loads(token_body)
         except Exception as exc:
             logger.error("OIDC token exchange non-JSON response for provider %d: %s", provider_id, exc)
             return RedirectResponse(url=f"{frontend_error_url}token_exchange_bad_response", status_code=302)
@@ -2061,10 +2106,10 @@ async def oidc_callback(
         # are inconsistent between the discovery issuer and the JWT iss claim.
         discovery_issuer: str = discovery.get("issuer", provider.issuer_url).rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=10) as jwks_http:
-                jwks_resp = await jwks_http.get(jwks_uri)
-                jwks_resp.raise_for_status()
-                jwks_data = jwks_resp.json()
+            jwks_status, jwks_body = await _bounded_fetch("GET", jwks_uri, timeout_s=_OIDC_JWKS_TIMEOUT_S)
+            if not (200 <= jwks_status < 300):
+                raise ValueError(f"JWKS endpoint returned HTTP {jwks_status}")
+            jwks_data = json.loads(jwks_body)
 
             jwks_client = PyJWKClient(jwks_uri)
             jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]

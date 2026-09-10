@@ -13,6 +13,7 @@ from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import auth as auth_routes
 from backend.app.api.routes.auth import _get_client_ip
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
 from backend.app.core.database import get_db
@@ -997,6 +998,20 @@ async def get_client_history(
 # cap exists to hide. Same sliding window and the same `time` indirection as
 # the AI limiter above, so a test can drive the clock.
 #
+# The per-IP caps assume the address they are keyed on is one visitor.
+# Behind a reverse proxy with TRUSTED_PROXY_IPS unset (the default), every
+# visitor's `_get_client_ip` resolves to the proxy's own address, and the
+# per-IP MISS cap would silently become a second, much tighter, site-wide
+# cap. `_track_rate_limited` detects that case (TRUSTED_PROXY_IPS empty but
+# an X-Forwarded-For header present) and suspends the per-IP miss cap for
+# it, presuming the peer is an unconfigured proxy; the global miss cap and
+# the per-IP CALLS cap — both still keyed on the proxy's one address — are
+# the bound instead. The trade-off: on a DIRECT install (no proxy at all) a
+# client can send its own X-Forwarded-For header to be treated the same
+# way, which raises its own per-address ceiling from the 30-miss cap to the
+# 120-call cap. The fix for both — the collapsed bucket and the spoof — is
+# the same: set TRUSTED_PROXY_IPS.
+#
 # In-process state, so it assumes the single uvicorn worker the Dockerfile
 # starts: `--workers N` would multiply every cap by N.
 _TRACK_RATE_WINDOW_S = 60.0
@@ -1032,9 +1047,18 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     visitor, and the per-IP cap would silently become a per-shop cap. Once
     a dict outgrows what the window can hold, every host whose entries have
     all aged out is dropped, so a scanner cycling addresses cannot grow it
-    without bound on a public route."""
+    without bound on a public route.
+
+    When TRUSTED_PROXY_IPS is unset and the request still carries an
+    X-Forwarded-For header, `_get_client_ip` cannot unwrap it and every
+    visitor collapses onto the proxy's one address — see the module-level
+    comment above the caps. That case suspends the per-IP MISS cap alone
+    (no reservation is made for it either); the per-IP CALLS cap and the
+    global miss cap, both keyed on that same collapsed address, still
+    apply exactly as they do for a direct, unproxied install."""
     now = time.monotonic()
     host = _get_client_ip(request)
+    collapsed = not auth_routes._TRUSTED_PROXY_IPS and bool(request.headers.get("X-Forwarded-For"))
     live = lambda calls: [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]  # noqa: E731
     for bucket in (_track_rate_ip_calls, _track_rate_ip_misses):
         if len(bucket) > _TRACK_RATE_SWEEP_ABOVE:
@@ -1045,12 +1069,13 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     _track_rate_global_misses[:] = live(_track_rate_global_misses)
     if (
         len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP
-        or len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP
+        or (not collapsed and len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP)
         or len(_track_rate_global_misses) >= _TRACK_RATE_MAX_MISSES_GLOBAL
     ):
         return None
     calls.append(now)
-    misses.append(now)
+    if not collapsed:
+        misses.append(now)
     _track_rate_ip_calls[host] = calls
     _track_rate_ip_misses[host] = misses
     _track_rate_global_misses.append(now)

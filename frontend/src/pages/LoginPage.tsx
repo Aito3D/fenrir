@@ -682,7 +682,7 @@ export function LoginPage() {
                 {emailOTPSent && (
                   <button
                     type="button"
-                    onClick={() => { setEmailOTPSent(false); sendEmailOTPMutation.mutate(); }}
+                    onClick={() => sendEmailOTPMutation.mutate()}
                     className="text-xs text-bambu-gray hover:text-bambu-green transition-colors"
                   >
                     {t('login.twoFA.resendCode')}

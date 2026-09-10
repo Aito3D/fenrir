@@ -681,6 +681,81 @@ describe('LoginPage', () => {
         expect(screen.getByRole('button', { name: /Send Code/i })).toBeInTheDocument();
       });
     });
+
+    // T-088: the code input must stay disabled while no OTP has ever been
+    // sent successfully — a failed *first* send leaves the user exactly
+    // where they started, unable to type a code that was never issued.
+    it('keeps the code input disabled when the first send-code request fails', async () => {
+      server.use(
+        http.post('/api/v1/auth/2fa/email/send', () =>
+          HttpResponse.json({ detail: 'Too many email OTP requests' }, { status: 429 })
+        )
+      );
+
+      const user = await loginWith2FA(['email']);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Send Code/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Send Code/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Too many email OTP requests')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeDisabled();
+    });
+
+    // T-088: sendEmailOTPMutation's onClick used to clear emailOTPSent
+    // *before* firing the resend request, so a failed resend (e.g. the
+    // backend's 429 rate limit) permanently disabled the code field even
+    // though the original code was still valid — the only escape hatch
+    // ("Send code") was itself rate-limited. The fix leaves emailOTPSent
+    // untouched on the resend path, relying on the mutation's onSuccess to
+    // set it and onError to leave it alone.
+    it('keeps the code input enabled and the sent instructions visible when a resend fails', async () => {
+      let sendCalls = 0;
+      server.use(
+        http.post('/api/v1/auth/2fa/email/send', () => {
+          sendCalls += 1;
+          if (sendCalls === 1) {
+            return HttpResponse.json({ message: 'Code sent to your email' });
+          }
+          return HttpResponse.json({ detail: 'Too many email OTP requests' }, { status: 429 });
+        })
+      );
+
+      const user = await loginWith2FA(['email']);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Send Code/i })).toBeInTheDocument();
+      });
+
+      // First send succeeds: code field becomes enabled and the "sent" copy
+      // (rather than the "not sent" copy) is shown.
+      await user.click(screen.getByRole('button', { name: /Send Code/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeEnabled();
+      });
+      expect(
+        screen.getByText('A 6-digit code has been sent to your email address. It expires in 10 minutes.')
+      ).toBeInTheDocument();
+
+      // Resend fails (e.g. rate limited) — the field must stay usable so the
+      // still-valid code that's already in the user's inbox can be entered.
+      await user.click(screen.getByRole('button', { name: /Resend code/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Too many email OTP requests')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeEnabled();
+      expect(
+        screen.getByText('A 6-digit code has been sent to your email address. It expires in 10 minutes.')
+      ).toBeInTheDocument();
+    });
   });
 
   describe('Remember Me', () => {

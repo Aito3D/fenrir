@@ -605,6 +605,85 @@ async def test_public_route_rate_limit_unwraps_a_trusted_proxy_and_forgets_idle_
 
 
 @pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_falls_back_to_the_global_miss_cap(async_client, db_session, monkeypatch):
+    """TRUSTED_PROXY_IPS unset but X-Forwarded-For present: _get_client_ip
+    cannot unwrap it, so every one of these "visitors" collapses onto the
+    same peer address. T-087: without the fallback the 31st miss would 429
+    on the (now site-wide) 30-miss per-IP cap; with it, only the much
+    larger global cap governs, and a real code still resolves."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    aito_routes._reset_track_rate_limits()
+    for i in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
+        assert r.status_code == 404
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": "203.0.113.99"})
+    assert r.status_code == 200
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_direct_install_per_ip_miss_cap_is_unchanged(async_client, monkeypatch):
+    """No X-Forwarded-For header at all (a direct, unproxied install):
+    the collapsed-bucket fallback must not engage, and the 31st miss still
+    429s exactly as before T-087."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    aito_routes._reset_track_rate_limits()
+    for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP):
+        assert (await async_client.get("/api/v1/aito/track/ZZZZZZ")).status_code == 404
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ")
+    assert r.status_code == 429
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_still_bounded_by_the_calls_cap(async_client, monkeypatch):
+    """The per-IP miss cap is suspended on a collapsed bucket, but the
+    per-IP CALLS cap — keyed on the same collapsed address — still trips."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_IP", 3)
+    aito_routes._reset_track_rate_limits()
+    for _ in range(3):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 404
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.6"})
+    assert r.status_code == 429
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_still_bounded_by_the_global_cap(async_client, monkeypatch):
+    """The per-IP miss cap is suspended on a collapsed bucket, but the
+    global miss cap — the site-wide backstop — still trips."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    aito_routes._reset_track_rate_limits()
+    for i in range(3):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
+        assert r.status_code == 404
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.9"})
+    assert r.status_code == 429
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
 async def test_regenerate_rewrites_the_quote_notes_with_the_new_link(async_client, db_session, monkeypatch):
     from backend.app.services.zoho import zoho_service
 

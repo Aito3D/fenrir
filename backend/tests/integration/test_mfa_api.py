@@ -78,6 +78,7 @@ def _make_stream_ctx(payload: dict):
     from unittest.mock import AsyncMock, MagicMock
 
     resp = MagicMock()
+    resp.status_code = 200
     resp.raise_for_status = MagicMock()
 
     async def _aiter_bytes():
@@ -2517,6 +2518,8 @@ class TestOIDCEndToEnd:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -2653,6 +2656,8 @@ class TestOIDCEndToEnd:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kw))
                 return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -3331,9 +3336,18 @@ class TestOIDCAutoLinkExistingLinkRejection:
         jwks_resp.json = MagicMock(return_value={})
 
         mock_http = AsyncMock()
-        # T-071: discovery is now read via client.stream(), not client.get() —
-        # only the JWKS fetch still goes through get().
-        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+
+        # T-089: the token exchange (POST) and JWKS fetch (GET) now go through
+        # client.stream() too, same as discovery — route by method/url so each
+        # still gets its own fake payload.
+        def _stream_dispatch(method, url, **kwargs):
+            if method == "POST":
+                return _make_stream_ctx(fake_token)
+            if "jwks" in url:
+                return _make_stream_ctx({})
+            return _make_stream_ctx(fake_discovery)
+
+        mock_http.stream = MagicMock(side_effect=_stream_dispatch)
         mock_http.get = AsyncMock(return_value=jwks_resp)
         mock_http.post = AsyncMock(return_value=token_resp)
 
@@ -3553,6 +3567,8 @@ class TestOIDCIssMismatch:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kw))
                 return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -3677,6 +3693,8 @@ class TestOIDCMissingSubClaim:
                 return _MockResp({"access_token": "a", "id_token": id_token})
 
             def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kw))
                 return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -3938,6 +3956,8 @@ class TestOIDCAudAndNonceMismatch:
                 return _MockResp({"access_token": "a", "id_token": id_token})
 
             def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kw))
                 return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -4057,6 +4077,8 @@ class TestOIDCAudAndNonceMismatch:
                 return _MockResp({"access_token": "a", "id_token": id_token})
 
             def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kw))
                 return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -4267,6 +4289,8 @@ class TestOIDCIssuerUrlTrailingSlash:
                 return httpx.Response(500, request=httpx.Request("GET", url), json={})
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Mock500Client):
@@ -4327,6 +4351,8 @@ class TestOIDCIssuerUrlTrailingSlash:
                 )
 
             def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
                 return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockNonObjectClient):
@@ -4627,6 +4653,8 @@ class TestOIDCIssuerUrlTrailingSlash:
                 return _MockResp(token_response)
 
             def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kw))
                 return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
@@ -4641,6 +4669,331 @@ class TestOIDCIssuerUrlTrailingSlash:
             "Trailing slash mismatch in iss claim must not cause token_validation_failed"
         )
         assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+
+# ===========================================================================
+# T-089: the token-exchange POST and JWKS GET in oidc_callback carry the same
+# overall-deadline + size-cap guard T-071 gave the discovery fetch above
+# (see TestOIDCIssuerUrlTrailingSlash's deadline/oversized-body tests, which
+# this modeled). The happy path where both fetches are fast and small is
+# already covered by TestOIDCEndToEnd::test_oidc_callback_creates_user_and_issues_jwt
+# (and the other full-callback tests in this file), so it isn't duplicated here.
+# ===========================================================================
+
+
+class TestOIDCTokenAndJWKSFetchGuards:
+    """A slow-trickling or oversized token/JWKS response must not hang the
+    callback or get buffered whole before anything validates it."""
+
+    async def _setup_provider_and_state(self, async_client: AsyncClient, db_session: AsyncSession, label: str):
+        """Create an enabled provider plus a live OIDC state row.
+
+        Returns (state, discovery_doc) for a GET .../oidc/callback under test.
+        """
+        issuer = f"https://idp.{label}.example.com"
+        admin_token = await _setup_and_login(async_client, f"{label}adm", f"{label}adm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": label,
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        return state, discovery_doc
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_overall_deadline_returns_network_error(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """A token endpoint that trickles past the (monkeypatched) overall
+        deadline must be cut off by asyncio.wait_for, same as T-071 did for
+        discovery — even though the per-phase httpx timeout is untouched.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_TOKEN_TIMEOUT_S", 0.2)
+
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "tokendeadline")
+
+        class _HangingStreamCtx:
+            async def __aenter__(self):
+                # Trickles longer than the (monkeypatched) overall deadline
+                # but far under the untouched per-phase timeout.
+                await asyncio.sleep(1.0)
+                raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _HangingStreamCtx()
+                return _make_stream_ctx(discovery_doc)
+
+        start = time.monotonic()
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+        elapsed = time.monotonic() - start
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_exchange_network_error" in location, location
+        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_oversized_body_returns_network_error(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """A token response larger than the size cap must be rejected before
+        ``json.loads`` ever sees the full body."""
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_MAX_BYTES", 256)
+
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "tokenoversize")
+
+        oversized_body = json.dumps({"access_token": "a", "id_token": "b", "padding": "x" * 1024}).encode()
+        assert len(oversized_body) > 256
+
+        class _OversizedResp:
+            status_code = 200
+
+            async def aiter_bytes(self):
+                # Chunked well below the cap so the mock exercises the
+                # running-total check, not a single oversized chunk.
+                chunk_size = 64
+                for i in range(0, len(oversized_body), chunk_size):
+                    yield oversized_body[i : i + chunk_size]
+
+        class _OversizedStreamCtx:
+            async def __aenter__(self):
+                return _OversizedResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _OversizedStreamCtx()
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_exchange_network_error" in location, location
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwks_overall_deadline_returns_token_validation_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """A JWKS endpoint that trickles past the (monkeypatched) overall
+        deadline must be cut off the same way the token exchange is."""
+        monkeypatch.setattr(mfa_module, "_OIDC_JWKS_TIMEOUT_S", 0.2)
+
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "keydeadline")
+        token_response = {"access_token": "acc", "id_token": "fake.id.token"}
+
+        class _HangingStreamCtx:
+            async def __aenter__(self):
+                await asyncio.sleep(1.0)
+                raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _make_stream_ctx(token_response)
+                if "jwks" in url:
+                    return _HangingStreamCtx()
+                return _make_stream_ctx(discovery_doc)
+
+        start = time.monotonic()
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+        elapsed = time.monotonic() - start
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_validation_failed" in location, location
+        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwks_oversized_body_returns_token_validation_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """A JWKS response larger than the size cap must be rejected before
+        ``json.loads`` ever sees the full body."""
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_MAX_BYTES", 256)
+
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "keyoversize")
+        token_response = {"access_token": "acc", "id_token": "fake.id.token"}
+
+        oversized_body = json.dumps({"keys": [{"kid": "k", "padding": "x" * 1024}]}).encode()
+        assert len(oversized_body) > 256
+
+        class _OversizedResp:
+            status_code = 200
+
+            async def aiter_bytes(self):
+                chunk_size = 64
+                for i in range(0, len(oversized_body), chunk_size):
+                    yield oversized_body[i : i + chunk_size]
+
+        class _OversizedStreamCtx:
+            async def __aenter__(self):
+                return _OversizedResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _make_stream_ctx(token_response)
+                if "jwks" in url:
+                    return _OversizedStreamCtx()
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_validation_failed" in location, location
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwks_non_2xx_status_redirects_token_validation_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A non-2xx JWKS response must be rejected the same way
+        ``raise_for_status()`` rejected it before this streamed rewrite —
+        ``_bounded_fetch`` doesn't call ``raise_for_status()`` itself, so the
+        JWKS call site must check the status code it returns."""
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "keybadstatus")
+        token_response = {"access_token": "acc", "id_token": "fake.id.token"}
+
+        class _ErrorResp:
+            status_code = 500
+
+            async def aiter_bytes(self):
+                yield b"{}"
+
+        class _ErrorStreamCtx:
+            async def __aenter__(self):
+                return _ErrorResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _make_stream_ctx(token_response)
+                if "jwks" in url:
+                    return _ErrorStreamCtx()
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_validation_failed" in location, location
 
 
 class _Clock:
@@ -4965,6 +5318,8 @@ async def _run_oidc_callback(
             return _R(token_response)
 
         def stream(self, method, url, **kw):
+            if method == "POST":
+                return _StreamCtx(self.post(url, **kw))
             return _StreamCtx(self.get(url, **kw))
 
     with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _C):
@@ -6021,9 +6376,18 @@ class TestOIDCFallCAutoLinkE2E:
         jwks_resp.json = MagicMock(return_value={})
 
         mock_http = AsyncMock()
-        # T-071: discovery is now read via client.stream(), not client.get() —
-        # only the JWKS fetch still goes through get().
-        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+
+        # T-089: the token exchange (POST) and JWKS fetch (GET) now go through
+        # client.stream() too, same as discovery — route by method/url so each
+        # still gets its own fake payload.
+        def _stream_dispatch(method, url, **kwargs):
+            if method == "POST":
+                return _make_stream_ctx(fake_token)
+            if "jwks" in url:
+                return _make_stream_ctx({})
+            return _make_stream_ctx(fake_discovery)
+
+        mock_http.stream = MagicMock(side_effect=_stream_dispatch)
         mock_http.get = AsyncMock(return_value=jwks_resp)
         mock_http.post = AsyncMock(return_value=token_resp)
 
