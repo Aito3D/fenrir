@@ -13,6 +13,7 @@ Gap 8: challenge_id cookie binding untested
 from __future__ import annotations
 
 import base64
+import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,28 @@ ME_URL = "/api/v1/auth/me"
 
 def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+class _StreamCtx:
+    """Minimal ``async with client.stream(...)`` shim (T-071).
+
+    ``_fetch_oidc_discovery`` now reads the discovery document via
+    ``client.stream("GET", ...)`` instead of ``client.get(...)`` so it can
+    cap the bytes read. This wraps whatever a mock client's own ``get()``
+    would have returned so each test's existing per-URL dispatch logic
+    (discovery vs. jwks) doesn't need duplicating for the streamed call —
+    ``stream()`` on those mock clients just does ``_StreamCtx(self.get(...))``.
+    """
+
+    def __init__(self, get_coro):
+        self._get_coro = get_coro
+
+    async def __aenter__(self):
+        self._resp = await self._get_coro
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
 
 
 def _norm_pw(password: str) -> str:
@@ -582,6 +605,11 @@ class TestOIDCEmailVerified:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClientEV:
             def __init__(self, *args, **kwargs):
                 pass
@@ -599,6 +627,9 @@ class TestOIDCEmailVerified:
 
             async def post(self, url, **kwargs):
                 return _MockResp({"access_token": "mock", "token_type": "Bearer", "id_token": id_token})
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClientEV):
             await async_client.get(
@@ -761,6 +792,11 @@ class TestOIDCSSRFProtection:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClientSSRF:
             def __init__(self, *args, **kwargs):
                 pass
@@ -776,6 +812,9 @@ class TestOIDCSSRFProtection:
 
             async def post(self, url, **kwargs):
                 return _MockResp({})
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClientSSRF):
             # oidc_authorize uses a path parameter, not query param

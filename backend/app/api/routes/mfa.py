@@ -20,6 +20,7 @@ import asyncio
 import base64
 import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -76,6 +77,7 @@ from backend.app.schemas.auth import (
     OIDCProviderCreate,
     OIDCProviderResponse,
     OIDCProviderUpdate,
+    OIDCPublicProviderResponse,
     TOTPDisableRequest,
     TOTPEnableRequest,
     TOTPEnableResponse,
@@ -136,6 +138,14 @@ def _build_provider_response(provider: OIDCProvider) -> OIDCProviderResponse:
     ``has_icon`` field is supplied by ``OIDCProvider.has_icon`` (a property
     reading the non-deferred ``icon_content_type`` column)."""
     return OIDCProviderResponse.model_validate(provider)
+
+
+def _build_public_provider_response(provider: OIDCProvider) -> OIDCPublicProviderResponse:
+    """Slim projection of ``_build_provider_response`` for the unauthenticated
+    ``GET /oidc/providers`` list (T-067) — id/name/has_icon only, no policy
+    or connection fields. ``has_icon`` is derived the same way as the full
+    response, via ``OIDCProvider.has_icon``."""
+    return OIDCPublicProviderResponse.model_validate(provider)
 
 
 def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
@@ -1404,18 +1414,24 @@ async def admin_disable_2fa(
 # ===========================================================================
 
 
-@router.get("/oidc/providers", response_model=list[OIDCProviderResponse])
+@router.get("/oidc/providers", response_model=list[OIDCPublicProviderResponse])
 async def list_oidc_providers(
     db: AsyncSession = Depends(get_db),
-) -> list[OIDCProviderResponse]:
+) -> list[OIDCPublicProviderResponse]:
     """List all enabled OIDC providers (public).
 
     The login page renders icons via /oidc/providers/{id}/icon — `icon_data`
     stays deferred so this list query never pulls the BLOB.
+
+    T-067: the public response is slimmed to id/name/has_icon — the fields
+    OIDCProviderButton actually reads. issuer_url/client_id/scopes and the
+    auto-create/auto-link/email-claim policy fields are not exposed to
+    unauthenticated callers; admins still get the full record via
+    ``GET /oidc/providers/all``.
     """
     result = await db.execute(select(OIDCProvider).where(OIDCProvider.is_enabled.is_(True)))
     providers = result.scalars().all()
-    return [_build_provider_response(p) for p in providers]
+    return [_build_public_provider_response(p) for p in providers]
 
 
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
@@ -1767,21 +1783,44 @@ def _oidc_authorize_rate_limited(request: Request) -> bool:
     return False
 
 
+# T-071: the per-phase `timeout=10` below resets on every byte received, so a
+# slow-trickling IdP can hold the fetch open indefinitely — this wraps the
+# WHOLE call (connect through body-read) in one overall deadline. 15s gives a
+# slow-but-legitimate IdP more headroom than the 10s per-phase timeout while
+# still bounding worst case.
+_OIDC_DISCOVERY_TIMEOUT_S = 15.0
+# Discovery documents are a few KB in practice; 256 KiB is generous headroom
+# while still capping how much a hostile/misconfigured IdP can make us buffer
+# before parsing. Mirrors the streaming-with-early-exit style of
+# services/oidc_icon.fetch_icon's `_MAX_ICON_BYTES` cap.
+_OIDC_DISCOVERY_MAX_BYTES = 256 * 1024
+
+
 async def _fetch_oidc_discovery(issuer_url: str) -> dict:
     """Fetch and parse the OIDC discovery document for *issuer_url*.
 
-    Raises on any failure (network error, non-2xx response, invalid JSON) —
-    callers catch the exception, log it, and return their own failure
-    response shape.
+    Raises on any failure (network error, non-2xx response, invalid JSON,
+    overall timeout, oversized body) — callers catch the exception, log it,
+    and return their own failure response shape.
     """
     discovery_url = f"{issuer_url.rstrip('/')}/.well-known/openid-configuration"
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(discovery_url)
-        resp.raise_for_status()
-        data = resp.json()
-        if not isinstance(data, dict):
-            raise ValueError("OIDC discovery document is not a JSON object")
-        return data
+
+    async def _do_fetch() -> dict:
+        async with httpx.AsyncClient(timeout=10) as client, client.stream("GET", discovery_url) as resp:
+            resp.raise_for_status()
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > _OIDC_DISCOVERY_MAX_BYTES:
+                    raise ValueError("OIDC discovery document too large")
+                chunks.append(chunk)
+            data = json.loads(b"".join(chunks))
+            if not isinstance(data, dict):
+                raise ValueError("OIDC discovery document is not a JSON object")
+            return data
+
+    return await asyncio.wait_for(_do_fetch(), timeout=_OIDC_DISCOVERY_TIMEOUT_S)
 
 
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
@@ -2317,7 +2356,6 @@ async def oidc_exchange(
             requires_2fa=True,
             pre_auth_token=pre_auth_token,
             two_fa_methods=two_fa_methods,
-            user=_user_to_response(user),
         )
 
     access_token = create_access_token(

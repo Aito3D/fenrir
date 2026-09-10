@@ -10,7 +10,9 @@ auto_create_users and produce a fresh user — instead of redirecting to
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import secrets
 import time
 import urllib.parse
@@ -26,6 +28,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import mfa as mfa_module
 from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.oidc_provider import UserOIDCLink
 from backend.app.models.user import User
@@ -59,6 +62,28 @@ def _make_rsa_key():
     return pem, jwks
 
 
+class _StreamCtx:
+    """Minimal ``async with client.stream(...)`` shim (T-071).
+
+    ``_fetch_oidc_discovery`` now reads the discovery document via
+    ``client.stream("GET", ...)`` instead of ``client.get(...)`` so it can
+    cap the bytes read. This wraps whatever a mock client's own ``get()``
+    would have returned so each test's existing per-URL dispatch logic
+    (discovery vs. jwks) doesn't need duplicating for the streamed call —
+    ``stream()`` on those mock clients just does ``_StreamCtx(self.get(...))``.
+    """
+
+    def __init__(self, get_coro):
+        self._get_coro = get_coro
+
+    async def __aenter__(self):
+        self._resp = await self._get_coro
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
+
+
 class _MockResp:
     def __init__(self, data):
         self._data = data
@@ -71,6 +96,11 @@ class _MockResp:
 
     def raise_for_status(self):
         pass
+
+    async def aiter_bytes(self):
+        # T-071: discovery is now read via client.stream(), so the mock must
+        # support the streamed-bytes read too.
+        yield json.dumps(self._data).encode()
 
 
 class _MockErrorResp:
@@ -108,6 +138,9 @@ def _mock_httpx_factory(discovery_doc, jwks_data, token_response):
 
         async def post(self, url, **kwargs):
             return _MockResp(token_response)
+
+        def stream(self, method, url, **kwargs):
+            return _StreamCtx(self.get(url, **kwargs))
 
     return _MockHttpxClient
 
@@ -409,6 +442,9 @@ class TestOidcCallbackDiscoveryFailure:
             async def get(self, url, **kwargs):
                 return httpx.Response(500, request=httpx.Request("GET", url), json={})
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpx500Client):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -447,6 +483,9 @@ class TestOidcCallbackDiscoveryFailure:
 
             async def get(self, url, **kwargs):
                 return httpx.Response(500, request=httpx.Request("GET", url), json={})
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpx500Client):
             callback_resp = await async_client.get(
@@ -512,7 +551,129 @@ class TestOidcCallbackDiscoveryFailure:
                 token_post_called = True
                 raise AssertionError("Token exchange must not be attempted after a discovery failure")
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxNonObjectClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"
+        assert not token_post_called, "Token exchange POST must not be attempted after a discovery failure"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_overall_deadline_redirects_to_discovery_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """T-071: a slow-trickling IdP must not hold the callback's discovery
+        fetch open past the overall deadline — same guard as the authorize
+        path (test_mfa_api.py::TestOIDCIssuerUrlTrailingSlash), exercised
+        here through oidc_callback's own try/except + redirect.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_TIMEOUT_S", 0.2)
+        _issuer, state = await _setup_provider_and_state(async_client, db_session, tag="discovery-deadline")
+
+        token_post_called = False
+
+        class _HangingStreamCtx:
+            async def __aenter__(self):
+                await asyncio.sleep(1.0)
+                raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _HangingDiscoveryClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                return _HangingStreamCtx()
+
+            async def post(self, url, **kwargs):
+                nonlocal token_post_called
+                token_post_called = True
+                raise AssertionError("Token exchange must not be attempted after a discovery failure")
+
+        start = time.monotonic()
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _HangingDiscoveryClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+        elapsed = time.monotonic() - start
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"
+        assert not token_post_called, "Token exchange POST must not be attempted after a discovery failure"
+        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oversized_body_redirects_to_discovery_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """T-071: a discovery document larger than the size cap must be
+        rejected before ``json.loads`` ever sees the full body, and must
+        never reach the token exchange POST.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_MAX_BYTES", 256)
+        _issuer, state = await _setup_provider_and_state(async_client, db_session, tag="discovery-oversized")
+
+        oversized_body = json.dumps({"issuer": "x", "padding": "a" * 1024}).encode()
+        assert len(oversized_body) > 256
+
+        token_post_called = False
+
+        class _OversizedResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            async def aiter_bytes(self):
+                chunk_size = 64
+                for i in range(0, len(oversized_body), chunk_size):
+                    yield oversized_body[i : i + chunk_size]
+
+        class _OversizedStreamCtx:
+            async def __aenter__(self):
+                return _OversizedResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _OversizedDiscoveryClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                return _OversizedStreamCtx()
+
+            async def post(self, url, **kwargs):
+                nonlocal token_post_called
+                token_post_called = True
+                raise AssertionError("Token exchange must not be attempted after a discovery failure")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _OversizedDiscoveryClient):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
                 follow_redirects=False,
@@ -568,6 +729,9 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
                 post_calls.append(url)
                 raise AssertionError("token exchange POST must never be attempted")
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -612,6 +776,9 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
             async def post(self, url, **kwargs):
                 post_calls.append(url)
                 raise AssertionError("token exchange POST must never be attempted")
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
@@ -678,6 +845,9 @@ class TestOidcCallbackTokenExchangeFailure:
                 post_calls.append(url)
                 raise AssertionError("token exchange POST must never be attempted")
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -724,6 +894,9 @@ class TestOidcCallbackTokenExchangeFailure:
                 post_calls.append(url)
                 raise AssertionError("token exchange POST must never be attempted")
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -766,6 +939,9 @@ class TestOidcCallbackTokenExchangeFailure:
 
             async def post(self, url, **kwargs):
                 raise httpx.ConnectError("simulated connection failure")
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
@@ -817,6 +993,9 @@ class TestOidcCallbackTokenExchangeFailure:
                     {"error": oidc_error_code, "error_description": "The authorization code is invalid."},
                 )
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -859,6 +1038,9 @@ class TestOidcCallbackTokenExchangeFailure:
                 # page) falls through the inner try/except, so oidc_err stays
                 # empty and the redirect falls back to the HTTP status code.
                 return _MockErrorResp(503, None, text="<html>Service Unavailable</html>")
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
@@ -919,6 +1101,9 @@ class TestOidcCallbackTokenExchangeFailure:
             async def post(self, url, **kwargs):
                 return _Mock2xxNonJsonResp()
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -975,6 +1160,9 @@ class TestOidcCallbackTokenExchangeFailure:
 
             async def post(self, url, **kwargs):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with (
             patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient),

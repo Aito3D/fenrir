@@ -1987,7 +1987,7 @@
    "params": [],
    "requestBody": {},
    "responses": {
-    "200": "[OIDCProviderResponse]"
+    "200": "[OIDCPublicProviderResponse]"
    },
    "security": false
   },
@@ -16107,6 +16107,18 @@
     "scopes": "anyOf(string,null)"
    },
    "required": []
+  },
+  "OIDCPublicProviderResponse": {
+   "properties": {
+    "has_icon": "boolean",
+    "id": "integer",
+    "name": "string"
+   },
+   "required": [
+    "has_icon",
+    "id",
+    "name"
+   ]
   },
   "OrcaAuthStatusResponse": {
    "properties": {

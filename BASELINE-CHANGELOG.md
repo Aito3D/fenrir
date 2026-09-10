@@ -11159,3 +11159,60 @@ email-send rate-limit event (`record_email_otp_send`, still recorded only after 
 the pre-auth token (only ever consumed after a successful send, so a failed send leaves it valid
 for a retry with no extra cost), and the response body/status codes on both the failure and success
 paths. User-approved 2026-09-09.
+
+T-066 — `oidc_exchange()`'s `requires_2fa=True` branch in `mfa.py` no longer passes
+`user=_user_to_response(user)` into the returned `LoginResponse`, so it now matches
+`auth.py:login()`'s own `requires_2fa` branch, which has always returned only
+`requires_2fa`/`pre_auth_token`/`two_fa_methods`. `LoginResponse.user` is `Optional` (defaults to
+`None`), so the field is simply omitted rather than replaced with a placeholder. User-visible
+effect: an OIDC user who has 2FA enabled no longer receives the full `user` object (email, role,
+is_admin, groups, permissions) in the `POST /auth/oidc/exchange` response before completing 2FA —
+`resp.user` is now `null` in that response, same as the password-login 2FA response has always
+been. `LoginPage.tsx`'s OIDC-exchange handler never read `resp.user` in the `requires_2fa` branch
+(it only reads `resp.pre_auth_token` and `resp.two_fa_methods` there); `resp.user` is read only in
+the non-2FA branch, which is unchanged and still returns the full user record. User-approved
+2026-09-09.
+
+T-067 — `list_oidc_providers()` (`GET /api/v1/auth/oidc/providers`, `mfa.py`), the unauthenticated
+route the login page polls for its SSO buttons, no longer returns the full `OIDCProviderResponse`
+for each provider. It previously carried `issuer_url`, `client_id`, `scopes`, `is_enabled`,
+`auto_create_users`, `auto_link_existing_accounts`, `email_claim`, `require_email_verified`,
+`icon_url`, `default_group_id`, `is_autologin` and `is_env_managed` to any anonymous caller — none
+of which the login page reads (`LoginPage.tsx`'s `OIDCProviderButton` only uses `provider.id`,
+`provider.name` and `provider.has_icon`). A new slim model, `OIDCPublicProviderResponse`
+(`schemas/auth.py`), carrying exactly `id`, `name` and `has_icon`, is now the route's
+`response_model`, built via a sibling `_build_public_provider_response()` helper in `mfa.py` that
+mirrors `_build_provider_response()`'s `has_icon` derivation (set explicitly from
+`OIDCProvider.has_icon`, never a lazy BLOB load). The route's filtering (`is_enabled.is_(True)`)
+and ordering are unchanged. `GET /oidc/providers/all` (`SETTINGS_READ`-gated, used by
+`OIDCProviderSettings.tsx` and `SettingsPage.tsx`) is untouched and keeps returning the full
+`OIDCProviderResponse` for every provider, enabled or not. User-visible effect: any external
+client reading the unauthenticated provider list loses `issuer_url`, `client_id`, `scopes` and the
+auto-create/auto-link/email-claim/default-group/env-managed policy fields — it now sees only
+`id`, `name` and `has_icon` per provider, which is all the shipped login page ever consumed.
+`app-openapi-index` golden re-recorded for the new schema. User-approved 2026-09-09.
+
+T-071 — `_fetch_oidc_discovery()` in `mfa.py` (shared by `oidc_authorize()` and `oidc_callback()`,
+the latter reachable unauthenticated) now bounds the whole discovery fetch instead of only its
+per-phase httpx timeout. Previously `httpx.AsyncClient(timeout=10)` applied that 10s to each phase
+(connect/read/write/pool) independently, not to the call as a whole, and `resp.json()` buffered the
+entire body — an issuer that trickled one byte every few seconds could reset the read timer forever
+and hold the request (and its `Depends(get_db)` connection) open indefinitely, letting a single
+client park many connections/tasks on a stuck IdP up to the existing 120/min per-IP cap. The fetch
+is now wrapped in `asyncio.wait_for(..., timeout=_OIDC_DISCOVERY_TIMEOUT_S)` with a new 15s overall
+deadline, and the response body is read via `client.stream("GET", ...)` + `aiter_bytes()` (mirroring
+`services/oidc_icon.fetch_icon`'s streaming-with-early-exit cap) instead of the old non-streaming
+`client.get()` + `.json()`, aborting with `ValueError("OIDC discovery document too large")` once more
+than `_OIDC_DISCOVERY_MAX_BYTES` (256 KiB) has been read, before the bytes are parsed as JSON. Order
+of checks is unchanged relative to parsing: HTTP status (`raise_for_status()`) → size cap → JSON
+parse → the existing T-059 dict-shape check. Both new failure modes (`asyncio.TimeoutError` and the
+size `ValueError`) are ordinary exceptions and land in the callers' existing `except Exception`
+clauses unchanged, so `oidc_authorize()` still answers its existing `502 Failed to fetch OIDC
+discovery document` and `oidc_callback()` still redirects to its existing `discovery_failed` error
+code — no new error codes, no new response shapes. The per-phase `timeout=10` on the client and the
+client's default (non-following) redirect behavior are both untouched. User-visible effect: a
+discovery fetch against a very slow IdP that today eventually succeeds after tens of seconds (by
+trickling bytes to keep resetting the 10s per-phase timer) now fails with the same existing 502 (or
+`discovery_failed` redirect) once the new 15s overall deadline elapses; a discovery document larger
+than 256 KiB — far beyond any real IdP's few-KB response — now fails the same way instead of being
+buffered and parsed in full. User-approved 2026-09-09.

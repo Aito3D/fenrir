@@ -18,6 +18,7 @@ Tests the full request/response cycle for:
 from __future__ import annotations
 
 import asyncio
+import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -43,6 +44,50 @@ _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 AUTH_SETUP_URL = "/api/v1/auth/setup"
 LOGIN_URL = "/api/v1/auth/login"
+
+
+class _StreamCtx:
+    """Minimal ``async with client.stream(...)`` shim (T-071).
+
+    ``_fetch_oidc_discovery`` now reads the discovery document via
+    ``client.stream("GET", ...)`` instead of ``client.get(...)`` so it can
+    cap the bytes read. This wraps whatever a mock client's own ``get()``
+    would have returned so each test's existing per-URL dispatch logic
+    (discovery vs. jwks) doesn't need duplicating for the streamed call —
+    ``stream()`` on those mock clients just does ``_StreamCtx(self.get(...))``.
+    """
+
+    def __init__(self, get_coro):
+        self._get_coro = get_coro
+
+    async def __aenter__(self):
+        self._resp = await self._get_coro
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def _make_stream_ctx(payload: dict):
+    """Build a ``client.stream(...)`` return value (T-071) for tests that mock
+    httpx via bare ``AsyncMock``/``MagicMock`` objects rather than a
+    hand-rolled client class — ``client.stream(...)`` itself is a *sync* call
+    that returns an async context manager, so this returns that context
+    manager directly (not a coroutine).
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+
+    async def _aiter_bytes():
+        yield json.dumps(payload).encode()
+
+    resp.aiter_bytes = _aiter_bytes
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=resp)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
 
 
 def _norm_pw(password: str) -> str:
@@ -1190,8 +1235,9 @@ class TestOIDCProviders:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_default_group_id_in_public_and_admin_list(self, async_client: AsyncClient, db_session: AsyncSession):
-        """default_group_id appears in both the public and admin list responses."""
+    async def test_default_group_id_in_admin_list_not_public(self, async_client: AsyncClient, db_session: AsyncSession):
+        """default_group_id appears in the admin list; the public list is slimmed
+        to id/name/has_icon (T-067) so it no longer carries this field."""
         from sqlalchemy import select
 
         from backend.app.models.group import Group
@@ -1224,7 +1270,71 @@ class TestOIDCProviders:
         pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
         pub_match = next((p for p in pub_resp.json() if p["id"] == provider_id), None)
         assert pub_match is not None
-        assert pub_match["default_group_id"] == operators.id
+        assert "default_group_id" not in pub_match
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_public_list_is_slimmed_to_id_name_has_icon(self, async_client: AsyncClient):
+        """T-067: the unauthenticated public list must carry ONLY id/name/has_icon —
+        none of the connection details or auto-create/auto-link/email-claim policy
+        fields that the full OIDCProviderResponse exposes on /oidc/providers/all."""
+        token = await _setup_and_login(async_client, "oidcslimpub", "OidcSlimPub1!")
+        await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SlimPublicProvider",
+                "issuer_url": "https://slimpublic.example.com",
+                "client_id": "slimpublic-client",
+                "client_secret": "secret",
+                "scopes": "openid email",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(token),
+        )
+
+        pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
+        assert pub_resp.status_code == 200
+        pub_items = pub_resp.json()
+        assert len(pub_items) >= 1
+        for item in pub_items:
+            assert set(item.keys()) == {"id", "name", "has_icon"}
+            for forbidden_field in (
+                "issuer_url",
+                "client_id",
+                "scopes",
+                "auto_create_users",
+                "auto_link_existing_accounts",
+                "email_claim",
+                "require_email_verified",
+                "default_group_id",
+                "is_env_managed",
+            ):
+                assert forbidden_field not in item
+
+        all_resp = await async_client.get("/api/v1/auth/oidc/providers/all", headers=_auth_header(token))
+        assert all_resp.status_code == 200
+        all_items = all_resp.json()
+        assert len(all_items) >= 1
+        full_key_set = {
+            "id",
+            "name",
+            "issuer_url",
+            "client_id",
+            "scopes",
+            "is_enabled",
+            "auto_create_users",
+            "auto_link_existing_accounts",
+            "email_claim",
+            "require_email_verified",
+            "icon_url",
+            "default_group_id",
+            "is_autologin",
+            "is_env_managed",
+            "has_icon",
+        }
+        for item in all_items:
+            assert set(item.keys()) == full_key_set
 
 
 # ===========================================================================
@@ -1555,6 +1665,11 @@ class TestOIDCExchange2FAChallenge:
         assert data.get("two_fa_methods") == ["totp", "backup"]
         # access_token must NOT be present — it would bypass the 2FA gate
         assert "access_token" not in data or data["access_token"] is None
+        # T-066: the user record must NOT be exposed before 2FA is verified
+        # (matches auth.py:login()'s requires_2fa branch, which also omits it;
+        # see test_oidc_callback_creates_user_and_issues_jwt for the non-2FA
+        # branch, which still returns the user).
+        assert data.get("user") is None
 
         # The pre_auth_token must be usable end-to-end: /2fa/verify relies on
         # the HttpOnly 2fa_challenge cookie set by the same call, so this also
@@ -2320,6 +2435,11 @@ class TestOIDCEndToEnd:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *args, **kwargs):
                 pass
@@ -2337,6 +2457,9 @@ class TestOIDCEndToEnd:
 
             async def post(self, url, **kwargs):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
@@ -2450,6 +2573,11 @@ class TestOIDCEndToEnd:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -2465,6 +2593,9 @@ class TestOIDCEndToEnd:
 
             async def post(self, url, **kw):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             first = await async_client.get(
@@ -3133,10 +3264,6 @@ class TestOIDCAutoLinkExistingLinkRejection:
             "exp": 9_999_999_999,
         }
 
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         token_resp = AsyncMock()
         token_resp.ok = True
         token_resp.json = MagicMock(return_value=fake_token)
@@ -3146,7 +3273,10 @@ class TestOIDCAutoLinkExistingLinkRejection:
         jwks_resp.json = MagicMock(return_value={})
 
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        # T-071: discovery is now read via client.stream(), not client.get() —
+        # only the JWKS fetch still goes through get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        mock_http.get = AsyncMock(return_value=jwks_resp)
         mock_http.post = AsyncMock(return_value=token_resp)
 
         mock_signing_key = MagicMock()
@@ -3343,6 +3473,11 @@ class TestOIDCIssMismatch:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -3358,6 +3493,9 @@ class TestOIDCIssMismatch:
 
             async def post(self, url, **kw):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -3576,6 +3714,11 @@ class TestOIDCAudAndNonceMismatch:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -3591,6 +3734,9 @@ class TestOIDCAudAndNonceMismatch:
 
             async def post(self, url, **kw):
                 return _MockResp({"access_token": "a", "id_token": id_token})
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -3687,6 +3833,11 @@ class TestOIDCAudAndNonceMismatch:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -3702,6 +3853,9 @@ class TestOIDCAudAndNonceMismatch:
 
             async def post(self, url, **kw):
                 return _MockResp({"access_token": "a", "id_token": id_token})
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -3848,12 +4002,9 @@ class TestOIDCIssuerUrlTrailingSlash:
             "issuer": issuer_with_slash,
             "authorization_endpoint": "https://authentik.example.com/application/o/bambuddy/authorize",
         }
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(return_value=disc_resp)
+        # T-071: discovery is now read via client.stream(), not client.get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -3862,7 +4013,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
 
         assert resp.status_code == 200
-        called_url = mock_http.get.call_args_list[0][0][0]
+        called_url = mock_http.stream.call_args_list[0][0][1]
         assert "//" not in called_url.replace("https://", ""), (
             f"Discovery URL must not contain double slash: {called_url}"
         )
@@ -3912,6 +4063,9 @@ class TestOIDCIssuerUrlTrailingSlash:
 
             async def get(self, url, **kwargs):
                 return httpx.Response(500, request=httpx.Request("GET", url), json={})
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Mock500Client):
             resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
@@ -3970,11 +4124,143 @@ class TestOIDCIssuerUrlTrailingSlash:
                     headers={"content-type": "application/json"},
                 )
 
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockNonObjectClient):
             resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
 
         assert resp.status_code == 502
         assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_overall_deadline_returns_502_promptly(self, async_client: AsyncClient, monkeypatch):
+        """T-071: a slow-trickling IdP must not hold the discovery fetch open
+        past the overall deadline — ``asyncio.wait_for`` must cut it off even
+        though each individual httpx phase (connect/read/write/pool) is well
+        under its own 10s per-phase timeout.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_TIMEOUT_S", 0.2)
+
+        admin_token = await _setup_and_login(async_client, "oidcdeadlineadm", "oidcdeadlineadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SlowIdP",
+                "issuer_url": "https://idp.discovery-deadline-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        class _HangingStreamCtx:
+            async def __aenter__(self):
+                # Trickles for longer than the (monkeypatched) overall
+                # deadline but far under the per-phase timeout=10 — this is
+                # exactly the "one byte every few seconds" scenario T-071
+                # guards against.
+                await asyncio.sleep(1.0)
+                raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _HangingDiscoveryClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                return _HangingStreamCtx()
+
+        start = time.monotonic()
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _HangingDiscoveryClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        elapsed = time.monotonic() - start
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_oversized_body_returns_502(self, async_client: AsyncClient, monkeypatch):
+        """T-071: a discovery document larger than the size cap must be
+        rejected before ``json.loads`` ever sees the full body.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_MAX_BYTES", 256)
+
+        admin_token = await _setup_and_login(async_client, "oidcbigbodyadm", "oidcbigbodyadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "OversizedDiscoveryIdP",
+                "issuer_url": "https://idp.discovery-oversized-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        oversized_body = json.dumps({"issuer": "x", "padding": "a" * 1024}).encode()
+        assert len(oversized_body) > 256
+
+        class _OversizedResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            async def aiter_bytes(self):
+                # Chunked well below the cap so the mock exercises the
+                # running-total check, not a single oversized chunk.
+                chunk_size = 64
+                for i in range(0, len(oversized_body), chunk_size):
+                    yield oversized_body[i : i + chunk_size]
+
+        class _OversizedStreamCtx:
+            async def __aenter__(self):
+                return _OversizedResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _OversizedDiscoveryClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                return _OversizedStreamCtx()
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _OversizedDiscoveryClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+        assert "auth_url" not in resp.json()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -4013,12 +4299,9 @@ class TestOIDCIssuerUrlTrailingSlash:
             # A private RFC-1918 address — not merely a bad scheme.
             "authorization_endpoint": "https://192.168.1.5/authorize",
         }
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(return_value=disc_resp)
+        # T-071: discovery is now read via client.stream(), not client.get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -4120,6 +4403,11 @@ class TestOIDCIssuerUrlTrailingSlash:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -4135,6 +4423,9 @@ class TestOIDCIssuerUrlTrailingSlash:
 
             async def post(self, url, **kw):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -4450,6 +4741,11 @@ async def _run_oidc_callback(
         def raise_for_status(self):
             pass
 
+        async def aiter_bytes(self):
+            # T-071: discovery is now read via client.stream(), so the mock
+            # must support the streamed-bytes read too.
+            yield json.dumps(self._data).encode()
+
     class _C:
         def __init__(self, *a, **kw):
             pass
@@ -4465,6 +4761,9 @@ async def _run_oidc_callback(
 
         async def post(self, url, **kw):
             return _R(token_response)
+
+        def stream(self, method, url, **kw):
+            return _StreamCtx(self.get(url, **kw))
 
     with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _C):
         resp = await async_client.get(
@@ -5512,10 +5811,6 @@ class TestOIDCFallCAutoLinkE2E:
             "exp": 9_999_999_999,
         }
 
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         token_resp = AsyncMock()
         token_resp.json = MagicMock(return_value=fake_token)
 
@@ -5524,7 +5819,10 @@ class TestOIDCFallCAutoLinkE2E:
         jwks_resp.json = MagicMock(return_value={})
 
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        # T-071: discovery is now read via client.stream(), not client.get() —
+        # only the JWKS fetch still goes through get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        mock_http.get = AsyncMock(return_value=jwks_resp)
         mock_http.post = AsyncMock(return_value=token_resp)
 
         mock_signing_key = MagicMock()
