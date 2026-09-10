@@ -1400,3 +1400,204 @@ class TestOidcCallbackAccountResolutionFailures:
         assert exchange_tokens.scalar_one_or_none() is None, (
             "No OIDC exchange token row should be created for a deactivated account"
         )
+
+
+# ---------------------------------------------------------------------------
+# T-078: the token-exchange POST body must omit ``client_secret`` for a
+# public client (no secret configured) and must omit ``code_verifier`` when
+# the stored OIDC state has none (non-PKCE provider) — previously only
+# exercised with both present, so the two ``if`` guards around
+# ``token_form`` in ``oidc_callback`` never took their False arm. Both tests
+# use a token response missing ``id_token`` (same fixture as
+# ``test_token_exchange_2xx_missing_id_token_redirects_to_no_id_token``
+# above) purely to reach a deterministic, easy-to-assert redirect *after*
+# the captured POST — the interesting assertion is the captured request
+# body, not the outcome of the exchange itself.
+# ---------------------------------------------------------------------------
+
+
+class TestOidcCallbackTokenFormOmissions:
+    """The token-exchange POST body must not include keys the provider/state
+    has no value for."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_omits_client_secret_for_public_client(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A provider configured with no client secret (public client) must
+        not send a ``client_secret`` field in the token-exchange POST body,
+        while the other required fields are still present."""
+        issuer = "https://idp.publicclient-test.example.com"
+        client_id = "publicclient-client"
+
+        provider = OIDCProvider(
+            name="PublicClientIdP",
+            issuer_url=issuer,
+            client_id=client_id,
+            _client_secret_enc="",
+            scopes="openid email profile",
+            is_enabled=True,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+        assert provider.client_secret == "", "Fixture setup: provider must have no client secret"
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        # No "id_token" key — just needs a deterministic post-POST redirect.
+        token_response = {"access_token": "mock-access", "token_type": "Bearer"}
+
+        captured_posts: list[dict] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                captured_posts.append(kwargs.get("data", {}))
+                return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith("oidc_error=no_id_token"), (
+            f"Expected the callback to still complete and reach no_id_token, got: {location}"
+        )
+
+        assert len(captured_posts) == 1, "Token endpoint must be POSTed to exactly once"
+        sent_form = captured_posts[0]
+        assert "client_secret" not in sent_form, (
+            f"Public client (no configured secret) must not send client_secret, got form: {sent_form}"
+        )
+        assert sent_form.get("client_id") == client_id
+        assert sent_form.get("code") == "test-code"
+        assert sent_form.get("grant_type") == "authorization_code"
+        assert "redirect_uri" in sent_form
+        assert sent_form.get("code_verifier"), "This provider's state DOES have a code_verifier — must still be sent"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_omits_code_verifier_when_state_has_none(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A stored OIDC state with no ``code_verifier`` (non-PKCE provider)
+        must not send a ``code_verifier`` field in the token-exchange POST
+        body, while ``client_secret`` (configured on this provider) is still
+        sent."""
+        issuer = "https://idp.nopkce-test.example.com"
+        client_id = "nopkce-client"
+
+        provider = OIDCProvider(
+            name="NoPkceIdP",
+            issuer_url=issuer,
+            client_id=client_id,
+            _client_secret_enc="test-secret",
+            scopes="openid email profile",
+            is_enabled=True,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+        assert provider.client_secret == "test-secret", "Fixture setup: provider must have a client secret"
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=None,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        token_response = {"access_token": "mock-access", "token_type": "Bearer"}
+
+        captured_posts: list[dict] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                captured_posts.append(kwargs.get("data", {}))
+                return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert location.endswith("oidc_error=no_id_token"), (
+            f"Expected the callback to still complete and reach no_id_token, got: {location}"
+        )
+
+        assert len(captured_posts) == 1, "Token endpoint must be POSTed to exactly once"
+        sent_form = captured_posts[0]
+        assert "code_verifier" not in sent_form, f"State with no code_verifier must not send one, got form: {sent_form}"
+        assert sent_form.get("client_secret") == "test-secret", (
+            "This provider DOES have a client_secret configured — must still be sent"
+        )
+        assert sent_form.get("client_id") == client_id
+        assert sent_form.get("code") == "test-code"
+        assert sent_form.get("grant_type") == "authorization_code"
+        assert "redirect_uri" in sent_form

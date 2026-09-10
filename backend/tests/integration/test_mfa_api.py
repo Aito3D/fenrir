@@ -2067,7 +2067,11 @@ class TestEmailOTPSendCookieRefresh:
     async def test_email_send_refreshes_2fa_challenge_cookie(self, async_client: AsyncClient, db_session: AsyncSession):
         """The send response's Set-Cookie for 2fa_challenge must carry the same
         binding value as the login cookie, with the same path/httponly/samesite
-        and a fresh max_age=300."""
+        and a fresh max_age=300. Both cookies are set over this fixture's
+        plain-http client, so `secure` (T-079: `raw_request.url.scheme ==
+        "https"`) must be absent on both — the https-scheme case is covered
+        by test_2fa_challenge_cookie_secure_flag_tracks_request_scheme
+        below."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
         await self._enable_email_otp_and_login(async_client, db_session, "cookierefresh1", "cookierefresh1a")
@@ -2077,6 +2081,7 @@ class TestEmailOTPSendCookieRefresh:
         )
         assert login_resp.status_code == 200, login_resp.text
         login_cookie = self._parse_2fa_challenge_cookie(login_resp.headers)
+        assert bool(login_cookie["secure"]) is False, "http-based login cookie must not carry Secure"
         pre_auth_token = login_resp.json()["pre_auth_token"]
 
         smtp_mock = MagicMock()
@@ -2096,6 +2101,59 @@ class TestEmailOTPSendCookieRefresh:
         assert send_cookie["max-age"] == login_cookie["max-age"] == "300"
         assert send_cookie["samesite"] == login_cookie["samesite"]
         assert bool(send_cookie["httponly"]) == bool(login_cookie["httponly"]) is True
+        assert bool(send_cookie["secure"]) is False, "http-based send-refresh cookie must not carry Secure"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_2fa_challenge_cookie_secure_flag_tracks_request_scheme(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """T-079/H-1: `_set_2fa_challenge_cookie`'s `secure` flag must track
+        the request's scheme so the binding cookie can't be intercepted on
+        mixed-content (http-downgrade) deployments. Every other test in this
+        module talks to the app over the `async_client` fixture's plain-http
+        base_url, so this builds a second client against the same ASGI app
+        with an https:// base_url — httpx's ASGITransport derives the ASGI
+        scope's `scheme` from the request URL — reusing the dependency
+        overrides / module patches the `async_client` fixture parameter
+        already applied for the duration of this test."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from httpx import ASGITransport
+
+        from backend.app.main import app as fastapi_app
+
+        await self._enable_email_otp_and_login(async_client, db_session, "cookiesecure3", "cookiesecure3a")
+
+        async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://testserver") as https_client:
+            login_resp = await https_client.post(
+                LOGIN_URL, json={"username": "cookiesecure3", "password": "Cookiesecure3a!"}
+            )
+            assert login_resp.status_code == 200, login_resp.text
+            login_cookie = self._parse_2fa_challenge_cookie(login_resp.headers)
+            assert bool(login_cookie["secure"]) is True, "login's 2fa_challenge cookie must be Secure over https"
+            pre_auth_token = login_resp.json()["pre_auth_token"]
+
+            smtp_mock = MagicMock()
+            with (
+                patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+                patch("backend.app.api.routes.mfa.send_email"),
+            ):
+                send_resp = await https_client.post(
+                    "/api/v1/auth/2fa/email/send",
+                    json={"pre_auth_token": pre_auth_token},
+                )
+            assert send_resp.status_code == 200, send_resp.text
+
+            send_cookie = self._parse_2fa_challenge_cookie(send_resp.headers)
+            assert bool(send_cookie["secure"]) is True, (
+                "send's refreshed 2fa_challenge cookie must be Secure over https"
+            )
+            assert send_cookie.value == login_cookie.value, "cookie binding value must be unchanged by the refresh"
+            assert send_cookie["path"] == login_cookie["path"] == "/api/v1/auth/2fa"
+            assert send_cookie["max-age"] == login_cookie["max-age"] == "300"
+            assert send_cookie["samesite"] == login_cookie["samesite"]
+            assert bool(send_cookie["httponly"]) == bool(login_cookie["httponly"]) is True
 
     @pytest.mark.asyncio
     @pytest.mark.integration

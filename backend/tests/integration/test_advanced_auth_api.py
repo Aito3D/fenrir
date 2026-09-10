@@ -699,6 +699,102 @@ class TestForgotPasswordAPI:
         assert confirm_resp.status_code == 400
         assert confirm_resp.json()["detail"] == "Invalid or expired password reset token"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_logs_when_cleanup_delete_also_fails(
+        self, async_client: AsyncClient, admin_token: str, caplog, db_session
+    ):
+        """T-080: when send_email() fails AND the subsequent cleanup delete also
+        fails (e.g. the engine is unavailable), the nested except branch inside
+        _send_reset_email_or_delete_token must log "Failed to delete reset token
+        after send failure" so operators can notice a stuck, undeletable token —
+        instead of the exception silently escaping the background task or the
+        cleanup attempt going unnoticed.
+        """
+        import logging
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "cleanupfail", "email": "cleanupfail@test.com", "role": "user"},
+            )
+            assert create_resp.status_code == 201
+
+        captured: dict[str, str] = {}
+
+        async def _capture_link_email(db, username, reset_url):
+            captured["reset_url"] = reset_url
+            return ("subject", "body", "<body/>")
+
+        def _broken_async_session(*args, **kwargs):
+            # Simulates the cleanup's own session being unusable (e.g. engine
+            # unavailable) — raises before any `async with` context is entered,
+            # so it's caught by the nested `except Exception as db_exc:`.
+            raise RuntimeError("engine unavailable")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch(
+                "backend.app.api.routes.auth.send_email",
+                side_effect=RuntimeError("smtp relay unreachable"),
+            ) as mock_send,
+            patch("backend.app.api.routes.auth.async_session", _broken_async_session),
+            caplog.at_level(logging.ERROR, logger="backend.app.api.routes.auth"),
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "cleanupfail@test.com"},
+            )
+
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+        assert "reset_url" in captured, "Reset URL not captured — email function was not called"
+
+        # The original send-failure log ("deleting token to unblock re-request")
+        # must still fire, and must precede the cleanup-failure log.
+        send_failure_logs = [r for r in caplog.records if "deleting token to unblock re-request" in r.getMessage()]
+        assert len(send_failure_logs) == 1
+
+        cleanup_failure_logs = [
+            r for r in caplog.records if "Failed to delete reset token after send failure" in r.getMessage()
+        ]
+        assert len(cleanup_failure_logs) == 1, "nested cleanup-failure log line was not emitted"
+        assert "engine unavailable" in cleanup_failure_logs[0].getMessage()
+
+        send_failure_idx = caplog.records.index(send_failure_logs[0])
+        cleanup_failure_idx = caplog.records.index(cleanup_failure_logs[0])
+        assert send_failure_idx < cleanup_failure_idx, (
+            "cleanup-failure log must be logged after the original send-failure log"
+        )
+
+        # Positive evidence of the consequence: because the cleanup delete
+        # itself failed, the token row must still exist (this is the stuck
+        # token the log line exists to flag).
+        reset_token = captured["reset_url"].rsplit("#reset_token=", 1)[1]
+
+        from sqlalchemy import select
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        remaining = await db_session.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == reset_token))
+        assert remaining.scalar_one_or_none() is not None, (
+            "reset token row should still exist — the cleanup delete failed and never ran"
+        )
+
+        # And the stuck token must still work for confirm.
+        confirm_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "Willwork1!"},
+        )
+        assert confirm_resp.status_code == 200
+
 
 class TestForgotPasswordRateLimitEquivalence:
     """T-051: the per-email PASSWORD_RESET_SEND rate-limit event must be staged
