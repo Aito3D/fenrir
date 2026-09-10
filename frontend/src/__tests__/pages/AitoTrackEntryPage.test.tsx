@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { useEffect, useState } from 'react';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import i18n from '../../i18n';
-import { screen, render as rtlRender, waitFor, fireEvent } from '@testing-library/react';
+import { screen, render as rtlRender, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -9,6 +10,37 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackEntryPage } from '../../pages/AitoTrackEntryPage';
 import { normalizeCode } from '../../utils/trackingCode';
 import type { AitoTracking } from '../../api/client';
+
+// `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
+// instant — the fr chunk this file already forces via `beforeAll` below is
+// fully loaded before any test runs. To exercise the not-ready render (and
+// its flip to ready) deterministically, wrap the real hook and let a test
+// pin `ready` to a fixed value; every other test leaves the override unset
+// and gets the real hook untouched.
+let readyOverride: boolean | null = null;
+const readyOverrideListeners = new Set<() => void>();
+function setReadyOverride(value: boolean | null) {
+  readyOverride = value;
+  readyOverrideListeners.forEach((listener) => listener());
+}
+vi.mock('../../hooks/useTrackingLanguage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../hooks/useTrackingLanguage')>();
+  return {
+    ...actual,
+    useTrackingLanguage: (...args: Parameters<typeof actual.useTrackingLanguage>) => {
+      const real = actual.useTrackingLanguage(...args);
+      const [, forceRender] = useState(0);
+      useEffect(() => {
+        const listener = () => forceRender((n) => n + 1);
+        readyOverrideListeners.add(listener);
+        return () => {
+          readyOverrideListeners.delete(listener);
+        };
+      }, []);
+      return readyOverride === null ? real : { ...real, ready: readyOverride };
+    },
+  };
+});
 
 const FIXTURE: AitoTracking = {
   column: 'print',
@@ -59,6 +91,7 @@ const status = () => screen.getByTestId('track-code-status');
 beforeAll(() => i18n.changeLanguage('fr'));
 afterAll(() => i18n.changeLanguage('en'));
 afterEach(async () => {
+  setReadyOverride(null);
   await i18n.changeLanguage('fr');
 });
 
@@ -151,5 +184,25 @@ describe('AitoTrackEntryPage', () => {
     await userEvent.paste('k7f3-xq 9w');
     expect(input()).toHaveValue('K7F3XQ');
     await waitFor(() => expect(seen).toEqual(['K7F3XQ']));
+  });
+
+  it('shows the card and logo with a pulsing skeleton, not the code entry, while the locale chunk is loading', async () => {
+    setReadyOverride(false);
+    renderEntry();
+    expect(await screen.findByAltText('Aito3D')).toBeInTheDocument();
+    expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('track-code')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
+  it('swaps the skeleton for the code entry once ready, leaving no skeleton behind', async () => {
+    setReadyOverride(false);
+    renderEntry();
+    await screen.findByAltText('Aito3D');
+    expect(screen.queryByTestId('track-code')).not.toBeInTheDocument();
+    act(() => setReadyOverride(true));
+    expect(await screen.findByRole('heading', { name: 'Suivre ma commande' })).toBeInTheDocument();
+    expect(screen.getByTestId('track-code')).toBeInTheDocument();
+    expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
   });
 });

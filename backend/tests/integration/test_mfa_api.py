@@ -36,6 +36,18 @@ from backend.app.models.user import User
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
+
+@pytest.fixture(autouse=True)
+def _reset_oidc_authorize_rate_limit_state():
+    """`oidc_authorize`'s per-IP window (routes/mfa.py) is a process-global
+    dict, not request-scoped — without this, one test's calls could still
+    be sitting in the window when a later test in this file runs. Same
+    shape as conftest.py's reset of aito.py's tracking-route limiter."""
+    mfa_module._reset_oidc_authorize_rate_limits()
+    yield
+    mfa_module._reset_oidc_authorize_rate_limits()
+
+
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -3744,6 +3756,162 @@ class TestOIDCIssuerUrlTrailingSlash:
             "Trailing slash mismatch in iss claim must not cause token_validation_failed"
         )
         assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+
+class _Clock:
+    """Stands in for routes/mfa.py's `time` name — the module looks up
+    `time.monotonic()` through the module attribute, so swapping the whole
+    name for this fake lets a test drive the clock deterministically."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+class TestOIDCAuthorizeRateLimit:
+    """GET /oidc/authorize/{id} is public and does an outbound discovery
+    fetch plus a DB write on every call, so it carries the same per-IP
+    sliding-window cap as aito.py's public tracking route — see
+    routes/mfa.py's `_oidc_authorize_rate_limited`."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_31st_call_from_one_ip_is_429_with_retry_after(self, async_client: AsyncClient, monkeypatch):
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            resp = await async_client.get("/api/v1/auth/oidc/authorize/999999")
+            assert resp.status_code == 404, "unknown provider id — not limited"
+
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999")
+        assert resp.status_code == 429
+        assert resp.headers["retry-after"] == "60"
+        assert "too many" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_different_ip_is_unaffected(self, async_client: AsyncClient, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+        # The test client's TCP peer is the trusted proxy; the real visitor
+        # is whoever X-Forwarded-For names, so two visitors get two buckets.
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            resp = await async_client.get(
+                "/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.5"}
+            )
+            assert resp.status_code == 404
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert resp.status_code == 429
+
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.6"})
+        assert resp.status_code == 404, "a different address must not share the first one's bucket"
+
+        # Once the dict is bigger than a window can justify, hosts whose
+        # calls have all aged out are swept — including ones that never
+        # come back.
+        assert set(mfa_module._oidc_authorize_rate_ip_calls) == {"203.0.113.5", "203.0.113.6"}
+        monkeypatch.setattr(mfa_module, "_OIDC_AUTHORIZE_RATE_SWEEP_ABOVE", 1)
+        clock.now += mfa_module._OIDC_AUTHORIZE_RATE_WINDOW_S + 1
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.7"})
+        assert resp.status_code == 404
+        assert set(mfa_module._oidc_authorize_rate_ip_calls) == {"203.0.113.7"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ip_is_admitted_again_after_the_window(self, async_client: AsyncClient, monkeypatch):
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 404
+        assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 429
+
+        clock.now += mfa_module._OIDC_AUTHORIZE_RATE_WINDOW_S + 1
+        assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_limited_request_does_no_discovery_fetch_or_db_write(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+
+        admin_token = await _setup_and_login(async_client, "oidcratelimadm", "oidcratelimadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "RateLimited",
+                "issuer_url": "https://idp.oidc-ratelimit-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        before = (
+            (
+                await db_session.execute(
+                    sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token_type == "oidc_state")
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Exhaust the cap against an unrelated (unknown) provider id first,
+        # so none of these calls could reach the discovery fetch either way.
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 404
+
+        recorder = AsyncMock()
+
+        class _RecordingClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kwargs):
+                await recorder(url)
+                raise AssertionError("discovery must not be fetched for a rate-limited request")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _RecordingClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 429
+        recorder.assert_not_called()
+
+        after = (
+            (
+                await db_session.execute(
+                    sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token_type == "oidc_state")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(after) == len(before), "a limited request must not write an OIDC_STATE row"
 
 
 class TestOIDCCallbackCodeLength:

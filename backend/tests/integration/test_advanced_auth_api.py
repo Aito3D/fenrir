@@ -5,6 +5,7 @@ email-based login, forgot password, admin password reset, and user creation
 with advanced authentication enabled.
 """
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -577,6 +578,84 @@ class TestForgotPasswordAPI:
             json={"username": "expiredreset", "password": "Originalpass1!"},
         )
         assert login_resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_send_runs_off_event_loop_and_deletes_token_on_failure(
+        self, async_client: AsyncClient, admin_token: str, caplog
+    ):
+        """T-045: the blocking send_email() call must run off the event loop.
+
+        _send_reset_email_or_delete_token is `async def` and registered via
+        BackgroundTasks — Starlette awaits it directly rather than running it
+        in a threadpool, so send_email() must itself be dispatched to a worker
+        thread (asyncio.to_thread) to avoid freezing the loop for every other
+        in-flight request. This also re-confirms the existing "delete the
+        token on send failure" except-branch still fires (same exception
+        handling, logged the same way) when the send is dispatched this way.
+        """
+        import logging
+        import threading
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "offloop", "email": "offloop@test.com", "role": "user"},
+            )
+            assert create_resp.status_code == 201
+
+        captured: dict[str, str] = {}
+
+        async def _capture_link_email(db, username, reset_url):
+            captured["reset_url"] = reset_url
+            return ("subject", "body", "<body/>")
+
+        recorded: dict[str, object] = {}
+
+        def _recording_send_email(*args, **kwargs):
+            recorded["off_main_thread"] = threading.current_thread() is not threading.main_thread()
+            try:
+                asyncio.get_running_loop()
+                recorded["loop_visible"] = True
+            except RuntimeError:
+                recorded["loop_visible"] = False
+            # Simulate an SMTP failure to also exercise the token-deletion path.
+            raise RuntimeError("smtp relay unreachable")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email", side_effect=_recording_send_email) as mock_send,
+            caplog.at_level(logging.ERROR, logger="backend.app.api.routes.auth"),
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "offloop@test.com"},
+            )
+
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+        assert "reset_url" in captured, "Reset URL not captured — email function was not called"
+
+        # The blocking call must have run off the event loop's thread, with no
+        # running loop visible from inside it (proof it's a real worker thread,
+        # not just an awaited coroutine on the same thread).
+        assert recorded.get("off_main_thread") is True
+        assert recorded.get("loop_visible") is False
+
+        # The send failure must still be caught by the except branch and trigger
+        # the same "delete token to unblock re-request" cleanup attempt/log as
+        # before — proving the wrapper's exception handling is unaffected by
+        # moving send_email() onto a worker thread.
+        failure_logs = [r for r in caplog.records if "deleting token to unblock re-request" in r.getMessage()]
+        assert len(failure_logs) == 1
+        assert "smtp relay unreachable" in failure_logs[0].getMessage()
 
 
 class TestAdminResetPasswordAPI:

@@ -10946,3 +10946,28 @@ a token captured from storage before logout (including a Remember Me token persi
 localStorage) stops working immediately instead of staying valid until its natural expiry, and a
 revoked_jti row is written on every logout. Local token/user state, the new-project-draft clear,
 and the swallow-errors-then-navigate sequence are unchanged. User-approved 2026-09-09.
+
+T-033 — GET /auth/oidc/authorize/{provider_id} (public, no credentials required) is now
+rate-limited per client IP: a sliding 60-second window admits at most 30 calls per address
+(`_OIDC_AUTHORIZE_RATE_WINDOW_S` / `_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP` in routes/mfa.py),
+modelled on aito.py's public tracking-route limiter and using the same proxy-aware
+`_get_client_ip` helper. The check is synchronous and runs before the provider lookup, the
+outbound discovery-document fetch, and the AuthEphemeralToken/OIDC_STATE write, so a limited
+request does none of that work. Past the cap the route returns 429 with
+`detail: "Too many OIDC authorize requests, please retry later"` and a `Retry-After: 60` header
+instead of an auth_url. No discovery-document caching and no global cap (declined) — narrowed,
+per-IP-only scope. User-approved, narrowed, 2026-09-09.
+
+T-047 — AitoTrackEntryPage's `!ready` gate (the locale chunk still loading — French, the
+tracking default, ships as a lazy ~350 KB chunk like every non-English bundle) no longer renders
+a bare `<div className="min-h-screen bg-aito-midnight" />`. It now renders the same page frame
+and card shell the ready state uses — the `min-h-screen bg-aito-midnight pt-[64px] pb-[48px]`
+wrapper, the CARD container, the centred `<Logo />` — with a pulsing skeleton block
+(`rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse`) standing in for the code-entry area,
+mirroring AitoTrackPage's own `!settled` skeleton. What a client on a stalled mobile connection
+sees during the first `/t` visit is now the card, the logo and a pulsing placeholder instead of a
+plain dark rectangle with nothing to distinguish it from a broken site. No English fallback
+timeout (declined): the page still waits for the requested locale chunk indefinitely, with no
+retry affordance, no new text and no i18n keys — purely a visual shell while `!ready`. The
+ready-state markup, the code-entry behaviour, and the ENTRY_MOTION/TRACK_MOTION first-load
+choreography are unchanged. User-approved, narrowed, 2026-09-09.

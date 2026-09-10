@@ -990,7 +990,7 @@ async def _send_reset_email_or_delete_token(
     ERROR so operators are alerted without leaking details to the caller.
     """
     try:
-        send_email(smtp_settings, to_email, subject, text_body, html_body)
+        await asyncio.to_thread(send_email, smtp_settings, to_email, subject, text_body, html_body)
         _logger.info("Password reset email sent (%s) to %s", log_label, to_email)
     except Exception as exc:  # SEC-AUTH-EXC: email-send failure → defensive token cleanup so a stuck token doesn't block re-request; no access granted, just frees future workflow
         _logger.error(

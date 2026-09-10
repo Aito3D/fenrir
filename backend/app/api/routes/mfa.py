@@ -25,6 +25,7 @@ import os
 import re
 import secrets
 import string
+import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 
@@ -40,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
 from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
+from backend.app.api.routes.auth import _get_client_ip
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
@@ -1682,6 +1684,49 @@ async def refresh_oidc_provider_icon(
     return _build_provider_response(provider)
 
 
+# /oidc/authorize is public (main.py's PUBLIC_API_PREFIXES exempts it, like
+# the login-flow routes above) and every call does an outbound discovery
+# fetch plus a DB write, so it is throttled the same way as aito.py's public
+# tracking route: a per-IP sliding window, counted and reserved
+# synchronously (no await between the check and the append) so a burst of
+# concurrent requests from one address cannot all pass the check together.
+# `time` is looked up through the module attribute (not `from time import
+# monotonic`) so a test can swap the whole name for a fake clock.
+_OIDC_AUTHORIZE_RATE_WINDOW_S = 60.0
+_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP = 30
+# More host keys than this and the stale ones are swept: only addresses that
+# called inside the window can be live.
+_OIDC_AUTHORIZE_RATE_SWEEP_ABOVE = 2 * _OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP
+_oidc_authorize_rate_ip_calls: dict[str, list[float]] = {}
+
+
+def _reset_oidc_authorize_rate_limits() -> None:
+    """Empty the window — tests reset this around each test that hits the
+    route, the same way conftest.py resets aito.py's tracking limiter."""
+    _oidc_authorize_rate_ip_calls.clear()
+
+
+def _oidc_authorize_rate_limited(request: Request) -> bool:
+    """True when *request*'s address is over the per-IP cap for this
+    window. The address is auth.py's proxy-aware `_get_client_ip`, not
+    `request.client.host` — behind nginx the latter is the proxy for every
+    visitor, and the per-IP cap would silently become a per-shop cap.
+    """
+    now = time.monotonic()
+    host = _get_client_ip(request)
+    if len(_oidc_authorize_rate_ip_calls) > _OIDC_AUTHORIZE_RATE_SWEEP_ABOVE:
+        for stale, calls in list(_oidc_authorize_rate_ip_calls.items()):
+            if not any(now - t < _OIDC_AUTHORIZE_RATE_WINDOW_S for t in calls):
+                del _oidc_authorize_rate_ip_calls[stale]
+    live = [t for t in _oidc_authorize_rate_ip_calls.get(host, ()) if now - t < _OIDC_AUTHORIZE_RATE_WINDOW_S]
+    if len(live) >= _OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP:
+        _oidc_authorize_rate_ip_calls[host] = live
+        return True
+    live.append(now)
+    _oidc_authorize_rate_ip_calls[host] = live
+    return False
+
+
 async def _fetch_oidc_discovery(issuer_url: str) -> dict:
     """Fetch and parse the OIDC discovery document for *issuer_url*.
 
@@ -1699,9 +1744,16 @@ async def _fetch_oidc_discovery(issuer_url: str) -> dict:
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
 async def oidc_authorize(
     provider_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> OIDCAuthorizeResponse:
     """Return the OIDC authorization URL for the given provider."""
+    if _oidc_authorize_rate_limited(request):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OIDC authorize requests, please retry later",
+            headers={"Retry-After": str(int(_OIDC_AUTHORIZE_RATE_WINDOW_S))},
+        )
     result = await db.execute(
         select(OIDCProvider).where(OIDCProvider.id == provider_id).where(OIDCProvider.is_enabled.is_(True))
     )

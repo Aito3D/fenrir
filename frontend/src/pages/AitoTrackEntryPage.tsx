@@ -72,7 +72,27 @@ export function AitoTrackEntryPage() {
     else setState('idle');
   };
 
-  if (!ready) return <div className="min-h-screen bg-aito-midnight" />;
+  // The first paint waits on the locale chunk (French, the tracking default,
+  // ships lazily like every non-English bundle — see i18n/index.ts). Rather
+  // than a bare rectangle, show the same card and logo the ready state uses,
+  // with a skeleton standing in for the code row: no text (nothing is
+  // translated yet) and no motion (ENTRY_MOTION plays only from the
+  // ready-state mount, below).
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+        <div className={CARD}>
+          <header className="text-center">
+            <Logo className="mb-[20px]" />
+          </header>
+          <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
+            <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
+            <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const status =
     state === 'checking'
