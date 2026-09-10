@@ -369,6 +369,123 @@ describe('LoginPage', () => {
     });
   });
 
+  // T-062: AuthContext.login() awaits checkAuthStatus(), which sets `user`
+  // before loginMutation's onSuccess runs, so the unrelated #1889
+  // "already authenticated" effect used to fire on that intermediate render
+  // and navigate('/') a beat before exitToDashboard() sent the browser to the
+  // real post-login target — two navigations (dashboard, then target) and a
+  // visible flash for one login. LoginPage now gates that effect on an
+  // in-flight/just-succeeded password login so exitToDashboard() is the only
+  // navigation. This block runs outside 'login flow' above so each test can
+  // control window.matchMedia itself.
+  describe('single post-login navigation, no #1889 double-navigate (T-062)', () => {
+    const mockUser = {
+      id: 1,
+      username: 'validuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    let originalMatchMedia: typeof window.matchMedia;
+
+    beforeEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      mockNavigate.mockClear();
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'test-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+    });
+
+    afterEach(() => {
+      if (originalMatchMedia) {
+        window.matchMedia = originalMatchMedia;
+      }
+      sessionStorage.clear();
+    });
+
+    it('navigates exactly once, to the stashed target, under reduced motion', async () => {
+      const user = userEvent.setup();
+      // Force reduced motion so exitToDashboard() takes its synchronous
+      // navigate() branch instead of arming the 700ms timer.
+      originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => true,
+      })) as typeof window.matchMedia;
+      // Same stash mechanism the T-037 block above uses to drive
+      // resolvePostLoginRedirect() to a non-'/' target.
+      sessionStorage.setItem('auth_post_login_redirect', '/archives');
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'validuser');
+      await user.type(screen.getByLabelText(/Password/i), 'validpass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalled();
+      });
+      // Give a stray follow-up render (e.g. the #1889 effect re-firing) a
+      // moment to surface before asserting the call count is final.
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Exactly one navigation, straight to the real target — not '/' first.
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/archives', { replace: true });
+    });
+
+    it('does not navigate before the 700ms exit timer, then navigates once to the stashed target', async () => {
+      const user = userEvent.setup();
+      // setup.ts's global window.matchMedia mock defaults to matches: false,
+      // so exitToDashboard() arms its real 700ms setTimeout here.
+      sessionStorage.setItem('auth_post_login_redirect', '/archives');
+
+      const { container } = render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'validuser');
+      await user.type(screen.getByLabelText(/Password/i), 'validpass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Login succeeded and exitToDashboard() armed its 700ms exit timer
+      // (isExiting flips synchronously, swapping in the exit-animation class)
+      // — but nothing should have navigated yet.
+      await waitFor(() => {
+        expect(container.querySelector('.animate-login-card-out')).toBeInTheDocument();
+      });
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      // Wait out (with margin) the 700ms delay before the real navigation
+      // fires — bounded and deliberate, mirroring the T-055/T-061 guards'
+      // own documented waits for this same timer.
+      await new Promise((r) => setTimeout(r, 800));
+
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/archives', { replace: true });
+    });
+  });
+
   describe('2FA flow', () => {
     // Helper: login as a 2FA user and get to the 2FA step
     async function loginWith2FA(twoFAMethods = ['totp', 'backup']) {

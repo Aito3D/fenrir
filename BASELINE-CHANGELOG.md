@@ -11100,3 +11100,21 @@ source address per minute instead of 30. Declined, per the narrowed approval: re
 off `X-Forwarded-For` regardless of `_TRUSTED_PROXY_IPS`, a startup warning when
 `TRUSTED_PROXY_IPS` is unset, and a dedicated global (not per-key) cap — the limiter's keying and
 logic are otherwise untouched. User-approved, narrowed, 2026-09-09.
+
+T-062 — `LoginPage.tsx`'s password-login flow no longer races its own `#1889` "already
+authenticated" effect. `AuthContext.login()` awaits `checkAuthStatus()`, which calls `setUser()`
+before `loginMutation`'s `onSuccess` runs, so the credentials-step effect
+(`if (!loading && user && step === 'credentials') navigate('/', { replace: true })`) used to fire on
+that intermediate render — before `onSuccess` had even called `exitToDashboard(resolvePostLoginRedirect())`
+— sending the browser to `/` a beat before the real target. A new `loginInFlightRef`, set `true`
+synchronously at the top of `handleSubmit()` (before `loginMutation.mutate()`) and cleared in the
+mutation's `onError`, gates that effect: `if (!loading && user && step === 'credentials' &&
+!loginInFlightRef.current)`. User-visible effect: a password login now produces exactly one
+navigation — to the real post-login target (a stashed redirect, or `/`), after the card's 700 ms
+exit animation (or immediately under reduced motion) — instead of an immediate flash to the
+dashboard followed a moment later by a second navigation to the actual target. The original
+`#1889` behaviour is unchanged: a visitor who lands on `/login` already authenticated (e.g. a
+back-button visit or a second tab), without performing a login in this mount, still redirects to
+`/` exactly as before — `loginInFlightRef` starts and stays `false` on that path. The OIDC-return
+and 2FA verification paths, `resolvePostLoginRedirect()`, and `exitToDashboard()`'s own timing are
+all untouched. User-approved 2026-09-09.

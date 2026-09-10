@@ -213,6 +213,16 @@ export function LoginPage() {
   // so the user understands why autologin didn't kick in.
   const [autologinFailed, setAutologinFailed] = useState(false);
 
+  // T-062: true for the span of an in-flight (or just-succeeded) password
+  // login in this mount. login() awaits checkAuthStatus(), which sets `user`
+  // before loginMutation's onSuccess runs, so the #1889 effect right below
+  // would otherwise fire on that intermediate render and navigate('/') a beat
+  // before exitToDashboard() sends the browser to the real post-login target —
+  // two navigations and a visible flash for one login. Cleared on failure so
+  // an unrelated already-authenticated bounce later in the same mount still
+  // works as before.
+  const loginInFlightRef = useRef(false);
+
   // #1889: redirect already-authenticated visitors away from /login. Without
   // this, a valid session that lands directly on /login (e.g. the browser
   // address bar autocompletes the origin to its most-visited path) renders the
@@ -221,9 +231,11 @@ export function LoginPage() {
   // credentials step so we don't interrupt the 2FA / OIDC-callback branches,
   // which navigate themselves after loginWithToken. Send to '/' rather than
   // resolvePostLoginRedirect() to avoid consuming the OIDC redirect stash: an
-  // already-authed direct visit has no pending redirect to honour.
+  // already-authed direct visit has no pending redirect to honour. Also skip
+  // while a password login is in flight/just succeeded (see loginInFlightRef
+  // above) so exitToDashboard() owns that navigation instead.
   useEffect(() => {
-    if (!loading && user && step === 'credentials') {
+    if (!loading && user && step === 'credentials' && !loginInFlightRef.current) {
       navigate('/', { replace: true });
     }
   }, [loading, user, step, navigate]);
@@ -361,6 +373,7 @@ export function LoginPage() {
       }
     },
     onError: (error: Error) => {
+      loginInFlightRef.current = false;
       showToast(error.message || t('login.loginFailed'), 'error');
     },
   });
@@ -456,6 +469,7 @@ export function LoginPage() {
       showToast(t('login.enterCredentials'), 'error');
       return;
     }
+    loginInFlightRef.current = true;
     loginMutation.mutate();
   };
 
