@@ -572,3 +572,100 @@ class TestLdapLoginBindTimeout:
         assert response.status_code == 401, response.text
         assert "Incorrect username or password" in response.json()["detail"]
         assert "LDAP authentication error, falling back to local" in caplog.text
+
+
+class TestLoginLocalAccountCollisionGuard:
+    """T-096: login() must not let a successful LDAP bind take over a username
+    that already belongs to a *local* account. auth.py lines 513-516:
+
+        if user and user.auth_source != "ldap":
+            user = None
+            ldap_user = None
+
+    Without this guard, a directory that happens to contain a username
+    matching an existing local admin/user would let anyone who can bind to
+    that directory account log in as the local user — no local password
+    required.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ldap_success_does_not_take_over_existing_local_username(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """An LDAP bind that resolves to a username already owned by a local
+        account must not log the caller in as that local account. The request
+        must instead fall through to local password verification, which fails
+        here because the supplied password is not the local user's password."""
+        from backend.app.core.auth import get_password_hash
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "collisionadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="true")
+
+        db_session.add(
+            User(
+                username="zoe",
+                email="zoe@test.com",
+                password_hash=get_password_hash("ZoeRealLocalPass1!"),
+                role="user",
+                auth_source="local",
+            )
+        )
+        await db_session.commit()
+
+        # The directory "succeeds" and hands back the same username — but the
+        # login request carries the wrong *local* password. If the guard were
+        # missing, the LDAP result alone would be enough to log in as "zoe".
+        fake_ldap = LDAPUserInfo(username="zoe", email="zoe@test.com", display_name=None, groups=[])
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "zoe", "password": "WrongLocalPass1!"},
+            )
+
+        assert response.status_code == 401, response.text
+        assert "Incorrect username or password" in response.json()["detail"]
+
+        # The local account must still be untouched — still local, never flipped to ldap.
+        row = (await db_session.execute(select(User).where(User.username == "zoe"))).scalar_one()
+        assert row.auth_source == "local"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ldap_success_with_auto_provision_off_and_no_local_user_falls_through(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A successful LDAP bind for a username with no matching local account,
+        while auto-provision is off, must not create a user or log the caller
+        in — it falls through cleanly to local auth, which then fails (no such
+        local account) with the same generic 401."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "collisionadmin2",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="false")
+
+        fake_ldap = LDAPUserInfo(username="brandnew", email="brandnew@test.com", display_name=None, groups=[])
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "brandnew", "password": "irrelevant"},
+            )
+
+        assert response.status_code == 401, response.text
+        assert "Incorrect username or password" in response.json()["detail"]
+
+        # No user must have been created as a side effect of the (discarded) LDAP result.
+        row = (await db_session.execute(select(User).where(User.username == "brandnew"))).scalar_one_or_none()
+        assert row is None

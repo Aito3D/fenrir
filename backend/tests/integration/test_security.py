@@ -719,7 +719,7 @@ class TestEmailOTPMaxAttempts:
         await db_session.commit()
 
         # Submit MAX_ATTEMPTS wrong codes
-        from backend.app.api.routes.mfa import MAX_2FA_ATTEMPTS
+        from backend.app.api.routes.mfa import MAX_2FA_ATTEMPTS, clear_failed_attempts
 
         for _ in range(MAX_2FA_ATTEMPTS):
             r = await async_client.post(
@@ -729,13 +729,21 @@ class TestEmailOTPMaxAttempts:
             # Each attempt must fail with 401
             assert r.status_code == 401
 
-        # After max attempts, the correct code is also rejected (either OTP
-        # invalidated → 401, or rate limit hit → 429). Either means locked out.
+        # The wrong-code loop above also trips verify_2fa's own per-username
+        # login rate limiter (check_rate_limit), which runs *before* the OTP
+        # record is even looked up. Clear that unrelated bucket so the final
+        # submission below actually reaches the OTP row's own MAX_ATTEMPTS
+        # lockout check instead of being rejected by the rate limiter first.
+        await clear_failed_attempts(db_session, "otp_max_admin")
+
+        # After max attempts, the OTP record itself must be invalidated even
+        # though the submitted code is correct.
         final = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "code": real_code, "method": "email"},
         )
-        assert final.status_code in (401, 429), f"Expected lockout, got {final.status_code}: {final.json()}"
+        assert final.status_code == 401, f"Expected OTP lockout, got {final.status_code}: {final.json()}"
+        assert final.json()["detail"] == "OTP code has been invalidated after too many attempts"
 
 
 # ===========================================================================

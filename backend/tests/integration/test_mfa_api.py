@@ -3567,6 +3567,150 @@ class TestOIDCIssMismatch:
 
 
 # ===========================================================================
+# T-100: OIDC ID token missing/empty sub claim must redirect to
+# missing_sub_claim and must not create a User or UserOIDCLink row.
+# ===========================================================================
+
+
+class TestOIDCMissingSubClaim:
+    """ID token whose `sub` claim is absent or empty must be rejected before
+    account resolution (mfa.py: `if not provider_sub: return RedirectResponse(...)`).
+    """
+
+    async def _run_callback(self, async_client: AsyncClient, db_session: AsyncSession, claims: dict, label: str):
+        from sqlalchemy import select as sa_select
+
+        from backend.app.core.auth import get_user_by_email
+        from backend.app.models.oidc_provider import UserOIDCLink
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = f"https://missing-sub-{label}.example.com"
+        client_id = f"missing-sub-{label}-client"
+        nonce = secrets.token_urlsafe(16)
+        now = int(time.time())
+
+        full_claims = {
+            "iss": issuer,
+            "aud": client_id,
+            "nonce": nonce,
+            "email": f"missingsub-{label}@example.com",
+            "email_verified": True,
+            "iat": now,
+            "exp": now + 300,
+            **claims,
+        }
+        id_token = pyjwt.encode(
+            full_claims,
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        admin_token = await _setup_and_login(async_client, f"subadmin_{label}", f"SubAdmin_{label}1")
+        cr = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"MissingSub-{label}-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "s",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert cr.status_code in (200, 201), cr.text
+        provider_id = cr.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = ""
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
+        class _MockHttpxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kw):
+                return _MockResp(jwks_data if "jwks" in url else discovery_doc)
+
+            async def post(self, url, **kw):
+                return _MockResp({"access_token": "a", "id_token": id_token})
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=c&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "missing_sub_claim" in location, f"Expected missing_sub_claim redirect, got: {location}"
+
+        # No OIDC link and no auto-created user for the token's email — the
+        # callback must fail closed before reaching account resolution.
+        link_result = await db_session.execute(sa_select(UserOIDCLink).where(UserOIDCLink.provider_id == provider_id))
+        assert link_result.scalar_one_or_none() is None, "No UserOIDCLink should be created for a missing sub claim"
+
+        email_user = await get_user_by_email(db_session, f"missingsub-{label}@example.com")
+        assert email_user is None, "No User should be auto-created for a missing sub claim"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_omitted_sub_redirects_missing_sub_claim(self, async_client: AsyncClient, db_session: AsyncSession):
+        """ID token with no `sub` key at all must be rejected."""
+        await self._run_callback(async_client, db_session, {}, "omitted")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_empty_sub_redirects_missing_sub_claim(self, async_client: AsyncClient, db_session: AsyncSession):
+        """ID token with `sub` present but an empty string must be rejected."""
+        await self._run_callback(async_client, db_session, {"sub": ""}, "empty")
+
+
+# ===========================================================================
 # Test Gap 3: /forgot-password/confirm token is single-use
 # ===========================================================================
 
