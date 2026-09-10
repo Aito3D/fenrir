@@ -11118,3 +11118,44 @@ back-button visit or a second tab), without performing a login in this mount, st
 `/` exactly as before — `loginInFlightRef` starts and stays `false` on that path. The OIDC-return
 and 2FA verification paths, `resolvePostLoginRedirect()`, and `exitToDashboard()`'s own timing are
 all untouched. User-approved 2026-09-09.
+
+## Campaign 13 · Round 3 (approved 2026-09-09)
+
+T-069 — `oidc_callback()`'s `frontend_error_url` in `mfa.py` now points at
+`f"{external_url}/login?oidc_error="` instead of `f"{external_url}/?oidc_error="`. `/` is the
+index route nested under `ProtectedRoute` (App.tsx), which for an unauthenticated visitor renders
+`<Navigate to="/login" replace state={{ from: location }} />` and drops the query string, so every
+SSO failure redirect previously landed on a bare `/login` with no `oidc_error` param —
+`LoginPage.tsx`'s `KNOWN_OIDC_ERRORS` table never fired and the user saw the plain credentials form
+with no explanation. Worse, on an install with `autologin_provider_id` set, LoginPage's autologin
+effect only skips its own redirect back to the IdP `if (... || searchParams.get('oidc_error'))` —
+with the param stripped, the browser bounced straight back to the IdP, which failed again,
+producing an endless IdP↔Bambuddy redirect loop with no reachable login form. User-visible effect:
+after a failed SSO sign-in the address bar now reads `/login?oidc_error=...` instead of
+`/?oidc_error=...`, and the user sees the corresponding error toast where previously they saw
+nothing; an autologin-configured install that used to loop now lands on a real login form showing
+the error. The success redirect (`f"{external_url}/login#oidc_token={exchange_token}"`) already
+targeted `/login` and is unchanged — only the failure path's path segment changed, from `/` to
+`/login`; every error-code string, status code (302), and the query-param name (`oidc_error`) are
+untouched. User-approved 2026-09-09.
+
+T-070 — `send_email_otp()` in `mfa.py` now commits the invalidation of the user's existing unused
+`UserOTPCode` rows and the newly-created row *before* calling `send_email()`, instead of leaving
+both staged in the same write transaction that spanned the SMTP round trip. SQLite only allows one
+writer at a time, and `send_email()`'s per-socket 10s timeout (connect/starttls/login/send) could
+previously pin that write transaction — and the RESERVED lock it holds — for up to ~40s against a
+slow or half-dead mail relay, while every other writer's `PRAGMA busy_timeout` gave them only 15s
+to acquire the lock; one user tapping "Send code" against a degraded relay could make unrelated
+writes across the app fail with "database is locked". The commit now happens immediately after the
+new row is flushed (its id is read before the commit, since a commit can expire the ORM instance),
+so no write transaction is open for the duration of the send. Because the invalidation and the new
+row are committed up front, a failed send can no longer roll them back; the `except` branch instead
+explicitly marks the just-committed row `used=True` and commits that before re-raising the same
+`HTTPException(500, "Failed to send OTP email")` as before. User-visible effect: when an OTP email
+fails to send, the code that was previously e-mailed to the user is now already invalidated (rather
+than being restored by a rolled-back transaction) — the user must request a new code instead of
+reusing the old one. Everything else is unchanged: the OTP code format and 10-minute TTL, the
+email-send rate-limit event (`record_email_otp_send`, still recorded only after a successful send),
+the pre-auth token (only ever consumed after a successful send, so a failed send leaves it valid
+for a retry with no extra cost), and the response body/status codes on both the failure and success
+paths. User-approved 2026-09-09.

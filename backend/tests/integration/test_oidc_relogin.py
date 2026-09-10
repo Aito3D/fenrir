@@ -287,7 +287,7 @@ class TestOidcReloginAfterDelete:
         # ── Second OIDC login with the same sub: auto_create must run again ──
         # The helper already asserts a 302 with oidc_token=… — that alone proves
         # auto_create fired (otherwise the callback would have redirected to
-        # /?oidc_error=account_inactive and the helper would have failed).
+        # /login?oidc_error=account_inactive and the helper would have failed).
         await _trigger_oidc_callback(
             async_client,
             db_session,
@@ -407,6 +407,98 @@ class TestOidcCallbackDiscoveryFailure:
         assert callback_resp.status_code == 302, callback_resp.text
         location = callback_resp.headers.get("location", "")
         assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_failure_redirect_targets_login_route_not_bare_index(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """The failure redirect must land on ``/login?oidc_error=...``, not the
+        bare ``/`` index route.
+
+        ``/`` is nested under ``ProtectedRoute`` (App.tsx), which redirects an
+        unauthenticated visitor to ``/login`` *without* preserving the query
+        string — so a failure sent to ``/?oidc_error=...`` would silently
+        drop the error code and, on installs with autologin configured, loop
+        straight back to the IdP. Regression test for #T-069.
+        """
+        issuer = "https://idp.login-route-test.example.com"
+        client_id = "login-route-client"
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "loginrouteadm",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "loginrouteadm", "password": "AdminPass1!"},
+        )
+        admin_token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "LoginRouteIdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "test-secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=headers,
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        class _MockHttpx500Client:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(500, request=httpx.Request("GET", url), json={})
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpx500Client):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        expected_external_url = "http://localhost:5173"
+        assert location.startswith(f"{expected_external_url}/login?oidc_error="), (
+            f"Expected redirect to {expected_external_url}/login?oidc_error=..., got: {location}"
+        )
+        parsed = urllib.parse.urlparse(location)
+        assert parsed.path == "/login", f"Expected path '/login', got: {parsed.path!r} (location={location})"
+        query = urllib.parse.parse_qs(parsed.query)
+        assert "oidc_error" in query, f"Expected 'oidc_error' query param, got: {parsed.query!r}"
+        assert query["oidc_error"] == ["discovery_failed"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -1127,7 +1127,12 @@ async def send_email_otp(
     if not smtp_settings:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Email service is not configured")
 
-    # Invalidate all existing unused OTP codes for this user (staged, not yet committed)
+    # T-070: invalidate the user's existing unused OTP codes and persist the new
+    # one, then COMMIT before touching SMTP. SQLite only allows one writer at a
+    # time, and send_email's per-socket 10s timeout (connect/starttls/login/send)
+    # can pin a write transaction for up to ~40s — long enough to starve every
+    # other writer through the 15s busy_timeout. Closing the write transaction
+    # first means a slow/hung relay never holds the RESERVED lock.
     await db.execute(
         UserOTPCode.__table__.update()  # type: ignore[attr-defined]
         .where(UserOTPCode.user_id == user.id)
@@ -1135,7 +1140,7 @@ async def send_email_otp(
         .values(used=True)
     )
 
-    # Generate a 6-digit code and stage the record (not committed yet)
+    # Generate a 6-digit code and persist the record.
     code = str(secrets.randbelow(1_000_000)).zfill(6)
     code_hash = pwd_context.hash(code)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=UserOTPCode.OTP_TTL_MINUTES)
@@ -1148,10 +1153,17 @@ async def send_email_otp(
         expires_at=expires_at,
     )
     db.add(otp_record)
+    await db.flush()
+    otp_id = otp_record.id  # pin before commit expires the instance (MissingGreenlet landmine)
+    await db.commit()
 
-    # M2: Send the email BEFORE consuming the pre-auth token.
-    # If the send fails we raise an exception here; the session is uncommitted so
-    # the OTP record is discarded and the original token remains valid for retry.
+    # M2 (updated for T-070): the write transaction above is already committed,
+    # so a failed send can no longer roll it back. Instead, the except branch
+    # explicitly marks the just-committed row used — the user-visible effect is
+    # that the previously e-mailed code is invalidated either way, and the
+    # caller must request a fresh code rather than reuse the old one. The
+    # original pre-auth token is untouched here either way and remains valid
+    # for a retry.
     try:
         await asyncio.to_thread(
             send_email,
@@ -1169,10 +1181,16 @@ async def send_email_otp(
         await record_email_otp_send(db, username)
     except Exception as exc:
         logger.error("Failed to send OTP email to user_id=%d: %s", user.id, exc)
+        await db.execute(
+            UserOTPCode.__table__.update()  # type: ignore[attr-defined]
+            .where(UserOTPCode.id == otp_id)
+            .values(used=True)
+        )
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send OTP email")
 
-    # Email sent — now atomically consume the old token (this also commits the
-    # staged OTP record) and issue a fresh token for the verify step.
+    # Email sent — now atomically consume the old token and issue a fresh one
+    # for the verify step (the OTP row itself was already committed above).
     consumed = await consume_pre_auth_token(db, body.pre_auth_token, challenge_id=challenge_id)
     if not consumed:
         # Raced with another request or token just expired — treat as invalid.
@@ -1866,7 +1884,7 @@ async def oidc_callback(
 ) -> RedirectResponse:
     """Handle the OIDC authorization code callback from the identity provider."""
     external_url = await _get_base_external_url(db)
-    frontend_error_url = f"{external_url}/?oidc_error="
+    frontend_error_url = f"{external_url}/login?oidc_error="
 
     try:
         if error:

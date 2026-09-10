@@ -7,7 +7,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { LoginPage } from '../../pages/LoginPage';
-import { setAuthToken } from '../../api/client';
+import { api, setAuthToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
@@ -1474,6 +1474,194 @@ describe('LoginPage', () => {
         expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
       });
       expect(mockNavigate).not.toHaveBeenCalledWith('/', { replace: true });
+    });
+  });
+
+  // T-074: #1589 autologin — when GET .../advanced-auth/status reports a
+  // non-null autologin_provider_id, an effect on mount fetches that
+  // provider's authorize URL and redirects unauthenticated visitors straight
+  // there, unless the visit carries `?fallback=local` or is already mid an
+  // OIDC callback. On fetch failure (or a 5s timeout) it skips the redirect
+  // and shows a banner instead. Previously fully uncovered.
+  //
+  // window.location must be fully stubbed by every test here rather than
+  // relying on the ambient location left over from earlier describes in this
+  // file (some of those permanently replace window.location with a plain
+  // object, so state leaks between tests unless each test defines exactly
+  // what it needs — see the module-level setup.ts proxy comment for why
+  // `href` writes are otherwise silently swallowed).
+  describe('autologin redirect to SSO provider (T-074)', () => {
+    function stubLocation(overrides: { href?: string; search?: string; hash?: string } = {}) {
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: {
+          href: 'http://localhost:3000/login',
+          pathname: '/login',
+          search: '',
+          hash: '',
+          ...overrides,
+        },
+      });
+    }
+
+    afterEach(() => {
+      stubLocation();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    it('redirects to the provider authorize URL when autologin_provider_id is set', async () => {
+      stubLocation();
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 7,
+          })
+        ),
+        http.get('/api/v1/auth/oidc/authorize/7', () =>
+          HttpResponse.json({ auth_url: 'https://idp.test/authorize?state=xyz' })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(window.location.href).toBe('https://idp.test/authorize?state=xyz');
+      });
+    });
+
+    it('does not redirect when the URL carries ?fallback=local, and renders the normal form', async () => {
+      stubLocation({ search: '?fallback=local' });
+      const authorizeSpy = vi.spyOn(api, 'getOIDCAuthorizeUrl');
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 7,
+          })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+      });
+      expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      expect(window.location.href).toBe('http://localhost:3000/login');
+      expect(authorizeSpy).not.toHaveBeenCalled();
+    });
+
+    it('shows the autologin-failed banner and a usable form when the authorize fetch fails', async () => {
+      stubLocation();
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 9,
+          })
+        ),
+        http.get('/api/v1/auth/oidc/authorize/9', () =>
+          HttpResponse.json({ detail: 'provider not found' }, { status: 500 })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Automatic SSO sign-in failed/i)).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+      expect(window.location.href).toBe('http://localhost:3000/login');
+    });
+
+    it('shows the autologin-failed banner when the authorize fetch never settles within the 5s timeout', async () => {
+      stubLocation();
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 11,
+          })
+        )
+      );
+      // Never resolves — the effect's 5s Promise.race timeout must be what
+      // surfaces the banner, not a rejection from this call itself.
+      vi.spyOn(api, 'getOIDCAuthorizeUrl').mockReturnValue(new Promise(() => {}));
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+      });
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Automatic SSO sign-in failed/i)).toBeInTheDocument();
+      });
+    });
+
+    it('does not redirect while an OIDC callback (#oidc_token=) is in flight', async () => {
+      stubLocation({ hash: '#oidc_token=in-flight-token' });
+      const authorizeSpy = vi.spyOn(api, 'getOIDCAuthorizeUrl');
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 7,
+          })
+        ),
+        // Malformed exchange response (no access_token/requires_2fa) is the
+        // simplest way to reach a stable, assertable end state for this test.
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({ token_type: 'bearer' })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Login.*failed|failed.*login/i)).toBeInTheDocument();
+      });
+      expect(authorizeSpy).not.toHaveBeenCalled();
+      expect(window.location.href).toBe('http://localhost:3000/login');
+    });
+
+    it('does not redirect while an OIDC error (?oidc_error=) is in flight', async () => {
+      stubLocation({ search: '?oidc_error=invalid_state' });
+      const authorizeSpy = vi.spyOn(api, 'getOIDCAuthorizeUrl');
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 7,
+          })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+      });
+      expect(authorizeSpy).not.toHaveBeenCalled();
+      expect(window.location.href).toBe('http://localhost:3000/login');
     });
   });
 });

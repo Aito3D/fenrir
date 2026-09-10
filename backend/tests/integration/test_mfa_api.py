@@ -2033,6 +2033,161 @@ class TestEmailOTPSendCookieRefresh:
         assert verify_resp.json()["user"]["username"] == "cookierefresh2"
 
 
+class TestEmailOTPSendCommitsBeforeSMTP:
+    """T-070: send_email_otp must commit the OTP-code invalidation + the new
+    UserOTPCode row BEFORE the SMTP round trip, so SQLite's write lock is
+    never held across send_email(). A failed send can therefore no longer
+    roll the invalidation back — the except branch marks the just-committed
+    row used instead, so the previously e-mailed code is invalidated either
+    way and the caller must request a fresh one (user-approved behaviour
+    change)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_send_failure_invalidates_previous_code_and_marks_new_row_used(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        import re
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        from backend.app.models.user_otp_code import UserOTPCode
+
+        await TestEmailOTPSendCookieRefresh()._enable_email_otp_and_login(
+            async_client, db_session, "sendfailinvalid", "sendfailinvalid1"
+        )
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "sendfailinvalid", "sendfailinvalid1")
+
+        # First (successful) send — this is the code the user "previously received".
+        captured: dict[str, str] = {}
+
+        def _capture(smtp_settings, to_email, subject, body_text, body_html):
+            m = re.search(r"login code is: (\d{6})", body_text)
+            if m:
+                captured["otp"] = m.group(1)
+
+        smtp_mock = MagicMock()
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            first_send = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert first_send.status_code == 200, first_send.text
+        previous_code = captured["otp"]
+        second_pre_auth_token = first_send.json()["pre_auth_token"]
+
+        # Re-tap "Send code" — the relay is down this time.
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=RuntimeError("smtp down")),
+        ):
+            failed_send = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": second_pre_auth_token},
+            )
+        assert failed_send.status_code == 500
+        assert failed_send.json()["detail"] == "Failed to send OTP email"
+
+        # Approved user-visible change: the previously-emailed code is already
+        # invalidated (not restored by a rollback) — /2fa/verify must reject it.
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": second_pre_auth_token, "method": "email", "code": previous_code},
+        )
+        assert verify_resp.status_code == 401
+
+        # The row created just before the failed send must be marked used too.
+        result = await db_session.execute(sa_select(User).where(User.username == "sendfailinvalid"))
+        user = result.scalar_one()
+        rows = (
+            (
+                await db_session.execute(
+                    sa_select(UserOTPCode).where(UserOTPCode.user_id == user.id).order_by(UserOTPCode.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows, "expected at least one UserOTPCode row"
+        assert all(row.used for row in rows), "every OTP row must be invalidated after a failed send"
+
+        # The pre-auth token itself is untouched by the failed send (only ever
+        # consumed on a successful send) — a retry with the same token works.
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            retry_send = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": second_pre_auth_token},
+            )
+        assert retry_send.status_code == 200, retry_send.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_open_write_transaction_during_smtp_send(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Mutation-sensitive proof of the commit-before-send contract.
+
+        The in-memory test database is a single shared (StaticPool) SQLite
+        connection, so a genuinely independent second connection that would
+        block on SQLite's RESERVED write lock isn't available here (and a
+        second *engine* pointed at ``:memory:`` would just get its own empty
+        database). Per the task's fallback ladder, this instead asserts
+        ``AsyncSession.in_transaction()`` is False at the exact moment
+        ``send_email`` is invoked — a direct, deterministic check of "no open
+        write transaction spans the SMTP call" rather than a timing race.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.core.database import get_db
+        from backend.app.main import app
+
+        await TestEmailOTPSendCookieRefresh()._enable_email_otp_and_login(
+            async_client, db_session, "notxnduringsend", "notxnduringsend1"
+        )
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "notxnduringsend", "notxnduringsend1")
+
+        captured_session: dict[str, AsyncSession] = {}
+        original_override = app.dependency_overrides[get_db]
+
+        async def capturing_override():
+            async for session in original_override():
+                captured_session["db"] = session
+                yield session
+
+        app.dependency_overrides[get_db] = capturing_override
+
+        observed: dict[str, bool] = {}
+        smtp_mock = MagicMock()
+
+        def _check_in_transaction(smtp_settings, to_email, subject, body_text, body_html):
+            observed["in_transaction"] = captured_session["db"].in_transaction()
+
+        try:
+            with (
+                patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+                patch("backend.app.api.routes.mfa.send_email", side_effect=_check_in_transaction),
+            ):
+                send_resp = await async_client.post(
+                    "/api/v1/auth/2fa/email/send",
+                    json={"pre_auth_token": pre_auth_token},
+                )
+        finally:
+            app.dependency_overrides[get_db] = original_override
+
+        assert send_resp.status_code == 200, send_resp.text
+        assert "in_transaction" in observed, "send_email side_effect never ran"
+        assert observed["in_transaction"] is False, (
+            "the OTP invalidation + new row must already be committed before the SMTP send starts"
+        )
+
+
 # ===========================================================================
 # OIDC end-to-end (coverage gap C4)
 # ===========================================================================
