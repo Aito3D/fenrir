@@ -404,6 +404,11 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
         # Obico endpoints load settings through the service's module-level binding;
         # without this patch they'd read whatever DB the cwd resolves to (#1546).
         patch("backend.app.services.obico_detection.async_session", test_async_session),
+        # _send_reset_email_or_delete_token opens its own session (module-level
+        # binding, not the get_db-overridden one) to delete the reset token on
+        # send failure; without this patch that cleanup silently hits the real
+        # DB engine instead of the test DB (T-054).
+        patch("backend.app.api.routes.auth.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         # Seed default groups for tests that need them
@@ -924,9 +929,16 @@ def _reset_tracking_rate_limits():
     """The public tracking route's sliding windows (routes/aito.py) live in
     module dicts and count every call; a file that opens the page thirty
     times across its tests would trip the per-IP cap on the thirty-first
-    for no reason of its own. Empty both buckets around every test."""
-    from backend.app.api.routes import aito as aito_routes
+    for no reason of its own. Empty both buckets around every test.
+
+    `oidc_authorize`'s per-IP window (routes/mfa.py) is a process-global
+    dict of the same shape, modelled on this same limiter — reset it here
+    too so every test file gets the same isolation, not just the one that
+    happens to exercise OIDC."""
+    from backend.app.api.routes import aito as aito_routes, mfa as mfa_routes
 
     aito_routes._reset_track_rate_limits()
+    mfa_routes._reset_oidc_authorize_rate_limits()
     yield
     aito_routes._reset_track_rate_limits()
+    mfa_routes._reset_oidc_authorize_rate_limits()

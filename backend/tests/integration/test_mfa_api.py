@@ -37,17 +37,6 @@ from backend.app.models.user import User
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
-@pytest.fixture(autouse=True)
-def _reset_oidc_authorize_rate_limit_state():
-    """`oidc_authorize`'s per-IP window (routes/mfa.py) is a process-global
-    dict, not request-scoped — without this, one test's calls could still
-    be sitting in the window when a later test in this file runs. Same
-    shape as conftest.py's reset of aito.py's tracking-route limiter."""
-    mfa_module._reset_oidc_authorize_rate_limits()
-    yield
-    mfa_module._reset_oidc_authorize_rate_limits()
-
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------

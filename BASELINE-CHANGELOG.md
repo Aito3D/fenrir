@@ -10971,3 +10971,25 @@ timeout (declined): the page still waits for the requested locale chunk indefini
 retry affordance, no new text and no i18n keys — purely a visual shell while `!ready`. The
 ready-state markup, the code-entry behaviour, and the ENTRY_MOTION/TRACK_MOTION first-load
 choreography are unchanged. User-approved, narrowed, 2026-09-09.
+
+## Campaign 13 · Round 2 (approved 2026-09-09)
+
+T-057 — login()'s LDAP bind (`await asyncio.to_thread(authenticate_ldap_user, ...)`) is now bounded
+by `asyncio.wait_for(..., timeout=_LDAP_BIND_TIMEOUT_S)` with `_LDAP_BIND_TIMEOUT_S = 15.0` in
+auth.py. `authenticate_ldap_user`'s ldap3 objects set only `connect_timeout=10` and never
+`receive_timeout`, so a directory that completes the TCP handshake and then stops answering used
+to leave the bind blocked in a read forever — and because `asyncio.to_thread` runs on the loop's
+shared default `ThreadPoolExecutor` (min(32, cpu+4) workers, process-wide), roughly 32 such login
+attempts would starve every other `to_thread` caller in the process (the 2FA OTP email, the
+password-reset email, main.py's photo/timelapse file IO). On timeout the request now takes the
+exact path an LDAP exception already took: `TimeoutError`/`asyncio.TimeoutError` is a subclass of
+`Exception`, so the surrounding `except Exception as e:` catches it unchanged, logs the same
+"LDAP authentication error, falling back to local: %s" warning (with the timeout's own message
+interpolated), sets `ldap_user = None`, and falls through to local auth exactly as before.
+User-visible effect: a login attempted while the LDAP server is unresponsive now returns a
+response (401, or a local-auth success if the credentials also match a local account) after ~15 s
+instead of hanging until the browser gives up. Limitation, noted honestly: `asyncio.wait_for`
+cancels the *awaiting* coroutine, not the worker thread — `asyncio.to_thread` has no cancellation
+hook, so the thread stays blocked in ldap3's read until the underlying socket eventually dies; only
+the request's wait is bounded, not the thread's lifetime. No other timeout, response, status code
+or message changed; ldap_service.py untouched. User-approved 2026-09-09.

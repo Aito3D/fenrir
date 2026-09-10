@@ -582,7 +582,7 @@ class TestForgotPasswordAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_forgot_password_send_runs_off_event_loop_and_deletes_token_on_failure(
-        self, async_client: AsyncClient, admin_token: str, caplog
+        self, async_client: AsyncClient, admin_token: str, caplog, db_session
     ):
         """T-045: the blocking send_email() call must run off the event loop.
 
@@ -608,10 +608,23 @@ class TestForgotPasswordAPI:
             )
             assert create_resp.status_code == 201
 
-        captured: dict[str, str] = {}
+        captured: dict[str, object] = {}
 
         async def _capture_link_email(db, username, reset_url):
             captured["reset_url"] = reset_url
+            # T-054: record whether the token row exists *before* the send
+            # (and its failure-branch delete) runs, using the same
+            # request-scoped session the endpoint just committed the token
+            # with. This is the positive-evidence half of the deletion proof
+            # — without it, "no row found" after the request could be
+            # vacuously true even if the delete never touched anything.
+            from sqlalchemy import select
+
+            from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+            reset_token = reset_url.rsplit("#reset_token=", 1)[1]
+            result = await db.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == reset_token))
+            captured["existed_before_send"] = result.scalar_one_or_none() is not None
             return ("subject", "body", "<body/>")
 
         recorded: dict[str, object] = {}
@@ -656,6 +669,35 @@ class TestForgotPasswordAPI:
         failure_logs = [r for r in caplog.records if "deleting token to unblock re-request" in r.getMessage()]
         assert len(failure_logs) == 1
         assert "smtp relay unreachable" in failure_logs[0].getMessage()
+
+        # T-054: the log line alone doesn't prove the delete actually happened
+        # (the cleanup opens its own DB session — if that session isn't bound
+        # to the test DB, the delete would silently fail against a table that
+        # doesn't exist there while still logging the same message). Confirm
+        # the token row is genuinely gone, not just that we attempted it.
+        #
+        # Positive evidence first: the token row must have existed before the
+        # failure branch ran the delete — otherwise "no row found" below would
+        # be vacuously true even if the delete never touched anything.
+        assert captured.get("existed_before_send") is True, (
+            "reset token row was never created — the deletion check below would be vacuous"
+        )
+
+        reset_token = captured["reset_url"].rsplit("#reset_token=", 1)[1]
+
+        from sqlalchemy import select
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        remaining = await db_session.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == reset_token))
+        assert remaining.scalar_one_or_none() is None, "reset token row was not deleted after the send failure"
+
+        confirm_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "Wontwork1!"},
+        )
+        assert confirm_resp.status_code == 400
+        assert confirm_resp.json()["detail"] == "Invalid or expired password reset token"
 
 
 class TestAdminResetPasswordAPI:

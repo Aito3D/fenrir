@@ -74,6 +74,15 @@ from backend.app.services.finance_defaults import ensure_user_finance_defaults
 
 _logger = logging.getLogger(__name__)
 
+# T-057: bound how long a login request will wait on the LDAP bind thread.
+# asyncio.wait_for cancels the *awaiting* coroutine on timeout, but it cannot
+# interrupt the worker thread the bind is running in (asyncio.to_thread has
+# no cancellation hook) — the thread keeps holding a slot in the shared
+# default executor until the underlying socket read finally gives up. What
+# this bounds is the request: the client gets a response after this many
+# seconds instead of hanging until the browser times out.
+_LDAP_BIND_TIMEOUT_S = 15.0
+
 
 def _user_to_response(user: User) -> UserResponse:
     """Convert a User model to UserResponse schema."""
@@ -494,8 +503,9 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
 
             ldap_config = parse_ldap_config(ldap_settings)
             if ldap_config:
-                ldap_user = await asyncio.to_thread(
-                    authenticate_ldap_user, ldap_config, request.username, request.password
+                ldap_user = await asyncio.wait_for(
+                    asyncio.to_thread(authenticate_ldap_user, ldap_config, request.username, request.password),
+                    timeout=_LDAP_BIND_TIMEOUT_S,
                 )
                 if ldap_user:
                     # LDAP auth succeeded — find or create local user
