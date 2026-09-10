@@ -1773,13 +1773,18 @@ async def oidc_authorize(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="OIDC discovery document missing authorization_endpoint"
         )
-    # B2: SSRF guard — reject non-HTTP(S) schemes in the authorization endpoint
-    if not authorization_endpoint.startswith(("https://", "http://")):
+    # B2: SSRF guard — reject non-public/non-HTTPS authorization endpoints, the
+    # same policy already applied to the issuer_url this document came from
+    # (schemas/auth.py:_validate_issuer_url) so the document can't smuggle in
+    # an endpoint the issuer check would have rejected.
+    try:
+        assert_safe_public_https_url(authorization_endpoint)
+    except ValueError:
         logger.warning("OIDC discovery authorization_endpoint has invalid scheme: %s", authorization_endpoint)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="OIDC discovery document contains invalid authorization_endpoint",
-        )
+        ) from None
 
     external_url = await _get_base_external_url(db)
     redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
@@ -1890,9 +1895,14 @@ async def oidc_callback(
         jwks_uri = discovery.get("jwks_uri")
         if not token_endpoint or not jwks_uri:
             return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
-        # L-R7-C: Reject non-HTTP(S) URLs in the discovery document to prevent
-        # SSRF via crafted responses (e.g. file://, gopher://, internal schemes).
-        if not token_endpoint.startswith(("https://", "http://")) or not jwks_uri.startswith(("https://", "http://")):
+        # L-R7-C: Reject non-public/non-HTTPS URLs in the discovery document to
+        # prevent SSRF via crafted responses (e.g. file://, gopher://, internal
+        # schemes, or private-network addresses) — same guard already applied
+        # to the issuer_url this document came from (schemas/auth.py:_validate_issuer_url).
+        try:
+            assert_safe_public_https_url(token_endpoint)
+            assert_safe_public_https_url(jwks_uri)
+        except ValueError:
             logger.warning(
                 "OIDC discovery document contains non-HTTP URL(s): token=%s jwks=%s", token_endpoint, jwks_uri
             )

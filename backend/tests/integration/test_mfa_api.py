@@ -3632,6 +3632,63 @@ class TestOIDCIssuerUrlTrailingSlash:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_private_authorization_endpoint_rejected(self, async_client: AsyncClient):
+        """T-050: a discovery document declaring a private-address
+        authorization_endpoint must be rejected the same way an invalid
+        scheme already was — no redirect URL is ever built from it.
+
+        Guards against an IdP declaring an authorization_endpoint that
+        escapes the same public-internet policy already enforced on the
+        issuer_url it came from (schemas/auth.py:_validate_issuer_url).
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        issuer = "https://idp.private-authz-test.example.com"
+
+        admin_token = await _setup_and_login(async_client, "privauthzadm", "privauthzadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PrivateAuthzIdP",
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        fake_discovery = {
+            "issuer": issuer,
+            # A private RFC-1918 address — not merely a bad scheme.
+            "authorization_endpoint": "https://192.168.1.5/authorize",
+        }
+        disc_resp = AsyncMock()
+        disc_resp.raise_for_status = MagicMock()
+        disc_resp.json = MagicMock(return_value=fake_discovery)
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=disc_resp)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/authorize/{provider_id}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"] == "OIDC discovery document contains invalid authorization_endpoint"
+        assert "auth_url" not in resp.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_iss_claim_trailing_slash_accepted(self, async_client: AsyncClient, db_session: AsyncSession):
         """Provider configured without trailing slash, Authentik JWT iss has trailing slash.
 

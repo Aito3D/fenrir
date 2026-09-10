@@ -389,3 +389,155 @@ class TestOidcCallbackDiscoveryFailure:
         assert callback_resp.status_code == 302, callback_resp.text
         location = callback_resp.headers.get("location", "")
         assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"
+
+
+class TestOidcCallbackDiscoveryEndpointSSRFGuard:
+    """T-050: token_endpoint and jwks_uri declared by the discovery document
+    must pass the same public-internet SSRF guard already applied to the
+    issuer_url they came from (schemas/auth.py:_validate_issuer_url) —
+    not just a scheme check. A private-address endpoint must redirect to
+    ``invalid_discovery_document`` and the token exchange POST must never
+    be attempted.
+    """
+
+    async def _setup_provider_and_state(self, async_client: AsyncClient, db_session: AsyncSession, *, tag: str):
+        issuer = f"https://idp.{tag}-test.example.com"
+        client_id = f"{tag}-client"
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": f"{tag}adm",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": f"{tag}adm", "password": "AdminPass1!"},
+        )
+        admin_token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"{tag}-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "test-secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=headers,
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+        return issuer, state
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_private_token_endpoint_rejected_no_token_post(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="privtoken")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            # A private-address token_endpoint — a classic SSRF/metadata probe,
+            # not merely a bad scheme.
+            "token_endpoint": "https://169.254.169.254/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        post_calls: list[str] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                post_calls.append(url)
+                raise AssertionError("token exchange POST must never be attempted")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_error=invalid_discovery_document" in location, (
+            f"Expected invalid_discovery_document redirect, got: {location}"
+        )
+        assert post_calls == [], "token endpoint POST must not have been attempted"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_private_jwks_uri_rejected_no_token_post(self, async_client: AsyncClient, db_session: AsyncSession):
+        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="privjwks")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            # A loopback-address jwks_uri — must be rejected too.
+            "jwks_uri": "https://127.0.0.1/jwks.json",
+        }
+
+        post_calls: list[str] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                post_calls.append(url)
+                raise AssertionError("token exchange POST must never be attempted")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_error=invalid_discovery_document" in location, (
+            f"Expected invalid_discovery_document redirect, got: {location}"
+        )
+        assert post_calls == [], "token endpoint POST must not have been attempted"

@@ -10993,3 +10993,58 @@ cancels the *awaiting* coroutine, not the worker thread — `asyncio.to_thread` 
 hook, so the thread stays blocked in ldap3's read until the underlying socket eventually dies; only
 the request's wait is bounded, not the thread's lifetime. No other timeout, response, status code
 or message changed; ldap_service.py untouched. User-approved 2026-09-09.
+
+T-050 — `oidc_authorize()` and `oidc_callback()` now validate the `authorization_endpoint`,
+`token_endpoint` and `jwks_uri` URLs taken from the IdP's discovery document with
+`_oidc_helpers.assert_safe_public_https_url()` — the same public-internet SSRF guard already
+applied to the `issuer_url` that document came from (`schemas/auth.py:_validate_issuer_url`) —
+instead of the previous scheme-only `startswith(("https://", "http://"))` check. The guard
+requires `https://`, rejects numeric-encoded and cloud-metadata IPs, and rejects loopback,
+private (RFC-1918), link-local, multicast and unspecified addresses; it does not perform DNS
+resolution, so ordinary hostnames are unaffected. Both call sites keep their existing failure
+path unchanged: `oidc_authorize` still raises the same 502 with detail "OIDC discovery document
+contains invalid authorization_endpoint", and `oidc_callback` still redirects to
+`/?oidc_error=invalid_discovery_document` with the same warning log line. User-visible effect: an
+IdP whose discovery document declares an `http://` or private-address `authorization_endpoint`,
+`token_endpoint` or `jwks_uri` now fails at that same checkpoint instead of only when the scheme
+was non-HTTP(S) — its users' logins bounce to the existing error page instead of the endpoint
+being fetched. `_fetch_oidc_discovery()` and `userinfo_endpoint` are untouched (T-059 is a
+separate task). User-approved 2026-09-09.
+
+T-051 — `forgot_password()` now stages the `PASSWORD_RESET_SEND` rate-limit event
+(`db.add(AuthRateLimitEvent(username=identifier, event_type=EventType.PASSWORD_RESET_SEND))`) for
+every request's normalised email, next to where the existing `PASSWORD_RESET_IP` event is staged
+and committed — before the user lookup even happens — instead of only inside the
+`if user and user.is_active and user.auth_source not in ("ldap", "oidc")` branch. Previously the
+per-email counter was only ever incremented for real, active, local accounts, so an unknown email
+or an SSO-only (LDAP/OIDC) account's email could be submitted indefinitely without ever tripping
+the per-email 429, while a real local account's email hit it on the 4th request within the
+15-minute window — making the 429 an account-existence oracle. The per-IP cap (10), the per-email
+cap (3), the window (15 minutes), the generic 200 body ("If the email address is associated with
+an account, a password reset email has been sent."), the 429 detail text ("Too many password
+reset requests. Please wait 15 minutes."), and the timing-equalisation logic are all unchanged;
+only the identifier the SEND event is staged for changed from "conditionally, for local users
+only" to "unconditionally, for every submitted address". User-visible effect: a visitor who
+submits the same unknown or SSO-only email 3 times in 15 minutes now gets 429 "Too many password
+reset requests" on the 4th attempt, exactly as a real local account's email already did — where
+previously every attempt for that unknown/SSO-only address returned the generic 200 success
+message. User-approved 2026-09-09.
+
+T-052 — `checkAuthStatus()` in `AuthContext.tsx` now only adopts the `?token=` URL param into
+storage when `getAuthToken()` reports no token already stored at that moment (checked before
+`setAuthToken` is called for the URL token). Previously any `?token=` present on any route was
+unconditionally written to session storage and, once the server confirmed it valid, promoted to
+persistent storage — silently replacing an already-signed-in session with whatever token the URL
+carried. The `?token=` query param is still stripped from the visible URL via
+`window.history.replaceState` in both cases, so the credential never lingers in the address bar
+or browser history either way, and an already-stored token (session or persistent) is left
+completely untouched — the same token continues to be used for `/auth/me` and every subsequent
+request. The later promotion step (`if (urlToken && token === urlToken) setAuthToken(urlToken,
+'persistent')`) needed no change: when the URL token isn't adopted, `token` (from `getAuthToken()`
+after the status check) is the pre-existing stored token, not `urlToken`, so the guard's equality
+check already prevents promotion in that case. User-visible effect: a `?token=` link no longer
+replaces an already-signed-in session on any page — the stored session simply continues; a
+SpoolBuddy kiosk link visited from a fresh browser (no token stored yet) still authenticates
+exactly as before. No kiosk marker or dedicated entry point was added (declined) — the
+distinguishing signal is solely "was a token already stored", per the narrowed approval.
+User-approved, narrowed, 2026-09-09.

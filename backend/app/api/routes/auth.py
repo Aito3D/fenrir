@@ -1147,11 +1147,15 @@ async def forgot_password(
             detail=f"Too many password reset requests. Please wait {_PWD_RESET_SEND_WINDOW.seconds // 60} minutes.",
         )
 
-    # Nit7: Always record the IP-level event (prevents spray attacks across many
-    # different email addresses from one IP).  The email-level event is only
-    # recorded when we actually send an email to a local user — LDAP/OIDC users
-    # do not consume a slot because this flow is a no-op for them.
+    # Nit7 / T-051: Always record both the IP-level and email-level events,
+    # regardless of whether the email belongs to a real, active, local
+    # account. Staging the email-level event only when we actually send an
+    # email would make the 429 response an account-existence oracle (a local
+    # account's address gets rate-limited after N attempts, an unknown or
+    # SSO-only address never does). Recording it unconditionally keeps the
+    # per-email counter — and its 429 — identical for every address.
     db.add(AuthRateLimitEvent(username=client_ip, event_type=EventType.PASSWORD_RESET_IP))
+    db.add(AuthRateLimitEvent(username=identifier, event_type=EventType.PASSWORD_RESET_SEND))
     await db.commit()
 
     # Get SMTP settings
@@ -1168,10 +1172,8 @@ async def forgot_password(
     # M-1: exclude LDAP and OIDC users — they must use their respective provider.
     if user and user.is_active and user.auth_source not in ("ldap", "oidc"):
         try:
-            # Record email-level slot only for local users who will actually receive
-            # the reset email (Nit7: don't waste the user's quota for LDAP/OIDC no-ops).
-            db.add(AuthRateLimitEvent(username=identifier, event_type=EventType.PASSWORD_RESET_SEND))
-
+            # T-051: the email-level rate-limit event is now staged unconditionally
+            # above (alongside the IP-level event), not here.
             await _issue_password_reset_email(db, background_tasks, user, smtp_settings, "forgot_password")
             _logger.info("Password reset email queued for %s", user.email)
         except Exception as e:  # SEC-AUTH-EXC: forgot-password response is intentionally generic regardless of outcome (user-enumeration defence); email failure does not grant access

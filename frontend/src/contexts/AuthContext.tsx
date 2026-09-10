@@ -39,10 +39,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // URL on first load. Persistence to localStorage is deferred until the
       // token has been verified by the server (L-4: prevents session fixation
       // where an attacker-crafted URL immediately persists a forged/stolen token).
+      // T-052: only adopt the URL token when no token is already stored —
+      // otherwise a ?token= link would silently replace an already-signed-in
+      // session. The URL is still stripped either way so the credential
+      // doesn't linger in the address bar/history.
       const urlParams = new URLSearchParams(window.location.search);
+      const hadStoredToken = !!getAuthToken();
       const urlToken = urlParams.get('token');
       if (urlToken) {
-        setAuthToken(urlToken, 'session'); // session-only until server confirms it's valid
+        if (!hadStoredToken) {
+          setAuthToken(urlToken, 'session'); // session-only until server confirms it's valid
+        }
         urlParams.delete('token');
         const cleanSearch = urlParams.toString();
         const cleanUrl = window.location.pathname

@@ -760,4 +760,98 @@ describe('AuthContext', () => {
       expect(localStorage.getItem('auth_token')).toBeNull();
     });
   });
+
+  describe('?token= URL never overwrites an already-live session (T-052)', () => {
+    afterEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('leaves a token already in localStorage untouched, strips the URL, and never sends the URL token to /auth/me', async () => {
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      setAuthToken(null);
+      setAuthToken('original-token', 'persistent');
+      window.history.replaceState({}, '', '/?token=other');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+      let receivedAuthHeader: string | null = null;
+      server.use(
+        http.get('/api/v1/auth/me', ({ request }) => {
+          receivedAuthHeader = request.headers.get('Authorization');
+          return HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      // Positive evidence: the request that confirmed the session carried the
+      // original stored token's Authorization header, not the URL token's.
+      expect(receivedAuthHeader).toBe('Bearer original-token');
+
+      // The already-live session's stored token is unchanged, in the same storage.
+      expect(localStorage.getItem('auth_token')).toBe('original-token');
+      expect(getAuthToken()).toBe('original-token');
+      // The URL token is never promoted anywhere, including sessionStorage.
+      expect(sessionStorage.getItem('auth_token')).not.toBe('other');
+
+      // The credential is still stripped from the address bar.
+      expect(window.location.search).not.toContain('token=');
+    });
+
+    it('leaves a token already in sessionStorage untouched, strips the URL, and never sends the URL token to /auth/me', async () => {
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      setAuthToken(null);
+      setAuthToken('original-session-token', 'session');
+      window.history.replaceState({}, '', '/?token=other');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+      let receivedAuthHeader: string | null = null;
+      server.use(
+        http.get('/api/v1/auth/me', ({ request }) => {
+          receivedAuthHeader = request.headers.get('Authorization');
+          return HttpResponse.json({
+            id: 2,
+            username: 'bob',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      expect(receivedAuthHeader).toBe('Bearer original-session-token');
+
+      // The already-live session's stored token is unchanged, in the same storage.
+      expect(sessionStorage.getItem('auth_token')).toBe('original-session-token');
+      expect(getAuthToken()).toBe('original-session-token');
+      // The URL token is never promoted to persistent storage.
+      expect(localStorage.getItem('auth_token')).toBeNull();
+
+      expect(window.location.search).not.toContain('token=');
+    });
+  });
 });

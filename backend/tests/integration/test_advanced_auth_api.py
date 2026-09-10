@@ -700,6 +700,108 @@ class TestForgotPasswordAPI:
         assert confirm_resp.json()["detail"] == "Invalid or expired password reset token"
 
 
+class TestForgotPasswordRateLimitEquivalence:
+    """T-051: the per-email PASSWORD_RESET_SEND rate-limit event must be staged
+    for every /forgot-password request, regardless of whether the email
+    belongs to a real, active, local account. Staging it only inside the
+    user-exists branch made the resulting 429 an account-existence oracle —
+    a local account's address got rate-limited after N attempts while an
+    unknown or SSO-only address never did.
+    """
+
+    @pytest.fixture
+    async def admin_token(self, async_client: AsyncClient):
+        return await _setup_admin(async_client, "ratelimitadmin", "AdminPass1!")
+
+    @staticmethod
+    async def _submit(async_client: AsyncClient, email: str, count: int):
+        """POST /auth/forgot-password `count` times for `email`, return the responses."""
+        responses = []
+        with patch("backend.app.api.routes.auth.send_email"):
+            for _ in range(count):
+                responses.append(await async_client.post("/api/v1/auth/forgot-password", json={"email": email}))
+        return responses
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unknown_email_hits_same_429_as_known_email(self, async_client: AsyncClient, admin_token: str):
+        """An unknown email submitted N+1 (4) times gets the byte-identical 429
+        response a known local account's email gets at the same count."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        create_resp = await async_client.post(
+            "/api/v1/users/",
+            headers=headers,
+            json={"username": "ratelimitknown", "email": "ratelimitknown@test.com", "role": "user"},
+        )
+        assert create_resp.status_code == 201
+
+        known_responses = await self._submit(async_client, "ratelimitknown@test.com", 4)
+        unknown_responses = await self._submit(async_client, "ratelimitunknown@test.com", 4)
+
+        assert [r.status_code for r in known_responses] == [200, 200, 200, 429]
+        assert [r.status_code for r in unknown_responses] == [200, 200, 200, 429]
+
+        # The 4th response's body must be byte-identical whether the account
+        # exists or not — this is what makes the 429 non-oracle-able.
+        assert unknown_responses[3].text == known_responses[3].text
+        assert unknown_responses[3].json()["detail"] == "Too many password reset requests. Please wait 15 minutes."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sso_only_email_hits_same_429(self, async_client: AsyncClient, admin_token: str, db_session):
+        """An OIDC-sourced user's email — for which no reset email is ever sent —
+        is rate-limited exactly like a real local account's email."""
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        oidc_user = User(
+            username="ratelimitoidc",
+            email="ratelimitoidc@test.com",
+            auth_source="oidc",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(oidc_user)
+        await db_session.commit()
+
+        responses = await self._submit(async_client, "ratelimitoidc@test.com", 4)
+        assert [r.status_code for r in responses] == [200, 200, 200, 429]
+        assert responses[3].json()["detail"] == "Too many password reset requests. Please wait 15 minutes."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unknown_email_rate_limit_is_per_address(self, async_client: AsyncClient, admin_token: str):
+        """Exhausting one unknown email's per-email slots does not rate-limit a
+        different, unrelated email address."""
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        exhausted = await self._submit(async_client, "ratelimitexhausted@test.com", 4)
+        assert exhausted[3].status_code == 429
+
+        other = await self._submit(async_client, "ratelimitother@test.com", 1)
+        assert other[0].status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_generic_200_body_unchanged_before_limit(self, async_client: AsyncClient, admin_token: str):
+        """The first N (3) attempts still return the exact generic
+        anti-enumeration message, unaffected by staging the per-email
+        rate-limit event earlier in the handler."""
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        responses = await self._submit(async_client, "ratelimitgeneric@test.com", 3)
+        for r in responses:
+            assert r.status_code == 200
+            assert r.json() == {
+                "message": "If the email address is associated with an account, a password reset email has been sent."
+            }
+
+
 class TestAdminResetPasswordAPI:
     """Integration tests for admin password reset endpoint."""
 
