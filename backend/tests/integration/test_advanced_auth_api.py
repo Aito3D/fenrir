@@ -464,6 +464,70 @@ class TestForgotPasswordAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_forgot_password_reissue_invalidates_previous_token(
+        self, async_client: AsyncClient, admin_token: str
+    ):
+        """A second forgot-password request invalidates the token from the first.
+
+        T-027: covers the outstanding-token prune performed by the shared
+        _issue_password_reset_email() helper — without it, an older reset link
+        would remain valid forever after a newer one is issued.
+        """
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "reissueme", "email": "reissueme@test.com", "role": "user"},
+            )
+            assert create_resp.status_code == 201
+
+        captured: list[str] = []
+
+        async def _capture_link_email(db, username, reset_url):
+            captured.append(reset_url)
+            return ("subject", "body", "<body/>")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email"),
+        ):
+            first_resp = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "reissueme@test.com"},
+            )
+            assert first_resp.status_code == 200
+            second_resp = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "reissueme@test.com"},
+            )
+            assert second_resp.status_code == 200
+
+        assert len(captured) == 2, "Both forgot-password requests should have queued an email"
+        first_token = captured[0].split("reset_token=")[1]
+        second_token = captured[1].split("reset_token=")[1]
+
+        # The first (superseded) token must now be rejected...
+        stale_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": first_token, "new_password": "Stalepass1!"},
+        )
+        assert stale_resp.status_code == 400
+
+        # ...while the second (current) token still works.
+        fresh_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": second_token, "new_password": "Freshpass1!"},
+        )
+        assert fresh_resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_forgot_password_confirm_rejects_expired_token(
         self, async_client: AsyncClient, admin_token: str, db_session
     ):
@@ -548,6 +612,69 @@ class TestAdminResetPasswordAPI:
         assert response.status_code == 200
         mock_send.assert_called_once()
         assert mock_send.call_args[0][1] == "resetuser@test.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_password_reissue_invalidates_previous_token(self, async_client: AsyncClient, admin_token: str):
+        """A second admin reset-password request invalidates the token from the first.
+
+        T-027: covers the outstanding-token prune performed by the shared
+        _issue_password_reset_email() helper for the admin-reset path.
+        """
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "adminreissue", "email": "adminreissue@test.com", "role": "user"},
+            )
+            user_id = create_resp.json()["id"]
+
+        captured: list[str] = []
+
+        async def _capture_link_email(db, username, reset_url):
+            captured.append(reset_url)
+            return ("subject", "body", "<body/>")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email"),
+        ):
+            first_resp = await async_client.post(
+                "/api/v1/auth/reset-password",
+                headers=headers,
+                json={"user_id": user_id},
+            )
+            assert first_resp.status_code == 200
+            second_resp = await async_client.post(
+                "/api/v1/auth/reset-password",
+                headers=headers,
+                json={"user_id": user_id},
+            )
+            assert second_resp.status_code == 200
+
+        assert len(captured) == 2, "Both reset-password requests should have queued an email"
+        first_token = captured[0].split("reset_token=")[1]
+        second_token = captured[1].split("reset_token=")[1]
+
+        # The first (superseded) token must now be rejected...
+        stale_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": first_token, "new_password": "Stalepass1!"},
+        )
+        assert stale_resp.status_code == 400
+
+        # ...while the second (current) token still works.
+        fresh_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": second_token, "new_password": "Freshpass1!"},
+        )
+        assert fresh_resp.status_code == 200
 
     @pytest.mark.asyncio
     @pytest.mark.integration

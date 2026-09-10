@@ -1492,8 +1492,79 @@ class TestLoginResponseShape:
         data = login_resp.json()
         assert data.get("requires_2fa") is True
         assert data.get("pre_auth_token") is not None
+        assert data.get("two_fa_methods") == ["totp", "backup"]
         # access_token must NOT be present — it would bypass the 2FA gate
         assert "access_token" not in data or data["access_token"] is None
+
+        # The pre_auth_token must be usable end-to-end: /2fa/verify relies on
+        # the HttpOnly 2fa_challenge cookie set by the same login call.
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={
+                "pre_auth_token": data["pre_auth_token"],
+                "method": "totp",
+                "code": pyotp.TOTP(secret).now(),
+            },
+        )
+        assert verify_resp.status_code == 200, verify_resp.text
+        assert verify_resp.json().get("access_token") is not None
+
+
+class TestOIDCExchange2FAChallenge:
+    """oidc_exchange() must issue the same pre_auth_token/cookie/methods shape
+    as login() when the resolved user has 2FA enabled (C4)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oidc_exchange_2fa_user_issues_challenge(self, async_client: AsyncClient, db_session: AsyncSession):
+        """A user with TOTP enabled must get requires_2fa+pre_auth_token from
+        /oidc/exchange (not a bare access_token), and must be able to complete
+        the challenge via /2fa/verify using the cookie set by the exchange."""
+        token = await _setup_and_login(async_client, "oidcexch2fa", "Oidcexch2fa1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+
+        exchange_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=exchange_token,
+                token_type="oidc_exchange",
+                username="oidcexch2fa",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        exchange_resp = await async_client.post(
+            "/api/v1/auth/oidc/exchange",
+            json={"oidc_token": exchange_token},
+        )
+        assert exchange_resp.status_code == 200, exchange_resp.text
+        data = exchange_resp.json()
+        assert data.get("requires_2fa") is True
+        assert data.get("pre_auth_token") is not None
+        assert data.get("two_fa_methods") == ["totp", "backup"]
+        # access_token must NOT be present — it would bypass the 2FA gate
+        assert "access_token" not in data or data["access_token"] is None
+
+        # The pre_auth_token must be usable end-to-end: /2fa/verify relies on
+        # the HttpOnly 2fa_challenge cookie set by the same call, so this also
+        # proves the cookie was set with the right value/path.
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={
+                "pre_auth_token": data["pre_auth_token"],
+                "method": "totp",
+                "code": pyotp.TOTP(secret).now(),
+            },
+        )
+        assert verify_resp.status_code == 200, verify_resp.text
+        assert verify_resp.json().get("access_token") is not None
 
 
 # ===========================================================================

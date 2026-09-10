@@ -266,6 +266,48 @@ async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: s
     return token
 
 
+async def _issue_2fa_challenge(
+    db: AsyncSession,
+    response: Response,
+    raw_request: Request,
+    user: User,
+    totp_enabled: bool,
+    email_enabled: bool,
+) -> tuple[str, list[str]]:
+    """Mint a pre-auth token bound to an HttpOnly ``2fa_challenge`` cookie.
+
+    Shared by auth.py:login() and oidc_exchange() below — both need the exact
+    same cookie-binding treatment (H-1/M5: XSS can't steal the token from JS
+    memory and replay 2FA from a different browser session) and the same
+    totp -> email -> backup methods ordering. The two callers derive
+    ``totp_enabled``/``email_enabled`` slightly differently and build
+    different ``LoginResponse`` shapes, so those parts stay in each caller.
+    """
+    challenge_id = secrets.token_urlsafe(32)
+    pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
+    response.set_cookie(
+        key="2fa_challenge",
+        value=challenge_id,
+        httponly=True,
+        # only transmit over HTTPS so the binding cookie can't be intercepted
+        # on mixed-content deployments.  Falls back to False on plain HTTP so
+        # tests and local development still work.
+        secure=raw_request.url.scheme == "https",
+        samesite="lax",
+        max_age=300,
+        path="/api/v1/auth/2fa",
+    )
+    methods: list[str] = []
+    if totp_enabled:
+        methods.append("totp")
+    if email_enabled:
+        methods.append("email")
+    # Backup codes are always available when TOTP is set up
+    if totp_enabled:
+        methods.append("backup")
+    return pre_auth_token, methods
+
+
 async def consume_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | None = None) -> str | None:
     """Atomically validate and consume a pre-auth token. Returns username or None.
 
@@ -2153,23 +2195,8 @@ async def oidc_exchange(
     if totp_enabled or email_2fa_enabled:
         # User has 2FA — issue a pre_auth_token bound to this browser session via
         # an HttpOnly cookie (H-A: mirrors the cookie-binding done in auth.py:login).
-        two_fa_methods: list[str] = []
-        if totp_enabled:
-            two_fa_methods.append("totp")
-        if email_2fa_enabled:
-            two_fa_methods.append("email")
-        if totp_enabled:
-            two_fa_methods.append("backup")
-        challenge_id = secrets.token_urlsafe(32)
-        pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
-        response.set_cookie(
-            key="2fa_challenge",
-            value=challenge_id,
-            httponly=True,
-            secure=raw_request.url.scheme == "https",
-            samesite="lax",
-            max_age=300,
-            path="/api/v1/auth/2fa",
+        pre_auth_token, two_fa_methods = await _issue_2fa_challenge(
+            db, response, raw_request, user, totp_enabled, email_2fa_enabled
         )
         return LoginResponse(
             requires_2fa=True,

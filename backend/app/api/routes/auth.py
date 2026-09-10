@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import secrets
@@ -493,7 +494,9 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
 
             ldap_config = parse_ldap_config(ldap_settings)
             if ldap_config:
-                ldap_user = authenticate_ldap_user(ldap_config, request.username, request.password)
+                ldap_user = await asyncio.to_thread(
+                    authenticate_ldap_user, ldap_config, request.username, request.password
+                )
                 if ldap_user:
                     # LDAP auth succeeded — find or create local user
                     user = await get_user_by_username(db, ldap_user.username)
@@ -591,32 +594,13 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
 
     if totp_enabled or email_otp_enabled:
         # Import here to avoid circular imports
-        from backend.app.api.routes.mfa import create_pre_auth_token
+        from backend.app.api.routes.mfa import _issue_2fa_challenge
 
         # Bind the pre_auth_token to an HttpOnly cookie so XSS cannot steal the
         # token from JS memory and complete 2FA from a different client.
-        challenge_id = secrets.token_urlsafe(32)
-        pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
-        response.set_cookie(
-            key="2fa_challenge",
-            value=challenge_id,
-            httponly=True,
-            # H-1: only transmit over HTTPS so the binding cookie can't be intercepted
-            # on mixed-content deployments.  Falls back to False on plain HTTP so tests
-            # and local development still work (the client wouldn't send it otherwise).
-            secure=raw_request.url.scheme == "https",
-            samesite="lax",
-            max_age=300,
-            path="/api/v1/auth/2fa",
+        pre_auth_token, methods = await _issue_2fa_challenge(
+            db, response, raw_request, user, totp_enabled, email_otp_enabled
         )
-        methods: list[str] = []
-        if totp_enabled:
-            methods.append("totp")
-        if email_otp_enabled:
-            methods.append("email")
-        # Backup codes are always available when TOTP is set up
-        if totp_enabled:
-            methods.append("backup")
 
         return LoginResponse(
             requires_2fa=True,
@@ -1028,6 +1012,61 @@ async def _send_reset_email_or_delete_token(
             _logger.error("Failed to delete reset token after send failure: %s", db_exc)
 
 
+async def _issue_password_reset_email(
+    db: AsyncSession,
+    background_tasks: BackgroundTasks,
+    user: User,
+    smtp_settings,
+    log_label: str,
+) -> None:
+    """Mint a single-use password-reset token and queue the reset email.
+
+    T-027: shared by forgot_password() and reset_user_password() — both prune
+    outstanding PASSWORD_RESET tokens for the user, mint a new one, commit,
+    build the reset link, and queue _send_reset_email_or_delete_token with the
+    same argument shape (only log_label differs per caller). Success logging
+    and error handling differ per caller and stay in the route bodies.
+    """
+    now = datetime.now(timezone.utc)
+    # Prune any outstanding reset tokens for this user before issuing a new one.
+    await db.execute(
+        delete(AuthEphemeralToken).where(
+            AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
+            AuthEphemeralToken.username == user.username,
+        )
+    )
+    reset_token = secrets.token_urlsafe(32)
+    db.add(
+        AuthEphemeralToken(
+            token=reset_token,
+            token_type=TokenType.PASSWORD_RESET,
+            username=user.username,
+            expires_at=now + _RESET_TOKEN_TTL,
+        )
+    )
+    await db.commit()
+
+    login_url = await get_external_login_url(db)
+    # M-B: Deliver token in the URL fragment so it never reaches the server
+    # in access-logs or Referer headers (mirrors H-4 for the OIDC token).
+    reset_url = f"{login_url}#reset_token={reset_token}"
+
+    subject, text_body, html_body = await create_password_reset_link_email_from_template(db, user.username, reset_url)
+    # L-R9-B: send asynchronously so response time is independent of
+    # whether the user exists (prevents email-existence timing oracle).
+    # C1: wrapper deletes the token if SMTP fails so the user can re-request.
+    background_tasks.add_task(
+        _send_reset_email_or_delete_token,
+        reset_token,
+        smtp_settings,
+        user.email,
+        subject,
+        text_body,
+        html_body,
+        log_label,
+    )
+
+
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(
     request: ForgotPasswordRequest,
@@ -1123,46 +1162,7 @@ async def forgot_password(
             # the reset email (Nit7: don't waste the user's quota for LDAP/OIDC no-ops).
             db.add(AuthRateLimitEvent(username=identifier, event_type=EventType.PASSWORD_RESET_SEND))
 
-            now = datetime.now(timezone.utc)
-            # Prune any outstanding reset tokens for this user before issuing a new one.
-            await db.execute(
-                delete(AuthEphemeralToken).where(
-                    AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
-                    AuthEphemeralToken.username == user.username,
-                )
-            )
-            reset_token = secrets.token_urlsafe(32)
-            db.add(
-                AuthEphemeralToken(
-                    token=reset_token,
-                    token_type=TokenType.PASSWORD_RESET,
-                    username=user.username,
-                    expires_at=now + _RESET_TOKEN_TTL,
-                )
-            )
-            await db.commit()
-
-            login_url = await get_external_login_url(db)
-            # M-B: Deliver token in the URL fragment so it never reaches the server
-            # in access-logs or Referer headers (mirrors H-4 for the OIDC token).
-            reset_url = f"{login_url}#reset_token={reset_token}"
-
-            subject, text_body, html_body = await create_password_reset_link_email_from_template(
-                db, user.username, reset_url
-            )
-            # L-R9-B: send asynchronously so response time is independent of
-            # whether the user exists (prevents email-existence timing oracle).
-            # C1: wrapper deletes the token if SMTP fails so the user can re-request.
-            background_tasks.add_task(
-                _send_reset_email_or_delete_token,
-                reset_token,
-                smtp_settings,
-                user.email,
-                subject,
-                text_body,
-                html_body,
-                "forgot_password",
-            )
+            await _issue_password_reset_email(db, background_tasks, user, smtp_settings, "forgot_password")
             _logger.info("Password reset email queued for %s", user.email)
         except Exception as e:  # SEC-AUTH-EXC: forgot-password response is intentionally generic regardless of outcome (user-enumeration defence); email failure does not grant access
             _logger.error("Failed to send password reset email: %s", e)
@@ -1274,40 +1274,7 @@ async def reset_user_password(
     try:
         # H-B: Issue a single-use reset link instead of generating a plaintext password.
         # The admin never sees the credential — the user sets their own password.
-        now = datetime.now(timezone.utc)
-        await db.execute(
-            delete(AuthEphemeralToken).where(
-                AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
-                AuthEphemeralToken.username == user.username,
-            )
-        )
-        reset_token = secrets.token_urlsafe(32)
-        db.add(
-            AuthEphemeralToken(
-                token=reset_token,
-                token_type=TokenType.PASSWORD_RESET,
-                username=user.username,
-                expires_at=now + _RESET_TOKEN_TTL,
-            )
-        )
-        await db.commit()
-
-        login_url = await get_external_login_url(db)
-        reset_url = f"{login_url}#reset_token={reset_token}"
-
-        subject, text_body, html_body = await create_password_reset_link_email_from_template(
-            db, user.username, reset_url
-        )
-        background_tasks.add_task(
-            _send_reset_email_or_delete_token,
-            reset_token,
-            smtp_settings,
-            user.email,
-            subject,
-            text_body,
-            html_body,
-            "admin_reset",
-        )
+        await _issue_password_reset_email(db, background_tasks, user, smtp_settings, "admin_reset")
 
         _logger.info("Admin password reset link queued for user '%s' by admin '%s'", user.username, admin_user.username)
         return ResetPasswordResponse(message=f"Password reset link sent to {user.email}")

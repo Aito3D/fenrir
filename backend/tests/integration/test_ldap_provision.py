@@ -16,6 +16,8 @@ These tests cover:
 - Duplicate-username protection (409 with explanation)
 """
 
+import asyncio
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -461,3 +463,50 @@ class TestLdapLoginFinanceDefaults:
         ).scalar_one_or_none()
         assert membership is not None
         assert membership.can_print is True
+
+
+class TestLdapLoginOffLoop:
+    """T-044: authenticate_ldap_user wraps blocking ldap3 calls; login() must run
+
+    it via asyncio.to_thread so a slow/unreachable directory only blocks its own
+    request instead of the whole event loop.
+    """
+
+    async def test_ldap_login_runs_authenticate_off_event_loop(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ldapadmin2",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="true")
+
+        calls = []
+
+        def fake_authenticate(config, username, password):
+            off_main_thread = threading.current_thread() is not threading.main_thread()
+            try:
+                asyncio.get_running_loop()
+                has_running_loop = True
+            except RuntimeError:
+                has_running_loop = False
+            calls.append((off_main_thread, has_running_loop))
+            return LDAPUserInfo(
+                username="offloop",
+                email="offloop@test.com",
+                display_name="Off Loop",
+                groups=[],
+            )
+
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", side_effect=fake_authenticate):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "offloop", "password": "irrelevant"},
+            )
+
+        assert response.status_code == 200
+        assert calls == [(True, False)]
