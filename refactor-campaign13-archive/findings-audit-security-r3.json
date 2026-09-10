@@ -1,0 +1,22 @@
+{"findings": [
+  {"severity": "medium", "category": "information-disclosure",
+   "file": "backend/app/api/routes/mfa.py", "line": 2302,
+   "title": "oidc_exchange() returns the full user record before 2FA is verified",
+   "evidence": "return LoginResponse(\n            requires_2fa=True,\n            pre_auth_token=pre_auth_token,\n            two_fa_methods=two_fa_methods,\n            user=_user_to_response(user),\n        )  # _user_to_response includes email, role, is_admin, groups, sorted(user.get_permissions())",
+   "fix": "drop the `user=_user_to_response(user)` argument from the requires_2fa branch of oidc_exchange so it matches auth.py:login(), which returns only requires_2fa/pre_auth_token/two_fa_methods (LoginResponse.user is already Optional and LoginPage never reads resp.user in that branch)",
+   "behavior_change": true,
+   "behavior_change_note": "an OIDC user with 2FA enabled no longer receives the `user` object in the POST /auth/oidc/exchange response; any client that reads resp.user before completing 2FA would now see null (Bambuddy's own LoginPage does not)"},
+  {"severity": "medium", "category": "information-disclosure",
+   "file": "backend/app/api/routes/mfa.py", "line": 1389,
+   "title": "list_oidc_providers() exposes each provider's account-linking policy to unauthenticated callers",
+   "evidence": "@router.get(\"/oidc/providers\", response_model=list[OIDCProviderResponse])  # main.py PUBLIC_API_ROUTES: \"/api/v1/auth/oidc/providers\"  — OIDCProviderResponse carries auto_create_users, auto_link_existing_accounts, email_claim, require_email_verified, default_group_id, is_env_managed",
+   "fix": "give the public route a slim response model containing only id, name and has_icon (the fields OIDCProviderButton uses) and keep the full OIDCProviderResponse on the SETTINGS_READ-gated /oidc/providers/all",
+   "behavior_change": true,
+   "behavior_change_note": "the unauthenticated GET /api/v1/auth/oidc/providers response loses issuer_url, client_id, scopes and the auto-create/auto-link/email-claim policy fields, so any external client reading those from the public list stops receiving them"},
+  {"severity": "low", "category": "denial-of-service",
+   "file": "backend/app/api/routes/mfa.py", "line": 1274,
+   "title": "verify_2fa() email branch uses scalar_one_or_none() on a query that can match several OTP rows",
+   "evidence": "select(UserOTPCode).where(UserOTPCode.user_id == user.id).where(UserOTPCode.used.is_(False)).where(UserOTPCode.expires_at > now).order_by(UserOTPCode.created_at.desc())\n        )\n        otp_record = result.scalar_one_or_none()",
+   "fix": "take the newest row explicitly — `.limit(1)` plus `result.scalars().first()` — so more than one live code raises no MultipleResultsFound; the existing order_by already expresses that intent",
+   "behavior_change": false}
+]}

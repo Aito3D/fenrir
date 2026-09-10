@@ -1,0 +1,23 @@
+frontend/src/components/stats/PipelineWidget.tsx | boundary-validation | PipelineWidget render path still dereferences data.tracking unguarded
+backend/app/services/aito_tracking.py | concurrency | ensure_tracking_token check-then-act lets a concurrent mint silently replace an already-handed-out link
+backend/app/api/routes/aito.py | unbounded-growth | get_tracking performs an unthrottled DB write on a fully public endpoint
+backend/app/services/aito_stats.py | unbounded-query | compute_aito_stats scans the entire event log regardless of the requested date range
+backend/app/services/aito_stats.py | boundary-validation | _tracking counts views of trashed cards, breaking the module's own trashed-excluded rule
+backend/app/api/routes/aito.py | unbounded-growth | _check_ai_rate_limit prunes timestamps but never evicts idle keys from _ai_rate_limit_calls
+frontend/src/components/aito/usePrintBlob.ts | error-handling | usePrintBlob's fontsReady rejection path skips the mountedRef guard its siblings have
+frontend/src/components/aito/usePrintBlob.ts | error-handling | print()'s wait on document.fonts.ready has no timeout after the load timer is cleared
+backend/app/api/routes/aito.py | concurrency | move_project renumbers a whole column from a stale read with no version or membership guard
+frontend/src/hooks/useCalculatorState.ts | boundary-validation | useCalculatorState's errors memo assumes every persisted field is a string
+backend/app/api/routes/aito.py | concurrency | import_legacy_projects' emptiness guard is a check-then-act despite its docstring's claim
+frontend/src/contexts/AuthContext.tsx | error-handling | logout() clears the auth token before calling api.logout(), so the JWT is never revoked server-side
+backend/app/api/routes/mfa.py | concurrency | send_email_otp blocks the event loop on the synchronous SMTP send
+backend/app/api/routes/auth.py | concurrency | login() calls the blocking ldap3 authenticate_ldap_user directly on the event loop
+backend/app/api/routes/auth.py | concurrency | _send_reset_email_or_delete_token runs the blocking SMTP send inside an async background task
+backend/app/api/routes/mfa.py | unbounded-growth | oidc_authorize is unauthenticated yet performs an outbound fetch and a DB insert per call with no throttle
+frontend/src/pages/AitoTrackEntryPage.tsx | partial-failure | AitoTrackEntryPage renders a bare empty screen, with no timeout or fallback, while the locale chunk loads
+backend/app/api/routes/auth.py | resource-leak | login()'s LDAP bind runs on the shared default executor with no bound on how long a thread is held
+backend/app/api/routes/mfa.py | partial-failure | send_email_otp re-issues a pre-auth token but never refreshes the 2fa_challenge cookie it is bound to
+backend/app/api/routes/mfa.py | boundary-validation | _fetch_oidc_discovery returns any JSON as `dict`, so a non-object discovery body crashes oidc_authorize
+backend/app/api/routes/mfa.py | boundary-validation | _oidc_authorize_rate_limited's per-IP cap collapses to one install-wide bucket on a default reverse-proxy install
+frontend/src/pages/LoginPage.tsx | resource-leak | exitToDashboard's 700 ms timer is never cleared on unmount
+frontend/src/pages/LoginPage.tsx | concurrency | the #1889 already-authenticated effect races exitToDashboard after a password login

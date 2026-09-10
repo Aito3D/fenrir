@@ -1,0 +1,15 @@
+{"findings": [
+  {"severity": "medium", "category": "inconsistency",
+   "file": "backend/tests/conftest.py", "line": 920,
+   "title": "New OIDC-authorize rate limiter isn't reset by conftest.py's global fixture, unlike the aito.py limiter it was modelled on",
+   "evidence": "conftest.py:920-928 has an autouse fixture `_reset_tracking_rate_limits` that clears aito.py's `_track_rate_ip_calls`/`_track_rate_ip_misses` dicts before/after every test in the suite. mfa.py's `_oidc_authorize_rate_ip_calls` dict (added this round, routes/mfa.py:178) is a process-global module dict with the exact same shape and the same comment lineage ('modelled on aito.py's _track_rate_limited', routes/mfa.py:167-170), but its reset (`_reset_oidc_authorize_rate_limits`, routes/mfa.py:181) is only wired into an autouse fixture scoped to backend/tests/integration/test_mfa_api.py:40-47. `rg -n \"oidc/authorize\" backend/tests/` shows two other files call the same route without resetting it: backend/tests/integration/test_security.py:783 and backend/tests/unit/test_route_auth_coverage.py:70 (the latter only lists the path string, does not call it). Since `./test_backend.sh` runs pytest with `-n 30` and xdist's default 'load' distribution interleaves tests from different files onto the same worker process, any accumulated per-IP call count from test_security.py's call is not cleared before/after it runs, unlike every other test in the suite that touches this module-global state.",
+   "fix": "fold mfa.py's `_reset_oidc_authorize_rate_limits()` into conftest.py's existing autouse `_reset_tracking_rate_limits` fixture (or a sibling one) so it resets for every test file the same way aito.py's limiter does, then drop the now-redundant file-local fixture in test_mfa_api.py",
+   "behavior_change": false},
+  {"severity": "low", "category": "dead-code",
+   "file": "frontend/src/utils/aitoTracking.ts", "line": 8,
+   "title": "TRACKING_FALLBACK_LANGUAGE is exported but only ever used inside its own file",
+   "evidence": "`rg -n \"\\bTRACKING_FALLBACK_LANGUAGE\\b\" frontend/ backend/ tools/ PROBES.json` -> only frontend/src/utils/aitoTracking.ts:8 (the `export const` declaration) and :21 (its one use, inside trackingDefaultLanguage() in the same file); no other file in frontend/, backend/, tools/, or PROBES.json references it. It is listed in SURFACE.md:1640, so it is a tracked export, not truly dead — just needlessly public.",
+   "fix": "drop the `export` keyword so the constant is file-private, since nothing outside frontend/src/utils/aitoTracking.ts imports it",
+   "behavior_change": true,
+   "behavior_change_note": "removing the export changes SURFACE.md's frozen public-surface listing for frontend/src/utils, even though no import site is affected today"}
+]}

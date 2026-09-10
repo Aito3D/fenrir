@@ -1,0 +1,11 @@
+backend/app/api/routes/aito.py | denial-of-service | get_tracking() writes an unthrottled DB row per unauthenticated request
+backend/app/api/routes/aito.py | authorization | get_tracking_link() is a state-changing GET that returns a bearer credential with no Cache-Control
+backend/app/api/routes/aito.py | information-disclosure | get_invoice_pdf() and get_quote_pdf() return client financial PDFs with no Cache-Control
+backend/app/api/routes/calculator.py | authorization | CALCULATOR_READ routes are reachable by every default-scoped API key via can_read_status
+backend/app/api/routes/aito.py | information-disclosure | _to_response() embeds the card's tracking token in every board response, below the tier that gates the tracking-link route
+frontend/src/contexts/AuthContext.tsx | authentication | logout() clears the token before calling api.logout(), so the JWT is never revoked server-side
+backend/app/api/routes/mfa.py | denial-of-service | oidc_authorize() is unauthenticated and unthrottled: one outbound discovery fetch plus one DB write per request
+backend/app/api/routes/mfa.py | ssrf | oidc_callback() fetches token_endpoint/jwks_uri from the discovery document with only a scheme check
+backend/app/api/routes/auth.py | information-disclosure | forgot_password() records the per-email rate event only for real local users, so its 429 is an account-existence oracle
+frontend/src/contexts/AuthContext.tsx | authentication | checkAuthStatus() adopts any ?token= from the URL on every route, overwriting a live session and persisting it once validated
+backend/app/api/routes/mfa.py | log-injection | oidc_callback() logs the attacker-controlled `error` query parameter with %s

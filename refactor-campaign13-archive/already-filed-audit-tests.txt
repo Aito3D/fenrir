@@ -1,0 +1,18 @@
+frontend/src/components/stats/PipelineWidget.tsx | coverage-gap | trackingOf() fallback for a payload without the tracking block is never exercised
+frontend/src/components/aito/TrackingLinkControl.tsx | coverage-gap | Copy-link and Regenerate-link onError toasts are untested
+backend/app/services/aito_tracking.py | coverage-gap | ensure_tracking_token()'s winning-mint UPDATE bumping updated_at is never asserted
+backend/tests/unit/test_aito_quote_sync.py | flaky-test | test_wake_drains_a_pending_project_without_waiting_for_the_interval's live_sessions poll uses a 1s hard budget while every other wait in the same test uses a 30s/5s asyncio.wait_for
+frontend/src/utils/quoteSummary.ts | coverage-gap | buildQuoteSummary()'s filament.name fallback (material falsy) is never exercised
+frontend/src/hooks/useCalculatorState.ts | coverage-gap | loadState()'s catch-block fallback for corrupted/unparseable localStorage is untested
+frontend/src/pages/CalculatorPage.tsx | coverage-gap | onTablistKeyDown() — arrow-key tab navigation — has no test at all
+backend/app/api/routes/auth.py | coverage-gap | forgot_password_confirm() never exercises the expired-token rejection branch
+backend/app/api/routes/mfa.py | coverage-gap | verify_2fa()'s per-method precondition failures (no outstanding email OTP, TOTP not enabled) are untested
+backend/app/api/routes/mfa.py | coverage-gap | verify_2fa()'s anti-replay guard (consume_pre_auth_token racing to None) is never triggered by a test
+frontend/src/pages/LoginPage.tsx | coverage-gap | sanitizeRedirectTarget()'s open-redirect checks are never exercised by any test
+frontend/src/pages/LoginPage.tsx | coverage-gap | The credentials-login failure toast (wrong username/password) is never triggered by a test
+frontend/src/pages/LoginPage.tsx | coverage-gap | The entire forgot-password / reset-password UI flow has no test
+frontend/src/contexts/AuthContext.tsx | coverage-gap | The kiosk ?token= URL bootstrap and its session-fixation defense are untested
+frontend/src/contexts/AuthContext.tsx | coverage-gap | canModify()'s ownership logic (*_own vs *_all permission, ownerless items) is never exercised against the real implementation
+backend/app/api/routes/auth.py | vacuous-assertion | _send_reset_email_or_delete_token()'s token-delete-on-failure runs against the real DB engine, not the test DB — T-045 only checks a log line, so the deletion itself is silently broken and unverified
+frontend/src/__tests__/pages/LoginPage.test.tsx | flaky-test | 'shows an error toast ... and does not navigate away' (T-038) races an earlier successful-login test's uncleared 700ms exitToDashboard timer
+backend/app/api/routes/mfa.py | coverage-gap | oidc_callback()'s post-discovery failure branches (invalid/non-HTTP discovery document, token-exchange network error, token-exchange non-2xx body) are untested, including the SSRF host-scheme guard

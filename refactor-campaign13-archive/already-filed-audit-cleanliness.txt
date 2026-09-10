@@ -1,0 +1,10 @@
+frontend/src/components/aito/celebration/render.ts | dead-code | clearSpriteCache() is defined but never called
+backend/app/api/routes/auth.py | inconsistency | get_current_user_info() re-imports jwt/PyJWTError instead of the module-level aliases
+backend/app/api/routes/auth.py | inconsistency | login()'s LDAP-fallback warning bypasses the module's own _logger
+backend/app/api/routes/auth.py | duplication | Password-reset token issuance duplicated between forgot_password() and reset_user_password()
+backend/app/api/routes/auth.py | duplication | 2FA-challenge cookie/token issuance duplicated between login() and oidc_exchange()
+backend/app/api/routes/mfa.py | duplication | verify_2fa()'s backup-code branch duplicates the function's own token-issuance tail
+backend/app/api/routes/mfa.py | duplication | OIDC discovery-document fetch duplicated between oidc_authorize() and oidc_callback()
+frontend/src/pages/LoginPage.tsx | duplication | The three 2FA method-selector buttons (totp/email/backup) are copy-pasted markup
+backend/tests/conftest.py | inconsistency | New OIDC-authorize rate limiter isn't reset by conftest.py's global fixture, unlike the aito.py limiter it was modelled on
+frontend/src/utils/aitoTracking.ts | dead-code | TRACKING_FALLBACK_LANGUAGE is exported but only ever used inside its own file

@@ -1,0 +1,20 @@
+{"findings": [
+  {"severity": "medium", "category": "duplication",
+   "file": "backend/tests/integration/test_oidc_relogin.py", "line": 523,
+   "title": "_setup_provider_and_state() is copy-pasted verbatim between TestOidcCallbackDiscoveryEndpointSSRFGuard and TestOidcCallbackTokenExchangeFailure (plus a third inline copy)",
+   "evidence": "rg -n '_setup_provider_and_state' backend/tests/integration/test_oidc_relogin.py -> defined identically at line 523 (used 2x within TestOidcCallbackDiscoveryEndpointSSRFGuard) and again at line 684 (used 6x within TestOidcCallbackTokenExchangeFailure); both bodies are byte-for-byte the same ~44-line admin-setup + create-provider + seed-oidc_state-token sequence. TestOidcCallbackDiscoveryFailure (line 330) inlines a third copy of the same sequence in a single test rather than calling a shared helper.",
+   "fix": "hoist one module-level async helper (e.g. `_setup_provider_and_state(async_client, db_session, *, tag)`) above the classes in test_oidc_relogin.py and have all three call sites use it instead of each class defining/inlining its own copy",
+   "behavior_change": false},
+  {"severity": "low", "category": "duplication",
+   "file": "frontend/src/__tests__/pages/LoginPage.test.tsx", "line": 98,
+   "title": "The reduced-motion window.matchMedia mock object is copy-pasted three times in this round's new tests",
+   "evidence": "rg -n 'addListener: \\(\\) => \\{\\}' frontend/src/__tests__/pages/LoginPage.test.tsx -> lines 103, 423, 995: the identical 13-line `window.matchMedia = ((query) => ({matches: true, ...})) as typeof window.matchMedia` block appears in the 'login flow' describe's beforeEach (T-055), the T-062 'navigates exactly once...' test, and the T-037 'post-login redirect sanitization' describe's beforeEach — all added/touched by this campaign round.",
+   "fix": "extract a shared `mockReducedMotion()` / `withReducedMotion()` test helper (module-level, or in the shared test-utils file) and call it from the three sites instead of re-declaring the mock object",
+   "behavior_change": false},
+  {"severity": "low", "category": "duplication",
+   "file": "backend/tests/integration/test_mfa_api.py", "line": 540,
+   "title": "Email-OTP-enable DB-injection dance is duplicated between TestTwoFAVerifyPreconditions._enable_email_otp and TestEmailOTPSendCookieRefresh._enable_email_otp_and_login",
+   "evidence": "backend/tests/integration/test_mfa_api.py:540 (`_enable_email_otp`) and :1908 (`_enable_email_otp_and_login`), both added this round, run the same sequence — set user.email, commit, stage an AuthEphemeralToken(token_type=\"email_otp_setup\") with a hashed setup code, commit, POST /2fa/email/enable/confirm — differing only in the setup code literal and whether the caller's own token/login is folded in.",
+   "fix": "factor the shared DB-injection steps into one module-level async helper (e.g. `_enable_email_otp(client, db_session, username, token, code=...)`) that both new test classes call",
+   "behavior_change": false}
+]}
