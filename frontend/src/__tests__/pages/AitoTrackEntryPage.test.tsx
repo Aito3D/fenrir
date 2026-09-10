@@ -1,14 +1,46 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { useEffect, useState } from 'react';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import i18n from '../../i18n';
-import { screen, render as rtlRender, waitFor, fireEvent } from '@testing-library/react';
+import { screen, render as rtlRender, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse, delay } from 'msw';
 import { server } from '../mocks/server';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackEntryPage } from '../../pages/AitoTrackEntryPage';
 import { normalizeCode } from '../../utils/trackingCode';
 import type { AitoTracking } from '../../api/client';
+
+// `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
+// instant — the fr chunk this file already forces via `beforeAll` below is
+// fully loaded before any test runs. To exercise the not-ready render (and
+// its flip to ready) deterministically, wrap the real hook and let a test
+// pin `ready` to a fixed value; every other test leaves the override unset
+// and gets the real hook untouched.
+let readyOverride: boolean | null = null;
+const readyOverrideListeners = new Set<() => void>();
+function setReadyOverride(value: boolean | null) {
+  readyOverride = value;
+  readyOverrideListeners.forEach((listener) => listener());
+}
+vi.mock('../../hooks/useTrackingLanguage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../hooks/useTrackingLanguage')>();
+  return {
+    ...actual,
+    useTrackingLanguage: (...args: Parameters<typeof actual.useTrackingLanguage>) => {
+      const real = actual.useTrackingLanguage(...args);
+      const [, forceRender] = useState(0);
+      useEffect(() => {
+        const listener = () => forceRender((n) => n + 1);
+        readyOverrideListeners.add(listener);
+        return () => {
+          readyOverrideListeners.delete(listener);
+        };
+      }, []);
+      return readyOverride === null ? real : { ...real, ready: readyOverride };
+    },
+  };
+});
 
 const FIXTURE: AitoTracking = {
   column: 'print',
@@ -52,6 +84,21 @@ function mockTrack(status: 200 | 404 | 429 | 500) {
   return seen;
 }
 
+/** Stands in for a request the server accepted but never answered — never
+ *  resolves on its own, so only the client-side abort timeout (T-072) ends
+ *  it. */
+function mockTrackHung() {
+  const seen: string[] = [];
+  server.use(
+    http.get('/api/v1/aito/track/:token', async ({ params }) => {
+      seen.push(String(params.token));
+      await delay('infinite');
+      return HttpResponse.json(FIXTURE);
+    }),
+  );
+  return seen;
+}
+
 const input = () => screen.getByLabelText('Code de suivi');
 const row = () => screen.getByTestId('track-code');
 const status = () => screen.getByTestId('track-code-status');
@@ -59,6 +106,7 @@ const status = () => screen.getByTestId('track-code-status');
 beforeAll(() => i18n.changeLanguage('fr'));
 afterAll(() => i18n.changeLanguage('en'));
 afterEach(async () => {
+  setReadyOverride(null);
   await i18n.changeLanguage('fr');
 });
 
@@ -151,5 +199,62 @@ describe('AitoTrackEntryPage', () => {
     await userEvent.paste('k7f3-xq 9w');
     expect(input()).toHaveValue('K7F3XQ');
     await waitFor(() => expect(seen).toEqual(['K7F3XQ']));
+  });
+
+  // T-072: a client on a flaky connection whose request is accepted but
+  // never answered was left with six frozen squares forever — no retry, no
+  // way out but a reload. An AbortController armed with a timeout now ends
+  // the check and lands on the same retryable error a network failure
+  // already shows.
+  it('aborts a check that hangs past the timeout, lands on the retryable error state, and accepts a fresh retry', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const seen = mockTrackHung();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderEntry();
+      await screen.findByRole('heading', { name: 'Suivre ma commande' });
+      await user.type(input(), 'k7f3xq');
+      await waitFor(() => expect(row()).toHaveAttribute('data-state', 'checking'));
+      expect(seen).toEqual(['K7F3XQ']);
+      expect(input()).toHaveAttribute('readonly');
+
+      // Comfortably inside the deadline: still checking, no error yet.
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(row()).toHaveAttribute('data-state', 'checking');
+
+      // Cross the deadline: the abort fires and the catch takes over.
+      await vi.advanceTimersByTimeAsync(1_001);
+      await waitFor(() => expect(row()).toHaveAttribute('data-state', 'error'));
+      expect(status()).toHaveTextContent('Impossible de vérifier le code');
+      expect(input()).not.toHaveAttribute('readonly');
+
+      // Retryable: a fresh submit issues a new request and can still succeed.
+      const retried = mockTrack(200);
+      fireEvent.keyDown(input(), { key: 'Enter' });
+      await waitFor(() => expect(row()).toHaveAttribute('data-state', 'found'));
+      expect(retried).toEqual(['K7F3XQ']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the card and logo with a pulsing skeleton, not the code entry, while the locale chunk is loading', async () => {
+    setReadyOverride(false);
+    renderEntry();
+    expect(await screen.findByAltText('Aito3D')).toBeInTheDocument();
+    expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('track-code')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
+  it('swaps the skeleton for the code entry once ready, leaving no skeleton behind', async () => {
+    setReadyOverride(false);
+    renderEntry();
+    await screen.findByAltText('Aito3D');
+    expect(screen.queryByTestId('track-code')).not.toBeInTheDocument();
+    act(() => setReadyOverride(true));
+    expect(await screen.findByRole('heading', { name: 'Suivre ma commande' })).toBeInTheDocument();
+    expect(screen.getByTestId('track-code')).toBeInTheDocument();
+    expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
   });
 });

@@ -5027,9 +5027,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  logout: () =>
+  // `token` lets callers (AuthContext.logout) send the JWT that was just
+  // cleared from module state, so the backend can still resolve+revoke its
+  // jti (T-032) — by the time this fires, the module-level authToken this
+  // function would otherwise fall back to is already null. `keepalive` lets
+  // the browser finish the request even though logout() also navigates away
+  // immediately after firing it.
+  logout: (token?: string | null) =>
     request<{ message: string }>('/auth/logout', {
       method: 'POST',
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      keepalive: true,
     }),
   getCurrentUser: () => request<UserResponse>('/auth/me'),
   disableAuth: () =>
@@ -7858,8 +7866,10 @@ export const api = {
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
   /** The public tracking page's payload — see routes/aito.py:get_tracking.
-   *  No auth: the token in the URL is the credential. */
-  getAitoTracking: (token: string) => request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`),
+   *  No auth: the token in the URL is the credential. An optional signal
+   *  lets a caller (the /t entry page) abort a hung check on a timeout. */
+  getAitoTracking: (token: string, signal?: AbortSignal) =>
+    request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`, { signal }),
   /** The current tracking link for the project, or null if never generated. */
   getAitoTrackingLink: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-link`),
   /** Mints (or re-mints) the project's tracking token, invalidating any

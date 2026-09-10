@@ -13,6 +13,12 @@ import { CARD, delayAt } from '../utils/trackingShell';
 
 type Failure = 'notFound' | 'tooMany' | 'error';
 
+/** A hung check (request accepted, never answered — a flaky mobile link)
+ *  must not leave the squares in "checking" forever with no way out: after
+ *  this long, abort and fall into the same retryable error state a network
+ *  failure already shows. */
+const CHECK_TIMEOUT_MS = 10_000;
+
 /** The front door of client tracking: `/t` with no code. A client holding
  *  the six characters from a quote or a message types them into six
  *  squares; the sixth one sends the code, and a recognised code carries
@@ -51,8 +57,10 @@ export function AitoTrackEntryPage() {
     const seq = ++sequence.current;
     setState('checking');
     setFailure(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
     try {
-      const data = await api.getAitoTracking(value);
+      const data = await api.getAitoTracking(value, controller.signal);
       if (seq !== sequence.current) return;
       queryClient.setQueryData(['aito-track', value], data);
       setState('found');
@@ -61,7 +69,17 @@ export function AitoTrackEntryPage() {
     } catch (err) {
       if (seq !== sequence.current) return;
       setState('error');
-      setFailure(err instanceof ApiError && err.status === 404 ? 'notFound' : err instanceof ApiError && err.status === 429 ? 'tooMany' : 'error');
+      setFailure(
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'error'
+          : err instanceof ApiError && err.status === 404
+            ? 'notFound'
+            : err instanceof ApiError && err.status === 429
+              ? 'tooMany'
+              : 'error',
+      );
+    } finally {
+      window.clearTimeout(timeout);
     }
   };
   const onChange = (next: string) => {
@@ -72,7 +90,27 @@ export function AitoTrackEntryPage() {
     else setState('idle');
   };
 
-  if (!ready) return <div className="min-h-screen bg-aito-midnight" />;
+  // The first paint waits on the locale chunk (French, the tracking default,
+  // ships lazily like every non-English bundle — see i18n/index.ts). Rather
+  // than a bare rectangle, show the same card and logo the ready state uses,
+  // with a skeleton standing in for the code row: no text (nothing is
+  // translated yet) and no motion (ENTRY_MOTION plays only from the
+  // ready-state mount, below).
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+        <div className={CARD}>
+          <header className="text-center">
+            <Logo className="mb-[20px]" />
+          </header>
+          <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
+            <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
+            <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const status =
     state === 'checking'

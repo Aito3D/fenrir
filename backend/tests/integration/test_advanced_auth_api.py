@@ -5,6 +5,7 @@ email-based login, forgot password, admin password reset, and user creation
 with advanced authentication enabled.
 """
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -462,6 +463,440 @@ class TestForgotPasswordAPI:
         )
         assert login_resp.status_code == 200
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_reissue_invalidates_previous_token(
+        self, async_client: AsyncClient, admin_token: str
+    ):
+        """A second forgot-password request invalidates the token from the first.
+
+        T-027: covers the outstanding-token prune performed by the shared
+        _issue_password_reset_email() helper — without it, an older reset link
+        would remain valid forever after a newer one is issued.
+        """
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "reissueme", "email": "reissueme@test.com", "role": "user"},
+            )
+            assert create_resp.status_code == 201
+
+        captured: list[str] = []
+
+        async def _capture_link_email(db, username, reset_url):
+            captured.append(reset_url)
+            return ("subject", "body", "<body/>")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email"),
+        ):
+            first_resp = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "reissueme@test.com"},
+            )
+            assert first_resp.status_code == 200
+            second_resp = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "reissueme@test.com"},
+            )
+            assert second_resp.status_code == 200
+
+        assert len(captured) == 2, "Both forgot-password requests should have queued an email"
+        first_token = captured[0].split("reset_token=")[1]
+        second_token = captured[1].split("reset_token=")[1]
+
+        # The first (superseded) token must now be rejected...
+        stale_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": first_token, "new_password": "Stalepass1!"},
+        )
+        assert stale_resp.status_code == 400
+
+        # ...while the second (current) token still works.
+        fresh_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": second_token, "new_password": "Freshpass1!"},
+        )
+        assert fresh_resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_confirm_rejects_expired_token(
+        self, async_client: AsyncClient, admin_token: str, db_session
+    ):
+        """An expired (but not yet consumed) reset token must be rejected.
+
+        T-034: covers the `now > expires_at` branch in forgot_password_confirm,
+        distinct from the already-consumed (row is None) branch.
+        """
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+        from backend.app.models.user import User
+
+        # admin_token's fixture already called /auth/setup, enabling auth.
+        user = User(
+            username="expiredreset",
+            email="expiredreset@test.com",
+            password_hash=get_password_hash("Originalpass1!"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(user)
+        await db_session.flush()
+
+        expired_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken.new_password_reset(
+                token=expired_token,
+                username="expiredreset",
+                expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": expired_token, "new_password": "Newpass456!"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid or expired password reset token"
+
+        # Password must remain unchanged
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "expiredreset", "password": "Originalpass1!"},
+        )
+        assert login_resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_send_runs_off_event_loop_and_deletes_token_on_failure(
+        self, async_client: AsyncClient, admin_token: str, caplog, db_session
+    ):
+        """T-045: the blocking send_email() call must run off the event loop.
+
+        _send_reset_email_or_delete_token is `async def` and registered via
+        BackgroundTasks — Starlette awaits it directly rather than running it
+        in a threadpool, so send_email() must itself be dispatched to a worker
+        thread (asyncio.to_thread) to avoid freezing the loop for every other
+        in-flight request. This also re-confirms the existing "delete the
+        token on send failure" except-branch still fires (same exception
+        handling, logged the same way) when the send is dispatched this way.
+        """
+        import logging
+        import threading
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "offloop", "email": "offloop@test.com", "role": "user"},
+            )
+            assert create_resp.status_code == 201
+
+        captured: dict[str, object] = {}
+
+        async def _capture_link_email(db, username, reset_url):
+            captured["reset_url"] = reset_url
+            # T-054: record whether the token row exists *before* the send
+            # (and its failure-branch delete) runs, using the same
+            # request-scoped session the endpoint just committed the token
+            # with. This is the positive-evidence half of the deletion proof
+            # — without it, "no row found" after the request could be
+            # vacuously true even if the delete never touched anything.
+            from sqlalchemy import select
+
+            from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+            reset_token = reset_url.rsplit("#reset_token=", 1)[1]
+            result = await db.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == reset_token))
+            captured["existed_before_send"] = result.scalar_one_or_none() is not None
+            return ("subject", "body", "<body/>")
+
+        recorded: dict[str, object] = {}
+
+        def _recording_send_email(*args, **kwargs):
+            recorded["off_main_thread"] = threading.current_thread() is not threading.main_thread()
+            try:
+                asyncio.get_running_loop()
+                recorded["loop_visible"] = True
+            except RuntimeError:
+                recorded["loop_visible"] = False
+            # Simulate an SMTP failure to also exercise the token-deletion path.
+            raise RuntimeError("smtp relay unreachable")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email", side_effect=_recording_send_email) as mock_send,
+            caplog.at_level(logging.ERROR, logger="backend.app.api.routes.auth"),
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "offloop@test.com"},
+            )
+
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+        assert "reset_url" in captured, "Reset URL not captured — email function was not called"
+
+        # The blocking call must have run off the event loop's thread, with no
+        # running loop visible from inside it (proof it's a real worker thread,
+        # not just an awaited coroutine on the same thread).
+        assert recorded.get("off_main_thread") is True
+        assert recorded.get("loop_visible") is False
+
+        # The send failure must still be caught by the except branch and trigger
+        # the same "delete token to unblock re-request" cleanup attempt/log as
+        # before — proving the wrapper's exception handling is unaffected by
+        # moving send_email() onto a worker thread.
+        failure_logs = [r for r in caplog.records if "deleting token to unblock re-request" in r.getMessage()]
+        assert len(failure_logs) == 1
+        assert "smtp relay unreachable" in failure_logs[0].getMessage()
+
+        # T-054: the log line alone doesn't prove the delete actually happened
+        # (the cleanup opens its own DB session — if that session isn't bound
+        # to the test DB, the delete would silently fail against a table that
+        # doesn't exist there while still logging the same message). Confirm
+        # the token row is genuinely gone, not just that we attempted it.
+        #
+        # Positive evidence first: the token row must have existed before the
+        # failure branch ran the delete — otherwise "no row found" below would
+        # be vacuously true even if the delete never touched anything.
+        assert captured.get("existed_before_send") is True, (
+            "reset token row was never created — the deletion check below would be vacuous"
+        )
+
+        reset_token = captured["reset_url"].rsplit("#reset_token=", 1)[1]
+
+        from sqlalchemy import select
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        remaining = await db_session.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == reset_token))
+        assert remaining.scalar_one_or_none() is None, "reset token row was not deleted after the send failure"
+
+        confirm_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "Wontwork1!"},
+        )
+        assert confirm_resp.status_code == 400
+        assert confirm_resp.json()["detail"] == "Invalid or expired password reset token"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_logs_when_cleanup_delete_also_fails(
+        self, async_client: AsyncClient, admin_token: str, caplog, db_session
+    ):
+        """T-080: when send_email() fails AND the subsequent cleanup delete also
+        fails (e.g. the engine is unavailable), the nested except branch inside
+        _send_reset_email_or_delete_token must log "Failed to delete reset token
+        after send failure" so operators can notice a stuck, undeletable token —
+        instead of the exception silently escaping the background task or the
+        cleanup attempt going unnoticed.
+        """
+        import logging
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "cleanupfail", "email": "cleanupfail@test.com", "role": "user"},
+            )
+            assert create_resp.status_code == 201
+
+        captured: dict[str, str] = {}
+
+        async def _capture_link_email(db, username, reset_url):
+            captured["reset_url"] = reset_url
+            return ("subject", "body", "<body/>")
+
+        def _broken_async_session(*args, **kwargs):
+            # Simulates the cleanup's own session being unusable (e.g. engine
+            # unavailable) — raises before any `async with` context is entered,
+            # so it's caught by the nested `except Exception as db_exc:`.
+            raise RuntimeError("engine unavailable")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch(
+                "backend.app.api.routes.auth.send_email",
+                side_effect=RuntimeError("smtp relay unreachable"),
+            ) as mock_send,
+            patch("backend.app.api.routes.auth.async_session", _broken_async_session),
+            caplog.at_level(logging.ERROR, logger="backend.app.api.routes.auth"),
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "cleanupfail@test.com"},
+            )
+
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+        assert "reset_url" in captured, "Reset URL not captured — email function was not called"
+
+        # The original send-failure log ("deleting token to unblock re-request")
+        # must still fire, and must precede the cleanup-failure log.
+        send_failure_logs = [r for r in caplog.records if "deleting token to unblock re-request" in r.getMessage()]
+        assert len(send_failure_logs) == 1
+
+        cleanup_failure_logs = [
+            r for r in caplog.records if "Failed to delete reset token after send failure" in r.getMessage()
+        ]
+        assert len(cleanup_failure_logs) == 1, "nested cleanup-failure log line was not emitted"
+        assert "engine unavailable" in cleanup_failure_logs[0].getMessage()
+
+        send_failure_idx = caplog.records.index(send_failure_logs[0])
+        cleanup_failure_idx = caplog.records.index(cleanup_failure_logs[0])
+        assert send_failure_idx < cleanup_failure_idx, (
+            "cleanup-failure log must be logged after the original send-failure log"
+        )
+
+        # Positive evidence of the consequence: because the cleanup delete
+        # itself failed, the token row must still exist (this is the stuck
+        # token the log line exists to flag).
+        reset_token = captured["reset_url"].rsplit("#reset_token=", 1)[1]
+
+        from sqlalchemy import select
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        remaining = await db_session.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == reset_token))
+        assert remaining.scalar_one_or_none() is not None, (
+            "reset token row should still exist — the cleanup delete failed and never ran"
+        )
+
+        # And the stuck token must still work for confirm.
+        confirm_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "Willwork1!"},
+        )
+        assert confirm_resp.status_code == 200
+
+
+class TestForgotPasswordRateLimitEquivalence:
+    """T-051: the per-email PASSWORD_RESET_SEND rate-limit event must be staged
+    for every /forgot-password request, regardless of whether the email
+    belongs to a real, active, local account. Staging it only inside the
+    user-exists branch made the resulting 429 an account-existence oracle —
+    a local account's address got rate-limited after N attempts while an
+    unknown or SSO-only address never did.
+    """
+
+    @pytest.fixture
+    async def admin_token(self, async_client: AsyncClient):
+        return await _setup_admin(async_client, "ratelimitadmin", "AdminPass1!")
+
+    @staticmethod
+    async def _submit(async_client: AsyncClient, email: str, count: int):
+        """POST /auth/forgot-password `count` times for `email`, return the responses."""
+        responses = []
+        with patch("backend.app.api.routes.auth.send_email"):
+            for _ in range(count):
+                responses.append(await async_client.post("/api/v1/auth/forgot-password", json={"email": email}))
+        return responses
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unknown_email_hits_same_429_as_known_email(self, async_client: AsyncClient, admin_token: str):
+        """An unknown email submitted N+1 (4) times gets the byte-identical 429
+        response a known local account's email gets at the same count."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        create_resp = await async_client.post(
+            "/api/v1/users/",
+            headers=headers,
+            json={"username": "ratelimitknown", "email": "ratelimitknown@test.com", "role": "user"},
+        )
+        assert create_resp.status_code == 201
+
+        known_responses = await self._submit(async_client, "ratelimitknown@test.com", 4)
+        unknown_responses = await self._submit(async_client, "ratelimitunknown@test.com", 4)
+
+        assert [r.status_code for r in known_responses] == [200, 200, 200, 429]
+        assert [r.status_code for r in unknown_responses] == [200, 200, 200, 429]
+
+        # The 4th response's body must be byte-identical whether the account
+        # exists or not — this is what makes the 429 non-oracle-able.
+        assert unknown_responses[3].text == known_responses[3].text
+        assert unknown_responses[3].json()["detail"] == "Too many password reset requests. Please wait 15 minutes."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sso_only_email_hits_same_429(self, async_client: AsyncClient, admin_token: str, db_session):
+        """An OIDC-sourced user's email — for which no reset email is ever sent —
+        is rate-limited exactly like a real local account's email."""
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        oidc_user = User(
+            username="ratelimitoidc",
+            email="ratelimitoidc@test.com",
+            auth_source="oidc",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(oidc_user)
+        await db_session.commit()
+
+        responses = await self._submit(async_client, "ratelimitoidc@test.com", 4)
+        assert [r.status_code for r in responses] == [200, 200, 200, 429]
+        assert responses[3].json()["detail"] == "Too many password reset requests. Please wait 15 minutes."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unknown_email_rate_limit_is_per_address(self, async_client: AsyncClient, admin_token: str):
+        """Exhausting one unknown email's per-email slots does not rate-limit a
+        different, unrelated email address."""
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        exhausted = await self._submit(async_client, "ratelimitexhausted@test.com", 4)
+        assert exhausted[3].status_code == 429
+
+        other = await self._submit(async_client, "ratelimitother@test.com", 1)
+        assert other[0].status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_generic_200_body_unchanged_before_limit(self, async_client: AsyncClient, admin_token: str):
+        """The first N (3) attempts still return the exact generic
+        anti-enumeration message, unaffected by staging the per-email
+        rate-limit event earlier in the handler."""
+        await _setup_smtp_and_advanced_auth(async_client, admin_token)
+
+        responses = await self._submit(async_client, "ratelimitgeneric@test.com", 3)
+        for r in responses:
+            assert r.status_code == 200
+            assert r.json() == {
+                "message": "If the email address is associated with an account, a password reset email has been sent."
+            }
+
 
 class TestAdminResetPasswordAPI:
     """Integration tests for admin password reset endpoint."""
@@ -496,6 +931,69 @@ class TestAdminResetPasswordAPI:
         assert response.status_code == 200
         mock_send.assert_called_once()
         assert mock_send.call_args[0][1] == "resetuser@test.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_password_reissue_invalidates_previous_token(self, async_client: AsyncClient, admin_token: str):
+        """A second admin reset-password request invalidates the token from the first.
+
+        T-027: covers the outstanding-token prune performed by the shared
+        _issue_password_reset_email() helper for the admin-reset path.
+        """
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with patch("backend.app.api.routes.users.send_email"):
+            await _setup_smtp_and_advanced_auth(async_client, admin_token)
+            create_resp = await async_client.post(
+                "/api/v1/users/",
+                headers=headers,
+                json={"username": "adminreissue", "email": "adminreissue@test.com", "role": "user"},
+            )
+            user_id = create_resp.json()["id"]
+
+        captured: list[str] = []
+
+        async def _capture_link_email(db, username, reset_url):
+            captured.append(reset_url)
+            return ("subject", "body", "<body/>")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email"),
+        ):
+            first_resp = await async_client.post(
+                "/api/v1/auth/reset-password",
+                headers=headers,
+                json={"user_id": user_id},
+            )
+            assert first_resp.status_code == 200
+            second_resp = await async_client.post(
+                "/api/v1/auth/reset-password",
+                headers=headers,
+                json={"user_id": user_id},
+            )
+            assert second_resp.status_code == 200
+
+        assert len(captured) == 2, "Both reset-password requests should have queued an email"
+        first_token = captured[0].split("reset_token=")[1]
+        second_token = captured[1].split("reset_token=")[1]
+
+        # The first (superseded) token must now be rejected...
+        stale_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": first_token, "new_password": "Stalepass1!"},
+        )
+        assert stale_resp.status_code == 400
+
+        # ...while the second (current) token still works.
+        fresh_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": second_token, "new_password": "Freshpass1!"},
+        )
+        assert fresh_resp.status_code == 200
 
     @pytest.mark.asyncio
     @pytest.mark.integration

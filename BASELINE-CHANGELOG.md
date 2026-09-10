@@ -10935,3 +10935,330 @@ every board response (GET /aito/, /aito/trash, PATCH/move/restore) drops the fie
 tracking_configured stays. The URL is served only by the AITO_UPDATE-gated GET
 /aito/{id}/tracking-link and POST /aito/{id}/tracking-token. app-openapi-index golden re-recorded
 for the removed schema property. User-approved 2026-09-06.
+
+## Campaign 13 · Round 1 (approved 2026-09-09)
+
+T-032 — logout() now captures the JWT before clearing local state and sends it on the
+POST /auth/logout request (`Authorization: Bearer <token>`, `keepalive: true` so the browser
+finishes the request across the immediate `/login` navigation), so the backend's existing
+revoke path actually runs. User-visible effect: logging out now really invalidates the session —
+a token captured from storage before logout (including a Remember Me token persisted in
+localStorage) stops working immediately instead of staying valid until its natural expiry, and a
+revoked_jti row is written on every logout. Local token/user state, the new-project-draft clear,
+and the swallow-errors-then-navigate sequence are unchanged. User-approved 2026-09-09.
+
+T-033 — GET /auth/oidc/authorize/{provider_id} (public, no credentials required) is now
+rate-limited per client IP: a sliding 60-second window admits at most 30 calls per address
+(`_OIDC_AUTHORIZE_RATE_WINDOW_S` / `_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP` in routes/mfa.py),
+modelled on aito.py's public tracking-route limiter and using the same proxy-aware
+`_get_client_ip` helper. The check is synchronous and runs before the provider lookup, the
+outbound discovery-document fetch, and the AuthEphemeralToken/OIDC_STATE write, so a limited
+request does none of that work. Past the cap the route returns 429 with
+`detail: "Too many OIDC authorize requests, please retry later"` and a `Retry-After: 60` header
+instead of an auth_url. No discovery-document caching and no global cap (declined) — narrowed,
+per-IP-only scope. User-approved, narrowed, 2026-09-09.
+
+T-047 — AitoTrackEntryPage's `!ready` gate (the locale chunk still loading — French, the
+tracking default, ships as a lazy ~350 KB chunk like every non-English bundle) no longer renders
+a bare `<div className="min-h-screen bg-aito-midnight" />`. It now renders the same page frame
+and card shell the ready state uses — the `min-h-screen bg-aito-midnight pt-[64px] pb-[48px]`
+wrapper, the CARD container, the centred `<Logo />` — with a pulsing skeleton block
+(`rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse`) standing in for the code-entry area,
+mirroring AitoTrackPage's own `!settled` skeleton. What a client on a stalled mobile connection
+sees during the first `/t` visit is now the card, the logo and a pulsing placeholder instead of a
+plain dark rectangle with nothing to distinguish it from a broken site. No English fallback
+timeout (declined): the page still waits for the requested locale chunk indefinitely, with no
+retry affordance, no new text and no i18n keys — purely a visual shell while `!ready`. The
+ready-state markup, the code-entry behaviour, and the ENTRY_MOTION/TRACK_MOTION first-load
+choreography are unchanged. User-approved, narrowed, 2026-09-09.
+
+## Campaign 13 · Round 2 (approved 2026-09-09)
+
+T-057 — login()'s LDAP bind (`await asyncio.to_thread(authenticate_ldap_user, ...)`) is now bounded
+by `asyncio.wait_for(..., timeout=_LDAP_BIND_TIMEOUT_S)` with `_LDAP_BIND_TIMEOUT_S = 15.0` in
+auth.py. `authenticate_ldap_user`'s ldap3 objects set only `connect_timeout=10` and never
+`receive_timeout`, so a directory that completes the TCP handshake and then stops answering used
+to leave the bind blocked in a read forever — and because `asyncio.to_thread` runs on the loop's
+shared default `ThreadPoolExecutor` (min(32, cpu+4) workers, process-wide), roughly 32 such login
+attempts would starve every other `to_thread` caller in the process (the 2FA OTP email, the
+password-reset email, main.py's photo/timelapse file IO). On timeout the request now takes the
+exact path an LDAP exception already took: `TimeoutError`/`asyncio.TimeoutError` is a subclass of
+`Exception`, so the surrounding `except Exception as e:` catches it unchanged, logs the same
+"LDAP authentication error, falling back to local: %s" warning (with the timeout's own message
+interpolated), sets `ldap_user = None`, and falls through to local auth exactly as before.
+User-visible effect: a login attempted while the LDAP server is unresponsive now returns a
+response (401, or a local-auth success if the credentials also match a local account) after ~15 s
+instead of hanging until the browser gives up. Limitation, noted honestly: `asyncio.wait_for`
+cancels the *awaiting* coroutine, not the worker thread — `asyncio.to_thread` has no cancellation
+hook, so the thread stays blocked in ldap3's read until the underlying socket eventually dies; only
+the request's wait is bounded, not the thread's lifetime. No other timeout, response, status code
+or message changed; ldap_service.py untouched. User-approved 2026-09-09.
+
+T-050 — `oidc_authorize()` and `oidc_callback()` now validate the `authorization_endpoint`,
+`token_endpoint` and `jwks_uri` URLs taken from the IdP's discovery document with
+`_oidc_helpers.assert_safe_public_https_url()` — the same public-internet SSRF guard already
+applied to the `issuer_url` that document came from (`schemas/auth.py:_validate_issuer_url`) —
+instead of the previous scheme-only `startswith(("https://", "http://"))` check. The guard
+requires `https://`, rejects numeric-encoded and cloud-metadata IPs, and rejects loopback,
+private (RFC-1918), link-local, multicast and unspecified addresses; it does not perform DNS
+resolution, so ordinary hostnames are unaffected. Both call sites keep their existing failure
+path unchanged: `oidc_authorize` still raises the same 502 with detail "OIDC discovery document
+contains invalid authorization_endpoint", and `oidc_callback` still redirects to
+`/?oidc_error=invalid_discovery_document` with the same warning log line. User-visible effect: an
+IdP whose discovery document declares an `http://` or private-address `authorization_endpoint`,
+`token_endpoint` or `jwks_uri` now fails at that same checkpoint instead of only when the scheme
+was non-HTTP(S) — its users' logins bounce to the existing error page instead of the endpoint
+being fetched. `_fetch_oidc_discovery()` and `userinfo_endpoint` are untouched (T-059 is a
+separate task). User-approved 2026-09-09.
+
+T-051 — `forgot_password()` now stages the `PASSWORD_RESET_SEND` rate-limit event
+(`db.add(AuthRateLimitEvent(username=identifier, event_type=EventType.PASSWORD_RESET_SEND))`) for
+every request's normalised email, next to where the existing `PASSWORD_RESET_IP` event is staged
+and committed — before the user lookup even happens — instead of only inside the
+`if user and user.is_active and user.auth_source not in ("ldap", "oidc")` branch. Previously the
+per-email counter was only ever incremented for real, active, local accounts, so an unknown email
+or an SSO-only (LDAP/OIDC) account's email could be submitted indefinitely without ever tripping
+the per-email 429, while a real local account's email hit it on the 4th request within the
+15-minute window — making the 429 an account-existence oracle. The per-IP cap (10), the per-email
+cap (3), the window (15 minutes), the generic 200 body ("If the email address is associated with
+an account, a password reset email has been sent."), the 429 detail text ("Too many password
+reset requests. Please wait 15 minutes."), and the timing-equalisation logic are all unchanged;
+only the identifier the SEND event is staged for changed from "conditionally, for local users
+only" to "unconditionally, for every submitted address". User-visible effect: a visitor who
+submits the same unknown or SSO-only email 3 times in 15 minutes now gets 429 "Too many password
+reset requests" on the 4th attempt, exactly as a real local account's email already did — where
+previously every attempt for that unknown/SSO-only address returned the generic 200 success
+message. User-approved 2026-09-09.
+
+T-052 — `checkAuthStatus()` in `AuthContext.tsx` now only adopts the `?token=` URL param into
+storage when `getAuthToken()` reports no token already stored at that moment (checked before
+`setAuthToken` is called for the URL token). Previously any `?token=` present on any route was
+unconditionally written to session storage and, once the server confirmed it valid, promoted to
+persistent storage — silently replacing an already-signed-in session with whatever token the URL
+carried. The `?token=` query param is still stripped from the visible URL via
+`window.history.replaceState` in both cases, so the credential never lingers in the address bar
+or browser history either way, and an already-stored token (session or persistent) is left
+completely untouched — the same token continues to be used for `/auth/me` and every subsequent
+request. The later promotion step (`if (urlToken && token === urlToken) setAuthToken(urlToken,
+'persistent')`) needed no change: when the URL token isn't adopted, `token` (from `getAuthToken()`
+after the status check) is the pre-existing stored token, not `urlToken`, so the guard's equality
+check already prevents promotion in that case. User-visible effect: a `?token=` link no longer
+replaces an already-signed-in session on any page — the stored session simply continues; a
+SpoolBuddy kiosk link visited from a fresh browser (no token stored yet) still authenticates
+exactly as before. No kiosk marker or dedicated entry point was added (declined) — the
+distinguishing signal is solely "was a token already stored", per the narrowed approval.
+User-approved, narrowed, 2026-09-09.
+
+T-058 — `send_email_otp()` (`POST /2fa/email/send` in `mfa.py`) now gains `response: Response` and,
+right after re-issuing the fresh pre-auth token bound to the existing challenge_id
+(`fresh_token = await create_pre_auth_token(db, username, challenge_id=challenge_id)`), re-sets the
+HttpOnly `2fa_challenge` binding cookie for that same challenge_id with the exact attributes
+`_issue_2fa_challenge()` already uses (httponly, `secure=` derived from the request scheme,
+samesite="lax", `max_age=300`, `path="/api/v1/auth/2fa"`) via a new shared helper,
+`_set_2fa_challenge_cookie()`, extracted from `_issue_2fa_challenge()` without changing what that
+function emits. Previously the cookie was only ever written once, by `_issue_2fa_challenge()` at
+login time, so its 300-second lifetime was always measured from login — while the re-issued
+pre-auth token from `/2fa/email/send` got a full fresh `PRE_AUTH_TOKEN_TTL` (5 minutes) and the OTP
+email itself advertises a 10-minute code lifetime. A user who logged in, picked the email method,
+and did not submit the code within 5 minutes of the *login* (even if well within 5 minutes of the
+code being *sent*) got a 401 "Invalid or expired pre-auth token" on `/2fa/verify` and had to
+re-enter username and password. User-visible effect: the `2fa_challenge` cookie's expiry is now
+extended on every OTP send, so the email-2FA step stays usable for 5 minutes after the code is
+sent rather than 5 minutes after the password was entered. Nothing else changed: the pre-auth
+token TTL, the OTP code TTL, the cookie's `max_age` value, the response body, status codes, error
+messages, rate limiting and the email content are all untouched, and the cookie is not refreshed
+anywhere else (e.g. on a failed `/2fa/verify`). User-approved 2026-09-09.
+
+T-059 — `_fetch_oidc_discovery()` in `mfa.py` now rejects a discovery document whose parsed JSON
+body is not an object: after `data = resp.json()`, `if not isinstance(data, dict): raise
+ValueError("OIDC discovery document is not a JSON object")` before returning it. Previously any
+JSON value the provider's `/.well-known/openid-configuration` responded with 200 for — `null`, a
+list, a string, a number — was returned as-is (the helper is annotated `-> dict` but never checked
+its return value), and both callers' subsequent `.get("...")` call on that value raised an
+uncaught `AttributeError` instead of taking the discovery-failure branch the code around it
+clearly intends. Both callers already wrap the helper call in a bare `except Exception`, so the new
+`ValueError` is caught by the existing handling with no new branches, messages, or codes added.
+User-visible effect: a provider whose discovery endpoint serves a non-object body now surfaces the
+existing 502 "Failed to fetch OIDC discovery document" on `GET /oidc/authorize/{provider_id}`
+(previously an unhandled 500) and redirects to the existing `discovery_failed` code on `GET
+/oidc/callback` (previously `internal_error`, from the outer catch-all). No other route,
+detail message, status code, or redirect code changed. User-approved 2026-09-09.
+
+T-060 — `_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP` in `mfa.py` is raised from 30 to 120, matching
+aito.py's public tracking-route cap (`_TRACK_RATE_MAX_CALLS_PER_IP`). `_oidc_authorize_rate_limited()`
+keys this per-IP sliding-window limiter off `_get_client_ip(request)` (auth.py), which only trusts
+`X-Forwarded-For` when the direct TCP peer is in `_TRUSTED_PROXY_IPS` — an env var that is empty by
+default. On a default install with a public `external_url` sitting behind a reverse proxy, every
+visitor is therefore keyed by the proxy's own address, so the cap is really a site-wide budget
+shared by every visitor rather than a per-visitor one. At 30 calls/minute for the whole site, the
+existing #1589 autologin effect (one `getOIDCAuthorizeUrl` call per unauthenticated `/login` mount)
+meant an office reloading the login page ~30 times a minute could push every visitor onto the 429
+path. The window (60s), the sweep threshold (`2 * cap`), the 429 status code, its body, and the
+`Retry-After: 60` header are all unchanged; only the cap's numeric value and its explanatory comment
+changed. User-visible effect: `GET /oidc/authorize/{id}` now starts answering 429 at 120 calls per
+source address per minute instead of 30. Declined, per the narrowed approval: re-keying the limiter
+off `X-Forwarded-For` regardless of `_TRUSTED_PROXY_IPS`, a startup warning when
+`TRUSTED_PROXY_IPS` is unset, and a dedicated global (not per-key) cap — the limiter's keying and
+logic are otherwise untouched. User-approved, narrowed, 2026-09-09.
+
+T-062 — `LoginPage.tsx`'s password-login flow no longer races its own `#1889` "already
+authenticated" effect. `AuthContext.login()` awaits `checkAuthStatus()`, which calls `setUser()`
+before `loginMutation`'s `onSuccess` runs, so the credentials-step effect
+(`if (!loading && user && step === 'credentials') navigate('/', { replace: true })`) used to fire on
+that intermediate render — before `onSuccess` had even called `exitToDashboard(resolvePostLoginRedirect())`
+— sending the browser to `/` a beat before the real target. A new `loginInFlightRef`, set `true`
+synchronously at the top of `handleSubmit()` (before `loginMutation.mutate()`) and cleared in the
+mutation's `onError`, gates that effect: `if (!loading && user && step === 'credentials' &&
+!loginInFlightRef.current)`. User-visible effect: a password login now produces exactly one
+navigation — to the real post-login target (a stashed redirect, or `/`), after the card's 700 ms
+exit animation (or immediately under reduced motion) — instead of an immediate flash to the
+dashboard followed a moment later by a second navigation to the actual target. The original
+`#1889` behaviour is unchanged: a visitor who lands on `/login` already authenticated (e.g. a
+back-button visit or a second tab), without performing a login in this mount, still redirects to
+`/` exactly as before — `loginInFlightRef` starts and stays `false` on that path. The OIDC-return
+and 2FA verification paths, `resolvePostLoginRedirect()`, and `exitToDashboard()`'s own timing are
+all untouched. User-approved 2026-09-09.
+
+## Campaign 13 · Round 3 (approved 2026-09-09)
+
+T-069 — `oidc_callback()`'s `frontend_error_url` in `mfa.py` now points at
+`f"{external_url}/login?oidc_error="` instead of `f"{external_url}/?oidc_error="`. `/` is the
+index route nested under `ProtectedRoute` (App.tsx), which for an unauthenticated visitor renders
+`<Navigate to="/login" replace state={{ from: location }} />` and drops the query string, so every
+SSO failure redirect previously landed on a bare `/login` with no `oidc_error` param —
+`LoginPage.tsx`'s `KNOWN_OIDC_ERRORS` table never fired and the user saw the plain credentials form
+with no explanation. Worse, on an install with `autologin_provider_id` set, LoginPage's autologin
+effect only skips its own redirect back to the IdP `if (... || searchParams.get('oidc_error'))` —
+with the param stripped, the browser bounced straight back to the IdP, which failed again,
+producing an endless IdP↔Bambuddy redirect loop with no reachable login form. User-visible effect:
+after a failed SSO sign-in the address bar now reads `/login?oidc_error=...` instead of
+`/?oidc_error=...`, and the user sees the corresponding error toast where previously they saw
+nothing; an autologin-configured install that used to loop now lands on a real login form showing
+the error. The success redirect (`f"{external_url}/login#oidc_token={exchange_token}"`) already
+targeted `/login` and is unchanged — only the failure path's path segment changed, from `/` to
+`/login`; every error-code string, status code (302), and the query-param name (`oidc_error`) are
+untouched. User-approved 2026-09-09.
+
+T-070 — `send_email_otp()` in `mfa.py` now commits the invalidation of the user's existing unused
+`UserOTPCode` rows and the newly-created row *before* calling `send_email()`, instead of leaving
+both staged in the same write transaction that spanned the SMTP round trip. SQLite only allows one
+writer at a time, and `send_email()`'s per-socket 10s timeout (connect/starttls/login/send) could
+previously pin that write transaction — and the RESERVED lock it holds — for up to ~40s against a
+slow or half-dead mail relay, while every other writer's `PRAGMA busy_timeout` gave them only 15s
+to acquire the lock; one user tapping "Send code" against a degraded relay could make unrelated
+writes across the app fail with "database is locked". The commit now happens immediately after the
+new row is flushed (its id is read before the commit, since a commit can expire the ORM instance),
+so no write transaction is open for the duration of the send. Because the invalidation and the new
+row are committed up front, a failed send can no longer roll them back; the `except` branch instead
+explicitly marks the just-committed row `used=True` and commits that before re-raising the same
+`HTTPException(500, "Failed to send OTP email")` as before. User-visible effect: when an OTP email
+fails to send, the code that was previously e-mailed to the user is now already invalidated (rather
+than being restored by a rolled-back transaction) — the user must request a new code instead of
+reusing the old one. Everything else is unchanged: the OTP code format and 10-minute TTL, the
+email-send rate-limit event (`record_email_otp_send`, still recorded only after a successful send),
+the pre-auth token (only ever consumed after a successful send, so a failed send leaves it valid
+for a retry with no extra cost), and the response body/status codes on both the failure and success
+paths. User-approved 2026-09-09.
+
+T-066 — `oidc_exchange()`'s `requires_2fa=True` branch in `mfa.py` no longer passes
+`user=_user_to_response(user)` into the returned `LoginResponse`, so it now matches
+`auth.py:login()`'s own `requires_2fa` branch, which has always returned only
+`requires_2fa`/`pre_auth_token`/`two_fa_methods`. `LoginResponse.user` is `Optional` (defaults to
+`None`), so the field is simply omitted rather than replaced with a placeholder. User-visible
+effect: an OIDC user who has 2FA enabled no longer receives the full `user` object (email, role,
+is_admin, groups, permissions) in the `POST /auth/oidc/exchange` response before completing 2FA —
+`resp.user` is now `null` in that response, same as the password-login 2FA response has always
+been. `LoginPage.tsx`'s OIDC-exchange handler never read `resp.user` in the `requires_2fa` branch
+(it only reads `resp.pre_auth_token` and `resp.two_fa_methods` there); `resp.user` is read only in
+the non-2FA branch, which is unchanged and still returns the full user record. User-approved
+2026-09-09.
+
+T-067 — `list_oidc_providers()` (`GET /api/v1/auth/oidc/providers`, `mfa.py`), the unauthenticated
+route the login page polls for its SSO buttons, no longer returns the full `OIDCProviderResponse`
+for each provider. It previously carried `issuer_url`, `client_id`, `scopes`, `is_enabled`,
+`auto_create_users`, `auto_link_existing_accounts`, `email_claim`, `require_email_verified`,
+`icon_url`, `default_group_id`, `is_autologin` and `is_env_managed` to any anonymous caller — none
+of which the login page reads (`LoginPage.tsx`'s `OIDCProviderButton` only uses `provider.id`,
+`provider.name` and `provider.has_icon`). A new slim model, `OIDCPublicProviderResponse`
+(`schemas/auth.py`), carrying exactly `id`, `name` and `has_icon`, is now the route's
+`response_model`, built via a sibling `_build_public_provider_response()` helper in `mfa.py` that
+mirrors `_build_provider_response()`'s `has_icon` derivation (set explicitly from
+`OIDCProvider.has_icon`, never a lazy BLOB load). The route's filtering (`is_enabled.is_(True)`)
+and ordering are unchanged. `GET /oidc/providers/all` (`SETTINGS_READ`-gated, used by
+`OIDCProviderSettings.tsx` and `SettingsPage.tsx`) is untouched and keeps returning the full
+`OIDCProviderResponse` for every provider, enabled or not. User-visible effect: any external
+client reading the unauthenticated provider list loses `issuer_url`, `client_id`, `scopes` and the
+auto-create/auto-link/email-claim/default-group/env-managed policy fields — it now sees only
+`id`, `name` and `has_icon` per provider, which is all the shipped login page ever consumed.
+`app-openapi-index` golden re-recorded for the new schema. User-approved 2026-09-09.
+
+T-071 — `_fetch_oidc_discovery()` in `mfa.py` (shared by `oidc_authorize()` and `oidc_callback()`,
+the latter reachable unauthenticated) now bounds the whole discovery fetch instead of only its
+per-phase httpx timeout. Previously `httpx.AsyncClient(timeout=10)` applied that 10s to each phase
+(connect/read/write/pool) independently, not to the call as a whole, and `resp.json()` buffered the
+entire body — an issuer that trickled one byte every few seconds could reset the read timer forever
+and hold the request (and its `Depends(get_db)` connection) open indefinitely, letting a single
+client park many connections/tasks on a stuck IdP up to the existing 120/min per-IP cap. The fetch
+is now wrapped in `asyncio.wait_for(..., timeout=_OIDC_DISCOVERY_TIMEOUT_S)` with a new 15s overall
+deadline, and the response body is read via `client.stream("GET", ...)` + `aiter_bytes()` (mirroring
+`services/oidc_icon.fetch_icon`'s streaming-with-early-exit cap) instead of the old non-streaming
+`client.get()` + `.json()`, aborting with `ValueError("OIDC discovery document too large")` once more
+than `_OIDC_DISCOVERY_MAX_BYTES` (256 KiB) has been read, before the bytes are parsed as JSON. Order
+of checks is unchanged relative to parsing: HTTP status (`raise_for_status()`) → size cap → JSON
+parse → the existing T-059 dict-shape check. Both new failure modes (`asyncio.TimeoutError` and the
+size `ValueError`) are ordinary exceptions and land in the callers' existing `except Exception`
+clauses unchanged, so `oidc_authorize()` still answers its existing `502 Failed to fetch OIDC
+discovery document` and `oidc_callback()` still redirects to its existing `discovery_failed` error
+code — no new error codes, no new response shapes. The per-phase `timeout=10` on the client and the
+client's default (non-following) redirect behavior are both untouched. User-visible effect: a
+discovery fetch against a very slow IdP that today eventually succeeds after tens of seconds (by
+trickling bytes to keep resetting the 10s per-phase timer) now fails with the same existing 502 (or
+`discovery_failed` redirect) once the new 15s overall deadline elapses; a discovery document larger
+than 256 KiB — far beyond any real IdP's few-KB response — now fails the same way instead of being
+buffered and parsed in full. User-approved 2026-09-09.
+
+T-072 — `check()` in `AitoTrackEntryPage.tsx` (the `/t` code-entry page) now arms an
+`AbortController` with a 10s deadline (`CHECK_TIMEOUT_MS`) around the tracking-code fetch, instead
+of awaiting `api.getAitoTracking()` with no deadline at all. `getAitoTracking()` (`api/client.ts`)
+gained a second, optional `signal?: AbortSignal` parameter, forwarded into `request()`'s existing
+`RequestInit` spread (`AitoTrackPage.tsx`'s call site is unchanged and passes no signal). The timer
+is cleared in a `finally` block on both the success and error paths. On abort, `fetch` rejects with
+a `DOMException` named `AbortError`, which is not an `ApiError` and is now matched explicitly ahead
+of the existing 404/429 checks in the `catch` block, so it cannot be misread as either and instead
+falls into the same generic `state='error'` / `failure='error'` branch a definite network failure
+already produced — no new state, no new text, no new i18n key. User-visible effect: a tracking-code
+check whose request is accepted by the server but never answered (a flaky mobile link) no longer
+leaves the six squares frozen in "checking" with the input locked (`readOnly`) forever; after 10s it
+now shows the same retryable error message ("Impossible de vérifier le code" in French) the page
+already shows for an ordinary network failure, the input becomes editable again, and Enter (or a
+fresh six characters) issues a new check, exactly like the existing retry path for any other error.
+A check that succeeds or fails inside the 10s window is unaffected. User-approved 2026-09-09.
+
+T-073 — `AuthContext.tsx`'s `login()` used to ignore whether `checkAuthStatus()` actually confirmed
+the freshly stored token: `setAuthToken(response.access_token, persistence); await
+checkAuthStatus();` then unconditionally returned the `LoginResponse`. `checkAuthStatus()`
+deliberately swallows every non-401 `/auth/me` failure — after its existing 3-attempt retry it
+calls `setUser(null)` and returns normally, by design, so a slow/transient backend blip doesn't
+force a re-login on page reload. But when that swallowing happened right after a fresh password
+login, `login()` still resolved successfully, so `LoginPage.tsx`'s `onSuccess` took the
+`resp.access_token && resp.user` branch, toasted `login.loginSuccess`, and called
+`exitToDashboard()` — while `user` was still `null`, so `ProtectedRoute` immediately bounced the
+browser straight back to `/login`, with a now-unconfirmed token left sitting in storage.
+`checkAuthStatus()` now returns `Promise<UserResponse | null>` — the confirmed user (or `null`) —
+at every one of its existing exit points, with no change to its side effects, its 3-attempt
+retry/backoff, the 401-only token-clearing behavior, or the kiosk `?token=` bootstrap (T-040/T-052).
+`login()` reads that return value: when the response carries a fresh (non-2FA) `access_token` and
+the follow-up `checkAuthStatus()` call returns `null` (token not confirmed), `login()` now clears
+the just-stored token (`setAuthToken(null)`) and throws `new Error('')` — an empty message so
+`LoginPage.tsx`'s existing `onError: (error) => showToast(error.message || t('login.loginFailed'),
+'error')` falls through to the already-shipped, localized generic failure text rather than a new
+ad hoc string. User-visible effect: a login whose follow-up `/auth/me` call keeps failing (all 3
+retries) now shows the same "Login failed" error toast an invalid-password attempt shows, and stays
+on the credentials form with the token cleared for a clean retry — instead of announcing success
+and silently bouncing back to an empty form with a dead token in storage. The `requires_2fa` branch
+(which never called `checkAuthStatus()` before and still doesn't — `login()`'s
+`!response.requires_2fa && response.access_token` guard is untouched) and the OIDC exchange path
+(`loginWithToken()`, used by both 2FA verification and OIDC callback, sets `user` directly and never
+calls `login()` or `checkAuthStatus()`) are both unaffected. A successful `/auth/me` confirmation —
+the common case — is unchanged: `login()` still resolves the same `LoginResponse` it always did.
+User-approved 2026-09-09.

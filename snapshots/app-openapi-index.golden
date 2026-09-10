@@ -1987,7 +1987,7 @@
    "params": [],
    "requestBody": {},
    "responses": {
-    "200": "[OIDCProviderResponse]"
+    "200": "[OIDCPublicProviderResponse]"
    },
    "security": false
   },
@@ -11538,6 +11538,7 @@
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
+    "shipping_lta": "anyOf(string,null)",
     "shipping_phone": "anyOf(string,null)",
     "shipping_price": "anyOf(number,null)",
     "shipping_service": "anyOf(string,null)",
@@ -11594,6 +11595,7 @@
     "shipping_first_name",
     "shipping_island",
     "shipping_last_name",
+    "shipping_lta",
     "shipping_phone",
     "shipping_price",
     "shipping_service",
@@ -11625,6 +11627,7 @@
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
+    "shipping_lta": "anyOf(string,null)",
     "shipping_phone": "anyOf(string,null)",
     "shipping_price": "anyOf(number,null)"
    },
@@ -11867,7 +11870,6 @@
     "impression_filament_id": "anyOf(integer,null)",
     "impression_printer_id": "anyOf(integer,null)",
     "impression_quantity": "anyOf(integer,null)",
-    "impression_rush": "boolean",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
     "modelisation_cost": "anyOf(number,null)",
@@ -11909,7 +11911,6 @@
     "impression_filament_id": "anyOf(integer,null)",
     "impression_printer_id": "anyOf(integer,null)",
     "impression_quantity": "anyOf(integer,null)",
-    "impression_rush": "boolean",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
     "modelisation_cost": "anyOf(number,null)",
@@ -11943,7 +11944,6 @@
   "AitoTaskStepsResponse": {
    "properties": {
     "done": "[string]",
-    "rush": "boolean",
     "services": "[string]",
     "title": "string"
    },
@@ -11962,7 +11962,6 @@
     "impression_filament_id": "anyOf(integer,null)",
     "impression_printer_id": "anyOf(integer,null)",
     "impression_quantity": "anyOf(integer,null)",
-    "impression_rush": "anyOf(boolean,null)",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
     "modelisation_cost": "anyOf(number,null)",
@@ -11986,6 +11985,7 @@
   },
   "AitoTrackingLinkResponse": {
    "properties": {
+    "quote_notes": "anyOf(string,null)",
     "tracking_url": "anyOf(string,null)"
    },
    "required": [
@@ -12017,10 +12017,12 @@
   "AitoTrackingShipping": {
    "properties": {
     "island": "string",
+    "lta": "anyOf(string,null)",
     "service": "string"
    },
    "required": [
     "island",
+    "lta",
     "service"
    ]
   },
@@ -13089,7 +13091,6 @@
     "prototype_rate_pct": "number",
     "qty_k": "number",
     "qty_min_factor": "number",
-    "rush_pct": "number",
     "stuff_markup_pct": "number",
     "tax_pct": "number",
     "updated_at": "string"
@@ -13113,7 +13114,6 @@
     "prototype_rate_pct",
     "qty_k",
     "qty_min_factor",
-    "rush_pct",
     "stuff_markup_pct",
     "tax_pct",
     "updated_at"
@@ -13138,7 +13138,6 @@
     "prototype_rate_pct": "anyOf(number,null)",
     "qty_k": "anyOf(number,null)",
     "qty_min_factor": "anyOf(number,null)",
-    "rush_pct": "anyOf(number,null)",
     "stuff_markup_pct": "anyOf(number,null)",
     "tax_pct": "anyOf(number,null)"
    },
@@ -16108,6 +16107,18 @@
     "scopes": "anyOf(string,null)"
    },
    "required": []
+  },
+  "OIDCPublicProviderResponse": {
+   "properties": {
+    "has_icon": "boolean",
+    "id": "integer",
+    "name": "string"
+   },
+   "required": [
+    "has_icon",
+    "id",
+    "name"
+   ]
   },
   "OrcaAuthStatusResponse": {
    "properties": {

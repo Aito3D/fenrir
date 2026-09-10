@@ -557,6 +557,22 @@ class OIDCProviderResponse(BaseModel):
         from_attributes = True
 
 
+class OIDCPublicProviderResponse(BaseModel):
+    """Slim projection of OIDCProviderResponse for the unauthenticated
+    ``GET /oidc/providers`` list (T-067). Carries only what the login page's
+    OIDCProviderButton reads — the full model's issuer_url/client_id/scopes
+    and auto-create/auto-link/email-claim policy fields are not exposed to
+    anonymous callers. Admin tooling keeps using the full response via the
+    SETTINGS_READ-gated ``GET /oidc/providers/all``."""
+
+    id: int
+    name: str
+    has_icon: bool
+
+    class Config:
+        from_attributes = True
+
+
 class OIDCAuthorizeResponse(BaseModel):
     auth_url: str
 

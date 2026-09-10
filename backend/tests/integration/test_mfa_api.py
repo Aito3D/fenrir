@@ -17,6 +17,8 @@ Tests the full request/response cycle for:
 
 from __future__ import annotations
 
+import asyncio
+import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -29,10 +31,12 @@ from httpx import AsyncClient
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import mfa as mfa_module
 from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.user import User
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -40,6 +44,50 @@ _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 AUTH_SETUP_URL = "/api/v1/auth/setup"
 LOGIN_URL = "/api/v1/auth/login"
+
+
+class _StreamCtx:
+    """Minimal ``async with client.stream(...)`` shim (T-071).
+
+    ``_fetch_oidc_discovery`` now reads the discovery document via
+    ``client.stream("GET", ...)`` instead of ``client.get(...)`` so it can
+    cap the bytes read. This wraps whatever a mock client's own ``get()``
+    would have returned so each test's existing per-URL dispatch logic
+    (discovery vs. jwks) doesn't need duplicating for the streamed call —
+    ``stream()`` on those mock clients just does ``_StreamCtx(self.get(...))``.
+    """
+
+    def __init__(self, get_coro):
+        self._get_coro = get_coro
+
+    async def __aenter__(self):
+        self._resp = await self._get_coro
+        return self._resp
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def _make_stream_ctx(payload: dict):
+    """Build a ``client.stream(...)`` return value (T-071) for tests that mock
+    httpx via bare ``AsyncMock``/``MagicMock`` objects rather than a
+    hand-rolled client class — ``client.stream(...)`` itself is a *sync* call
+    that returns an async context manager, so this returns that context
+    manager directly (not a coroutine).
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+
+    async def _aiter_bytes():
+        yield json.dumps(payload).encode()
+
+    resp.aiter_bytes = _aiter_bytes
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=resp)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
 
 
 def _norm_pw(password: str) -> str:
@@ -521,6 +569,110 @@ class TestTwoFAVerifyTOTP:
 
 
 # ===========================================================================
+# 2FA Verify — per-method precondition failures
+# ===========================================================================
+
+
+class TestTwoFAVerifyPreconditions:
+    """Tests for POST /api/v1/auth/2fa/verify precondition failures.
+
+    Each 2FA method has its own "not actually usable right now" branch that
+    is distinct from a wrong code: TOTP/backup require an *enabled* UserTOTP
+    row, and email requires an outstanding, unexpired UserOTPCode row (i.e.
+    /2fa/email/send was actually called before /2fa/verify).
+    """
+
+    async def _enable_email_otp(self, client: AsyncClient, db_session: AsyncSession, username: str, token: str) -> None:
+        """Give the user an email address and enable email 2FA (DB injection,
+        mirroring TestEmailOTPFlow.test_email_otp_send_and_verify)."""
+        from sqlalchemy import select as sa_select
+
+        result = await db_session.execute(sa_select(User).where(User.username == username))
+        user = result.scalar_one()
+        user.email = f"{username}@example.com"
+        await db_session.commit()
+
+        setup_code = "444444"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username=username,
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        confirm_resp = await client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+        assert confirm_resp.status_code == 200, confirm_resp.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_email_with_no_outstanding_otp_returns_401(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """method=email with a valid pre_auth_token but no UserOTPCode row ever
+        created (i.e. /2fa/email/send was never called) must be rejected —
+        not silently treated as a wrong-code case."""
+        token = await _setup_and_login(async_client, "emailnootp", "emailnootp1")
+        await self._enable_email_otp(async_client, db_session, "emailnootp", token)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "emailnootp", "emailnootp1")
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "email", "code": "123456"},
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "No valid OTP code found. Request a new one."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_totp_when_totp_not_enabled_returns_400(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """method=totp for a user whose only enabled 2FA method is email (i.e.
+        TOTP was never set up) must be rejected with a distinct 400, not
+        treated as an invalid-code 401."""
+        token = await _setup_and_login(async_client, "totpnotenabled", "totpnotenabled1")
+        await self._enable_email_otp(async_client, db_session, "totpnotenabled", token)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "totpnotenabled", "totpnotenabled1")
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": "123456"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "TOTP is not enabled for this user"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_backup_when_totp_not_enabled_returns_400(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """method=backup shares the TOTP-enabled precondition (backup codes
+        are only ever issued alongside TOTP); a user with only email 2FA
+        must get the same distinct 400, not an invalid-code 401."""
+        token = await _setup_and_login(async_client, "backupnotenabled", "backupnotenabled1")
+        await self._enable_email_otp(async_client, db_session, "backupnotenabled", token)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "backupnotenabled", "backupnotenabled1")
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "backup", "code": "12345678"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "TOTP is not enabled for this user"
+
+
+# ===========================================================================
 # 2FA Verify — Backup code path
 # ===========================================================================
 
@@ -548,7 +700,10 @@ class TestTwoFAVerifyBackup:
             json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
         )
         assert verify_resp.status_code == 200
-        assert "access_token" in verify_resp.json()
+        data = verify_resp.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert data["user"]["username"] == "backupcodeok"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -603,6 +758,115 @@ class TestTwoFAVerifyBackup:
         # Status is readable with the original full token (still valid)
         status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(token))
         assert status_resp.json()["backup_codes_remaining"] == 9
+
+
+# ===========================================================================
+# 2FA Verify — anti-replay guard (concurrent pre-auth-token consumption)
+# ===========================================================================
+
+
+class TestTwoFAVerifyAntiReplayGuard:
+    """T-036: verify_2fa() peeks the pre_auth_token (non-consuming) up front,
+    then consumes it for real only after the method-specific code check
+    passes. If a concurrent request wins the race and consumes the token in
+    between, the code's own comment (C-1 / M1) says the loser must be
+    rejected with 401 rather than silently granted a session.
+
+    These tests reproduce that race deterministically (no flaky
+    asyncio.gather) by patching ``peek_pre_auth_token`` so that, after it
+    reports the token as still valid (exactly as it would moments before a
+    concurrent winner deletes it), it immediately performs the real
+    out-of-band ``consume_pre_auth_token`` call that a concurrent request
+    would have made. By the time verify_2fa() reaches its own consume call,
+    the row is already gone — triggering the guard.
+    """
+
+    async def _patched_peek_that_loses_the_race(self, db, token, challenge_id=None):
+        """Behaves exactly like the real peek_pre_auth_token, except a
+        concurrent request is simulated to consume the token right after
+        this peek succeeds (and before verify_2fa's own consume call)."""
+        username = await self._real_peek(db, token, challenge_id=challenge_id)
+        if username is not None:
+            await self._real_consume(db, token, challenge_id=challenge_id)
+        return username
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_totp_verify_rejects_token_consumed_by_concurrent_request(self, async_client: AsyncClient):
+        """method=totp: a valid code plus a valid pre_auth_token must still be
+        rejected with 401 if a concurrent request already consumed the
+        pre_auth_token — this proves the guard at mfa.py:~1256 fires."""
+        token = await _setup_and_login(async_client, "antireplaytotp", "antireplaytotp1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "antireplaytotp", "antireplaytotp1")
+
+        self._real_peek = mfa_module.peek_pre_auth_token
+        self._real_consume = mfa_module.consume_pre_auth_token
+        with patch(
+            "backend.app.api.routes.mfa.peek_pre_auth_token",
+            self._patched_peek_that_loses_the_race,
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/2fa/verify",
+                json={
+                    "pre_auth_token": pre_auth_token,
+                    "method": "totp",
+                    "code": pyotp.TOTP(secret).now(),
+                },
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired pre-auth token"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backup_verify_rejects_token_consumed_by_concurrent_request(self, async_client: AsyncClient):
+        """method=backup: a valid backup code plus a valid pre_auth_token must
+        still be rejected with 401 if a concurrent request already consumed
+        the pre_auth_token — this proves the guard at mfa.py:~1235 fires,
+        and that the backup code itself is NOT burned in that case (the
+        route consumes the token before removing the code)."""
+        token = await _setup_and_login(async_client, "antireplaybackup", "antireplaybackup1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        enable_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+        backup_code = enable_resp.json()["backup_codes"][0]
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "antireplaybackup", "antireplaybackup1")
+
+        self._real_peek = mfa_module.peek_pre_auth_token
+        self._real_consume = mfa_module.consume_pre_auth_token
+        with patch(
+            "backend.app.api.routes.mfa.peek_pre_auth_token",
+            self._patched_peek_that_loses_the_race,
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/2fa/verify",
+                json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired pre-auth token"
+
+        # The backup code must still be usable — proof the route consumed the
+        # pre_auth_token (and rejected) BEFORE removing the backup code.
+        pre_auth_token2 = await _login_get_pre_auth_token(async_client, "antireplaybackup", "antireplaybackup1")
+        retry_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token2, "method": "backup", "code": backup_code},
+        )
+        assert retry_resp.status_code == 200
 
 
 # ===========================================================================
@@ -971,8 +1235,9 @@ class TestOIDCProviders:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_default_group_id_in_public_and_admin_list(self, async_client: AsyncClient, db_session: AsyncSession):
-        """default_group_id appears in both the public and admin list responses."""
+    async def test_default_group_id_in_admin_list_not_public(self, async_client: AsyncClient, db_session: AsyncSession):
+        """default_group_id appears in the admin list; the public list is slimmed
+        to id/name/has_icon (T-067) so it no longer carries this field."""
         from sqlalchemy import select
 
         from backend.app.models.group import Group
@@ -1005,7 +1270,71 @@ class TestOIDCProviders:
         pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
         pub_match = next((p for p in pub_resp.json() if p["id"] == provider_id), None)
         assert pub_match is not None
-        assert pub_match["default_group_id"] == operators.id
+        assert "default_group_id" not in pub_match
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_public_list_is_slimmed_to_id_name_has_icon(self, async_client: AsyncClient):
+        """T-067: the unauthenticated public list must carry ONLY id/name/has_icon —
+        none of the connection details or auto-create/auto-link/email-claim policy
+        fields that the full OIDCProviderResponse exposes on /oidc/providers/all."""
+        token = await _setup_and_login(async_client, "oidcslimpub", "OidcSlimPub1!")
+        await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SlimPublicProvider",
+                "issuer_url": "https://slimpublic.example.com",
+                "client_id": "slimpublic-client",
+                "client_secret": "secret",
+                "scopes": "openid email",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(token),
+        )
+
+        pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
+        assert pub_resp.status_code == 200
+        pub_items = pub_resp.json()
+        assert len(pub_items) >= 1
+        for item in pub_items:
+            assert set(item.keys()) == {"id", "name", "has_icon"}
+            for forbidden_field in (
+                "issuer_url",
+                "client_id",
+                "scopes",
+                "auto_create_users",
+                "auto_link_existing_accounts",
+                "email_claim",
+                "require_email_verified",
+                "default_group_id",
+                "is_env_managed",
+            ):
+                assert forbidden_field not in item
+
+        all_resp = await async_client.get("/api/v1/auth/oidc/providers/all", headers=_auth_header(token))
+        assert all_resp.status_code == 200
+        all_items = all_resp.json()
+        assert len(all_items) >= 1
+        full_key_set = {
+            "id",
+            "name",
+            "issuer_url",
+            "client_id",
+            "scopes",
+            "is_enabled",
+            "auto_create_users",
+            "auto_link_existing_accounts",
+            "email_claim",
+            "require_email_verified",
+            "icon_url",
+            "default_group_id",
+            "is_autologin",
+            "is_env_managed",
+            "has_icon",
+        }
+        for item in all_items:
+            assert set(item.keys()) == full_key_set
 
 
 # ===========================================================================
@@ -1277,8 +1606,84 @@ class TestLoginResponseShape:
         data = login_resp.json()
         assert data.get("requires_2fa") is True
         assert data.get("pre_auth_token") is not None
+        assert data.get("two_fa_methods") == ["totp", "backup"]
         # access_token must NOT be present — it would bypass the 2FA gate
         assert "access_token" not in data or data["access_token"] is None
+
+        # The pre_auth_token must be usable end-to-end: /2fa/verify relies on
+        # the HttpOnly 2fa_challenge cookie set by the same login call.
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={
+                "pre_auth_token": data["pre_auth_token"],
+                "method": "totp",
+                "code": pyotp.TOTP(secret).now(),
+            },
+        )
+        assert verify_resp.status_code == 200, verify_resp.text
+        assert verify_resp.json().get("access_token") is not None
+
+
+class TestOIDCExchange2FAChallenge:
+    """oidc_exchange() must issue the same pre_auth_token/cookie/methods shape
+    as login() when the resolved user has 2FA enabled (C4)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oidc_exchange_2fa_user_issues_challenge(self, async_client: AsyncClient, db_session: AsyncSession):
+        """A user with TOTP enabled must get requires_2fa+pre_auth_token from
+        /oidc/exchange (not a bare access_token), and must be able to complete
+        the challenge via /2fa/verify using the cookie set by the exchange."""
+        token = await _setup_and_login(async_client, "oidcexch2fa", "Oidcexch2fa1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+
+        exchange_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=exchange_token,
+                token_type="oidc_exchange",
+                username="oidcexch2fa",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        exchange_resp = await async_client.post(
+            "/api/v1/auth/oidc/exchange",
+            json={"oidc_token": exchange_token},
+        )
+        assert exchange_resp.status_code == 200, exchange_resp.text
+        data = exchange_resp.json()
+        assert data.get("requires_2fa") is True
+        assert data.get("pre_auth_token") is not None
+        assert data.get("two_fa_methods") == ["totp", "backup"]
+        # access_token must NOT be present — it would bypass the 2FA gate
+        assert "access_token" not in data or data["access_token"] is None
+        # T-066: the user record must NOT be exposed before 2FA is verified
+        # (matches auth.py:login()'s requires_2fa branch, which also omits it;
+        # see test_oidc_callback_creates_user_and_issues_jwt for the non-2FA
+        # branch, which still returns the user).
+        assert data.get("user") is None
+
+        # The pre_auth_token must be usable end-to-end: /2fa/verify relies on
+        # the HttpOnly 2fa_challenge cookie set by the same call, so this also
+        # proves the cookie was set with the right value/path.
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={
+                "pre_auth_token": data["pre_auth_token"],
+                "method": "totp",
+                "code": pyotp.TOTP(secret).now(),
+            },
+        )
+        assert verify_resp.status_code == 200, verify_resp.text
+        assert verify_resp.json().get("access_token") is not None
 
 
 # ===========================================================================
@@ -1543,6 +1948,418 @@ class TestEmailOTPSendVerify:
         )
         assert good.status_code == 200
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_otp_send_runs_off_event_loop(self, async_client: AsyncClient, db_session: AsyncSession):
+        """The blocking SMTP send must run in a worker thread, not on the event loop.
+
+        Regression guard for T-043: send_email is a synchronous smtplib call and
+        must be offloaded (e.g. via asyncio.to_thread) so it cannot stall the
+        single uvicorn event loop.
+        """
+        import threading
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(async_client, "emailoffloop", "emailoffloop1")
+
+        result = await db_session.execute(sa_select(User).where(User.username == "emailoffloop"))
+        user = result.scalar_one()
+        user.email = "emailoffloop@example.com"
+        await db_session.commit()
+
+        setup_code = "666666"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="emailoffloop",
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "emailoffloop", "emailoffloop1")
+
+        smtp_mock = MagicMock()
+        observed: dict[str, bool] = {}
+
+        def _record_thread(smtp_settings, to_email, subject, body_text, body_html):
+            observed["off_main_thread"] = threading.current_thread() is not threading.main_thread()
+            try:
+                asyncio.get_running_loop()
+                observed["no_running_loop"] = False
+            except RuntimeError:
+                observed["no_running_loop"] = True
+
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_record_thread),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+
+        assert send_resp.status_code == 200, send_resp.text
+        assert observed.get("off_main_thread") is True, "send_email must run in a worker thread, not the event loop"
+        assert observed.get("no_running_loop") is True, "send_email's thread must have no running asyncio loop"
+
+
+class TestEmailOTPSendCookieRefresh:
+    """T-058: POST /2fa/email/send must re-set the 2fa_challenge cookie (same
+    binding value, same attributes, fresh max_age=300) alongside the fresh
+    pre-auth token it issues, so the 5-minute binding window restarts from
+    "code sent" rather than "logged in"."""
+
+    async def _enable_email_otp_and_login(
+        self, client: AsyncClient, db_session: AsyncSession, username: str, password: str
+    ) -> str:
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(client, username, password)
+
+        result = await db_session.execute(sa_select(User).where(User.username == username))
+        user = result.scalar_one()
+        user.email = f"{username}@example.com"
+        await db_session.commit()
+
+        setup_code = "123456"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username=username,
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+        return token
+
+    @staticmethod
+    def _parse_2fa_challenge_cookie(headers):
+        from http.cookies import SimpleCookie
+
+        for raw in headers.get_list("set-cookie"):
+            jar: SimpleCookie = SimpleCookie()
+            jar.load(raw)
+            if "2fa_challenge" in jar:
+                return jar["2fa_challenge"]
+        raise AssertionError(f"no 2fa_challenge Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_send_refreshes_2fa_challenge_cookie(self, async_client: AsyncClient, db_session: AsyncSession):
+        """The send response's Set-Cookie for 2fa_challenge must carry the same
+        binding value as the login cookie, with the same path/httponly/samesite
+        and a fresh max_age=300. Both cookies are set over this fixture's
+        plain-http client, so `secure` (T-079: `raw_request.url.scheme ==
+        "https"`) must be absent on both — the https-scheme case is covered
+        by test_2fa_challenge_cookie_secure_flag_tracks_request_scheme
+        below."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        await self._enable_email_otp_and_login(async_client, db_session, "cookierefresh1", "cookierefresh1a")
+
+        login_resp = await async_client.post(
+            LOGIN_URL, json={"username": "cookierefresh1", "password": "Cookierefresh1a!"}
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        login_cookie = self._parse_2fa_challenge_cookie(login_resp.headers)
+        assert bool(login_cookie["secure"]) is False, "http-based login cookie must not carry Secure"
+        pre_auth_token = login_resp.json()["pre_auth_token"]
+
+        smtp_mock = MagicMock()
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email"),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert send_resp.status_code == 200, send_resp.text
+
+        send_cookie = self._parse_2fa_challenge_cookie(send_resp.headers)
+        assert send_cookie.value == login_cookie.value, "cookie binding value must be unchanged by the refresh"
+        assert send_cookie["path"] == login_cookie["path"] == "/api/v1/auth/2fa"
+        assert send_cookie["max-age"] == login_cookie["max-age"] == "300"
+        assert send_cookie["samesite"] == login_cookie["samesite"]
+        assert bool(send_cookie["httponly"]) == bool(login_cookie["httponly"]) is True
+        assert bool(send_cookie["secure"]) is False, "http-based send-refresh cookie must not carry Secure"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_2fa_challenge_cookie_secure_flag_tracks_request_scheme(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """T-079/H-1: `_set_2fa_challenge_cookie`'s `secure` flag must track
+        the request's scheme so the binding cookie can't be intercepted on
+        mixed-content (http-downgrade) deployments. Every other test in this
+        module talks to the app over the `async_client` fixture's plain-http
+        base_url, so this builds a second client against the same ASGI app
+        with an https:// base_url — httpx's ASGITransport derives the ASGI
+        scope's `scheme` from the request URL — reusing the dependency
+        overrides / module patches the `async_client` fixture parameter
+        already applied for the duration of this test."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from httpx import ASGITransport
+
+        from backend.app.main import app as fastapi_app
+
+        await self._enable_email_otp_and_login(async_client, db_session, "cookiesecure3", "cookiesecure3a")
+
+        async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://testserver") as https_client:
+            login_resp = await https_client.post(
+                LOGIN_URL, json={"username": "cookiesecure3", "password": "Cookiesecure3a!"}
+            )
+            assert login_resp.status_code == 200, login_resp.text
+            login_cookie = self._parse_2fa_challenge_cookie(login_resp.headers)
+            assert bool(login_cookie["secure"]) is True, "login's 2fa_challenge cookie must be Secure over https"
+            pre_auth_token = login_resp.json()["pre_auth_token"]
+
+            smtp_mock = MagicMock()
+            with (
+                patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+                patch("backend.app.api.routes.mfa.send_email"),
+            ):
+                send_resp = await https_client.post(
+                    "/api/v1/auth/2fa/email/send",
+                    json={"pre_auth_token": pre_auth_token},
+                )
+            assert send_resp.status_code == 200, send_resp.text
+
+            send_cookie = self._parse_2fa_challenge_cookie(send_resp.headers)
+            assert bool(send_cookie["secure"]) is True, (
+                "send's refreshed 2fa_challenge cookie must be Secure over https"
+            )
+            assert send_cookie.value == login_cookie.value, "cookie binding value must be unchanged by the refresh"
+            assert send_cookie["path"] == login_cookie["path"] == "/api/v1/auth/2fa"
+            assert send_cookie["max-age"] == login_cookie["max-age"] == "300"
+            assert send_cookie["samesite"] == login_cookie["samesite"]
+            assert bool(send_cookie["httponly"]) == bool(login_cookie["httponly"]) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_send_cookie_refresh_lets_late_verify_succeed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """End-to-end proof of the user-visible fix: once the login-time cookie
+        is gone (simulating that its max_age=300 window, timed from login, has
+        elapsed), the cookie re-issued by /2fa/email/send is what /2fa/verify
+        needs to succeed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        await self._enable_email_otp_and_login(async_client, db_session, "cookierefresh2", "cookierefresh2a")
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "cookierefresh2", "cookierefresh2a")
+
+        captured: dict[str, str] = {}
+        smtp_mock = MagicMock()
+
+        def _capture(smtp_settings, to_email, subject, body_text, body_html):
+            import re
+
+            m = re.search(r"login code is: (\d{6})", body_text)
+            if m:
+                captured["otp"] = m.group(1)
+
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert send_resp.status_code == 200, send_resp.text
+        fresh_token = send_resp.json()["pre_auth_token"]
+        refreshed_cookie = self._parse_2fa_challenge_cookie(send_resp.headers)
+
+        # Simulate the login-time cookie having already expired (dropped from
+        # the client's jar) by the time the user finally types the code, and
+        # keep only the cookie that /2fa/email/send re-issued.
+        async_client.cookies.delete("2fa_challenge", path="/api/v1/auth/2fa")
+        async_client.cookies.set("2fa_challenge", refreshed_cookie.value, path="/api/v1/auth/2fa")
+
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": fresh_token, "method": "email", "code": captured["otp"]},
+        )
+        assert verify_resp.status_code == 200, verify_resp.text
+        assert verify_resp.json()["user"]["username"] == "cookierefresh2"
+
+
+class TestEmailOTPSendCommitsBeforeSMTP:
+    """T-070: send_email_otp must commit the OTP-code invalidation + the new
+    UserOTPCode row BEFORE the SMTP round trip, so SQLite's write lock is
+    never held across send_email(). A failed send can therefore no longer
+    roll the invalidation back — the except branch marks the just-committed
+    row used instead, so the previously e-mailed code is invalidated either
+    way and the caller must request a fresh one (user-approved behaviour
+    change)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_send_failure_invalidates_previous_code_and_marks_new_row_used(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        import re
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        from backend.app.models.user_otp_code import UserOTPCode
+
+        await TestEmailOTPSendCookieRefresh()._enable_email_otp_and_login(
+            async_client, db_session, "sendfailinvalid", "sendfailinvalid1"
+        )
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "sendfailinvalid", "sendfailinvalid1")
+
+        # First (successful) send — this is the code the user "previously received".
+        captured: dict[str, str] = {}
+
+        def _capture(smtp_settings, to_email, subject, body_text, body_html):
+            m = re.search(r"login code is: (\d{6})", body_text)
+            if m:
+                captured["otp"] = m.group(1)
+
+        smtp_mock = MagicMock()
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            first_send = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert first_send.status_code == 200, first_send.text
+        previous_code = captured["otp"]
+        second_pre_auth_token = first_send.json()["pre_auth_token"]
+
+        # Re-tap "Send code" — the relay is down this time.
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=RuntimeError("smtp down")),
+        ):
+            failed_send = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": second_pre_auth_token},
+            )
+        assert failed_send.status_code == 500
+        assert failed_send.json()["detail"] == "Failed to send OTP email"
+
+        # Approved user-visible change: the previously-emailed code is already
+        # invalidated (not restored by a rollback) — /2fa/verify must reject it.
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": second_pre_auth_token, "method": "email", "code": previous_code},
+        )
+        assert verify_resp.status_code == 401
+
+        # The row created just before the failed send must be marked used too.
+        result = await db_session.execute(sa_select(User).where(User.username == "sendfailinvalid"))
+        user = result.scalar_one()
+        rows = (
+            (
+                await db_session.execute(
+                    sa_select(UserOTPCode).where(UserOTPCode.user_id == user.id).order_by(UserOTPCode.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows, "expected at least one UserOTPCode row"
+        assert all(row.used for row in rows), "every OTP row must be invalidated after a failed send"
+
+        # The pre-auth token itself is untouched by the failed send (only ever
+        # consumed on a successful send) — a retry with the same token works.
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            retry_send = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": second_pre_auth_token},
+            )
+        assert retry_send.status_code == 200, retry_send.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_open_write_transaction_during_smtp_send(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Mutation-sensitive proof of the commit-before-send contract.
+
+        The in-memory test database is a single shared (StaticPool) SQLite
+        connection, so a genuinely independent second connection that would
+        block on SQLite's RESERVED write lock isn't available here (and a
+        second *engine* pointed at ``:memory:`` would just get its own empty
+        database). Per the task's fallback ladder, this instead asserts
+        ``AsyncSession.in_transaction()`` is False at the exact moment
+        ``send_email`` is invoked — a direct, deterministic check of "no open
+        write transaction spans the SMTP call" rather than a timing race.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.core.database import get_db
+        from backend.app.main import app
+
+        await TestEmailOTPSendCookieRefresh()._enable_email_otp_and_login(
+            async_client, db_session, "notxnduringsend", "notxnduringsend1"
+        )
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "notxnduringsend", "notxnduringsend1")
+
+        captured_session: dict[str, AsyncSession] = {}
+        original_override = app.dependency_overrides[get_db]
+
+        async def capturing_override():
+            async for session in original_override():
+                captured_session["db"] = session
+                yield session
+
+        app.dependency_overrides[get_db] = capturing_override
+
+        observed: dict[str, bool] = {}
+        smtp_mock = MagicMock()
+
+        def _check_in_transaction(smtp_settings, to_email, subject, body_text, body_html):
+            observed["in_transaction"] = captured_session["db"].in_transaction()
+
+        try:
+            with (
+                patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+                patch("backend.app.api.routes.mfa.send_email", side_effect=_check_in_transaction),
+            ):
+                send_resp = await async_client.post(
+                    "/api/v1/auth/2fa/email/send",
+                    json={"pre_auth_token": pre_auth_token},
+                )
+        finally:
+            app.dependency_overrides[get_db] = original_override
+
+        assert send_resp.status_code == 200, send_resp.text
+        assert "in_transaction" in observed, "send_email side_effect never ran"
+        assert observed["in_transaction"] is False, (
+            "the OTP invalidation + new row must already be committed before the SMTP send starts"
+        )
+
 
 # ===========================================================================
 # OIDC end-to-end (coverage gap C4)
@@ -1676,6 +2493,11 @@ class TestOIDCEndToEnd:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *args, **kwargs):
                 pass
@@ -1693,6 +2515,9 @@ class TestOIDCEndToEnd:
 
             async def post(self, url, **kwargs):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             callback_resp = await async_client.get(
@@ -1806,6 +2631,11 @@ class TestOIDCEndToEnd:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -1821,6 +2651,9 @@ class TestOIDCEndToEnd:
 
             async def post(self, url, **kw):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             first = await async_client.get(
@@ -2489,10 +3322,6 @@ class TestOIDCAutoLinkExistingLinkRejection:
             "exp": 9_999_999_999,
         }
 
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         token_resp = AsyncMock()
         token_resp.ok = True
         token_resp.json = MagicMock(return_value=fake_token)
@@ -2502,7 +3331,10 @@ class TestOIDCAutoLinkExistingLinkRejection:
         jwks_resp.json = MagicMock(return_value={})
 
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        # T-071: discovery is now read via client.stream(), not client.get() —
+        # only the JWKS fetch still goes through get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        mock_http.get = AsyncMock(return_value=jwks_resp)
         mock_http.post = AsyncMock(return_value=token_resp)
 
         mock_signing_key = MagicMock()
@@ -2699,6 +3531,11 @@ class TestOIDCIssMismatch:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -2714,6 +3551,9 @@ class TestOIDCIssMismatch:
 
             async def post(self, url, **kw):
                 return _MockResp(token_response)
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -2932,6 +3772,11 @@ class TestOIDCAudAndNonceMismatch:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -2947,6 +3792,9 @@ class TestOIDCAudAndNonceMismatch:
 
             async def post(self, url, **kw):
                 return _MockResp({"access_token": "a", "id_token": id_token})
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -3043,6 +3891,11 @@ class TestOIDCAudAndNonceMismatch:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -3058,6 +3911,9 @@ class TestOIDCAudAndNonceMismatch:
 
             async def post(self, url, **kw):
                 return _MockResp({"access_token": "a", "id_token": id_token})
+
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
@@ -3204,12 +4060,9 @@ class TestOIDCIssuerUrlTrailingSlash:
             "issuer": issuer_with_slash,
             "authorization_endpoint": "https://authentik.example.com/application/o/bambuddy/authorize",
         }
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(return_value=disc_resp)
+        # T-071: discovery is now read via client.stream(), not client.get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -3218,13 +4071,308 @@ class TestOIDCIssuerUrlTrailingSlash:
             resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
 
         assert resp.status_code == 200
-        called_url = mock_http.get.call_args_list[0][0][0]
+        called_url = mock_http.stream.call_args_list[0][0][1]
         assert "//" not in called_url.replace("https://", ""), (
             f"Discovery URL must not contain double slash: {called_url}"
         )
         assert called_url.endswith("/.well-known/openid-configuration"), (
             f"Expected discovery URL to end with /.well-known/openid-configuration, got: {called_url}"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_fetch_failure_returns_502(self, async_client: AsyncClient):
+        """A non-2xx discovery response must surface as a 502, not a raw 200.
+
+        Uses a real httpx.Response(500) (not a stub whose raise_for_status()
+        is a no-op) so the shared discovery-fetch helper's own
+        raise_for_status() call is what's under test.
+        """
+        from unittest.mock import patch
+
+        import httpx
+
+        admin_token = await _setup_and_login(async_client, "oidc502adm", "oidc502adm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "Discovery502",
+                "issuer_url": "https://idp.discovery-502-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        class _Mock500Client:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(500, request=httpx.Request("GET", url), json={})
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Mock500Client):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "raw_body",
+        ["null", "[1, 2]"],
+        ids=["null-body", "list-body"],
+    )
+    async def test_discovery_non_object_body_returns_502(self, async_client: AsyncClient, raw_body: str):
+        """A 200 discovery response whose body is not a JSON object (e.g.
+        ``null`` or a list) must surface as the existing 502, not a raw
+        AttributeError from ``discovery.get(...)`` crashing as a 500.
+        """
+        from unittest.mock import patch
+
+        import httpx
+
+        admin_token = await _setup_and_login(async_client, "oidcnonobjadm", "oidcnonobjadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DiscoveryNonObject",
+                "issuer_url": "https://idp.discovery-non-object-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        class _MockNonObjectClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(
+                    200,
+                    request=httpx.Request("GET", url),
+                    content=raw_body.encode(),
+                    headers={"content-type": "application/json"},
+                )
+
+            def stream(self, method, url, **kwargs):
+                return _StreamCtx(self.get(url, **kwargs))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockNonObjectClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_overall_deadline_returns_502_promptly(self, async_client: AsyncClient, monkeypatch):
+        """T-071: a slow-trickling IdP must not hold the discovery fetch open
+        past the overall deadline — ``asyncio.wait_for`` must cut it off even
+        though each individual httpx phase (connect/read/write/pool) is well
+        under its own 10s per-phase timeout.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_TIMEOUT_S", 0.2)
+
+        admin_token = await _setup_and_login(async_client, "oidcdeadlineadm", "oidcdeadlineadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SlowIdP",
+                "issuer_url": "https://idp.discovery-deadline-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        class _HangingStreamCtx:
+            async def __aenter__(self):
+                # Trickles for longer than the (monkeypatched) overall
+                # deadline but far under the per-phase timeout=10 — this is
+                # exactly the "one byte every few seconds" scenario T-071
+                # guards against.
+                await asyncio.sleep(1.0)
+                raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _HangingDiscoveryClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                return _HangingStreamCtx()
+
+        start = time.monotonic()
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _HangingDiscoveryClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        elapsed = time.monotonic() - start
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_oversized_body_returns_502(self, async_client: AsyncClient, monkeypatch):
+        """T-071: a discovery document larger than the size cap must be
+        rejected before ``json.loads`` ever sees the full body.
+        """
+        monkeypatch.setattr(mfa_module, "_OIDC_DISCOVERY_MAX_BYTES", 256)
+
+        admin_token = await _setup_and_login(async_client, "oidcbigbodyadm", "oidcbigbodyadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "OversizedDiscoveryIdP",
+                "issuer_url": "https://idp.discovery-oversized-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        oversized_body = json.dumps({"issuer": "x", "padding": "a" * 1024}).encode()
+        assert len(oversized_body) > 256
+
+        class _OversizedResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            async def aiter_bytes(self):
+                # Chunked well below the cap so the mock exercises the
+                # running-total check, not a single oversized chunk.
+                chunk_size = 64
+                for i in range(0, len(oversized_body), chunk_size):
+                    yield oversized_body[i : i + chunk_size]
+
+        class _OversizedStreamCtx:
+            async def __aenter__(self):
+                return _OversizedResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _OversizedDiscoveryClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def stream(self, method, url, **kwargs):
+                return _OversizedStreamCtx()
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _OversizedDiscoveryClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+        assert "auth_url" not in resp.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_private_authorization_endpoint_rejected(self, async_client: AsyncClient):
+        """T-050: a discovery document declaring a private-address
+        authorization_endpoint must be rejected the same way an invalid
+        scheme already was — no redirect URL is ever built from it.
+
+        Guards against an IdP declaring an authorization_endpoint that
+        escapes the same public-internet policy already enforced on the
+        issuer_url it came from (schemas/auth.py:_validate_issuer_url).
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        issuer = "https://idp.private-authz-test.example.com"
+
+        admin_token = await _setup_and_login(async_client, "privauthzadm", "privauthzadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PrivateAuthzIdP",
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        fake_discovery = {
+            "issuer": issuer,
+            # A private RFC-1918 address — not merely a bad scheme.
+            "authorization_endpoint": "https://192.168.1.5/authorize",
+        }
+        mock_http = AsyncMock()
+        # T-071: discovery is now read via client.stream(), not client.get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/authorize/{provider_id}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"] == "OIDC discovery document contains invalid authorization_endpoint"
+        assert "auth_url" not in resp.json()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -3313,6 +4461,11 @@ class TestOIDCIssuerUrlTrailingSlash:
             def raise_for_status(self):
                 pass
 
+            async def aiter_bytes(self):
+                # T-071: discovery is now read via client.stream(), so the
+                # mock must support the streamed-bytes read too.
+                yield json.dumps(self._data).encode()
+
         class _MockHttpxClient:
             def __init__(self, *a, **kw):
                 pass
@@ -3329,6 +4482,9 @@ class TestOIDCIssuerUrlTrailingSlash:
             async def post(self, url, **kw):
                 return _MockResp(token_response)
 
+            def stream(self, method, url, **kw):
+                return _StreamCtx(self.get(url, **kw))
+
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
             resp = await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
@@ -3341,6 +4497,171 @@ class TestOIDCIssuerUrlTrailingSlash:
             "Trailing slash mismatch in iss claim must not cause token_validation_failed"
         )
         assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+
+class _Clock:
+    """Stands in for routes/mfa.py's `time` name — the module looks up
+    `time.monotonic()` through the module attribute, so swapping the whole
+    name for this fake lets a test drive the clock deterministically."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+class TestOIDCAuthorizeRateLimit:
+    """GET /oidc/authorize/{id} is public and does an outbound discovery
+    fetch plus a DB write on every call, so it carries the same per-IP
+    sliding-window cap as aito.py's public tracking route — see
+    routes/mfa.py's `_oidc_authorize_rate_limited`."""
+
+    def test_cap_matches_the_tracking_routes_cap(self):
+        # Both are public, per-IP-keyed limiters that collapse to one
+        # site-wide bucket on a default install (no TRUSTED_PROXY_IPS), so
+        # they're deliberately sized the same. If one changes without the
+        # other, that's drift worth seeing.
+        from backend.app.api.routes import aito as aito_module
+
+        assert mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP == aito_module._TRACK_RATE_MAX_CALLS_PER_IP
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cap_plus_one_call_from_one_ip_is_429_with_retry_after(self, async_client: AsyncClient, monkeypatch):
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            resp = await async_client.get("/api/v1/auth/oidc/authorize/999999")
+            assert resp.status_code == 404, "unknown provider id — not limited"
+
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999")
+        assert resp.status_code == 429
+        assert resp.headers["retry-after"] == "60"
+        assert "too many" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_different_ip_is_unaffected(self, async_client: AsyncClient, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+        # The test client's TCP peer is the trusted proxy; the real visitor
+        # is whoever X-Forwarded-For names, so two visitors get two buckets.
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            resp = await async_client.get(
+                "/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.5"}
+            )
+            assert resp.status_code == 404
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert resp.status_code == 429
+
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.6"})
+        assert resp.status_code == 404, "a different address must not share the first one's bucket"
+
+        # Once the dict is bigger than a window can justify, hosts whose
+        # calls have all aged out are swept — including ones that never
+        # come back.
+        assert set(mfa_module._oidc_authorize_rate_ip_calls) == {"203.0.113.5", "203.0.113.6"}
+        monkeypatch.setattr(mfa_module, "_OIDC_AUTHORIZE_RATE_SWEEP_ABOVE", 1)
+        clock.now += mfa_module._OIDC_AUTHORIZE_RATE_WINDOW_S + 1
+        resp = await async_client.get("/api/v1/auth/oidc/authorize/999999", headers={"X-Forwarded-For": "203.0.113.7"})
+        assert resp.status_code == 404
+        assert set(mfa_module._oidc_authorize_rate_ip_calls) == {"203.0.113.7"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ip_is_admitted_again_after_the_window(self, async_client: AsyncClient, monkeypatch):
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 404
+        assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 429
+
+        clock.now += mfa_module._OIDC_AUTHORIZE_RATE_WINDOW_S + 1
+        assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_limited_request_does_no_discovery_fetch_or_db_write(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        clock = _Clock()
+        monkeypatch.setattr(mfa_module, "time", clock)
+
+        admin_token = await _setup_and_login(async_client, "oidcratelimadm", "oidcratelimadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "RateLimited",
+                "issuer_url": "https://idp.oidc-ratelimit-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        before = (
+            (
+                await db_session.execute(
+                    sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token_type == "oidc_state")
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Exhaust the cap against an unrelated (unknown) provider id first,
+        # so none of these calls could reach the discovery fetch either way.
+        for _ in range(mfa_module._OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP):
+            assert (await async_client.get("/api/v1/auth/oidc/authorize/999999")).status_code == 404
+
+        recorder = AsyncMock()
+
+        class _RecordingClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kwargs):
+                await recorder(url)
+                raise AssertionError("discovery must not be fetched for a rate-limited request")
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _RecordingClient):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 429
+        recorder.assert_not_called()
+
+        after = (
+            (
+                await db_session.execute(
+                    sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token_type == "oidc_state")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(after) == len(before), "a limited request must not write an OIDC_STATE row"
 
 
 class TestOIDCCallbackCodeLength:
@@ -3478,6 +4799,11 @@ async def _run_oidc_callback(
         def raise_for_status(self):
             pass
 
+        async def aiter_bytes(self):
+            # T-071: discovery is now read via client.stream(), so the mock
+            # must support the streamed-bytes read too.
+            yield json.dumps(self._data).encode()
+
     class _C:
         def __init__(self, *a, **kw):
             pass
@@ -3493,6 +4819,9 @@ async def _run_oidc_callback(
 
         async def post(self, url, **kw):
             return _R(token_response)
+
+        def stream(self, method, url, **kw):
+            return _StreamCtx(self.get(url, **kw))
 
     with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _C):
         resp = await async_client.get(
@@ -4540,10 +5869,6 @@ class TestOIDCFallCAutoLinkE2E:
             "exp": 9_999_999_999,
         }
 
-        disc_resp = AsyncMock()
-        disc_resp.raise_for_status = MagicMock()
-        disc_resp.json = MagicMock(return_value=fake_discovery)
-
         token_resp = AsyncMock()
         token_resp.json = MagicMock(return_value=fake_token)
 
@@ -4552,7 +5877,10 @@ class TestOIDCFallCAutoLinkE2E:
         jwks_resp.json = MagicMock(return_value={})
 
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        # T-071: discovery is now read via client.stream(), not client.get() —
+        # only the JWKS fetch still goes through get().
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        mock_http.get = AsyncMock(return_value=jwks_resp)
         mock_http.post = AsyncMock(return_value=token_resp)
 
         mock_signing_key = MagicMock()

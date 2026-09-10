@@ -11,7 +11,7 @@ import { server } from '../mocks/server';
 import { AuthProvider, useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { getAuthToken, setAuthToken, type Permission } from '../../api/client';
+import { getAuthToken, setAuthToken, type LoginResponse, type Permission } from '../../api/client';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -495,6 +495,627 @@ describe('AuthContext', () => {
 
       // Negative-after: logout wipes it, so the next login opens an empty drawer.
       expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+      expect(result.current.user).toBeNull();
+    });
+  });
+
+  describe('logout sends the JWT so the backend can revoke it (T-032)', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+      setAuthToken('valid-token', 'persistent');
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('carries the pre-logout token as a Bearer header, sent keepalive, while clearing the local token immediately', async () => {
+      let receivedAuthHeader: string | null = null;
+      server.use(
+        http.post('/api/v1/auth/logout', ({ request }) => {
+          receivedAuthHeader = request.headers.get('Authorization');
+          return HttpResponse.json({ message: 'ok' });
+        })
+      );
+      const fetchSpy = vi.spyOn(window, 'fetch');
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      // Positive-before: token is present ahead of logout.
+      expect(getAuthToken()).toBe('valid-token');
+
+      act(() => {
+        result.current.logout();
+      });
+
+      // Negative-after: the local token/user are cleared synchronously,
+      // without waiting on the network call below to resolve.
+      expect(getAuthToken()).toBeNull();
+      expect(result.current.user).toBeNull();
+
+      await waitFor(() => expect(receivedAuthHeader).not.toBeNull());
+      expect(receivedAuthHeader).toBe('Bearer valid-token');
+
+      const logoutCall = fetchSpy.mock.calls.find(([input]) =>
+        typeof input === 'string' && input.includes('/auth/logout')
+      );
+      expect(logoutCall).toBeDefined();
+      expect((logoutCall?.[1] as RequestInit | undefined)?.keepalive).toBe(true);
+
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe('canModify() ownership logic (T-041)', () => {
+    // Auth enabled, non-admin user — the only path that exercises the
+    // *_own / *_all branching (the early returns for auth-disabled and
+    // admin are covered elsewhere).
+    const mockUser = (permissions: Permission[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            is_admin: false,
+            permissions,
+            groups: [],
+          })
+        )
+      );
+    };
+
+    beforeEach(() => {
+      setAuthToken('valid-token', 'persistent');
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('*_own permission + matching owner id → true', async () => {
+      mockUser(['queue:update_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Positive evidence: wait for the real user (id: 1) to load.
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('queue', 'update', 1)).toBe(true);
+    });
+
+    it('*_own permission + a different owner id → false', async () => {
+      mockUser(['queue:update_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('queue', 'update', 999)).toBe(false);
+    });
+
+    it('*_own permission + ownerless item (null createdById) → false', async () => {
+      mockUser(['archives:delete_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('archives', 'delete', null)).toBe(false);
+    });
+
+    it('*_own permission + ownerless item (undefined createdById) → false', async () => {
+      mockUser(['library:update_own' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('library', 'update', undefined)).toBe(false);
+    });
+
+    it('*_all permission → true regardless of owner (own, other, ownerless)', async () => {
+      mockUser(['archives:reprint_all' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('archives', 'reprint', 1)).toBe(true);
+      expect(result.current.canModify('archives', 'reprint', 999)).toBe(true);
+      expect(result.current.canModify('archives', 'reprint', null)).toBe(true);
+    });
+
+    it('neither *_own nor *_all permission → false', async () => {
+      mockUser(['queue:read' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.canModify('queue', 'update', 1)).toBe(false);
+      expect(result.current.canModify('queue', 'update', null)).toBe(false);
+    });
+
+    it('admin short-circuit: grants modify access with no matching permission at all', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'admin',
+            is_active: true,
+            is_admin: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+
+      expect(result.current.isAdmin).toBe(true);
+      expect(result.current.canModify('queue', 'delete', 999)).toBe(true);
+      expect(result.current.canModify('library', 'delete', null)).toBe(true);
+    });
+  });
+
+  describe('kiosk ?token= URL bootstrap (L-4 session-fixation defense)', () => {
+    beforeEach(() => {
+      // No prior session: start with a clean slate and a URL carrying a
+      // kiosk token, the way SpoolBuddy links to the app on first load.
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      setAuthToken(null);
+      window.history.replaceState({}, '', '/?token=kiosk-abc');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      // Restore the URL so later tests in this file aren't affected.
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('stores the URL token session-only and strips it from the URL (not yet server-confirmed)', async () => {
+      // /auth/me fails transiently (never a definitive 401) so the token is
+      // neither promoted nor cleared — isolates the bootstrap step itself.
+      server.use(http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 })));
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 4000 });
+
+      // Session-only: readable via sessionStorage, absent from localStorage.
+      expect(sessionStorage.getItem('auth_token')).toBe('kiosk-abc');
+      expect(localStorage.getItem('auth_token')).toBeNull();
+      // The token param is stripped from the visible URL immediately, before
+      // the server has had any chance to confirm it.
+      expect(window.location.search).not.toContain('token=');
+    });
+
+    it('promotes the token to persistent storage once /auth/me confirms it is valid', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 7,
+            username: 'kiosk',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Positive evidence: the server confirmed the token before we check promotion.
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+      expect(result.current.user?.username).toBe('kiosk');
+
+      // Only now — after confirmation — does it land in persistent storage.
+      expect(localStorage.getItem('auth_token')).toBe('kiosk-abc');
+      expect(sessionStorage.getItem('auth_token')).toBe('kiosk-abc');
+    });
+
+    it('never promotes the token when /auth/me returns a definitive 401', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Positive evidence: wait for the auth check to settle to unauthenticated
+      // before asserting on the (lack of) promotion.
+      await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 4000 });
+      expect(result.current.user).toBeNull();
+
+      // Negative assertion: a forged/stolen URL token that fails server
+      // verification must never reach persistent storage.
+      expect(localStorage.getItem('auth_token')).toBeNull();
+    });
+  });
+
+  describe('?token= URL never overwrites an already-live session (T-052)', () => {
+    afterEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('leaves a token already in localStorage untouched, strips the URL, and never sends the URL token to /auth/me', async () => {
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      setAuthToken(null);
+      setAuthToken('original-token', 'persistent');
+      window.history.replaceState({}, '', '/?token=other');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+      let receivedAuthHeader: string | null = null;
+      server.use(
+        http.get('/api/v1/auth/me', ({ request }) => {
+          receivedAuthHeader = request.headers.get('Authorization');
+          return HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      // Positive evidence: the request that confirmed the session carried the
+      // original stored token's Authorization header, not the URL token's.
+      expect(receivedAuthHeader).toBe('Bearer original-token');
+
+      // The already-live session's stored token is unchanged, in the same storage.
+      expect(localStorage.getItem('auth_token')).toBe('original-token');
+      expect(getAuthToken()).toBe('original-token');
+      // The URL token is never promoted anywhere, including sessionStorage.
+      expect(sessionStorage.getItem('auth_token')).not.toBe('other');
+
+      // The credential is still stripped from the address bar.
+      expect(window.location.search).not.toContain('token=');
+    });
+
+    it('leaves a token already in sessionStorage untouched, strips the URL, and never sends the URL token to /auth/me', async () => {
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      setAuthToken(null);
+      setAuthToken('original-session-token', 'session');
+      window.history.replaceState({}, '', '/?token=other');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+      let receivedAuthHeader: string | null = null;
+      server.use(
+        http.get('/api/v1/auth/me', ({ request }) => {
+          receivedAuthHeader = request.headers.get('Authorization');
+          return HttpResponse.json({
+            id: 2,
+            username: 'bob',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      expect(receivedAuthHeader).toBe('Bearer original-session-token');
+
+      // The already-live session's stored token is unchanged, in the same storage.
+      expect(sessionStorage.getItem('auth_token')).toBe('original-session-token');
+      expect(getAuthToken()).toBe('original-session-token');
+      // The URL token is never promoted to persistent storage.
+      expect(localStorage.getItem('auth_token')).toBeNull();
+
+      expect(window.location.search).not.toContain('token=');
+    });
+  });
+
+  // T-073: login() used to ignore checkAuthStatus()'s outcome entirely — it
+  // stored the fresh token and resolved the LoginResponse regardless of
+  // whether the follow-up /auth/me call ever confirmed that token. A
+  // transient /auth/me failure therefore reported a successful login that
+  // hadn't actually taken (user still null), and LoginPage bounced the
+  // visitor straight back to the credentials form. checkAuthStatus() now
+  // reports the confirmed user (or null) and login() rejects when a fresh
+  // token can't be confirmed, clearing the unconfirmed token.
+  describe('login() confirms the fresh token before resolving (T-073)', () => {
+    beforeEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      sessionStorage.clear();
+      localStorage.removeItem('auth_token');
+    });
+
+    it('rejects and clears the token when /auth/me keeps failing after a fresh login', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'fresh-token',
+            token_type: 'bearer',
+            user: { id: 1, username: 'alice', is_active: true, permissions: [], groups: [] },
+          })
+        ),
+        // checkAuthStatus() retries transient failures up to 3 times — fail
+        // every attempt so the retries are exhausted with no confirmed user.
+        http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 }))
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let caught: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.login('alice', 'password');
+        } catch (err) {
+          caught = err as Error;
+        }
+      });
+
+      // Positive evidence first: login() actually threw.
+      expect(caught).toBeInstanceOf(Error);
+      // Negative-after: no user was set, and the unconfirmed token was
+      // cleared rather than left sitting in storage for a retry.
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+    });
+
+    it('resolves and sets the user when /auth/me confirms the fresh token', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'fresh-token',
+            token_type: 'bearer',
+            user: { id: 1, username: 'alice', is_active: true, permissions: [], groups: [] },
+          })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let response: LoginResponse | undefined;
+      await act(async () => {
+        response = await result.current.login('alice', 'password');
+      });
+
+      expect(response?.access_token).toBe('fresh-token');
+      expect(result.current.user?.username).toBe('alice');
+    });
+
+    it('resolves without calling /auth/me when the login response requires 2FA', async () => {
+      let meCalled = false;
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'pre-token',
+            two_fa_methods: ['totp'],
+          })
+        ),
+        http.get('/api/v1/auth/me', () => {
+          meCalled = true;
+          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let response: LoginResponse | undefined;
+      await act(async () => {
+        response = await result.current.login('alice', 'password');
+      });
+
+      expect(response?.requires_2fa).toBe(true);
+      expect(meCalled).toBe(false);
+    });
+  });
+
+  // T-081: refreshUser() is a manual re-fetch of /auth/me exposed on the
+  // public context. Unlike checkAuthStatus() (which retries transient
+  // failures and only clears the token on a definitive 401), refreshUser()
+  // makes a single attempt and clears the token + user unconditionally on
+  // ANY failure — it's meant for "the server told us this token is stale
+  // right now", not a resilient mount-time check.
+  describe('refreshUser() (T-081)', () => {
+    beforeEach(() => {
+      setAuthToken('valid-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('updates the user in place on success, leaving the token untouched', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+
+      // Swap the handler so a manual refresh observes a changed user.
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'bob',
+            is_active: true,
+            permissions: ['printers:read' as Permission],
+            groups: [],
+          })
+        )
+      );
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(result.current.user?.username).toBe('bob');
+      expect(result.current.user?.permissions).toEqual(['printers:read']);
+      expect(getAuthToken()).toBe('valid-token');
+    });
+
+    it('clears the token (both storages) and the user on any failure — no retry', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      // Positive evidence first: a real user is set before the failing refresh.
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+
+      server.use(http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 })));
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+      expect(localStorage.getItem('auth_token')).toBeNull();
+      expect(sessionStorage.getItem('auth_token')).toBeNull();
+    });
+
+    it('clears the token and user on a 401 too, unlike checkAuthStatus which only clears on a definitive 401 after retries', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
+        )
+      );
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+    });
+
+    it('no-ops without calling /auth/me when auth is disabled', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: false, requires_setup: false })
+        )
+      );
+      let meCalled = false;
+      server.use(
+        http.get('/api/v1/auth/me', () => {
+          meCalled = true;
+          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.authEnabled).toBe(false);
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(meCalled).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+
+    it('no-ops without calling /auth/me when no token is present', async () => {
+      setAuthToken(null);
+      let meCalled = false;
+      server.use(
+        http.get('/api/v1/auth/me', () => {
+          meCalled = true;
+          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(getAuthToken()).toBeNull();
+      expect(result.current.user).toBeNull();
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(meCalled).toBe(false);
       expect(result.current.user).toBeNull();
     });
   });

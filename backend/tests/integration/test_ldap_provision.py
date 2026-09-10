@@ -16,6 +16,10 @@ These tests cover:
 - Duplicate-username protection (409 with explanation)
 """
 
+import asyncio
+import logging
+import threading
+import time
 from unittest.mock import patch
 
 import pytest
@@ -461,3 +465,110 @@ class TestLdapLoginFinanceDefaults:
         ).scalar_one_or_none()
         assert membership is not None
         assert membership.can_print is True
+
+
+class TestLdapLoginOffLoop:
+    """T-044: authenticate_ldap_user wraps blocking ldap3 calls; login() must run
+
+    it via asyncio.to_thread so a slow/unreachable directory only blocks its own
+    request instead of the whole event loop.
+    """
+
+    async def test_ldap_login_runs_authenticate_off_event_loop(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ldapadmin2",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="true")
+
+        calls = []
+
+        def fake_authenticate(config, username, password):
+            off_main_thread = threading.current_thread() is not threading.main_thread()
+            try:
+                asyncio.get_running_loop()
+                has_running_loop = True
+            except RuntimeError:
+                has_running_loop = False
+            calls.append((off_main_thread, has_running_loop))
+            return LDAPUserInfo(
+                username="offloop",
+                email="offloop@test.com",
+                display_name="Off Loop",
+                groups=[],
+            )
+
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", side_effect=fake_authenticate):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "offloop", "password": "irrelevant"},
+            )
+
+        assert response.status_code == 200
+        assert calls == [(True, False)]
+
+
+class TestLdapLoginBindTimeout:
+    """T-057: authenticate_ldap_user runs on the shared default executor via
+    asyncio.to_thread with no bound on how long the bind can block — a
+    directory that completes the TCP handshake and then stops answering
+    would hold the request (and eventually starve the executor other
+    to_thread callers share) indefinitely. login() now wraps the bind in
+    asyncio.wait_for(..., timeout=_LDAP_BIND_TIMEOUT_S) and, on timeout,
+    falls back through the exact same path an LDAP exception already takes.
+    """
+
+    async def test_slow_ldap_bind_times_out_and_falls_back_to_local_path(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        monkeypatch.setattr("backend.app.api.routes.auth._LDAP_BIND_TIMEOUT_S", 0.2)
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ldapadmin3",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="true")
+
+        def fake_authenticate(config, username, password):
+            # Runs in a worker thread (asyncio.to_thread) — sleeping here
+            # does not block the event loop, only the LDAP bind's own thread.
+            time.sleep(1.0)
+            return LDAPUserInfo(
+                username="slowuser",
+                email="slowuser@test.com",
+                display_name="Slow User",
+                groups=[],
+            )
+
+        with (
+            patch("backend.app.services.ldap_service.authenticate_ldap_user", side_effect=fake_authenticate),
+            caplog.at_level(logging.WARNING, logger="backend.app.api.routes.auth"),
+        ):
+            start = time.monotonic()
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "slowuser", "password": "irrelevant"},
+            )
+            elapsed = time.monotonic() - start
+
+        # The bound request returns well before the 1.0s block finishes --
+        # this is the assertion the mutation proof removes the wait_for for.
+        assert elapsed < 0.8, f"login() took {elapsed:.2f}s — the wait_for bound did not apply"
+        # Same response the existing LDAP-exception fallback path gives today:
+        # no local user named "slowuser" exists, so local auth also fails.
+        assert response.status_code == 401, response.text
+        assert "Incorrect username or password" in response.json()["detail"]
+        assert "LDAP authentication error, falling back to local" in caplog.text

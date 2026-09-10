@@ -16,14 +16,17 @@ Security model
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
+import json
 import logging
 import os
 import re
 import secrets
 import string
+import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 
@@ -39,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
 from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
+from backend.app.api.routes.auth import _get_client_ip
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
@@ -73,6 +77,7 @@ from backend.app.schemas.auth import (
     OIDCProviderCreate,
     OIDCProviderResponse,
     OIDCProviderUpdate,
+    OIDCPublicProviderResponse,
     TOTPDisableRequest,
     TOTPEnableRequest,
     TOTPEnableResponse,
@@ -133,6 +138,14 @@ def _build_provider_response(provider: OIDCProvider) -> OIDCProviderResponse:
     ``has_icon`` field is supplied by ``OIDCProvider.has_icon`` (a property
     reading the non-deferred ``icon_content_type`` column)."""
     return OIDCProviderResponse.model_validate(provider)
+
+
+def _build_public_provider_response(provider: OIDCProvider) -> OIDCPublicProviderResponse:
+    """Slim projection of ``_build_provider_response`` for the unauthenticated
+    ``GET /oidc/providers`` list (T-067) — id/name/has_icon only, no policy
+    or connection fields. ``has_icon`` is derived the same way as the full
+    response, via ``OIDCProvider.has_icon``."""
+    return OIDCPublicProviderResponse.model_validate(provider)
 
 
 def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
@@ -263,6 +276,58 @@ async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: s
     )
     await db.commit()
     return token
+
+
+def _set_2fa_challenge_cookie(response: Response, raw_request: Request, challenge_id: str) -> None:
+    """Set (or refresh) the HttpOnly ``2fa_challenge`` cookie that binds a pre-auth token.
+
+    Shared by ``_issue_2fa_challenge`` (login/oidc_exchange) and
+    ``send_email_otp`` (T-058: re-sending the code refreshes the cookie's
+    max_age alongside the fresh pre-auth token it re-issues).
+    """
+    response.set_cookie(
+        key="2fa_challenge",
+        value=challenge_id,
+        httponly=True,
+        # only transmit over HTTPS so the binding cookie can't be intercepted
+        # on mixed-content deployments.  Falls back to False on plain HTTP so
+        # tests and local development still work.
+        secure=raw_request.url.scheme == "https",
+        samesite="lax",
+        max_age=300,
+        path="/api/v1/auth/2fa",
+    )
+
+
+async def _issue_2fa_challenge(
+    db: AsyncSession,
+    response: Response,
+    raw_request: Request,
+    user: User,
+    totp_enabled: bool,
+    email_enabled: bool,
+) -> tuple[str, list[str]]:
+    """Mint a pre-auth token bound to an HttpOnly ``2fa_challenge`` cookie.
+
+    Shared by auth.py:login() and oidc_exchange() below — both need the exact
+    same cookie-binding treatment (H-1/M5: XSS can't steal the token from JS
+    memory and replay 2FA from a different browser session) and the same
+    totp -> email -> backup methods ordering. The two callers derive
+    ``totp_enabled``/``email_enabled`` slightly differently and build
+    different ``LoginResponse`` shapes, so those parts stay in each caller.
+    """
+    challenge_id = secrets.token_urlsafe(32)
+    pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
+    _set_2fa_challenge_cookie(response, raw_request, challenge_id)
+    methods: list[str] = []
+    if totp_enabled:
+        methods.append("totp")
+    if email_enabled:
+        methods.append("email")
+    # Backup codes are always available when TOTP is set up
+    if totp_enabled:
+        methods.append("backup")
+    return pre_auth_token, methods
 
 
 async def consume_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | None = None) -> str | None:
@@ -1043,6 +1108,7 @@ async def disable_email_otp(
 @router.post("/2fa/email/send")
 async def send_email_otp(
     request: Request,
+    response: Response,
     body: EmailOTPSendRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -1071,7 +1137,12 @@ async def send_email_otp(
     if not smtp_settings:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Email service is not configured")
 
-    # Invalidate all existing unused OTP codes for this user (staged, not yet committed)
+    # T-070: invalidate the user's existing unused OTP codes and persist the new
+    # one, then COMMIT before touching SMTP. SQLite only allows one writer at a
+    # time, and send_email's per-socket 10s timeout (connect/starttls/login/send)
+    # can pin a write transaction for up to ~40s — long enough to starve every
+    # other writer through the 15s busy_timeout. Closing the write transaction
+    # first means a slow/hung relay never holds the RESERVED lock.
     await db.execute(
         UserOTPCode.__table__.update()  # type: ignore[attr-defined]
         .where(UserOTPCode.user_id == user.id)
@@ -1079,7 +1150,7 @@ async def send_email_otp(
         .values(used=True)
     )
 
-    # Generate a 6-digit code and stage the record (not committed yet)
+    # Generate a 6-digit code and persist the record.
     code = str(secrets.randbelow(1_000_000)).zfill(6)
     code_hash = pwd_context.hash(code)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=UserOTPCode.OTP_TTL_MINUTES)
@@ -1092,12 +1163,20 @@ async def send_email_otp(
         expires_at=expires_at,
     )
     db.add(otp_record)
+    await db.flush()
+    otp_id = otp_record.id  # pin before commit expires the instance (MissingGreenlet landmine)
+    await db.commit()
 
-    # M2: Send the email BEFORE consuming the pre-auth token.
-    # If the send fails we raise an exception here; the session is uncommitted so
-    # the OTP record is discarded and the original token remains valid for retry.
+    # M2 (updated for T-070): the write transaction above is already committed,
+    # so a failed send can no longer roll it back. Instead, the except branch
+    # explicitly marks the just-committed row used — the user-visible effect is
+    # that the previously e-mailed code is invalidated either way, and the
+    # caller must request a fresh code rather than reuse the old one. The
+    # original pre-auth token is untouched here either way and remains valid
+    # for a retry.
     try:
-        send_email(
+        await asyncio.to_thread(
+            send_email,
             smtp_settings=smtp_settings,
             to_email=user.email,
             subject="Your Bambuddy verification code",
@@ -1112,10 +1191,16 @@ async def send_email_otp(
         await record_email_otp_send(db, username)
     except Exception as exc:
         logger.error("Failed to send OTP email to user_id=%d: %s", user.id, exc)
+        await db.execute(
+            UserOTPCode.__table__.update()  # type: ignore[attr-defined]
+            .where(UserOTPCode.id == otp_id)
+            .values(used=True)
+        )
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send OTP email")
 
-    # Email sent — now atomically consume the old token (this also commits the
-    # staged OTP record) and issue a fresh token for the verify step.
+    # Email sent — now atomically consume the old token and issue a fresh one
+    # for the verify step (the OTP row itself was already committed above).
     consumed = await consume_pre_auth_token(db, body.pre_auth_token, challenge_id=challenge_id)
     if not consumed:
         # Raced with another request or token just expired — treat as invalid.
@@ -1125,8 +1210,38 @@ async def send_email_otp(
     # carries forward through the email → verify step.
     fresh_token = await create_pre_auth_token(db, username, challenge_id=challenge_id)
 
+    # T-058: refresh the binding cookie's max_age alongside the fresh token so
+    # the 5-minute window restarts from "code sent" rather than "logged in".
+    if challenge_id:
+        _set_2fa_challenge_cookie(response, request, challenge_id)
+
     # Return the fresh pre-auth token so the frontend can proceed to verify
     return {"message": "Code sent to your email address", "pre_auth_token": fresh_token}
+
+
+async def _issue_2fa_success(db: AsyncSession, user: User, username: str) -> TwoFAVerifyResponse:
+    """Clear failed-attempt tracking and mint the session response after a successful 2FA check.
+
+    Shared tail for the totp/email/backup verification paths — must run after the
+    caller has already consumed the pre-auth token (and, for backup codes, removed
+    the used code).
+    """
+    await clear_failed_attempts(db, username)
+
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
+    )
+
+    # Reload with groups for permission calculation
+    result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
+    user = result.scalar_one()
+
+    return TwoFAVerifyResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=_user_to_response(user),
+    )
 
 
 @router.post("/2fa/verify", response_model=TwoFAVerifyResponse)
@@ -1238,15 +1353,8 @@ async def verify_2fa(
         updated_codes = [c for i, c in enumerate(totp_record.backup_code_hashes) if i != matched_index]
         totp_record.backup_code_hashes = updated_codes
         await db.commit()
-        await clear_failed_attempts(db, username)
 
-        access_token = create_access_token(
-            data={"sub": user.username},
-            expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
-        )
-        result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
-        user = result.scalar_one()
-        return TwoFAVerifyResponse(access_token=access_token, token_type="bearer", user=_user_to_response(user))
+        return await _issue_2fa_success(db, user, username)
 
     # Verification succeeded (TOTP or email) — consume the pre-auth token.
     # C-1: Check the return value; if None the token was already consumed by a
@@ -1254,22 +1362,8 @@ async def verify_2fa(
     consumed_username = await consume_pre_auth_token(db, body.pre_auth_token, challenge_id=challenge_id)
     if not consumed_username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
-    await clear_failed_attempts(db, username)
 
-    access_token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
-    )
-
-    # Reload with groups for permission calculation
-    result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
-    user = result.scalar_one()
-
-    return TwoFAVerifyResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=_user_to_response(user),
-    )
+    return await _issue_2fa_success(db, user, username)
 
 
 @router.delete("/2fa/admin/{user_id}")
@@ -1320,18 +1414,24 @@ async def admin_disable_2fa(
 # ===========================================================================
 
 
-@router.get("/oidc/providers", response_model=list[OIDCProviderResponse])
+@router.get("/oidc/providers", response_model=list[OIDCPublicProviderResponse])
 async def list_oidc_providers(
     db: AsyncSession = Depends(get_db),
-) -> list[OIDCProviderResponse]:
+) -> list[OIDCPublicProviderResponse]:
     """List all enabled OIDC providers (public).
 
     The login page renders icons via /oidc/providers/{id}/icon — `icon_data`
     stays deferred so this list query never pulls the BLOB.
+
+    T-067: the public response is slimmed to id/name/has_icon — the fields
+    OIDCProviderButton actually reads. issuer_url/client_id/scopes and the
+    auto-create/auto-link/email-claim policy fields are not exposed to
+    unauthenticated callers; admins still get the full record via
+    ``GET /oidc/providers/all``.
     """
     result = await db.execute(select(OIDCProvider).where(OIDCProvider.is_enabled.is_(True)))
     providers = result.scalars().all()
-    return [_build_provider_response(p) for p in providers]
+    return [_build_public_provider_response(p) for p in providers]
 
 
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
@@ -1634,12 +1734,108 @@ async def refresh_oidc_provider_icon(
     return _build_provider_response(provider)
 
 
+# /oidc/authorize is public (main.py's PUBLIC_API_PREFIXES exempts it, like
+# the login-flow routes above) and every call does an outbound discovery
+# fetch plus a DB write, so it is throttled the same way as aito.py's public
+# tracking route: a per-IP sliding window, counted and reserved
+# synchronously (no await between the check and the append) so a burst of
+# concurrent requests from one address cannot all pass the check together.
+# `time` is looked up through the module attribute (not `from time import
+# monotonic`) so a test can swap the whole name for a fake clock.
+_OIDC_AUTHORIZE_RATE_WINDOW_S = 60.0
+# On a default install (TRUSTED_PROXY_IPS unset) `_get_client_ip` cannot see
+# past a reverse proxy, so every visitor behind it shares one key — this cap
+# is really a site-wide budget, not a per-visitor one. Sized to match
+# aito.py's public tracking route (`_TRACK_RATE_MAX_CALLS_PER_IP`) rather than
+# a per-client rate, so a busy office reloading the login page doesn't 429
+# itself.
+_OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP = 120
+# More host keys than this and the stale ones are swept: only addresses that
+# called inside the window can be live.
+_OIDC_AUTHORIZE_RATE_SWEEP_ABOVE = 2 * _OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP
+_oidc_authorize_rate_ip_calls: dict[str, list[float]] = {}
+
+
+def _reset_oidc_authorize_rate_limits() -> None:
+    """Empty the window — tests reset this around each test that hits the
+    route, the same way conftest.py resets aito.py's tracking limiter."""
+    _oidc_authorize_rate_ip_calls.clear()
+
+
+def _oidc_authorize_rate_limited(request: Request) -> bool:
+    """True when *request*'s address is over the per-IP cap for this
+    window. The address is auth.py's proxy-aware `_get_client_ip`, not
+    `request.client.host` — behind nginx the latter is the proxy for every
+    visitor, and the per-IP cap would silently become a per-shop cap.
+    """
+    now = time.monotonic()
+    host = _get_client_ip(request)
+    if len(_oidc_authorize_rate_ip_calls) > _OIDC_AUTHORIZE_RATE_SWEEP_ABOVE:
+        for stale, calls in list(_oidc_authorize_rate_ip_calls.items()):
+            if not any(now - t < _OIDC_AUTHORIZE_RATE_WINDOW_S for t in calls):
+                del _oidc_authorize_rate_ip_calls[stale]
+    live = [t for t in _oidc_authorize_rate_ip_calls.get(host, ()) if now - t < _OIDC_AUTHORIZE_RATE_WINDOW_S]
+    if len(live) >= _OIDC_AUTHORIZE_RATE_MAX_CALLS_PER_IP:
+        _oidc_authorize_rate_ip_calls[host] = live
+        return True
+    live.append(now)
+    _oidc_authorize_rate_ip_calls[host] = live
+    return False
+
+
+# T-071: the per-phase `timeout=10` below resets on every byte received, so a
+# slow-trickling IdP can hold the fetch open indefinitely — this wraps the
+# WHOLE call (connect through body-read) in one overall deadline. 15s gives a
+# slow-but-legitimate IdP more headroom than the 10s per-phase timeout while
+# still bounding worst case.
+_OIDC_DISCOVERY_TIMEOUT_S = 15.0
+# Discovery documents are a few KB in practice; 256 KiB is generous headroom
+# while still capping how much a hostile/misconfigured IdP can make us buffer
+# before parsing. Mirrors the streaming-with-early-exit style of
+# services/oidc_icon.fetch_icon's `_MAX_ICON_BYTES` cap.
+_OIDC_DISCOVERY_MAX_BYTES = 256 * 1024
+
+
+async def _fetch_oidc_discovery(issuer_url: str) -> dict:
+    """Fetch and parse the OIDC discovery document for *issuer_url*.
+
+    Raises on any failure (network error, non-2xx response, invalid JSON,
+    overall timeout, oversized body) — callers catch the exception, log it,
+    and return their own failure response shape.
+    """
+    discovery_url = f"{issuer_url.rstrip('/')}/.well-known/openid-configuration"
+
+    async def _do_fetch() -> dict:
+        async with httpx.AsyncClient(timeout=10) as client, client.stream("GET", discovery_url) as resp:
+            resp.raise_for_status()
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > _OIDC_DISCOVERY_MAX_BYTES:
+                    raise ValueError("OIDC discovery document too large")
+                chunks.append(chunk)
+            data = json.loads(b"".join(chunks))
+            if not isinstance(data, dict):
+                raise ValueError("OIDC discovery document is not a JSON object")
+            return data
+
+    return await asyncio.wait_for(_do_fetch(), timeout=_OIDC_DISCOVERY_TIMEOUT_S)
+
+
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
 async def oidc_authorize(
     provider_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> OIDCAuthorizeResponse:
     """Return the OIDC authorization URL for the given provider."""
+    if _oidc_authorize_rate_limited(request):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OIDC authorize requests, please retry later",
+            headers={"Retry-After": str(int(_OIDC_AUTHORIZE_RATE_WINDOW_S))},
+        )
     result = await db.execute(
         select(OIDCProvider).where(OIDCProvider.id == provider_id).where(OIDCProvider.is_enabled.is_(True))
     )
@@ -1648,12 +1844,8 @@ async def oidc_authorize(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found or not enabled")
 
     # Fetch discovery document
-    discovery_url = f"{provider.issuer_url.rstrip('/')}/.well-known/openid-configuration"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(discovery_url)
-            resp.raise_for_status()
-            discovery = resp.json()
+        discovery = await _fetch_oidc_discovery(provider.issuer_url)
     except Exception as exc:
         logger.error("Failed to fetch OIDC discovery for provider %d: %s", provider_id, exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch OIDC discovery document")
@@ -1663,13 +1855,18 @@ async def oidc_authorize(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="OIDC discovery document missing authorization_endpoint"
         )
-    # B2: SSRF guard — reject non-HTTP(S) schemes in the authorization endpoint
-    if not authorization_endpoint.startswith(("https://", "http://")):
+    # B2: SSRF guard — reject non-public/non-HTTPS authorization endpoints, the
+    # same policy already applied to the issuer_url this document came from
+    # (schemas/auth.py:_validate_issuer_url) so the document can't smuggle in
+    # an endpoint the issuer check would have rejected.
+    try:
+        assert_safe_public_https_url(authorization_endpoint)
+    except ValueError:
         logger.warning("OIDC discovery authorization_endpoint has invalid scheme: %s", authorization_endpoint)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="OIDC discovery document contains invalid authorization_endpoint",
-        )
+        ) from None
 
     external_url = await _get_base_external_url(db)
     redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
@@ -1726,7 +1923,7 @@ async def oidc_callback(
 ) -> RedirectResponse:
     """Handle the OIDC authorization code callback from the identity provider."""
     external_url = await _get_base_external_url(db)
-    frontend_error_url = f"{external_url}/?oidc_error="
+    frontend_error_url = f"{external_url}/login?oidc_error="
 
     try:
         if error:
@@ -1770,12 +1967,8 @@ async def oidc_callback(
         redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
 
         # ── Step 1: Fetch discovery document ────────────────────────────────
-        discovery_url = f"{provider.issuer_url.rstrip('/')}/.well-known/openid-configuration"
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                disc_resp = await client.get(discovery_url)
-                disc_resp.raise_for_status()
-                discovery = disc_resp.json()
+            discovery = await _fetch_oidc_discovery(provider.issuer_url)
         except Exception as exc:
             logger.error("OIDC discovery fetch failed for provider %d: %s", provider_id, exc)
             return RedirectResponse(url=f"{frontend_error_url}discovery_failed", status_code=302)
@@ -1784,9 +1977,14 @@ async def oidc_callback(
         jwks_uri = discovery.get("jwks_uri")
         if not token_endpoint or not jwks_uri:
             return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
-        # L-R7-C: Reject non-HTTP(S) URLs in the discovery document to prevent
-        # SSRF via crafted responses (e.g. file://, gopher://, internal schemes).
-        if not token_endpoint.startswith(("https://", "http://")) or not jwks_uri.startswith(("https://", "http://")):
+        # L-R7-C: Reject non-public/non-HTTPS URLs in the discovery document to
+        # prevent SSRF via crafted responses (e.g. file://, gopher://, internal
+        # schemes, or private-network addresses) — same guard already applied
+        # to the issuer_url this document came from (schemas/auth.py:_validate_issuer_url).
+        try:
+            assert_safe_public_https_url(token_endpoint)
+            assert_safe_public_https_url(jwks_uri)
+        except ValueError:
             logger.warning(
                 "OIDC discovery document contains non-HTTP URL(s): token=%s jwks=%s", token_endpoint, jwks_uri
             )
@@ -2151,29 +2349,13 @@ async def oidc_exchange(
     if totp_enabled or email_2fa_enabled:
         # User has 2FA — issue a pre_auth_token bound to this browser session via
         # an HttpOnly cookie (H-A: mirrors the cookie-binding done in auth.py:login).
-        two_fa_methods: list[str] = []
-        if totp_enabled:
-            two_fa_methods.append("totp")
-        if email_2fa_enabled:
-            two_fa_methods.append("email")
-        if totp_enabled:
-            two_fa_methods.append("backup")
-        challenge_id = secrets.token_urlsafe(32)
-        pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
-        response.set_cookie(
-            key="2fa_challenge",
-            value=challenge_id,
-            httponly=True,
-            secure=raw_request.url.scheme == "https",
-            samesite="lax",
-            max_age=300,
-            path="/api/v1/auth/2fa",
+        pre_auth_token, two_fa_methods = await _issue_2fa_challenge(
+            db, response, raw_request, user, totp_enabled, email_2fa_enabled
         )
         return LoginResponse(
             requires_2fa=True,
             pre_auth_token=pre_auth_token,
             two_fa_methods=two_fa_methods,
-            user=_user_to_response(user),
         )
 
     access_token = create_access_token(
