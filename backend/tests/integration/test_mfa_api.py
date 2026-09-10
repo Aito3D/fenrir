@@ -654,7 +654,10 @@ class TestTwoFAVerifyBackup:
             json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
         )
         assert verify_resp.status_code == 200
-        assert "access_token" in verify_resp.json()
+        data = verify_resp.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert data["user"]["username"] == "backupcodeok"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -3576,6 +3579,55 @@ class TestOIDCIssuerUrlTrailingSlash:
         assert called_url.endswith("/.well-known/openid-configuration"), (
             f"Expected discovery URL to end with /.well-known/openid-configuration, got: {called_url}"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_fetch_failure_returns_502(self, async_client: AsyncClient):
+        """A non-2xx discovery response must surface as a 502, not a raw 200.
+
+        Uses a real httpx.Response(500) (not a stub whose raise_for_status()
+        is a no-op) so the shared discovery-fetch helper's own
+        raise_for_status() call is what's under test.
+        """
+        from unittest.mock import patch
+
+        import httpx
+
+        admin_token = await _setup_and_login(async_client, "oidc502adm", "oidc502adm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "Discovery502",
+                "issuer_url": "https://idp.discovery-502-test.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        class _Mock500Client:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(500, request=httpx.Request("GET", url), json={})
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Mock500Client):
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

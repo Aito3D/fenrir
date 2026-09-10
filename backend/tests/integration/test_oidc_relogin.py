@@ -16,6 +16,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import httpx
 import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -297,3 +298,94 @@ class TestOidcReloginAfterDelete:
         # And a fresh link for the new user
         link_after = await db_session.execute(select(UserOIDCLink).where(UserOIDCLink.provider_user_id == sub))
         assert link_after.scalar_one().user_id == second_user.id
+
+
+class TestOidcCallbackDiscoveryFailure:
+    """GET /oidc/callback must redirect to ``discovery_failed`` when the IdP's
+    discovery document fetch fails (e.g. a non-2xx response tripping
+    ``raise_for_status()``).
+
+    Exercises the shared ``_fetch_oidc_discovery()`` helper on the callback
+    path specifically — ``oidc_authorize`` already has trailing-slash
+    coverage in test_mfa_api.py, but nothing previously drove a discovery
+    failure through the callback's own try/except + redirect.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_fetch_failure_redirects_to_discovery_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        issuer = "https://idp.discovery-failure-test.example.com"
+        client_id = "discovery-failure-client"
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "discfailadm",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "discfailadm", "password": "AdminPass1!"},
+        )
+        admin_token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DiscoveryFailureIdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "test-secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=headers,
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        class _MockHttpx500Client:
+            """Discovery GET returns a real httpx.Response(500) so the
+            helper's own ``raise_for_status()`` call is the thing under
+            test, not a stubbed exception."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                return httpx.Response(500, request=httpx.Request("GET", url), json={})
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpx500Client):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_error=discovery_failed" in location, f"Expected discovery_failed redirect, got: {location}"

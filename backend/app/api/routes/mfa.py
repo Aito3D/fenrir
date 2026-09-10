@@ -1173,6 +1173,31 @@ async def send_email_otp(
     return {"message": "Code sent to your email address", "pre_auth_token": fresh_token}
 
 
+async def _issue_2fa_success(db: AsyncSession, user: User, username: str) -> TwoFAVerifyResponse:
+    """Clear failed-attempt tracking and mint the session response after a successful 2FA check.
+
+    Shared tail for the totp/email/backup verification paths — must run after the
+    caller has already consumed the pre-auth token (and, for backup codes, removed
+    the used code).
+    """
+    await clear_failed_attempts(db, username)
+
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
+    )
+
+    # Reload with groups for permission calculation
+    result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
+    user = result.scalar_one()
+
+    return TwoFAVerifyResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=_user_to_response(user),
+    )
+
+
 @router.post("/2fa/verify", response_model=TwoFAVerifyResponse)
 async def verify_2fa(
     request: Request,
@@ -1282,15 +1307,8 @@ async def verify_2fa(
         updated_codes = [c for i, c in enumerate(totp_record.backup_code_hashes) if i != matched_index]
         totp_record.backup_code_hashes = updated_codes
         await db.commit()
-        await clear_failed_attempts(db, username)
 
-        access_token = create_access_token(
-            data={"sub": user.username},
-            expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
-        )
-        result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
-        user = result.scalar_one()
-        return TwoFAVerifyResponse(access_token=access_token, token_type="bearer", user=_user_to_response(user))
+        return await _issue_2fa_success(db, user, username)
 
     # Verification succeeded (TOTP or email) — consume the pre-auth token.
     # C-1: Check the return value; if None the token was already consumed by a
@@ -1298,22 +1316,8 @@ async def verify_2fa(
     consumed_username = await consume_pre_auth_token(db, body.pre_auth_token, challenge_id=challenge_id)
     if not consumed_username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
-    await clear_failed_attempts(db, username)
 
-    access_token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
-    )
-
-    # Reload with groups for permission calculation
-    result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
-    user = result.scalar_one()
-
-    return TwoFAVerifyResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=_user_to_response(user),
-    )
+    return await _issue_2fa_success(db, user, username)
 
 
 @router.delete("/2fa/admin/{user_id}")
@@ -1678,6 +1682,20 @@ async def refresh_oidc_provider_icon(
     return _build_provider_response(provider)
 
 
+async def _fetch_oidc_discovery(issuer_url: str) -> dict:
+    """Fetch and parse the OIDC discovery document for *issuer_url*.
+
+    Raises on any failure (network error, non-2xx response, invalid JSON) —
+    callers catch the exception, log it, and return their own failure
+    response shape.
+    """
+    discovery_url = f"{issuer_url.rstrip('/')}/.well-known/openid-configuration"
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(discovery_url)
+        resp.raise_for_status()
+        return resp.json()
+
+
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
 async def oidc_authorize(
     provider_id: int,
@@ -1692,12 +1710,8 @@ async def oidc_authorize(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found or not enabled")
 
     # Fetch discovery document
-    discovery_url = f"{provider.issuer_url.rstrip('/')}/.well-known/openid-configuration"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(discovery_url)
-            resp.raise_for_status()
-            discovery = resp.json()
+        discovery = await _fetch_oidc_discovery(provider.issuer_url)
     except Exception as exc:
         logger.error("Failed to fetch OIDC discovery for provider %d: %s", provider_id, exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch OIDC discovery document")
@@ -1814,12 +1828,8 @@ async def oidc_callback(
         redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
 
         # ── Step 1: Fetch discovery document ────────────────────────────────
-        discovery_url = f"{provider.issuer_url.rstrip('/')}/.well-known/openid-configuration"
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                disc_resp = await client.get(discovery_url)
-                disc_resp.raise_for_status()
-                discovery = disc_resp.json()
+            discovery = await _fetch_oidc_discovery(provider.issuer_url)
         except Exception as exc:
             logger.error("OIDC discovery fetch failed for provider %d: %s", provider_id, exc)
             return RedirectResponse(url=f"{frontend_error_url}discovery_failed", status_code=302)

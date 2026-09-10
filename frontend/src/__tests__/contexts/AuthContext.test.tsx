@@ -499,6 +499,68 @@ describe('AuthContext', () => {
     });
   });
 
+  describe('logout sends the JWT so the backend can revoke it (T-032)', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+      setAuthToken('valid-token', 'persistent');
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('carries the pre-logout token as a Bearer header, sent keepalive, while clearing the local token immediately', async () => {
+      let receivedAuthHeader: string | null = null;
+      server.use(
+        http.post('/api/v1/auth/logout', ({ request }) => {
+          receivedAuthHeader = request.headers.get('Authorization');
+          return HttpResponse.json({ message: 'ok' });
+        })
+      );
+      const fetchSpy = vi.spyOn(window, 'fetch');
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      // Positive-before: token is present ahead of logout.
+      expect(getAuthToken()).toBe('valid-token');
+
+      act(() => {
+        result.current.logout();
+      });
+
+      // Negative-after: the local token/user are cleared synchronously,
+      // without waiting on the network call below to resolve.
+      expect(getAuthToken()).toBeNull();
+      expect(result.current.user).toBeNull();
+
+      await waitFor(() => expect(receivedAuthHeader).not.toBeNull());
+      expect(receivedAuthHeader).toBe('Bearer valid-token');
+
+      const logoutCall = fetchSpy.mock.calls.find(([input]) =>
+        typeof input === 'string' && input.includes('/auth/logout')
+      );
+      expect(logoutCall).toBeDefined();
+      expect((logoutCall?.[1] as RequestInit | undefined)?.keepalive).toBe(true);
+
+      fetchSpy.mockRestore();
+    });
+  });
+
   describe('canModify() ownership logic (T-041)', () => {
     // Auth enabled, non-admin user — the only path that exercises the
     // *_own / *_all branching (the early returns for auth-disabled and

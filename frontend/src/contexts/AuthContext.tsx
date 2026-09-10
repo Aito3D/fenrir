@@ -183,12 +183,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    // Capture the token before clearing it so it can still be sent on the
+    // logout request below — otherwise the backend has nothing to resolve a
+    // jti from and never revokes the session server-side (T-032).
+    const token = getAuthToken();
     setAuthToken(null);
     setUser(null);
     // Clear the new-project draft (client name/email/phone) so it can't be
     // read back by whoever logs into this browser next (T-021).
     clearNewProjectDraft();
-    api.logout().catch(() => {
+    api.logout(token).catch(() => {
       // Ignore logout errors
     });
     window.location.href = '/login';

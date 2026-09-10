@@ -10935,3 +10935,14 @@ every board response (GET /aito/, /aito/trash, PATCH/move/restore) drops the fie
 tracking_configured stays. The URL is served only by the AITO_UPDATE-gated GET
 /aito/{id}/tracking-link and POST /aito/{id}/tracking-token. app-openapi-index golden re-recorded
 for the removed schema property. User-approved 2026-09-06.
+
+## Campaign 13 · Round 1 (approved 2026-09-09)
+
+T-032 — logout() now captures the JWT before clearing local state and sends it on the
+POST /auth/logout request (`Authorization: Bearer <token>`, `keepalive: true` so the browser
+finishes the request across the immediate `/login` navigation), so the backend's existing
+revoke path actually runs. User-visible effect: logging out now really invalidates the session —
+a token captured from storage before logout (including a Remember Me token persisted in
+localStorage) stops working immediately instead of staying valid until its natural expiry, and a
+revoked_jti row is written on every logout. Local token/user state, the new-project-draft clear,
+and the swallow-errors-then-navigate sequence are unchanged. User-approved 2026-09-09.

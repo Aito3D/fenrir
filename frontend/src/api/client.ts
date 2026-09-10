@@ -5027,9 +5027,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  logout: () =>
+  // `token` lets callers (AuthContext.logout) send the JWT that was just
+  // cleared from module state, so the backend can still resolve+revoke its
+  // jti (T-032) — by the time this fires, the module-level authToken this
+  // function would otherwise fall back to is already null. `keepalive` lets
+  // the browser finish the request even though logout() also navigates away
+  // immediately after firing it.
+  logout: (token?: string | null) =>
     request<{ message: string }>('/auth/logout', {
       method: 'POST',
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      keepalive: true,
     }),
   getCurrentUser: () => request<UserResponse>('/auth/me'),
   disableAuth: () =>
