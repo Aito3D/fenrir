@@ -14,27 +14,30 @@ failed or was cancelled. `Backend Security` / `Frontend Security` are advisory
 PRs opened by the repository owner skip the jobs — the branch already ran
 them on push — and `CI OK` treats that as green.
 
-## CD — the `deploy` branch
+## CD — the container image
 
-The production host polls `origin/deploy`. `.github/workflows/deploy.yml`
-moves that branch automatically:
+`.github/workflows/docker-publish.yml` builds the production image and pushes
+it to GHCR. The production host pulls `ghcr.io/aito3d/fenrir:latest`.
 
 - **Automatic:** when `CI` finishes **successfully** for a commit on `main`,
-  `deploy` is fast-forwarded to that commit. A red `main` never ships.
-- **Manual (re-deploy / rollback):** *Actions → Deploy → Run workflow* with
-  `ref` set to a SHA, branch or tag. The job refuses unless that commit has a
-  successful `CI` run on record.
-- **Fast-forward only.** If `deploy` is not an ancestor of the target (someone
-  pushed to it directly), the job fails instead of force-pushing. Reset it by
-  hand (`git push origin <sha>:refs/heads/deploy`) if that is intended.
+  that commit is built for `linux/amd64` and `linux/arm64` and published as
+  `:latest` and `:sha-<short>`. A red `main` never ships.
+- **Releases:** pushing a `v*` tag publishes `:<version>` (the tag minus the
+  `v`) for that commit. `:latest` is not moved — it keeps tracking `main`.
+  The tagged commit must already have a green `CI` run; tag it after CI has
+  finished, or re-run the workflow by hand once it has.
+- **Manual (re-deploy / rollback):** *Actions → Publish Image → Run workflow*
+  with `ref` set to a SHA, branch or tag. The job refuses unless that commit
+  has a successful `CI` run on record, then publishes it as `:latest`.
 
-Deploys are serialised (`concurrency: deploy`) and never cancelled mid-run.
+Each platform builds natively on its own runner and is pushed by digest; a
+final job merges the two digests into one multi-arch manifest and applies the
+tags, so no tag ever points at a half-built image. Publishes are serialised
+(`concurrency: publish`) and never cancelled mid-run.
 
-The old manual command still works as an escape hatch:
-
-```bash
-git push origin main:refs/heads/deploy
-```
+Every published commit keeps its immutable `:sha-<short>` tag, so a rollback
+on the host is `docker compose pull` against a pinned tag, or a manual run
+of the workflow to move `:latest` back.
 
 ## Local equivalents
 

@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    # Every commit on every branch gets tested. `deploy` is excluded: it is a
-    # pointer moved by deploy.yml to a commit main already tested.
-    branches-ignore: [deploy]
+    # Every commit on every branch gets tested. Tag pushes are deliberately not
+    # matched: a `v*` tag must point at a commit CI already passed, and
+    # docker-publish.yml checks that before publishing the version tag.
+    branches: ['**']
   pull_request:
     branches: [main]
   workflow_dispatch:
