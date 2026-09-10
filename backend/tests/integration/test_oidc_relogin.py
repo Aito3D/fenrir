@@ -192,6 +192,62 @@ async def _trigger_oidc_callback(
     return exchange_resp.json()["access_token"]
 
 
+async def _setup_provider_and_state(async_client: AsyncClient, db_session: AsyncSession, *, tag: str):
+    """Admin setup + create an OIDC provider + seed an ``oidc_state`` token.
+
+    Shared by every test below that only needs a valid ``(issuer, state)``
+    pair to drive the callback — no real IdP round-trip required. ``tag``
+    keeps the admin username / provider name / issuer unique per test.
+    """
+    issuer = f"https://idp.{tag}-test.example.com"
+    client_id = f"{tag}-client"
+
+    await async_client.post(
+        "/api/v1/auth/setup",
+        json={
+            "auth_enabled": True,
+            "admin_username": f"{tag}adm",
+            "admin_password": "AdminPass1!",
+        },
+    )
+    login_resp = await async_client.post(
+        "/api/v1/auth/login",
+        json={"username": f"{tag}adm", "password": "AdminPass1!"},
+    )
+    admin_token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_resp = await async_client.post(
+        "/api/v1/auth/oidc/providers",
+        json={
+            "name": f"{tag}-IdP",
+            "issuer_url": issuer,
+            "client_id": client_id,
+            "client_secret": "test-secret",
+            "scopes": "openid email profile",
+            "is_enabled": True,
+            "auto_create_users": True,
+        },
+        headers=headers,
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    provider_id = create_resp.json()["id"]
+
+    state = secrets.token_urlsafe(32)
+    db_session.add(
+        AuthEphemeralToken(
+            token=state,
+            token_type="oidc_state",
+            provider_id=provider_id,
+            nonce=secrets.token_urlsafe(16),
+            code_verifier=secrets.token_urlsafe(48),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+    return issuer, state
+
+
 class TestOidcReloginAfterDelete:
     """Issue #1285: SSO user must be recreatable after admin deletion."""
 
@@ -334,52 +390,7 @@ class TestOidcCallbackDiscoveryFailure:
     async def test_discovery_fetch_failure_redirects_to_discovery_failed(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer = "https://idp.discovery-failure-test.example.com"
-        client_id = "discovery-failure-client"
-
-        await async_client.post(
-            "/api/v1/auth/setup",
-            json={
-                "auth_enabled": True,
-                "admin_username": "discfailadm",
-                "admin_password": "AdminPass1!",
-            },
-        )
-        login_resp = await async_client.post(
-            "/api/v1/auth/login",
-            json={"username": "discfailadm", "password": "AdminPass1!"},
-        )
-        admin_token = login_resp.json()["access_token"]
-        headers = {"Authorization": f"Bearer {admin_token}"}
-
-        create_resp = await async_client.post(
-            "/api/v1/auth/oidc/providers",
-            json={
-                "name": "DiscoveryFailureIdP",
-                "issuer_url": issuer,
-                "client_id": client_id,
-                "client_secret": "test-secret",
-                "scopes": "openid email profile",
-                "is_enabled": True,
-                "auto_create_users": True,
-            },
-            headers=headers,
-        )
-        assert create_resp.status_code == 201, create_resp.text
-        provider_id = create_resp.json()["id"]
-
-        state = secrets.token_urlsafe(32)
-        db_session.add(
-            AuthEphemeralToken(
-                token=state,
-                token_type="oidc_state",
-                provider_id=provider_id,
-                nonce=secrets.token_urlsafe(16),
-                code_verifier=secrets.token_urlsafe(48),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-            )
-        )
-        await db_session.commit()
+        _issuer, state = await _setup_provider_and_state(async_client, db_session, tag="discovery-failure")
 
         class _MockHttpx500Client:
             """Discovery GET returns a real httpx.Response(500) so the
@@ -422,52 +433,7 @@ class TestOidcCallbackDiscoveryFailure:
         drop the error code and, on installs with autologin configured, loop
         straight back to the IdP. Regression test for #T-069.
         """
-        issuer = "https://idp.login-route-test.example.com"
-        client_id = "login-route-client"
-
-        await async_client.post(
-            "/api/v1/auth/setup",
-            json={
-                "auth_enabled": True,
-                "admin_username": "loginrouteadm",
-                "admin_password": "AdminPass1!",
-            },
-        )
-        login_resp = await async_client.post(
-            "/api/v1/auth/login",
-            json={"username": "loginrouteadm", "password": "AdminPass1!"},
-        )
-        admin_token = login_resp.json()["access_token"]
-        headers = {"Authorization": f"Bearer {admin_token}"}
-
-        create_resp = await async_client.post(
-            "/api/v1/auth/oidc/providers",
-            json={
-                "name": "LoginRouteIdP",
-                "issuer_url": issuer,
-                "client_id": client_id,
-                "client_secret": "test-secret",
-                "scopes": "openid email profile",
-                "is_enabled": True,
-                "auto_create_users": True,
-            },
-            headers=headers,
-        )
-        assert create_resp.status_code == 201, create_resp.text
-        provider_id = create_resp.json()["id"]
-
-        state = secrets.token_urlsafe(32)
-        db_session.add(
-            AuthEphemeralToken(
-                token=state,
-                token_type="oidc_state",
-                provider_id=provider_id,
-                nonce=secrets.token_urlsafe(16),
-                code_verifier=secrets.token_urlsafe(48),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-            )
-        )
-        await db_session.commit()
+        _issuer, state = await _setup_provider_and_state(async_client, db_session, tag="login-route")
 
         class _MockHttpx500Client:
             def __init__(self, *args, **kwargs):
@@ -515,52 +481,7 @@ class TestOidcCallbackDiscoveryFailure:
         redirect — not the outer catch-all's ``internal_error`` — and must
         never reach the token exchange POST.
         """
-        issuer = "https://idp.discovery-non-object-test.example.com"
-        client_id = "discovery-non-object-client"
-
-        await async_client.post(
-            "/api/v1/auth/setup",
-            json={
-                "auth_enabled": True,
-                "admin_username": "discnonobjadm",
-                "admin_password": "AdminPass1!",
-            },
-        )
-        login_resp = await async_client.post(
-            "/api/v1/auth/login",
-            json={"username": "discnonobjadm", "password": "AdminPass1!"},
-        )
-        admin_token = login_resp.json()["access_token"]
-        headers = {"Authorization": f"Bearer {admin_token}"}
-
-        create_resp = await async_client.post(
-            "/api/v1/auth/oidc/providers",
-            json={
-                "name": "DiscoveryNonObjectIdP",
-                "issuer_url": issuer,
-                "client_id": client_id,
-                "client_secret": "test-secret",
-                "scopes": "openid email profile",
-                "is_enabled": True,
-                "auto_create_users": True,
-            },
-            headers=headers,
-        )
-        assert create_resp.status_code == 201, create_resp.text
-        provider_id = create_resp.json()["id"]
-
-        state = secrets.token_urlsafe(32)
-        db_session.add(
-            AuthEphemeralToken(
-                token=state,
-                token_type="oidc_state",
-                provider_id=provider_id,
-                nonce=secrets.token_urlsafe(16),
-                code_verifier=secrets.token_urlsafe(48),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-            )
-        )
-        await db_session.commit()
+        _issuer, state = await _setup_provider_and_state(async_client, db_session, tag="discovery-non-object")
 
         token_post_called = False
 
@@ -612,61 +533,12 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
     be attempted.
     """
 
-    async def _setup_provider_and_state(self, async_client: AsyncClient, db_session: AsyncSession, *, tag: str):
-        issuer = f"https://idp.{tag}-test.example.com"
-        client_id = f"{tag}-client"
-
-        await async_client.post(
-            "/api/v1/auth/setup",
-            json={
-                "auth_enabled": True,
-                "admin_username": f"{tag}adm",
-                "admin_password": "AdminPass1!",
-            },
-        )
-        login_resp = await async_client.post(
-            "/api/v1/auth/login",
-            json={"username": f"{tag}adm", "password": "AdminPass1!"},
-        )
-        admin_token = login_resp.json()["access_token"]
-        headers = {"Authorization": f"Bearer {admin_token}"}
-
-        create_resp = await async_client.post(
-            "/api/v1/auth/oidc/providers",
-            json={
-                "name": f"{tag}-IdP",
-                "issuer_url": issuer,
-                "client_id": client_id,
-                "client_secret": "test-secret",
-                "scopes": "openid email profile",
-                "is_enabled": True,
-                "auto_create_users": True,
-            },
-            headers=headers,
-        )
-        assert create_resp.status_code == 201, create_resp.text
-        provider_id = create_resp.json()["id"]
-
-        state = secrets.token_urlsafe(32)
-        db_session.add(
-            AuthEphemeralToken(
-                token=state,
-                token_type="oidc_state",
-                provider_id=provider_id,
-                nonce=secrets.token_urlsafe(16),
-                code_verifier=secrets.token_urlsafe(48),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-            )
-        )
-        await db_session.commit()
-        return issuer, state
-
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_private_token_endpoint_rejected_no_token_post(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="privtoken")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="privtoken")
 
         discovery = {
             "issuer": issuer,
@@ -712,7 +584,7 @@ class TestOidcCallbackDiscoveryEndpointSSRFGuard:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_private_jwks_uri_rejected_no_token_post(self, async_client: AsyncClient, db_session: AsyncSession):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="privjwks")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="privjwks")
 
         discovery = {
             "issuer": issuer,
@@ -773,61 +645,12 @@ class TestOidcCallbackTokenExchangeFailure:
     no id_token/JWKS handling for token-exchange failures).
     """
 
-    async def _setup_provider_and_state(self, async_client: AsyncClient, db_session: AsyncSession, *, tag: str):
-        issuer = f"https://idp.{tag}-test.example.com"
-        client_id = f"{tag}-client"
-
-        await async_client.post(
-            "/api/v1/auth/setup",
-            json={
-                "auth_enabled": True,
-                "admin_username": f"{tag}adm",
-                "admin_password": "AdminPass1!",
-            },
-        )
-        login_resp = await async_client.post(
-            "/api/v1/auth/login",
-            json={"username": f"{tag}adm", "password": "AdminPass1!"},
-        )
-        admin_token = login_resp.json()["access_token"]
-        headers = {"Authorization": f"Bearer {admin_token}"}
-
-        create_resp = await async_client.post(
-            "/api/v1/auth/oidc/providers",
-            json={
-                "name": f"{tag}-IdP",
-                "issuer_url": issuer,
-                "client_id": client_id,
-                "client_secret": "test-secret",
-                "scopes": "openid email profile",
-                "is_enabled": True,
-                "auto_create_users": True,
-            },
-            headers=headers,
-        )
-        assert create_resp.status_code == 201, create_resp.text
-        provider_id = create_resp.json()["id"]
-
-        state = secrets.token_urlsafe(32)
-        db_session.add(
-            AuthEphemeralToken(
-                token=state,
-                token_type="oidc_state",
-                provider_id=provider_id,
-                nonce=secrets.token_urlsafe(16),
-                code_verifier=secrets.token_urlsafe(48),
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-            )
-        )
-        await db_session.commit()
-        return issuer, state
-
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_discovery_missing_token_endpoint_redirects_to_invalid_discovery_document(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="notokenep")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="notokenep")
 
         discovery = {
             "issuer": issuer,
@@ -873,7 +696,7 @@ class TestOidcCallbackTokenExchangeFailure:
     async def test_discovery_missing_jwks_uri_redirects_to_invalid_discovery_document(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="nojwksuri")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="nojwksuri")
 
         discovery = {
             "issuer": issuer,
@@ -919,7 +742,7 @@ class TestOidcCallbackTokenExchangeFailure:
     async def test_token_exchange_network_error_redirects_to_token_exchange_network_error(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="netfail")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="netfail")
 
         discovery = {
             "issuer": issuer,
@@ -961,7 +784,7 @@ class TestOidcCallbackTokenExchangeFailure:
     async def test_token_exchange_non_2xx_json_error_body_redirects_with_urlencoded_code(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="jsonerr")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="jsonerr")
 
         discovery = {
             "issuer": issuer,
@@ -1009,7 +832,7 @@ class TestOidcCallbackTokenExchangeFailure:
     async def test_token_exchange_non_2xx_non_json_body_redirects_with_status_code(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
-        issuer, state = await self._setup_provider_and_state(async_client, db_session, tag="nonjsonerr")
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="nonjsonerr")
 
         discovery = {
             "issuer": issuer,
@@ -1048,3 +871,126 @@ class TestOidcCallbackTokenExchangeFailure:
         assert location.endswith("oidc_error=token_exchange_503"), (
             f"Expected token_exchange_503 redirect, got: {location}"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_2xx_non_json_body_redirects_to_token_exchange_bad_response(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A *successful* (2xx) token response whose body is not valid JSON
+        is a distinct branch from the non-2xx error-body handling above: the
+        outer ``token_resp.is_success`` check passes, so it's the inner
+        ``token_resp.json()`` call (made to extract ``id_token``) that must
+        raise and be caught, redirecting to ``token_exchange_bad_response``.
+        """
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="badjson2xx")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        class _Mock2xxNonJsonResp:
+            status_code = 200
+            is_success = True
+            text = "not json"
+
+            def json(self):
+                raise ValueError("Response body is not valid JSON")
+
+        get_calls: list[str] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                get_calls.append(url)
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                return _Mock2xxNonJsonResp()
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        expected_external_url = "http://localhost:5173"
+        assert location.startswith(f"{expected_external_url}/login?oidc_error="), (
+            f"Expected redirect to {expected_external_url}/login?oidc_error=..., got: {location}"
+        )
+        assert location.endswith("oidc_error=token_exchange_bad_response"), (
+            f"Expected token_exchange_bad_response redirect, got: {location}"
+        )
+        assert not any("jwks" in url for url in get_calls), "JWKS must not be fetched after a bad token response"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_exchange_2xx_missing_id_token_redirects_to_no_id_token(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A 2xx JSON token response that omits ``id_token`` must redirect to
+        ``no_id_token`` and must never proceed to Step 3 (JWKS fetch / JWT
+        decode) — those calls are recorded/patched so this test fails loudly
+        if the route reaches them.
+        """
+        issuer, state = await _setup_provider_and_state(async_client, db_session, tag="noidtoken")
+
+        discovery = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        # No "id_token" key present, unlike the happy-path token_response fixture.
+        token_response = {"access_token": "mock-access", "token_type": "Bearer"}
+
+        get_calls: list[str] = []
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                get_calls.append(url)
+                return _MockResp(discovery)
+
+            async def post(self, url, **kwargs):
+                return _MockResp(token_response)
+
+        with (
+            patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient),
+            patch("backend.app.api.routes.mfa.jwt.decode") as mock_jwt_decode,
+        ):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        expected_external_url = "http://localhost:5173"
+        assert location.startswith(f"{expected_external_url}/login?oidc_error="), (
+            f"Expected redirect to {expected_external_url}/login?oidc_error=..., got: {location}"
+        )
+        assert location.endswith("oidc_error=no_id_token"), f"Expected no_id_token redirect, got: {location}"
+        assert mock_jwt_decode.call_count == 0, "JWT decode must not be attempted when id_token is missing"
+        assert not any("jwks" in url for url in get_calls), "JWKS must not be fetched when id_token is missing"
