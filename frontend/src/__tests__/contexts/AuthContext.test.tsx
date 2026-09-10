@@ -969,4 +969,154 @@ describe('AuthContext', () => {
       expect(meCalled).toBe(false);
     });
   });
+
+  // T-081: refreshUser() is a manual re-fetch of /auth/me exposed on the
+  // public context. Unlike checkAuthStatus() (which retries transient
+  // failures and only clears the token on a definitive 401), refreshUser()
+  // makes a single attempt and clears the token + user unconditionally on
+  // ANY failure — it's meant for "the server told us this token is stale
+  // right now", not a resilient mount-time check.
+  describe('refreshUser() (T-081)', () => {
+    beforeEach(() => {
+      setAuthToken('valid-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('updates the user in place on success, leaving the token untouched', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+
+      // Swap the handler so a manual refresh observes a changed user.
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'bob',
+            is_active: true,
+            permissions: ['printers:read' as Permission],
+            groups: [],
+          })
+        )
+      );
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(result.current.user?.username).toBe('bob');
+      expect(result.current.user?.permissions).toEqual(['printers:read']);
+      expect(getAuthToken()).toBe('valid-token');
+    });
+
+    it('clears the token (both storages) and the user on any failure — no retry', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      // Positive evidence first: a real user is set before the failing refresh.
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+
+      server.use(http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 })));
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+      expect(localStorage.getItem('auth_token')).toBeNull();
+      expect(sessionStorage.getItem('auth_token')).toBeNull();
+    });
+
+    it('clears the token and user on a 401 too, unlike checkAuthStatus which only clears on a definitive 401 after retries', async () => {
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
+        )
+      );
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+    });
+
+    it('no-ops without calling /auth/me when auth is disabled', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: false, requires_setup: false })
+        )
+      );
+      let meCalled = false;
+      server.use(
+        http.get('/api/v1/auth/me', () => {
+          meCalled = true;
+          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.authEnabled).toBe(false);
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(meCalled).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+
+    it('no-ops without calling /auth/me when no token is present', async () => {
+      setAuthToken(null);
+      let meCalled = false;
+      server.use(
+        http.get('/api/v1/auth/me', () => {
+          meCalled = true;
+          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(getAuthToken()).toBeNull();
+      expect(result.current.user).toBeNull();
+
+      await act(async () => {
+        await result.current.refreshUser();
+      });
+
+      expect(meCalled).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+  });
 });
