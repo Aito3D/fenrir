@@ -6192,6 +6192,221 @@ class TestOIDCTokenAndJWKSFetchGuards:
         assert "token_validation_failed" in location, location
 
 
+class TestOIDCMalformedDocumentTypes:
+    """T-116: a discovery or token document whose fields are the wrong JSON
+    type (null, a number, a list, ...) must redirect to the specific
+    invalid_discovery_document/token_exchange_bad_response/no_id_token error
+    instead of AttributeError-ing into the generic internal_error handler.
+
+    A normal, all-string flow completing successfully is already covered by
+    existing full-success tests elsewhere in this file (e.g.
+    TestOIDCFallCAutoLinkE2E.test_fall_c_auto_link_links_existing_user_via_callback
+    and TestOIDCAutoCreateUsername.test_provider_sub_fallback_when_no_claims),
+    so it isn't duplicated here.
+    """
+
+    async def _setup_provider_and_state(self, async_client: AsyncClient, db_session: AsyncSession, label: str):
+        """Create an enabled provider plus a live OIDC state row.
+
+        Returns (state, discovery_doc) for a GET .../oidc/callback under test,
+        mirroring TestOIDCTokenAndJWKSFetchGuards._setup_provider_and_state.
+        """
+        issuer = f"https://idp.{label}.example.com"
+        admin_token = await _setup_and_login(async_client, f"{label}adm", f"{label}adm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": label,
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        return state, discovery_doc
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_token_endpoint_redirects_invalid_discovery_document(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Before T-116, ``urlparse()`` inside ``assert_safe_public_https_url()``
+        raised ``AttributeError`` (not ``ValueError``) on a list ``token_endpoint``,
+        which escaped the surrounding ``except ValueError`` and fell through to
+        the generic internal_error handler instead of this specific redirect."""
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "listtoken")
+        discovery_doc["token_endpoint"] = ["https://idp.listtoken.example.com/token"]
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "invalid_discovery_document" in location, location
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_null_issuer_redirects_invalid_discovery_document(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A null ``issuer`` reaches ``discovery.get("issuer", ...).rstrip("/")``
+        with the token exchange otherwise completing normally; pre-T-116 this
+        raised AttributeError (None has no rstrip) after the token endpoint
+        had already been called."""
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "nullissuer")
+        discovery_doc["issuer"] = None
+        token_response = {"access_token": "acc", "id_token": "irrelevant.token.value"}
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _make_stream_ctx(token_response)
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "invalid_discovery_document" in location, location
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_json_array_token_body_redirects_token_exchange_bad_response(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A token endpoint answering 200 with a JSON array body (not an
+        object) must not reach ``token_data.get(...)``, which would otherwise
+        AttributeError on a list."""
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "arraybody")
+
+        class _ArrayResp:
+            status_code = 200
+
+            async def aiter_bytes(self):
+                yield b"[]"
+
+        class _ArrayStreamCtx:
+            async def __aenter__(self):
+                return _ArrayResp()
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _ArrayStreamCtx()
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_exchange_bad_response" in location, location
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_string_id_token_redirects_no_id_token(self, async_client: AsyncClient, db_session: AsyncSession):
+        """An ``id_token`` that is present but not a string (e.g. a JSON
+        array) is truthy, so it must be routed to the same no_id_token
+        redirect as a genuinely missing id_token rather than reaching
+        ``jwt.decode()``, which would fail with a less specific error."""
+        state, discovery_doc = await self._setup_provider_and_state(async_client, db_session, "listidtoken")
+        token_response = {"access_token": "acc", "id_token": ["not-a-string"]}
+
+        class _Client:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            def stream(self, method, url, **kw):
+                if method == "POST":
+                    return _make_stream_ctx(token_response)
+                return _make_stream_ctx(discovery_doc)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _Client):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "no_id_token" in location, location
+
+
 class _Clock:
     """Stands in for routes/mfa.py's `time` name — the module looks up
     `time.monotonic()` through the module attribute, so swapping the whole

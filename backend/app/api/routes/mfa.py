@@ -2128,7 +2128,18 @@ async def oidc_callback(
 
         token_endpoint = discovery.get("token_endpoint")
         jwks_uri = discovery.get("jwks_uri")
-        if not token_endpoint or not jwks_uri:
+        # T-116: a spec-compliant discovery document always has string endpoint
+        # URLs; a malformed one (null, a number, a list, ...) must not reach
+        # assert_safe_public_https_url()/urlparse() below, which raise TypeError
+        # (not ValueError) on non-string input and would otherwise escape to the
+        # generic internal_error handler instead of this specific redirect.
+        if not isinstance(token_endpoint, str) or not token_endpoint or not isinstance(jwks_uri, str) or not jwks_uri:
+            logger.warning(
+                "OIDC discovery document has non-string endpoint(s) for provider %d: token_endpoint=%s jwks_uri=%s",
+                provider_id,
+                type(token_endpoint).__name__,
+                type(jwks_uri).__name__,
+            )
             return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
         # L-R7-C: Reject non-public/non-HTTPS URLs in the discovery document to
         # prevent SSRF via crafted responses (e.g. file://, gopher://, internal
@@ -2198,8 +2209,22 @@ async def oidc_callback(
             logger.error("OIDC token exchange non-JSON response for provider %d: %s", provider_id, exc)
             return RedirectResponse(url=f"{frontend_error_url}token_exchange_bad_response", status_code=302)
 
+        # T-116: a well-formed token response is always a JSON object; a provider
+        # that answers with an array/number/string body would otherwise AttributeError
+        # on the .get() call below and escape to the generic internal_error handler.
+        if not isinstance(token_data, dict):
+            logger.error(
+                "OIDC token exchange returned non-object JSON for provider %d: %s",
+                provider_id,
+                type(token_data).__name__,
+            )
+            return RedirectResponse(url=f"{frontend_error_url}token_exchange_bad_response", status_code=302)
+
         id_token = token_data.get("id_token")
-        if not id_token:
+        # T-116: id_token must also be a string — a non-string value (e.g. a list) is
+        # truthy and would otherwise reach jwt.decode() and fail there instead, so
+        # treat it the same as a missing id_token for this redirect.
+        if not id_token or not isinstance(id_token, str):
             # Only log the keys present — values may contain secrets (access_token, etc.)
             logger.error(
                 "OIDC token response missing id_token for provider %d; keys present: %s",
@@ -2213,7 +2238,18 @@ async def oidc_callback(
         # §3.1.3.7 requires iss == discovery issuer exactly).  We strip trailing slashes
         # from both sides because some providers (e.g. Authentik, older PocketID versions)
         # are inconsistent between the discovery issuer and the JWT iss claim.
-        discovery_issuer: str = discovery.get("issuer", provider.issuer_url).rstrip("/")
+        raw_issuer = discovery.get("issuer", provider.issuer_url)
+        # T-116: a discovery document may set "issuer" to null/a number/a list; guard
+        # before .rstrip() so a malformed value redirects to invalid_discovery_document
+        # instead of AttributeError-ing into the generic internal_error handler.
+        if not isinstance(raw_issuer, str) or not raw_issuer:
+            logger.warning(
+                "OIDC discovery document has non-string issuer for provider %d: %s",
+                provider_id,
+                type(raw_issuer).__name__,
+            )
+            return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
+        discovery_issuer: str = raw_issuer.rstrip("/")
         try:
             jwks_status, jwks_body = await _bounded_fetch("GET", jwks_uri, timeout_s=_OIDC_JWKS_TIMEOUT_S)
             if not (200 <= jwks_status < 300):

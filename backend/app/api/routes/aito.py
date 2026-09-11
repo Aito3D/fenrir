@@ -1,6 +1,7 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
 import contextlib
+import ipaddress
 import logging
 import re
 import time
@@ -986,17 +987,24 @@ async def get_client_history(
 
 # The public tracking route: a 6-character code (services/aito_tracking.py)
 # is guessable in principle, so the route is throttled — per client IP, and
-# across all clients so a spread of addresses buys nothing. The caps count
-# MISSES (404s): a guesser only ever produces misses, a real client only ever
-# produces hits, so counting hits bought no security and cost availability —
-# one scanner sitting at the global cap, or a promo SMS to a town behind
-# carrier-grade NAT, locked every client out of their own page. Hits are not
-# free either: a generous per-address ceiling on all calls backstops one
-# client looping on a valid code. Past a tripped cap everything is a 429,
-# hits included: a hit cannot be told apart before the lookup runs, and
-# answering hits through the cap would hand a guesser exactly the oracle the
-# cap exists to hide. Same sliding window and the same `time` indirection as
-# the AI limiter above, so a test can drive the clock.
+# per source network (see below) so a spread of addresses on ONE network
+# buys nothing. The caps count MISSES (404s): a guesser only ever produces
+# misses, a real client only ever produces hits, so counting hits bought no
+# security and cost availability — one scanner sitting at the global cap, or
+# a promo SMS to a town behind carrier-grade NAT, locked every client out of
+# their own page. T-122: the miss budget used to be ONE bucket shared by
+# every visitor on the internet, so a single flooding source could trip it
+# and 429 every other client too; it is now keyed per source network
+# (IPv4 /24, IPv6 /64) so a flood from one network cannot exhaust the
+# budget of clients on other networks — at the cost of a busy /24 now being
+# able to exhaust its own (still 600-wide) budget sooner than the old
+# shared one. Hits are not free either: a generous per-address ceiling on
+# all calls backstops one client looping on a valid code. Past a tripped
+# cap everything is a 429, hits included: a hit cannot be told apart before
+# the lookup runs, and answering hits through the cap would hand a guesser
+# exactly the oracle the cap exists to hide. Same sliding window and the
+# same `time` indirection as the AI limiter above, so a test can drive the
+# clock.
 #
 # The per-IP caps assume the address they are keyed on is one visitor.
 # Behind a reverse proxy with TRUSTED_PROXY_IPS unset (the default), every
@@ -1004,33 +1012,72 @@ async def get_client_history(
 # per-IP MISS cap would silently become a second, much tighter, site-wide
 # cap. `_track_rate_limited` detects that case (TRUSTED_PROXY_IPS empty but
 # an X-Forwarded-For header present) and suspends the per-IP miss cap for
-# it, presuming the peer is an unconfigured proxy; the global miss cap and
+# it, presuming the peer is an unconfigured proxy; the per-net miss cap and
 # the per-IP CALLS cap — both still keyed on the proxy's one address — are
-# the bound instead. The trade-off: on a DIRECT install (no proxy at all) a
-# client can send its own X-Forwarded-For header to be treated the same
-# way, which raises its own per-address ceiling from the 30-miss cap to the
-# 120-call cap. The fix for both — the collapsed bucket and the spoof — is
-# the same: set TRUSTED_PROXY_IPS.
+# the bound instead. On a collapsed bucket the "network" IS the proxy's own
+# /24 or /64, so the per-net budget is once again a single site-wide budget
+# for that install, same as before T-122. T-121: that presumption alone is
+# spoofable on a DIRECT
+# install — any client could add its own X-Forwarded-For header to lift its
+# own ceiling from the 30-miss cap to the 120-call cap — so the collapse
+# additionally requires the direct TCP peer to look like a proxy: loopback
+# or an RFC-1918/private address (see `_peer_is_private`). A public peer's
+# X-Forwarded-For is ignored for this purpose. The remaining trade-off: a
+# reverse proxy that itself sits on a public IP still needs TRUSTED_PROXY_IPS
+# configured, or its visitors share the tighter per-IP miss cap.
 #
 # In-process state, so it assumes the single uvicorn worker the Dockerfile
 # starts: `--workers N` would multiply every cap by N.
 _TRACK_RATE_WINDOW_S = 60.0
 _TRACK_RATE_MAX_MISSES_PER_IP = 30
-_TRACK_RATE_MAX_MISSES_GLOBAL = 600
+_TRACK_RATE_MAX_MISSES_PER_NET = 600
 _TRACK_RATE_MAX_CALLS_PER_IP = 120
 # More host keys than this and the stale ones are swept: only addresses that
 # called inside the window can be live.
-_TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_MISSES_GLOBAL
+_TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_MISSES_PER_NET
 _track_rate_ip_calls: dict[str, list[float]] = {}
 _track_rate_ip_misses: dict[str, list[float]] = {}
-_track_rate_global_misses: list[float] = []
+_track_rate_net_misses: dict[str, list[float]] = {}
 
 
 def _reset_track_rate_limits() -> None:
     """Empty every window — tests/conftest.py runs this around each test."""
     _track_rate_ip_calls.clear()
     _track_rate_ip_misses.clear()
-    _track_rate_global_misses.clear()
+    _track_rate_net_misses.clear()
+
+
+def _track_rate_net_key(host: str) -> str:
+    """The source network a miss is budgeted against (T-122): IPv4 hosts
+    collapse to their /24, IPv6 hosts to their /64, so a flood spread over
+    many addresses on one network still shares one budget. A host that does
+    not parse as an IP — the `__no_ip_...` placeholder `_get_client_ip`
+    mints when there is no peer, or some other unrecognisable string — gets
+    its own key equal to the raw host: fail closed, one bucket per source
+    rather than one shared by everything unparseable."""
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    prefix = 24 if addr.version == 4 else 64
+    return str(ipaddress.ip_network(f"{host}/{prefix}", strict=False))
+
+
+def _peer_is_private(request: Request) -> bool:
+    """True when the direct TCP peer looks like an unconfigured reverse
+    proxy: loopback, or an RFC-1918/private address (T-121). Used only to
+    decide whether an X-Forwarded-For header is plausibly trustworthy
+    enough to suspend the per-IP miss cap — a public-internet peer's own
+    X-Forwarded-For never does. A peer that fails to parse (no
+    `request.client`, or a host string that isn't a real IP, e.g. a unit
+    test's placeholder client name) counts as NOT private: fail closed."""
+    if request.client is None:
+        return False
+    try:
+        addr = ipaddress.ip_address(request.client.host)
+    except ValueError:
+        return False
+    return addr.is_loopback or addr.is_private
 
 
 def _track_rate_limited(request: Request) -> tuple[str, float] | None:
@@ -1053,32 +1100,44 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     X-Forwarded-For header, `_get_client_ip` cannot unwrap it and every
     visitor collapses onto the proxy's one address — see the module-level
     comment above the caps. That case suspends the per-IP MISS cap alone
-    (no reservation is made for it either); the per-IP CALLS cap and the
-    global miss cap, both keyed on that same collapsed address, still
-    apply exactly as they do for a direct, unproxied install."""
+    (no reservation is made for it either), but only when the direct peer
+    is also plausibly the unconfigured proxy itself — loopback or private,
+    per `_peer_is_private` (T-121) — since otherwise any public-internet
+    client could set its own X-Forwarded-For to buy the same suspension.
+    The per-IP CALLS cap and the per-net miss cap, both keyed on that same
+    collapsed address (T-122: on a collapsed bucket the "network" is the
+    proxy's own /24 or /64, so this is once again a single site-wide
+    budget), still apply exactly as they do for a direct, unproxied
+    install."""
     now = time.monotonic()
     host = _get_client_ip(request)
-    collapsed = not auth_routes._TRUSTED_PROXY_IPS and bool(request.headers.get("X-Forwarded-For"))
+    net = _track_rate_net_key(host)
+    collapsed = (
+        not auth_routes._TRUSTED_PROXY_IPS
+        and bool(request.headers.get("X-Forwarded-For"))
+        and _peer_is_private(request)
+    )
     live = lambda calls: [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]  # noqa: E731
-    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses):
+    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses, _track_rate_net_misses):
         if len(bucket) > _TRACK_RATE_SWEEP_ABOVE:
             for stale in [h for h, calls in bucket.items() if not live(calls)]:
                 del bucket[stale]
     calls = live(_track_rate_ip_calls.get(host, ()))
     misses = live(_track_rate_ip_misses.get(host, ()))
-    _track_rate_global_misses[:] = live(_track_rate_global_misses)
+    net_misses = live(_track_rate_net_misses.get(net, ()))
     if (
         len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP
         or (not collapsed and len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP)
-        or len(_track_rate_global_misses) >= _TRACK_RATE_MAX_MISSES_GLOBAL
+        or len(net_misses) >= _TRACK_RATE_MAX_MISSES_PER_NET
     ):
         return None
     calls.append(now)
     if not collapsed:
         misses.append(now)
+    net_misses.append(now)
     _track_rate_ip_calls[host] = calls
     _track_rate_ip_misses[host] = misses
-    _track_rate_global_misses.append(now)
+    _track_rate_net_misses[net] = net_misses
     return host, now
 
 
@@ -1090,8 +1149,13 @@ def _track_rate_hit(host: str, stamp: float) -> None:
             bucket.remove(stamp)
         if not bucket:
             del _track_rate_ip_misses[host]
-    with contextlib.suppress(ValueError):
-        _track_rate_global_misses.remove(stamp)
+    net = _track_rate_net_key(host)
+    net_bucket = _track_rate_net_misses.get(net)
+    if net_bucket is not None:
+        with contextlib.suppress(ValueError):
+            net_bucket.remove(stamp)
+        if not net_bucket:
+            del _track_rate_net_misses[net]
 
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)

@@ -568,7 +568,7 @@ async def test_public_route_global_cap_holds_across_addresses(async_client, monk
 
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
     aito_routes._reset_track_rate_limits()
     # Three calls fill the global window even though no single IP is near
     # its own cap; the fourth is refused whoever sends it.
@@ -673,7 +673,7 @@ async def test_public_route_collapsed_bucket_still_bounded_by_the_global_cap(asy
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
     aito_routes._reset_track_rate_limits()
     for i in range(3):
         r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
@@ -681,6 +681,95 @@ async def test_public_route_collapsed_bucket_still_bounded_by_the_global_cap(asy
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.9"})
     assert r.status_code == 429
     aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_requires_a_private_peer(async_client, monkeypatch):
+    """T-121: a public-internet peer's own X-Forwarded-For must not suspend
+    the per-IP miss cap — only a peer that plausibly IS the unconfigured
+    proxy (loopback/RFC-1918) may. Without the peer check, a direct install
+    could raise its own ceiling from the 30-miss cap to the 120-call cap for
+    free by sending itself an X-Forwarded-For header."""
+    from httpx import ASGITransport, AsyncClient
+
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+    from backend.app.main import app
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    aito_routes._reset_track_rate_limits()
+    # A real public IP (Python's ipaddress.is_private is True for several
+    # documentation/reserved ranges such as 203.0.113.0/24 used elsewhere in
+    # this file as a stand-in visitor address — 1.2.3.4 is not one of them).
+    transport = ASGITransport(app=app, client=("1.2.3.4", 5555))
+    async with AsyncClient(transport=transport, base_url="http://test") as public_client:
+        for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP):
+            r = await public_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
+            assert r.status_code == 404
+        r = await public_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 429
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_also_accepts_an_rfc1918_peer(async_client, monkeypatch):
+    """The peer check is not loopback-only: an unconfigured proxy on a LAN
+    (an RFC-1918 direct peer) collapses the bucket exactly like one on
+    127.0.0.1 does in the tests above."""
+    from httpx import ASGITransport, AsyncClient
+
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+    from backend.app.main import app
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    aito_routes._reset_track_rate_limits()
+    transport = ASGITransport(app=app, client=("10.0.0.5", 5555))
+    async with AsyncClient(transport=transport, base_url="http://test") as private_client:
+        for i in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
+            r = await private_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
+            assert r.status_code == 404
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("127.0.0.1", True),  # loopback
+        ("10.0.0.5", True),  # RFC-1918
+        ("172.16.0.1", True),  # RFC-1918
+        ("192.168.1.1", True),  # RFC-1918
+        ("8.8.8.8", False),  # public
+        ("93.184.216.34", False),  # public
+        ("::1", True),  # IPv6 loopback
+        ("fd00::1", True),  # IPv6 ULA (private)
+        ("2001:4860:4860::8888", False),  # IPv6 public
+        ("testclient", False),  # unparseable (e.g. a test double) — fail closed
+    ],
+)
+def test_peer_is_private_classifies_loopback_and_private_addresses(host, expected):
+    """Unit-tests `_peer_is_private` directly (T-121). Deliberately avoids
+    203.0.113.0/24 and 2001:db8::/32 (used elsewhere in this file as
+    placeholder "public" visitor addresses): Python's
+    `ipaddress.*.is_private` is True for those documentation/reserved
+    ranges too, so they are not useful public-vs-private fixtures here."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    request = SimpleNamespace(client=SimpleNamespace(host=host))
+    assert aito_routes._peer_is_private(request) is expected
+
+
+def test_peer_is_private_fails_closed_with_no_client():
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    request = SimpleNamespace(client=None)
+    assert aito_routes._peer_is_private(request) is False
 
 
 @pytest.mark.asyncio
@@ -837,7 +926,7 @@ async def test_public_route_hits_never_count_against_the_caps(async_client, db_s
 
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 2)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 2)
     pid = await _create(async_client)
     token = await _token(async_client, db_session, pid)
     aito_routes._reset_track_rate_limits()
@@ -868,7 +957,7 @@ def test_public_route_reserves_the_miss_at_arrival_and_releases_it_on_a_hit(monk
 
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
     aito_routes._reset_track_rate_limits()
     request = SimpleNamespace(client=SimpleNamespace(host="203.0.113.9"), headers={})
     # Three arrivals, none looked up yet: the fourth is already refused.
@@ -888,7 +977,7 @@ async def test_public_route_global_cap_holds_under_concurrent_misses(async_clien
 
     from backend.app.api.routes import aito as aito_routes
 
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_GLOBAL", 3)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
     aito_routes._reset_track_rate_limits()
     codes = [await async_client.get(TRACK + "ZZZZZZ") for _ in range(0)]  # warm nothing
     results = await asyncio.gather(*(async_client.get(TRACK + "ZZZZZZ") for _ in range(12)))
@@ -916,6 +1005,118 @@ async def test_public_route_backstops_a_single_address_whatever_it_sends(async_c
     clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
     assert (await async_client.get(TRACK + token)).status_code == 200
     aito_routes._reset_track_rate_limits()
+
+
+# ── T-122: the miss budget is per source network, not one global bucket ──────
+
+
+@pytest.mark.asyncio
+async def test_public_route_net_cap_isolates_a_flood_from_other_networks(async_client, monkeypatch):
+    """A flood from one /24 must trip only that network's budget: a visitor
+    on an unrelated /24 keeps getting answered while the flood is ongoing —
+    the whole point of T-122 (previously ALL clients 429'd together)."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+    aito_routes._reset_track_rate_limits()
+    # Three misses from 198.51.100.7 fill its /24's budget.
+    for _ in range(3):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "198.51.100.7"})
+        assert r.status_code == 404
+    # A different host on the SAME /24 (198.51.100.0/24) inherits the tripped
+    # budget: no single IP address needs to be the one flooding.
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "198.51.100.8"})
+    assert r.status_code == 429
+    # A visitor on an unrelated network still gets its normal answer.
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "8.8.8.8"})
+    assert r.status_code == 404
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_hit_releases_the_net_reservation(async_client, db_session, monkeypatch):
+    """A real code fetched repeatedly must never trip the net cap: each hit
+    hands its reservation back to the SAME network bucket it was taken
+    from, exactly like the per-IP miss bucket already does."""
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    aito_routes._reset_track_rate_limits()
+    for _ in range(10):
+        assert (await async_client.get(TRACK + token)).status_code == 200
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_net_cap_ipv6_shares_a_slash_64(async_client, monkeypatch):
+    """IPv6 addresses in the same /64 share a budget; a different /64 does
+    not, mirroring the IPv4 /24 behaviour above."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+    aito_routes._reset_track_rate_limits()
+    for _ in range(3):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2001:4860:4860::8888"})
+        assert r.status_code == 404
+    # Same /64 (2001:4860:4860::/64), different address: inherits the cap.
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2001:4860:4860::8844"})
+    assert r.status_code == 429
+    # A different /64 is unaffected.
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2606:4700:4700::1111"})
+    assert r.status_code == 404
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_net_cap_scaled_flood_no_longer_reaches_other_networks(async_client, monkeypatch):
+    """A scaled-down version of the original T-122 flood scenario: 600
+    misses (the real cap, monkeypatched down here) from one /24 must not
+    429 a visitor on a different /24."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 20)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 20)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+    aito_routes._reset_track_rate_limits()
+    for i in range(20):
+        r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"198.51.100.{i}"})
+        assert r.status_code == 404
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "198.51.100.250"})
+    assert r.status_code == 429
+    # An address outside 198.51.100.0/24 was never touched by the flood.
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.42"})
+    assert r.status_code == 404
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("203.0.113.5", "203.0.113.0/24"),
+        ("203.0.113.250", "203.0.113.0/24"),
+        ("2001:4860:4860::8888", "2001:4860:4860::/64"),
+        ("2001:4860:4860::8844", "2001:4860:4860::/64"),
+        ("2606:4700:4700::1111", "2606:4700:4700::/64"),
+        ("testclient", "testclient"),  # unparseable — fail closed to its own bucket
+        ("__no_ip_deadbeef__", "__no_ip_deadbeef__"),  # no-peer placeholder — same
+    ],
+)
+def test_track_rate_net_key(host, expected):
+    from backend.app.api.routes import aito as aito_routes
+
+    assert aito_routes._track_rate_net_key(host) == expected
 
 
 @pytest.mark.asyncio

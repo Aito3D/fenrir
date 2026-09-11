@@ -11905,3 +11905,168 @@ untrusted peer, and a trusted peer with no forwarded header. All pre-existing
 `TestCookieSecureBehindTrustedProxy` tests in `test_mfa_api.py` and all tests in
 `test_security.py` pass unchanged, proving the delegate preserves `_cookie_secure`'s
 exact behavior. User-approved 2026-09-10.
+
+## T-121 — 2026-09-10 — user-approved behavior change
+
+T-087 taught `_track_rate_limited` (`routes/aito.py`) to suspend the per-IP MISS cap
+whenever `auth_routes._TRUSTED_PROXY_IPS` is empty (the default) but the request still
+carries an `X-Forwarded-For` header — presuming that combination means every visitor is
+colliding onto one unconfigured reverse proxy's address. That presumption was never
+checked against who is actually making the request: on a DIRECT install (no proxy at
+all, the same unset `TRUSTED_PROXY_IPS` default), any client could add its own
+`X-Forwarded-For` header to its own request and get the same suspension, raising its own
+per-address ceiling from the 30-miss cap straight to the 120-call cap — four times the
+guessing budget against the 6-character tracking code, for free, with no proxy involved.
+
+Fixed by adding `_peer_is_private(request)` next to `_track_rate_limited`: it returns
+True only when `request.client` is present and `ipaddress.ip_address(request.client.host)`
+parses and is `.is_loopback` or `.is_private` (RFC-1918 and the other ranges Python
+classifies as private) — an address that fails to parse, or `request.client is None`,
+returns False (fail closed). `collapsed` in `_track_rate_limited` now additionally
+requires `_peer_is_private(request)`, alongside the existing empty-`TRUSTED_PROXY_IPS`
+and X-Forwarded-For-present checks. Nothing else in the function changed — the per-IP
+CALLS cap and the global miss cap, both still keyed on the same address, are unaffected,
+and T-122 (landing right after this change, in the same file) budgets the global miss
+cap per network without touching this `collapsed` computation.
+
+User-visible change, quoting the approved finding verbatim: "a deployment whose reverse
+proxy sits on a public IP with TRUSTED_PROXY_IPS still unset would lose the miss-cap
+suspension and could start seeing 429s on /t after 30 bad codes a minute across all its
+visitors, until TRUSTED_PROXY_IPS is configured." The operator fix is the same as
+T-087's: set `TRUSTED_PROXY_IPS` to the proxy's address.
+
+Unaffected: trusted-proxy installs (`TRUSTED_PROXY_IPS` configured — that unwrap path is
+untouched); direct installs with a genuinely private/loopback path to the app (the
+common case — Docker's bridge network, a proxy on `127.0.0.1` or a LAN address, or no
+proxy and no `X-Forwarded-For` header at all) keep exactly T-087's suspended-cap
+behavior; and installs that never receive an `X-Forwarded-For` header are unaffected
+either way, since `collapsed` already required the header to be present.
+
+Tests added to `backend/tests/unit/test_aito_tracking.py`: a public-peer client (a real
+routable address, not `request.client.host`-shaped `TRUSTED_PROXY_IPS` member) sending
+`X-Forwarded-For` with `TRUSTED_PROXY_IPS` empty now 429s on the 31st miss exactly like a
+direct install (the spoof T-121 closes); a private/RFC-1918 direct peer with the same
+setup still collapses the bucket, preserving T-087's behavior for a real unconfigured
+proxy on a LAN address; and a parametrized unit test of `_peer_is_private` covering IPv4
+loopback, RFC-1918, and public addresses, IPv6 loopback/ULA/public addresses, an
+unparseable host string, and `client=None`. All pre-existing collapsed-bucket tests
+(keyed on the test client's loopback peer) pass unmodified. User-approved 2026-09-10.
+
+## T-122 — 2026-09-10 — user-approved behavior change
+
+`_track_rate_limited` (`routes/aito.py`) budgeted its MISS (404) count for the public
+`/t/<code>` tracking page in two tiers: a per-IP cap (30 misses/60s) and a single global
+cap (`_TRACK_RATE_MAX_MISSES_GLOBAL = 600`) shared by every visitor on the internet. The
+global tier existed to stop a guesser spreading requests across many addresses from
+dodging the per-IP cap for free — but because it was ONE bucket, a single unauthenticated
+client sending ~11 bogus codes per second (no auth, no cookies required) could hold that
+bucket at its cap continuously, and `get_tracking()` turns a tripped cap into a 429 for
+EVERY caller, hits included (that "past a tripped cap everything is a 429" rule is
+intentional and unchanged — see below). The result: one flooding source could take the
+public tracking page offline for every real client, on every network, for as long as the
+flood lasted.
+
+Fixed by replacing the single global bucket with a dict of miss lists keyed by the
+visitor's source NETWORK instead of the whole internet: `_track_rate_net_key(host)`
+resolves an IPv4 host to its `/24` and an IPv6 host to its `/64` via
+`ipaddress.ip_network(..., strict=False)`; a host that fails to parse (the `__no_ip_...`
+placeholder `_get_client_ip` mints when there is no peer, or any other unrecognisable
+string) gets its own key equal to the raw host, so it fails closed into its own bucket
+rather than sharing one with every other unparseable host. `_TRACK_RATE_MAX_MISSES_GLOBAL`
+is renamed `_TRACK_RATE_MAX_MISSES_PER_NET`, value unchanged at 600, and is now the cap
+on each network's own bucket. `_track_rate_hit` releases a hit's reservation from the same
+per-network bucket it was reserved in, exactly as it already did for the per-IP bucket.
+The stale-bucket sweep now runs over three dicts (per-IP calls, per-IP misses, per-net
+misses) instead of two. Nothing else changed: the 60s sliding window, the per-IP CALLS
+cap, the per-IP MISS cap, the T-087/T-121 collapsed-bucket detection and its own miss-cap
+suspension, and the "no hits get through a tripped cap" rule are all exactly as they were.
+
+One documented interaction: on a `collapsed` bucket (T-087/T-121 — an unconfigured
+reverse proxy with `TRUSTED_PROXY_IPS` unset, so every visitor's resolved address IS the
+proxy's own address), the visitor's "network" is just the proxy's own `/24` or `/64`, so
+the per-network budget is once again a single site-wide budget for that install — same as
+before this change, for that specific configuration.
+
+User-visible change, quoting the approved finding verbatim: "clients on networks
+unrelated to a flood keep getting answers where they previously got 429s, and a single
+busy /24 can now exhaust its own budget sooner than the old shared 600."
+
+Unaffected: the per-IP CALLS cap (120/60s) and per-IP MISS cap (30/60s); the 60-second
+sliding window; the "everything is a 429 past a tripped cap" rule (still true, just
+scoped to the tripped network's own visitors instead of the whole internet); the
+T-087/T-121 collapsed-bucket detection logic itself (only the bucket it now feeds from
+changed name and shape); and reservation/release semantics (a miss is still reserved at
+arrival and released on a hit).
+
+Tests added to `backend/tests/unit/test_aito_tracking.py`: a flood of misses from one
+`/24` (`198.51.100.0/24`, monkeypatched cap of 3) 429s a different host on the same `/24`
+but leaves a visitor on an unrelated network (`8.8.8.8`) getting its normal 404; a real
+tracking code fetched repeatedly never trips a small net cap, proving hits still release
+their reservation; two IPv6 addresses sharing one `/64` share a budget while a different
+`/64` does not; a scaled-down repeat of the original flood scenario (monkeypatched cap of
+20) confirms an address outside the flooded `/24` is never touched; and a parametrized
+unit test of `_track_rate_net_key` covering IPv4, IPv6, and unparseable-host inputs. The
+five pre-existing tests that drove the old global cap (all from one effective network, so
+still trip the renamed cap identically) were updated to reference
+`_TRACK_RATE_MAX_MISSES_PER_NET` and pass unmodified otherwise. User-approved 2026-09-10.
+
+## T-116 — 2026-09-11 — user-approved behavior change
+
+`oidc_callback` (`routes/mfa.py`) trusted every field of the IdP's discovery document and
+token-endpoint JSON body to be a string, with no `isinstance` guard anywhere between
+`.get(...)` and first use. Three call sites were affected:
+
+- `token_endpoint`/`jwks_uri` from the discovery document were passed straight into
+  `assert_safe_public_https_url()`, whose `urlparse()` call raises `AttributeError` (not
+  `ValueError`) on a non-string value such as a JSON list — the surrounding
+  `except ValueError:` did not catch it.
+- `token_data = json.loads(token_body)` was assumed to be a JSON object; a token endpoint
+  answering 200 with a JSON array or number body made the very next line,
+  `token_data.get("id_token")`, raise `AttributeError`.
+- `discovery.get("issuer", provider.issuer_url).rstrip("/")` assumed the `issuer` field was
+  a string; `"issuer": null` (or a number/list) made `.rstrip()` raise `AttributeError`.
+
+All three exceptions escaped the local `try/except` blocks (where present) and were caught
+only by the outer generic `except Exception` far downstream, which redirects to
+`?oidc_error=internal_error` and logs an "Unexpected error" stack trace — hiding, from both
+the operator and the user, that the provider had returned a malformed document.
+
+Fixed with three surgical, isinstance-first checks, each routed to the existing redirect
+that already covers "this document is unusable" for that stage rather than a new one:
+
+- `token_endpoint`/`jwks_uri`: the existing `if not token_endpoint or not jwks_uri:` guard
+  now also requires `isinstance(..., str)` for both, before either reaches
+  `assert_safe_public_https_url()`. Still → `invalid_discovery_document`.
+- `token_data`: after `json.loads(token_body)` succeeds, a new
+  `if not isinstance(token_data, dict):` check runs before `.get("id_token")` is called.
+  → `token_exchange_bad_response` (the same redirect already used for a non-JSON body).
+- `id_token`: the existing `if not id_token:` guard now also rejects a non-string value
+  (e.g. `{"id_token": ["x"]}"`, which is truthy) — a present-but-wrong-type `id_token` is
+  treated the same as a missing one. Still → `no_id_token`.
+- `issuer`: the value is read into `raw_issuer` and checked with
+  `if not isinstance(raw_issuer, str) or not raw_issuer:` before `.rstrip("/")` runs.
+  → `invalid_discovery_document`. The check stays exactly where the value is first used
+  (after the token exchange, not hoisted earlier), so the state-row deletion / code-exchange
+  sequencing is unchanged.
+
+User-visible change, quoting the approved finding verbatim: "a provider returning a
+malformed discovery or token document now yields the specific 'invalid discovery document'
+[or 'token exchange bad response' / 'no id token'] toast instead of the generic
+internal-error one."
+
+Unaffected: well-formed providers (every field already a string) complete the flow exactly
+as before — see the existing full-success regression tests
+`TestOIDCFallCAutoLinkE2E.test_fall_c_auto_link_links_existing_user_via_callback` and
+`TestOIDCAutoCreateUsername.test_provider_sub_fallback_when_no_claims`, both unmodified and
+still passing; the SSRF guard `assert_safe_public_https_url()` itself (only reached now with
+guaranteed string input, never touched); and the state-row / code-exchange sequencing.
+
+Tests added to `backend/tests/integration/test_mfa_api.py`
+(`TestOIDCMalformedDocumentTypes`, modelled on
+`TestOIDCTokenAndJWKSFetchGuards._setup_provider_and_state`): a discovery document with
+`"token_endpoint": ["https://..."]` (list) → `invalid_discovery_document`, where pre-fix
+`urlparse()` raised `AttributeError` (confirmed directly against `urllib.parse.urlparse`);
+a discovery document with `"issuer": null` and an otherwise-normal token exchange →
+`invalid_discovery_document`; a token endpoint returning the JSON array body `[]` →
+`token_exchange_bad_response`; a token body `{"id_token": ["not-a-string"]}` →
+`no_id_token`. User-approved 2026-09-10.
