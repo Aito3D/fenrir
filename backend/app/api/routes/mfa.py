@@ -41,6 +41,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
+from backend.app.api.routes import auth as auth_routes
 from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
 from backend.app.api.routes.auth import _get_client_ip
 from backend.app.api.routes.settings import get_setting, set_setting
@@ -286,7 +287,19 @@ def _cookie_secure(raw_request: Request) -> bool:
     transmit over HTTPS so the binding cookie can't be intercepted on
     mixed-content deployments; falls back to False on plain HTTP so tests and
     local development still work.
+
+    T-093: ``request.url.scheme`` is the scheme uvicorn saw on its own socket,
+    which is "http" behind a TLS-terminating reverse proxy even when the
+    deployment is HTTPS-only end to end. When the direct TCP peer is in the
+    same trusted-proxy allowlist ``_get_client_ip`` uses (``TRUSTED_PROXY_IPS``),
+    trust that proxy's ``X-Forwarded-Proto`` header instead. The header is
+    ignored -- and the raw socket scheme used -- for any untrusted peer, so an
+    unconfigured or direct-install deployment behaves exactly as before.
     """
+    if raw_request.client and raw_request.client.host in auth_routes._TRUSTED_PROXY_IPS:
+        forwarded_proto = raw_request.headers.get("X-Forwarded-Proto")
+        if forwarded_proto:
+            return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
     return raw_request.url.scheme == "https"
 
 

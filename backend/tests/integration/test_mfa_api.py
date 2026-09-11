@@ -31,7 +31,7 @@ from httpx import AsyncClient
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes import mfa as mfa_module
+from backend.app.api.routes import auth as auth_routes, mfa as mfa_module
 from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.user import User
 
@@ -3765,6 +3765,318 @@ class TestOIDCStateBindingCookie:
         )
 
 
+class TestCookieSecureBehindTrustedProxy:
+    """T-093: `_cookie_secure` must trust `X-Forwarded-Proto` -- instead of
+    always reading `request.url.scheme`, which is the scheme uvicorn saw on
+    its own socket and stays "http" behind a TLS-terminating reverse proxy
+    even on an HTTPS-only deployment -- but only when the direct TCP peer is
+    in the same `TRUSTED_PROXY_IPS` allowlist `_get_client_ip` already uses.
+    Covers both cookies sharing the helper: `2fa_challenge`
+    (`_set_2fa_challenge_cookie`) and `oidc_state` (`oidc_authorize`)."""
+
+    async def _enable_email_otp_and_login(
+        self, client: AsyncClient, db_session: AsyncSession, username: str, password: str
+    ) -> str:
+        """Mirrors TestEmailOTPSendCookieRefresh's helper of the same name:
+        enable auth, create an admin user, then turn on email 2FA for it."""
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(client, username, password)
+
+        result = await db_session.execute(sa_select(User).where(User.username == username))
+        user = result.scalar_one()
+        user.email = f"{username}@example.com"
+        await db_session.commit()
+
+        setup_code = "123456"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username=username,
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+        return token
+
+    @staticmethod
+    def _parse_cookie(headers, name: str):
+        from http.cookies import SimpleCookie
+
+        for raw in headers.get_list("set-cookie"):
+            jar: SimpleCookie = SimpleCookie()
+            jar.load(raw)
+            if name in jar:
+                return jar[name]
+        raise AssertionError(f"no {name} Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
+
+    async def _authorize_with_headers(
+        self, client: AsyncClient, admin_token: str, *, name: str, issuer: str, headers: dict[str, str] | None = None
+    ):
+        """Create an OIDC provider and hit GET /oidc/authorize/{id} with the
+        given extra headers, mirroring TestOIDCStateBindingCookie's
+        _create_provider / _authorize helpers."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        create_resp = await client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": name,
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        fake_discovery = {"issuer": issuer, "authorization_endpoint": f"{issuer}/authorize"}
+        mock_http = AsyncMock()
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            resp = await client.get(f"/api/v1/auth/oidc/authorize/{provider_id}", headers=headers or {})
+        assert resp.status_code == 200, resp.text
+        return resp
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trusted_proxy_with_forwarded_https_marks_both_cookies_secure(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """(a) Direct peer in TRUSTED_PROXY_IPS + X-Forwarded-Proto: https ->
+        both the 2fa_challenge and oidc_state cookies gain Secure, even
+        though this fixture's client talks to the app over plain http."""
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+        admin_token = await self._enable_email_otp_and_login(
+            async_client, db_session, "trustproxysec1", "trustproxysec1a"
+        )
+        login_resp = await async_client.post(
+            LOGIN_URL,
+            json={"username": "trustproxysec1", "password": "Trustproxysec1a!"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        challenge_cookie = self._parse_cookie(login_resp.headers, "2fa_challenge")
+        assert bool(challenge_cookie["secure"]) is True, (
+            "2fa_challenge cookie must be Secure when a trusted proxy forwards https"
+        )
+
+        # The first user created via /auth/setup is the admin; reuse that
+        # token rather than calling _setup_and_login a second time (auth is
+        # already enabled at this point).
+        auth_resp = await self._authorize_with_headers(
+            async_client,
+            admin_token,
+            name="trustproxysecprov",
+            issuer="https://trustproxysec.example.com",
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        assert bool(oidc_cookie["secure"]) is True, (
+            "oidc_state cookie must be Secure when a trusted proxy forwards https"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trusted_proxy_with_explicit_forwarded_http_not_secure(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """(b) Direct peer in TRUSTED_PROXY_IPS but X-Forwarded-Proto is
+        explicitly "http" -> neither cookie gains Secure."""
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+        admin_token = await self._enable_email_otp_and_login(
+            async_client, db_session, "trustproxyhttp1", "trustproxyhttp1a"
+        )
+        login_resp = await async_client.post(
+            LOGIN_URL,
+            json={"username": "trustproxyhttp1", "password": "Trustproxyhttp1a!"},
+            headers={"X-Forwarded-Proto": "http"},
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        challenge_cookie = self._parse_cookie(login_resp.headers, "2fa_challenge")
+        assert bool(challenge_cookie["secure"]) is False, (
+            "2fa_challenge cookie must not be Secure when the forwarded proto is http"
+        )
+
+        auth_resp = await self._authorize_with_headers(
+            async_client,
+            admin_token,
+            name="trustproxyhttpprov",
+            issuer="https://trustproxyhttp.example.com",
+            headers={"X-Forwarded-Proto": "http"},
+        )
+        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        assert bool(oidc_cookie["secure"]) is False, (
+            "oidc_state cookie must not be Secure when the forwarded proto is http"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trusted_proxy_with_no_forwarded_proto_header_not_secure(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """(b) Direct peer in TRUSTED_PROXY_IPS but X-Forwarded-Proto is
+        absent entirely -> falls back to the raw (http) scheme, so neither
+        cookie gains Secure."""
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+        admin_token = await self._enable_email_otp_and_login(
+            async_client, db_session, "trustproxynohdr1", "trustproxynohdr1a"
+        )
+        login_resp = await async_client.post(
+            LOGIN_URL, json={"username": "trustproxynohdr1", "password": "Trustproxynohdr1a!"}
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        challenge_cookie = self._parse_cookie(login_resp.headers, "2fa_challenge")
+        assert bool(challenge_cookie["secure"]) is False, (
+            "2fa_challenge cookie must not be Secure when there is no forwarded-proto header at all"
+        )
+
+        auth_resp = await self._authorize_with_headers(
+            async_client,
+            admin_token,
+            name="trustproxynohdrprov",
+            issuer="https://trustproxynohdr.example.com",
+        )
+        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        assert bool(oidc_cookie["secure"]) is False, (
+            "oidc_state cookie must not be Secure when there is no forwarded-proto header at all"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_untrusted_peer_forwarded_https_header_ignored(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """(c) TRUSTED_PROXY_IPS is empty (no reverse proxy configured, or the
+        direct peer isn't one) -> a client-supplied X-Forwarded-Proto: https
+        must be ignored and the raw socket scheme (http, in this fixture)
+        used instead. This is the existing/default-install behavior and must
+        be unaffected by T-093."""
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset())
+
+        admin_token = await self._enable_email_otp_and_login(async_client, db_session, "untrustedfp1", "untrustedfp1a")
+        login_resp = await async_client.post(
+            LOGIN_URL,
+            json={"username": "untrustedfp1", "password": "Untrustedfp1a!"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        challenge_cookie = self._parse_cookie(login_resp.headers, "2fa_challenge")
+        assert bool(challenge_cookie["secure"]) is False, (
+            "an untrusted peer's X-Forwarded-Proto must not be able to force Secure"
+        )
+
+        auth_resp = await self._authorize_with_headers(
+            async_client,
+            admin_token,
+            name="untrustedfpprov",
+            issuer="https://untrustedfp.example.com",
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        assert bool(oidc_cookie["secure"]) is False, (
+            "an untrusted peer's X-Forwarded-Proto must not be able to force Secure (oidc_state)"
+        )
+
+    def test_cookie_secure_unit_fallback_and_header_parsing(self, monkeypatch):
+        """(d) Unit-level coverage of `_cookie_secure` itself, using a minimal
+        fake request rather than a full HTTP round trip, for edge cases a
+        client-controlled header string can hit: multiple comma-separated
+        hops (only the first/leftmost is trusted -- the proxy's own value),
+        surrounding whitespace/mixed case, and a request with no `client`
+        (transport gave no peer address at all) not crashing and falling
+        back to the raw scheme."""
+
+        class _FakeClient:
+            def __init__(self, host):
+                self.host = host
+
+        class _FakeURL:
+            def __init__(self, scheme):
+                self.scheme = scheme
+
+        class _FakeRequest:
+            def __init__(self, *, client_host, scheme="http", headers=None):
+                self.client = _FakeClient(client_host) if client_host is not None else None
+                self.headers = headers or {}
+                self.url = _FakeURL(scheme)
+
+        monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"10.0.0.1"}))
+
+        # Trusted peer, well-formed header.
+        assert (
+            mfa_module._cookie_secure(
+                _FakeRequest(client_host="10.0.0.1", scheme="http", headers={"X-Forwarded-Proto": "https"})
+            )
+            is True
+        )
+
+        # Trusted peer, multi-hop header: only the first (proxy-added) value counts.
+        assert (
+            mfa_module._cookie_secure(
+                _FakeRequest(client_host="10.0.0.1", scheme="http", headers={"X-Forwarded-Proto": "https, http"})
+            )
+            is True
+        )
+        assert (
+            mfa_module._cookie_secure(
+                _FakeRequest(client_host="10.0.0.1", scheme="https", headers={"X-Forwarded-Proto": "http, https"})
+            )
+            is False
+        )
+
+        # Trusted peer, whitespace/mixed case header.
+        assert (
+            mfa_module._cookie_secure(
+                _FakeRequest(client_host="10.0.0.1", scheme="http", headers={"X-Forwarded-Proto": "  HTTPS  "})
+            )
+            is True
+        )
+
+        # Untrusted peer: header ignored, raw scheme wins either way.
+        assert (
+            mfa_module._cookie_secure(
+                _FakeRequest(client_host="203.0.113.9", scheme="http", headers={"X-Forwarded-Proto": "https"})
+            )
+            is False
+        )
+        assert (
+            mfa_module._cookie_secure(
+                _FakeRequest(client_host="203.0.113.9", scheme="https", headers={"X-Forwarded-Proto": "http"})
+            )
+            is True
+        )
+
+        # No client at all (raw_request.client is None) -- must not crash, falls back to scheme.
+        assert mfa_module._cookie_secure(_FakeRequest(client_host=None, scheme="https")) is True
+        assert mfa_module._cookie_secure(_FakeRequest(client_host=None, scheme="http")) is False
+
+
 # ===========================================================================
 # Test Gap 2: OIDC iss claim mismatch must redirect to token_validation_failed
 # ===========================================================================
@@ -4611,6 +4923,69 @@ class TestOIDCIssuerUrlTrailingSlash:
 
         assert resp.status_code == 502
         assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "discovery_doc",
+        [
+            {"issuer": "https://idp.discovery-missing-authz.example.com", "token_endpoint": "https://x/token"},
+            {
+                "issuer": "https://idp.discovery-missing-authz.example.com",
+                "token_endpoint": "https://x/token",
+                "authorization_endpoint": "",
+            },
+        ],
+        ids=["key-absent", "key-empty-string"],
+    )
+    async def test_discovery_missing_authorization_endpoint_returns_502(
+        self, async_client: AsyncClient, db_session: AsyncSession, discovery_doc: dict
+    ):
+        """A syntactically valid discovery document that omits (or has an
+        empty) ``authorization_endpoint`` must surface as the dedicated 502
+        for that case — not proceed to build an authorize URL with a missing
+        endpoint, and not write an OIDC_STATE row (the raise happens before
+        ``db.add``/``db.commit``).
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy import select as sa_select
+
+        admin_token = await _setup_and_login(async_client, "oidcnoauthzadm", "oidcnoauthzadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DiscoveryMissingAuthz",
+                "issuer_url": "https://idp.discovery-missing-authz.example.com",
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        mock_http = AsyncMock()
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(discovery_doc))
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "OIDC discovery document missing authorization_endpoint"
+
+        # The raise happens before db.add()/db.commit() for the OIDC_STATE
+        # token, so no state row should have been persisted for this provider.
+        result = await db_session.execute(
+            sa_select(AuthEphemeralToken).where(AuthEphemeralToken.provider_id == provider_id)
+        )
+        assert result.scalar_one_or_none() is None, "No OIDC_STATE row should be written when the 502 is raised"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

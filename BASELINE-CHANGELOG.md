@@ -11527,3 +11527,50 @@ the same way; a callback with the matching cookie clears the state check (and fa
 for the same unrelated reason the existing `TestOIDCStateReplay` first call does — no
 mocked IdP behind the fake issuer); and a directly-inserted state row with `challenge_id=None`
 still works with no cookie. User-approved 2026-09-10.
+
+## T-093 — 2026-09-10 — user-approved behavior change
+
+`_cookie_secure(raw_request)` (factored out in T-092, shared by both the `2fa_challenge`
+and `oidc_state` binding cookies) computed `secure` from `raw_request.url.scheme` alone —
+the scheme uvicorn saw on its own socket. The Dockerfile's `uvicorn` CMD passes no
+`--forwarded-allow-ips`, and `docker-compose.yml`'s bridge-networking topology puts a
+reverse proxy in front that is not `127.0.0.1`, so on an HTTPS-only deployment fronted by
+a TLS-terminating proxy, `request.url.scheme` stays `"http"` for every request uvicorn
+receives even though the browser is talking HTTPS end to end — the binding cookies were
+issued without `Secure` despite the deployment being HTTPS-only.
+
+Fixed by resolving the effective scheme from the `X-Forwarded-Proto` header when the
+direct TCP peer is in the existing `_TRUSTED_PROXY_IPS` allowlist (`auth.py`, the same
+gate `_get_client_ip` already uses for `X-Forwarded-For`) — read through the `auth`
+module at call time (`auth_routes._TRUSTED_PROXY_IPS`) so it stays live if a deployment
+sets `TRUSTED_PROXY_IPS` after import. When the peer is trusted, the header's first
+comma-separated value (the proxy's own value; standard `X-Forwarded-Proto` chains prepend
+each proxy's contribution the same way `X-Forwarded-For` appends), lowercased and
+stripped, is compared to `"https"`. An untrusted peer's header is ignored outright and
+`raw_request.url.scheme` is used, exactly as before.
+
+User-visible change, quoting the approved finding verbatim: "on a deployment that fronts
+the app with a trusted proxy but still serves some traffic over plain http://, the
+`2fa_challenge` cookie would gain `Secure` and 2FA login over that http path would begin
+failing with 'Invalid or expired pre-auth token'." This covers both binding cookies that
+share the helper (`2fa_challenge` and `oidc_state`) identically, since both call
+`_cookie_secure`.
+
+Unaffected: direct installs with no reverse proxy, and any installation that has not set
+`TRUSTED_PROXY_IPS`, behave exactly as before (`_TRUSTED_PROXY_IPS` is empty, so the
+membership check is always false and the code falls straight through to
+`raw_request.url.scheme == "https"`). The HSTS header logic in `main.py`, which the
+auditor separately noted also keys on the raw request scheme, is untouched — out of this
+task's scope and left as a lead for a future task. `auth.py` and `_get_client_ip` are
+untouched; only `_cookie_secure`'s body and docstring changed.
+
+New tests added to `test_mfa_api.py` (`TestCookieSecureBehindTrustedProxy`): a trusted
+peer sending `X-Forwarded-Proto: https` marks both the `2fa_challenge` and `oidc_state`
+cookies `Secure`; a trusted peer sending `http` (or no header at all) leaves both cookies
+without `Secure`; an untrusted peer's `X-Forwarded-Proto: https` is ignored (falls back to
+the raw `http` scheme, `Secure` absent) — proving the default/unconfigured-install
+behavior is unaffected; and a unit-level test of `_cookie_secure` itself against a minimal
+fake request covering multi-hop headers (only the first value counts), whitespace/case
+normalization, and a request with no `client` at all (falls back to the raw scheme without
+crashing). All pre-existing `2fa_challenge`/`oidc_state` cookie tests keep passing
+unchanged. User-approved 2026-09-10.
