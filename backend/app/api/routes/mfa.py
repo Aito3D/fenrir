@@ -1837,22 +1837,24 @@ async def _fetch_oidc_discovery(issuer_url: str) -> dict:
     """
     discovery_url = f"{issuer_url.rstrip('/')}/.well-known/openid-configuration"
 
-    async def _do_fetch() -> dict:
-        async with httpx.AsyncClient(timeout=10) as client, client.stream("GET", discovery_url) as resp:
-            resp.raise_for_status()
-            chunks: list[bytes] = []
-            total = 0
-            async for chunk in resp.aiter_bytes():
-                total += len(chunk)
-                if total > _OIDC_DISCOVERY_MAX_BYTES:
-                    raise ValueError("OIDC discovery document too large")
-                chunks.append(chunk)
-            data = json.loads(b"".join(chunks))
-            if not isinstance(data, dict):
-                raise ValueError("OIDC discovery document is not a JSON object")
-            return data
-
-    return await asyncio.wait_for(_do_fetch(), timeout=_OIDC_DISCOVERY_TIMEOUT_S)
+    # T-104: the streamed, byte-capped fetch loop now lives in _bounded_fetch
+    # (below) — this keeps the raise_for_status-before-any-body-read ordering
+    # and the 10s-per-phase / _OIDC_DISCOVERY_TIMEOUT_S-overall timeout split
+    # that are unique to discovery via the client_timeout_s/raise_for_status
+    # keyword args.
+    _, body = await _bounded_fetch(
+        "GET",
+        discovery_url,
+        timeout_s=_OIDC_DISCOVERY_TIMEOUT_S,
+        client_timeout_s=10,
+        max_bytes=_OIDC_DISCOVERY_MAX_BYTES,
+        raise_for_status=True,
+        too_large_message="OIDC discovery document too large",
+    )
+    data = json.loads(body)
+    if not isinstance(data, dict):
+        raise ValueError("OIDC discovery document is not a JSON object")
+    return data
 
 
 # T-089: the token-exchange POST and JWKS GET in oidc_callback had the same
@@ -1871,6 +1873,9 @@ async def _bounded_fetch(
     *,
     timeout_s: float,
     max_bytes: int | None = None,
+    client_timeout_s: float | None = None,
+    raise_for_status: bool = False,
+    too_large_message: str | None = None,
     **kwargs: object,
 ) -> tuple[int, bytes]:
     """Stream *method url* with an overall deadline and a byte cap.
@@ -1881,18 +1886,37 @@ async def _bounded_fetch(
     ``max_bytes`` defaults to ``_OIDC_DISCOVERY_MAX_BYTES``, looked up here
     (rather than bound as a default-argument value) so tests can monkeypatch
     the module attribute the same way they already do for discovery.
+
+    ``client_timeout_s`` is the per-phase (connect/read/write/pool) httpx
+    timeout; it defaults to ``timeout_s`` (today's behaviour for the token and
+    JWKS callers, whose per-phase and overall timeouts already matched — see
+    T-089 below). T-104: discovery uses a smaller per-phase timeout than its
+    overall deadline, so this stays a separate parameter instead of collapsing
+    the two.
+
+    ``raise_for_status``, when true, calls ``resp.raise_for_status()`` right
+    after the stream opens — before any body bytes are read — so a non-2xx
+    response raises ``httpx.HTTPStatusError`` without buffering its body.
+    Defaults to ``False`` to keep the token/JWKS callers' existing
+    "return the raw status code for the caller to check" contract.
     """
     if max_bytes is None:
         max_bytes = _OIDC_DISCOVERY_MAX_BYTES
+    if client_timeout_s is None:
+        client_timeout_s = timeout_s
+    if too_large_message is None:
+        too_large_message = f"{method} {url} response too large"
 
     async def _do_fetch() -> tuple[int, bytes]:
-        async with httpx.AsyncClient(timeout=timeout_s) as client, client.stream(method, url, **kwargs) as resp:
+        async with httpx.AsyncClient(timeout=client_timeout_s) as client, client.stream(method, url, **kwargs) as resp:
+            if raise_for_status:
+                resp.raise_for_status()
             chunks: list[bytes] = []
             total = 0
             async for chunk in resp.aiter_bytes():
                 total += len(chunk)
                 if total > max_bytes:
-                    raise ValueError(f"{method} {url} response too large")
+                    raise ValueError(too_large_message)
                 chunks.append(chunk)
             return resp.status_code, b"".join(chunks)
 

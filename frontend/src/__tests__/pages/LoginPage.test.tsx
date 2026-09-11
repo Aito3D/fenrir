@@ -1470,6 +1470,201 @@ describe('LoginPage', () => {
     });
   });
 
+  // T-108: consumeSavedRememberMe/stashPostLoginRedirect/consumePostLoginRedirect
+  // each wrap their sessionStorage access in try/catch — private-browsing Safari
+  // and quota-exceeded storage both throw synchronously on access. Drive each
+  // helper's failure path by making Storage.prototype throw for just the key(s)
+  // that helper touches (leaving unrelated sessionStorage use, e.g. token
+  // storage, working normally) and assert the page still completes login /
+  // redirect instead of crashing.
+  describe('sessionStorage unavailable (T-108)', () => {
+    const mockUser = {
+      id: 1,
+      username: 'oidcuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    const provider = {
+      id: 42,
+      name: 'FlakyIdP',
+      issuer_url: 'https://flaky.test',
+      client_id: 'c',
+      is_enabled: true,
+      icon_url: null,
+      has_icon: false,
+      email_claim: 'email',
+      require_email_verified: true,
+      auto_create_users: false,
+      auto_link_existing_accounts: false,
+    };
+
+    let originalMatchMedia: typeof window.matchMedia;
+    let getItemSpy: ReturnType<typeof vi.spyOn> | null = null;
+    let setItemSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+    // Throws for the given keys only; passes every other key through to the
+    // real jsdom Storage implementation so e.g. AuthContext's own token
+    // read/write on the same sessionStorage instance keeps working. Spies on
+    // sessionStorage's own prototype (not the global `Storage` class) because
+    // jsdom's storage objects don't share a prototype with the `Storage`
+    // global visible to test code.
+    function throwGetItemFor(...keys: string[]) {
+      const proto = Object.getPrototypeOf(sessionStorage);
+      const realGetItem = proto.getItem;
+      getItemSpy = vi.spyOn(proto, 'getItem').mockImplementation(function (
+        this: Storage,
+        key: string
+      ) {
+        if (keys.includes(key)) {
+          throw new DOMException('Storage access blocked', 'SecurityError');
+        }
+        return realGetItem.call(this, key);
+      });
+    }
+
+    function throwSetItemFor(...keys: string[]) {
+      const proto = Object.getPrototypeOf(sessionStorage);
+      const realSetItem = proto.setItem;
+      setItemSpy = vi.spyOn(proto, 'setItem').mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string
+      ) {
+        if (keys.includes(key)) {
+          throw new DOMException('Storage access blocked', 'SecurityError');
+        }
+        return realSetItem.call(this, key, value);
+      });
+    }
+
+    beforeEach(() => {
+      sessionStorage.clear();
+      mockNavigate.mockClear();
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      // Reduced motion so exitToDashboard() navigates synchronously instead
+      // of behind its 700ms setTimeout — same rationale as the T-102 block.
+      originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => true,
+      })) as typeof window.matchMedia;
+    });
+
+    afterEach(() => {
+      getItemSpy?.mockRestore();
+      setItemSpy?.mockRestore();
+      getItemSpy = null;
+      setItemSpy = null;
+      window.matchMedia = originalMatchMedia;
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      sessionStorage.clear();
+    });
+
+    it('completes the OIDC return trip and falls back to session-only persistence when reading auth_remember_me throws', async () => {
+      throwGetItemFor('auth_remember_me', 'auth_post_login_redirect');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-session-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      // Login still completes and navigates away rather than crashing.
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      });
+      // Remember Me couldn't be read back, so it defaults to false — token
+      // must NOT be persisted to localStorage (session-only, like the
+      // non-Remember-Me case in the "OIDC with Remember Me" block above).
+      expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('consumeSavedRememberMe: sessionStorage unavailable'),
+        expect.anything()
+      );
+    });
+
+    it('redirects to the OIDC provider without crashing when stashing the post-login target throws', async () => {
+      throwSetItemFor('auth_post_login_redirect');
+      window.history.pushState({ usr: { from: { pathname: '/queue', search: '?x=1' } } }, '', '/login');
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([provider])),
+        http.get('/api/v1/auth/oidc/authorize/42', () =>
+          HttpResponse.json({ auth_url: 'https://flaky.test/authorize?state=abc' })
+        )
+      );
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...window.location, href: 'http://localhost:3000/login' },
+      });
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /FlakyIdP/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /FlakyIdP/i }));
+
+      // The provider redirect still happens even though the stash failed.
+      await waitFor(() => {
+        expect(window.location.href).toBe('https://flaky.test/authorize?state=abc');
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('stashPostLoginRedirect: sessionStorage unavailable'),
+        expect.anything()
+      );
+    });
+
+    it('navigates to "/" after password login when there is no router state and reading the post-login stash throws', async () => {
+      throwGetItemFor('auth_post_login_redirect');
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'test-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        ),
+        http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser))
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      });
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('consumePostLoginRedirect: sessionStorage unavailable'),
+        expect.anything()
+      );
+    });
+  });
+
   // #1333: icon proxy — login page renders <img src> from /icon endpoint
   // rather than the upstream icon_url, so the strict img-src CSP holds.
   describe('OIDC icon proxy (#1333)', () => {

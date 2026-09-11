@@ -3787,6 +3787,152 @@ class TestOIDCStateBindingCookie:
             f"a challenge_id=None row (back-compat path) must not require a cookie: {resp.headers.get('location')}"
         )
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success_redirect_clears_binding_cookie(self, async_client: AsyncClient, db_session: AsyncSession):
+        """T-107: the success-path callback must clear the oidc_state binding
+        cookie it just consumed (T-092) -- Set-Cookie: oidc_state=""; Max-Age=0;
+        Path=/api/v1/auth/oidc -- instead of leaving it behind after handing
+        off the exchange token. As a negative control, a callback that fails
+        before the success redirect (invalid_state) must not emit that same
+        deletion cookie at all, since it never reaches the success path."""
+        import urllib.parse
+        from unittest.mock import AsyncMock, MagicMock
+
+        # Negative control: an invalid-state callback carries no oidc_state
+        # cookie of any kind in its response.
+        control = await async_client.get(
+            "/api/v1/auth/oidc/callback?code=x&state=totally-bogus-state-t107",
+            follow_redirects=False,
+        )
+        assert control.status_code == 302
+        assert "invalid_state" in control.headers.get("location", "")
+        for raw in control.headers.get_list("set-cookie"):
+            assert "oidc_state" not in raw, f"invalid_state path must not touch oidc_state cookie, got: {raw}"
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://oidcbindcookie6.example.com"
+        client_id = "oidcbindcookie6-client"
+
+        admin_token = await _setup_and_login(async_client, "oidcbindcookie6adm", "oidcbindcookie6adm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "oidcbindcookie6",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        discovery_doc = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/authorize",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        # Step 1: mint the real state row + binding cookie via /oidc/authorize
+        # (rather than inserting an AuthEphemeralToken row directly), so the
+        # cookie this test is checking the deletion of is actually in play.
+        mock_http = AsyncMock()
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(discovery_doc))
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            auth_resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        assert auth_resp.status_code == 200, auth_resp.text
+
+        binding_cookie = self._parse_oidc_state_cookie(auth_resp.headers)
+        assert binding_cookie.value  # sanity: the binding cookie really was set
+
+        auth_url = auth_resp.json()["auth_url"]
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_url).query))
+        state = query["state"]
+        nonce = query["nonce"]
+
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": "oidc-sub-t107",
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": "oidct107@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+        token_response = {"access_token": "mock-access", "token_type": "Bearer", "id_token": id_token}
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = str(data)
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+            async def aiter_bytes(self):
+                yield json.dumps(self._data).encode()
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                if "jwks" in url:
+                    return _MockResp(jwks_data)
+                return _MockResp(discovery_doc)
+
+            async def post(self, url, **kwargs):
+                return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
+                return _StreamCtx(self.get(url, **kwargs))
+
+        # Step 2: the callback -- async_client's cookie jar already carries
+        # the oidc_state binding cookie the authorize call just set, exactly
+        # like a real browser would send it back.
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-auth-code-t107&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_token=" in location, f"expected the success redirect, got: {location}"
+
+        cleared = self._parse_oidc_state_cookie(callback_resp.headers)
+        assert cleared["path"] == "/api/v1/auth/oidc"
+        assert cleared["max-age"] == "0", (
+            f"success redirect must clear the oidc_state binding cookie (Max-Age=0), got attrs: {cleared}"
+        )
+
 
 class TestCookieSecureBehindTrustedProxy:
     """T-093: `_cookie_secure` must trust `X-Forwarded-Proto` -- instead of
