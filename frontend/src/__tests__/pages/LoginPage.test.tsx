@@ -756,6 +756,125 @@ describe('LoginPage', () => {
         screen.getByText('A 6-digit code has been sent to your email address. It expires in 10 minutes.')
       ).toBeInTheDocument();
     });
+
+    // T-103: verify2FAMutation.onError / onSuccess (unexpected shape) and
+    // sendEmailOTPMutation.onError never had a single test exercising the
+    // toast paths — every prior 2FA test only drove the happy path.
+    describe('failure toasts (T-103)', () => {
+      it('shows the backend detail as an error toast and clears the code field on a rejected code', async () => {
+        mockNavigate.mockClear();
+        setAuthToken(null);
+        sessionStorage.clear();
+        server.use(
+          http.post('/api/v1/auth/2fa/verify', () =>
+            HttpResponse.json({ detail: 'Invalid code' }, { status: 401 })
+          )
+        );
+
+        const user = await loginWith2FA();
+
+        await waitFor(() => {
+          expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeInTheDocument();
+        });
+
+        const codeInput = screen.getByRole('textbox', { name: /Verification Code/i });
+        await user.type(codeInput, '000000');
+        await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+        // Positive evidence: the 401's `detail` string surfaces verbatim as
+        // the error toast (client.ts passes it through as error.message).
+        await waitFor(() => {
+          expect(screen.getByText('Invalid code')).toBeInTheDocument();
+        });
+
+        // The code field is cleared so the user can't resubmit the same
+        // rejected code.
+        await waitFor(() => {
+          expect(screen.getByRole('textbox', { name: /Verification Code/i })).toHaveValue('');
+        });
+        expect(mockNavigate).not.toHaveBeenCalled();
+      });
+
+      it('falls back to the generic invalid-code message when the error has no detail text', async () => {
+        setAuthToken(null);
+        sessionStorage.clear();
+        server.use(
+          http.post('/api/v1/auth/2fa/verify', () =>
+            HttpResponse.json({ detail: '' }, { status: 401 })
+          )
+        );
+
+        const user = await loginWith2FA();
+
+        await waitFor(() => {
+          expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '111111');
+        await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+        await waitFor(() => {
+          expect(screen.getByText('Invalid code. Please try again.')).toBeInTheDocument();
+        });
+      });
+
+      it('shows the login-failed toast and does not navigate when verify succeeds with an unexpected response shape', async () => {
+        mockNavigate.mockClear();
+        setAuthToken(null);
+        sessionStorage.clear();
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        server.use(
+          // Response is missing both access_token and requires_2fa — hits the else branch
+          http.post('/api/v1/auth/2fa/verify', () => HttpResponse.json({}))
+        );
+
+        const user = await loginWith2FA();
+
+        await waitFor(() => {
+          expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '222222');
+        await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+        await waitFor(() => {
+          expect(screen.getByText('Login failed')).toBeInTheDocument();
+        });
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          '2FA verify: unexpected response shape',
+          expect.anything()
+        );
+        expect(mockNavigate).not.toHaveBeenCalled();
+
+        consoleErrorSpy.mockRestore();
+      });
+
+      it('shows the send-code-failed toast when the first email OTP send fails with no detail text', async () => {
+        setAuthToken(null);
+        sessionStorage.clear();
+        server.use(
+          http.post('/api/v1/auth/2fa/email/send', () =>
+            HttpResponse.json({ detail: '' }, { status: 500 })
+          )
+        );
+
+        const user = await loginWith2FA(['email']);
+
+        await waitFor(() => {
+          expect(screen.getByRole('button', { name: /Send Code/i })).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByRole('button', { name: /Send Code/i }));
+
+        await waitFor(() => {
+          expect(screen.getByText('Failed to send verification code')).toBeInTheDocument();
+        });
+
+        expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeDisabled();
+      });
+    });
   });
 
   describe('Remember Me', () => {
@@ -1180,6 +1299,174 @@ describe('LoginPage', () => {
 
       const firstNavigateCall = await waitForFirstNavigateCall();
       expect(firstNavigateCall).toEqual(['/archives', { replace: true }]);
+    });
+  });
+
+  // T-102: T-037 above drives consumePostLoginRedirect() (the read side of the
+  // sessionStorage bridge) by seeding sessionStorage directly. It never
+  // exercises stashPostLoginRedirect() (the write side, triggered by clicking
+  // an OIDC provider button while router state carries a redirect target) —
+  // that write path, and the two ends wired together end-to-end, are covered
+  // here.
+  describe('post-login redirect stash (T-102)', () => {
+    const mockUser = {
+      id: 1,
+      username: 'oidcuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    const provider = {
+      id: 42,
+      name: 'StashIdP',
+      issuer_url: 'https://stash.test',
+      client_id: 'c',
+      is_enabled: true,
+      icon_url: null,
+      has_icon: false,
+      email_claim: 'email',
+      require_email_verified: true,
+      auto_create_users: false,
+      auto_link_existing_accounts: false,
+    };
+
+    let originalMatchMedia: typeof window.matchMedia;
+
+    beforeEach(() => {
+      sessionStorage.clear();
+      mockNavigate.mockClear();
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      // Reduced motion so exitToDashboard() (used by the return-trip tests)
+      // navigates synchronously instead of behind its 700ms setTimeout — same
+      // rationale as the T-037 block above.
+      originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => true,
+      })) as typeof window.matchMedia;
+    });
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      sessionStorage.clear();
+    });
+
+    it('stashes the router-state redirect target before the OIDC provider redirect', async () => {
+      // Mirrors what ProtectedRoute (App.tsx) leaves behind: <Navigate to="/login" state={{ from: location }} />.
+      window.history.pushState(
+        { usr: { from: { pathname: '/queue', search: '?x=1' } } },
+        '',
+        '/login'
+      );
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([provider])),
+        http.get('/api/v1/auth/oidc/authorize/42', () =>
+          HttpResponse.json({ auth_url: 'https://stash.test/authorize?state=abc' })
+        )
+      );
+      // Stub window.location so the OIDC redirect doesn't actually navigate jsdom.
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...window.location, href: 'http://localhost:3000/login' },
+      });
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /StashIdP/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /StashIdP/i }));
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_post_login_redirect')).toBe('/queue?x=1');
+      });
+    });
+
+    it('does not stash an unsafe router-state redirect target before the OIDC provider redirect', async () => {
+      window.history.pushState(
+        { usr: { from: { pathname: '//evil.com', search: '' } } },
+        '',
+        '/login'
+      );
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([provider])),
+        http.get('/api/v1/auth/oidc/authorize/42', () =>
+          HttpResponse.json({ auth_url: 'https://stash.test/authorize?state=abc' })
+        )
+      );
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...window.location, href: 'http://localhost:3000/login' },
+      });
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /StashIdP/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /StashIdP/i }));
+
+      // Wait for the mutation's onSuccess to actually finish (the href write
+      // is its last statement) before asserting the negative, so a bug that
+      // stashes *after* a delay can't race past the assertion.
+      await waitFor(() => {
+        expect(window.location.href).toBe('https://stash.test/authorize?state=abc');
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBeNull();
+    });
+
+    it('honours a stashed redirect target on the OIDC return trip and clears it', async () => {
+      sessionStorage.setItem('auth_post_login_redirect', '/queue?x=1');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+      window.location.hash = '#oidc_token=test-exchange-token';
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/queue?x=1', { replace: true });
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBeNull();
+    });
+
+    it('rejects a tampered stash on the OIDC return trip, falls back to "/", and clears it', async () => {
+      sessionStorage.setItem('auth_post_login_redirect', '//evil.com');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+      window.location.hash = '#oidc_token=test-exchange-token';
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBeNull();
     });
   });
 

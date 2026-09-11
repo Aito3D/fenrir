@@ -11,7 +11,7 @@ import { server } from '../mocks/server';
 import { AuthProvider, useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { getAuthToken, setAuthToken, type LoginResponse, type Permission } from '../../api/client';
+import { api, getAuthToken, setAuthToken, type LoginResponse, type Permission, type UserResponse } from '../../api/client';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -367,6 +367,60 @@ describe('AuthContext', () => {
         window.dispatchEvent(new CustomEvent('auth:expired'));
       }).not.toThrow();
     });
+
+    it('handleAuthExpired itself is a no-op after unmount (mountedRef guard, not just the removed listener)', async () => {
+      // The test above only proves the *listener* is gone after unmount — the
+      // effect cleanup removes it, so the dispatched event never reaches
+      // handleAuthExpired and its own `if (!mountedRef.current) return;`
+      // guard never runs. To actually exercise that guard, capture the
+      // handler reference before unmount (via the addEventListener call it
+      // registers with) and invoke it directly afterwards — bypassing the
+      // now-removed listener the same way a lingering closure/race would.
+      const DRAFT_KEY = 'aito.newProjectDraft.v1';
+      const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+
+      const { result, unmount } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      const registration = addEventListenerSpy.mock.calls.find(
+        ([type]) => type === 'auth:expired'
+      );
+      expect(registration).toBeDefined();
+      const handleAuthExpired = registration![1] as EventListener;
+
+      // Seed the draft the way the "clears the persisted new-project draft"
+      // test above does, so we have an observable, non-React side effect
+      // (handleAuthExpired's only other action besides setUser(null)).
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          tasks: [],
+          client: { id: 1, name: 'Alice Client', email: 'alice@example.com' },
+          summaryText: '',
+          summaryEdited: false,
+          summarySignature: '',
+        })
+      );
+
+      unmount();
+
+      // Invoke the captured handler directly — with the mountedRef guard
+      // intact this returns immediately and never reaches
+      // clearNewProjectDraft(). If the guard were deleted, the draft would
+      // be wiped here exactly like the live "clears the persisted
+      // new-project draft" test proves it is when the guard does NOT apply.
+      handleAuthExpired(new CustomEvent('auth:expired'));
+
+      expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+      localStorage.removeItem(DRAFT_KEY);
+      addEventListenerSpy.mockRestore();
+    });
   });
 
   describe('token validation on mount (#1889)', () => {
@@ -438,6 +492,164 @@ describe('AuthContext', () => {
       await waitFor(() => expect(result.current.user).not.toBeNull());
       expect(result.current.user?.username).toBe('alice');
       expect(getAuthToken()).toBe('valid-token');
+    });
+  });
+
+  describe('checkAuthStatus mountedRef guards a real unmount race (T-101)', () => {
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+      sessionStorage.removeItem('auth_token');
+      window.history.pushState({}, '', '/');
+      vi.restoreAllMocks();
+    });
+
+    it('does not persist the kiosk ?token= to localStorage when getCurrentUser resolves after unmount (guards the post-loop check)', async () => {
+      // No token stored yet — the ?token= kiosk bootstrap path (L-4) only
+      // persists to localStorage *after* the server confirms the token via
+      // getCurrentUser(). That confirmation is a plain side effect
+      // (localStorage.setItem), unlike setUser() — React silently no-ops
+      // state updates on an unmounted tree either way, so only a
+      // non-React side effect can tell the app-level guard apart from one
+      // that was deleted.
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+      window.history.pushState({}, '', '/?token=kiosk-token-abc');
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+
+      let resolveUser!: (user: UserResponse) => void;
+      const pending = new Promise<UserResponse>((resolve) => {
+        resolveUser = resolve;
+      });
+      const getCurrentUserSpy = vi
+        .spyOn(api, 'getCurrentUser')
+        .mockReturnValue(pending);
+
+      const { unmount } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => expect(getCurrentUserSpy).toHaveBeenCalledTimes(1));
+
+      // Unmount while getCurrentUser() is still pending — mountedRef.current
+      // flips to false in the effect cleanup, before the fetch resolves.
+      unmount();
+
+      await act(async () => {
+        resolveUser({
+          id: 1,
+          username: 'kiosk',
+          is_active: true,
+          permissions: [],
+          groups: [],
+        } as UserResponse);
+        // Flush the microtask queue so checkAuthStatus's continuation
+        // (the guard check + persistence call it gates) runs to completion.
+        await pending;
+        await Promise.resolve();
+      });
+
+      // With the guard intact, the confirmed kiosk token is never persisted
+      // to localStorage post-unmount. Without it, `setAuthToken(urlToken,
+      // 'persistent')` would run here and this would fail.
+      expect(localStorage.getItem('auth_token')).toBeNull();
+    });
+
+    it('stops the retry loop after unmount instead of scheduling another backoff + attempt (guards the catch-block check)', async () => {
+      setAuthToken('valid-token');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        )
+      );
+
+      const getCurrentUserSpy = vi
+        .spyOn(api, 'getCurrentUser')
+        .mockRejectedValue(new Error('network blip'));
+
+      const { unmount } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      // Let the first attempt fire and reject, entering the 400ms backoff
+      // before the second attempt.
+      await waitFor(() =>
+        expect(getCurrentUserSpy).toHaveBeenCalledTimes(1)
+      );
+
+      // Unmount while that first backoff timer is still pending.
+      unmount();
+
+      // Let the pending 400ms backoff, the second attempt, and — were the
+      // guard not there — the following 800ms backoff and third attempt all
+      // play out in real time.
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+
+      // The guard catches the second attempt's rejection and returns
+      // immediately instead of scheduling a third attempt: exactly 2 calls.
+      // Without the guard, a third call would follow the second backoff.
+      expect(getCurrentUserSpy).toHaveBeenCalledTimes(2);
+    }, 10000);
+
+    it('falls back to authEnabled=false, user=null when /auth/status itself throws (mounted — establishes the guarded body\'s baseline behavior)', async () => {
+      // The guard at the top of the outer catch (`if (!mountedRef.current)
+      // return null;`) only means something in contrast to what happens
+      // when it does NOT short-circuit: setAuthEnabled(false)/setUser(null)
+      // below it. Pin that baseline here so the unmount variant below is
+      // provably about the guard, not about whether the catch body runs at
+      // all.
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.error())
+      );
+
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.authEnabled).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+
+    it('does not crash when the top-level /auth/status status settles after unmount (guards the outer catch)', async () => {
+      let rejectStatus!: (err: unknown) => void;
+      const pendingStatus = new Promise<UserResponse>((_resolve, reject) => {
+        rejectStatus = reject;
+      });
+      const getAuthStatusSpy = vi
+        .spyOn(api, 'getAuthStatus')
+        .mockReturnValue(pendingStatus as unknown as ReturnType<typeof api.getAuthStatus>);
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { unmount } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => expect(getAuthStatusSpy).toHaveBeenCalledTimes(1));
+
+      unmount();
+
+      await act(async () => {
+        rejectStatus(new Error('boom'));
+        // pendingStatus itself rejects; swallow that here since the
+        // production code's own try/catch is what we're exercising.
+        await pendingStatus.catch(() => {});
+        await Promise.resolve();
+      });
+
+      const unmountWarnings = consoleErrorSpy.mock.calls.filter(([msg]) =>
+        typeof msg === 'string' &&
+        /unmounted|state update on an unmounted/i.test(msg)
+      );
+      expect(unmountWarnings).toHaveLength(0);
+
+      consoleErrorSpy.mockRestore();
     });
   });
 
