@@ -888,6 +888,94 @@ describe('AuthContext', () => {
     });
   });
 
+  describe('permission helpers with auth enabled (T-082)', () => {
+    // Auth enabled, admin user with an EMPTY permission list — proves the
+    // `if (isAdmin) return true` short-circuit inside hasPermission /
+    // hasAnyPermission / hasAllPermissions, distinct from the `if
+    // (!authEnabled) return true` short-circuit covered above and from the
+    // canModify() admin short-circuit covered in T-041.
+    const mockAdmin = () => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'admin',
+            is_active: true,
+            is_admin: true,
+            permissions: [],
+            groups: [],
+          })
+        )
+      );
+    };
+
+    // Negative control: a non-admin user with a narrow permission list, so
+    // the admin case above is proven to be an admin-only short-circuit
+    // rather than a generally permissive default.
+    const mockNonAdmin = (permissions: Permission[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2,
+            username: 'bob',
+            is_active: true,
+            is_admin: false,
+            permissions,
+            groups: [],
+          })
+        )
+      );
+    };
+
+    beforeEach(() => {
+      setAuthToken('valid-token', 'persistent');
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('admin with no permissions granted still passes every check', async () => {
+      mockAdmin();
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(1));
+      expect(result.current.isAdmin).toBe(true);
+
+      expect(result.current.hasPermission('users:delete' as Permission)).toBe(true);
+      expect(
+        result.current.hasAnyPermission('printers:read' as Permission, 'settings:update' as Permission)
+      ).toBe(true);
+      expect(
+        result.current.hasAllPermissions('printers:read' as Permission, 'settings:update' as Permission)
+      ).toBe(true);
+    });
+
+    it('non-admin with a narrow permission list only passes matching checks', async () => {
+      mockNonAdmin(['printers:read' as Permission]);
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.user?.id).toBe(2));
+      expect(result.current.isAdmin).toBe(false);
+
+      expect(result.current.hasPermission('printers:read' as Permission)).toBe(true);
+      expect(result.current.hasPermission('users:delete' as Permission)).toBe(false);
+      expect(
+        result.current.hasAnyPermission('users:delete' as Permission, 'printers:read' as Permission)
+      ).toBe(true);
+      expect(
+        result.current.hasAllPermissions('printers:read' as Permission, 'users:delete' as Permission)
+      ).toBe(false);
+    });
+  });
+
   describe('kiosk ?token= URL bootstrap (L-4 session-fixation defense)', () => {
     beforeEach(() => {
       // No prior session: start with a clean slate and a URL carrying a
