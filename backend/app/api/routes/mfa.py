@@ -295,12 +295,12 @@ def _cookie_secure(raw_request: Request) -> bool:
     trust that proxy's ``X-Forwarded-Proto`` header instead. The header is
     ignored -- and the raw socket scheme used -- for any untrusted peer, so an
     unconfigured or direct-install deployment behaves exactly as before.
+
+    T-120: delegates to ``auth_routes._request_is_https``, which the HSTS
+    response header now also uses, so proxy-scheme detection lives in exactly
+    one place.
     """
-    if raw_request.client and raw_request.client.host in auth_routes._TRUSTED_PROXY_IPS:
-        forwarded_proto = raw_request.headers.get("X-Forwarded-Proto")
-        if forwarded_proto:
-            return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
-    return raw_request.url.scheme == "https"
+    return auth_routes._request_is_https(raw_request)
 
 
 def _oidc_state_cookie_name(state: str) -> str:

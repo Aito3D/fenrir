@@ -1015,6 +1015,102 @@ class TestLoginRateLimiting:
 
 
 # ===========================================================================
+# T-119: unknown-username login must pay the same verify_password() cost as
+# a wrong-password login (username-enumeration timing oracle)
+# ===========================================================================
+
+
+class TestLoginTimingOracle:
+    """login() must call verify_password() exactly once per attempt, whether
+    the username is unknown, exists with the wrong password, or is correct —
+    never zero (the enumeration oracle) and never twice (wasted/asymmetric
+    cost on the wrong-password path).
+
+    ``verify_password`` is imported by name into two modules and each is
+    called from a different call site, so both bindings are patched with the
+    same counting wrapper to get one accurate total:
+      - ``backend.app.core.auth.verify_password``       (authenticate_user())
+      - ``backend.app.api.routes.auth.verify_password``  (login()'s dummy verify)
+    """
+
+    @staticmethod
+    def _patch_verify_password():
+        from backend.app.api.routes import auth as routes_auth_module
+        from backend.app.core import auth as core_auth_module
+
+        real_verify_password = core_auth_module.verify_password
+        call_count = {"n": 0}
+
+        def counting_verify_password(*args, **kwargs):
+            call_count["n"] += 1
+            return real_verify_password(*args, **kwargs)
+
+        return (
+            patch.object(core_auth_module, "verify_password", counting_verify_password),
+            patch.object(routes_auth_module, "verify_password", counting_verify_password),
+            call_count,
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unknown_username_hashes_exactly_once(self, async_client: AsyncClient):
+        await async_client.post(
+            AUTH_SETUP_URL,
+            json={"auth_enabled": True, "admin_username": "oracle_admin", "admin_password": "Oracle_pw123"},
+        )
+
+        patch_core, patch_routes, call_count = self._patch_verify_password()
+        with patch_core, patch_routes:
+            resp = await async_client.post(
+                LOGIN_URL,
+                json={"username": "no_such_user_at_all", "password": "whatever_password"},
+            )
+
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Incorrect username or password"
+        assert call_count["n"] == 1, f"expected exactly one verify_password() call, got {call_count['n']}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_known_user_wrong_password_hashes_exactly_once(self, async_client: AsyncClient):
+        await async_client.post(
+            AUTH_SETUP_URL,
+            json={"auth_enabled": True, "admin_username": "oracle_admin2", "admin_password": "Oracle_pw123"},
+        )
+
+        patch_core, patch_routes, call_count = self._patch_verify_password()
+        with patch_core, patch_routes:
+            resp = await async_client.post(
+                LOGIN_URL,
+                json={"username": "oracle_admin2", "password": "wrong_password_here"},
+            )
+
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Incorrect username or password"
+        assert call_count["n"] == 1, (
+            f"expected exactly one verify_password() call (no double-hash), got {call_count['n']}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_known_user_correct_password_hashes_exactly_once(self, async_client: AsyncClient):
+        await async_client.post(
+            AUTH_SETUP_URL,
+            json={"auth_enabled": True, "admin_username": "oracle_admin3", "admin_password": "Oracle_pw123"},
+        )
+
+        patch_core, patch_routes, call_count = self._patch_verify_password()
+        with patch_core, patch_routes:
+            resp = await async_client.post(
+                LOGIN_URL,
+                json={"username": "oracle_admin3", "password": "Oracle_pw123"},
+            )
+
+        assert resp.status_code == 200
+        assert call_count["n"] == 1, f"expected exactly one verify_password() call, got {call_count['n']}"
+
+
+# ===========================================================================
 # Gap 8: challenge_id cookie binding
 # ===========================================================================
 

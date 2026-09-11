@@ -66,6 +66,51 @@ describe('Auth Token Management', () => {
     expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
   });
 
+  // T-118: a shared-browser scenario where user A ticks Remember Me (token
+  // persisted to localStorage) and closes the tab, then user B signs in
+  // without Remember Me. B's session-scoped login must supersede A's
+  // persisted token, not merely add a session-scoped copy alongside it —
+  // otherwise a freshly opened tab would silently resume A's session.
+  it("setAuthToken('session') with a different token clears a previously persisted token", () => {
+    setAuthToken('remembered-token-A', 'persistent');
+    expect(localStorage.getItem('auth_token')).toBe('remembered-token-A');
+
+    setAuthToken('fresh-token-B', 'session');
+
+    expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
+    expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'fresh-token-B');
+    expect(getAuthToken()).toBe('fresh-token-B');
+  });
+
+  // Chosen semantics (see caller analysis in BASELINE-CHANGELOG.md): the
+  // localStorage entry is cleared on every session-scoped call, with no
+  // same-token exception. No caller relies on a session-scoped call
+  // preserving an existing persisted token for the same token value, so the
+  // simpler unconditional-clear behavior was kept rather than adding a
+  // token-comparison special case.
+  it("setAuthToken('session') clears localStorage even when reusing the same token value that was persisted", () => {
+    setAuthToken('same-token', 'persistent');
+    expect(localStorage.getItem('auth_token')).toBe('same-token');
+
+    setAuthToken('same-token', 'session');
+
+    expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'same-token');
+    expect(getAuthToken()).toBe('same-token');
+  });
+
+  it("setAuthToken('persistent') followed by another 'persistent' call updates localStorage", () => {
+    setAuthToken('first-token', 'persistent');
+    expect(localStorage.getItem('auth_token')).toBe('first-token');
+
+    setAuthToken('second-token', 'persistent');
+
+    expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'second-token');
+    expect(localStorage.getItem('auth_token')).toBe('second-token');
+    expect(getAuthToken()).toBe('second-token');
+  });
+
   it('setAuthToken(null) removes from both storages regardless of previous persistence', () => {
     setAuthToken('some-token', 'persistent');
     vi.mocked(localStorage.setItem).mockClear();

@@ -11791,3 +11791,117 @@ production fix and re-running this test in isolation confirmed it returns HTTP 2
 valid `access_token` today, proving bug 2 above is real). All pre-existing LDAP/login tests
 in the same file and in `test_auth_api.py` pass unchanged (69 passed, up from 67 before
 this change). User-approved 2026-09-10.
+
+## T-118 — 2026-09-10 — user-approved behavior change
+
+`setAuthToken(token, persistence)` in `frontend/src/api/client.ts` always writes/removes the
+`sessionStorage` copy of the token, but only touched `localStorage` on a `'persistent'` call
+(write) or a `null` call (remove) — a `'session'` call left any *previously persisted*
+`localStorage` token untouched. Module init reads
+`sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token')`, so on a shared
+browser: user A signs in with Remember Me (token persisted to `localStorage`) and closes the
+tab; user B then signs in *without* Remember Me, which only ever writes `sessionStorage`. A's
+token is still sitting in `localStorage`. Any freshly opened tab on that browser (no
+`sessionStorage` entry of its own) falls through to `localStorage` and silently resumes A's
+session — and B "signing out" by closing the tab hands the browser straight back to A's live
+session and permissions, not a logged-out state.
+
+Caller analysis (`rg -n "setAuthToken\(" frontend/src --glob '!__tests__'`): every call site
+that passes an explicit `persistence` was checked for the one variant that could regress —
+a `'session'` call reusing a token whose persisted copy the caller wants kept:
+- `AuthContext.tsx`'s kiosk `?token=` bootstrap calls `setAuthToken(urlToken, 'session')`
+  only inside `if (!hadStoredToken)` (i.e. only when `getAuthToken()` — the in-memory value
+  seeded from `sessionStorage ?? localStorage` at module init — was already `null`). When a
+  kiosk token is already persisted from a prior confirmed session, `hadStoredToken` is
+  `true` and this branch never runs, so it never collides with an existing persisted token.
+- The kiosk token is later promoted with `setAuthToken(urlToken, 'persistent')` only after
+  `/auth/me` confirms it — a `'persistent'` call, unaffected by this change.
+- `login()` / `loginWithToken()` (`AuthContext.tsx`, called from `LoginPage.tsx`) always pass
+  the caller-chosen `persistence` for a *brand-new* sign-in — exactly the case this fix is
+  meant to affect: a fresh sign-in without Remember Me should supersede whatever was
+  persisted by an earlier sign-in on the same browser.
+- `logout()` and the 401-handler in `client.ts`'s `request()` call `setAuthToken(null)`,
+  already unconditionally clearing both storages — unaffected.
+No caller was found that relies on a `'session'` call preserving an existing `localStorage`
+token (same or different value), so the minimal fix — unconditionally clearing the
+`localStorage` entry in the `'session'` branch, with no same-token special case — fully closes
+the finding without special-casing any call site.
+
+Fixed by adding an `else { localStorage.removeItem('auth_token'); }` branch alongside the
+existing `'persistent'` write in `setAuthToken()`'s `localStorage` block, so a `'session'`
+call now always removes any stale `localStorage` entry (whether from Remember Me or an
+earlier kiosk session) in addition to writing the new token to `sessionStorage`.
+
+User-visible change, in the auditor's words: "a user who previously ticked Remember Me and
+then signs in again without ticking it will no longer be silently signed back in after
+closing the tab — the remembered session is dropped at that second sign-in."
+
+Unaffected: `'persistent'` logins (Remember Me, and the confirmed kiosk `?token=` bootstrap)
+still write to `localStorage` exactly as before; `logout()` and 401-driven token clearing
+(`setAuthToken(null)`) already cleared both storages unconditionally; the kiosk `?token=`
+bootstrap's session-fixation defense (only adopting the URL token when no token is already
+stored, T-052) is untouched since that path never collides with an existing persisted token
+per the caller analysis above.
+
+Tests added in `frontend/src/__tests__/api/client.test.ts`: a persistent login followed by a
+session login with a *different* token asserts `localStorage` is cleared and `sessionStorage`
+holds the new token; a persistent login followed by a session login reusing the *same* token
+value asserts `localStorage` is still cleared (documents the chosen no-same-token-exception
+semantics from the caller analysis); a persistent login followed by another persistent login
+asserts `localStorage` is updated to the new value. The pre-existing
+`setAuthToken(null) removes from both storages...` test and all other tests in the file pass
+unchanged (26 passed, up from 23 before this change).
+`frontend/src/__tests__/contexts/AuthContext.test.tsx` (including the `token validation on
+mount (#1889)` and kiosk-bootstrap/T-052/T-101 describe blocks) and
+`frontend/src/__tests__/pages/LoginPage.test.tsx` pass unchanged (49 and 71 passed
+respectively). User-approved 2026-09-10.
+
+## T-120 — 2026-09-10 — user-approved behavior change
+
+`security_headers_middleware()` (`main.py`) keyed `Strict-Transport-Security` off
+`request.url.scheme` alone — the scheme uvicorn saw on its own socket. Exactly like the
+`_cookie_secure` binding-cookie gap T-093 fixed, that scheme stays `"http"` behind a
+TLS-terminating reverse proxy even on an HTTPS-only deployment, so the deployments that
+most need HSTS (login credentials, the public `/t` tracking pages) never received the
+header at all.
+
+Fixed by moving the proxy-aware scheme decision out of `mfa.py` into a new module-level
+function in `auth.py`, `_request_is_https(request)`, holding the exact same logic
+`_cookie_secure` used: when the direct TCP peer is in `_TRUSTED_PROXY_IPS` (the same
+allowlist `_get_client_ip` and `_cookie_secure` already gate on) and the request carries
+an `X-Forwarded-Proto` header, its first comma-separated value (stripped and lowercased)
+decides the scheme; otherwise the raw `request.url.scheme` is used, exactly as before.
+`mfa._cookie_secure` now delegates to it (`return auth_routes._request_is_https(raw_request)`),
+so both the auth-binding-cookie `Secure` flag and the HSTS header share one proxy-scheme
+helper instead of two independent (and, until now, divergent) implementations.
+`security_headers_middleware` calls `auth._request_is_https(request)` in place of the old
+`request.url.scheme == "https"` check; the emitted header value
+(`max-age=31536000; includeSubDomains`) is unchanged.
+
+User-visible change, quoting the approved finding verbatim: "browsers reaching a proxied
+HTTPS deployment will start pinning it to HTTPS for a year, so an operator who later
+downgrades that hostname to plain http will find it unreachable until the pin expires or
+is cleared." This only takes effect on deployments that both set `TRUSTED_PROXY_IPS` to
+include their proxy's address and have that proxy forward `X-Forwarded-Proto: https`.
+
+Unaffected: direct installs with no reverse proxy, and any installation that has not set
+`TRUSTED_PROXY_IPS`, behave exactly as before (`_TRUSTED_PROXY_IPS` is empty, so the
+membership check is always false and the code falls straight through to
+`request.url.scheme == "https"`, matching today's HSTS behavior exactly). The
+`Strict-Transport-Security` header value itself is unchanged. The cookie `Secure` flag's
+existing behavior (T-092/T-093) is unchanged — `_cookie_secure` now calls through to
+`_request_is_https` but computes the identical result for every input, proven by the
+pre-existing `TestCookieSecureBehindTrustedProxy` tests passing unmodified.
+
+Tests added to `backend/tests/integration/test_security_headers.py`: a trusted peer
+sending `X-Forwarded-Proto: https` gets the HSTS header on a plain-http test request; a
+trusted peer sending `http` (or no header at all) does not; an untrusted peer's
+`X-Forwarded-Proto: https` is ignored (empty `TRUSTED_PROXY_IPS` allowlist, header
+disregarded); a direct plain-http request with no proxy config gets no header (today's
+behavior, unchanged); and a `TestRequestIsHttpsUnit` class unit-tests `_request_is_https`
+directly against a minimal fake request, covering multi-hop `X-Forwarded-Proto` values
+(first value wins), whitespace/case normalization, a request with `client=None`, an
+untrusted peer, and a trusted peer with no forwarded header. All pre-existing
+`TestCookieSecureBehindTrustedProxy` tests in `test_mfa_api.py` and all tests in
+`test_security.py` pass unchanged, proving the delegate preserves `_cookie_secure`'s
+exact behavior. User-approved 2026-09-10.

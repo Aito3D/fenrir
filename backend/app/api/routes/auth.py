@@ -36,6 +36,7 @@ from backend.app.core.auth import (
     resolve_session_max_minutes,
     revoke_jti,
     security,
+    verify_password,
 )
 from backend.app.core.database import async_session, get_db
 from backend.app.core.oidc_env import env_bool
@@ -82,6 +83,16 @@ _logger = logging.getLogger(__name__)
 # this bounds is the request: the client gets a response after this many
 # seconds instead of hanging until the browser times out.
 _LDAP_BIND_TIMEOUT_S = 15.0
+
+# T-119: authenticate_user() only calls verify_password() (pbkdf2_sha256,
+# ~3ms in this venv) when a *local* username match exists — an unknown
+# username short-circuits before hashing ever runs, so a failed login's
+# response time leaks whether the username exists. Hashing a fixed random
+# secret once at import time (the plaintext is discarded immediately) gives
+# login() a constant-cost dummy verify to spend on that path so its timing
+# matches the wrong-password path. One-time cost: this hash runs once per
+# process start (including in tests), not per request.
+_DUMMY_PASSWORD_HASH = get_password_hash(secrets.token_urlsafe(32))
 
 
 def _user_to_response(user: User) -> UserResponse:
@@ -170,6 +181,28 @@ def _local_login_env_bypass() -> bool:
     # never raise -- a 500 on the recovery endpoint is the opposite of what this
     # bypass is for.
     return env_bool("BAMBUDDY_LOCAL_LOGIN", False, strict=False)
+
+
+def _request_is_https(request: Request) -> bool:
+    """Whether ``request`` was made over HTTPS, trusting a proxy's header when safe.
+
+    ``request.url.scheme`` is the scheme uvicorn saw on its own socket, which is
+    "http" behind a TLS-terminating reverse proxy even when the deployment is
+    HTTPS-only end to end. When the direct TCP peer is in the trusted-proxy
+    allowlist ``_get_client_ip`` uses (``TRUSTED_PROXY_IPS``), trust that proxy's
+    ``X-Forwarded-Proto`` header instead. The header is ignored -- and the raw
+    socket scheme used -- for any untrusted peer, so an unconfigured or
+    direct-install deployment behaves exactly as before.
+
+    Shared by the auth-binding cookie ``Secure`` flag (``mfa._cookie_secure``)
+    and the HSTS response header so proxy-scheme detection lives in exactly one
+    place.
+    """
+    if request.client and request.client.host in _TRUSTED_PROXY_IPS:
+        forwarded_proto = request.headers.get("X-Forwarded-Proto")
+        if forwarded_proto:
+            return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
+    return request.url.scheme == "https"
 
 
 def _get_client_ip(request: Request) -> str:
@@ -571,6 +604,17 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             user = await authenticate_user_by_email(db, request.username, request.password)
 
     if not user:
+        if ldap_user is None:
+            # T-119: authenticate_user() never reached verify_password() when
+            # no local account matches this username at all, so pay an
+            # equivalent dummy hash here to close the enumeration oracle.
+            # Skip it when a local user WAS found — the wrong-password /
+            # inactive-account paths already paid a real verify_password()
+            # cost inside authenticate_user(), and hashing again there would
+            # reintroduce a (smaller) timing gap in the other direction.
+            username_lookup = await get_user_by_username(db, request.username)
+            if username_lookup is None:
+                verify_password(request.password, _DUMMY_PASSWORD_HASH)
         await record_failed_attempt(db, request.username, event_type=EventType.LOGIN_ATTEMPT)
         await record_failed_attempt(db, client_ip, event_type=EventType.LOGIN_IP)
         # Same generic 401 either way — never tell the client whether the

@@ -55,6 +55,13 @@ export function setAuthToken(token: string | null, persistence: TokenPersistence
       localStorage.removeItem('auth_token');
     } else if (persistence === 'persistent') {
       localStorage.setItem('auth_token', token);
+    } else {
+      // T-118: a session-scoped login must supersede any token a *previous*
+      // user left persisted here via Remember Me. On a shared browser, if
+      // user A ticked Remember Me and closed the tab, then user B signs in
+      // without ticking it, leaving A's token in localStorage would let any
+      // freshly opened tab silently resume A's session (and permissions).
+      localStorage.removeItem('auth_token');
     }
   } catch (err) {
     console.warn('setAuthToken: localStorage operation failed', err);

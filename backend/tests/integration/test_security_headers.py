@@ -306,3 +306,149 @@ async def test_pwa_bootstrap_routes_accept_head(async_client: AsyncClient, path:
     # 200 if static asset is present in the test environment, 404 if it's
     # not packaged in this checkout — but never 405.
     assert resp.status_code != 405, f"HEAD {path} returned 405 — route must accept HEAD as well as GET"
+
+
+# ─── T-120: HSTS must be sent behind a trusted TLS-terminating proxy ─────
+#
+# `security_headers_middleware` used to key `Strict-Transport-Security` off
+# `request.url.scheme`, which is the scheme uvicorn saw on its own socket —
+# always "http" behind a TLS-terminating reverse proxy even on an
+# HTTPS-only deployment. It now shares `auth_routes._request_is_https` with
+# `mfa._cookie_secure` (T-093), so the same trusted-proxy allowlist governs
+# both the auth-cookie Secure flag and this header.
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hsts_sent_when_trusted_proxy_forwards_https(async_client: AsyncClient, monkeypatch):
+    """Direct peer in TRUSTED_PROXY_IPS + X-Forwarded-Proto: https -> HSTS is
+    emitted even though this test client talks to the app over plain http."""
+    from backend.app.api.routes import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+    resp = await async_client.get("/api/v1/auth/status", headers={"X-Forwarded-Proto": "https"})
+    assert resp.headers.get("Strict-Transport-Security") == "max-age=31536000; includeSubDomains"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hsts_absent_when_trusted_proxy_forwards_http(async_client: AsyncClient, monkeypatch):
+    """Trusted peer but X-Forwarded-Proto: http -> no HSTS."""
+    from backend.app.api.routes import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+    resp = await async_client.get("/api/v1/auth/status", headers={"X-Forwarded-Proto": "http"})
+    assert "Strict-Transport-Security" not in resp.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hsts_absent_when_trusted_proxy_sends_no_forwarded_header(async_client: AsyncClient, monkeypatch):
+    """Trusted peer but no X-Forwarded-Proto header at all -> falls back to
+    the raw (plain-http) socket scheme, so no HSTS."""
+    from backend.app.api.routes import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+
+    resp = await async_client.get("/api/v1/auth/status")
+    assert "Strict-Transport-Security" not in resp.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hsts_ignores_forwarded_header_from_untrusted_peer(async_client: AsyncClient, monkeypatch):
+    """Empty allowlist -> the request's own peer is never trusted, so an
+    X-Forwarded-Proto: https header from it is ignored and no HSTS is sent."""
+    from backend.app.api.routes import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset())
+
+    resp = await async_client.get("/api/v1/auth/status", headers={"X-Forwarded-Proto": "https"})
+    assert "Strict-Transport-Security" not in resp.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hsts_absent_on_plain_direct_request(async_client: AsyncClient, monkeypatch):
+    """Today's behaviour, unchanged: a direct plain-http request (no proxy
+    config at all) never gets HSTS."""
+    from backend.app.api.routes import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset())
+
+    resp = await async_client.get("/api/v1/auth/status")
+    assert "Strict-Transport-Security" not in resp.headers
+
+
+class _FakeClient:
+    def __init__(self, host):
+        self.host = host
+
+
+class _FakeURL:
+    def __init__(self, scheme):
+        self.scheme = scheme
+
+
+class _FakeRequest:
+    """Minimal stand-in for a Starlette ``Request`` -- ``_request_is_https``
+    only touches ``.client.host``, ``.headers`` and ``.url.scheme``."""
+
+    def __init__(self, *, client_host, headers=None, scheme="http"):
+        self.client = _FakeClient(client_host) if client_host is not None else None
+        self.headers = headers or {}
+        self.url = _FakeURL(scheme)
+
+
+class TestRequestIsHttpsUnit:
+    """Unit tests for `_request_is_https` in isolation, without going through
+    the ASGI stack (complements the integration tests above and mirrors the
+    coverage `TestCookieSecureBehindTrustedProxy` gives the identical
+    logic it now delegates to)."""
+
+    def test_multi_hop_forwarded_proto_uses_first_value(self, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1"}))
+        request = _FakeRequest(client_host="127.0.0.1", headers={"X-Forwarded-Proto": "https, http"}, scheme="http")
+        assert auth_module._request_is_https(request) is True
+
+    def test_multi_hop_forwarded_proto_first_value_http(self, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1"}))
+        request = _FakeRequest(client_host="127.0.0.1", headers={"X-Forwarded-Proto": "http, https"}, scheme="http")
+        assert auth_module._request_is_https(request) is False
+
+    def test_whitespace_and_case_normalized(self, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1"}))
+        request = _FakeRequest(client_host="127.0.0.1", headers={"X-Forwarded-Proto": "  HTTPS  "}, scheme="http")
+        assert auth_module._request_is_https(request) is True
+
+    def test_client_none_falls_back_to_url_scheme(self, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1"}))
+        request = _FakeRequest(client_host=None, headers={"X-Forwarded-Proto": "https"}, scheme="https")
+        assert auth_module._request_is_https(request) is True
+
+        request_http = _FakeRequest(client_host=None, headers={"X-Forwarded-Proto": "https"}, scheme="http")
+        assert auth_module._request_is_https(request_http) is False
+
+    def test_untrusted_peer_falls_back_to_url_scheme(self, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset())
+        request = _FakeRequest(client_host="127.0.0.1", headers={"X-Forwarded-Proto": "https"}, scheme="http")
+        assert auth_module._request_is_https(request) is False
+
+    def test_no_forwarded_header_falls_back_to_url_scheme(self, monkeypatch):
+        from backend.app.api.routes import auth as auth_module
+
+        monkeypatch.setattr(auth_module, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1"}))
+        request = _FakeRequest(client_host="127.0.0.1", headers={}, scheme="https")
+        assert auth_module._request_is_https(request) is True
