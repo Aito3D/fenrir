@@ -11633,3 +11633,161 @@ present) is still rejected as `invalid_state` with its state row consumed; and, 
 success-path mocking (discovery, JWKS, token exchange), completing one flow's callback
 deletes only that flow's own cookie on the success redirect — the other flow's cookie and
 still-live state row are left untouched. User-approved 2026-09-10.
+
+## T-112 — 2026-09-10 — user-approved behavior change
+
+The OIDC token-exchange success path (`frontend/src/pages/LoginPage.tsx`, the
+`#oidc_token=...` fragment handler) never set `loginInFlightRef.current = true` before
+calling `api.exchangeOIDCToken(...)`, unlike `handleSubmit`'s password-login path, which
+sets it before `loginMutation.mutate()`. `loginWithToken()` sets `user` synchronously, and
+`step` is still `'credentials'` at that point (the OIDC success branch never touches
+`step`), so the #1889 already-authenticated effect (`if (!loading && user && step ===
+'credentials' && !loginInFlightRef.current) navigate('/', { replace: true })`) fired on the
+very next render and raced `exitToDashboard(resolvePostLoginRedirect())`'s own navigate.
+`resolvePostLoginRedirect()` had already consumed and removed the sessionStorage stash by
+then, so the extra `navigate('/', ...)` call landed after (or interleaved with)
+`exitToDashboard`'s call to the real target, and the unmount cleanup for the pending
+700ms exit-animation timer made the outcome timing-sensitive.
+
+Fixed by holding `loginInFlightRef.current = true` across the exchange, mirroring
+`handleSubmit`'s policy exactly: set it immediately before `api.exchangeOIDCToken(...)`,
+and clear it back to `false` in the two branches that leave `step` at `'credentials'`
+without navigating anywhere useful — the malformed-response `else` branch and the
+`.catch` branch — the same way `loginMutation`'s `onError` clears it for the password
+path. The `requires_2fa` branch and the success (`access_token && user`) branch leave it
+`true`, again matching the password path (`step` becomes `'2fa'` in one case, and
+`exitToDashboard` owns the navigation in the other, so the #1889 effect never needs to
+fire in either).
+
+User-visible change, in the auditor's words: "unlike `handleSubmit`, this path never sets
+`loginInFlightRef.current = true`, and `step` is still `'credentials'`, so the #1889
+effect... fires on the very next render. `resolvePostLoginRedirect()` has already
+consumed and removed the sessionStorage stash, and the unmount cleanup clears the 700 ms
+exit timer, so a user who was bounced to /login from a protected page and signed in with
+SSO is dropped on the dashboard instead of the page they asked for, after a truncated exit
+animation." After this fix, the browser lands on the page the user was originally trying
+to reach rather than the dashboard.
+
+Unaffected: the password-login path (`handleSubmit` / `loginMutation`) is untouched — it
+already set and cleared this ref correctly. The 2FA step (`verify2FAMutation`'s own
+`loginWithToken` + `exitToDashboard` call) is untouched — `step` is `'2fa'` by the time
+that mutation resolves, so the #1889 effect's `step === 'credentials'` guard already
+excluded it regardless of this ref. OIDC exchange failures (`oidc_error` query param, a
+thrown/rejected exchange, or a malformed 2xx response) are untouched in outcome — they
+still show the same error toast and `navigate('/login', { replace: true })`; only the
+ref-clearing was added so a later, unrelated already-authenticated bounce in the same
+mount still works afterwards instead of being permanently blocked.
+
+Two tests added in `frontend/src/__tests__/pages/LoginPage.test.tsx` (in the "post-login
+redirect stash (T-102)" describe): one drives the OIDC return trip with a seeded stash and
+asserts `mockNavigate` was called exactly once, with the stashed target, and never with
+`'/'`; a companion seeds a live session (`setAuthToken` + a mocked `/auth/me`) alongside a
+failing `/oidc/exchange` (401) and asserts the failure's own `navigate('/login', ...)`
+fires and, afterwards, the already-authenticated effect still redirects to `'/'` — proving
+the guard is cleared on failure rather than left stuck. All pre-existing OIDC/2FA/stash
+tests in the same file pass unchanged. User-approved 2026-09-10.
+
+## T-113 — 2026-09-10 — user-approved behavior change
+
+The `#1589` autologin effect (`frontend/src/pages/LoginPage.tsx`) gated only on
+`autologinAttemptedRef`, `?fallback=local`, and the OIDC return-trip hash/query, never on
+whether the visitor already had a valid session. It also never tracked whether the
+component was still mounted, and never cleared the 5s `setTimeout` behind its
+`Promise.race` timeout guard. In the auditor's words: "An already-signed-in visitor who
+opens /login on an autologin install triggers both this effect and the #1889 effect: the
+SPA navigates to the dashboard, then a second or two later the pending authorize URL
+arrives and `window.location.href` yanks the whole browser out of the dashboard back to
+the identity provider. The 5 s `setTimeout` behind `timeoutPromise` is also never cleared,
+so it stays armed after the component is gone."
+
+Fixed by adding `if (loading || user) return;` at the top of the effect, before
+`autologinAttemptedRef.current` is ever set, and adding `loading` and `user` to the effect's
+dependency array. While `loading` is true the auth state is unknown, so the effect now
+waits rather than marking itself "attempted", and re-runs once `loading` resolves; once
+`user` is set, the effect returns without ever fetching an authorize URL or arming the
+timeout. This dependency-array change does not cancel a legitimate in-flight redirect: the
+new `loading` gate means the fetch and timer are never started until `loading` is already
+false, so a `loading` transition can never interrupt them, and the cleanup only runs on
+unmount or a genuine dependency change while the effect is armed. Separately, the effect
+now tracks a local `cancelled` flag and the `setTimeout` timer id in its closure, and
+returns a cleanup that sets `cancelled = true` and calls `clearTimeout(timer)`; the `.then`
+and `.catch` handlers both check `cancelled` before touching `window.location.href` or
+calling `setAutologinFailed`, so neither can act after the effect has been torn down.
+
+User-visible change, in the auditor's words: "a visitor who already has a valid session
+will no longer be sent through the identity provider when they open /login on an autologin
+install."
+
+Unaffected: signed-out visitors on an autologin install still redirect to the provider's
+authorize URL exactly as before (all pre-existing T-074 tests pass unchanged); the
+`?fallback=local` bypass and the OIDC return trip (`#oidc_token=`, `?oidc_error=`) are
+untouched; the 5s timeout-then-banner failure path for a signed-out visitor is untouched.
+
+Three tests added in `frontend/src/__tests__/pages/LoginPage.test.tsx` (in the "autologin
+redirect to SSO provider (T-074)" describe): one seeds a live session (`setAuthToken` + a
+mocked `/auth/me`) alongside an autologin-enabled `/advanced-auth/status` and asserts the
+OIDC authorize endpoint is never called while the #1889 effect still navigates to `'/'`; a
+second unmounts the component before a controlled authorize-fetch promise resolves and
+asserts `window.location.href` is never assigned after the promise resolves post-unmount; a
+third unmounts the component while the 5s race is pending and asserts the effect's cleanup
+calls `clearTimeout` on its own timer. All pre-existing autologin tests in the same file
+pass unchanged. User-approved 2026-09-10.
+
+## T-114 — 2026-09-10 — user-approved behavior change
+
+`login()` in `backend/app/api/routes/auth.py` wraps its LDAP bind/provision/sync path in a
+single broad `except Exception as e: ... ldap_user = None`. That block runs
+`_provision_ldap_user` / `_sync_ldap_user` / `ensure_user_finance_defaults`, all of which
+flush and commit against the request's `AsyncSession`. When one of those commits fails
+partway through (this codebase's own comments cite SQLite write-lock contention), the
+except handler logged a warning and reset `ldap_user`, but never rolled the session back
+and never reset `user`. Two distinct bugs followed from that:
+
+1. If the failing statement left the session's transaction needing a rollback, every
+   subsequent statement on that session — the very next `SELECT local_login_enabled` and
+   the local-credentials query — raised `sqlalchemy.exc.PendingRollbackError`, turning a
+   correct LDAP credential (or simply a valid bind hitting a transient DB error) into an
+   HTTP 500, even though the log claimed the request was "falling back to local".
+2. If `_provision_ldap_user` had already resolved/created and committed a `User` row
+   before a *later* step in the same try block raised (e.g. the per-login
+   `ensure_user_finance_defaults` call that runs after `_sync_ldap_user`), `user` stayed
+   bound to that half-resolved row. Verified directly (production code temporarily
+   reverted, target test run in isolation): with local login disabled, nothing downstream
+   ever re-assigns `user`, so `if not user:` was False and the request returned **HTTP 200
+   with a valid access token** for a user whose credentials were never actually checked —
+   a real authentication bypass, not just a robustness bug.
+
+Fixed by adding `await db.rollback()` and `user = None` inside the except branch,
+immediately before the existing `ldap_user = None`. Read the downstream code (~537-577):
+the local-credentials path only re-assigns `user` via `authenticate_user(...)` when `not
+ldap_user and local_login_allowed`, so a leaked non-None `user` from a failed LDAP branch
+would otherwise be treated as authenticated by the `if not user:` check at the bottom of
+`login()` — confirming bug 2 above.
+
+User-visible change, in the auditor's words: "a login that currently 500s after a database
+error in the LDAP sync would instead complete the local-credential check and return the
+normal 401 (or a successful login)." Additionally (found while validating this task): the
+same fix closes the authentication-bypass path in bug 2 above — a login that previously
+returned an authenticated 200 after a finance-defaults failure following a successful LDAP
+provision now correctly returns 401.
+
+Unaffected: successful LDAP logins (bind + provision/sync + finance-defaults all succeed)
+are untouched — the try block's happy path is unchanged. Local-only installs (LDAP
+disabled or unconfigured) never enter this try block at all. The existing username-collision
+guard (T-096) and auto-provision-off fallthrough are untouched.
+
+Two tests added in `backend/tests/integration/test_ldap_provision.py`
+(`TestLdapSyncFailureRollsBackSession`, next to `TestLdapLoginFinanceDefaults`):
+`test_dirty_session_from_sync_failure_falls_back_to_401_not_500` monkeypatches
+`_sync_ldap_user` to perform a DB write that raises `IntegrityError` (duplicate username)
+mid-transaction and asserts the login returns 401 — not 500 — and that the session remains
+usable afterwards (proving the rollback happened; reverting the production fix reproduces
+the pre-fix `PendingRollbackError` traceback, confirmed by running the test against the
+reverted code). `test_finance_defaults_failure_after_provision_does_not_leak_authenticated_user`
+monkeypatches `_provision_ldap_user` to commit a real new `User` row and return it, then
+monkeypatches `ensure_user_finance_defaults` to raise on the per-login sync call, with
+local login disabled — asserting 401 and no `access_token` in the response (reverting the
+production fix and re-running this test in isolation confirmed it returns HTTP 200 with a
+valid `access_token` today, proving bug 2 above is real). All pre-existing LDAP/login tests
+in the same file and in `test_auth_api.py` pass unchanged (69 passed, up from 67 before
+this change). User-approved 2026-09-10.

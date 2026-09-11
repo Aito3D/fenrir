@@ -20,7 +20,7 @@ import asyncio
 import logging
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -465,6 +465,189 @@ class TestLdapLoginFinanceDefaults:
         ).scalar_one_or_none()
         assert membership is not None
         assert membership.can_print is True
+
+
+class TestLdapSyncFailureRollsBackSession:
+    """T-114: a DB error raised by the LDAP sync/provision path (inside the
+    login() try block) must not leak into the downstream local-auth code as
+    an unrecoverable session or as an authenticated `user`.
+
+    Before the fix, the except block set `ldap_user = None` but never rolled
+    back the session and never reset `user`. Two distinct bugs followed:
+
+      (a) if the failing call had left the AsyncSession's transaction dirty
+          (e.g. a flush that raised IntegrityError), every subsequent
+          statement on that session -- including the very next `SELECT
+          local_login_enabled` and the local-credentials query -- raised
+          SQLAlchemy's PendingRollbackError, turning a valid LDAP directory
+          hiccup into an HTTP 500 instead of the documented "falls back to
+          local" behavior.
+
+      (b) if `_provision_ldap_user` (or `_sync_ldap_user`) had already
+          resolved/created a `User` row before a *later* step in the same
+          try block raised, `user` stayed bound to that half-resolved User
+          object. When local login is disabled (local_login_allowed is
+          False), the `if not ldap_user and local_login_allowed:` guard at
+          the local-auth call site never runs, so `user` is never
+          overwritten -- `if not user:` at the bottom of login() is False,
+          and the request returns a normal 200 with an access token for a
+          user whose credentials were never actually checked. That is a
+          real authentication bypass, not just a robustness bug.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dirty_session_from_sync_failure_falls_back_to_401_not_500(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """`_sync_ldap_user` performs a DB write that fails (IntegrityError from a
+        duplicate username) leaving the session dirty. The login must still
+        resolve to a normal 401 (wrong local credentials) rather than a 500."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ldapadmin4",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="false")
+
+        legacy_user = User(
+            username="dirtysync",
+            email="dirtysync@test.com",
+            password_hash=None,
+            role="user",
+            auth_source="ldap",
+            is_active=True,
+        )
+        db_session.add(legacy_user)
+        await db_session.commit()
+        await db_session.refresh(legacy_user)
+
+        async def fake_sync_ldap_user(db, user, ldap_user, ldap_config):
+            # Simulate a DB write inside the LDAP sync step that fails and
+            # leaves the session's transaction needing a rollback -- e.g. a
+            # write-lock/constraint failure the codebase's own comments cite.
+            db.add(
+                User(
+                    username=user.username,  # duplicate -> unique constraint violation
+                    email="duplicate@test.com",
+                    password_hash=None,
+                    role="user",
+                    auth_source="ldap",
+                )
+            )
+            await db.flush()
+
+        monkeypatch.setattr("backend.app.api.routes.auth._sync_ldap_user", fake_sync_ldap_user)
+
+        fake_ldap = LDAPUserInfo(
+            username="dirtysync",
+            email="dirtysync@test.com",
+            display_name="Dirty Sync",
+            groups=[],
+        )
+        with (
+            patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap),
+            caplog.at_level(logging.WARNING, logger="backend.app.api.routes.auth"),
+        ):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "dirtysync", "password": "wrong-local-password"},
+            )
+
+        # Never a 500 -- PendingRollbackError must not escape to the client.
+        assert response.status_code == 401, response.text
+        assert "Incorrect username or password" in response.json()["detail"]
+        assert "LDAP authentication error, falling back to local" in caplog.text
+
+        # The session is left usable: a follow-up query on the same
+        # connection succeeds (proves the rollback actually happened).
+        row = (await db_session.execute(select(User).where(User.username == "dirtysync"))).scalar_one()
+        assert row.email == "dirtysync@test.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_finance_defaults_failure_after_provision_does_not_leak_authenticated_user(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Auth bypass regression check: a provisioned-but-not-fully-synced LDAP
+        user must never be treated as authenticated. Before the fix, this
+        exact scenario (local login disabled, `ensure_user_finance_defaults`
+        raising right after a successful provision) returned HTTP 200 with a
+        valid access token -- login() never actually checked a credential."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ldapadmin5",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="true")
+        # Local login disabled: without the `user = None` reset, nothing else
+        # in login() would ever overwrite the leaked `user`.
+        db_session.add(Settings(key="local_login_enabled", value="false"))
+        await db_session.commit()
+
+        # `_provision_ldap_user` "succeeds": it creates and commits a brand-new
+        # User row (auth_source=ldap) and returns it, exactly like the real
+        # provisioning path does once its own internal finance-defaults call
+        # has gone through. `user` is now bound to a real, committed row.
+        async def fake_provision(db, ldap_user_info, ldap_config):
+            new_user = User(
+                username=ldap_user_info.username,
+                email=ldap_user_info.email,
+                password_hash=None,
+                role="user",
+                auth_source="ldap",
+                is_active=True,
+            )
+            db.add(new_user)
+            await db.commit()
+            await db.refresh(new_user)
+            return new_user
+
+        monkeypatch.setattr("backend.app.api.routes.auth._provision_ldap_user", fake_provision)
+        # The *second* finance-defaults call further down in login() -- the
+        # one that keeps every LDAP user's wallet in sync on every login,
+        # run right after `_sync_ldap_user` -- is the one that fails here.
+        monkeypatch.setattr(
+            "backend.app.api.routes.auth.ensure_user_finance_defaults",
+            AsyncMock(side_effect=RuntimeError("simulated finance-defaults failure")),
+        )
+
+        fake_ldap = LDAPUserInfo(
+            username="halfprovisioned",
+            email="halfprovisioned@test.com",
+            display_name="Half Provisioned",
+            groups=[],
+        )
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "halfprovisioned", "password": "not-checked-anywhere"},
+            )
+
+        assert response.status_code == 401, response.text
+        assert "access_token" not in response.json()
+        assert "Incorrect username or password" in response.json()["detail"]
+
+        # The user row from the aborted provision attempt may or may not
+        # persist (provisioning itself committed before finance-defaults
+        # raised) -- what matters is that this request was never treated as
+        # an authenticated session for it.
+        row = (await db_session.execute(select(User).where(User.username == "halfprovisioned"))).scalar_one_or_none()
+        if row is not None:
+            assert row.auth_source == "ldap"
 
 
 class TestLdapLoginOffLoop:

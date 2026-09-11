@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { LoginPage } from '../../pages/LoginPage';
@@ -1359,6 +1359,9 @@ describe('LoginPage', () => {
       window.location.hash = '';
       window.history.pushState({}, '', '/login');
       sessionStorage.clear();
+      // T-112's guard-clear test sets a real session token; make sure it
+      // never leaks into a later test.
+      setAuthToken(null);
     });
 
     it('stashes the router-state redirect target before the OIDC provider redirect', async () => {
@@ -1467,6 +1470,69 @@ describe('LoginPage', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
       });
       expect(sessionStorage.getItem('auth_post_login_redirect')).toBeNull();
+    });
+
+    // T-112: without loginInFlightRef held across the OIDC exchange, the
+    // #1889 already-authenticated effect fires on the render right after
+    // loginWithToken() sets `user` (step is still 'credentials' at that
+    // point) and steals a second navigate('/') call, clobbering the stashed
+    // target that exitToDashboard() just navigated to. Pin the fix: exactly
+    // one navigate() call, to the stashed target, never to '/'.
+    it('T-112: navigates to the stashed target exactly once and never to "/" (loginInFlightRef held across the OIDC exchange)', async () => {
+      sessionStorage.setItem('auth_post_login_redirect', '/queue?x=1');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+      window.location.hash = '#oidc_token=test-exchange-token';
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/queue?x=1', { replace: true });
+      });
+      // Give the #1889 effect a render cycle to fire (it would, without the
+      // guard) before inspecting the full call list.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(mockNavigate).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/queue?x=1', { replace: true });
+      expect(mockNavigate).not.toHaveBeenCalledWith('/', { replace: true });
+    });
+
+    // T-112 companion: the guard must not get stuck true forever on a failed
+    // exchange — clearing it in the catch branch means an unrelated,
+    // already-authenticated session (e.g. a live token in another tab that
+    // hit a stale/replayed oidc_token fragment) still redirects normally
+    // afterwards instead of being trapped on the credentials form.
+    it('T-112: clears the guard on an OIDC exchange failure so an already-authenticated redirect still fires', async () => {
+      setAuthToken('valid-token', 'session');
+      server.use(
+        http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser)),
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({ detail: 'invalid token' }, { status: 401 })
+        )
+      );
+      window.location.hash = '#oidc_token=bad-exchange-token';
+
+      render(<LoginPage />);
+
+      // The failed-exchange branch itself clears the #oidc_token fragment.
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/login', { replace: true });
+      });
+      // ...and, because loginInFlightRef was cleared in the catch branch, the
+      // #1889 already-authenticated effect is free to redirect the still-live
+      // session to the app instead of being permanently blocked.
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      });
     });
   });
 
@@ -2120,6 +2186,7 @@ describe('LoginPage', () => {
       stubLocation();
       vi.restoreAllMocks();
       vi.useRealTimers();
+      setAuthToken(null);
     });
 
     it('redirects to the provider authorize URL when autologin_provider_id is set', async () => {
@@ -2274,6 +2341,111 @@ describe('LoginPage', () => {
       });
       expect(authorizeSpy).not.toHaveBeenCalled();
       expect(window.location.href).toBe('http://localhost:3000/login');
+    });
+
+    // T-113: an already-authenticated visitor must never be bounced through
+    // the IdP — only the #1889 effect (navigate to '/') should act.
+    it('does not redirect through the IdP when the visitor already has a valid session', async () => {
+      stubLocation();
+      const mockUser = {
+        id: 1,
+        username: 'testuser',
+        role: 'admin' as const,
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
+      setAuthToken('valid-token', 'session');
+      server.use(
+        http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser)),
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 7,
+          })
+        )
+      );
+      const authorizeSpy = vi.spyOn(api, 'getOIDCAuthorizeUrl');
+      mockNavigate.mockClear();
+
+      render(<LoginPage />);
+
+      // The #1889 effect still owns the redirect for an already-authed visitor.
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      });
+
+      expect(authorizeSpy).not.toHaveBeenCalled();
+      expect(window.location.href).toBe('http://localhost:3000/login');
+    });
+
+    // T-113: unmounting before the authorize fetch resolves must not let a
+    // stale `.then` yank the browser to the IdP after the fact.
+    it('does not touch window.location if the component unmounts before the authorize fetch resolves', async () => {
+      stubLocation();
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 21,
+          })
+        )
+      );
+      let resolveAuthorize!: (value: { auth_url: string }) => void;
+      const authorizePromise = new Promise<{ auth_url: string }>((resolve) => {
+        resolveAuthorize = resolve;
+      });
+      vi.spyOn(api, 'getOIDCAuthorizeUrl').mockReturnValue(authorizePromise);
+
+      const { unmount } = render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(api.getOIDCAuthorizeUrl).toHaveBeenCalledWith(21);
+      });
+
+      unmount();
+      resolveAuthorize({ auth_url: 'https://idp.test/authorize?state=late' });
+
+      // Flush microtasks so the effect's `.then` would have run by now if the
+      // cancelled guard were missing.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(window.location.href).toBe('http://localhost:3000/login');
+    });
+
+    // T-113: unmounting mid-race must clear the 5s timer so it can't fire
+    // setAutologinFailed on a component that's already gone.
+    it('clears the pending 5s autologin timeout on unmount', async () => {
+      stubLocation();
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: true,
+            autologin_provider_id: 13,
+          })
+        )
+      );
+      // Never resolves — forces the effect to stay armed on its 5s timeout.
+      vi.spyOn(api, 'getOIDCAuthorizeUrl').mockReturnValue(new Promise(() => {}));
+
+      const { unmount } = render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(api.getOIDCAuthorizeUrl).toHaveBeenCalledWith(13);
+      });
+
+      const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+      unmount();
+
+      // The effect's cleanup must clear its own 5s timer on unmount so it
+      // can't later call setAutologinFailed on a gone component.
+      expect(clearTimeoutSpy).toHaveBeenCalled();
     });
   });
 });

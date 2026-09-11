@@ -532,7 +532,15 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             import logging
 
             logging.getLogger(__name__).warning("LDAP authentication error, falling back to local: %s", e)
+            # A commit inside the try block (provisioning/sync/finance-defaults)
+            # may have failed partway through, leaving the session needing a
+            # rollback before any further statement can run (PendingRollbackError).
+            # Also drop `user`: a half-resolved LDAP user (e.g. successfully
+            # provisioned but then failed to sync) must not leak into the
+            # downstream local-auth branches as if it were authenticated.
+            await db.rollback()
             ldap_user = None
+            user = None
 
     # #1589: local username/password gate. LDAP keeps its own switch
     # (ldap_enabled) and is not affected — a delegated directory has its

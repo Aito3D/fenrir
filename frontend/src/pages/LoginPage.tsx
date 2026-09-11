@@ -242,6 +242,11 @@ export function LoginPage() {
 
   const autologinAttemptedRef = useRef(false);
   useEffect(() => {
+    // T-113: while auth status is still loading we don't yet know whether this
+    // visitor already has a valid session — wait rather than mark "attempted"
+    // so the effect re-runs once `loading` flips. Once `user` is set, never
+    // redirect through the IdP; the #1889 effect above sends them to '/'.
+    if (loading || user) return;
     if (autologinAttemptedRef.current) return;
     const fallbackQuery = searchParams.get('fallback');
     if (fallbackQuery === 'local') return;
@@ -251,18 +256,28 @@ export function LoginPage() {
     if (hash.startsWith('#oidc_token=') || searchParams.get('oidc_error')) return;
     autologinAttemptedRef.current = true;
 
+    let cancelled = false;
     const providerId = advancedAuthStatus.autologin_provider_id;
-    const timeoutPromise = new Promise<never>((_resolve, reject) =>
-      setTimeout(() => reject(new Error('autologin timeout')), 5000),
-    );
+    let timeoutReject: (reason: Error) => void = () => {};
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeoutReject = reject;
+    });
+    const timer = setTimeout(() => timeoutReject(new Error('autologin timeout')), 5000);
     Promise.race([api.getOIDCAuthorizeUrl(providerId), timeoutPromise])
       .then((result) => {
+        if (cancelled) return;
         window.location.href = (result as { auth_url: string }).auth_url;
       })
       .catch(() => {
+        if (cancelled) return;
         setAutologinFailed(true);
       });
-  }, [advancedAuthStatus, searchParams]);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [advancedAuthStatus, searchParams, loading, user]);
 
   const localLoginEnabled = advancedAuthStatus?.local_login_enabled !== false;
   const showAutologinBanner = autologinFailed && advancedAuthStatus?.autologin_provider_id != null;
@@ -324,6 +339,12 @@ export function LoginPage() {
     }
 
     if (oidcToken) {
+      // T-112: same guard as handleSubmit's password path — hold this true across
+      // the exchange so the #1889 already-authenticated effect (still seeing
+      // step === 'credentials' on the intermediate render) doesn't fire its own
+      // navigate('/') and steal exitToDashboard()'s post-login redirect. Cleared
+      // on failure so an unrelated already-authed bounce still works afterwards.
+      loginInFlightRef.current = true;
       api.exchangeOIDCToken(oidcToken).then((resp: LoginResponse) => {
         if (resp.requires_2fa && resp.pre_auth_token) {
           // OIDC user has 2FA enabled — redirect to 2FA step
@@ -342,10 +363,12 @@ export function LoginPage() {
           showToast(t('login.loginSuccess'));
           exitToDashboard(resolvePostLoginRedirect());
         } else {
+          loginInFlightRef.current = false;
           showToast(t('login.oidcLoginFailed'), 'error');
           navigate('/login', { replace: true });
         }
       }).catch((err: unknown) => {
+        loginInFlightRef.current = false;
         console.error('OIDC token exchange failed', err);
         showToast(t('login.oidcLoginFailed'), 'error');
         navigate('/login', { replace: true });
