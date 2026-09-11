@@ -278,6 +278,18 @@ async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: s
     return token
 
 
+def _cookie_secure(raw_request: Request) -> bool:
+    """Whether an auth-binding cookie should be marked ``secure``.
+
+    Shared by ``_set_2fa_challenge_cookie`` and the OIDC state binding cookie
+    (T-092) so proxy-scheme detection lives in exactly one place.  Only
+    transmit over HTTPS so the binding cookie can't be intercepted on
+    mixed-content deployments; falls back to False on plain HTTP so tests and
+    local development still work.
+    """
+    return raw_request.url.scheme == "https"
+
+
 def _set_2fa_challenge_cookie(response: Response, raw_request: Request, challenge_id: str) -> None:
     """Set (or refresh) the HttpOnly ``2fa_challenge`` cookie that binds a pre-auth token.
 
@@ -289,10 +301,7 @@ def _set_2fa_challenge_cookie(response: Response, raw_request: Request, challeng
         key="2fa_challenge",
         value=challenge_id,
         httponly=True,
-        # only transmit over HTTPS so the binding cookie can't be intercepted
-        # on mixed-content deployments.  Falls back to False on plain HTTP so
-        # tests and local development still work.
-        secure=raw_request.url.scheme == "https",
+        secure=_cookie_secure(raw_request),
         samesite="lax",
         max_age=300,
         path="/api/v1/auth/2fa",
@@ -1133,6 +1142,9 @@ async def send_email_otp(
     if not user.email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User has no email address configured")
 
+    if not await _get_email_2fa_enabled(db, user.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email 2FA is not enabled for this user")
+
     smtp_settings = await get_smtp_settings(db)
     if not smtp_settings:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Email service is not configured")
@@ -1291,6 +1303,12 @@ async def verify_2fa(
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     elif method == "email":
+        if not await _get_email_2fa_enabled(db, user.id):
+            await record_failed_attempt(db, username)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Email 2FA is not enabled for this user"
+            )
+
         now = datetime.now(timezone.utc)
         result = await db.execute(
             select(UserOTPCode)
@@ -1871,6 +1889,7 @@ async def _bounded_fetch(
 async def oidc_authorize(
     provider_id: int,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> OIDCAuthorizeResponse:
     """Return the OIDC authorization URL for the given provider."""
@@ -1930,6 +1949,13 @@ async def oidc_authorize(
     code_verifier = secrets.token_urlsafe(48)  # 64-char URL-safe string
     code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
 
+    # T-092: bind the OIDC state to the initiating browser with an HttpOnly
+    # cookie, mirroring the pre-auth challenge_id pattern above. Without this,
+    # an attacker can start their own authorize round and lure the victim to
+    # the resulting callback URL, silently signing the victim's browser into
+    # the attacker's account (login CSRF / session fixation).
+    binding = secrets.token_urlsafe(32)
+
     db.add(
         AuthEphemeralToken(
             token=state,
@@ -1937,10 +1963,21 @@ async def oidc_authorize(
             provider_id=provider_id,
             nonce=nonce,
             code_verifier=code_verifier,
+            challenge_id=binding,
             expires_at=now + OIDC_STATE_TTL,
         )
     )
     await db.commit()
+
+    response.set_cookie(
+        key="oidc_state",
+        value=binding,
+        httponly=True,
+        secure=_cookie_secure(request),
+        samesite="lax",
+        max_age=int(OIDC_STATE_TTL.total_seconds()),
+        path="/api/v1/auth/oidc",
+    )
 
     params = urllib.parse.urlencode(
         {
@@ -1960,6 +1997,7 @@ async def oidc_authorize(
 
 @router.get("/oidc/callback")
 async def oidc_callback(
+    request: Request,
     code: str | None = Query(default=None, max_length=2048),
     state: str | None = Query(default=None, max_length=2048),
     error: str | None = Query(default=None, max_length=256),
@@ -1992,6 +2030,7 @@ async def oidc_callback(
                 AuthEphemeralToken.provider_id,
                 AuthEphemeralToken.nonce,
                 AuthEphemeralToken.code_verifier,
+                AuthEphemeralToken.challenge_id,
             )
         )
         state_row = state_del.one_or_none()
@@ -1999,7 +2038,18 @@ async def oidc_callback(
             await db.rollback()
             return RedirectResponse(url=f"{frontend_error_url}invalid_state", status_code=302)
 
-        provider_id, nonce, code_verifier = state_row
+        provider_id, nonce, code_verifier, stored_binding = state_row
+
+        # T-092: enforce that this browser is the one that started the flow.
+        # The state row is already deleted above (single-use), so commit that
+        # deletion even on a mismatch — unlike consume_pre_auth_token's rollback
+        # variant, retrying with the correct cookie must not be possible, since
+        # the whole point of the binding check is to stop an attacker's own
+        # authorize round from being replayed into a victim's browser.
+        if stored_binding is not None and stored_binding != request.cookies.get("oidc_state"):
+            await db.commit()
+            return RedirectResponse(url=f"{frontend_error_url}invalid_state", status_code=302)
+
         await db.commit()
 
         # Load provider
@@ -2325,7 +2375,12 @@ async def oidc_callback(
 
             # H-4: Use a URL fragment (#) instead of a query parameter so the exchange
             # token is never sent to the server in the Referer header or server logs.
-            return RedirectResponse(url=f"{external_url}/login#oidc_token={exchange_token}", status_code=302)
+            success_redirect = RedirectResponse(
+                url=f"{external_url}/login#oidc_token={exchange_token}", status_code=302
+            )
+            # T-092: the state binding cookie has done its job; don't leave it behind.
+            success_redirect.delete_cookie("oidc_state", path="/api/v1/auth/oidc")
+            return success_redirect
 
         except Exception as exc:
             logger.error("OIDC user resolution failed for provider %d: %s", provider_id, exc, exc_info=True)

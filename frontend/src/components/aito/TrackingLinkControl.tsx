@@ -45,7 +45,10 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
   const copy = useMutation({
     mutationFn: () => api.getAitoTrackingLink(project.id),
     onSuccess: async ({ tracking_url }) => {
-      if (!tracking_url) return;
+      if (!tracking_url) {
+        showToast(t('common.errorLoading'), 'error');
+        return;
+      }
       if (await copyTextToClipboard(tracking_url)) {
         copiedTimers.current.forEach((id) => window.clearTimeout(id));
         setCopied('in');
@@ -53,6 +56,8 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
           window.setTimeout(() => setCopied('out'), COPIED_HOLD_MS),
           window.setTimeout(() => setCopied(null), COPIED_HOLD_MS + COPIED_EXIT_MS),
         ];
+      } else {
+        showToast(t('common.errorLoading'), 'error');
       }
       invalidate();
     },

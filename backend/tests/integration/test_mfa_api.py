@@ -674,6 +674,97 @@ class TestTwoFAVerifyPreconditions:
 
 
 # ===========================================================================
+# T-091: email OTP send/verify must require email 2FA to be enabled
+# ===========================================================================
+
+
+class TestEmailOTPRequiresEnablement:
+    """A user with TOTP enabled but email 2FA NOT enabled must not be able to
+    finish login via the email OTP path — neither by requesting a code nor by
+    verifying one. (The happy path with email 2FA enabled is already covered
+    by TestEmailOTPSendVerify.test_email_otp_send_and_verify.)"""
+
+    async def _enroll_totp_only(self, client: AsyncClient, username: str, password: str) -> tuple[str, str]:
+        """Set up a user with TOTP enabled and no email 2FA. Returns (bearer_token, totp_secret)."""
+        token = await _setup_and_login(client, username, password)
+        setup_resp = await client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        enable_resp = await client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+        assert enable_resp.status_code == 200, enable_resp.text
+        return token, secret
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_send_email_otp_rejected_when_email_2fa_not_enabled(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """POST /2fa/email/send for a TOTP-only user must 400 without creating
+        an OTP row or sending an email."""
+        from sqlalchemy import select as sa_select
+
+        from backend.app.models.user_otp_code import UserOTPCode
+
+        username, password = "emailsendnotenabled", "emailsendnotenabled1"
+        await self._enroll_totp_only(async_client, username, password)
+
+        # Give the user an email address (send_email_otp's earlier precondition)
+        # but deliberately do NOT enable email 2FA.
+        result = await db_session.execute(sa_select(User).where(User.username == username))
+        user = result.scalar_one()
+        user.email = f"{username}@example.com"
+        await db_session.commit()
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, username, password)
+
+        with patch("backend.app.api.routes.mfa.send_email") as mock_send:
+            response = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Email 2FA is not enabled for this user"
+        mock_send.assert_not_called()
+
+        rows = await db_session.execute(sa_select(UserOTPCode).where(UserOTPCode.user_id == user.id))
+        assert rows.scalars().all() == [], "no UserOTPCode row should be created when email 2FA is disabled"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_email_rejected_when_email_2fa_not_enabled_and_token_not_consumed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """POST /2fa/verify with method=email for a TOTP-only user must 400
+        without consuming the pre_auth_token — a following TOTP verify with
+        the same token must still succeed."""
+        username, password = "emailverifynotenabled", "emailverifynotenabled1"
+        _token, secret = await self._enroll_totp_only(async_client, username, password)
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, username, password)
+
+        response = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "email", "code": "123456"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Email 2FA is not enabled for this user"
+
+        # Token must not have been consumed by the rejected email attempt.
+        valid_totp_code = pyotp.TOTP(secret).now()
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": valid_totp_code},
+        )
+        assert verify_resp.status_code == 200
+        assert verify_resp.json()["user"]["username"] == username
+
+
+# ===========================================================================
 # 2FA Verify — Backup code path
 # ===========================================================================
 
@@ -3449,6 +3540,228 @@ class TestOIDCStateReplay:
         assert second.status_code == 302
         assert "invalid_state" in second.headers.get("location", ""), (
             f"Replayed state must redirect to invalid_state, got: {second.headers.get('location')}"
+        )
+
+
+# ===========================================================================
+# T-092: OIDC state must be bound to the initiating browser via an HttpOnly
+# oidc_state cookie, or an attacker's own authorize round can be replayed
+# into a victim's browser (login CSRF / session fixation).
+# ===========================================================================
+
+
+class TestOIDCStateBindingCookie:
+    """GET /oidc/authorize sets an HttpOnly ``oidc_state`` cookie bound to the
+    OIDC_STATE row; GET /oidc/callback must reject a state redemption that
+    isn't accompanied by the matching cookie value."""
+
+    @staticmethod
+    def _parse_oidc_state_cookie(headers):
+        from http.cookies import SimpleCookie
+
+        for raw in headers.get_list("set-cookie"):
+            jar: SimpleCookie = SimpleCookie()
+            jar.load(raw)
+            if "oidc_state" in jar:
+                return jar["oidc_state"]
+        raise AssertionError(f"no oidc_state Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
+
+    async def _create_provider(self, async_client: AsyncClient, *, name: str, issuer: str) -> int:
+        admin_token = await _setup_and_login(async_client, f"{name}adm", f"{name}adm1")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": name,
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    async def _authorize(self, async_client: AsyncClient, provider_id: int, issuer: str):
+        from unittest.mock import AsyncMock, MagicMock
+
+        fake_discovery = {"issuer": issuer, "authorization_endpoint": f"{issuer}/authorize"}
+        mock_http = AsyncMock()
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        assert resp.status_code == 200, resp.text
+        return resp
+
+    @staticmethod
+    def _state_from_auth_url(auth_url: str) -> str:
+        import urllib.parse
+
+        return dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_url).query))["state"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_authorize_sets_binding_cookie_matching_stored_challenge_id(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """The Set-Cookie attributes must match the design (HttpOnly, Lax,
+        path scoped to /api/v1/auth/oidc, max-age = OIDC_STATE_TTL) and the
+        cookie value must be exactly what got stored as the OIDC_STATE row's
+        challenge_id."""
+        from sqlalchemy import select as sa_select
+
+        issuer = "https://oidcbindcookie1.example.com"
+        provider_id = await self._create_provider(async_client, name="oidcbindcookie1", issuer=issuer)
+        resp = await self._authorize(async_client, provider_id, issuer)
+
+        cookie = self._parse_oidc_state_cookie(resp.headers)
+        assert bool(cookie["httponly"]) is True
+        assert cookie["samesite"].lower() == "lax"
+        assert cookie["path"] == "/api/v1/auth/oidc"
+        assert cookie["max-age"] == "600"
+
+        state = self._state_from_auth_url(resp.json()["auth_url"])
+        result = await db_session.execute(sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == state))
+        row = result.scalar_one()
+        assert row.challenge_id == cookie.value
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_callback_without_cookie_rejected_and_state_consumed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A callback for a state minted via authorize, arriving with no
+        oidc_state cookie at all (fresh browser / cleared jar), must be
+        rejected as invalid_state — and the state row must still be gone
+        (single-use even on a binding mismatch)."""
+        from sqlalchemy import select as sa_select
+
+        issuer = "https://oidcbindcookie2.example.com"
+        provider_id = await self._create_provider(async_client, name="oidcbindcookie2", issuer=issuer)
+        resp = await self._authorize(async_client, provider_id, issuer)
+        state = self._state_from_auth_url(resp.json()["auth_url"])
+
+        # httpx.AsyncClient keeps a cookie jar across requests within one
+        # client — drop it to simulate a callback landing in a different
+        # browser / cleared cookie jar than the one that called authorize.
+        async_client.cookies.clear()
+
+        cb = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+            follow_redirects=False,
+        )
+        assert cb.status_code == 302
+        assert "invalid_state" in cb.headers.get("location", ""), (
+            f"missing binding cookie must redirect to invalid_state, got: {cb.headers.get('location')}"
+        )
+
+        result = await db_session.execute(sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == state))
+        assert result.scalar_one_or_none() is None, "state row must be consumed (single-use) even on a mismatch"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_callback_with_wrong_cookie_rejected_and_state_consumed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A callback presenting a cookie that doesn't match the stored
+        binding (e.g. an attacker's own authorize round replayed into the
+        victim's browser) must be rejected as invalid_state, and the state
+        row must be gone."""
+        from sqlalchemy import select as sa_select
+
+        issuer = "https://oidcbindcookie3.example.com"
+        provider_id = await self._create_provider(async_client, name="oidcbindcookie3", issuer=issuer)
+        resp = await self._authorize(async_client, provider_id, issuer)
+        state = self._state_from_auth_url(resp.json()["auth_url"])
+
+        async_client.cookies.delete("oidc_state", path="/api/v1/auth/oidc")
+        async_client.cookies.set("oidc_state", "attacker-supplied-value", path="/api/v1/auth/oidc")
+
+        cb = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+            follow_redirects=False,
+        )
+        assert cb.status_code == 302
+        assert "invalid_state" in cb.headers.get("location", ""), (
+            f"mismatched binding cookie must redirect to invalid_state, got: {cb.headers.get('location')}"
+        )
+
+        result = await db_session.execute(sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == state))
+        assert result.scalar_one_or_none() is None, "state row must be consumed (single-use) even on a mismatch"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_callback_with_matching_cookie_proceeds_past_state_check(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A callback presenting the cookie the authorize call set must clear
+        the state check — it may still fail further down the pipeline (here,
+        for the same reason ``TestOIDCStateReplay``'s first call does: no
+        mocked IdP behind the fake issuer), but it must NOT be invalid_state."""
+        issuer = "https://oidcbindcookie4.example.com"
+        provider_id = await self._create_provider(async_client, name="oidcbindcookie4", issuer=issuer)
+        resp = await self._authorize(async_client, provider_id, issuer)
+        state = self._state_from_auth_url(resp.json()["auth_url"])
+
+        # async_client's jar already carries the oidc_state cookie the
+        # authorize call just set — no extra setup needed to send it back.
+        cb = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+            follow_redirects=False,
+        )
+        assert cb.status_code == 302
+        assert "invalid_state" not in cb.headers.get("location", ""), (
+            f"matching binding cookie must clear the state check, got: {cb.headers.get('location')}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_row_without_challenge_id_still_works_with_no_cookie(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Backward compatibility: an OIDC_STATE row inserted directly (as
+        the pre-T-092 tests in this module still do) with no challenge_id
+        must keep working without a cookie at all."""
+        from backend.app.models.oidc_provider import OIDCProvider
+
+        provider = OIDCProvider(
+            name="NoBindingIdP",
+            issuer_url="https://oidcbindcookie5.example.com",
+            client_id="client_no_binding",
+            _client_secret_enc="secret_no_binding",
+            scopes="openid",
+            is_enabled=True,
+            auto_link_existing_accounts=False,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=secrets.token_urlsafe(32),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        async_client.cookies.clear()
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=any_code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "invalid_state" not in resp.headers.get("location", ""), (
+            f"a challenge_id=None row (back-compat path) must not require a cookie: {resp.headers.get('location')}"
         )
 
 

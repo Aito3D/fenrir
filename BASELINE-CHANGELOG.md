@@ -11413,3 +11413,117 @@ both endpoints); pre-existing full-callback tests in `test_mfa_api.py` and
 methods updated to route `POST` calls to their existing `post()` fakes (previously
 `stream()` was only ever called for discovery `GET`s) — no assertions were weakened, only
 the mock plumbing was extended to match the new call shape. User-approved 2026-09-10.
+
+## T-090 — 2026-09-10 — user-approved behavior change
+
+`TrackingLinkControl.tsx`'s Copy button mutation (`copy.onSuccess`) had two silent
+fall-through branches: when the link endpoint answered with `tracking_url: null`, the
+handler returned immediately with no toast and no "Copié" badge; when
+`copyTextToClipboard(tracking_url)` resolved `false` (its return value when both
+`navigator.clipboard.writeText` and the `execCommand('copy')` fallback fail, e.g. Firefox
+on a plain-HTTP LAN origin), the handler skipped the badge but still reported nothing to
+the operator. In both cases the button just flashed back to idle, and the operator had no
+way to tell the copy hadn't happened — they'd paste whatever was already on the clipboard
+into the client's message instead of the tracking link.
+
+Fixed by reusing the mutation's existing `onError` toast (`showToast(t('common.errorLoading'),
+'error')`, no new i18n key) on both fall-through paths: a `null` `tracking_url` now shows
+the toast and returns early (matching today's behavior of not calling `invalidate()` on
+that path), and a `false` return from `copyTextToClipboard` now shows the toast in an
+`else` branch while still calling `invalidate()` afterward exactly as it does today on
+that path.
+
+User-visible change, quoting the approved finding verbatim: "a copy that silently does
+nothing today would raise an error toast." Unaffected: a successful copy (clipboard
+write succeeds) still shows the "Copié" badge and toasts nothing, exactly as before; the
+Regenerate hold flow and its own success/error toasts are untouched. Two new tests added
+to `AitoTrackingLinkControl.test.tsx` cover the null-URL and clipboard-failure paths; all
+6 pre-existing tests in that file pass unchanged. User-approved 2026-09-10.
+
+## T-091 — 2026-09-10 — user-approved behavior change
+
+`send_email_otp()` (`POST /2fa/email/send`) and `verify_2fa()`'s `method == "email"`
+branch (`POST /2fa/verify`) never checked `_get_email_2fa_enabled(db, user.id)` before
+acting — they only checked that the user *had* an email address (send) or that an
+outstanding `UserOTPCode` row existed (verify). `login()` and `oidc_exchange()` both
+already gate the *advertised* `email` method on that same setting, so a user who only
+ever enabled TOTP was never offered "email" as a login option in the UI — but nothing
+stopped a client that sent `method="email"` directly from completing login with an
+emailed code anyway, bypassing the second factor the user actually configured.
+
+Fixed by adding the same precondition check both branches already use for their other
+methods: `send_email_otp()` now 400s with `"Email 2FA is not enabled for this user"`
+(mirroring the wording of the TOTP branch's `"TOTP is not enabled for this user"`)
+immediately after its existing "user has no email" check, before touching SMTP settings
+or writing any `UserOTPCode` row. `verify_2fa()`'s email branch now performs the same
+check (and calls `record_failed_attempt`, matching the TOTP/backup branches' shape) at
+the top of the branch, before querying for an outstanding OTP row — so a rejected
+attempt does not consume the `pre_auth_token`, exactly like every other precondition
+failure in that endpoint.
+
+User-visible change, quoting the approved finding verbatim: "an account that has TOTP
+but not email 2FA can currently finish login with an emailed code; after the fix
+`POST /2fa/email/send` and `POST /2fa/verify` with `method=email` would start rejecting
+that account, so any client or script relying on the email path for a TOTP-only user
+stops working."
+
+Unaffected: the TOTP and backup verify branches, the pre-auth token peek/consume
+semantics, and both rate limiters are untouched; accounts that DO have email 2FA
+enabled keep working exactly as before (covered by the existing
+`TestEmailOTPSendVerify.test_email_otp_send_and_verify` happy-path test); the email-2FA
+*enrolment* flow (`/2fa/email/enable` + `/2fa/email/enable/confirm`, which sends/verifies
+a code via a setup token while the setting is still false) is a separate pair of
+endpoints and was not touched. New tests added to `test_mfa_api.py`:
+`TestEmailOTPRequiresEnablement.test_send_email_otp_rejected_when_email_2fa_not_enabled`
+(400, no email sent, no `UserOTPCode` row created) and
+`TestEmailOTPRequiresEnablement.test_verify_email_rejected_when_email_2fa_not_enabled_and_token_not_consumed`
+(400, then proves the `pre_auth_token` was not consumed by successfully verifying with
+`method="totp"` using the same token). User-approved 2026-09-10.
+
+## T-092 — 2026-09-10 — user-approved behavior change
+
+`oidc_authorize()` (`GET /oidc/authorize/{provider_id}`) stored the OIDC state row with
+no binding to the browser that requested it, and `oidc_callback()` consumed that row
+based only on the `state` query parameter matching — it checked nothing about who was
+calling. Contrast the pre-auth (2FA) flow, which already binds its ephemeral token to
+an HttpOnly `2fa_challenge` cookie via `consume_pre_auth_token(..., challenge_id=...)`.
+Combined with `LoginPage.tsx` auto-exchanging `#oidc_token=` on page load with no user
+gesture, an attacker could start their own OIDC authorize round against a real provider,
+lure the victim to the resulting callback URL, and silently sign the victim's browser
+into the attacker's account (login CSRF / session fixation).
+
+Fixed by minting a random `binding = secrets.token_urlsafe(32)` in `oidc_authorize()`,
+storing it in the `AuthEphemeralToken.challenge_id` column already used for this purpose
+by the pre-auth flow (no migration needed), and setting it as an HttpOnly,
+`SameSite=Lax` cookie named `oidc_state`, scoped to `/api/v1/auth/oidc`, with
+`max_age` equal to `OIDC_STATE_TTL` (10 minutes). The cookie's `secure` flag is computed
+by a new `_cookie_secure(raw_request)` helper factored out of `_set_2fa_challenge_cookie`
+(identical `raw_request.url.scheme == "https"` semantics, now shared by both cookies so a
+later fix to proxy-scheme detection only needs to happen in one place). `oidc_callback()`
+now reads the `oidc_state` cookie and, after atomically deleting the OIDC_STATE row
+(unchanged single-use semantics), compares the row's `challenge_id` to the cookie value.
+A `None` `challenge_id` (rows inserted directly by tests, or from before this change)
+still works with no cookie required, matching the pre-auth flow's same backward-compat
+rule. On a mismatch (including a missing cookie), the deletion is still committed — the
+state stays single-use even though it's being rejected, exactly as it already was for
+every other invalid-state case — and the request redirects to the existing
+`/login?oidc_error=invalid_state`. On success the cookie is cleared on the redirect
+response so it isn't left behind.
+
+User-visible change, quoting the approved finding verbatim: "an OIDC login started in
+one browser (or with the app's cookies blocked) and completed in another will stop
+working and land on `/login?oidc_error=invalid_state` instead of signing in."
+
+Unaffected: a normal same-browser OIDC login (the SPA calls `/oidc/authorize` same-origin,
+so the browser stores the `Set-Cookie`, and the IdP's subsequent top-level-GET redirect
+to `/oidc/callback` still carries a `SameSite=Lax` cookie) is unaffected; the `2fa_challenge`
+cookie and its consume/peek helpers are untouched aside from the shared `_cookie_secure`
+extraction; OIDC provider configuration, discovery, PKCE, and token exchange are untouched.
+New tests added to `test_mfa_api.py` (`TestOIDCStateBindingCookie`): the authorize response
+sets an `oidc_state` cookie (HttpOnly, Lax, path `/api/v1/auth/oidc`, `max-age=600`) whose
+value matches the stored row's `challenge_id`; a callback with no cookie is rejected as
+`invalid_state` and the state row is gone; a callback with a wrong cookie value is rejected
+the same way; a callback with the matching cookie clears the state check (and fails later
+for the same unrelated reason the existing `TestOIDCStateReplay` first call does — no
+mocked IdP behind the fake issuer); and a directly-inserted state row with `challenge_id=None`
+still works with no cookie. User-approved 2026-09-10.

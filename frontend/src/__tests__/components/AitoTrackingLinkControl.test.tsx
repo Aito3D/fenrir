@@ -136,6 +136,36 @@ describe('TrackingLinkControl', () => {
     expect(screen.queryByText(/copied/i)).not.toBeInTheDocument();
   });
 
+  it('toasts an error and shows no confirmation when the link endpoint returns no URL', async () => {
+    server.use(http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: null })));
+    render(<TrackingLinkControl project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+
+    expect(await screen.findByText(/error loading data/i)).toBeInTheDocument();
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(screen.queryByText(/copied/i)).not.toBeInTheDocument();
+  });
+
+  it('toasts an error and shows no confirmation when the clipboard write fails', async () => {
+    server.use(
+      http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: 'https://x.pf/t/abc' })),
+    );
+    (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('blocked'));
+    // Simulates the execCommand fallback also failing (e.g. Firefox on a
+    // plain-HTTP LAN origin), so copyTextToClipboard resolves to false.
+    const originalExecCommand = document.execCommand;
+    document.execCommand = vi.fn().mockReturnValue(false);
+
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+
+    expect(await screen.findByText(/error loading data/i)).toBeInTheDocument();
+    expect(screen.queryByText(/copied/i)).not.toBeInTheDocument();
+
+    document.execCommand = originalExecCommand;
+  });
+
   it('toasts an error and does not regenerate when the token endpoint fails on a completed hold', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const calls: string[] = [];
