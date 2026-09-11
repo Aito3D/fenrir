@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -2644,6 +2645,28 @@ class TestOIDCEndToEnd:
         )
         assert resp.status_code == 302
         assert "invalid_state" in resp.headers.get("location", "")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oidc_callback_error_param_logged_with_repr(self, async_client: AsyncClient, caplog):
+        """The `error` query param is attacker-controlled; it must be logged with
+        %r (not %s) so embedded newlines/control characters are escaped rather
+        than forging log lines. The redirect behavior must be unaffected."""
+        malicious_error = "access_denied\nFORGED LINE\x1b[0m"
+        with caplog.at_level(logging.WARNING, logger=mfa_module.logger.name):
+            resp = await async_client.get(
+                "/api/v1/auth/oidc/callback",
+                params={"error": malicious_error},
+                follow_redirects=False,
+            )
+        assert resp.status_code == 302
+        assert resp.headers.get("location", "").endswith("oidc_provider_error")
+
+        matching = [r for r in caplog.records if "OIDC callback received error" in r.getMessage()]
+        assert matching, "expected the OIDC callback error to be logged"
+        message = matching[0].getMessage()
+        assert "\n" not in message
+        assert "\\n" in message
 
     @pytest.mark.asyncio
     @pytest.mark.integration

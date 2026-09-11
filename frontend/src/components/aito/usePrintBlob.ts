@@ -206,7 +206,10 @@ export function usePrintBlob({
               openInTab(objectUrl, element);
             }
           },
-          () => openInTab(objectUrl, element),
+          () => {
+            if (!mountedRef.current) return;
+            openInTab(objectUrl, element);
+          },
         );
       };
 

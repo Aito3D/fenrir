@@ -746,6 +746,152 @@ class TestEmailOTPMaxAttempts:
         assert final.json()["detail"] == "OTP code has been invalidated after too many attempts"
 
 
+class TestEmailOTPMultipleLiveRows:
+    """T-068: verify_2fa's email branch must tolerate more than one live
+    (unused, unexpired) UserOTPCode row for the same user — e.g. from a race
+    between two concurrent /2fa/email/send calls. The query orders by
+    created_at desc, so the newest row is the one that should be checked;
+    it must not raise MultipleResultsFound (-> HTTP 500).
+    """
+
+    async def _seed_two_live_codes(self, db_session: AsyncSession, user_id: int, older_code: str, newer_code: str):
+        from passlib.context import CryptContext
+
+        from backend.app.models.user_otp_code import UserOTPCode
+
+        _pwd_ctx = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+        now = datetime.now(timezone.utc)
+        older = UserOTPCode(
+            user_id=user_id,
+            code_hash=_pwd_ctx.hash(older_code),
+            attempts=0,
+            used=False,
+            expires_at=now + timedelta(minutes=10),
+            created_at=now - timedelta(seconds=30),
+        )
+        newer = UserOTPCode(
+            user_id=user_id,
+            code_hash=_pwd_ctx.hash(newer_code),
+            attempts=0,
+            used=False,
+            expires_at=now + timedelta(minutes=10),
+            created_at=now,
+        )
+        db_session.add(older)
+        db_session.add(newer)
+        await db_session.commit()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_newest_live_code_is_accepted(self, async_client: AsyncClient, db_session: AsyncSession):
+        from sqlalchemy import select as sa_select
+
+        admin_token = await _setup_and_login(async_client, "otp_multi_admin", "otp_multi_admin1")
+
+        result = await db_session.execute(sa_select(User).where(User.username == "otp_multi_admin"))
+        user = result.scalar_one()
+        user.email = "otpmulti@example.com"
+        await db_session.commit()
+
+        setup_code = "123456"
+        from passlib.context import CryptContext
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken as AET
+
+        _pwd_ctx = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AET(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="otp_multi_admin",
+                nonce=_pwd_ctx.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(admin_token),
+        )
+
+        login_resp = await async_client.post(
+            LOGIN_URL, json={"username": "otp_multi_admin", "password": "Otp_multi_admin1"}
+        )
+        pre_auth_token = login_resp.json()["pre_auth_token"]
+
+        older_code = "111111"
+        newer_code = "222222"
+        await self._seed_two_live_codes(db_session, user.id, older_code, newer_code)
+
+        # Before the fix, scalar_one_or_none() on two matching rows raised
+        # MultipleResultsFound, which FastAPI's default exception handling
+        # surfaces as an HTTP 500. Submitting the newest code must succeed.
+        r = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "code": newer_code, "method": "email"},
+        )
+        assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+        assert "access_token" in r.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_older_live_code_is_rejected_when_newer_exists(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        from sqlalchemy import select as sa_select
+
+        admin_token = await _setup_and_login(async_client, "otp_multi_admin2", "otp_multi_admin2")
+
+        result = await db_session.execute(sa_select(User).where(User.username == "otp_multi_admin2"))
+        user = result.scalar_one()
+        user.email = "otpmulti2@example.com"
+        await db_session.commit()
+
+        setup_code = "123456"
+        from passlib.context import CryptContext
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken as AET
+
+        _pwd_ctx = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AET(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="otp_multi_admin2",
+                nonce=_pwd_ctx.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(admin_token),
+        )
+
+        login_resp = await async_client.post(
+            LOGIN_URL, json={"username": "otp_multi_admin2", "password": "Otp_multi_admin2"}
+        )
+        pre_auth_token = login_resp.json()["pre_auth_token"]
+
+        older_code = "333333"
+        newer_code = "444444"
+        await self._seed_two_live_codes(db_session, user.id, older_code, newer_code)
+
+        # Only the newest row is checked, so the older (still-live) code must
+        # be rejected as an invalid code, not accepted.
+        r = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "code": older_code, "method": "email"},
+        )
+        assert r.status_code == 401, f"Expected 401, got {r.status_code}: {r.text}"
+        assert r.json()["detail"] == "Invalid OTP code"
+
+
 # ===========================================================================
 # Gap 6: OIDC callback SSRF protection — invalid authorization_endpoint scheme
 # ===========================================================================

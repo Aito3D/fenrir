@@ -1329,8 +1329,9 @@ async def verify_2fa(
             .where(UserOTPCode.used.is_(False))
             .where(UserOTPCode.expires_at > now)
             .order_by(UserOTPCode.created_at.desc())
+            .limit(1)
         )
-        otp_record = result.scalar_one_or_none()
+        otp_record = result.scalars().first()
         if not otp_record:
             await record_failed_attempt(db, username)
             raise HTTPException(
@@ -2022,7 +2023,7 @@ async def oidc_callback(
 
     try:
         if error:
-            logger.warning("OIDC callback received error: %s", error)
+            logger.warning("OIDC callback received error: %r", error)
             return RedirectResponse(url=f"{frontend_error_url}oidc_provider_error", status_code=302)
 
         if not code or not state:

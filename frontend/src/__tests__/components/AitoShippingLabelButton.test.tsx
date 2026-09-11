@@ -190,6 +190,74 @@ describe('ShippingLabelButton', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /print shipping label/i })).toBeEnabled());
   });
 
+  it('falls back to a new tab when the fonts promise rejects while still mounted', async () => {
+    // A font failing to load or decode rejects `fonts.ready` instead of
+    // resolving it. This is the existing fallback for that case — pinned
+    // here alongside the unmount guard below so the guard is provably the
+    // only thing that changes when the component is gone.
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue(SERVICES);
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:label');
+    globalThis.URL.revokeObjectURL = vi.fn();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    let rejectFonts: () => void = () => {};
+    const ready = new Promise<void>((_resolve, reject) => {
+      rejectFonts = () => reject(new Error('font decode error'));
+    });
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentDocument', 'get').mockReturnValue({
+      fonts: { ready },
+    } as unknown as Document);
+    const user = userEvent.setup();
+
+    render(<ShippingLabelButton project={shipped} />);
+    await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: /print shipping label/i }));
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector('iframe');
+      expect(iframe).not.toBeNull();
+    });
+    fireEvent.load(iframe as unknown as HTMLIFrameElement);
+
+    rejectFonts();
+    await waitFor(() => expect(open).toHaveBeenCalledWith('blob:label', '_blank'));
+  });
+
+  it('does not fall back to a new tab when the fonts promise rejects after unmount', async () => {
+    // The success arm and the load-timeout timer both bail on `mountedRef`
+    // after unmount; the fonts-rejection arm used to call `openInTab`
+    // (and therefore `window.open`) unconditionally, popping a stray tab
+    // for a panel the operator had already closed.
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue(SERVICES);
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:label');
+    globalThis.URL.revokeObjectURL = vi.fn();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    let rejectFonts: () => void = () => {};
+    const ready = new Promise<void>((_resolve, reject) => {
+      rejectFonts = () => reject(new Error('font decode error'));
+    });
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentDocument', 'get').mockReturnValue({
+      fonts: { ready },
+    } as unknown as Document);
+    const user = userEvent.setup();
+
+    const { unmount } = render(<ShippingLabelButton project={shipped} />);
+    await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: /print shipping label/i }));
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector('iframe');
+      expect(iframe).not.toBeNull();
+    });
+    fireEvent.load(iframe as unknown as HTMLIFrameElement);
+
+    unmount();
+    rejectFonts();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it('is an icon-only header cell that keeps its accessible name', () => {
     vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue(SERVICES);
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
