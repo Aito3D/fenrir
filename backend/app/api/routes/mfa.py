@@ -303,6 +303,22 @@ def _cookie_secure(raw_request: Request) -> bool:
     return raw_request.url.scheme == "https"
 
 
+def _oidc_state_cookie_name(state: str) -> str:
+    """Derive the OIDC state-binding cookie name from the flow's own ``state``.
+
+    T-111: a single fixed cookie name ("oidc_state") meant a second authorize
+    round (e.g. a second tab, or backing out of the IdP and retrying) would
+    overwrite the first flow's binding cookie, permanently breaking the first
+    flow's callback with ``invalid_state`` even though its state row was still
+    live. Keying the cookie name off the state itself lets concurrent flows
+    keep independent cookies; each still expires on its own via ``max_age``.
+    ``state`` is ``secrets.token_urlsafe(32)`` (43 chars of [A-Za-z0-9_-]), all
+    valid cookie-name characters, so a short prefix keeps the name unique
+    without growing header size unnecessarily.
+    """
+    return f"oidc_state_{state[:16]}"
+
+
 def _set_2fa_challenge_cookie(response: Response, raw_request: Request, challenge_id: str) -> None:
     """Set (or refresh) the HttpOnly ``2fa_challenge`` cookie that binds a pre-auth token.
 
@@ -1992,6 +2008,9 @@ async def oidc_authorize(
     # an attacker can start their own authorize round and lure the victim to
     # the resulting callback URL, silently signing the victim's browser into
     # the attacker's account (login CSRF / session fixation).
+    # T-111: the cookie name is derived from this flow's own state (see
+    # _oidc_state_cookie_name) rather than fixed, so a second authorize round
+    # started before this one completes doesn't overwrite its binding cookie.
     binding = secrets.token_urlsafe(32)
 
     db.add(
@@ -2008,7 +2027,7 @@ async def oidc_authorize(
     await db.commit()
 
     response.set_cookie(
-        key="oidc_state",
+        key=_oidc_state_cookie_name(state),
         value=binding,
         httponly=True,
         secure=_cookie_secure(request),
@@ -2084,7 +2103,9 @@ async def oidc_callback(
         # variant, retrying with the correct cookie must not be possible, since
         # the whole point of the binding check is to stop an attacker's own
         # authorize round from being replayed into a victim's browser.
-        if stored_binding is not None and stored_binding != request.cookies.get("oidc_state"):
+        # T-111: the binding cookie is keyed per flow (see _oidc_state_cookie_name),
+        # so a concurrent second flow's cookie can't shadow this one's.
+        if stored_binding is not None and stored_binding != request.cookies.get(_oidc_state_cookie_name(state)):
             await db.commit()
             return RedirectResponse(url=f"{frontend_error_url}invalid_state", status_code=302)
 
@@ -2417,7 +2438,8 @@ async def oidc_callback(
                 url=f"{external_url}/login#oidc_token={exchange_token}", status_code=302
             )
             # T-092: the state binding cookie has done its job; don't leave it behind.
-            success_redirect.delete_cookie("oidc_state", path="/api/v1/auth/oidc")
+            # T-111: only this flow's cookie — other concurrent flows keep theirs.
+            success_redirect.delete_cookie(_oidc_state_cookie_name(state), path="/api/v1/auth/oidc")
             return success_redirect
 
         except Exception as exc:

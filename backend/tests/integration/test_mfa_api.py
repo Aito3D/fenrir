@@ -3574,20 +3574,24 @@ class TestOIDCStateReplay:
 
 
 class TestOIDCStateBindingCookie:
-    """GET /oidc/authorize sets an HttpOnly ``oidc_state`` cookie bound to the
-    OIDC_STATE row; GET /oidc/callback must reject a state redemption that
-    isn't accompanied by the matching cookie value."""
+    """GET /oidc/authorize sets an HttpOnly, per-flow ``oidc_state_<state prefix>``
+    cookie (T-111) bound to the OIDC_STATE row; GET /oidc/callback must reject
+    a state redemption that isn't accompanied by the matching cookie value."""
 
     @staticmethod
-    def _parse_oidc_state_cookie(headers):
+    def _parse_oidc_state_cookie(headers, state: str):
+        """T-111: the cookie name is derived from ``state`` (see
+        ``mfa_module._oidc_state_cookie_name``), so callers must supply the
+        state the authorize/callback round used."""
         from http.cookies import SimpleCookie
 
+        cookie_name = mfa_module._oidc_state_cookie_name(state)
         for raw in headers.get_list("set-cookie"):
             jar: SimpleCookie = SimpleCookie()
             jar.load(raw)
-            if "oidc_state" in jar:
-                return jar["oidc_state"]
-        raise AssertionError(f"no oidc_state Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
+            if cookie_name in jar:
+                return jar[cookie_name]
+        raise AssertionError(f"no {cookie_name} Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
 
     async def _create_provider(self, async_client: AsyncClient, *, name: str, issuer: str) -> int:
         admin_token = await _setup_and_login(async_client, f"{name}adm", f"{name}adm1")
@@ -3641,13 +3645,13 @@ class TestOIDCStateBindingCookie:
         provider_id = await self._create_provider(async_client, name="oidcbindcookie1", issuer=issuer)
         resp = await self._authorize(async_client, provider_id, issuer)
 
-        cookie = self._parse_oidc_state_cookie(resp.headers)
+        state = self._state_from_auth_url(resp.json()["auth_url"])
+        cookie = self._parse_oidc_state_cookie(resp.headers, state)
         assert bool(cookie["httponly"]) is True
         assert cookie["samesite"].lower() == "lax"
         assert cookie["path"] == "/api/v1/auth/oidc"
         assert cookie["max-age"] == "600"
 
-        state = self._state_from_auth_url(resp.json()["auth_url"])
         result = await db_session.execute(sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == state))
         row = result.scalar_one()
         assert row.challenge_id == cookie.value
@@ -3700,9 +3704,10 @@ class TestOIDCStateBindingCookie:
         provider_id = await self._create_provider(async_client, name="oidcbindcookie3", issuer=issuer)
         resp = await self._authorize(async_client, provider_id, issuer)
         state = self._state_from_auth_url(resp.json()["auth_url"])
+        cookie_name = mfa_module._oidc_state_cookie_name(state)
 
-        async_client.cookies.delete("oidc_state", path="/api/v1/auth/oidc")
-        async_client.cookies.set("oidc_state", "attacker-supplied-value", path="/api/v1/auth/oidc")
+        async_client.cookies.delete(cookie_name, path="/api/v1/auth/oidc")
+        async_client.cookies.set(cookie_name, "attacker-supplied-value", path="/api/v1/auth/oidc")
 
         cb = await async_client.get(
             f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
@@ -3849,13 +3854,13 @@ class TestOIDCStateBindingCookie:
             auth_resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
         assert auth_resp.status_code == 200, auth_resp.text
 
-        binding_cookie = self._parse_oidc_state_cookie(auth_resp.headers)
-        assert binding_cookie.value  # sanity: the binding cookie really was set
-
         auth_url = auth_resp.json()["auth_url"]
         query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_url).query))
         state = query["state"]
         nonce = query["nonce"]
+
+        binding_cookie = self._parse_oidc_state_cookie(auth_resp.headers, state)
+        assert binding_cookie.value  # sanity: the binding cookie really was set
 
         now = int(time.time())
         id_token = pyjwt.encode(
@@ -3927,11 +3932,336 @@ class TestOIDCStateBindingCookie:
         location = callback_resp.headers.get("location", "")
         assert "oidc_token=" in location, f"expected the success redirect, got: {location}"
 
-        cleared = self._parse_oidc_state_cookie(callback_resp.headers)
+        cleared = self._parse_oidc_state_cookie(callback_resp.headers, state)
         assert cleared["path"] == "/api/v1/auth/oidc"
         assert cleared["max-age"] == "0", (
             f"success redirect must clear the oidc_state binding cookie (Max-Age=0), got attrs: {cleared}"
         )
+
+
+class TestOIDCStatePerFlowCookies:
+    """T-111: the OIDC state binding cookie's name is derived from each
+    flow's own ``state`` (see ``mfa_module._oidc_state_cookie_name``), so two
+    concurrent authorize rounds (e.g. two tabs, or backing out of the IdP and
+    retrying) each keep their own cookie instead of the second overwriting
+    the first -- and completing one flow only ever deletes its own cookie."""
+
+    async def _create_provider(
+        self, async_client: AsyncClient, *, name: str, issuer: str, admin_token: str | None = None
+    ) -> int:
+        """Create an OIDC provider. Tests that need TWO providers must create
+        one admin (auth can only be set up once per client) and pass its
+        token in on the second call rather than calling this with no
+        ``admin_token`` twice."""
+        if admin_token is None:
+            admin_token = await _setup_and_login(async_client, f"{name}adm", f"{name}adm1")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": name,
+                "issuer_url": issuer,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    async def _authorize(self, async_client: AsyncClient, provider_id: int, issuer: str):
+        from unittest.mock import AsyncMock, MagicMock
+
+        fake_discovery = {"issuer": issuer, "authorization_endpoint": f"{issuer}/authorize"}
+        mock_http = AsyncMock()
+        mock_http.stream = MagicMock(return_value=_make_stream_ctx(fake_discovery))
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        assert resp.status_code == 200, resp.text
+        return resp
+
+    @staticmethod
+    def _state_from_auth_url(auth_url: str) -> str:
+        import urllib.parse
+
+        return dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_url).query))["state"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_two_authorize_calls_get_different_cookie_names(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Authorizing twice from the same client (e.g. two tabs, or backing
+        out of the IdP and clicking the provider button again) must not
+        reuse the same cookie name -- each flow gets its own, and both stay
+        present in the client's cookie jar simultaneously."""
+        issuer1 = "https://oidcperflow1.example.com"
+        issuer2 = "https://oidcperflow2.example.com"
+        admin_token = await _setup_and_login(async_client, "oidcperflow1adm", "oidcperflow1adm1")
+        provider_id1 = await self._create_provider(
+            async_client, name="oidcperflow1", issuer=issuer1, admin_token=admin_token
+        )
+        provider_id2 = await self._create_provider(
+            async_client, name="oidcperflow2", issuer=issuer2, admin_token=admin_token
+        )
+
+        resp1 = await self._authorize(async_client, provider_id1, issuer1)
+        state1 = self._state_from_auth_url(resp1.json()["auth_url"])
+        resp2 = await self._authorize(async_client, provider_id2, issuer2)
+        state2 = self._state_from_auth_url(resp2.json()["auth_url"])
+
+        name1 = mfa_module._oidc_state_cookie_name(state1)
+        name2 = mfa_module._oidc_state_cookie_name(state2)
+        assert name1 != name2, "two concurrent authorize rounds must not share a cookie name"
+
+        jar_names = set(async_client.cookies.keys())
+        assert name1 in jar_names, f"first flow's cookie missing from jar: {jar_names}"
+        assert name2 in jar_names, f"second flow's cookie missing from jar: {jar_names}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_first_flow_callback_proceeds_with_second_flow_pending(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Completing the FIRST flow's callback while the SECOND flow's
+        authorize cookie also sits in the jar must still pass the state
+        check -- pre-fix, the second authorize's fixed-name cookie would
+        have overwritten the first's, breaking this."""
+        issuer1 = "https://oidcperflow3.example.com"
+        issuer2 = "https://oidcperflow4.example.com"
+        admin_token = await _setup_and_login(async_client, "oidcperflow3adm", "oidcperflow3adm1")
+        provider_id1 = await self._create_provider(
+            async_client, name="oidcperflow3", issuer=issuer1, admin_token=admin_token
+        )
+        provider_id2 = await self._create_provider(
+            async_client, name="oidcperflow4", issuer=issuer2, admin_token=admin_token
+        )
+
+        resp1 = await self._authorize(async_client, provider_id1, issuer1)
+        state1 = self._state_from_auth_url(resp1.json()["auth_url"])
+        resp2 = await self._authorize(async_client, provider_id2, issuer2)
+        state2 = self._state_from_auth_url(resp2.json()["auth_url"])
+        assert state1 != state2
+
+        cb = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=test-code&state={state1}",
+            follow_redirects=False,
+        )
+        assert cb.status_code == 302
+        assert "invalid_state" not in cb.headers.get("location", ""), (
+            "first flow's callback must clear the state check even with a second flow's "
+            f"cookie also present, got: {cb.headers.get('location')}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_callback_with_only_a_different_flows_cookie_rejected(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A callback for flow A's state, when only flow B's per-flow cookie
+        is present (flow A's own cookie missing), must be rejected as
+        invalid_state and consume flow A's state row -- same as no cookie at
+        all."""
+        from sqlalchemy import select as sa_select
+
+        issuer_a = "https://oidcperflow5.example.com"
+        issuer_b = "https://oidcperflow6.example.com"
+        admin_token = await _setup_and_login(async_client, "oidcperflow5adm", "oidcperflow5adm1")
+        provider_a = await self._create_provider(
+            async_client, name="oidcperflow5", issuer=issuer_a, admin_token=admin_token
+        )
+        provider_b = await self._create_provider(
+            async_client, name="oidcperflow6", issuer=issuer_b, admin_token=admin_token
+        )
+
+        resp_a = await self._authorize(async_client, provider_a, issuer_a)
+        state_a = self._state_from_auth_url(resp_a.json()["auth_url"])
+        # Drop flow A's own cookie so only flow B's ends up in the jar.
+        async_client.cookies.delete(mfa_module._oidc_state_cookie_name(state_a), path="/api/v1/auth/oidc")
+
+        resp_b = await self._authorize(async_client, provider_b, issuer_b)
+        state_b = self._state_from_auth_url(resp_b.json()["auth_url"])
+        assert mfa_module._oidc_state_cookie_name(state_b) in async_client.cookies
+
+        cb = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=test-code&state={state_a}",
+            follow_redirects=False,
+        )
+        assert cb.status_code == 302
+        assert "invalid_state" in cb.headers.get("location", ""), (
+            f"flow A's callback with only flow B's cookie present must be invalid_state, got: "
+            f"{cb.headers.get('location')}"
+        )
+
+        result = await db_session.execute(sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == state_a))
+        assert result.scalar_one_or_none() is None, "state row must be consumed (single-use) even on a mismatch"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_completing_first_flow_does_not_delete_second_flows_cookie(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Full-success pinning: with two OIDC flows in flight, the FIRST
+        one completing successfully must delete only its OWN binding
+        cookie on the success redirect -- the second flow's cookie (and its
+        still-live state row) must be left untouched, so it can still
+        complete afterwards."""
+        import time
+        import urllib.parse
+        from http.cookies import SimpleCookie
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy import select as sa_select
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://oidcperflow7.example.com"
+        client_id = "oidcperflow7-client"
+
+        admin_token = await _setup_and_login(async_client, "oidcperflow7adm", "oidcperflow7adm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "oidcperflow7",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201, create_resp.text
+        provider_id = create_resp.json()["id"]
+
+        discovery_doc = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/authorize",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        # Flow 1: mint the real state row + binding cookie via /oidc/authorize.
+        mock_http_1 = AsyncMock()
+        mock_http_1.stream = MagicMock(return_value=_make_stream_ctx(discovery_doc))
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls_1:
+            mock_cls_1.return_value.__aenter__ = AsyncMock(return_value=mock_http_1)
+            mock_cls_1.return_value.__aexit__ = AsyncMock(return_value=False)
+            auth_resp_1 = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        assert auth_resp_1.status_code == 200, auth_resp_1.text
+        query_1 = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_resp_1.json()["auth_url"]).query))
+        state_1, nonce_1 = query_1["state"], query_1["nonce"]
+
+        # Flow 2: a second, concurrent authorize round for the same provider
+        # (e.g. a second tab) -- its cookie must survive flow 1's completion.
+        mock_http_2 = AsyncMock()
+        mock_http_2.stream = MagicMock(return_value=_make_stream_ctx(discovery_doc))
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls_2:
+            mock_cls_2.return_value.__aenter__ = AsyncMock(return_value=mock_http_2)
+            mock_cls_2.return_value.__aexit__ = AsyncMock(return_value=False)
+            auth_resp_2 = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+        assert auth_resp_2.status_code == 200, auth_resp_2.text
+        query_2 = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_resp_2.json()["auth_url"]).query))
+        state_2 = query_2["state"]
+        assert state_2 != state_1
+
+        cookie_name_1 = mfa_module._oidc_state_cookie_name(state_1)
+        cookie_name_2 = mfa_module._oidc_state_cookie_name(state_2)
+        assert cookie_name_1 != cookie_name_2
+        assert cookie_name_1 in async_client.cookies
+        assert cookie_name_2 in async_client.cookies
+
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": "oidc-sub-perflow7",
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": nonce_1,
+                "email": "oidcperflow7@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+        token_response = {"access_token": "mock-access", "token_type": "Bearer", "id_token": id_token}
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = str(data)
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+            async def aiter_bytes(self):
+                yield json.dumps(self._data).encode()
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                if "jwks" in url:
+                    return _MockResp(jwks_data)
+                return _MockResp(discovery_doc)
+
+            async def post(self, url, **kwargs):
+                return _MockResp(token_response)
+
+            def stream(self, method, url, **kwargs):
+                if method == "POST":
+                    return _StreamCtx(self.post(url, **kwargs))
+                return _StreamCtx(self.get(url, **kwargs))
+
+        # Complete flow 1 -- its own cookie (cookie_name_1) is in the jar
+        # alongside flow 2's (cookie_name_2), exactly like a real second tab.
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-auth-code-perflow7&state={state_1}",
+                follow_redirects=False,
+            )
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_token=" in location, f"expected the success redirect, got: {location}"
+
+        set_cookie_headers = list(callback_resp.headers.get_list("set-cookie"))
+        deleted_names = set()
+        for raw in set_cookie_headers:
+            jar: SimpleCookie = SimpleCookie()
+            jar.load(raw)
+            for morsel_name, morsel in jar.items():
+                if morsel["max-age"] == "0":
+                    deleted_names.add(morsel_name)
+
+        assert cookie_name_1 in deleted_names, (
+            f"flow 1's own cookie must be deleted on its success redirect, got Set-Cookie: {set_cookie_headers}"
+        )
+        assert cookie_name_2 not in deleted_names, (
+            f"flow 2's cookie must survive flow 1's success redirect, got Set-Cookie: {set_cookie_headers}"
+        )
+
+        # Flow 2's state row is still live -- its own callback can still succeed.
+        result = await db_session.execute(sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == state_2))
+        assert result.scalar_one_or_none() is not None, "flow 2's state row must still be live"
 
 
 class TestCookieSecureBehindTrustedProxy:
@@ -3986,6 +4316,15 @@ class TestCookieSecureBehindTrustedProxy:
             if name in jar:
                 return jar[name]
         raise AssertionError(f"no {name} Set-Cookie header found in {list(headers.get_list('set-cookie'))!r}")
+
+    @classmethod
+    def _parse_oidc_state_cookie(cls, headers, auth_url: str):
+        """T-111: the oidc_state cookie name is derived from the flow's own
+        ``state`` query param, so it must be read out of ``auth_url`` first."""
+        import urllib.parse
+
+        state = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_url).query))["state"]
+        return cls._parse_cookie(headers, mfa_module._oidc_state_cookie_name(state))
 
     async def _authorize_with_headers(
         self, client: AsyncClient, admin_token: str, *, name: str, issuer: str, headers: dict[str, str] | None = None
@@ -4057,7 +4396,7 @@ class TestCookieSecureBehindTrustedProxy:
             issuer="https://trustproxysec.example.com",
             headers={"X-Forwarded-Proto": "https"},
         )
-        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        oidc_cookie = self._parse_oidc_state_cookie(auth_resp.headers, auth_resp.json()["auth_url"])
         assert bool(oidc_cookie["secure"]) is True, (
             "oidc_state cookie must be Secure when a trusted proxy forwards https"
         )
@@ -4094,7 +4433,7 @@ class TestCookieSecureBehindTrustedProxy:
             issuer="https://trustproxyhttp.example.com",
             headers={"X-Forwarded-Proto": "http"},
         )
-        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        oidc_cookie = self._parse_oidc_state_cookie(auth_resp.headers, auth_resp.json()["auth_url"])
         assert bool(oidc_cookie["secure"]) is False, (
             "oidc_state cookie must not be Secure when the forwarded proto is http"
         )
@@ -4129,7 +4468,7 @@ class TestCookieSecureBehindTrustedProxy:
             name="trustproxynohdrprov",
             issuer="https://trustproxynohdr.example.com",
         )
-        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        oidc_cookie = self._parse_oidc_state_cookie(auth_resp.headers, auth_resp.json()["auth_url"])
         assert bool(oidc_cookie["secure"]) is False, (
             "oidc_state cookie must not be Secure when there is no forwarded-proto header at all"
         )
@@ -4167,7 +4506,7 @@ class TestCookieSecureBehindTrustedProxy:
             issuer="https://untrustedfp.example.com",
             headers={"X-Forwarded-Proto": "https"},
         )
-        oidc_cookie = self._parse_cookie(auth_resp.headers, "oidc_state")
+        oidc_cookie = self._parse_oidc_state_cookie(auth_resp.headers, auth_resp.json()["auth_url"])
         assert bool(oidc_cookie["secure"]) is False, (
             "an untrusted peer's X-Forwarded-Proto must not be able to force Secure (oidc_state)"
         )

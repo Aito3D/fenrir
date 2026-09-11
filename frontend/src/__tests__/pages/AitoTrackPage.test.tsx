@@ -301,6 +301,59 @@ describe('AitoTrackPage', () => {
     clearSpy.mockRestore();
   });
 
+  // T-110: the deadline timer is only one of the two cancellation sources
+  // the queryFn composes (see the comment above it in AitoTrackPage.tsx) —
+  // TanStack's own signal, which fires when the last observer unmounts, is
+  // the other. Prove it actually reaches the network request, not just the
+  // page's own controller.
+  it('aborts the in-flight request when the page unmounts, via TanStack\'s own signal', async () => {
+    let requestSignal: AbortSignal | undefined;
+    server.use(
+      http.get('/api/v1/aito/track/:token', async ({ request }) => {
+        requestSignal = request.signal;
+        await delay('infinite');
+        return HttpResponse.json(FIXTURE);
+      }),
+    );
+    const { unmount } = renderAt('unmount-me');
+    await waitFor(() => expect(requestSignal).toBeDefined());
+    expect(requestSignal!.aborted).toBe(false);
+    unmount();
+    await waitFor(() => expect(requestSignal!.aborted).toBe(true));
+  });
+
+  // T-110: the other cancellation source — a refetch superseding a request
+  // still in flight — must also abort the superseded request's signal, not
+  // just leave it to resolve into a discarded update.
+  it('aborts the superseded request\'s signal when a later refetch replaces it', async () => {
+    let calls = 0;
+    let secondRequestSignal: AbortSignal | undefined;
+    server.use(
+      http.get('/api/v1/aito/track/:token', async ({ request }) => {
+        calls += 1;
+        if (calls === 2) {
+          secondRequestSignal = request.signal;
+          await delay('infinite');
+        }
+        return HttpResponse.json(FIXTURE);
+      }),
+    );
+    const { queryClient } = renderAt('supersede');
+    // The first fetch (on mount) resolves normally, giving the query data —
+    // `cancelRefetch` (the default) only cancels an in-flight fetch once
+    // there is already data to fall back on (see query-core's `fetch`).
+    await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
+    // The second fetch hangs; capture its request signal before superseding it.
+    const second = queryClient.refetchQueries({ queryKey: ['aito-track', 'supersede'] });
+    await waitFor(() => expect(secondRequestSignal).toBeDefined());
+    expect(secondRequestSignal!.aborted).toBe(false);
+    // A third refetch, triggered while the second is still hung, supersedes
+    // it — the second request's signal must abort.
+    const third = queryClient.refetchQueries({ queryKey: ['aito-track', 'supersede'] });
+    await waitFor(() => expect(secondRequestSignal!.aborted).toBe(true));
+    await Promise.all([second, third]);
+  });
+
   it('exposes the timeline to assistive tech and lists the steps on demand', async () => {
     mockTrack(FIXTURE);
     renderAt('a11y');

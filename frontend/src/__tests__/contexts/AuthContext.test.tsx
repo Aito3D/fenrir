@@ -1419,4 +1419,111 @@ describe('AuthContext', () => {
       expect(result.current.user).toBeNull();
     });
   });
+
+  // T-109: refreshAuth() is the public re-check-auth-status function exposed
+  // on the context (SetupPage calls it right after api.setupAuth() succeeds,
+  // to pick up the freshly-flipped auth_enabled/requires_setup flags without
+  // a full page reload). It's a thin wrapper around checkAuthStatus() — see
+  // the "token validation on mount (#1889)" describe above for that
+  // function's full retry/401 behaviour; these tests exercise it via the
+  // manual refreshAuth() entry point instead of the mount-time effect, and
+  // confirm it actually re-hits the network rather than replaying stale state.
+  describe('refreshAuth (T-109)', () => {
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+    });
+
+    it('re-fetches /auth/status (and /auth/me once a token exists) and updates authEnabled/requiresSetup/user, mirroring the post-setup admin-bootstrap re-check', async () => {
+      let statusCalls = 0;
+      let meCalls = 0;
+      server.use(
+        http.get('/api/v1/auth/status', () => {
+          statusCalls++;
+          return HttpResponse.json({ auth_enabled: false, requires_setup: true });
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      // Before: setup is still required, no user, and only the mount-time
+      // fetch has happened.
+      await waitFor(() => expect(result.current.requiresSetup).toBe(true));
+      expect(result.current.authEnabled).toBe(false);
+      expect(result.current.user).toBeNull();
+      expect(statusCalls).toBe(1);
+      expect(meCalls).toBe(0);
+
+      // Setup just completed server-side: auth is now enabled, setup is no
+      // longer required, and the freshly-created admin's token is stored —
+      // the same shape as SetupPage's onSuccess handler calling refreshAuth()
+      // right after api.setupAuth() resolves.
+      setAuthToken('admin-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', () => {
+          statusCalls++;
+          return HttpResponse.json({ auth_enabled: true, requires_setup: false });
+        }),
+        http.get('/api/v1/auth/me', () => {
+          meCalls++;
+          return HttpResponse.json({
+            id: 7,
+            username: 'admin',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          });
+        })
+      );
+
+      await act(async () => {
+        await result.current.refreshAuth();
+      });
+
+      // After: the real implementation re-fetched /auth/status and, because
+      // auth is now enabled and a token is present, /auth/me too — and the
+      // returned state actually changed, proving these were live requests
+      // rather than the initial mount-time snapshot.
+      expect(statusCalls).toBe(2);
+      expect(meCalls).toBe(1);
+      expect(result.current.authEnabled).toBe(true);
+      expect(result.current.requiresSetup).toBe(false);
+      expect(result.current.user?.username).toBe('admin');
+    });
+
+    it('clears user and the token when /auth/me reports a definitive 401 during a manual refresh', async () => {
+      setAuthToken('stale-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      // Positive evidence first: a real user is loaded before the token goes stale.
+      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
+      expect(getAuthToken()).toBe('stale-token');
+
+      // The token has since been revoked server-side — /auth/me now returns
+      // a definitive 401, matching checkAuthStatus's `err.status === 401`
+      // branch (lines ~93-95) that skips the transient-failure retries and
+      // clears the token outright (line ~118).
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
+        )
+      );
+
+      await act(async () => {
+        await result.current.refreshAuth();
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+      expect(localStorage.getItem('auth_token')).toBeNull();
+    });
+  });
 });

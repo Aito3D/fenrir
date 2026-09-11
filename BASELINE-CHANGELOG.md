@@ -11574,3 +11574,62 @@ fake request covering multi-hop headers (only the first value counts), whitespac
 normalization, and a request with no `client` at all (falls back to the raw scheme without
 crashing). All pre-existing `2fa_challenge`/`oidc_state` cookie tests keep passing
 unchanged. User-approved 2026-09-10.
+
+## T-111 — 2026-09-10 — user-approved behavior change
+
+`oidc_authorize` (T-092) stored every in-flight OIDC flow's binding value under one fixed
+cookie name, `oidc_state`, scoped to `path=/api/v1/auth/oidc`. A second authorize round
+started before the first one's callback returned — e.g. `/login` open in two tabs, or a
+user backing out of the IdP and clicking the provider button again — overwrote that single
+cookie with the second flow's binding, even though the first flow's `AuthEphemeralToken`
+row was still live. Returning to the first tab and finishing that IdP login then failed
+`oidc_callback`'s binding check (`stored_binding != request.cookies.get("oidc_state")`)
+after the state row had already been deleted (single-use), so the first flow could not be
+retried at all — the entire SSO round trip had to be restarted from `/login`. The success
+path's `delete_cookie("oidc_state")` compounded this by deleting whichever cookie was
+current, killing any other flow still in progress the moment either one finished.
+
+Fixed by keying the binding cookie's *name* — not just its value — to the flow that set
+it: `_oidc_state_cookie_name(state)` returns `f"oidc_state_{state[:16]}"`, using the first
+16 of the 43 URL-safe characters of that flow's own `state` (`secrets.token_urlsafe(32)`,
+already unique and cookie-name-safe) to keep the header compact while remaining unique per
+flow. `oidc_authorize` sets the cookie under that name instead of the fixed `"oidc_state"`
+— every other attribute (`value=binding`, `httponly=True`, `secure=_cookie_secure(request)`,
+`samesite="lax"`, `max_age=int(OIDC_STATE_TTL.total_seconds())`, `path="/api/v1/auth/oidc"`)
+is unchanged. `oidc_callback` already has `state` from the query string, so it reads
+`request.cookies.get(_oidc_state_cookie_name(state))` for the same comparison it always
+did, and the success redirect calls `delete_cookie(_oidc_state_cookie_name(state), ...)` so
+it only ever clears its own flow's cookie. Abandoned flows' cookies still expire on their
+own via the existing `max_age`; no registry or list of live cookies was needed.
+
+User-visible change, in the auditor's words: "a user with /login open in two tabs (or who
+backs out of the IdP and clicks the provider button again) starts authorize twice; the
+second round overwrites the cookie, so returning to the first tab and finishing that IdP
+login lands on `/login?oidc_error=invalid_state` with the state row destroyed — no retry is
+possible, the whole SSO round trip has to be restarted." After this fix, both flows can
+complete independently — finishing either one no longer disturbs the other's cookie, and
+the invalid-state failure only occurs for the reasons it always did (no cookie at all,
+mismatched value, or an already-consumed/expired state row).
+
+Unaffected: the binding *semantics* are untouched — `stored_binding is not None and
+stored_binding != <cookie>` still redirects to `invalid_state` after the state row has
+already been deleted (commit, not rollback, exactly as T-092 designed it), and a
+directly-inserted state row with `challenge_id=None` still needs no cookie at all. The
+cookie's other attributes (`HttpOnly`, `Lax`, `path=/api/v1/auth/oidc`, `max_age`,
+`secure` via `_cookie_secure`) are unchanged. `_cookie_secure`, the `2fa_challenge` cookie
+and its helpers, OIDC provider configuration, discovery, PKCE, and token exchange are all
+untouched.
+
+Existing tests updated in `test_mfa_api.py` (`TestOIDCStateBindingCookie`,
+`TestCookieSecureBehindTrustedProxy`, and T-107's `test_success_redirect_clears_binding_cookie`)
+to derive the expected cookie name from the `state` returned in `auth_url` via
+`mfa_module._oidc_state_cookie_name` instead of asserting the literal name `"oidc_state"` —
+assertion strength (HttpOnly/Lax/path/max-age/Secure) is unchanged. New tests added
+(`TestOIDCStatePerFlowCookies`): two authorize calls from the same client get two different
+cookie names and both remain present in the jar simultaneously; completing the first
+flow's callback while the second flow's cookie also sits in the jar still passes the state
+check; a callback whose own per-flow cookie is missing (only a *different* flow's cookie is
+present) is still rejected as `invalid_state` with its state row consumed; and, with full
+success-path mocking (discovery, JWKS, token exchange), completing one flow's callback
+deletes only that flow's own cookie on the success redirect — the other flow's cookie and
+still-live state row are left untouched. User-approved 2026-09-10.
