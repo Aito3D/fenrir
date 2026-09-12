@@ -9,6 +9,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.sent': 'aito.history.quoteSent',
   'quote.emailed': 'aito.history.quoteEmailed',
   'invoice.emailed': 'aito.history.invoiceEmailed',
+  'invoice.created': 'aito.history.invoiceCreated',
   'quote.viewed': 'aito.history.quoteViewed',
   'quote.accepted': 'aito.history.quoteAccepted',
   'quote.unaccepted': 'aito.history.quoteUnaccepted',

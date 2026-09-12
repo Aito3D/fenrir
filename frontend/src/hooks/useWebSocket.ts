@@ -560,14 +560,17 @@ export function useWebSocket() {
         if (typeof message.project_id === 'number') {
           aitoEventsDirtyRef.current.add(message.project_id);
         }
-        // 'invoice-email' is the one action whose effect a second operator's
-        // open panel cannot otherwise learn about: it changes only what
-        // Books itself reports (see routes/aito.py's send_invoice_email),
+        // The two actions whose effect a second operator's open panel cannot
+        // otherwise learn about: both change only what Books itself reports
+        // (see routes/aito.py's send_invoice_email and create_invoice),
         // nothing on the project row a board resync would pick up, and the
         // Invoice card's own query sits on a 5-minute staleTime. Without
-        // this a second viewer keeps reading "Draft" for up to five minutes
-        // after someone else's send actually went through.
-        if (message.action === 'invoice-email' && typeof message.project_id === 'number') {
+        // this a second viewer keeps reading "Draft" — or no invoice card at
+        // all — for up to five minutes after the bill actually went out.
+        if (
+          (message.action === 'invoice-email' || message.action === 'invoice') &&
+          typeof message.project_id === 'number'
+        ) {
           queryClient.invalidateQueries({ queryKey: ['aito-invoice', message.project_id] });
         }
         if (aitoResyncTimeoutRef.current) clearTimeout(aitoResyncTimeoutRef.current);

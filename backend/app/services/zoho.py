@@ -918,6 +918,49 @@ class ZohoService:
         """
         await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/email", json={"to_mail_ids": to_mail_ids})
 
+    async def create_invoice(self, db: AsyncSession, payload: dict) -> dict:
+        """Raise an invoice. Returns Books' own copy, ids and totals included.
+
+        There is no conversion endpoint to use instead — Zoho's KB states
+        plainly that an estimate cannot be converted to an invoice through
+        the API — so the caller builds the body and passes ``estimate_id`` to
+        link the two. See ``aito_invoice_create`` for what goes in it.
+
+        Created as a DRAFT: no ``status`` is sent and Books' default for a
+        new invoice is draft, which is what the Aito button promises. Nothing
+        here emails anything.
+        """
+        return (await self._request(db, "POST", "/invoices", json=payload)).get("invoice", {})
+
+    async def get_retainer_invoice(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
+        """One retainer invoice in full — specifically its ``payments``.
+
+        The estimate's own ``retainerinvoices`` summary carries the number,
+        status and total but no payment ids, and it is the payment id that
+        applying a deposit to an invoice actually needs.
+        """
+        return (await self._request(db, "GET", f"/retainerinvoices/{_seg(retainer_invoice_id)}")).get(
+            "retainerinvoice", {}
+        )
+
+    async def apply_invoice_credits(self, db: AsyncSession, invoice_id: str, invoice_payments: list[dict]) -> None:
+        """Point existing customer payments at an invoice.
+
+        This is how a paid retainer becomes a payment on the bill: Books
+        books a retainer's payment as a customer ADVANCE with an
+        ``unused_amount``, and applying it is adding the invoice to that
+        payment rather than recording a new one. Each entry is
+        ``{"payment_id": ..., "amount_applied": ...}``; Books rejects a total
+        that exceeds the invoice balance, so the caller caps it.
+
+        The endpoint is named for credit notes, which share it — the invoice
+        that results shows the money under ``payment_made``, not
+        ``credits_applied`` (verified on FA-26-4100).
+        """
+        await self._request(
+            db, "POST", f"/invoices/{_seg(invoice_id)}/credits", json={"invoice_payments": invoice_payments}
+        )
+
     async def create_contact(
         self,
         db: AsyncSession,

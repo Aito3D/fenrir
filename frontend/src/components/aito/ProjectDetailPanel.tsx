@@ -11,6 +11,7 @@ import { UnacceptHoldPill } from './UnacceptHoldPill';
 import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
+import { CreateInvoiceButton } from './CreateInvoiceButton';
 import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
 import { QuoteDownloadButton } from './QuoteDownloadButton';
@@ -1324,6 +1325,14 @@ export function ProjectDetailPanel({
                         gap-px dividers handle without any last-child rule. */}
                     {canUpdate && <SendQuoteButton project={project} />}
                   </div>
+
+                  {/* The card's last action, and the only irreversible one on
+                      this panel: it raises a real invoice in Books and spends
+                      the client's deposits against it. Full width under the
+                      segmented row rather than a fourth cell in it — those
+                      three read a document, this one creates one. Renders
+                      itself away outside Finish; see canCreateInvoice. */}
+                  {canUpdate && <CreateInvoiceButton project={project} />}
                   </>
                   )}
 

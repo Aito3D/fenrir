@@ -29,8 +29,10 @@ from backend.app.schemas.aito import (
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
+    AitoInvoiceCreatedResponse,
     AitoInvoiceEmailContent,
     AitoInvoiceEmailRequest,
+    AitoInvoicePreview,
     AitoInvoiceResponse,
     AitoNoteCreate,
     AitoPickupMessageResponse,
@@ -49,6 +51,8 @@ from backend.app.schemas.aito import (
     AitoQuoteEmailResponse,
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
+    AitoRetainerApplied,
+    AitoRetainerPreview,
     AitoShippingIsland,
     AitoShippingService,
     AitoShippingServicesResponse,
@@ -67,6 +71,12 @@ from backend.app.services import aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
+from backend.app.services.aito_invoice_create import (
+    apply_retainers,
+    build_invoice_payload,
+    plan_invoice,
+    share_out,
+)
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
@@ -81,12 +91,12 @@ from backend.app.services.aito_shipping import (
 )
 from backend.app.services.aito_stats import compute_aito_stats
 from backend.app.services.aito_tracking import (
-    SMS_PREFIX,
     build_tracking_url,
     compute_tracking,
     external_url as tracking_external_url,
     mint_unique_token,
     tracking_url,
+    with_tracking_sms,
 )
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
@@ -1571,6 +1581,226 @@ async def get_invoice(
         logger.warning("Aito invoice lookup failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoInvoiceResponse(**newest, url=url, invoice_count=len(invoices))
+
+
+async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoProject:
+    """The project, or the reason it must not be billed right now.
+
+    Every guard here is also the button's own visibility rule on the
+    frontend, restated server-side because the button is not the only way to
+    reach this endpoint and because raising a real invoice is the one Aito
+    action nothing in this app can undo.
+
+    409 throughout rather than 422: none of these is a malformed request, it
+    is a request that is right but arrives at the wrong moment, and the
+    frontend distinguishes them only by the message it shows.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=409, detail="This project has no Zoho quote to invoice")
+    if project.board_column != "finish":
+        # The rule the operator asked for: a job is billed when it is
+        # finished, not while it is still on a printer.
+        raise HTTPException(status_code=409, detail="Only a project in Finish can be invoiced")
+    if project.quote_sync_state == "pending":
+        # An edit is still on its way to Books. Billing now would invoice the
+        # lines as they were BEFORE that edit landed, and no amount of
+        # re-syncing afterwards would correct a document already issued.
+        raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
+    return project
+
+
+@router.get("/{project_id}/invoice-preview", response_model=AitoInvoicePreview)
+async def get_invoice_preview(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """What "Create invoice" would do, so the confirm dialog can say it.
+
+    Reads only. Runs the same guards as the create route so the dialog can
+    never open on a project the create would refuse — the alternative is an
+    operator reading a full confirmation and then being told no.
+    """
+    project = await _project_ready_to_invoice(db, project_id)
+    try:
+        existing = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        if existing:
+            raise HTTPException(status_code=409, detail="This project already has an invoice in Zoho")
+        plan = await plan_invoice(db, project)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice preview failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    # The SAME split the create will perform — capped, first-listed-first-spent
+    # — not each retainer's raw unused amount. Two deposits that together
+    # exceed a shrunken job would otherwise both display in full under a
+    # balance that had already netted them off, and the dialog would be
+    # promising a split the create does not do.
+    shares = share_out(plan.retainers, plan.total)
+    applied = sum(p["amount_applied"] for _retainer, payments in shares for p in payments)
+    return AitoInvoicePreview(
+        quote_number=plan.estimate_number,
+        currency_code=plan.currency_code,
+        total=plan.total,
+        line_count=len(plan.line_items),
+        retainers=[
+            AitoRetainerPreview(
+                id=retainer.id,
+                number=retainer.number,
+                status=retainer.status,
+                total=retainer.total,
+                applicable=sum(p["amount_applied"] for p in payments),
+            )
+            for retainer, payments in shares
+        ],
+        projected_balance=round(plan.total - applied, 2),
+    )
+
+
+@router.post("/{project_id}/invoice", response_model=AitoInvoiceCreatedResponse)
+async def create_invoice(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Raise the invoice for a finished project, paid down by its deposits.
+
+    ZOHO-FIRST, like ``send_invoice_email``: the invoice IS the act, and
+    nothing is written locally until Books confirms it exists. A timeline
+    entry for an invoice that was never raised is worse than none.
+
+    The plan is re-read here rather than taken from the preview the dialog
+    showed, for the same reason the send route re-reads its recipients: what
+    the client echoes back is not evidence. That costs one extra estimate
+    read and buys the guarantee that the lines billed are the lines Books
+    holds at the moment of billing.
+
+    The retainer application deliberately cannot fail this request. Once
+    ``create_invoice`` returns, a real document exists in the client's
+    account; a 500 after that point would invite a retry that raises a
+    SECOND one. So ``apply_retainers`` swallows its own upstream errors and
+    reports what it managed, and the response says which deposits landed.
+
+    One consequence worth naming: the new invoice makes
+    ``aito_quote_sync._is_locked`` true (non-empty ``invoice_ids``), so the
+    quote stops accepting line edits from this app on the next sync pass.
+    That is the existing, intended rule — an invoiced estimate is accounting,
+    not a draft — and it is why the confirm dialog exists.
+    """
+    project = await _project_ready_to_invoice(db, project_id)
+    # Captured before any Zoho call: every rollback below expires `project`
+    # in the identity map, and reading an expired attribute from async code
+    # raises MissingGreenlet rather than lazily re-loading it. Same rule, and
+    # the same hard-won reason, as send_invoice_email.
+    project_pk, quote_id, client_id = project.id, project.quote_id, project.client_id or ""
+
+    try:
+        existing = await zoho_service.list_project_invoices(db, quote_id, client_id)
+        if existing:
+            # Idempotency, not politeness: two operators on the same card, or
+            # one double-click, would otherwise bill the client twice.
+            raise HTTPException(status_code=409, detail="This project already has an invoice in Zoho")
+        plan = await plan_invoice(db, project)
+        if not plan.line_items:
+            raise HTTPException(status_code=409, detail="This quote has no lines to invoice")
+        created = await zoho_service.create_invoice(db, build_invoice_payload(plan))
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice creation failed for project %s: %s", project_id, e)
+        await db.rollback()
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    invoice_id = str(created.get("invoice_id") or "")
+    invoice_number = str(created.get("invoice_number") or invoice_id)
+    applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
+
+    try:
+        # Adopt the fact locally, in the same transaction as the event. The
+        # hourly quote-sync sweep would set this eventually, but three
+        # surfaces read it NOW: `canCreateInvoice` (or the button stays
+        # offering to bill a billed job), `mayHaveInvoice` (or reopening the
+        # panel hides the Invoice card for a real invoice), and the invoice
+        # sweep's own selection. Books is the authority and Books has just
+        # confirmed — there is nothing to wait for.
+        project.quote_invoiced = True
+        await record(
+            db,
+            project_pk,
+            "invoice.created",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project_pk,
+            detail={
+                "invoice_number": invoice_number,
+                "total": float(created.get("total") or 0),
+                "retainers_applied": round(sum(a.applied for a in applications), 2),
+            },
+        )
+        await db.commit()
+    except SQLAlchemyError as e:
+        # Never 500 past the create, for the reason in the docstring: the
+        # invoice exists, and a retry would raise a second one. The timeline
+        # loses an entry; the books do not gain a duplicate.
+        logger.error(
+            "Aito invoice %s for project %s WAS RAISED in Books but recording the local "
+            "invoice.created event failed: %s",
+            invoice_number,
+            project_id,
+            e,
+        )
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
+            pass
+
+    # Re-read so the card shows Books' own figures — number, due date and the
+    # balance AFTER the retainers landed, none of which the create response
+    # knows. Degrades to the create response rather than 500ing, same rule as
+    # send_invoice_email's post-send re-read.
+    fresh, url, count = None, "", 1
+    try:
+        invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
+        fresh = next((i for i in invoices if i["id"] == invoice_id), None)
+        count = len(invoices) or 1
+        if fresh:
+            url = await zoho_service.books_invoice_url(db, invoice_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
+        logger.warning("Aito invoice re-read failed for project %s after creating it: %s", project_id, e)
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — see above
+            pass
+    if fresh is None:
+        # The invoice was created but this app cannot see it through the
+        # estimate filter. Logged loudly because the likeliest cause is the
+        # `estimate_id` link not sticking, which would leave the Invoice card
+        # permanently blank for a real bill.
+        logger.warning(
+            "Aito invoice %s for project %s is not listed under estimate %s — the estimate link may be missing",
+            invoice_number,
+            project_id,
+            quote_id,
+        )
+        fresh = {
+            "id": invoice_id,
+            "number": invoice_number,
+            "date": str(created.get("date") or ""),
+            "due_date": str(created.get("due_date") or ""),
+            "total": float(created.get("total") or 0),
+            "balance": float(created.get("balance") or 0),
+            "currency_code": str(created.get("currency_code") or plan.currency_code),
+            "status": str(created.get("status") or ""),
+        }
+
+    await _broadcast_changed("invoice", project_pk, _actor(current_user))
+    return AitoInvoiceCreatedResponse(
+        **fresh,
+        url=url,
+        invoice_count=count,
+        retainers=[AitoRetainerApplied(number=a.number, total=a.total, applied=a.applied) for a in applications],
+    )
 
 
 async def _resolve_project_invoice(db: AsyncSession, project: AitoProject, invoice_id: str | None) -> tuple[dict, int]:
@@ -3101,7 +3331,7 @@ async def generate_pickup_message(
         raise HTTPException(status_code=502, detail=str(e)) from e
     url = await build_tracking_url(db, project)
     if url:
-        message = f"{message}{SMS_PREFIX}{url}"
+        message = with_tracking_sms(message, url)
     await db.commit()  # the minted token must outlive this draft request
     return AitoPickupMessageResponse(message=message, model=model)
 

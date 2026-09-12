@@ -806,6 +806,75 @@ class AitoInvoiceResponse(BaseModel):
     invoice_count: int
 
 
+class AitoRetainerPreview(BaseModel):
+    """One deposit already taken against this quote, and what of it is spendable.
+
+    ``applicable`` is what can be put on the new invoice: the sum of the
+    retainer's UNUSED advance payments, which is 0 for a retainer that is
+    unpaid and also 0 for one already drawn against an earlier invoice.
+    ``total - applicable`` is the part the dialog reports as not applied —
+    the operator needs to see the deposit exists either way, because a
+    retainer silently missing from the confirm dialog reads as "there was no
+    deposit", which is the one thing that would make them bill it twice.
+    """
+
+    id: str
+    number: str
+    status: str
+    total: float
+    applicable: float
+
+
+class AitoInvoicePreview(BaseModel):
+    """What "Create invoice" is about to do, read from Books before it does it.
+
+    Feeds the confirm dialog only. The create route re-reads all of it rather
+    than trusting what comes back — see ``create_invoice`` — so nothing here
+    is load-bearing beyond the sentence the operator reads.
+    """
+
+    quote_number: str
+    currency_code: str
+    total: float
+    line_count: int
+    retainers: list[AitoRetainerPreview]
+    # What the invoice will still owe once the applicable retainers are on
+    # it. Computed server-side so the dialog and the result cannot disagree
+    # about the arithmetic.
+    projected_balance: float
+
+
+class AitoRetainerApplied(BaseModel):
+    """What actually happened to one retainer, reported after the fact."""
+
+    number: str
+    total: float
+    applied: float
+
+
+class AitoInvoiceCreatedResponse(BaseModel):
+    """The new invoice, in the exact shape the Invoice card already renders.
+
+    Extends ``AitoInvoiceResponse`` rather than sitting beside it so the
+    frontend can seed the ``['aito-invoice', id]`` cache straight from this
+    response, the way the send route's does — the card then appears with no
+    second round trip. ``retainers`` is the extra, and it is what the success
+    toast reports.
+    """
+
+    id: str
+    number: str
+    date: str
+    due_date: str
+    total: float
+    balance: float
+    currency_code: str
+    status: str
+    url: str
+    invoice_count: int
+    retainers: list[AitoRetainerApplied]
+
+
 class AitoEventResponse(BaseModel):
     id: int
     occurred_at: datetime

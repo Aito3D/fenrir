@@ -37,6 +37,11 @@ KINDS: dict[str, str] = {
     # the only record that an invoice was ever sent — nothing on the project
     # row stores that.
     "invoice.emailed": "story",
+    # The bill was raised. Distinct from invoice.emailed (the bill went OUT)
+    # and from the quote.* family: this is the moment the job stops being a
+    # price and becomes a receivable, and it is the only local record that
+    # the invoice was raised from Aito rather than by hand in Books.
+    "invoice.created": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
     # Acceptance revoked by hand (the detail panel's hold-to-unaccept pill) —

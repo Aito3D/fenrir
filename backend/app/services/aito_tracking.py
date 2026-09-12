@@ -53,7 +53,11 @@ NOTES_CODE_PREFIX = "Code de suivi : "
 # Wordings this app wrote before 2026-09-08. Stripped on merge, so a card
 # re-synced after the change carries one tracking block, not two.
 _LEGACY_NOTES_PREFIXES = ("Suivez votre commande : ",)
-SMS_PREFIX = "\n\nSuivi : "
+SMS_PREFIX = "\nSuivi : "
+SMS_SIGNATURE = "Aito3D"
+# The blank line before the signature: the link is the message's last word,
+# « Aito3D » is the sign-off under it.
+SMS_SIGNATURE_SEP = "\n\n"
 
 
 def mint_token() -> str:
@@ -113,6 +117,23 @@ def tracking_notes(url: str, token: str) -> str:
     if len(token) == TOKEN_LENGTH:
         text += f"\n{NOTES_CODE_PREFIX}{token}"
     return text
+
+
+def with_tracking_sms(message: str, url: str) -> str:
+    """The pickup SMS with its tracking link — and the signature kept last.
+
+    The draft ends « ...\\nAito3D » (see openrouter._normalize_pickup), and
+    a link simply appended would land under the signature, reading as an
+    afterthought. So the signature is lifted off, the link goes on the very
+    next line, and « Aito3D » goes back after a blank line — the layout of a
+    signed note. A draft without the signature just gets the link at the
+    end."""
+    body = message.rstrip()
+    signed = body.endswith(SMS_SIGNATURE)
+    if signed:
+        body = body.removesuffix(SMS_SIGNATURE).rstrip()
+    text = f"{body}{SMS_PREFIX}{url}"
+    return f"{text}{SMS_SIGNATURE_SEP}{SMS_SIGNATURE}" if signed else text
 
 
 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:

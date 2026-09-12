@@ -4339,6 +4339,51 @@ export interface AitoInvoice {
   invoice_count: number;
 }
 
+/** One deposit already taken against a quote, as the create-invoice confirm
+ *  dialog lists it. `applicable` is what can actually be put on the new
+ *  invoice — the sum of the retainer's UNUSED advance payments, which is 0
+ *  both for an unpaid retainer and for one already drawn against an earlier
+ *  invoice. `total - applicable` is the part the dialog reports as not
+ *  applied. See schemas/aito.py:AitoRetainerPreview. */
+export interface AitoRetainerPreview {
+  id: string;
+  number: string;
+  /** Books' retainer vocabulary — draft / sent / paid / partially_paid. */
+  status: string;
+  total: number;
+  applicable: number;
+}
+
+/** What "Create invoice" is about to do, read from Books before it does it.
+ *  Display data only: the POST re-reads every figure server-side rather than
+ *  trusting anything sent back. */
+export interface AitoInvoicePreview {
+  quote_number: string;
+  currency_code: string;
+  total: number;
+  line_count: number;
+  retainers: AitoRetainerPreview[];
+  /** What the invoice will still owe once the applicable retainers are on
+   *  it. Computed server-side so the dialog and the result cannot disagree. */
+  projected_balance: number;
+}
+
+/** What actually happened to one retainer, reported after the invoice was
+ *  raised. `applied` can be less than `applicable` promised — the deposit
+ *  application is allowed to fail without failing the invoice. */
+export interface AitoRetainerApplied {
+  number: string;
+  total: number;
+  applied: number;
+}
+
+/** The freshly-raised invoice, in the exact shape the Invoice card renders,
+ *  plus the deposit report. Extends AitoInvoice so the caller can seed the
+ *  ['aito-invoice', id] cache straight from it. */
+export interface AitoInvoiceCreated extends AitoInvoice {
+  retainers: AitoRetainerApplied[];
+}
+
 export interface AitoShippingIsland {
   key: string;
   label: string;
@@ -7793,6 +7838,21 @@ export const api = {
    *  is none — which is the ordinary state of a job that has not been billed
    *  yet, not an error. Hits Zoho on every call, so callers should cache. */
   getAitoInvoice: (projectId: number) => request<AitoInvoice | null>(`/aito/${projectId}/invoice`),
+  /** What raising the invoice would do — the confirm dialog's contents.
+   *  Runs the same guards the POST does (Finish column, a quote, no pending
+   *  sync, not already invoiced), so a dialog can never open on a project
+   *  the create would then refuse. */
+  getAitoInvoicePreview: (projectId: number) =>
+    request<AitoInvoicePreview>(`/aito/${projectId}/invoice-preview`),
+  /** Raise the invoice for a finished project and pay it down with the
+   *  deposits already taken against its quote.
+   *
+   *  Irreversible from this app: it creates a real draft invoice in Books
+   *  and points the client's paid retainers at it. The server refuses a
+   *  second call while an invoice exists, but the UI must still confirm
+   *  first. Nothing is emailed. */
+  createAitoInvoice: (projectId: number) =>
+    request<AitoInvoiceCreated>(`/aito/${projectId}/invoice`, { method: 'POST' }),
   /** What Books would send if this invoice were emailed now — preview only.
    *  The POST re-reads it server-side rather than trusting anything sent
    *  back, so this is safe to treat as display data.
