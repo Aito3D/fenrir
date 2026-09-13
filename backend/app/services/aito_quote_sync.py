@@ -1452,17 +1452,6 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
                 return
             await reconcile_quote_status(db, project, estimate)
 
-            # Trigger B (spec §6.3): paid retainers that cover the required
-            # amount are the client's go-ahead. Read off the estimate the
-            # reconcile above already paid for — zero extra Books calls.
-            paid = _paid_retainer_total(estimate)
-            project.retainer_paid_total = paid
-            needed = required_amount(project.quote_total, await deposit_pct(db))
-            if needed is not None and paid >= needed and project.quote_status != "accepted":
-                await accept_quote(
-                    db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
-                )
-
             # The estimate's own total, adopted from the read the reconcile
             # above already paid for. Before this, `quote_total` was written
             # ONLY by `_apply_estimate` — i.e. only on a push — so a quote
@@ -1475,8 +1464,27 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
             # just made, where an absent total genuinely means "this quote has
             # no lines". This reads an estimate that already exists, so a
             # partial payload would zero a real quote's total instead.
+            #
+            # Done BEFORE Trigger B below on purpose: that block's money math
+            # must read the total Books just reported, never the stale cached
+            # figure from our last push — a total edited directly in Books
+            # would otherwise feed the auto-accept threshold from a value
+            # already known to be wrong.
             if estimate.get("total") is not None:
                 project.quote_total = float(estimate["total"])
+
+            # Trigger B (spec §6.3): paid retainers that cover the required
+            # amount are the client's go-ahead. Read off the estimate the
+            # reconcile above already paid for — zero extra Books calls. Uses
+            # `project.quote_total` as just refreshed above, not a value from
+            # before this tick's read.
+            paid = _paid_retainer_total(estimate)
+            project.retainer_paid_total = paid
+            needed = required_amount(project.quote_total, await deposit_pct(db))
+            if needed is not None and paid >= needed and project.quote_status != "accepted":
+                await accept_quote(
+                    db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
+                )
 
             now = datetime.utcnow()
             if should_pull_comments(project, estimate, now):

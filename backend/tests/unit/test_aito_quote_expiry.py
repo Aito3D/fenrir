@@ -145,3 +145,51 @@ async def test_sweep_accepts_when_paid_retainers_cover_the_required_amount(db_se
     await db_session.refresh(p)
     assert p.retainer_paid_total == 10000.0
     assert p.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_sweep_uses_the_fresh_total_from_the_estimate_not_the_stale_cache(db_session, monkeypatch):
+    """The cached quote_total (20000, from our last push) would require a
+    20000 retainer and NOT be covered by 10000 paid. But Books now reports
+    the total as 10000 (edited directly in Books, e.g. a discount) — the
+    fresh figure the reconcile above already read. Trigger B must accept off
+    THAT total, not the stale cache: proves the copy-back runs before the
+    money math, not after it."""
+    await _configure_zoho(db_session)
+    p = AitoProject(
+        description="x",
+        board_column="devis",
+        position=0,
+        status="active",
+        client_id="z1",
+        quote_id="EST1",
+        quote_number="DEV-1",
+        quote_total=20000.0,
+        quote_status="sent",
+        quote_sync_state="idle",
+    )
+    db_session.add(p)
+    await db_session.commit()
+    await db_session.refresh(p)
+
+    async def fake_get_estimate(db, estimate_id):
+        return {
+            "estimate_id": "EST1",
+            "status": "sent",
+            "total": 10000,
+            "is_inclusive_tax": True,
+            "retainerinvoices": [{"status": "paid", "total": 10000}],
+            "last_modified_time": "x",
+        }
+
+    async def ok(db, estimate_id, target, current=None):
+        return None
+
+    monkeypatch.setattr(zoho_service, "get_estimate", fake_get_estimate)
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", ok)
+    monkeypatch.setattr(zoho_service, "books_app_url", ok)
+    await aito_quote_sync.sync_project(db_session, p)
+    await db_session.refresh(p)
+    assert p.quote_total == 10000.0
+    assert p.retainer_paid_total == 10000.0
+    assert p.quote_status == "accepted"
