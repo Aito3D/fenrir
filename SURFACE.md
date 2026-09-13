@@ -28,8 +28,10 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/aito/{project_id}/events ['POST']
 /api/v1/aito/{project_id}/flag ['PATCH']
 /api/v1/aito/{project_id}/invoice ['GET']
+/api/v1/aito/{project_id}/invoice ['POST']
 /api/v1/aito/{project_id}/invoice-email ['GET']
 /api/v1/aito/{project_id}/invoice-email ['POST']
+/api/v1/aito/{project_id}/invoice-preview ['GET']
 /api/v1/aito/{project_id}/invoice.pdf ['GET']
 /api/v1/aito/{project_id}/move ['PATCH']
 /api/v1/aito/{project_id}/pickup-message ['POST']
@@ -960,15 +962,15 @@ websocket:connect
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "from backend.app.core.config import settings; [print(n, \"=\", repr(f.default)) for n, f in sorted(type(settings).model_fields.items())]" 2>/dev/null```
 ```
 api_prefix = '/api/v1'
-app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
+app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')
 app_name = 'Bambuddy'
-archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')
+archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/archive')
 bambu_studio_api_url = 'http://localhost:3001'
 bambu_studio_bundle_dir = None
 bambu_studio_user_dirs = None
 bambu_user_id = '1961034787'
-base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
-database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'
+base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')
+database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-c15/bambuddy.db'
 db_max_overflow = None
 db_pool_recycle = None
 db_pool_size = None
@@ -976,13 +978,13 @@ db_pool_timeout = None
 db_pool_use_lifo = None
 debug = False
 log_backup_count = 3
-log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')
+log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/logs')
 log_level = 'INFO'
 log_max_bytes = 5242880
 log_to_file = True
-plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')
+plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/data/plate_calibration')
 slicer_api_url = 'http://localhost:3003'
-static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')
+static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/static')
 ```
 
 ## Backend service top-level defs (count per signature)
@@ -990,6 +992,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 ```
 1 async def apply_camera_rotation_to_file(path: Path, rotation: int, logger: logging.Logger) -> None:
 1 async def apply_print_charge_for_archive(
+1 async def apply_retainers(
 1 async def auto_assign_spool(
 1 async def backfill_batch_statuses(db: AsyncSession) -> int:
 1 async def build_printer_file(
@@ -1105,6 +1108,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def perform_ssh_update(device_id: str, ip_address: str, install_path: str | None = None) -> None:
 1 async def persist_session(
 1 async def pickup_message(
+1 async def plan_invoice(db: AsyncSession, project: AitoProject) -> InvoicePlan:
 1 async def pop_frame(nonce: str) -> bytes | None:
 1 async def prepare_internal_spool_payload(db: AsyncSession, data: dict, fields_set: set[str]) -> dict:
 1 async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
@@ -1223,6 +1227,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class ImportPreview(BaseModel):
 1 class ImportResult(BaseModel):
 1 class ImportRowResult(BaseModel):
+1 class InvoicePlan:
 1 class KProfile:
 1 class LabelData:
 1 class LDAPConfig:
@@ -1281,6 +1286,8 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class PushcutUpstreamError(Exception):
 1 class ResolvedProfile(NamedTuple):
 1 class RESTSmartPlugService:
+1 class RetainerApplication:
+1 class RetainerCredit:
 1 class ScanResult(BaseModel):
 1 class SensorReading:
 1 class ShippingCatalogueUnavailable(Exception):
@@ -1347,7 +1354,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
 1 def build_camera_url(ip_address: str, access_code: str, model: str | None) -> str:
 1 def build_description(service: str, task: ExportTask) -> str:
+1 def build_invoice_payload(plan: InvoicePlan) -> dict:
 1 def build_line_items(
+1 def build_line_items(estimate_lines: list[dict]) -> list[dict]:
 1 def build_match_index(catalogue: list[FilamentProduct]) -> CatalogueIndex:
 1 def build_preview(
 1 def build_shipping_description(shipping: ExportShipping) -> str:
@@ -1527,6 +1536,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def service_for_island(island: str | None) -> str | None:
 1 def service_for_sku(sku: str | None) -> str | None:
 4 def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
+1 def share_out(retainers: list[RetainerCredit], balance: float) -> list[tuple[RetainerCredit, list[dict]]]:
 1 def should_pull_comments(project: AitoProject, estimate: dict, now: datetime) -> bool:
 1 def start_aito_quote_sync() -> None:
 1 def start_gcode_is_missing(content: bytes, *, export_3mf: bool) -> bool:
@@ -1557,6 +1567,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def verify_3mf_candidate(
 1 def waiting_reason_for_codes(codes: list[int]) -> str:
 1 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
+1 def with_tracking_sms(message: str, url: str) -> str:
 ```
 
 ## Frontend exported symbols — utils + hooks
@@ -1948,6 +1959,7 @@ export function useColumnMoveMutation
 export function useColumnReflow
 export function useCombinedGridStats
 export function useContactedMutation
+export function useCreateInvoiceMutation
 export function useCurrency
 export function useDismissableDialog
 export function useDueDateMutation
@@ -2175,6 +2187,7 @@ confirmEnableEmailOTP
 connectPrinter
 connectSpoolman
 controlSmartPlug
+createAitoInvoice
 createAitoProject
 createAitoTask
 createAPIKey
@@ -2316,6 +2329,7 @@ getAitoEvents
 getAitoInvoice
 getAitoInvoiceEmail
 getAitoInvoicePdf
+getAitoInvoicePreview
 getAitoProjects
 getAitoQuoteEmail
 getAitoQuotePdf
