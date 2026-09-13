@@ -78,6 +78,13 @@ KINDS: dict[str, str] = {
     # one does NOT set the contacted mark. Story depth for the same reason
     # the contacted pair has it: it is part of "who told them, and when".
     "project.sms.sent": "story",
+    # The online payment link's life (services/aito_payment_links.py). Story
+    # depth: "the client paid" is the narrative, and a link cancelled because
+    # a retainer covered it explains why the panel shows no link.
+    "payment_link.created": "story",
+    "payment_link.replaced": "story",
+    "payment_link.paid": "story",
+    "payment_link.cancelled": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",
