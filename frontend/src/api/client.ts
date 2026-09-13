@@ -1455,9 +1455,16 @@ export interface AppSettings {
   openrouter_model: string;
   // Pushcut pickup-SMS relay (write-only — the URL embeds its secret token)
   pushcut_sms_url: string;
+  // Heimdall payment bridge (token is write-only)
+  heimdall_base_url: string;
+  heimdall_api_token: string;
+  /** 0 = payment links ask for the full quote; otherwise the deposit share. */
+  aito_deposit_pct: number;
+  aito_quote_validity_days: number;
   /** Aito follow-ups strip thresholds, in days. */
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;
+  aito_followup_link_days: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2859,6 +2866,7 @@ export interface NotificationProvider {
   on_print_progress: boolean;
   on_print_missing_spool_assignment: boolean;
   on_billing_charge_failed: boolean;
+  on_aito_payment_received: boolean;
   // Printer status events
   on_printer_offline: boolean;
   on_printer_error: boolean;
@@ -2922,6 +2930,7 @@ export interface NotificationProviderCreate {
   on_print_progress?: boolean;
   on_print_missing_spool_assignment?: boolean;
   on_billing_charge_failed?: boolean;
+  on_aito_payment_received?: boolean;
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
@@ -2978,6 +2987,7 @@ export interface NotificationProviderUpdate {
   on_print_progress?: boolean;
   on_print_missing_spool_assignment?: boolean;
   on_billing_charge_failed?: boolean;
+  on_aito_payment_received?: boolean;
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
@@ -4090,6 +4100,7 @@ export interface AitoTracking {
   shipping: { island: string; service: string; lta: string | null } | null;
   done_at: string | null;
   invoice: AitoTrackingInvoice | null;
+  payment: AitoTrackingPayment | null;
   reference: string | null;
   updated_at: string;
 }
@@ -4098,6 +4109,35 @@ export interface AitoTrackingLink {
   tracking_url: string | null;
   /** Regenerate only: whether the Zoho quote's notes took the new link. */
   quote_notes?: 'updated' | 'failed' | null;
+}
+
+export type AitoPaymentLinkState = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
+
+/** The project's current online payment link (Heimdall/OSB), or null. `url`
+ *  is the public payment page — safe on the board payload like quote_url. */
+export interface AitoPaymentLink {
+  state: AitoPaymentLinkState;
+  amount: number;
+  currency: string;
+  url: string | null;
+  /** ISO `YYYY-MM-DD` — the link dies at the end of that UTC day. */
+  expires_on: string;
+  paid_at: string | null;
+  /** Last Heimdall failure for this link, or null. */
+  sync_error: string | null;
+}
+
+export interface AitoTrackingPayment {
+  state: 'unpaid' | 'paid';
+  url: string | null;
+  /** True when the link asked for a deposit share rather than the whole quote. */
+  deposit: boolean;
+}
+
+export interface HeimdallStatus {
+  configured: boolean;
+  reachable: boolean | null;
+  error: 'unauthorized' | 'forbidden' | 'unreachable' | null;
 }
 
 export type AitoFlag = 'urgent' | 'sav' | 'pause';
@@ -4149,6 +4189,12 @@ export interface AitoProject {
   invoice_balance: number | null;
   invoice_due_date: string | null;
   invoice_checked_at: string | null;
+  /** Books' expiry_date for the quote (ISO date), copied back by the sync. */
+  quote_expiry_date: string | null;
+  /** Paid retainers as last read by the sweep, or null. */
+  retainer_paid_total: number | null;
+  /** The current online payment link, or null when there is none. */
+  payment_link: AitoPaymentLink | null;
   /** The worker's push state for this project's quote. Always present —
    *  never null — even on hand-made cards that have never had a quote
    *  ('idle'). 'pending' while the worker has not yet caught up with the
@@ -7948,10 +7994,14 @@ export const api = {
     request<void>(`/aito/${id}`, { method: 'DELETE' }),
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
+  refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),
 
   // Zoho Books integration
   getZohoStatus: (probe = false) =>
     request<ZohoStatus>(`/zoho/status${probe ? '?probe=true' : ''}`),
+  // Heimdall payment bridge
+  testHeimdall: (body: { base_url?: string; token?: string }) =>
+    request<HeimdallStatus>('/heimdall/test', { method: 'POST', body: JSON.stringify(body) }),
   searchZohoContacts: (q: string) => request<ZohoContact[]>(`/zoho/contacts?q=${encodeURIComponent(q)}`),
   /** An empty query lists the most recent quotes, so the picker is useful
    *  before the user types anything. */

@@ -437,6 +437,9 @@ export function placeholderProject(fields: {
     invoice_balance: null,
     invoice_due_date: null,
     invoice_checked_at: null,
+    quote_expiry_date: null,
+    retainer_paid_total: null,
+    payment_link: null,
     quote_sync_state: 'pending',
     quote_invoiced: false,
     // A fresh placeholder carries no flag: it is a workshop signal set by hand

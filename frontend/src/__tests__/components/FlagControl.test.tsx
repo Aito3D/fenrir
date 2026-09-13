@@ -62,6 +62,9 @@ const baseProject: AitoProject = {
   shipping_lta: null,
   shipping_service_name: null,
   tracking_configured: false,
+  quote_expiry_date: null,
+  retainer_paid_total: null,
+  payment_link: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };

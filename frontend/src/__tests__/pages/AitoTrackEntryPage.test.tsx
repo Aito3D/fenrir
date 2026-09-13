@@ -46,7 +46,7 @@ const FIXTURE: AitoTracking = {
   column: 'print',
   tasks: [{ title: 'Support GoPro', quantity: null }],
   due_date: '2026-09-20', shipping: null, done_at: null,
-  invoice: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
+  invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
 };
 
 function Landed() {
