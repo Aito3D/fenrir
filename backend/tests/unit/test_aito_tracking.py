@@ -203,7 +203,17 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
     assert r.status_code == 200, r.text
     assert r.headers["cache-control"] == "no-store"
     body = r.json()
-    assert set(body) == {"column", "tasks", "due_date", "shipping", "done_at", "invoice", "reference", "updated_at"}
+    assert set(body) == {
+        "column",
+        "tasks",
+        "due_date",
+        "shipping",
+        "done_at",
+        "invoice",
+        "reference",
+        "updated_at",
+        "payment",
+    }
     assert body["updated_at"]  # project.updated_at, naive UTC ISO string
     assert body["column"] == "print"
     assert body["tasks"] == [{"title": "Support GoPro", "quantity": None}, {"title": "Pièce 2", "quantity": None}]

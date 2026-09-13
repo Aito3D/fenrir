@@ -19,7 +19,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
-from backend.app.schemas.aito import AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
+from backend.app.schemas.aito import AitoTrackingPayment, AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
 from backend.app.services.aito_shipping import SERVICE_LABELS
 
 # Crockford's base32: digits and capitals minus I, L, O and U, so no symbol
@@ -241,6 +241,20 @@ def invoice_state(status: str | None) -> str | None:
     return _INVOICE_STATE.get(status or "")
 
 
+async def payment_state(db: AsyncSession, project_id: int) -> AitoTrackingPayment | None:
+    """Read off the ledger only — the public page must never trigger a
+    Heimdall call. Pending -> unpaid with the URL; paid -> paid; a dead or
+    absent link -> None."""
+    from backend.app.services.aito_payment_links import current_link, deposit_pct
+
+    row = await current_link(db, project_id)
+    if row is None or row.heimdall_id is None or row.status not in ("pending", "paid"):
+        return None
+    return AitoTrackingPayment(
+        state="paid" if row.status == "paid" else "unpaid", url=row.url, deposit=(await deposit_pct(db)) > 0
+    )
+
+
 # (cost column, quantity column) per service — the quantity of a service
 # only counts when that service is priced (a non-null cost).
 _SERVICE_COUNTS = (
@@ -365,5 +379,6 @@ async def compute_tracking(
         invoice=invoice_state(project.invoice_status),
         reference=project.quote_number or None,
         updated_at=updated_at,
+        payment=await payment_state(db, project.id),
     )
     return project.id, data

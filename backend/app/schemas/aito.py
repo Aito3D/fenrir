@@ -1097,6 +1097,16 @@ class AitoTrackingTask(BaseModel):
     quantity: int | None
 
 
+class AitoTrackingPayment(BaseModel):
+    """The online payment link as the client sees it: a state and, while
+    unpaid, the page to pay on. `deposit` says whether the link was for a
+    deposit share rather than the whole quote — the page's wording differs."""
+
+    state: Literal["unpaid", "paid"]
+    url: str | None
+    deposit: bool
+
+
 class AitoTrackingResponse(BaseModel):
     """Everything the public tracking page draws — and nothing else. See
     docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md."""
@@ -1114,6 +1124,9 @@ class AitoTrackingResponse(BaseModel):
     # (services/aito_tracking.py:last_activity) — the page's "Mis à jour …"
     # line. Real data only.
     updated_at: datetime
+    # The online payment link, or None when the project has no live one.
+    # The page ranks the invoice above this — an invoice is the truer story.
+    payment: AitoTrackingPayment | None
 
 
 class AitoTrackingLinkResponse(BaseModel):
