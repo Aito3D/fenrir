@@ -90,6 +90,22 @@ LISTED = {
     "customer_id": "z1",
 }
 
+# What `GET /invoices/inv-1` answers once the deposit has been applied: the
+# state CREATED predates. Books recomputes both figures when a payment lands,
+# and the card is supposed to show these, not the ones it was handed at
+# creation time.
+DETAIL = {
+    "invoice_id": "inv-1",
+    "invoice_number": "FA-26-4100",
+    "date": "2026-09-12",
+    "due_date": "2026-09-12",
+    "total": 2500.0,
+    "balance": 1500.0,
+    "currency_code": "XPF",
+    "status": "partially_paid",
+    "estimate_id": "EST-9",
+}
+
 
 @pytest.fixture
 def books(monkeypatch):
@@ -104,7 +120,12 @@ def books(monkeypatch):
         "estimate": dict(ESTIMATE),
         "retainer": dict(RETAINER),
         "created": dict(CREATED),
+        "detail": dict(DETAIL),  # what GET /invoices/{id} answers
         "listed": [],  # what GET /invoices answers; empty = not yet invoiced
+        # Books silently drops an unknown estimate field on create (it did,
+        # on FA-26-4331). Flip this to model a create whose link did not
+        # stick: the invoice exists, the estimate filter never finds it.
+        "link_sticks": True,
         "fail": None,  # a path prefix that should raise instead
     }
 
@@ -115,8 +136,21 @@ def books(monkeypatch):
         if path == "/invoices" and method == "GET":
             return {"invoices": [dict(i) for i in state["listed"]]}
         if path == "/invoices" and method == "POST":
-            state["listed"] = [dict(LISTED)]
-            return {"invoice": dict(state["created"])}
+            created = dict(state["created"])
+            if state["link_sticks"]:
+                state["listed"] = [dict(LISTED)]
+                # Books echoes the link it made — the signal the route reads
+                # to decide whether the invoice needs repairing.
+                created["estimate_id"] = "EST-9"
+            return {"invoice": created}
+        if path.startswith("/invoices/") and method == "PUT":
+            linked = (json or {}).get("invoiced_estimate_id") or ""
+            state["detail"] = {**state["detail"], "estimate_id": linked}
+            if linked:
+                state["listed"] = [dict(LISTED)]
+            return {"invoice": dict(state["detail"])}
+        if path.startswith("/invoices/") and method == "GET":
+            return {"invoice": dict(state["detail"])}
         if path.startswith("/estimates/"):
             return {"estimate": dict(state["estimate"])}
         if path.startswith("/retainerinvoices/"):
@@ -236,16 +270,23 @@ async def test_a_deleted_project_is_a_404(async_client, db_session, books):
 
 @pytest.mark.asyncio
 async def test_the_invoice_is_linked_to_the_estimate_and_carries_its_lines(async_client, db_session, books):
-    """`estimate_id` is the whole visibility story: `list_project_invoices`
-    filters GET /invoices by it and by nothing else, so an invoice raised
-    without it exists in Books and is invisible to every Aito surface."""
+    """The link is the whole visibility story: `list_project_invoices` filters
+    GET /invoices by the estimate and by nothing else, so an invoice raised
+    without it exists in Books and is invisible to every Aito surface.
+
+    And the field name is load-bearing. `invoiced_estimate_id` is the only
+    estimate field in Books' create-an-invoice schema; `estimate_id` is a
+    response/filter field, and a create body carrying it is accepted with a
+    200 and the link silently dropped — which is exactly how FA-26-4331 was
+    raised orphaned in production."""
     project_id = await _project(db_session)
 
     response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
 
     assert response.status_code == 200
     posted = next(c["json"] for c in books["calls"] if c["method"] == "POST" and c["path"] == "/invoices")
-    assert posted["estimate_id"] == "EST-9"
+    assert posted["invoiced_estimate_id"] == "EST-9"
+    assert "estimate_id" not in posted
     assert posted["customer_id"] == "z1"
     assert len(posted["line_items"]) == 2
     # The fields that decide the total travel; the estimate's wording does not.
@@ -394,15 +435,70 @@ async def test_the_project_is_marked_invoiced_at_once(async_client, db_session, 
 
 @pytest.mark.asyncio
 async def test_the_response_carries_the_balance_after_the_deposit_landed(async_client, db_session, books):
-    """The create response still says 2500 owed; only the re-read knows the
-    retainer has been applied. The card must show the re-read."""
+    """The create response still says 2500 owed and "draft"; only the re-read
+    knows the retainer has been applied. The card must show the re-read."""
     project_id = await _project(db_session)
 
     body = (await async_client.post(f"/api/v1/aito/{project_id}/invoice")).json()
 
     assert body["balance"] == 1500.0
+    assert body["status"] == "partially_paid"
     assert body["number"] == "FA-26-4100"
     assert body["url"].endswith("/invoices/inv-1")
+
+
+@pytest.mark.asyncio
+async def test_the_card_shows_books_figures_even_when_the_estimate_link_fails(async_client, db_session, books):
+    """Production, FA-26-4331: the invoice was raised, the deposit was applied
+    in full, and Books linked it to nothing. The re-read used to go looking
+    through the estimate filter, find nothing, and fall back to the create
+    response — so the card reported a DRAFT owing the full total for an
+    invoice Books itself called paid and settled.
+
+    Reading the invoice by its own id is what makes the figures right whether
+    or not the link stuck. The missing link is still a real defect — it is
+    what the warning log is for — but it must not also corrupt the money on
+    screen."""
+    books["link_sticks"] = False
+    books["detail"] = {**books["detail"], "balance": 0.0, "status": "paid", "estimate_id": ""}
+    project_id = await _project(db_session)
+
+    body = (await async_client.post(f"/api/v1/aito/{project_id}/invoice")).json()
+
+    assert (body["balance"], body["status"]) == (0.0, "paid")
+    assert body["total"] == 2500.0
+    # Still one invoice on the card, not zero: the count degrades to the
+    # invoice in hand rather than reporting an invoice that does not exist.
+    assert body["invoice_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unlinked_invoice_is_repaired_rather_than_left_orphaned(async_client, db_session, books):
+    """An invoice Books did not link is invisible to `list_project_invoices`,
+    and that list IS the duplicate-invoice guard — so an orphan is not a
+    cosmetic problem, it is the gap a double-click bills a client twice
+    through. One PUT puts the link back."""
+    books["link_sticks"] = False
+    project_id = await _project(db_session)
+
+    await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    put = next(c for c in books["calls"] if c["method"] == "PUT" and c["path"] == "/invoices/inv-1")
+    assert put["json"] == {"invoiced_estimate_id": "EST-9"}
+    # And the repair took: the estimate filter now finds the invoice, which
+    # is what the card, the guard and the balance sweep all read.
+    assert [i["invoice_id"] for i in books["listed"]] == ["inv-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_linked_invoice_is_not_touched_again(async_client, db_session, books):
+    """The repair fires on a missing link, not on every create: a PUT against
+    a fresh invoice is a write nobody asked for."""
+    project_id = await _project(db_session)
+
+    await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert [c["path"] for c in books["calls"] if c["method"] == "PUT"] == []
 
 
 # --- failure ------------------------------------------------------------------

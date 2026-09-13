@@ -1713,6 +1713,17 @@ async def create_invoice(
 
     invoice_id = str(created.get("invoice_id") or "")
     invoice_number = str(created.get("invoice_number") or invoice_id)
+    if invoice_id and not str(created.get("estimate_id") or ""):
+        # Books took the invoice but did not link it to the quote. Repaired
+        # here rather than reported, because an unlinked invoice is invisible
+        # to `list_project_invoices` and therefore to the duplicate-invoice
+        # guard — the one thing standing between a double-click and a client
+        # billed twice. Never fatal: the invoice is already real, and a 500
+        # now would invite exactly the retry the guard cannot catch.
+        try:
+            await zoho_service.link_invoice_to_estimate(db, invoice_id, quote_id)
+        except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+            logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
     applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
 
     try:
@@ -1755,17 +1766,39 @@ async def create_invoice(
         except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
             pass
 
-    # Re-read so the card shows Books' own figures — number, due date and the
-    # balance AFTER the retainers landed, none of which the create response
-    # knows. Degrades to the create response rather than 500ing, same rule as
+    # Re-read BY ID, not through the estimate filter: the create response was
+    # written before `apply_retainers` ran, so it still says draft and owes
+    # the full total, and the deposits are exactly what the operator is
+    # waiting to see land. Reading the invoice itself also means the card is
+    # right even when the estimate link did not stick — that is a
+    # discoverability bug (below), not a reason to show stale money.
+    # Degrades to the create response rather than 500ing, same rule as
     # send_invoice_email's post-send re-read.
     fresh, url, count = None, "", 1
     try:
-        invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
-        fresh = next((i for i in invoices if i["id"] == invoice_id), None)
-        count = len(invoices) or 1
+        fresh = await zoho_service.get_invoice(db, invoice_id) or None
         if fresh:
             url = await zoho_service.books_invoice_url(db, invoice_id)
+        # Only for "and N more" on the card. A failure to count must not cost
+        # the figures above, so it rides its own try.
+        try:
+            linked = await zoho_service.list_project_invoices(db, quote_id, client_id)
+        except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError):
+            linked = []
+        count = len(linked) or 1
+        if not any(i["id"] == invoice_id for i in linked):
+            # Raised, but not reachable from the quote. Every other invoice
+            # surface keys off the estimate — the card on reopen, the
+            # duplicate-invoice guard, the balance sweep, `_is_locked` — so
+            # this is the difference between a bill the app can see and one
+            # it cannot. Loud, because nothing else in the request fails.
+            logger.warning(
+                "Aito invoice %s for project %s is not listed under estimate %s — the estimate link "
+                "did not stick, so the Invoice card and the duplicate guard cannot see it",
+                invoice_number,
+                project_id,
+                quote_id,
+            )
     except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
         logger.warning("Aito invoice re-read failed for project %s after creating it: %s", project_id, e)
         try:
@@ -1773,16 +1806,6 @@ async def create_invoice(
         except Exception:  # noqa: BLE001 — see above
             pass
     if fresh is None:
-        # The invoice was created but this app cannot see it through the
-        # estimate filter. Logged loudly because the likeliest cause is the
-        # `estimate_id` link not sticking, which would leave the Invoice card
-        # permanently blank for a real bill.
-        logger.warning(
-            "Aito invoice %s for project %s is not listed under estimate %s — the estimate link may be missing",
-            invoice_number,
-            project_id,
-            quote_id,
-        )
         fresh = {
             "id": invoice_id,
             "number": invoice_number,

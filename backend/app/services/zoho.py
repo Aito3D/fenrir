@@ -866,6 +866,34 @@ class ZohoService:
         invoices.sort(key=lambda i: i.get("date") or "", reverse=True)
         return [_map_invoice(i) for i in invoices]
 
+    async def link_invoice_to_estimate(self, db: AsyncSession, invoice_id: str, estimate_id: str) -> None:
+        """Attach an already-raised invoice to the estimate it was billed from.
+
+        Same field as the create, ``invoiced_estimate_id``, and the same
+        effect: Books fills the invoice's ``estimate_id``, moves the estimate
+        to status ``invoiced`` and lists the invoice in its ``invoice_ids``.
+        Nothing else on the invoice moves — verified on FA-26-4331, which was
+        paid in full when it was linked and stayed paid in full.
+
+        Exists because the link is the only thing that makes an invoice
+        visible to this app (see ``list_project_invoices``), so a create that
+        comes back unlinked needs a way to be repaired rather than a warning
+        in a log nobody reads.
+        """
+        await self._request(db, "PUT", f"/invoices/{_seg(invoice_id)}", json={"invoiced_estimate_id": estimate_id})
+
+    async def get_invoice(self, db: AsyncSession, invoice_id: str) -> dict:
+        """One invoice by id, in the flat shape the Invoice card renders.
+
+        Reads the invoice ITSELF rather than looking for it in
+        ``list_project_invoices``: the estimate filter answers with what Books
+        has linked to the quote, and a caller that already holds an invoice id
+        wants that invoice's own figures — after a payment lands, say, when
+        the create response it is holding still says draft.
+        """
+        invoice = (await self._request(db, "GET", f"/invoices/{_seg(invoice_id)}")).get("invoice", {})
+        return _map_invoice(invoice) if invoice else {}
+
     async def get_invoice_pdf(self, db: AsyncSession, invoice_id: str) -> bytes:
         """The invoice rendered as a PDF, for printing.
 

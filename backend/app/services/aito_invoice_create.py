@@ -2,9 +2,9 @@
 
 Zoho has no "convert estimate to invoice" endpoint — Books' own KB says so
 outright — so this builds the invoice itself and links it back with
-``estimate_id``, which is the field ``list_project_invoices`` filters on and
-therefore the only thing that makes the new invoice visible to the Invoice
-card at all.
+``invoiced_estimate_id``. Books then fills the invoice's ``estimate_id``,
+which is what ``list_project_invoices`` filters on and therefore the only
+thing that makes the new invoice visible to the Invoice card at all.
 
 The line items are COPIED FROM THE ESTIMATE rather than re-derived from the
 project's tasks. Those two are normally identical, but not always: a quote
@@ -191,10 +191,15 @@ def build_invoice_payload(plan: InvoicePlan) -> dict:
     """
     payload: dict = {
         "customer_id": plan.customer_id,
-        # The link. Without it the invoice exists but no Aito surface can
-        # find it: `list_project_invoices` filters `GET /invoices` by
-        # estimate_id and nothing else.
-        "estimate_id": plan.estimate_id,
+        # The link, and it must be spelled `invoiced_estimate_id`: that is the
+        # only estimate field in Books' `create-an-invoice-request` schema
+        # ("Use this field when creating an invoice from an existing
+        # estimate"). `estimate_id` is a RESPONSE and list-filter field; sent
+        # in a create body Books drops it without a word, which is how
+        # FA-26-4331 was raised unlinked — invisible to
+        # `list_project_invoices`, to the duplicate guard, to the balance
+        # sweep, and to `_is_locked`, all of which key off the estimate.
+        "invoiced_estimate_id": plan.estimate_id,
         "line_items": plan.line_items,
     }
     for key in ("currency_id", "is_inclusive_tax", "discount_type", "is_discount_before_tax"):
