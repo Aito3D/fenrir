@@ -57,7 +57,6 @@ MAX_POLLS_PER_TICK = 40
 # One tick of the quote-sync loop; the per-row backoff counts in these.
 _TICK_SECONDS = 300
 _MAX_BACKOFF_TICKS = 6
-_FINAL_STATUSES = frozenset({"paid", "failed", "cancelled", "expired"})
 _DEAD_STATUSES = frozenset({"failed", "cancelled", "expired"})
 _CLOSED_QUOTE_STATUSES = frozenset({"declined", "expired"})
 # time.monotonic() until which the whole reconciler stands down after a 429.
@@ -170,32 +169,80 @@ async def _next_key(db: AsyncSession, project_id: int) -> str:
     return f"aito:{project_id}:{len(count) + 1}"
 
 
+async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
+    """Everything a link's transition to `paid` triggers, wherever it was
+    discovered — a poll, a cancel racing a payment (409), a patch racing one
+    (409). `row.status` must already be `'paid'` (the caller's `_adopt` set
+    it) before this runs. Stamps `paid_at`, records the story event, commits,
+    then accepts the quote if the project is still active."""
+    project_id = row.project_id
+    row.paid_at = now
+    await record(
+        db,
+        project_id,
+        "payment_link.paid",
+        actor_class="system",
+        subject_type="project",
+        subject_id=project_id,
+        detail={"reference": row.reference, "amount": row.amount, "heimdall_id": row.heimdall_id},
+    )
+    await db.commit()
+    from backend.app.services.aito_quote_status import accept_quote
+
+    project = await db.get(AitoProject, project_id)
+    if project is not None and project.status == "active":
+        await accept_quote(
+            db, project, source="payment_link", detail={"amount": row.amount, "reference": row.reference}
+        )
+
+
 async def _create(
-    db: AsyncSession, project: AitoProject, wanted: Wanted, *, today: date, now: datetime, kind: str
+    db: AsyncSession,
+    project: AitoProject,
+    wanted: Wanted,
+    *,
+    now: datetime,
+    kind: str,
+    extra_detail: dict | None = None,
 ) -> None:
     """Reserve, commit, POST, complete. A crash between the two commits
-    leaves a reservation the next pass re-POSTs under the same key."""
+    leaves a reservation the next pass re-POSTs under the same key.
+    `created_at` is stamped explicitly (not left to the server default) so a
+    retry days later still asks Heimdall for the SAME `expires_in_days` —
+    see `_complete`."""
     row = AitoPaymentLink(
         project_id=project.id,
         idempotency_key=await _next_key(db, project.id),
         reference=wanted.reference,
         amount=wanted.amount,
         expires_on=wanted.expires_on,
+        created_at=now,
     )
     db.add(row)
     await db.commit()
-    await _complete(db, project, row, today=today, now=now, kind=kind)
+    await _complete(db, project, row, now=now, kind=kind, extra_detail=extra_detail)
 
 
 async def _complete(
-    db: AsyncSession, project: AitoProject, row: AitoPaymentLink, *, today: date, now: datetime, kind: str
+    db: AsyncSession,
+    project: AitoProject,
+    row: AitoPaymentLink,
+    *,
+    now: datetime,
+    kind: str,
+    extra_detail: dict | None = None,
 ) -> None:
+    """POST the reservation. `expires_in_days` is computed from the
+    reservation's OWN day (`row.created_at`), never `today`: a retry of an
+    unfinished reservation on a later day must send the exact same body
+    under the same idempotency key, or Heimdall sees a changed body and
+    answers 409 forever instead of replaying the first response."""
     view = await heimdall_service.create_link(
         db,
         idempotency_key=row.idempotency_key,
         reference=row.reference,
         amount=row.amount,
-        expires_in_days=expires_in_days(row.expires_on, today),
+        expires_in_days=expires_in_days(row.expires_on, row.created_at.date()),
     )
     _adopt(row, view, now)
     await record(
@@ -210,30 +257,46 @@ async def _complete(
             "amount": row.amount,
             "expires_on": row.expires_on,
             "heimdall_id": row.heimdall_id,
+            **(extra_detail or {}),
         },
     )
     await db.commit()
 
 
-async def _cancel(db: AsyncSession, project: AitoProject, row: AitoPaymentLink, *, now: datetime, reason: str) -> None:
+async def _cancel(
+    db: AsyncSession,
+    project: AitoProject,
+    row: AitoPaymentLink,
+    *,
+    now: datetime,
+    reason: str,
+    record_event: bool = True,
+) -> None:
+    """`record_event=False` lets a caller that already records its OWN event
+    for this transition (a renumber, which records `payment_link.replaced`
+    with `detail.reason` instead) suppress the `payment_link.cancelled` that
+    would otherwise double up the story."""
     try:
         view = await heimdall_service.cancel_link(db, row.heimdall_id)
         _adopt(row, view, now)
     except HeimdallConflict:
         # Already settled at OSB (paid/expired meanwhile): read the truth.
-        view = await heimdall_service.get_payment(db, row.heimdall_id)
-        _adopt(row, view, now)
+        was = row.status
+        _adopt(row, await heimdall_service.get_payment(db, row.heimdall_id), now)
         if row.status == "paid":
-            return  # money wins; the poll path records/accepts it
-    await record(
-        db,
-        project.id,
-        "payment_link.cancelled",
-        actor_class="system",
-        subject_type="project",
-        subject_id=project.id,
-        detail={"reference": row.reference, "reason": reason, "heimdall_id": row.heimdall_id},
-    )
+            if was != "paid":
+                await _became_paid(db, row, now=now)
+            return  # money wins over the cancel we were attempting
+    if record_event:
+        await record(
+            db,
+            project.id,
+            "payment_link.cancelled",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"reference": row.reference, "reason": reason, "heimdall_id": row.heimdall_id},
+        )
     await db.commit()
 
 
@@ -254,26 +317,26 @@ async def reconcile_project(
 ) -> None:
     """Spec §5.4, one project. Commits its own work; a Heimdall failure is
     stored on the row and never raises past here — except a 429, which the
-    pass handler turns into a throttle."""
-    # Captured now: a rollback below can expire `project` (whenever the
-    # failure hits before any intervening commit re-closed the transaction),
-    # and a bare attribute access on an expired ORM object outside of an
-    # awaited session call needs SQLAlchemy's async-to-sync greenlet bridge,
-    # which is not active here — it would raise MissingGreenlet instead of
-    # reloading.
-    project_id = project.id
-    wanted = wanted_link(project, pct=pct, validity_days=validity_days, today=today)
-    row = await current_link(db, project_id)
-    if row is not None and _in_backoff(row, now):
-        return
+    pass handler turns into a throttle. The WHOLE body runs under one
+    try/except, including the very first read off `project`: nothing is
+    read before the try, so even a stale/expired `project` handed in by a
+    caller (a bare attribute access raises `MissingGreenlet`, a
+    `SQLAlchemyError` subclass) is caught and isolated like any other
+    failure, rather than escaping and aborting the whole pass."""
+    project_id: int | None = None
     try:
+        project_id = project.id
+        wanted = wanted_link(project, pct=pct, validity_days=validity_days, today=today)
+        row = await current_link(db, project_id)
+        if row is not None and _in_backoff(row, now):
+            return
         if row is None:
             if wanted is not None:
-                await _create(db, project, wanted, today=today, now=now, kind="payment_link.created")
+                await _create(db, project, wanted, now=now, kind="payment_link.created")
             return
         if row.heimdall_id is None:
             # A reservation: always complete it under its own key first.
-            await _complete(db, project, row, today=today, now=now, kind="payment_link.created")
+            await _complete(db, project, row, now=now, kind="payment_link.created")
             return
         if row.status == "paid":
             return
@@ -281,7 +344,7 @@ async def reconcile_project(
             if wanted is not None:
                 row.superseded_at = now
                 await db.commit()
-                await _create(db, project, wanted, today=today, now=now, kind="payment_link.replaced")
+                await _create(db, project, wanted, now=now, kind="payment_link.replaced")
             return
         # pending
         if wanted is None:
@@ -290,12 +353,16 @@ async def reconcile_project(
             )
             return
         if row.reference != wanted.reference:
-            await _cancel(db, project, row, now=now, reason="renumbered")
+            # One event for a renumber (payment_link.replaced, reason
+            # carried in its detail), not a cancelled/replaced pair.
+            await _cancel(db, project, row, now=now, reason="renumbered", record_event=False)
             if row.status == "paid":
                 return
             row.superseded_at = now
             await db.commit()
-            await _create(db, project, wanted, today=today, now=now, kind="payment_link.replaced")
+            await _create(
+                db, project, wanted, now=now, kind="payment_link.replaced", extra_detail={"reason": "renumbered"}
+            )
             return
         if not _fields_match(row, wanted):
             try:
@@ -309,24 +376,27 @@ async def reconcile_project(
                 )
                 _adopt(row, view, now)
                 row.expires_on = wanted.expires_on
+                await db.commit()
             except HeimdallConflict:
-                # The link left `pending` under us: adopt the truth, next
-                # pass takes the paid/dead branch above.
+                # The link left `pending` under us: adopt the truth. A
+                # patch racing a payment is credited right now instead of
+                # waiting for the next poll to notice.
+                was = row.status
                 _adopt(row, await heimdall_service.get_payment(db, row.heimdall_id), now)
-            await db.commit()
+                if row.status == "paid" and was != "paid":
+                    await _became_paid(db, row, now=now)
+                else:
+                    await db.commit()
     except HeimdallRateLimited:
         raise
     except (HeimdallUpstreamError, SQLAlchemyError) as exc:
         logger.warning("payment link reconcile failed for project %s: %s", project_id, exc)
         await db.rollback()
-        # A real rollback (one where a transaction was genuinely open —
-        # e.g. the top-of-function `current_link` SELECT autobegan one and
-        # nothing committed since) expires every ORM object the session
-        # tracks, `project` included. The caller keeps its own reference to
-        # `project` past this call, so leave it valid rather than expired —
-        # a bare attribute access on an expired async-ORM object outside an
-        # awaited session call raises MissingGreenlet instead of reloading.
-        await db.refresh(project)
+        if project_id is None:
+            # The very first read off `project` was itself what failed (an
+            # already-expired object handed in) — there is no id to look a
+            # row up by, so there is nothing more to record.
+            return
         row = await current_link(db, project_id)
         if row is not None:
             _fail(row, exc, now)
@@ -334,10 +404,7 @@ async def reconcile_project(
 
 
 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
-    """One GET for a pending link. Spec §5.5. `paid` accepts the quote."""
-    from backend.app.services.aito_quote_status import accept_quote
-
-    project_id = row.project_id
+    """One GET for a pending link. Spec §5.5. `paid` credits and accepts."""
     try:
         view = await heimdall_service.get_payment(db, row.heimdall_id)
     except HeimdallRateLimited:
@@ -349,22 +416,7 @@ async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) ->
     was = row.status
     _adopt(row, view, now)
     if row.status == "paid" and was != "paid":
-        row.paid_at = now
-        await record(
-            db,
-            project_id,
-            "payment_link.paid",
-            actor_class="system",
-            subject_type="project",
-            subject_id=project_id,
-            detail={"reference": row.reference, "amount": row.amount, "heimdall_id": row.heimdall_id},
-        )
-        await db.commit()
-        project = await db.get(AitoProject, project_id)
-        if project is not None and project.status == "active":
-            await accept_quote(
-                db, project, source="payment_link", detail={"amount": row.amount, "reference": row.reference}
-            )
+        await _became_paid(db, row, now=now)
         return
     await db.commit()
 
@@ -379,7 +431,17 @@ async def reconcile_payment_links(
 ) -> int:
     """One pass: reconcile every quoted project, then poll pending links.
     Returns the number of projects visited. Silent no-op when Heimdall is not
-    configured or the 429 throttle is armed."""
+    configured or the 429 throttle is armed.
+
+    Ids are materialised up front and each row/project is re-fetched with
+    `db.get()` INSIDE its own loop iteration, never held onto across
+    iterations: a rollback anywhere in this pass (a Heimdall failure, a
+    Books push failure inside `accept_quote`, an unexpected DB error)
+    expires every ORM object the session is tracking, not just the one the
+    failure was about. Holding a list of already-loaded objects across
+    iterations would turn iteration N's failure into a bare-attribute
+    `MissingGreenlet` on iteration N+1; re-fetching by id avoids it.
+    """
     global _throttled_until
     if not await heimdall_service.is_configured(db):
         return 0
@@ -391,22 +453,31 @@ async def reconcile_payment_links(
 
     pct = await deposit_pct(db)
     validity = await quote_validity_days(db)
-    stmt = select(AitoProject).where(AitoProject.quote_number.is_not(None), AitoProject.quote_sync_state != "unmanaged")
+    stmt = select(AitoProject.id).where(
+        AitoProject.quote_number.is_not(None), AitoProject.quote_sync_state != "unmanaged"
+    )
     if only_project_id is not None:
         stmt = stmt.where(AitoProject.id == only_project_id)
-    projects = list((await db.execute(stmt.order_by(AitoProject.id))).scalars().all())
+    project_ids = list((await db.execute(stmt.order_by(AitoProject.id))).scalars().all())
     if create_only:
-        have = await current_links(db, [p.id for p in projects])
-        projects = [p for p in projects if p.id not in have]
+        have = await current_links(db, project_ids)
+        project_ids = [pid for pid in project_ids if pid not in have]
     visited = 0
     try:
-        for project in projects:
+        for pid in project_ids:
+            project = await db.get(AitoProject, pid)
+            if project is None:
+                continue
             visited += 1
-            await reconcile_project(db, project, pct=pct, validity_days=validity, today=today, now=now)
+            try:
+                await reconcile_project(db, project, pct=pct, validity_days=validity, today=today, now=now)
+            except SQLAlchemyError as exc:
+                logger.warning("payment link reconcile: project %s failed unexpectedly: %s", pid, exc)
+                await db.rollback()
         if not create_only:
             _throttled_until = None
             pending = (
-                select(AitoPaymentLink)
+                select(AitoPaymentLink.id)
                 .where(
                     AitoPaymentLink.status == "pending",
                     AitoPaymentLink.superseded_at.is_(None),
@@ -417,10 +488,16 @@ async def reconcile_payment_links(
             )
             if only_project_id is not None:
                 pending = pending.where(AitoPaymentLink.project_id == only_project_id)
-            for row in list((await db.execute(pending)).scalars().all()):
-                if _in_backoff(row, now):
+            pending_ids = list((await db.execute(pending)).scalars().all())
+            for rid in pending_ids:
+                row = await db.get(AitoPaymentLink, rid)
+                if row is None or _in_backoff(row, now):
                     continue
-                await poll_link(db, row, now=now)
+                try:
+                    await poll_link(db, row, now=now)
+                except SQLAlchemyError as exc:
+                    logger.warning("payment link poll: row %s failed unexpectedly: %s", rid, exc)
+                    await db.rollback()
     except HeimdallRateLimited as exc:
         logger.warning("Heimdall rate limit: standing down for %s s", exc.retry_after)
         await db.rollback()

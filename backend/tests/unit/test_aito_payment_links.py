@@ -28,7 +28,7 @@ from backend.app.services.heimdall import (
     LinkView,
     heimdall_service,
 )
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
 TODAY = date(2026, 9, 12)
 NOW = datetime(2026, 9, 12, 10, 0, 0)
@@ -276,7 +276,16 @@ async def test_reference_change_replaces(db_session, fake):
     assert rows[0].superseded_at is not None and rows[0].status == "cancelled"
     assert rows[1].idempotency_key == f"aito:{p.id}:2" and rows[1].heimdall_id == "L2"
     assert ("cancel", "L1") in fake.calls
-    assert (await _kinds(db_session, p.id))[-1:] == ["payment_link.replaced"]
+    kinds = await _kinds(db_session, p.id)
+    assert kinds[-1:] == ["payment_link.replaced"]
+    # One event for a renumber, not a cancelled/replaced pair.
+    assert "payment_link.cancelled" not in kinds
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.replaced")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == "renumbered"
 
 
 @pytest.mark.asyncio
@@ -339,14 +348,57 @@ async def test_a_dead_link_on_an_open_quote_is_replaced(db_session, fake, dead):
 @pytest.mark.asyncio
 async def test_patch_conflict_rereads_instead_of_retrying(db_session, fake):
     p = await _project(db_session)
+    pid = p.id
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")  # paid at OSB, we don't know yet
     p.quote_total = 13000.0
     await db_session.commit()
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
-    (r,) = await _rows(db_session, p.id)
-    assert r.status == "paid" and r.sync_error is None
+    (r,) = await _rows(db_session, pid)
+    assert r.status == "paid" and r.sync_error is None and r.paid_at == NOW
     assert fake.calls[-1] == ("get", "L1")
+    # A paid discovered via a PATCH-409 must be credited exactly like one
+    # discovered by a poll: the event, and the quote accepted.
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" in kinds
+    accepted = await db_session.get(AitoProject, pid)
+    assert accepted.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_cancel_conflict_with_a_paid_link_credits_instead_of_cancelling(db_session, fake):
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.set_status("L1", "paid")  # paid at OSB, right as we go to cancel it
+    p.quote_invoiced = True  # nothing wanted any more -> reconcile_project tries to cancel
+    await db_session.commit()
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, pid)
+    assert r.status == "paid" and r.paid_at == NOW and r.sync_error is None
+    assert fake.calls[-1] == ("get", "L1")
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" in kinds
+    assert "payment_link.cancelled" not in kinds
+    accepted = await db_session.get(AitoProject, pid)
+    assert accepted.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_a_retried_reservation_replays_the_same_expiry(db_session, fake):
+    """A retry days later must send the SAME body under the same
+    idempotency key, or Heimdall answers 409 idempotency_conflict forever
+    instead of replaying the first response."""
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    later = NOW + timedelta(days=2)
+    p = await db_session.get(AitoProject, p.id)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=later.date(), now=later)
+    creates = [c for c in fake.calls if c[0] == "create"]
+    assert len(creates) == 2
+    assert creates[0][4] == creates[1][4] == 15
 
 
 # --- polling ------------------------------------------------------------------
@@ -433,6 +485,58 @@ async def test_one_failure_does_not_stop_the_pass(db_session, fake, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_a_dirty_transaction_from_one_project_does_not_break_the_next(db_session, fake, monkeypatch):
+    """A failure that leaves a real transaction open on `db` (not just the
+    fake's own bookkeeping) rolls back and expires every ORM object the
+    session tracks. The pass must still process the next project — it can
+    only do that by re-fetching per project rather than holding onto
+    objects loaded before the loop started."""
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+    aid, bid = a.id, b.id
+    real = fake.create_link
+
+    async def dirty_then_fail(db, **kw):
+        if kw["reference"] == "DEV-A":
+            await db.execute(select(AitoProject.id))  # opens a real transaction
+            raise HeimdallUpstreamError("nope")
+        return await real(db, **kw)
+
+    monkeypatch.setattr(heimdall_service, "create_link", dirty_then_fail)
+    n = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    assert n == 2
+    assert (await current_link(db_session, aid)).heimdall_id is None
+    assert (await current_link(db_session, bid)).heimdall_id == "L1"
+
+
+@pytest.mark.asyncio
+async def test_a_books_failure_on_one_paid_row_does_not_break_the_next_poll(db_session, fake, monkeypatch):
+    """`push_quote_status` (inside `accept_quote`) swallows its own Zoho
+    failure and rolls back, which — like any rollback — expires every ORM
+    object the session tracks. The next pending row in the SAME poll batch
+    must still get polled, which only holds if the poll loop re-fetches
+    each row by id rather than iterating objects loaded before the loop."""
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+    aid, bid = a.id, b.id
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    a_link = await current_link(db_session, aid)
+    fake.set_status(a_link.heimdall_id, "paid")
+
+    async def boom(db, estimate_id, target, current=None):
+        raise ZohoUpstreamError("nope")
+
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", boom)
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    ra = await current_link(db_session, aid)
+    rb = await current_link(db_session, bid)
+    assert ra.status == "paid" and ra.paid_at == later
+    assert "payment_link.paid" in await _kinds(db_session, aid)
+    assert rb.checked_at == later  # b was still polled despite a's Books failure
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_arms_a_throttle_that_skips_the_next_pass(db_session, fake, monkeypatch):
     await _project(db_session)
     fake.fail_with = HeimdallRateLimited("slow down", 120.0)
@@ -447,19 +551,29 @@ async def test_rate_limit_arms_a_throttle_that_skips_the_next_pass(db_session, f
 @pytest.mark.asyncio
 async def test_backoff_skips_a_failing_row_for_a_few_ticks(db_session, fake):
     p = await _project(db_session)
+    pid = p.id
     fake.fail_with = HeimdallUpstreamError("down")
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    # A real rollback (a transaction was genuinely open when the failure
+    # hit) expires every ORM object the session tracks, `p` included — the
+    # production pass loop now re-fetches by id every iteration rather than
+    # holding a stale reference across calls (see reconcile_payment_links);
+    # mirror that here instead of reusing the same possibly-expired `p`.
+    p = await db_session.get(AitoProject, pid)
     # One failure: skipped for one tick (300 s) counted from checked_at.
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=100))
-    (r,) = await _rows(db_session, p.id)
+    (r,) = await _rows(db_session, pid)
     assert r.sync_failures == 1 and r.checked_at == NOW
+    p = await db_session.get(AitoProject, pid)
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=400))
-    (r,) = await _rows(db_session, p.id)
+    (r,) = await _rows(db_session, pid)
     assert r.sync_failures == 2 and r.checked_at == NOW + timedelta(seconds=400)
     fake.calls.clear()
+    p = await db_session.get(AitoProject, pid)
     # Two failures: skipped until 2 * 300 s have passed since the last attempt.
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=900))
     assert fake.calls == []
+    p = await db_session.get(AitoProject, pid)
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=1100))
     assert fake.calls != []
 
