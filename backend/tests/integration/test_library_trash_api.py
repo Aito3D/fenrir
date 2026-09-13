@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import AsyncClient
 
+from backend.tests.integration.test_ownership_permissions import TestOwnershipPermissionsSetup
+
 
 @pytest.fixture
 async def file_factory(db_session):
@@ -596,3 +598,225 @@ async def test_release_reports_and_cancels_every_copy_of_one_file(file_factory, 
         assert row.status == "cancelled"
         assert "many-copies.3mf" in row.error_message
         assert row.library_file_id is None
+
+
+# ---------------------------------------------------------------------------
+# Non-admin ownership enforcement on the trash bin (#library_trash T-130)
+#
+# list_trash / _load_trashed_file / empty_trash all gate on the
+# LIBRARY_DELETE_ALL / LIBRARY_DELETE_OWN ownership pair (see the module
+# docstring): admins see and manage everyone's trash, everyone else is
+# scoped to rows they created.
+# ---------------------------------------------------------------------------
+
+
+class TestTrashOwnershipPermissions(TestOwnershipPermissionsSetup):
+    """Ownership enforcement for the per-user trash endpoints."""
+
+    @pytest.fixture
+    async def trashed_file_factory(self, db_session):
+        """Factory for LibraryFile rows that are already in the trash."""
+        from backend.app.models.library import LibraryFile
+
+        _counter = [0]
+
+        async def _create(**kwargs):
+            _counter[0] += 1
+            counter = _counter[0]
+            defaults = {
+                "filename": f"trash_owner_{counter}.3mf",
+                "file_path": f"/test/library/trash_owner_{counter}.3mf",
+                "file_size": 1024,
+                "file_type": "3mf",
+                "deleted_at": datetime.now(timezone.utc),
+            }
+            defaults.update(kwargs)
+            file = LibraryFile(**defaults)
+            db_session.add(file)
+            await db_session.commit()
+            await db_session.refresh(file)
+            return file
+
+        return _create
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_restore_others_trashed_file(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory
+    ):
+        """Restoring another user's trashed file is a 403, not a silent no-op."""
+        file = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/trash/{file.id}/restore",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "You can only manage your own trashed files"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_restore_own_trashed_file(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory
+    ):
+        file = await trashed_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/trash/{file.id}/restore",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_restore_any_trashed_file(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory
+    ):
+        file = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/trash/{file.id}/restore",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_hard_delete_others_trashed_file(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory
+    ):
+        file = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.delete(
+            f"/api/v1/library/trash/{file.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "You can only manage your own trashed files"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_hard_delete_own_trashed_file(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory, db_session
+    ):
+        from backend.app.models.library import LibraryFile
+
+        file = await trashed_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        file_id = file.id
+
+        response = await async_client.delete(
+            f"/api/v1/library/trash/{file_id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+        db_session.expire_all()
+        assert await db_session.get(LibraryFile, file_id) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_hard_delete_any_trashed_file(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory, db_session
+    ):
+        from backend.app.models.library import LibraryFile
+
+        file = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        file_id = file.id
+
+        response = await async_client.delete(
+            f"/api/v1/library/trash/{file_id}",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
+        db_session.expire_all()
+        assert await db_session.get(LibraryFile, file_id) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_trash_scopes_non_admin_to_own_rows(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory
+    ):
+        mine = await trashed_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        theirs = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.get(
+            "/api/v1/library/trash",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        ids = [item["id"] for item in body["items"]]
+        assert mine.id in ids
+        assert theirs.id not in ids
+        assert body["total"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_trash_shows_every_user_to_admin(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory
+    ):
+        mine = await trashed_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        theirs = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.get(
+            "/api/v1/library/trash",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
+        ids = [item["id"] for item in response.json()["items"]]
+        assert mine.id in ids
+        assert theirs.id in ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_empty_trash_only_removes_own_rows_for_non_admin(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory, db_session
+    ):
+        from backend.app.models.library import LibraryFile
+
+        mine = await trashed_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        theirs = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        mine_id, theirs_id = mine.id, theirs.id
+
+        response = await async_client.delete(
+            "/api/v1/library/trash",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["deleted"] == 1
+
+        db_session.expire_all()
+        assert await db_session.get(LibraryFile, mine_id) is None
+        remaining = await db_session.get(LibraryFile, theirs_id)
+        assert remaining is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_empty_trash_removes_everyone_for_admin(
+        self, async_client: AsyncClient, auth_setup, trashed_file_factory, db_session
+    ):
+        from backend.app.models.library import LibraryFile
+
+        mine = await trashed_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        theirs = await trashed_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        mine_id, theirs_id = mine.id, theirs.id
+
+        response = await async_client.delete(
+            "/api/v1/library/trash",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["deleted"] == 2
+
+        db_session.expire_all()
+        assert await db_session.get(LibraryFile, mine_id) is None
+        assert await db_session.get(LibraryFile, theirs_id) is None
