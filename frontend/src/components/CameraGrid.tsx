@@ -27,6 +27,8 @@ const HIDDEN_SUSPEND_DELAY_MS = 15_000;
 const IDS_DEBOUNCE_MS = 2_000;
 /** Fullscreen wall: hide cursor + toolbar after this much input silence. */
 const KIOSK_IDLE_MS = 4_000;
+/** Backend hard cap on grid-stream printer count (camera.py grid-stream route: "Maximum 30 printers per grid stream"). */
+const GRID_STREAM_MAX_PRINTERS = 30;
 
 /** Printer info consumed by the camera grid, derived from printer + live status. */
 export interface GridPrinter {
@@ -307,6 +309,7 @@ export function CameraGrid({
         .filter(p => p.connected)
         .map(p => p.id)
         .sort((a, b) => a - b)
+        .slice(0, GRID_STREAM_MAX_PRINTERS)
         .join(',');
 
   // Debounce printerIdsKey so transient printer list changes don't tear down the stream

@@ -11262,3 +11262,49 @@ and silently bouncing back to an empty form with a dead token in storage. The `r
 calls `login()` or `checkAuthStatus()`) are both unaffected. A successful `/auth/me` confirmation —
 the common case — is unchanged: `login()` still resolves the same `LoginResponse` it always did.
 User-approved 2026-09-09.
+
+## Campaign 15 · Iteration 3 · T-137 — 2026-09-13 — user-approved behavior change
+
+`CameraGrid.tsx:304`'s `rawPrinterIdsKey` built the grid-stream printer-id list from every
+connected MJPEG printer (`mjpegPrinters.filter(p => p.connected).map(p => p.id).sort((a, b) => a -
+b).join(',')`) with no cap, while the backend's grid-stream route (`camera.py:1913`) hard-rejects
+any request naming more than 30 printers with `HTTPException(400, "Maximum 30 printers per grid
+stream")`. On a farm with 31 or more connected non-RTSP printers, every grid-stream fetch was
+rejected with that 400, `useGridStream` treated it as a failure and entered its exponential-backoff
+reconnect loop, and the entire camera wall stayed black indefinitely — including the printers that
+would otherwise fit within the 30-printer limit.
+
+Fixed by adding a module-private `GRID_STREAM_MAX_PRINTERS = 30` constant (with a comment pointing
+at the backend check) and appending `.slice(0, GRID_STREAM_MAX_PRINTERS)` to `rawPrinterIdsKey`
+immediately after the existing ascending numeric sort, so the id list sent to `useGridStream` is
+now always capped at the same 30 the backend enforces. The constant is not exported.
+
+User-visible effect: a camera grid with more than 30 connected MJPEG printers previously sent every
+id, got HTTP 400 "Maximum 30 printers per grid stream" from the backend, and every tile sat in the
+reconnect loop; now the client sends only the 30 lowest printer ids, those 30 tiles stream, and the
+remaining tiles show the ordinary no-frame state. Grids with 30 or fewer printers are unchanged.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 3 · T-142 — 2026-09-13 — user-approved behavior change
+
+`library.py:1455`'s `delete_folder()` passed the raw `LibraryFile.file_path` / `.thumbnail_path`
+columns straight into `os.path.exists()` / `os.remove()`: `if file_path and
+os.path.exists(file_path): os.remove(file_path)`. For managed files those columns are stored
+relative to `settings.base_dir` (`_stored_file_path`, library.py:425), not relative to the process's
+current working directory. Every other caller — `delete_file()` and
+`LibraryTrashService._unlink_on_disk` — resolves the same columns through `to_absolute_path()` /
+its mirror before touching disk. In the shipped Docker layout WORKDIR is `/app` while `base_dir` is
+`/data`, so the relative path resolved against the wrong root, `os.path.exists()` returned False,
+and the unlink silently no-op'd. Deleting a folder still cascaded away all of its `LibraryFile` rows
+(library.py:1481), so the bytes and thumbnails were orphaned on disk forever, and because the rows
+were already gone the trash sweeper could never reclaim them — the data volume grew monotonically
+with every folder delete.
+
+Fixed by resolving both `file_path` and `thumbnail_path` through the existing `to_absolute_path()`
+helper (library.py:190) inside `delete_folder()`'s inner `get_all_file_ids()`, before the
+`os.path.exists()` / `os.remove()` calls, mirroring exactly what `delete_file()` and
+`LibraryTrashService._unlink_on_disk` already do. Nothing else in `delete_folder()` changed.
+
+User-visible change: Deleting a library folder would start actually freeing disk space; installs
+that have been relying on the orphaned bytes surviving a folder delete would lose them.
+User-approved 2026-09-13.

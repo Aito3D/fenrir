@@ -13,6 +13,7 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
@@ -446,8 +447,23 @@ def _resolve_source_disk_path(file: LibraryFile) -> Path | None:
     return to_absolute_path(file.file_path)
 
 
-def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> str:
-    """Physically relocate `file`'s bytes to match `target_folder`.
+class _MoveResult(NamedTuple):
+    """Outcome of a successful ``_move_file_bytes`` call.
+
+    ``file_path`` is the value to persist on the DB row. ``src`` and
+    ``dest`` are the on-disk paths involved — the caller defers unlinking
+    ``src`` until the batch's ``db.commit()`` has actually succeeded, and
+    uses ``dest`` to clean up the freshly copied bytes if the commit
+    fails instead.
+    """
+
+    file_path: str
+    src: Path
+    dest: Path
+
+
+def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> _MoveResult:
+    """Physically copy `file`'s bytes to match `target_folder`.
 
     Used by the move endpoint when source/target straddle the
     managed↔external boundary (#1112 follow-up — the prior implementation
@@ -455,16 +471,18 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
     file moved to an external SMB folder showed up in Bambuddy's UI but
     not on the NAS).
 
-    Returns the new ``file_path`` value to persist (relative for managed
-    targets, absolute for external targets — matches the upload + scan
-    paths). Raises ``_MoveSkip`` for any condition that would make the
-    move unsafe (target unwritable, filename collision, source missing).
+    Returns a :class:`_MoveResult` with the new ``file_path`` value to
+    persist (relative for managed targets, absolute for external targets
+    — matches the upload + scan paths) plus the source/dest paths so the
+    caller can unlink the source only after the DB row referencing the
+    new dest is durably committed. Raises ``_MoveSkip`` for any condition
+    that would make the move unsafe (target unwritable, filename
+    collision, source missing).
 
-    The copy-then-unlink ordering means a partial copy followed by a
-    failed unlink leaves both the source and the dest on disk — better
-    than the symmetric "rename or move" which would lose the source if
-    the target write didn't complete on a flaky mount. The DB row stays
-    pointed at the source until the caller commits the new ``file_path``.
+    Deliberately does NOT unlink the source itself — see ``move_files``,
+    which commits the whole batch before removing any source bytes so a
+    failed commit can never leave a row pointing at a file that no
+    longer exists.
     """
     src = _resolve_source_disk_path(file)
     if not src or not src.exists():
@@ -510,19 +528,9 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
                 dest.unlink(missing_ok=True)
             raise _MoveSkip("copy_failed", f"copy failed: {e}") from e
 
-    # Copy succeeded — unlink the original. A failure here leaves an
-    # orphan on disk but the DB row is consistent against the new dest.
-    try:
-        src.unlink(missing_ok=True)
-    except OSError as e:
-        logger.warning(
-            "Move: copied %s → %s but couldn't remove source: %s",
-            src,
-            dest,
-            e,
-        )
-
-    return _stored_file_path(dest, is_external=target_is_external)
+    # Copy succeeded. The source is left in place for now — the caller
+    # unlinks it only after the DB row pointing at `dest` is committed.
+    return _MoveResult(_stored_file_path(dest, is_external=target_is_external), src, dest)
 
 
 def _clean_3mf_metadata(obj):
@@ -1452,10 +1460,12 @@ async def delete_folder(
             # Only delete non-external files from disk
             if not is_ext and not file_is_ext:
                 try:
-                    if file_path and os.path.exists(file_path):
-                        os.remove(file_path)
-                    if thumb_path and os.path.exists(thumb_path):
-                        os.remove(thumb_path)
+                    abs_file_path = to_absolute_path(file_path)
+                    abs_thumb_path = to_absolute_path(thumb_path)
+                    if abs_file_path and abs_file_path.exists():
+                        os.remove(abs_file_path)
+                    if abs_thumb_path and abs_thumb_path.exists():
+                        os.remove(abs_thumb_path)
                 except OSError as e:
                     logger.warning("Failed to delete file: %s", e)
 
@@ -5443,6 +5453,9 @@ async def move_files(
     moved = 0
     skipped = 0
     skipped_reasons: list[dict] = []
+    # Bytes already copied to their new home, awaiting the batch commit
+    # below before their sources are unlinked (see _move_file_bytes).
+    pending_bytes_moves: list[_MoveResult] = []
 
     for file_id in data.file_ids:
         result = await db.execute(
@@ -5478,7 +5491,7 @@ async def move_files(
 
         # Otherwise relocate the bytes, then update the DB row to match.
         try:
-            new_file_path = _move_file_bytes(file, target_folder)
+            move_result = _move_file_bytes(file, target_folder)
         except _MoveSkip as e:
             skipped += 1
             skipped_reasons.append({"file_id": file_id, "code": e.code, "reason": e.reason})
@@ -5486,21 +5499,46 @@ async def move_files(
 
         file.is_external = target_is_external
         file.folder_id = data.folder_id
-        file.file_path = new_file_path
+        file.file_path = move_result.file_path
         # External rows historically carry `file_hash=None` (scan skips
         # hashing). When pulling an external file into managed storage,
         # compute the hash so dedup detection works for future uploads
         # of the same content.
         if not target_is_external and file.file_hash is None:
             try:
-                abs_path = to_absolute_path(new_file_path)
+                abs_path = to_absolute_path(move_result.file_path)
                 if abs_path:
                     file.file_hash = calculate_file_hash(abs_path)
             except OSError:
                 pass  # leave hash null; dedup just won't match this row
+        pending_bytes_moves.append(move_result)
         moved += 1
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Nothing has been unlinked yet -- the batch never became durable,
+        # so undo the copies (best-effort) rather than leave orphan bytes
+        # sitting under their fresh dest names with no row referencing
+        # them. Re-raise so get_db's rollback and the existing error
+        # response behave exactly as before this change.
+        for move_result in pending_bytes_moves:
+            with contextlib.suppress(OSError):
+                move_result.dest.unlink(missing_ok=True)
+        raise
+
+    # The batch is durable now -- safe to remove the sources whose bytes
+    # were physically relocated above.
+    for move_result in pending_bytes_moves:
+        try:
+            move_result.src.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(
+                "Move: copied %s → %s but couldn't remove source: %s",
+                move_result.src,
+                move_result.dest,
+                e,
+            )
 
     return {
         "status": "success",

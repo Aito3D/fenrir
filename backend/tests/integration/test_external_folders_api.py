@@ -1077,6 +1077,131 @@ class TestCrossBoundaryMove:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_multi_file_batch_move_relocates_every_source(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """T-141: a batch of several files must all land on the NAS and
+        lose their internal copy — proving the deferred-unlink rework
+        (commit once, then unlink every successfully-copied source)
+        still relocates every file in a multi-file move, not just one."""
+        import io
+
+        from backend.app.api.routes.library import to_absolute_path
+        from backend.app.models.library import LibraryFile
+
+        file_ids = []
+        managed_paths = []
+        for name in ("batch_a.stl", "batch_b.stl", "batch_c.stl"):
+            upload = await async_client.post(
+                "/api/v1/library/files",
+                files={"file": (name, io.BytesIO(f"bytes-{name}".encode()), "application/octet-stream")},
+            )
+            assert upload.status_code == 200
+            file_id = upload.json()["id"]
+            file_ids.append(file_id)
+            row = await db_session.get(LibraryFile, file_id)
+            await db_session.refresh(row)
+            managed_paths.append(to_absolute_path(row.file_path))
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": file_ids, "folder_id": writable_folder["id"]},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["moved"] == 3
+        assert body["skipped"] == 0
+
+        for name, managed_path in zip(("batch_a.stl", "batch_b.stl", "batch_c.stl"), managed_paths, strict=True):
+            on_nas = external_dir / name
+            assert on_nas.exists()
+            assert on_nas.read_bytes() == f"bytes-{name}".encode()
+            assert not managed_path.exists(), f"managed source for {name} must be removed after the move"
+
+        for file_id in file_ids:
+            row = await db_session.get(LibraryFile, file_id)
+            await db_session.refresh(row)
+            assert row.is_external is True
+            assert row.folder_id == writable_folder["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_commit_failure_leaves_sources_and_db_untouched(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir, monkeypatch
+    ):
+        """T-141: ``_move_file_bytes`` used to unlink each source
+        immediately, before the batch's single ``db.commit()`` at the end
+        of the loop. If that commit failed (lock, IntegrityError, worker
+        restart) the transaction rolled back but the source bytes were
+        already gone — rows pointed at deleted files with nothing
+        referencing the freshly copied bytes under their new name.
+
+        This reproduces a commit failure and asserts the fix: nothing is
+        unlinked, no orphan dest is left on the NAS, and the DB row still
+        points at the original (still-present) source after rollback.
+        """
+        import io
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from backend.app.api.routes.library import to_absolute_path
+        from backend.app.models.library import LibraryFile
+
+        upload = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("fragile.stl", io.BytesIO(b"do-not-lose-me"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+
+        pre = await db_session.get(LibraryFile, file_id)
+        await db_session.refresh(pre)
+        original_file_path = pre.file_path
+        managed_disk_path = to_absolute_path(original_file_path)
+        assert managed_disk_path is not None and managed_disk_path.exists()
+
+        real_commit = AsyncSession.commit
+        state = {"armed": False, "triggered": False}
+
+        async def flaky_commit(self):
+            if state["armed"] and not state["triggered"]:
+                state["triggered"] = True
+                raise RuntimeError("database is locked")
+            return await real_commit(self)
+
+        monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+        state["armed"] = True
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": writable_folder["id"]},
+        )
+        assert state["triggered"], "the commit patch never fired — test would be a false positive"
+        # The app's fail-closed auth-probe middleware turns any unhandled
+        # exception from the request pipeline into a 503 (GHSA-6mf4-q26m-47pv)
+        # -- this pre-existing behavior is unrelated to the fix under test,
+        # only the on-disk/DB state below is.
+        assert response.status_code == 503
+
+        # The source bytes must still be exactly where they were.
+        assert managed_disk_path.exists(), "source must survive a failed commit"
+        assert managed_disk_path.read_bytes() == b"do-not-lose-me"
+
+        # No orphan copy left behind on the NAS target.
+        on_nas = external_dir / "fragile.stl"
+        assert not on_nas.exists(), "a failed commit must not leave an orphan dest copy"
+
+        # The DB row is unchanged — rollback undid the in-memory edits, and
+        # since the fix never unlinked anything, the still-standing source
+        # is exactly what the still-original row points at.
+        db_session.expire_all()
+        post = await db_session.get(LibraryFile, file_id)
+        assert post.file_path == original_file_path
+        assert post.is_external is False
+        assert post.folder_id is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_external_to_managed_relocates_bytes(
         self, async_client: AsyncClient, db_session, writable_folder, external_dir
     ):
