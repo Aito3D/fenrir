@@ -232,6 +232,10 @@ async def test_update_estimate_lines_passes_notes_through(db_session, monkeypatc
             "is_transaction_created": False,
             "invoiced_amount": 0,
             "is_inclusive_tax": True,
+            # Already set: keeps the expiry-once guard in _update_quote from
+            # calling the (here unmocked) update_estimate_fields — this test
+            # is about notes, not expiry.
+            "expiry_date": "2026-08-13",
             "line_items": [],
             "notes": remote_notes,
         }
@@ -282,6 +286,10 @@ async def test_update_estimate_lines_passes_notes_through(db_session, monkeypatc
             "is_transaction_created": False,
             "invoiced_amount": 0,
             "is_inclusive_tax": True,
+            # Already set: keeps the expiry-once guard in _update_quote from
+            # calling the (here unmocked) update_estimate_fields — this test
+            # is about notes, not expiry.
+            "expiry_date": "2026-08-13",
             "line_items": [],
             "notes": remote_notes,
         }

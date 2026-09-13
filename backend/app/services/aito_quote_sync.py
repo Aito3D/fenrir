@@ -36,6 +36,7 @@ from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_events import record
 from backend.app.services.aito_invoice_sweep import sweep_invoices
+from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
     Catalogue,
@@ -44,7 +45,7 @@ from backend.app.services.aito_quote_export import (
     build_line_items,
     enabled_services,
 )
-from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
@@ -440,6 +441,8 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
         project.quote_number = estimate["estimate_number"]
     if estimate.get("date") is not None:
         project.quote_date = estimate["date"]
+    if estimate.get("expiry_date") is not None:
+        project.quote_expiry_date = estimate["expiry_date"]
     # `or 0` is intentional here, not a bug: an absent/None total means the
     # quote genuinely has no lines yet, and 0 is exactly the right value —
     # unlike the string fields above, there's no falsy-but-valid float this
@@ -601,6 +604,8 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         "customer_id": project.client_id,
         "reference_number": reference_number,
         "is_inclusive_tax": True,
+        # The payment link dies the same day (services/aito_payment_links.py).
+        "expiry_date": expiry_for(None, await quote_validity_days(db)),
         "line_items": line_items,
     }
     estimate = await zoho_service.create_estimate(db, payload)
@@ -1159,6 +1164,16 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         catalogue,
         shipping=load_export_shipping(project, catalogue),
     )
+    # Pre-existing quotes get an expiry ONCE; one set by hand in Books is
+    # never overwritten. Its own call, not folded into the line-item PUT, so
+    # a rejected expiry can never cost a line-item push (and vice versa).
+    if not estimate.get("expiry_date"):
+        try:
+            await zoho_service.update_estimate_fields(
+                db, project.quote_id, {"expiry_date": expiry_for(estimate.get("date"), await quote_validity_days(db))}
+            )
+        except ZohoUpstreamError:
+            logger.warning("expiry_date not written on estimate %s", project.quote_id, exc_info=True)
     updated = await zoho_service.update_estimate_lines(
         db, project.quote_id, line_items, notes=await notes_with_tracking(db, project, estimate.get("notes"))
     )
@@ -1436,6 +1451,17 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
                 await _lock_project(db, project, project_id, invoiced=True, clear_block=True, reset_failures=True)
                 return
             await reconcile_quote_status(db, project, estimate)
+
+            # Trigger B (spec §6.3): paid retainers that cover the required
+            # amount are the client's go-ahead. Read off the estimate the
+            # reconcile above already paid for — zero extra Books calls.
+            paid = _paid_retainer_total(estimate)
+            project.retainer_paid_total = paid
+            needed = required_amount(project.quote_total, await deposit_pct(db))
+            if needed is not None and paid >= needed and project.quote_status != "accepted":
+                await accept_quote(
+                    db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
+                )
 
             # The estimate's own total, adopted from the read the reconcile
             # above already paid for. Before this, `quote_total` was written
@@ -2055,6 +2081,42 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
 # depending on plan. At 60s a single active quote cost 1,440 calls/day and
 # two of them exhausted a Standard plan. See test_aito_quote_sync_interval.
 _DEFAULT_INTERVAL_SECONDS = 300
+
+_DEFAULT_QUOTE_VALIDITY_DAYS = 15
+
+
+async def quote_validity_days(db: AsyncSession) -> int:
+    from backend.app.api.routes.settings import get_setting
+
+    raw = await get_setting(db, "aito_quote_validity_days")
+    try:
+        return max(1, min(365, int(raw))) if raw else _DEFAULT_QUOTE_VALIDITY_DAYS
+    except ValueError:
+        return _DEFAULT_QUOTE_VALIDITY_DAYS
+
+
+def expiry_for(quote_date: str | None, validity_days: int) -> str:
+    """The estimate's expiry_date: quote date + validity, ISO YYYY-MM-DD.
+    Today when the quote has no date yet (a create, whose date Books
+    assigns as today anyway)."""
+    from datetime import date, timedelta
+
+    start = date.fromisoformat(quote_date) if quote_date else date.today()
+    return (start + timedelta(days=validity_days)).isoformat()
+
+
+def _paid_retainer_total(estimate: dict) -> float:
+    """Sum of the estimate's retainer invoices Books reports as paid. The
+    same `retainerinvoices` list _is_locked and aito_invoice_create trust."""
+    total = 0.0
+    for entry in estimate.get("retainerinvoices") or []:
+        if str(entry.get("status") or "") == "paid":
+            try:
+                total += float(entry.get("total") or 0)
+            except (TypeError, ValueError):
+                continue
+    return total
+
 
 # How long an EDIT waits before the drain it asked for actually runs. The
 # window exists to keep the outbox's burst-collapsing: ten task ticks made

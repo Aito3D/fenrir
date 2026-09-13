@@ -100,6 +100,10 @@ _ESTIMATE_CREATED = {
         "total": 27500,
         "last_modified_time": "2026-08-05T10:00:00-1000",
         "is_inclusive_tax": True,
+        # Already set: keeps the expiry-once guard in _update_quote from
+        # firing an extra PUT in tests that re-GET this fixture as an
+        # existing estimate.
+        "expiry_date": "2026-08-20",
     }
 }
 

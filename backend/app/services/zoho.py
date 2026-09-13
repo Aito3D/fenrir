@@ -582,6 +582,11 @@ class ZohoService:
             "estimate", {}
         )
 
+    async def update_estimate_fields(self, db: AsyncSession, estimate_id: str, fields: dict) -> dict:
+        """PUT a partial estimate body (e.g. {"expiry_date": ...}). Books
+        merges partial PUTs, the same way update_estimate_notes relies on."""
+        return (await self._request(db, "PUT", f"/estimates/{_seg(estimate_id)}", json=fields)).get("estimate", {})
+
     async def set_estimate_status(self, db: AsyncSession, estimate_id: str, status: str) -> None:
         """`sent`, `accepted` or `declined`. There is no `draft`: Books offers
         no way back, so declining an estimate is one-way through the API."""

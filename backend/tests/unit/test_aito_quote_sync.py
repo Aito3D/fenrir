@@ -837,6 +837,10 @@ async def test_update_preserves_foreign_lines_and_refreshes_status(db_session):
                         "is_transaction_created": False,
                         "invoiced_amount": 0,
                         "is_inclusive_tax": True,
+                        # Already set: the expiry-once guard in _update_quote
+                        # must not fire a second PUT here — this test is about
+                        # the line-item push, not the expiry write.
+                        "expiry_date": "2026-08-13",
                         "line_items": [
                             {"line_item_id": "OLD", "sku": "P3DSCAN", "item_order": 1},
                             {"line_item_id": "FOREIGN", "sku": "", "name": "Bobine", "item_order": 2},
@@ -3350,6 +3354,9 @@ async def test_adopted_orphan_is_brought_into_sync_by_the_following_tick(db_sess
                         "status": "draft",
                         "invoiced_amount": 0,
                         "is_inclusive_tax": True,
+                        # Already set: keeps the expiry-once guard from firing
+                        # a second PUT this test is not about.
+                        "expiry_date": "2026-08-13",
                         # Books still holds only the scan line from the
                         # orphaned POST — this is the divergence Important 3
                         # exists to close, not paper over.
@@ -5823,6 +5830,9 @@ async def test_update_pushes_the_shipping_line_too_not_only_on_create(db_session
                         "status": "sent",
                         "invoiced_amount": 0,
                         "is_inclusive_tax": True,
+                        # Already set: keeps the expiry-once guard from firing
+                        # a second PUT this test is not about.
+                        "expiry_date": "2026-08-13",
                         "line_items": [],
                     }
                 },
@@ -5876,6 +5886,9 @@ async def test_detaching_a_shipment_pushes_line_items_without_the_shipping_line(
                         "status": "sent",
                         "invoiced_amount": 0,
                         "is_inclusive_tax": True,
+                        # Already set: keeps the expiry-once guard from firing
+                        # a second PUT this test is not about.
+                        "expiry_date": "2026-08-13",
                         "line_items": [
                             {
                                 "line_item_id": "L9",
