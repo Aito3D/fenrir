@@ -109,6 +109,30 @@ describe('CreateInvoiceButton', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('1 500');
   });
 
+  it('interpolates the quote and its line count into the sentence', async () => {
+    // Regression: the sentence read `{{lines}}` verbatim in the shipped
+    // dialog because the key's placeholder and the value the component
+    // passed had different names. Nothing type-checks that pairing, so it
+    // is asserted here — on the rendered text, in the real locale.
+    vi.spyOn(api, 'getAitoInvoicePreview').mockResolvedValue(PREVIEW);
+    renderButton(makeProject());
+
+    await userEvent.click(screen.getByRole('button'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Quote DEV26-2493, 2 lines.');
+    expect(dialog.textContent).not.toContain('{{');
+  });
+
+  it('says "1 line", not "1 lines", for a single-line quote', async () => {
+    vi.spyOn(api, 'getAitoInvoicePreview').mockResolvedValue({ ...PREVIEW, line_count: 1 });
+    renderButton(makeProject());
+
+    await userEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('DEV26-2493, 1 line.');
+  });
+
   it('lists a deposit that cannot be applied rather than hiding it', async () => {
     vi.spyOn(api, 'getAitoInvoicePreview').mockResolvedValue({
       ...PREVIEW,
