@@ -905,6 +905,7 @@ export default {
       medium: "Сред.",
       high: "Высокое",
       cameraUnavailable: "Камера недоступна",
+      streamRejected: "Поток отклонён сервером (HTTP {{status}})",
       connectionLost: "Соединение потеряно",
       reconnecting: "Переподключение через {{countdown}} с (попытка {{attempt}})",
       expand: "Развернуть",

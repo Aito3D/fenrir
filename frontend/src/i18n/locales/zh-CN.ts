@@ -922,6 +922,7 @@ export default {
       medium: '中',
       high: '高',
       cameraUnavailable: '摄像头不可用',
+      streamRejected: '服务器拒绝了视频流 (HTTP {{status}})',
       connectionLost: '连接丢失',
       reconnecting: '{{countdown}}秒后重新连接 (第{{attempt}}次)',
       expand: '展开',

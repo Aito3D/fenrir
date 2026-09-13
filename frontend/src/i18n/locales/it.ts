@@ -922,6 +922,7 @@ export default {
       medium: 'Media',
       high: 'Alta',
       cameraUnavailable: 'Fotocamera non disponibile',
+      streamRejected: 'Flusso rifiutato dal server (HTTP {{status}})',
       connectionLost: 'Connessione persa',
       reconnecting: 'Riconnessione tra {{countdown}}s (tentativo {{attempt}})',
       expand: 'Espandi',

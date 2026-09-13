@@ -11423,3 +11423,48 @@ group) will get "File not found" instead of a queued item when they POST
 relies on operators queueing shared uploads owned by an admin will start failing until those users are
 granted `library:read_all`.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 6 · T-138 — 2026-09-13 — user-approved behavior change
+
+`startMultiplexedStream()` (frontend/src/hooks/useGridStream.ts:610) treated every non-ok grid-stream
+fetch response identically: `if (!res.ok || !res.body) { throw new Error(\`HTTP ${res.status}\`); }`,
+caught unconditionally at the bottom of the loop and handed to `await scheduleReconnect(ids)` regardless
+of status. A 400 (too many printers), 401 (expired token), or 403 (missing `camera:view`) was therefore
+retried forever at up to `RECONNECT_MAX_DELAY_MS` between authenticated requests, and the status code
+was never surfaced anywhere — the operator saw only "Connection lost" / "Reconnecting in Ns (attempt N)"
+indefinitely, with no way to tell a transient network blip from a permission problem that backoff can
+never fix.
+
+Fixed by branching on `res.status` before throwing (useGridStream.ts:610): a 4xx status other than 408
+(request timeout) and 429 (rate limited) now stops the loop (`active = false`), clears any pending
+reconnect grace timer, resets the reconnect sub-hook, records the status in a new `terminalError: {
+status: number } | null` hook-state field (exposed on the hook's return object), and marks every id in
+the current stream as errored — mirroring the existing "worker restarts exhausted" terminal-error path.
+Network errors, 5xx, 408, 429, and an ok response with no body are unchanged: they still fall through to
+the existing throw → exponential-backoff-reconnect path. `terminalError` is cleared at every point the
+hook already resets `errorSet`/`reconnectingSet` on a fresh start — the mount/restart effect init
+(useGridStream.ts:~219), the per-decoded-frame clear in `handleWorkerMessage` (~L383, defensive; a frame
+can't arrive once the loop has stopped, but kept for consistency), and a successful (re)connect
+(~L638) — so bumping the grid's restart key (the wall's existing "retry" button, which forces the whole
+effect to re-run and re-fetch) tries again and clears the terminal state if it succeeds.
+`CameraGridCard.tsx` gained a `terminalErrorStatus?: number` prop, passed through from
+`CameraGrid.tsx`'s `terminalError?.status`; the card's existing error overlay (the `AlertCircle` +
+"Camera unavailable" block, `~L267`) now shows the new `printers.cameraGrid.streamRejected` i18n key
+interpolated with the status instead of the generic text whenever a terminal error is set, keeping the
+same retry button. Added the `streamRejected` key to `en.ts` and all 12 other locale files (real
+translations, not English placeholders — verified by `npm run check:i18n`).
+
+Confirmed via `snapshot.py verify` that `fe-i18n-parity` is the only mismatching probe, with
+`key_count` moving from 7290 to 7291 for every locale and `missing_vs_en`/`extra_vs_en` staying empty
+for all of them; re-recorded via `snapshot.py record` (`git diff --stat snapshots/` shows only
+`snapshots/fe-i18n-parity.golden` touched). `SURFACE.md` is unchanged (no new exports).
+
+User-visible change: a camera wall hitting a 400 (too many printers), 401 (expired token), or 403
+(missing `camera:view`) on the grid stream no longer shows a perpetual "Connection lost / Reconnecting
+in Ns (attempt N)" overlay. Instead the tile(s) switch to the terminal error overlay (red `AlertCircle`
+icon) showing "Stream rejected by server (HTTP 400)" / "... (HTTP 401)" / "... (HTTP 403)" in place of
+the generic "Camera unavailable" text, with the same "Retry" button as before — clicking it forces a
+fresh attempt and clears the terminal state if the new attempt succeeds. 5xx errors, request timeouts
+(408), and rate-limiting (429) still show the existing "Connection lost" / reconnecting overlay with
+backoff exactly as before.
+User-approved 2026-09-13.

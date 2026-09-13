@@ -921,6 +921,7 @@ export default {
       medium: '中',
       high: '高',
       cameraUnavailable: 'カメラが利用できません',
+      streamRejected: 'サーバーによってストリームが拒否されました (HTTP {{status}})',
       connectionLost: '接続が切断されました',
       reconnecting: '{{countdown}}秒後に再接続 (試行{{attempt}})',
       expand: '拡大',

@@ -221,6 +221,43 @@ describe('CameraGridCard', () => {
     });
   });
 
+  describe('error overlay', () => {
+    it('shows the generic "camera unavailable" text when error is true with no terminal error status', () => {
+      render(<CameraGridCard {...baseProps({ connected: true, error: true, reconnecting: false })} />);
+
+      expect(screen.getByText('Camera unavailable')).toBeInTheDocument();
+      expect(screen.queryByText(/Stream rejected/)).not.toBeInTheDocument();
+    });
+
+    it('shows the terminal-error status text instead of the generic message when terminalErrorStatus is set (T-138)', () => {
+      render(<CameraGridCard {...baseProps({
+        connected: true,
+        error: true,
+        reconnecting: false,
+        terminalErrorStatus: 403,
+      })} />);
+
+      expect(screen.getByText('Stream rejected by server (HTTP 403)')).toBeInTheDocument();
+      expect(screen.queryByText('Camera unavailable')).not.toBeInTheDocument();
+    });
+
+    it('still offers the retry button when a terminal error is shown, so a manual restart can clear it', async () => {
+      const user = userEvent.setup();
+      const onRestart = vi.fn();
+      render(<CameraGridCard {...baseProps({
+        connected: true,
+        error: true,
+        reconnecting: false,
+        terminalErrorStatus: 401,
+        onRestart,
+      })} />);
+
+      await user.click(screen.getByRole('button', { name: /retry/i }));
+
+      expect(onRestart).toHaveBeenCalled();
+    });
+  });
+
   describe('stale overlay (media blur)', () => {
     it('blurs the canvas when connected, stale, and not loading/error/reconnecting', () => {
       const { container } = render(<CameraGridCard {...baseProps({

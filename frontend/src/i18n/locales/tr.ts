@@ -922,6 +922,7 @@ export default {
       medium: 'Orta',
       high: 'Yüksek',
       cameraUnavailable: 'Kamera kullanılamıyor',
+      streamRejected: 'Akış sunucu tarafından reddedildi (HTTP {{status}})',
       connectionLost: 'Bağlantı kesildi',
       reconnecting: '{{countdown}} sn içinde yeniden bağlanılıyor (deneme {{attempt}})',
       expand: 'Genişlet',

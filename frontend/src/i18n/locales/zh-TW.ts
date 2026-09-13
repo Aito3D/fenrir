@@ -922,6 +922,7 @@ export default {
       medium: '中',
       high: '高',
       cameraUnavailable: '相機無法使用',
+      streamRejected: '伺服器拒絕了串流 (HTTP {{status}})',
       connectionLost: '連線中斷',
       reconnecting: '{{countdown}} 秒後重新連線（第 {{attempt}} 次嘗試）',
       expand: '展開',

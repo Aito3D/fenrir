@@ -929,6 +929,7 @@ export default {
       medium: 'Med',
       high: 'High',
       cameraUnavailable: 'Camera unavailable',
+      streamRejected: 'Stream rejected by server (HTTP {{status}})',
       connectionLost: 'Connection lost',
       reconnecting: 'Reconnecting in {{countdown}}s (attempt {{attempt}})',
       expand: 'Expand',

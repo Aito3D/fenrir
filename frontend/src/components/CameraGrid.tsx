@@ -338,6 +338,7 @@ export function CameraGrid({
     reconnectingSet,
     reconnectCountdown,
     reconnectAttempt,
+    terminalError,
     getStatsSnapshot: getMjpegStatsSnapshot,
     handleVisibilityChange,
   } = useGridStream({ printerIdsKey, gridParamsKey, restartKey });
@@ -490,6 +491,7 @@ export function CameraGrid({
               canvasRef={canvasRefs.current.get(p.id)}
               loading={loadingSet.has(p.id)}
               error={errorSet.has(p.id)}
+              terminalErrorStatus={terminalError?.status}
               reconnecting={reconnectingSet.has(p.id)}
               reconnectCountdown={reconnectingSet.has(p.id) ? reconnectCountdown : 0}
               reconnectAttempt={reconnectingSet.has(p.id) ? reconnectAttempt : 0}

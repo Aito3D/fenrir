@@ -26,10 +26,24 @@ function resetHashInstrumentation() {
   hashCompletionOrder = [];
 }
 
+/**
+ * A manually-controlled "gate": the promise stays pending until the test
+ * calls `resolve()`. Used instead of real setTimeout delays so completion
+ * order and pool depth are driven by explicit test actions, not wall-clock
+ * timing (which is not guaranteed to resolve in program order under load).
+ */
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function makeInstrumentedFile(
   content: string,
   name: string,
-  opts: { delayMs?: number; fail?: boolean } = {},
+  opts: { gate?: Promise<void>; fail?: boolean } = {},
 ): File {
   const file = new File([content], name, { type: 'application/octet-stream' });
   const buffer = new TextEncoder().encode(content).buffer;
@@ -39,8 +53,8 @@ function makeInstrumentedFile(
       concurrentHashCalls++;
       peakConcurrentHashCalls = Math.max(peakConcurrentHashCalls, concurrentHashCalls);
       try {
-        if (opts.delayMs) {
-          await new Promise((resolve) => setTimeout(resolve, opts.delayMs));
+        if (opts.gate) {
+          await opts.gate;
         }
         if (opts.fail) {
           throw new RangeError(`Array buffer allocation failed for ${name}`);
@@ -702,25 +716,31 @@ describe('FileUploadModal', () => {
       const user = userEvent.setup();
       render(<FileUploadModal {...defaultProps} />);
 
-      // 6 files, all with the same artificial delay: if hashing were still
-      // fanned out with Promise.all (the bug), all 6 would start at once and
-      // peakConcurrentHashCalls would hit 6. A bounded pool of 3 must never
-      // exceed 3, and — since 6 > 3 — should actually reach 3 (not silently
-      // serialize to 1), proving real bounded parallelism is happening.
-      const files = Array.from({ length: 6 }, (_, i) =>
-        makeInstrumentedFile(`content-${i}`, `file${i}.3mf`, { delayMs: 30 }),
+      // 6 files, each gated on a manually-controlled deferred promise: if
+      // hashing were still fanned out with Promise.all (the bug), all 6
+      // would start at once and peakConcurrentHashCalls would hit 6. A
+      // bounded pool of 3 must never exceed 3, and — since 6 > 3 — should
+      // actually reach 3 (not silently serialize to 1), proving real bounded
+      // parallelism is happening.
+      const gates = Array.from({ length: 6 }, () => createDeferred());
+      const files = gates.map((gate, i) =>
+        makeInstrumentedFile(`content-${i}`, `file${i}.3mf`, { gate: gate.promise }),
       );
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       await user.upload(fileInput, files);
 
-      await waitFor(
-        () => {
-          expect(hashCompletionOrder.length).toBe(6);
-        },
-        { timeout: 5000 },
-      );
-
+      // The pool kicks off its first HASH_POOL_SIZE workers synchronously —
+      // each increments the counter and then suspends on its own (still
+      // pending) gate before any of them can decrement — so the peak is
+      // already final the instant upload() settles; no timer to race.
       expect(peakConcurrentHashCalls).toBe(3);
+
+      // Release all 6 files; order doesn't matter for this assertion.
+      gates.forEach((gate) => gate.resolve());
+
+      await waitFor(() => {
+        expect(hashCompletionOrder.length).toBe(6);
+      });
     });
 
     // INVARIANT GUARD, not a fix-pinning regression test: this also passes against
@@ -732,12 +752,17 @@ describe('FileUploadModal', () => {
       const user = userEvent.setup();
       render(<FileUploadModal {...defaultProps} />);
 
-      // fileB finishes first (shortest delay) despite being added second —
-      // exercises the "completion order != input order" case. Only fileB's
-      // content hashes to the value the server reports as a duplicate.
-      const fileA = makeInstrumentedFile('aaa-content', 'fileA.3mf', { delayMs: 60 });
-      const fileB = makeInstrumentedFile('bbb-content', 'fileB.3mf', { delayMs: 5 });
-      const fileC = makeInstrumentedFile('ccc-content', 'fileC.3mf', { delayMs: 30 });
+      // fileB is released first (despite being added second) — exercises
+      // the "completion order != input order" case. Only fileB's content
+      // hashes to the value the server reports as a duplicate. Each file is
+      // gated independently so the test controls completion order directly
+      // instead of hoping real delays resolve in that order.
+      const gateA = createDeferred();
+      const gateB = createDeferred();
+      const gateC = createDeferred();
+      const fileA = makeInstrumentedFile('aaa-content', 'fileA.3mf', { gate: gateA.promise });
+      const fileB = makeInstrumentedFile('bbb-content', 'fileB.3mf', { gate: gateB.promise });
+      const fileC = makeInstrumentedFile('ccc-content', 'fileC.3mf', { gate: gateC.promise });
 
       const bbbHash = '3fe4fb767f8a7283f23b1f486b069d4cbd4774ffcea5364f246ed7096ffa0376';
       server.use(
@@ -753,23 +778,30 @@ describe('FileUploadModal', () => {
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       await user.upload(fileInput, [fileA, fileB, fileC]);
 
-      // Sanity check on the instrumentation itself: B really did finish before A.
-      await waitFor(
-        () => {
-          expect(hashCompletionOrder).toEqual(['fileB.3mf', 'fileC.3mf', 'fileA.3mf']);
-        },
-        { timeout: 5000 },
-      );
+      // Release strictly in the desired order, waiting for each release to
+      // land before triggering the next — this pins completion order by
+      // construction instead of racing real setTimeout delays.
+      gateB.resolve();
+      await waitFor(() => {
+        expect(hashCompletionOrder).toEqual(['fileB.3mf']);
+      });
+
+      gateC.resolve();
+      await waitFor(() => {
+        expect(hashCompletionOrder).toEqual(['fileB.3mf', 'fileC.3mf']);
+      });
+
+      gateA.resolve();
+      await waitFor(() => {
+        expect(hashCompletionOrder).toEqual(['fileB.3mf', 'fileC.3mf', 'fileA.3mf']);
+      });
 
       // Only fileB's row should be flagged as a duplicate, despite it having
       // completed hashing first — proves the result wasn't misattributed to
       // whichever file happened to finish first (e.g. fileA).
-      await waitFor(
-        () => {
-          expect(screen.getByText(/Already in library/)).toBeInTheDocument();
-        },
-        { timeout: 5000 },
-      );
+      await waitFor(() => {
+        expect(screen.getByText(/Already in library/)).toBeInTheDocument();
+      });
 
       const rowB = screen.getByText('fileB.3mf').closest('.flex.items-center.gap-3');
       const rowA = screen.getByText('fileA.3mf').closest('.flex.items-center.gap-3');

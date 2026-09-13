@@ -899,6 +899,7 @@ export default {
       medium: '중간',
       high: '높음',
       cameraUnavailable: '카메라 사용 불가',
+      streamRejected: '서버가 스트림을 거부했습니다 (HTTP {{status}})',
       connectionLost: '연결 끊김',
       reconnecting: '{{countdown}}초 후 재연결 (시도 {{attempt}})',
       expand: '확대',
