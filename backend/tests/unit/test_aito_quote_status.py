@@ -4,8 +4,19 @@ an unsaved AitoProject row is enough."""
 
 from datetime import datetime
 
+import pytest
+from sqlalchemy import select
+
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
-from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.models.aito_task import AitoTask
+from backend.app.services.aito_quote_status import (
+    accept_quote,
+    adopt_quote_status,
+    apply_quote_decision,
+    push_quote_status,
+)
+from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
 
 def _project(**overrides) -> AitoProject:
@@ -109,3 +120,98 @@ def test_none_is_still_adoptable():
     project = _project(quote_status="sent")
     adopt_quote_status(project, None)
     assert project.quote_status is None
+
+
+async def _persisted(db, **fields) -> AitoProject:
+    base = {"description": "x", "board_column": "devis", "position": 0, "status": "active", "quote_status": "sent"}
+    base.update(fields)
+    row = AitoProject(**base)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_apply_quote_decision_writes_locally_records_and_moves_the_card(db_session):
+    p = await _persisted(db_session, quote_status_block="conflict", quote_status_remote="declined")
+    await apply_quote_decision(
+        db_session,
+        p,
+        "accepted",
+        actor_class="system",
+        actor_name=None,
+        source="payment_link",
+        detail={"amount": 12500},
+    )
+    assert p.quote_status == "accepted" and p.quote_accepted_at is not None
+    assert p.quote_status_block is None and p.quote_status_remote is None and p.quote_status_confirmed is False
+    # An accepted card with no pending work leaves Devis (board rules).
+    assert p.board_column != "devis"
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "quote.accepted")
+        )
+    ).scalar_one()
+    assert ev.actor_class == "system" and ev.detail["source"] == "payment_link" and ev.detail["amount"] == 12500
+
+
+@pytest.mark.asyncio
+async def test_apply_quote_decision_records_unaccepted_for_accepted_to_sent(db_session):
+    p = await _persisted(db_session, quote_status="accepted")
+    await apply_quote_decision(db_session, p, "sent", actor_class="user", actor_name="paul", source="user")
+    kinds = {
+        e.kind for e in (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == p.id))).scalars()
+    }
+    assert "quote.unaccepted" in kinds and "quote.sent" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_push_quote_status_confirms_on_success_and_rolls_back_on_failure(db_session, monkeypatch):
+    p = await _persisted(db_session, quote_id="EST1")
+
+    async def ok(db, estimate_id, target, current=None):
+        return None
+
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", ok)
+    assert await push_quote_status(db_session, p, "accepted") is True
+    assert p.quote_status_confirmed is True
+
+    async def fail(db, estimate_id, target, current=None):
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", fail)
+    p2 = await _persisted(db_session, quote_id="EST2")
+    assert await push_quote_status(db_session, p2, "accepted") is False
+
+
+@pytest.mark.asyncio
+async def test_accept_quote_is_a_no_op_when_already_accepted(db_session, monkeypatch):
+    p = await _persisted(db_session, quote_status="accepted")
+    calls = []
+
+    async def spy(db, estimate_id, target, current=None):
+        calls.append(target)
+
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", spy)
+    assert await accept_quote(db_session, p, source="retainer") is False
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_accept_quote_reopens_a_declined_quote(db_session, monkeypatch):
+    p = await _persisted(db_session, quote_status="declined", quote_id="EST1", board_column="done")
+    # A pending step is what makes the reopen visibly move the card: with no
+    # tasks at all, "nothing left to do" trusts the stored column between
+    # Finish and Done (aito_board_rules.evaluate) and a card already sitting
+    # in Done from the decline would simply stay there, which would not
+    # exercise the rules running at all.
+    db_session.add(AitoTask(project_id=p.id, position=0, scan_cost=100.0, scan_done=False))
+    await db_session.commit()
+
+    async def ok(db, estimate_id, target, current=None):
+        return None
+
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", ok)
+    assert await accept_quote(db_session, p, source="payment_link", detail={"reference": "DEV-1"}) is True
+    assert p.quote_status == "accepted" and p.board_column != "done"

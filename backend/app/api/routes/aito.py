@@ -77,7 +77,7 @@ from backend.app.services.aito_invoice_create import (
     plan_invoice,
     share_out,
 )
-from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
     notes_with_tracking,
@@ -3547,82 +3547,22 @@ async def set_quote_status(
             },
         )
 
-    # Decided before adopt overwrites the old status: a revoked acceptance is
-    # recorded as its own kind so the timeline never passes it off as an
-    # ordinary "marked sent" — the audit trail is how the shop reconstructs
-    # who un-authorised work the board had already released.
-    unaccepting = project.quote_status == "accepted" and payload.status == "sent"
-    adopt_quote_status(project, payload.status)
-    # Our side just moved, so any recorded block describes an attempt that no
-    # longer exists. This is what lets quote_status_remote alone identify a
-    # blocked attempt — see the column comments on AitoProject.
-    project.quote_status_block = None
-    project.quote_status_remote = None
-    # T-026: a fresh local decision is, by definition, not yet observed to
-    # agree with Books — the push below is best-effort and may fail (Books
-    # unreachable), in which case this is the ONLY record that the local and
-    # remote statuses have diverged. Set True below only if the push actually
-    # succeeds. See AitoProject.quote_status_confirmed's own docstring for
-    # why this gates the reconcile sweep's terminal-card exclusion.
-    project.quote_status_confirmed = False
-    summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary, actor=_actor(current_user))
-    await record(
+    await apply_quote_decision(
         db,
-        project.id,
-        "quote.unaccepted" if unaccepting else f"quote.{payload.status}",
+        project,
+        payload.status,
         actor_class="user",
         actor_name=_actor(current_user),
-        subject_type="project",
-        subject_id=project.id,
+        source="user",
     )
-    await db.commit()
-    await _broadcast_changed("quote-status", project.id, _actor(current_user))
-    await db.refresh(project)
-
-    # Built BEFORE the Zoho call, not after: the project's data cannot change
-    # in between, and a DB-layer failure inside set_estimate_status's
-    # _request (a token-refresh write, a settings read) can leave the session
-    # needing a rollback — a following _project_response call would then
-    # raise PendingRollbackError instead of the intended best-effort
-    # zoho_synced=False response. Same reasoning covers _shipping_names: it
-    # is itself a DB read, so it has to happen up here too.
+    # Built BEFORE the Zoho call: push_quote_status rolls the session back
+    # on failure, which expires this row, and a _project_response after
+    # that would raise instead of returning the intended best-effort
+    # zoho_synced=False.
+    summary = await _summary_for(db, project.id)
     project_response = await _project_response(db, project, summary)
-
-    zoho_synced = False
-    if project.quote_id:
-        try:
-            # No `current`: this pays for one read rather than trusting
-            # project.quote_status, which the model documents as a snapshot
-            # that goes stale.
-            await zoho_service.advance_estimate_status(db, project.quote_id, payload.status)
-            zoho_synced = True
-            # T-026: a direct observation that Books now agrees with the
-            # decision just written above. Persisted by get_db's own implicit
-            # commit after this handler returns (see the rollback comment
-            # just below for the failure twin of that same mechanism) — no
-            # explicit commit needed here, and the response built above
-            # deliberately does not reflect it (this column is internal-only,
-            # never serialised on AitoQuoteStatusResponse).
-            project.quote_status_confirmed = True
-        except Exception:
-            logger.warning(
-                "Could not set Zoho estimate %s to %s for project %s",
-                project.quote_id,
-                payload.status,
-                project.id,
-                exc_info=True,
-            )
-            # A DB-layer failure inside set_estimate_status can leave this
-            # session needing a rollback; without it, get_db's own implicit
-            # commit() after this handler returns would raise
-            # PendingRollbackError and turn this best-effort push into a 500.
-            await db.rollback()
-
-    return AitoQuoteStatusResponse(
-        project=project_response,
-        zoho_synced=zoho_synced,
-    )
+    zoho_synced = await push_quote_status(db, project, payload.status)
+    return AitoQuoteStatusResponse(project=project_response, zoho_synced=zoho_synced)
 
 
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)
