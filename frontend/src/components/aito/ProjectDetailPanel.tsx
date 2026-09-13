@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
@@ -11,20 +11,19 @@ import { UnacceptHoldPill } from './UnacceptHoldPill';
 import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
+import { BillingCard } from './BillingCard';
 import { CreateInvoiceButton } from './CreateInvoiceButton';
-import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
-import { QuoteDownloadButton } from './QuoteDownloadButton';
-import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
-import { SendQuoteButton } from './SendQuoteButton';
+import { PanelTabs } from './PanelTabs';
+import { panelTabId, panelTabPanelId } from './panelTabIds';
 import { SOCIAL_ICONS, SOCIAL_LABEL_KEYS, SocialInput } from './SocialInput';
 import {
-  quoteStatusLabelKey,
+  quoteStatusText,
   quoteStatusTone,
   QUOTE_STATUS_PILL_TONE_CLASSES,
-  QUOTE_STATUS_TEXT_TONE_CLASSES,
 } from './quoteStatus';
+import { deriveQuoteSync } from './quoteSync';
 import { ShippingCard } from './ShippingCard';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { stagesWithWork } from './services';
@@ -40,6 +39,7 @@ import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
+import { usePanelTab } from '../../hooks/usePanelTab';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -57,42 +57,10 @@ import { focusRingCls, inputCls } from '../formStyles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useProjectPatchMutation } from './useProjectPatchMutation';
-import { ACTION_GROUP } from './quoteActionGroup';
 
-/** Explicit map rather than a template literal key: the i18n gate scans for
- *  literal `t('...')` calls, and a dynamic key is invisible to it. */
-const SYNC_LABEL_KEY: Record<string, string> = {
-  pending: 'aito.syncPendingLabel',
-  error: 'aito.syncError',
-  locked: 'aito.quoteLocked',
-};
-
-/** Why the backend's status reconciler is stuck, keyed by the stored fact it
- *  records — same explicit-map reason as SYNC_LABEL_KEY above.
- *
- *  Deliberately NOT folded into the sync row: a block is recorded whatever
- *  `quote_sync_state` happens to be, and the sync row only renders for three
- *  of its five values. A conflict written into a field the UI renders in one
- *  state only is a conflict that reaches nobody, which is exactly how the
- *  previous design lost them. */
-const BLOCK_MESSAGE_KEY: Record<string, string> = {
-  conflict: 'aito.quoteConflict',
-  rejected: 'aito.quoteRejected',
-};
-
-/** Renders a Zoho estimate status through the shared quote-status labels, so
- *  every surface that shows one — the header's eyebrow pill, the Quote card's
- *  Status row, and the block-message interpolation below — agrees on the
- *  same word. An untranslated status falls back to the raw string; a null
- *  status (only reachable from the block-message call sites, which already
- *  guard on `project.quote_status_block`) renders an em dash. Module-level,
- *  not a closure over one component's `t`, because `PanelHeader` needs it too
- *  and the two must never drift into two different fallback rules. */
-function quoteStatusText(t: (key: string) => string, status: string | null): string {
-  if (!status) return '—';
-  const key = quoteStatusLabelKey(status);
-  return key ? t(key) : status;
-}
+/** The right column's tabs, in strip order. Details first: it holds the
+ *  reference cards most panels are opened for. */
+const RIGHT_TABS = ['details', 'activity'] as const;
 
 interface ProjectDetailPanelProps {
   project: AitoProject;
@@ -815,39 +783,11 @@ export function ProjectDetailPanel({
     externalDirtyRef.current = true;
   };
 
-  // A status rendered through the shared quote-status labels (see
-  // `quoteStatusText` above), so the two sides of a block message are
-  // localised too rather than raw Zoho English.
-  const statusLabel = (status: string | null): string => quoteStatusText(t, status);
-  // Object.hasOwn-guarded, same reason as quoteStatus.ts's own lookups: the
-  // union types on these fields describe what the backend is SUPPOSED to
-  // send, not a runtime check on what actually arrives over the wire, so an
-  // unguarded `BLOCK_MESSAGE_KEY[project.quote_status_block]` could resolve
-  // an inherited Object.prototype member (e.g. 'toString') instead of
-  // falling through to the intended `null`.
-  const blockKey = project.quote_status_block
-    ? Object.hasOwn(BLOCK_MESSAGE_KEY, project.quote_status_block)
-      ? BLOCK_MESSAGE_KEY[project.quote_status_block]
-      : null
-    : null;
-  // Same guard, same reason, computed once and shared by hasQuoteMessage
-  // and the sync row below rather than three separate unguarded lookups.
-  const syncLabelKey = Object.hasOwn(SYNC_LABEL_KEY, project.quote_sync_state)
-    ? SYNC_LABEL_KEY[project.quote_sync_state]
-    : undefined;
-
-  /** Whether the Quote card has anything to say beyond the number itself.
-   *
-   *  The card is gated on `quote_number` so a hand-made project shows no
-   *  empty "Quote" heading — but these three messages must never be gated
-   *  with it. A sync error, a status block or a declined quote on a project
-   *  whose number is missing would vanish into a card that no longer renders,
-   *  and a conflict that reaches nobody is exactly how the previous design
-   *  lost them. So the card opens for either reason. */
-  const hasQuoteMessage =
-    Boolean(syncLabelKey) ||
-    Boolean(blockKey) ||
-    project.quote_status === 'declined';
+  // The Billing card derives its own rows from the same function; the panel
+  // only needs to know whether the Details tab must carry the attention dot,
+  // since a tab is otherwise the one place a failed sync could hide.
+  const { needsAttention: billingNeedsAttention } = deriveQuoteSync(project);
+  const [rightTab, setRightTab] = usePanelTab(RIGHT_TABS);
 
   // A description edit shows immediately; the retry-sync button sends the
   // description UNCHANGED (its only job is to re-mark the project pending
@@ -959,6 +899,21 @@ export function ProjectDetailPanel({
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
+  // Six lines at rest, the whole text on request. The left column is the
+  // panel's shortest now that the reference cards sit behind a tab, and a
+  // long description is the one thing that can still make it outgrow the
+  // task list. Overflow is measured, not guessed from a character count:
+  // the clamp is CSS, so only the element knows whether it clipped anything.
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [descOverflows, setDescOverflows] = useState(false);
+  const descRef = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    // Measured while clamped only: once expanded there is nothing to clip,
+    // and the "Show less" affordance keeps the answer from the last clamp.
+    if (editingDesc || descExpanded) return;
+    const el = descRef.current;
+    if (el) setDescOverflows(el.scrollHeight > el.clientHeight);
+  }, [project.description, editingDesc, descExpanded]);
   const [descState, setDescState] = useState<SaveState>('idle');
 
   // The version this edit session is BASED ON, captured once when the
@@ -1235,6 +1190,7 @@ export function ProjectDetailPanel({
                     />
                   ) : (
                     <p
+                      ref={descRef}
                       role="button"
                       tabIndex={0}
                       aria-label={t('aito.editDescription')}
@@ -1245,189 +1201,33 @@ export function ProjectDetailPanel({
                           beginEditDescription();
                         }
                       }}
-                      className="flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+                      className={`flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40 ${
+                        descExpanded ? '' : 'line-clamp-6'
+                      }`}
                     >
                       {project.description}
                     </p>
                   )}
                   <SaveIndicator state={descState} />
                 </div>
+                {/* Only when the clamp actually clipped something; a toggle
+                    on a three-line description would be a control that does
+                    nothing. Its own button, not a click on the text — that
+                    already opens the editor. */}
+                {!editingDesc && descOverflows && (
+                  <button
+                    type="button"
+                    onClick={() => setDescExpanded((v) => !v)}
+                    className={`mt-1.5 text-xs text-bambu-green hover:text-bambu-green/80 ${focusRingCls}`}
+                  >
+                    {descExpanded ? t('aito.descriptionShowLess') : t('aito.descriptionShowMore')}
+                  </button>
+                )}
               </PanelCard>
 
               <PanelCard title={t('aito.stageAndWorkLeft')}>
                 <StageRail tasks={tasks} column={project.column} currency={currency} />
               </PanelCard>
-
-              {/* Imported projects only. The card itself is gated on
-                  quote_number, not just its content: a hand-made project has
-                  no quote at all, and a "Quote" heading over an empty body is
-                  exactly the noise the omitted Email/Seller rows elsewhere in
-                  this panel are built to avoid. The quote is a snapshot, so
-                  this still renders with Zoho unreachable; only the link
-                  needs Zoho. */}
-              {(project.quote_number || hasQuoteMessage) && (
-                <PanelCard title={t('aito.quoteSearchLabel')}>
-                  {project.quote_number && (
-                  <>
-                  {/* A two-row definition list, not just the bare number: the
-                      Number row is what used to be here alone, and Status
-                      repeats the quote's Zoho status already shown as the
-                      header's eyebrow pill — this is the row someone scanning
-                      the left column (rather than the header) reaches for it
-                      from. Rendered only when there is a status to show, same
-                      omission rule the seller/email rows above follow. */}
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
-                    <dt className="text-bambu-gray">{t('aito.quoteNumberLabel')}</dt>
-                    <dd className="text-right min-w-0">
-                      {project.quote_url ? (
-                        <a
-                          href={project.quote_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={t('aito.quoteOpenInZoho')}
-                          className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
-                        >
-                          {project.quote_number}
-                          <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-                        </a>
-                      ) : (
-                        <span className="min-w-0 truncate text-white">{project.quote_number}</span>
-                      )}
-                    </dd>
-                    {project.quote_status && (
-                      <>
-                        <dt className="text-bambu-gray">{t('common.status')}</dt>
-                        <dd className={`text-right ${QUOTE_STATUS_TEXT_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}>
-                          {quoteStatusText(t, project.quote_status)}
-                        </dd>
-                      </>
-                    )}
-                  </dl>
-
-                  {/* Print and Send, side by side. Print used to be full width
-                      because it was the only action in this card; it no longer
-                      is, so the two share the row at flex-1 rather than
-                      leaving a ragged gap. "Open in Zoho" is still absent: the
-                      quote number above already goes there when clicked, and
-                      two affordances for one destination in a six-row card is
-                      what got it removed. */}
-                  {/* Print / download / send as one segmented control. The row is
-                      230.4px wide and three labelled pills wanted 253.6px, so the
-                      labels moved to aria-label + title; see quoteActionGroup.ts
-                      for the measurements and for why the dividers are gaps
-                      rather than borders. The Invoice card's row is identical. */}
-                  <div className={ACTION_GROUP}>
-                    <QuotePrintButton project={project} />
-                    {/* Reads the same PDF the print button does, but saves it. */}
-                    <QuoteDownloadButton project={project} />
-                    {/* POST /{project_id}/quote-email enforces AITO_UPDATE. When
-                        it is absent the group is a two-cell control, which the
-                        gap-px dividers handle without any last-child rule. */}
-                    {canUpdate && <SendQuoteButton project={project} />}
-                  </div>
-
-                  {/* The card's last action, and the only irreversible one on
-                      this panel: it raises a real invoice in Books and spends
-                      the client's deposits against it. Full width under the
-                      segmented row rather than a fourth cell in it — those
-                      three read a document, this one creates one. Renders
-                      itself away outside Finish; see canCreateInvoice. */}
-                  {canUpdate && <CreateInvoiceButton project={project} />}
-                  </>
-                  )}
-
-              {/* Inside the Quote card, under its Number/Status rows — these
-                  are all facts about the same quote, and as a loose block
-                  between two cards they read as belonging to neither.
-                  <dt>/<dd> gives assistive technology the label-to-value
-                  association for free; the colon is markup, so no locale
-                  string carries punctuation. Rendered only when there is
-                  something to say: a row reading "up to date" on every idle
-                  card would be noise, not information.
-                  The card's own gate widens to `quote_number || hasQuoteMessage`
-                  for these: a message with no quote number would otherwise be
-                  swallowed by the card that no longer renders, which is
-                  exactly how a previous redesign lost them. */}
-              <dl className={`space-y-2 text-sm ${project.quote_number ? 'mt-2 pt-2 border-t border-bambu-dark-tertiary' : ''}`}>
-                {/* Only when there is something to say. An idle project is the
-                    normal case and a row reading "up to date" on every card
-                    would be noise. */}
-                {syncLabelKey && (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
-                    <dd className="text-white min-w-0 text-right">
-                      {t(syncLabelKey)}
-                      {project.quote_sync_error && (
-                        <span className="block text-xs text-bambu-gray">{project.quote_sync_error}</span>
-                      )}
-                      {project.quote_sync_state === 'locked' && (
-                        <span className="block text-xs text-bambu-gray">{t('aito.quoteLockedHelp')}</span>
-                      )}
-                      {project.quote_sync_state === 'error' && (
-                        <button
-                          type="button"
-                          onClick={() => updateMutation.mutate({ description: project.description })}
-                          disabled={updateMutation.isPending}
-                          className="block ml-auto mt-1 text-xs text-bambu-green hover:text-bambu-green/80 disabled:opacity-50"
-                        >
-                          {t('aito.retrySync')}
-                        </button>
-                      )}
-                    </dd>
-                  </div>
-                )}
-
-                {/* Also independent of the sync row above, and for the same
-                    reason it had to be moved out of it: the sync row only
-                    renders for pending/error/locked, and a card left declined
-                    — restored from the trash, or re-imported from a declined
-                    quote — is normally 'idle', so the one sentence explaining
-                    why it is stuck rendered exactly never. */}
-                {project.quote_status === 'declined' && (
-                  <div className="flex items-baseline gap-2">
-                    <dd className="ml-0 w-full text-xs text-bambu-gray">{t('aito.quoteDeclinedNoDraft')}</dd>
-                  </div>
-                )}
-
-                {/* Rendered for ANY quote_sync_state, unlike the sync row
-                    above: the reconciler records a block as a fact of its
-                    own, and a card can be perfectly 'idle' for the line-item
-                    sync while its STATUS is stuck against Books. */}
-                {blockKey && (
-                  <div className="flex items-baseline gap-2">
-                    {/* No <dt>: the sync row above already uses the only label
-                        that would fit ("Sync"), and two consecutive rows under
-                        one identical term reads as a mistake. The sentence
-                        names both sides itself, so it needs no term — it spans
-                        the row instead. */}
-                    <dd className="ml-0 w-full text-status-error">
-                      {t(blockKey, {
-                        ours: statusLabel(project.quote_status),
-                        theirs: statusLabel(project.quote_status_remote),
-                      })}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-                </PanelCard>
-              )}
-
-              {/* Directly under the Quote card: the invoice is the quote's
-                  next chapter, and the two read as one story in that order.
-                  Renders itself away when there is no invoice — see
-                  InvoiceCard, which is why there is no gate here. `canUpdate`
-                  is passed through so the card can gate its own Send button
-                  the same way the Quote card gates SendQuoteButton above. */}
-              <InvoiceCard project={project} canUpdate={canUpdate} />
-
-              <RecordCard
-                project={project}
-                latestEvent={latestEvent}
-                canUpdate={canUpdate}
-                onDuplicate={canCreate ? onDuplicate : undefined}
-              />
-
-              <ShippingCard project={project} currency={currency} onWrite={markExternalWrite} />
             </div>
 
             <div
@@ -1478,7 +1278,56 @@ export function ProjectDetailPanel({
             </div>
 
             <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4">
-              <ActivityRail projectId={project.id} />
+              {/* Details (Billing, Record, Shipping) and Activity, one at a
+                  time. These used to be the tail of the left rail and the
+                  whole of this column: six cards on the left set the panel's
+                  height and pushed Record and Shipping below the fold on
+                  every project with a few tasks. Behind a tab, the left rail
+                  is description and stage only, and the task list — the
+                  column the operator works in — sets the height instead.
+
+                  Only the selected panel mounts. The Activity rail is an
+                  infinite query; it should not run for a panel nobody opened
+                  Activity on, and the reference cards need no state kept
+                  warm while hidden. */}
+              <PanelTabs
+                tabs={[
+                  { id: 'details', label: t('aito.panelTabDetails'), attention: billingNeedsAttention },
+                  { id: 'activity', label: t('aito.history.title') },
+                ]}
+                selected={rightTab}
+                onSelect={setRightTab}
+                attentionLabel={t('aito.panelTabAttention')}
+              />
+              <div
+                role="tabpanel"
+                id={panelTabPanelId(rightTab)}
+                aria-labelledby={panelTabId(rightTab)}
+                className={rightTab === 'details' ? 'space-y-4' : undefined}
+              >
+                {rightTab === 'details' ? (
+                  <>
+                    {/* The sync retry re-saves the UNCHANGED description: its
+                        only job is to re-mark the project pending for the
+                        worker (see updateMutation's transform). */}
+                    <BillingCard
+                      project={project}
+                      canUpdate={canUpdate}
+                      onRetrySync={() => updateMutation.mutate({ description: project.description })}
+                      retryPending={updateMutation.isPending}
+                    />
+                    <RecordCard
+                      project={project}
+                      latestEvent={latestEvent}
+                      canUpdate={canUpdate}
+                      onDuplicate={canCreate ? onDuplicate : undefined}
+                    />
+                    <ShippingCard project={project} currency={currency} onWrite={markExternalWrite} />
+                  </>
+                ) : (
+                  <ActivityRail projectId={project.id} showTitle={false} />
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1518,6 +1367,14 @@ export function ProjectDetailPanel({
               finding the card again. The two blocks are mutually exclusive by
               construction (see ProjectDoneAction), so this never crowds. */}
           <span className="flex-1" />
+          {/* The one irreversible commitment on the panel: it raises a real
+              invoice in Books and spends the client's deposits against it.
+              It sat at the foot of the Quote card until that card moved
+              behind the Details tab; a tab must never hide it, and the
+              footer is where the other commitments already live. Renders
+              itself away outside Finish (see canCreateInvoice) and, like
+              QuoteStatusActions beside it, rides AITO_UPDATE. */}
+          {canUpdate && <CreateInvoiceButton project={project} />}
           {/* POST /{project_id}/quote-status enforces AITO_UPDATE. */}
           {canUpdate && <QuoteStatusActions project={project} layout="row" />}
           <ProjectDoneAction project={project} />

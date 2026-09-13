@@ -239,6 +239,10 @@ const mockEvent: AitoEvent = {
 };
 
 beforeEach(() => {
+  // The right column remembers its tab for the session (usePanelTab); a test
+  // that opened Activity must not hand the next test a panel with the
+  // reference cards hidden.
+  sessionStorage.clear();
   server.use(
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
     http.get('/api/v1/calculator/printers/', () => HttpResponse.json(mockPrinters)),
@@ -1689,16 +1693,16 @@ describe('ProjectDetailPanel quote row', () => {
 });
 
 describe('ProjectDetailPanel left column cards', () => {
-  it('groups the left column into four cards, description first, for an imported project', () => {
-    // quote_number set (imported from Zoho) is what earns the Quote card —
+  it('keeps description and stage on the left, and files Billing and Record under the Details tab, for an imported project', () => {
+    // quote_number set (imported from Zoho) is what earns the Billing card —
     // see the sibling test below for the hand-made project, which has none.
     show({ quote_number: 'DEV26-2462' });
     const headings = screen.getAllByTestId('panel-card-heading').map((n) => n.textContent);
-    expect(headings).toEqual(['Product description', 'Stage & work left', 'Quote', 'Record']);
+    expect(headings).toEqual(['Product description', 'Stage & work left', 'Billing', 'Record']);
   });
 
-  it('omits the Quote card entirely for a hand-made project, rather than showing it empty', () => {
-    // The default fixture has quote_number: null. A "Quote" heading over an
+  it('omits the Billing card entirely for a hand-made project, rather than showing it empty', () => {
+    // The default fixture has quote_number: null. A "Billing" heading over an
     // empty body would be exactly the noise the omitted Email/Seller rows
     // elsewhere in this panel are built to avoid.
     show();
@@ -1820,12 +1824,13 @@ describe('ProjectDetailPanel sync row', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
-  it('shows the locked help text and no retry control once the quote is invoiced', async () => {
+  it('shows the locked label and no retry control once the quote is invoiced, with no help sentence under it', async () => {
     show({ quote_sync_state: 'locked' });
     expect(await screen.findByText('Quote invoiced')).toBeInTheDocument();
-    expect(
-      screen.getByText('This quote has been invoiced: changes stay local.'),
-    ).toBeInTheDocument();
+    // The "changes stay local" sentence used to sit under the label. It was
+    // the tallest row on every invoiced card for one fact the label already
+    // states, so it is gone.
+    expect(screen.queryByText(/changes stay local/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 
@@ -2005,9 +2010,10 @@ describe('ProjectDetailPanel activity rail', () => {
   // leaks into every later test and their PATCHes never reach msw.
   afterEach(() => vi.restoreAllMocks());
 
-  it('shows the activity rail alongside the tasks', async () => {
+  it('shows the activity rail behind its tab, beside the tasks', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
     expect(await screen.findByRole('region', { name: /activity/i })).toBeInTheDocument();
   });
 
@@ -2017,6 +2023,7 @@ describe('ProjectDetailPanel activity rail', () => {
     const user = userEvent.setup();
     render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
 
+    await user.click(screen.getByRole('tab', { name: 'Activity' }));
     await screen.findByRole('region', { name: /activity/i });
     const before = events.mock.calls.length;
 
@@ -2064,7 +2071,7 @@ describe('ProjectDetailPanel footer', () => {
   it('puts Print quote in the Quote card, with no duplicate Zoho control', async () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462', quote_url: 'https://books.zoho.com/e2' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
-      .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
+      .find((n) => /billing/i.test(n.textContent ?? ''))!.closest('section')!;
 
     expect(within(quoteCard).getByRole('button', { name: /print quote/i })).toBeInTheDocument();
     // The quote NUMBER is already a link to Zoho; a separate "Open in Zoho"
@@ -2324,7 +2331,7 @@ describe('ProjectDetailPanel surfaces', () => {
   it('keeps the sync row inside the Quote card', async () => {
     show({ quote_number: 'DEV26-2476', quote_sync_state: 'pending' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
-      .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
+      .find((n) => /billing/i.test(n.textContent ?? ''))!.closest('section')!;
     expect(quoteCard.textContent).toMatch(/pending/i);
   });
 
@@ -2456,12 +2463,14 @@ describe('ProjectDetailPanel visual parity: tasks column header', () => {
 
 describe('ProjectDetailPanel visual parity: quote card rows', () => {
   const quoteCard = () =>
-    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.closest('section')!;
+    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Billing')!.closest('section')!;
 
-  it('shows a Number row and, when the project has a status, a Status row', () => {
+  it('shows a Quote row with the number and, when the project has a status, a Status row', () => {
     show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
     const card = quoteCard();
-    expect(within(card).getByText('Number')).toBeInTheDocument();
+    // The row is labelled "Quote", not "Number": the invoice rows share this
+    // card now, and two "Number" rows in one list would name neither.
+    expect(within(card).getByText('Quote')).toBeInTheDocument();
     expect(within(card).getByText('DEV26-2462')).toBeInTheDocument();
     expect(within(card).getByText('Status')).toBeInTheDocument();
     expect(within(card).getByText('Accepted')).toBeInTheDocument();
@@ -2483,7 +2492,7 @@ describe('ProjectDetailPanel visual parity: quote card rows', () => {
 // map so they cannot drift apart again.
 describe('ProjectDetailPanel visual parity: quote status tone matches its actual status', () => {
   const quoteCard = () =>
-    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.closest('section')!;
+    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Billing')!.closest('section')!;
 
   it('accepted renders the success accent (bambu-green) in both the pill and the Status row', () => {
     show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
@@ -2554,7 +2563,7 @@ describe('ProjectDetailPanel visual parity: footer buttons', () => {
     // mid-phrase. The labels now live on aria-label + title only.
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
-      .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
+      .find((n) => /billing/i.test(n.textContent ?? ''))!.closest('section')!;
 
     const print = within(quoteCard).getByRole('button', { name: /print quote/i });
     // Reachable by name, but nothing rendered — that pair is the whole point.
@@ -3104,5 +3113,172 @@ describe('ProjectDetailPanel header: hold-to-unaccept pill', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// The right column is tabbed: Details (Billing, Record, Shipping) and
+// Activity. Description and Stage stay on the left beside the tasks, so the
+// panel's height is set by the task list rather than by a six-card rail.
+describe('ProjectDetailPanel right column tabs', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('offers Details and Activity, and opens on Details', () => {
+    show({ quote_number: 'DEV26-2462' });
+    expect(screen.getAllByRole('tab').map((n) => n.textContent)).toEqual(['Details', 'Activity']);
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).toHaveAttribute('aria-labelledby', 'panel-tab-details');
+    expect(within(panel).getAllByTestId('panel-card-heading').map((n) => n.textContent)).toEqual([
+      'Billing',
+      'Record',
+    ]);
+    // The rail is not mounted behind the closed tab — its infinite query must
+    // not run for a panel nobody opened Activity on.
+    expect(screen.queryByPlaceholderText('Add a note…')).not.toBeInTheDocument();
+  });
+
+  it('keeps description and stage out of the tabs, beside the tasks', () => {
+    show();
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).queryByText('Product description')).not.toBeInTheDocument();
+    expect(within(panel).queryByText('Stage & work left')).not.toBeInTheDocument();
+    expect(screen.getByText('Product description')).toBeInTheDocument();
+    expect(screen.getByText('Stage & work left')).toBeInTheDocument();
+  });
+
+  it('keeps the right column a scrolling grid column with the tabs inside it', () => {
+    show();
+    const grid = document.querySelector('[class*="lg:grid-cols-"]')!;
+    const right = grid.children[2] as HTMLElement;
+    expect(within(right).getByRole('tablist')).toBeInTheDocument();
+    expect(right.className).toContain('lg:overflow-y-auto');
+  });
+
+  it('mounts the activity rail only once its tab is opened, and unmounts the details', async () => {
+    show({ quote_number: 'DEV26-2462' });
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    expect(await screen.findByPlaceholderText('Add a note…')).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'panel-tab-activity');
+    expect(screen.queryByText('Billing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Record')).not.toBeInTheDocument();
+  });
+
+  it('does not repeat the Activity heading inside its own tab', async () => {
+    show();
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    await screen.findByPlaceholderText('Add a note…');
+    // Exactly one: the tab. The rail's own "Activity" eyebrow is suppressed
+    // there, or the word would sit twice within a centimetre.
+    expect(screen.getAllByText('Activity')).toHaveLength(1);
+  });
+
+  it('reopens on the tab the previous panel was left on', async () => {
+    const first = show();
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    first.unmount();
+    show();
+    expect(screen.getByRole('tab', { name: 'Activity' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('flags Details when the quote sync has failed', () => {
+    show({ quote_number: 'DEV26-2462', quote_sync_state: 'error', quote_sync_error: 'Zoho unreachable' });
+    const tab = screen.getByRole('tab', { name: /Details/ });
+    expect(within(tab).getByTestId('panel-tab-attention')).toHaveAttribute('aria-label', 'Needs attention');
+  });
+
+  it('flags Details when the quote status is blocked against Books, even on an idle sync', () => {
+    show({
+      quote_number: 'DEV26-2462',
+      quote_sync_state: 'idle',
+      quote_status: 'accepted',
+      quote_status_block: 'conflict',
+      quote_status_remote: 'declined',
+    });
+    expect(within(screen.getByRole('tab', { name: /Details/ })).getByTestId('panel-tab-attention')).toBeInTheDocument();
+  });
+
+  it('does not flag Details for an idle, pending or locked sync', () => {
+    for (const state of ['idle', 'pending', 'locked'] as const) {
+      const { unmount } = show({ quote_number: 'DEV26-2462', quote_sync_state: state });
+      expect(screen.queryByTestId('panel-tab-attention')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
+describe('ProjectDetailPanel create invoice', () => {
+  const billable = { column: 'finish', quote_id: 'e2', quote_number: 'DEV26-2462', quote_status: 'accepted' } as const;
+
+  it('offers Create invoice in the footer, not in the Billing card, for a billable card in Finish', () => {
+    show(billable);
+    const footer = screen.getByTestId('panel-footer');
+    expect(within(footer).getByRole('button', { name: /create invoice/i })).toBeInTheDocument();
+    const billing = screen
+      .getAllByTestId('panel-card-heading')
+      .find((h) => h.textContent === 'Billing')!
+      .closest('section')!;
+    expect(within(billing).queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('offers it as a permanent bordered button, like the footer\'s other actions', () => {
+    show(billable);
+    const button = within(screen.getByTestId('panel-footer')).getByRole('button', { name: /create invoice/i });
+    expect(button.className).toContain('border');
+    expect(button.className).not.toContain('w-full');
+  });
+
+  it('omits it outside Finish', () => {
+    show({ ...billable, column: 'print' });
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('omits it without the update permission', () => {
+    render(
+      <ProjectDetailPanel canCreate canUpdate={false} canDelete project={{ ...project, ...billable }} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel description clamp', () => {
+  // jsdom lays nothing out, so overflow is simulated: the clamp decides on
+  // scrollHeight vs clientHeight of the description, and both are 0 here
+  // unless mocked. Element.prototype, not HTMLElement — that is where jsdom
+  // defines both getters.
+  const overflow = (scrollHeight: number, clientHeight: number) => {
+    vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(scrollHeight);
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(clientHeight);
+  };
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('clamps a long description to six lines and offers to show more', async () => {
+    overflow(240, 120);
+    show();
+    const description = screen.getByRole('button', { name: /edit description/i });
+    expect(description.className).toContain('line-clamp-6');
+    await userEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(description.className).not.toContain('line-clamp-6');
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
+    // Toggling the clamp is not an edit.
+    expect(screen.queryByRole('textbox', { name: /edit description/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no toggle when the description fits', () => {
+    overflow(120, 120);
+    show();
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
+  });
+
+  it('never clamps the editor', async () => {
+    overflow(240, 120);
+    show();
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    const editor = screen.getByDisplayValue('Support de caméra');
+    expect(editor.className).not.toContain('line-clamp');
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
   });
 });

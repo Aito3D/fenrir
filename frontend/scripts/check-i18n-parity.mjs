@@ -144,6 +144,7 @@ function isAlwaysAllowedIdentical(value) {
 const DE_COGNATES = [
   'in {{folder}}',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
+  'Details',  // aito.panelTabDetails — "Details" is the German word too
   'Cyan',  // settings.accentCyan — the colour is spelled "Cyan" in German too
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
   'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)

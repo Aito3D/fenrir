@@ -27,6 +27,20 @@ export function quoteStatusLabelKey(status: string): string | null {
   return Object.hasOwn(LABEL_KEYS, status) ? LABEL_KEYS[status] : null;
 }
 
+/** Renders a Zoho estimate status through the shared quote-status labels, so
+ *  every surface that shows one — the panel header's eyebrow pill, the
+ *  Billing card's Status row, and the block-message interpolation — agrees on
+ *  the same word. An untranslated status falls back to the raw string; a null
+ *  status (only reachable from the block-message call sites, which already
+ *  guard on `project.quote_status_block`) renders an em dash. Module-level,
+ *  not a closure over one component's `t`, because the header and the card
+ *  both need it and the two must never drift into two fallback rules. */
+export function quoteStatusText(t: (key: string) => string, status: string | null): string {
+  if (!status) return '—';
+  const key = quoteStatusLabelKey(status);
+  return key ? t(key) : status;
+}
+
 /** How serious a status is, matched to the classification QuoteStatusActions
  *  already renders (accept = green, decline = status-error) so the two
  *  surfaces can never disagree about whether a status is bad. `expired` gets

@@ -35,7 +35,16 @@ function initialDepth(): AitoHistoryDepth {
  *  Depth is a genuine refetch rather than a client-side filter — the server
  *  owns the kind-to-depth registry, so the three levels are different result
  *  sets and paging them separately is what keeps the cursor honest. */
-export function ActivityRail({ projectId }: { projectId: number }) {
+export function ActivityRail({
+  projectId,
+  showTitle = true,
+}: {
+  projectId: number;
+  /** Off when the rail sits behind a tab already labelled "Activity" — the
+   *  word would otherwise appear twice within a centimetre. The depth control
+   *  keeps its row either way. */
+  showTitle?: boolean;
+}) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -136,8 +145,8 @@ export function ActivityRail({ projectId }: { projectId: number }) {
           column is 22rem wide and the control is 166px, so stacking them spent
           a whole line on 40% occupancy — and it put the heading and the thing
           that changes what the heading lists two rows apart. */}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <p className="text-xs uppercase tracking-wide text-bambu-gray">{t('aito.history.title')}</p>
+      <div className={`flex items-center gap-2 mb-3 ${showTitle ? 'justify-between' : 'justify-end'}`}>
+        {showTitle && <p className="text-xs uppercase tracking-wide text-bambu-gray">{t('aito.history.title')}</p>}
 
         <div className="inline-flex rounded-lg border border-bambu-dark-tertiary overflow-hidden flex-shrink-0">
           {DEPTHS.map((option) => (

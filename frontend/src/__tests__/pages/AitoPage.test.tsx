@@ -379,8 +379,9 @@ describe('AitoPage (backend board)', () => {
     expect(within(panel).getByTestId('stage-node-devis')).toHaveAttribute('data-state', 'current');
     // The heading itself, not a text match: StageRail's own 'devis' node also
     // reads "Quote" (aito.columns.devis), so an unscoped text query would
-    // still pass with the Quote card deleted entirely.
-    expect(within(panel).getAllByTestId('panel-card-heading').map((n) => n.textContent)).toContain('Quote');
+    // still pass with the Billing card deleted entirely. Billing sits behind
+    // the right column's Details tab, which is the tab a fresh panel opens on.
+    expect(within(panel).getAllByTestId('panel-card-heading').map((n) => n.textContent)).toContain('Billing');
   });
 
   it('opens the panel from the keyboard via the card body', async () => {
