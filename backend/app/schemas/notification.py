@@ -41,6 +41,9 @@ class NotificationProviderBase(BaseModel):
         description="Notify when a print starts with required trays missing spool assignments",
     )
     on_billing_charge_failed: bool = Field(default=True, description="Notify when a print charge cannot be recorded")
+    on_aito_payment_received: bool = Field(
+        default=False, description="Notify when an Aito quote is paid online or by a covering deposit"
+    )
 
     # Event triggers - printer status
     on_printer_offline: bool = Field(default=False, description="Notify when printer goes offline")
@@ -142,6 +145,7 @@ class NotificationProviderUpdate(BaseModel):
     on_print_progress: bool | None = None
     on_print_missing_spool_assignment: bool | None = None
     on_billing_charge_failed: bool | None = None
+    on_aito_payment_received: bool | None = None
 
     # Event triggers - printer status
     on_printer_offline: bool | None = None

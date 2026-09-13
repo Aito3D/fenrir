@@ -151,7 +151,16 @@ async def accept_quote(
     """Accept the quote from an automatic trigger. False (nothing done) when
     it is already accepted. 'Money wins': a declined or expired quote is
     reopened, the same latest-go-ahead-wins path the panel's Accept button
-    offers on a declined card."""
+    offers on a declined card.
+
+    Fires ``aito_payment_received`` for any non-'user' source (a paid link,
+    a covering retainer) — never for a human's own Accept click, which goes
+    through ``apply_quote_decision`` directly (routes/aito.py) and never
+    reaches here anyway; the check is a second line, not the first. Variables
+    are captured BEFORE the Books push below: a failed push rolls the session
+    back and expires this ORM row, so anything read off ``project`` after
+    that point would be a fresh (and possibly different) read.
+    """
     if project.quote_status == "accepted":
         return False
     await apply_quote_decision(
@@ -163,5 +172,22 @@ async def accept_quote(
         source=source,
         detail=detail,
     )
+    notify = None
+    if source != "user":
+        notify = {
+            "project_id": project.id,
+            "client_name": project.client_name,
+            "reference": (detail or {}).get("reference") or project.quote_number,
+            "amount": (detail or {}).get("amount") or 0,
+            "currency": "XPF",
+            "source": source,
+        }
     await push_quote_status(db, project, "accepted")
+    if notify is not None:
+        try:
+            from backend.app.services.notification_service import notification_service
+
+            await notification_service.on_aito_payment_received(db, **notify)
+        except Exception:  # noqa: BLE001 — a notification must never undo an acceptance
+            logger.warning("payment notification failed for project %s", notify["project_id"], exc_info=True)
     return True

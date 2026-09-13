@@ -252,4 +252,10 @@ DEFAULT_TEMPLATES = [
         "title_template": "Your Print Has Been Stopped",
         "body_template": "Hello {username},\n\nYour print job was stopped on {printer}.\n\nFile: {filename}",
     },
+    {
+        "event_type": "aito_payment_received",
+        "name": "Aito Payment Received",
+        "title_template": "Payment received — {reference}",
+        "body_template": "{client_name} paid {amount} {currency} ({source})\nProject #{project_id}",
+    },
 ]

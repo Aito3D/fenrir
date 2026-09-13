@@ -3356,6 +3356,18 @@ async def run_migrations(conn):
             "ALTER TABLE notification_providers ADD COLUMN on_billing_charge_failed BOOLEAN DEFAULT TRUE",
         )
 
+    # Migration: Aito online-payment notification toggle (2026-09-12).
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN DEFAULT 0",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN DEFAULT FALSE",
+        )
+
     # Reprints reuse their source archive, so archive uniqueness must only be
     # the legacy fallback for rows without a per-run UUID. The globally unique
     # print_run_id is the idempotency key for all new charges.
