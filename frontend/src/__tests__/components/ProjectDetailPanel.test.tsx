@@ -2161,6 +2161,56 @@ describe('ProjectDetailPanel mark as done', () => {
       move.mockRestore();
     }
   });
+
+  it('closes the panel the moment the hold completes, so the card\'s flight to Done can play', async () => {
+    // The board defers a card's flight while the panel is open (AitoPage's
+    // `suspended: 'defer'`), so a Done that leaves the panel up celebrates
+    // over a modal and never shows the card travelling. Same contract as
+    // the header's UnacceptHoldPill: commit, then hand back the panel's own
+    // onClose — not after the request, which would hold the modal open for
+    // a round trip.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const move = vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
+    const onClose = vi.fn();
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(
+        <ProjectDetailPanel
+          canCreate
+          canUpdate
+          canDelete
+          project={{
+            ...project,
+            column: 'finish',
+            move_lock: null,
+            quote_status: 'accepted',
+            client_contacted_at: '2026-08-20T09:00:00Z',
+          }}
+          onClose={onClose}
+          onDelete={vi.fn()}
+        />,
+      );
+      const button = doneButton()!;
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(onClose).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(move).toHaveBeenCalledWith(12, { column: 'done', position: 0 });
+    } finally {
+      vi.useRealTimers();
+      move.mockRestore();
+    }
+  });
 });
 
 describe('ProjectDetailPanel delete', () => {

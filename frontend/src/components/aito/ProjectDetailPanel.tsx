@@ -1377,7 +1377,11 @@ export function ProjectDetailPanel({
           {canUpdate && <CreateInvoiceButton project={project} />}
           {/* POST /{project_id}/quote-status enforces AITO_UPDATE. */}
           {canUpdate && <QuoteStatusActions project={project} layout="row" />}
-          <ProjectDoneAction project={project} />
+          {/* Closes the panel as it commits: the board only flies the card to
+              the archive once the modal is out of the way (see AitoPage's
+              deferred flights), and a Done that left it open never showed
+              the card go. */}
+          <ProjectDoneAction project={project} onDone={onClose} />
         </div>
       </div>
     </div>
