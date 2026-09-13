@@ -1,5 +1,6 @@
 """API routes for File Manager (Library) functionality."""
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -1797,7 +1798,17 @@ async def scan_external_folder(
     # Real on-disk mtime per visited folder id (#2680), applied after the walk.
     folder_mtimes: dict[int, datetime] = {}
 
-    for dirpath, dirnames, filenames in os.walk(ext_path):
+    # os.walk's default onerror=None silently swallows scandir failures (e.g. an
+    # SMB/NFS mount dropping mid-walk), which would otherwise truncate the walk
+    # with no signal — leaving found_paths partial and making every remaining
+    # tracked file on the dead mount look "deleted" to the removal pass below.
+    walk_errors: list[OSError] = []
+
+    def _record_walk_error(err: OSError) -> None:
+        walk_errors.append(err)
+        logger.warning("External folder scan hit a walk error under %s: %s", ext_path, err)
+
+    for dirpath, dirnames, filenames in os.walk(ext_path, onerror=_record_walk_error):
         # Filter hidden directories unless configured
         if not folder.external_show_hidden:
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -1980,6 +1991,13 @@ async def scan_external_folder(
             db.add(db_file)
             added += 1
 
+    # A partial walk (recorded above) or a mount that vanished entirely between
+    # the initial accessibility check and now must never be treated as "every
+    # remaining tracked file was deleted". Skip the whole removal pass in that
+    # case — adds/updates already committed during the walk are correct data
+    # and stay; only the destructive cleanup below is gated.
+    walk_was_partial = bool(walk_errors) or not (ext_path.exists() and ext_path.is_dir())
+
     # Remove DB entries for files that no longer exist on disk.
     #
     # Gate on actual disk presence, NOT merely absence from found_paths:
@@ -1989,44 +2007,49 @@ async def scan_external_folder(
     # every scan even though the file is still there. os.path.exists keeps
     # such records; genuinely-deleted files (absent from disk) are still
     # cleaned up. External file_path is the absolute on-disk path.
-    for path_str, db_file in existing_files.items():
-        if path_str not in found_paths and not os.path.exists(path_str):
-            # Clean up thumbnail if we generated one
-            if db_file.thumbnail_path:
-                try:
-                    abs_thumb = to_absolute_path(db_file.thumbnail_path)
-                    if abs_thumb and abs_thumb.exists():
-                        abs_thumb.unlink()
-                except OSError:
-                    pass
-            await db.delete(db_file)
-            removed += 1
+    if not walk_was_partial:
+        for path_str, db_file in existing_files.items():
+            if path_str not in found_paths and not os.path.exists(path_str):
+                # Clean up thumbnail if we generated one
+                if db_file.thumbnail_path:
+                    try:
+                        abs_thumb = to_absolute_path(db_file.thumbnail_path)
+                        if abs_thumb and abs_thumb.exists():
+                            abs_thumb.unlink()
+                    except OSError:
+                        pass
+                await db.delete(db_file)
+                removed += 1
 
-    # Remove empty subfolders whose directories no longer exist on disk
+    # Remove empty subfolders whose directories no longer exist on disk.
+    # Gated on the same walk_was_partial flag as the file removal above: a
+    # truncated walk means seen_rel_dirs is incomplete, so an unreached (but
+    # still-present) subfolder would otherwise look deleted too.
     # Process deepest-first by sorting on path depth (descending)
-    subfolder_entries = [(rel, fid) for rel, fid in folder_cache.items() if rel and fid != folder_id]
-    subfolder_entries.sort(key=lambda x: x[0].count("/"), reverse=True)
-    for rel_path, sub_fid in subfolder_entries:
-        if rel_path in seen_rel_dirs:
-            continue  # Directory still exists on disk
-        # Check if subfolder has any remaining files
-        file_count_result = await db.execute(
-            select(func.count(LibraryFile.id)).where(
-                LibraryFile.folder_id == sub_fid,
-                LibraryFile.deleted_at.is_(None),
+    if not walk_was_partial:
+        subfolder_entries = [(rel, fid) for rel, fid in folder_cache.items() if rel and fid != folder_id]
+        subfolder_entries.sort(key=lambda x: x[0].count("/"), reverse=True)
+        for rel_path, sub_fid in subfolder_entries:
+            if rel_path in seen_rel_dirs:
+                continue  # Directory still exists on disk
+            # Check if subfolder has any remaining files
+            file_count_result = await db.execute(
+                select(func.count(LibraryFile.id)).where(
+                    LibraryFile.folder_id == sub_fid,
+                    LibraryFile.deleted_at.is_(None),
+                )
             )
-        )
-        if (file_count_result.scalar() or 0) == 0:
-            # Check if it has any remaining child folders
-            child_count_result = await db.execute(
-                select(func.count(LibraryFolder.id)).where(LibraryFolder.parent_id == sub_fid)
-            )
-            if (child_count_result.scalar() or 0) == 0:
-                sub_folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == sub_fid))
-                sub_folder_obj = sub_folder_result.scalar_one_or_none()
-                if sub_folder_obj:
-                    await db.delete(sub_folder_obj)
-                    folder_mtimes.pop(sub_fid, None)
+            if (file_count_result.scalar() or 0) == 0:
+                # Check if it has any remaining child folders
+                child_count_result = await db.execute(
+                    select(func.count(LibraryFolder.id)).where(LibraryFolder.parent_id == sub_fid)
+                )
+                if (child_count_result.scalar() or 0) == 0:
+                    sub_folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == sub_fid))
+                    sub_folder_obj = sub_folder_result.scalar_one_or_none()
+                    if sub_folder_obj:
+                        await db.delete(sub_folder_obj)
+                        folder_mtimes.pop(sub_fid, None)
 
     # Persist each visited folder's real directory mtime (#2680). Fetched in one
     # trip; folders deleted by the cleanup above were dropped from folder_mtimes.
@@ -2052,6 +2075,8 @@ async def scan_external_folder(
         name=f"stl-backfill-folder-{folder_id}",
     )
 
+    if walk_was_partial:
+        return {"status": "partial", "added": added, "removed": 0, "walk_errors": len(walk_errors)}
     return {"status": "success", "added": added, "removed": removed}
 
 
@@ -2732,6 +2757,12 @@ async def extract_zip_file(
 
 # ============ STL Thumbnail Batch Generation ============
 
+# generate_stl_thumbnail() does a synchronous trimesh load + matplotlib render,
+# roughly 1-5s each. Cap how many a single request renders so one call can't
+# block behind a reverse-proxy timeout (or hold the thread pool) for hours on
+# a large library; callers can repeat the call to work through the remainder.
+STL_THUMBNAIL_BATCH_LIMIT = 100
+
 
 @router.post("/generate-stl-thumbnails", response_model=BatchThumbnailResponse)
 async def batch_generate_stl_thumbnails(
@@ -2778,8 +2809,10 @@ async def batch_generate_stl_thumbnails(
             results=[],
         )
 
-    result = await db.execute(query)
-    stl_files = result.scalars().all()
+    result = await db.execute(query.limit(STL_THUMBNAIL_BATCH_LIMIT + 1))
+    matched_files = result.scalars().all()
+    remaining = max(0, len(matched_files) - STL_THUMBNAIL_BATCH_LIMIT)
+    stl_files = matched_files[:STL_THUMBNAIL_BATCH_LIMIT]
 
     succeeded = 0
     failed = 0
@@ -2800,7 +2833,7 @@ async def batch_generate_stl_thumbnails(
             continue
 
         try:
-            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+            thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
 
             if thumbnail_path:
                 # Update database with relative path
@@ -2843,6 +2876,7 @@ async def batch_generate_stl_thumbnails(
         succeeded=succeeded,
         failed=failed,
         results=results,
+        remaining=remaining,
     )
 
 
@@ -2879,6 +2913,15 @@ async def add_files_to_queue(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
 
+    # Per-file ownership gate (IDOR fix): QUEUE_CREATE alone let a READ_OWN
+    # caller (e.g. the built-in Operators group) enqueue another user's
+    # library file by raw id and read its filename back in the response,
+    # even though GET on that id returned 404. Enforce the same visibility
+    # the read routes use — see _ensure_library_file_visible — before a file
+    # is queued. API-key / auth-disabled callers (current_user is None) keep
+    # can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+
     # Project attribution (#1897): a file queued from a project-linked folder
     # inherits that project, so the resulting archive counts toward the
     # project's progress. A file's own project link wins over its folder's.
@@ -2897,7 +2940,11 @@ async def add_files_to_queue(
     for file_id in request.file_ids:
         lib_file = files.get(file_id)
 
-        if not lib_file:
+        try:
+            lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
+        except HTTPException:
+            # Same generic error as a genuinely missing id — ownership must not
+            # be distinguishable from non-existence (no real filename leaked).
             errors.append(AddToQueueError(file_id=file_id, filename="(not found)", error="File not found"))
             continue
 

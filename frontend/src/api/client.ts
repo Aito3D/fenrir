@@ -9249,6 +9249,8 @@ export interface BatchThumbnailResponse {
   succeeded: number;
   failed: number;
   results: BatchThumbnailResult[];
+  // Matching STL files not processed in this call (batch is capped); 0 when complete.
+  remaining?: number;
 }
 
 // Library Queue types

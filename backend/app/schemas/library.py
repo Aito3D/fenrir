@@ -444,6 +444,8 @@ class BatchThumbnailResponse(BaseModel):
     succeeded: int
     failed: int
     results: list[BatchThumbnailResult]
+    # Matching STL files not processed in this call (batch is capped); 0 when complete.
+    remaining: int = 0
 
 
 # ============ File History (#file-history) ============

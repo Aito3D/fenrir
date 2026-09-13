@@ -11308,3 +11308,118 @@ helper (library.py:190) inside `delete_folder()`'s inner `get_all_file_ids()`, b
 User-visible change: Deleting a library folder would start actually freeing disk space; installs
 that have been relying on the orphaned bytes surviving a folder delete would lose them.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 4 · T-143 — 2026-09-13 — user-approved behavior change
+
+`scan_external_folder()`'s (library.py:1723) removal pass at library.py:1993 read `if path_str not
+in found_paths and not os.path.exists(path_str): ... await db.delete(db_file)`, fed by `os.walk(ext_path)`
+at library.py:1800 with the default `onerror=None`. That default silently swallows scandir failures,
+so an SMB/NFS mount dropping mid-walk just truncated the walk with no error — `found_paths` came out
+partial, `os.path.exists()` then returned `False` for every remaining tracked file on the dead mount,
+and the removal pass hard-deleted all of those rows plus unlinked their thumbnails even though the
+files were untouched on the NAS. The tags (M2M via `library_file_tags`), variant-group membership,
+and queue references attached to those rows were gone for good; a later successful scan just re-added
+the files as brand-new rows with new ids.
+
+Fixed by passing an `onerror` callback to `os.walk` (library.py:1800) that records each `OSError`
+into a local `walk_errors` list and logs a warning (the walk itself still continues past the failure —
+that's `os.walk`'s semantics — but the scan now knows it was truncated). Before the removal pass, a
+new `walk_was_partial` flag is computed as `bool(walk_errors) or not (ext_path.exists() and
+ext_path.is_dir())` — covering both a mid-walk scandir failure and the root vanishing entirely between
+the initial accessibility check and the removal pass. Both destructive passes (the tracked-file removal
+loop at library.py:1993 and the empty-subfolder removal loop right after it, which has the same
+seen_rel_dirs-completeness assumption) are now skipped entirely when `walk_was_partial` is true — no
+`db.delete`, no thumbnail `unlink`. Adds/updates already committed during the (partial) walk are correct
+data and are kept as-is. Nothing else in the walk or the rest of the function changed.
+
+Response shape: the endpoint has no `response_model` (returns a plain dict), so this only adds a new
+key/value combination on the previously-unreachable partial path — a clean scan's response is
+byte-identical (`{"status": "success", "added": ..., "removed": ...}`). A partial scan now returns
+`{"status": "partial", "added": <adds still made>, "removed": 0, "walk_errors": <count>}`. Confirmed
+via `snapshot.py verify` (11/11, `app-openapi-index` unchanged) and `SURFACE.md` (no diff) that this is
+not a typed/documented contract change. The frontend's `scanExternalFolder()` type in
+`frontend/src/api/client.ts` already declared `status: string`, so no type change was needed;
+`FileManagerPage.tsx`'s scan-mutation success toast only reads `result.added` / `result.removed`, so a
+partial scan still renders as a normal (if oddly zero-removed) success toast — a nicer "scan was
+partial, mount may be unreachable" message is a follow-up, not built here per the approval note.
+
+User-visible change: A scan interrupted by a mount dropout (mid-walk scandir error, or the mount
+disappearing right after the walk finishes) now reports a partial result and leaves every previously
+tracked row in place — files, tags, variant-group membership, queue references, and thumbnails all
+survive — instead of reporting `"status": "success"` with a large `removed` count and permanently
+losing that metadata.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 4 · T-144 — 2026-09-13 — user-approved behavior change
+
+`batch_generate_stl_thumbnails()` (library.py:2761) rendered every matching STL synchronously on the
+event loop: the query for `all_missing=True` selected every STL file with no thumbnail (unbounded),
+and `generate_stl_thumbnail()` (services/stl_thumbnail.py:182) does a synchronous `trimesh.load` plus a
+matplotlib Agg render — documented at library.py:801 as "~1-5s each" — inline in the `for stl_file in
+stl_files` loop with nothing awaited between renders except `db.flush()`. The File Manager's "generate
+thumbnails" button (FileManagerPage.tsx:1673, `all_missing: true`) on a large library therefore froze
+the entire asyncio loop for as long as the batch took: camera grid streams stalled, the WebSocket
+stopped, MQTT status ingest backed up, and every other HTTP request hung until the request returned.
+
+Fixed by (1) wrapping the render at library.py:2827 in `await asyncio.to_thread(generate_stl_thumbnail,
+file_path, thumbnails_dir)` so each render runs on a worker thread instead of blocking the loop —
+everything else in the loop body (the not-on-disk check, `db.flush()`, result bookkeeping, exception
+handling) is unchanged; and (2) capping the batch with a new module constant
+`STL_THUMBNAIL_BATCH_LIMIT = 100` applied uniformly to all three selection modes (`file_ids`,
+`folder_id`, `all_missing`) via `query.limit(STL_THUMBNAIL_BATCH_LIMIT + 1)`, so one request renders at
+most 100 files and can tell whether more are left over from the one extra row fetched.
+
+Response shape: `BatchThumbnailResponse` gains one new optional field, `remaining: int = 0` — the count
+of matching STL files not processed in this call (0 when the batch was already complete). The default
+means every existing response shape and every existing client is unaffected unless it inspects the new
+field. Confirmed via `snapshot.py verify`/`record` that `app-openapi-index` is the only probe affected,
+and its diff is exactly this new optional `remaining` field; `SURFACE.md` was regenerated and its diff
+is empty (an optional property on an already-exported TS interface is not a new export). The frontend's
+`BatchThumbnailResponse` type in `frontend/src/api/client.ts` gained the matching optional
+`remaining?: number`; the existing toast in `FileManagerPage.tsx` (~L1674, ~L1702), which only reads
+`processed`/`succeeded`/`failed`, keeps working unchanged. Surfacing `remaining > 0` in that toast (so
+users know to click "generate thumbnails" again) is a follow-up, not built here per the approval note.
+
+User-visible change: On a library with more than 100 STL files matching the request, the "generate
+thumbnails" endpoint now renders at most 100 per call (each render off the event loop, so the rest of
+the app stays responsive throughout) and reports how many are left via the new `remaining` field,
+instead of blocking the request — and the whole server — until every matching file had been rendered.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 4 · T-152 — 2026-09-13 — user-approved behavior change
+
+`add_files_to_queue()` (library.py:2899, `POST /library/files/add-to-queue`) required only
+`Permission.QUEUE_CREATE` and resolved each requested id with a plain `LibraryFile.active().where(...)`
+lookup — no per-file ownership gate. The sibling paths onto the print queue all gate on visibility:
+`print_queue.py:193 _assert_can_queue_library_file()` (archives/reprint path) and this same module's own
+`_ensure_library_file_visible()` (library.py:110, used by the slice route at library.py:4776 with a
+comment naming exactly this class of bug) both require `LIBRARY_READ_ALL` or `created_by_id ==
+current_user.id`. The built-in Operators group holds `QUEUE_CREATE` and `LIBRARY_READ_OWN` with no
+`LIBRARY_READ_ALL` (permissions.py:436-441), so an ordinary operator could enqueue another user's sliced
+model for printing — an id they could not `GET` — and read its real filename back off
+`AddToQueueResult.filename` / `AddToQueueError.filename` by enumerating file ids in the response.
+
+Fixed by computing `can_read_all = current_user is None or current_user.has_permission(Permission
+.LIBRARY_READ_ALL.value)` once per request (library.py:2907, mirroring the slice route at library.py:
+4776), then, per requested id, running the resolved row through the module's own
+`_ensure_library_file_visible(lib_file, current_user, can_read_all)` before anything else in the loop
+runs (library.py:2941). A file that is missing or not visible to the caller now raises the same
+`HTTPException(404, "File not found")` the pre-existing missing-id branch already raised, caught and
+turned into the identical `AddToQueueError(file_id=file_id, filename="(not found)", error="File not
+found")` the missing-id branch has always produced — so a non-owned id is indistinguishable from a
+genuinely non-existent one, and the real filename is never included in the response for either case. No
+private cross-module import was added: the fix reuses this module's existing helper rather than reaching
+into `print_queue.py`. With auth disabled (`current_user is None`), `can_read_all` is always true, so
+every file stays visible and behavior is unchanged. Everything else in the route — the sliced-file check,
+the on-disk existence check, project attribution, queue item creation, response shape, and result
+ordering — is untouched.
+
+Confirmed via `snapshot.py verify` (11/11, unchanged) and `SURFACE.md` (no diff) that this is a
+permission-check change, not a contract change — no schema or route shape was touched.
+
+User-visible change: a user with `queue:create` but only `library:read_own` (the default Operators
+group) will get "File not found" instead of a queued item when they POST
+`/library/files/add-to-queue` with a file id belonging to another user — any existing workflow that
+relies on operators queueing shared uploads owned by an admin will start failing until those users are
+granted `library:read_all`.
+User-approved 2026-09-13.

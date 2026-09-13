@@ -12926,6 +12926,7 @@
    "properties": {
     "failed": "integer",
     "processed": "integer",
+    "remaining": "integer",
     "results": "[BatchThumbnailResult]",
     "succeeded": "integer"
    },

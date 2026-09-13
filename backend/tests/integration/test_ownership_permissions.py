@@ -945,6 +945,154 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
         assert response.status_code == 403
 
     # ========================================================================
+    # add-to-queue (IDOR fix): QUEUE_CREATE alone let a caller with only
+    # library:read_own (the built-in Operators group) enqueue another user's
+    # library file by raw id and read its real filename back in the response,
+    # even though GET on that id returned 404. Not-found and not-visible must
+    # produce the exact same error so ownership can't be enumerated.
+    # ========================================================================
+
+    @pytest.fixture
+    async def sliced_library_file_factory(self, db_session):
+        """Factory for library files that pass add-to-queue's other gates: a
+        sliced filename, and bytes that actually exist under `base_dir` (the
+        route rejects files missing from disk)."""
+        from pathlib import Path
+
+        from backend.app.core.config import settings as app_settings
+        from backend.app.models.library import LibraryFile
+
+        _counter = [0]
+        created_paths = []
+
+        async def _create_file(**kwargs):
+            _counter[0] += 1
+            rel_path = f"archive/library/files/ownership_add_to_queue_probe_{_counter[0]}.gcode.3mf"
+            abs_path = Path(app_settings.base_dir) / rel_path
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            abs_path.write_bytes(b"probe")
+            created_paths.append(abs_path)
+
+            defaults = {
+                "filename": f"ownership_add_to_queue_probe_{_counter[0]}.gcode.3mf",
+                "file_path": rel_path,
+                "file_type": "gcode.3mf",
+                "file_size": 5,
+            }
+            defaults.update(kwargs)
+
+            file = LibraryFile(**defaults)
+            db_session.add(file)
+            await db_session.commit()
+            await db_session.refresh(file)
+            return file
+
+        yield _create_file
+
+        for path in created_paths:
+            path.unlink(missing_ok=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_queue_others_library_file(
+        self, async_client: AsyncClient, auth_setup, sliced_library_file_factory, db_session
+    ):
+        """QUEUE_CREATE + library:read_own is not enough to queue another
+        user's file — it must fail exactly like a missing id, with no real
+        filename leaked."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        file = await sliced_library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [file.id]},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["added"] == []
+        assert len(result["errors"]) == 1
+        assert result["errors"][0]["file_id"] == file.id
+        assert result["errors"][0]["error"] == "File not found"
+        assert result["errors"][0]["filename"] != file.filename
+        assert file.filename not in response.text
+
+        queue_item = (
+            await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.library_file_id == file.id))
+        ).scalar_one_or_none()
+        assert queue_item is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_queue_own_library_file(
+        self, async_client: AsyncClient, auth_setup, sliced_library_file_factory
+    ):
+        """An operator can still queue their own sliced file."""
+        file = await sliced_library_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [file.id]},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["errors"] == []
+        assert len(result["added"]) == 1
+        assert result["added"][0]["file_id"] == file.id
+        assert result["added"][0]["filename"] == file.filename
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_queue_any_library_file(
+        self, async_client: AsyncClient, auth_setup, sliced_library_file_factory
+    ):
+        """A caller with library:read_all (admin) can queue anyone's file."""
+        file = await sliced_library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+            json={"file_ids": [file.id]},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["errors"] == []
+        assert len(result["added"]) == 1
+        assert result["added"][0]["file_id"] == file.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_mixed_batch_owned_and_not_owned(
+        self, async_client: AsyncClient, auth_setup, sliced_library_file_factory
+    ):
+        """A batch with one owned and one not-owned file reports one success
+        and one generic not-found error, independently of order."""
+        own_file = await sliced_library_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        other_file = await sliced_library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [own_file.id, other_file.id]},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert len(result["added"]) == 1
+        assert result["added"][0]["file_id"] == own_file.id
+        assert len(result["errors"]) == 1
+        assert result["errors"][0]["file_id"] == other_file.id
+        assert result["errors"][0]["error"] == "File not found"
+        assert other_file.filename not in response.text
+
+    # ========================================================================
     # Folder deletion (#1781): folders have no ownership tracking, so users
     # with only library:delete_own may delete empty, non-external, non-linked
     # folders. Everything else still requires library:delete_all.

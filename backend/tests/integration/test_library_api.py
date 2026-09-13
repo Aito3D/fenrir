@@ -2,6 +2,7 @@
 
 import io
 import tempfile
+import threading
 import zipfile
 from pathlib import Path
 
@@ -948,6 +949,7 @@ class TestLibraryStlThumbnailAPI:
         assert result["succeeded"] == 0
         assert result["failed"] == 0
         assert result["results"] == []
+        assert result["remaining"] == 0
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1135,6 +1137,94 @@ endsolid cube"""
         file_ids = {r["file_id"] for r in result["results"]}
         assert stl_without_thumb1.id in file_ids
         assert stl_without_thumb2.id in file_ids
+        # Batch was well under the cap, so nothing is left over
+        assert result["remaining"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_runs_off_the_event_loop(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """Verify the render is dispatched via asyncio.to_thread instead of blocking the event loop."""
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write("solid test\nendsolid test")
+            stl_path = f.name
+
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+
+        try:
+            stl_file = await file_factory(
+                filename="thread_check.stl",
+                file_path=stl_path,
+                thumbnail_path=None,
+            )
+
+            data = {"file_ids": [stl_file.id]}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 1
+            assert result["succeeded"] == 1
+            # generate_stl_thumbnail must have run off the event-loop thread
+            assert thread_is_not_main == [True]
+        finally:
+            if os.path.exists(stl_path):
+                os.unlink(stl_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_batch_limit_and_remaining(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """Verify the batch is capped and `remaining` reports the leftover; a follow-up call finishes the rest."""
+        import os
+
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        stl_paths = []
+        try:
+            for i in range(3):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\nendsolid test")
+                    stl_path = f.name
+                stl_paths.append(stl_path)
+                await file_factory(
+                    filename=f"batch_limit_{i}.stl",
+                    file_path=stl_path,
+                    thumbnail_path=None,
+                )
+
+            data = {"all_missing": True}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 2
+            assert result["succeeded"] == 2
+            assert result["remaining"] == 1
+
+            # A follow-up call with the same criteria picks up the rest.
+            response2 = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response2.status_code == 200
+            result2 = response2.json()
+            assert result2["processed"] == 1
+            assert result2["succeeded"] == 1
+            assert result2["remaining"] == 0
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
 
 
 class TestLibraryPathHelpers:
