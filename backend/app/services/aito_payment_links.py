@@ -503,3 +503,21 @@ async def reconcile_payment_links(
         await db.rollback()
         _arm_throttle(exc.retry_after)
     return visited
+
+
+def link_view(row: AitoPaymentLink | None):
+    """The API shape of a ledger row; None for no row and for a reservation
+    that never completed (nothing to copy, nothing to pay)."""
+    from backend.app.schemas.aito import AitoPaymentLinkView
+
+    if row is None or row.heimdall_id is None:
+        return None
+    return AitoPaymentLinkView(
+        state=row.status if row.status in ("pending", "paid", "failed", "cancelled", "expired") else "pending",
+        amount=row.amount,
+        currency=row.currency or "XPF",
+        url=row.url,
+        expires_on=row.expires_on,
+        paid_at=row.paid_at,
+        sync_error=row.sync_error,
+    )

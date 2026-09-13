@@ -35,6 +35,7 @@ from backend.app.schemas.aito import (
     AitoInvoicePreview,
     AitoInvoiceResponse,
     AitoNoteCreate,
+    AitoPaymentLinkView,
     AitoPickupMessageResponse,
     AitoPickupSmsRequest,
     AitoPickupSmsResponse,
@@ -77,6 +78,7 @@ from backend.app.services.aito_invoice_create import (
     plan_invoice,
     share_out,
 )
+from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
 from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
@@ -401,10 +403,16 @@ async def _shipping_rates(db: AsyncSession) -> dict[str, float]:
 
 
 def _to_response(
-    p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str], external_url: str
+    p: AitoProject,
+    summary: TaskSummary,
+    shipping_names: dict[str, str],
+    external_url: str,
+    payment_link: AitoPaymentLinkView | None,
 ) -> AitoProjectResponse:
-    """`summary`, `shipping_names` and `external_url` are all required, never
-    defaulted. The detail panel writes PATCH (and move / quote-status /
+    """`summary`, `shipping_names`, `external_url` and `payment_link` are all
+    required, never defaulted — `payment_link` for the same reason: resolved
+    once per request by the caller via `current_links`/`current_link`, never
+    defaulted to None here. The detail panel writes PATCH (and move / quote-status /
     restore) responses straight into the board cache with setQueryData,
     replacing the row — so an endpoint that quietly returned zeros, an empty
     shipping_names map, or a blank external_url when one is configured, would
@@ -446,6 +454,9 @@ def _to_response(
         invoice_balance=p.invoice_balance,
         invoice_due_date=p.invoice_due_date,
         invoice_checked_at=p.invoice_checked_at,
+        quote_expiry_date=p.quote_expiry_date,
+        retainer_paid_total=p.retainer_paid_total,
+        payment_link=payment_link,
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
         # Mirrors quote_sync_state's fallback above: the Python-side default
@@ -496,9 +507,9 @@ def _to_response(
 async def _project_response(
     db: AsyncSession, p: AitoProject, summary: TaskSummary | None = None
 ) -> AitoProjectResponse:
-    """`_to_response(p, summary, shipping_names, external_url)` with
-    `shipping_names` and `external_url` always resolved here via
-    `_shipping_names` and `_external_url`, and `summary` resolved via
+    """`_to_response(p, summary, shipping_names, external_url, payment_link)` with
+    `shipping_names`, `external_url` and `payment_link` always resolved here via
+    `_shipping_names`, `_external_url` and `current_link`, and `summary` resolved via
     `_summary_for` too when the caller has none in hand yet.
 
     Callers that already computed `summary` earlier — because a step before
@@ -510,7 +521,9 @@ async def _project_response(
     """
     if summary is None:
         summary = await _summary_for(db, p.id)
-    return _to_response(p, summary, await _shipping_names(db), await _external_url(db))
+    return _to_response(
+        p, summary, await _shipping_names(db), await _external_url(db), link_view(await current_link(db, p.id))
+    )
 
 
 def _task_to_response(t: AitoTask) -> AitoTaskResponse:
@@ -934,7 +947,11 @@ async def list_projects(
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
     external_url = await _external_url(db)
-    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url) for p in projects]
+    links = await current_links(db, [p.id for p in projects])
+    return [
+        _to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url, link_view(links.get(p.id)))
+        for p in projects
+    ]
 
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
@@ -952,7 +969,11 @@ async def list_trash(
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
     external_url = await _external_url(db)
-    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url) for p in projects]
+    links = await current_links(db, [p.id for p in projects])
+    return [
+        _to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url, link_view(links.get(p.id)))
+        for p in projects
+    ]
 
 
 @router.get("/stats", response_model=AitoStatsResponse)
@@ -2788,7 +2809,7 @@ async def import_legacy_projects(
     # project can have a shipment — an empty map is correct here, not merely
     # a shortcut.
     external_url = await _external_url(db)
-    return [_to_response(p, TaskSummary(), {}, external_url) for p in created]
+    return [_to_response(p, TaskSummary(), {}, external_url, None) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
@@ -3306,6 +3327,21 @@ async def regenerate_tracking_token(
     )
     await db.commit()
     return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project), quote_notes=quote_notes)
+
+
+@router.post("/{project_id}/payment-link/refresh", response_model=AitoProjectResponse)
+async def refresh_payment_link(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Reconcile and poll this one project's payment link now, instead of
+    waiting for the loop's tick — the panel's Retry. Never raises on a
+    Heimdall failure: the row's sync_error carries it to the panel."""
+    project = await _get_active_project_or_404(db, project_id)
+    await reconcile_payment_links(db, only_project_id=project.id)
+    await db.refresh(project)
+    return await _project_response(db, project)
 
 
 async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:

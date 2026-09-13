@@ -600,6 +600,8 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = None
         project.quote_sync_failures = 0
         return
+    # The payment link is minted by reconcile_payment_links right after this
+    # tick's run_sync_once (run_sync_loop), keyed on quote_number.
     payload = {
         "customer_id": project.client_id,
         "reference_number": reference_number,
@@ -2272,6 +2274,15 @@ async def run_sync_loop() -> None:
                     await purge_tracking_views(db)
                 except Exception as exc:
                     logger.warning("Tracking-view purge failed: %s", exc)
+                # Payment links: gated on Heimdall, not Books — a link can
+                # be polled with Books down. Its own try/except like the
+                # purge: one failed pass costs this tick, never the loop.
+                try:
+                    from backend.app.services.aito_payment_links import reconcile_payment_links
+
+                    await reconcile_payment_links(db)
+                except Exception:
+                    logger.exception("Payment-link reconcile failed")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -2303,6 +2314,15 @@ async def run_sync_loop() -> None:
                 async with async_session() as db:
                     if await sync_enabled(db) and await zoho_service.is_configured(db):
                         await run_sync_once(db, pending_only=True)
+                        # A quote just created owes its link now, not next
+                        # tick: creates only, so the Copy button lights up
+                        # within seconds without spending the poll budget.
+                        try:
+                            from backend.app.services.aito_payment_links import reconcile_payment_links
+
+                            await reconcile_payment_links(db, create_only=True)
+                        except Exception:
+                            logger.exception("Payment-link create drain failed")
             except asyncio.CancelledError:
                 raise
             except Exception:

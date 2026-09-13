@@ -540,6 +540,20 @@ class AitoTaskStepsResponse(BaseModel):
     title: str = ""
 
 
+class AitoPaymentLinkView(BaseModel):
+    """The project's CURRENT online payment link (services/aito_payment_links.py).
+    `state` is Heimdall's unified status. `url` is public — the payment page
+    the client opens — so it rides on the board payload like quote_url."""
+
+    state: Literal["pending", "paid", "failed", "cancelled", "expired"]
+    amount: int
+    currency: str
+    url: str | None
+    expires_on: str
+    paid_at: datetime | None
+    sync_error: str | None
+
+
 class AitoProjectResponse(BaseModel):
     id: int
     description: str
@@ -573,6 +587,13 @@ class AitoProjectResponse(BaseModel):
     invoice_balance: float | None
     invoice_due_date: str | None
     invoice_checked_at: datetime | None
+    # Books' expiry_date for the quote, copied back like quote_date; the
+    # payment link ends the same day.
+    quote_expiry_date: str | None
+    # Paid retainers as last read by the sweep — see the column comment.
+    retainer_paid_total: float | None
+    # The current online payment link, or null when the project has none.
+    payment_link: AitoPaymentLinkView | None
     created_by: str | None
     # 'idle' | 'pending' | 'error' | 'locked' | 'unmanaged' — see the column
     # comment on AitoProject.quote_sync_state for what each means.

@@ -73,7 +73,7 @@ async def aito_tokens(db_session):
 
 # Every RequirePermissionIfAuthEnabled(Permission.AITO_CREATE / AITO_UPDATE /
 # AITO_DELETE) route in backend/app/api/routes/aito.py, plus /proofread
-# (require_any_permission_if_auth_enabled(AITO_CREATE, AITO_UPDATE)) — 24 in
+# (require_any_permission_if_auth_enabled(AITO_CREATE, AITO_UPDATE)) — 25 in
 # total, confirmed by `grep -c` against the file. (route_name, method, url,
 # json_body). `route_name` is the FastAPI route name (the handler's function
 # name), used only in assertion failure messages here — unlike
@@ -103,9 +103,10 @@ WRITE_ROUTES = [
     ("delete_project", "delete", f"/api/v1/aito/{_MISSING_ID}", None),
     ("get_tracking_link", "get", f"/api/v1/aito/{_MISSING_ID}/tracking-link", None),
     ("regenerate_tracking_token", "post", f"/api/v1/aito/{_MISSING_ID}/tracking-token", None),
+    ("refresh_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/refresh", None),
 ]
 
-assert len(WRITE_ROUTES) == 24, "WRITE_ROUTES must cover exactly the 24 gated write routes aito.py declares"
+assert len(WRITE_ROUTES) == 25, "WRITE_ROUTES must cover exactly the 25 gated write routes aito.py declares"
 
 
 @pytest.mark.asyncio
