@@ -5,10 +5,11 @@ payment links. This module is the only thing in Bambuddy that talks to it:
 five calls, one signing recipe, and an exception per outcome the reconciler
 (services/aito_payment_links.py) branches on.
 
-Authentication is HMAC, not a bearer token: a credential is
-``hmd_live.<key_id>.<secret>`` (dot-separated). Only the key id is ever put on
-the wire, in ``X-Heimdall-Key-Id`` — the secret's only job is to key the
-HMAC-SHA256 signature, and no ``Authorization`` header is sent or read.
+Authentication is a per-request HMAC signature, not a static header a proxy
+could replay: a credential is ``hmd_live.<key_id>.<secret>`` (dot-separated).
+Only the key id is ever put on the wire, in ``X-Heimdall-Key-Id`` — the
+secret's only job is to key the HMAC-SHA256 signature, and no
+``Authorization`` header is sent or read.
 
 Settings are read on every call, like services/zoho.py — a token rotated
 under Settings takes effect on the next request, no restart.
