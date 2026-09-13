@@ -1005,3 +1005,24 @@ class TestCameraStreamPoolHygiene:
                 f"camera_stream re-introduced a get_db-held session via parameter {name!r} — "
                 "it would stay open for the entire stream (issue #2572)"
             )
+
+    def test_camera_grid_stream_does_not_hold_a_get_db_session(self):
+        """The multiplexed grid-stream endpoint must NOT take a ``Depends(get_db)`` session either.
+
+        Same issue as ``camera_stream`` (#2572), but for ``/camera/grid-stream``:
+        it stays open for as long as the camera-wall tab is open, so every open
+        tab pinned one pooled connection. The endpoint now resolves the quality
+        preset and fetches printers in a short-lived ``async with
+        database.async_session()`` block before streaming starts. If someone
+        re-adds a ``Depends(get_db)`` param, this fails (T-136).
+        """
+        import inspect
+
+        from backend.app.api.routes.camera import camera_grid_stream, get_db
+
+        for name, param in inspect.signature(camera_grid_stream).parameters.items():
+            dependency = getattr(param.default, "dependency", None)
+            assert dependency is not get_db, (
+                f"camera_grid_stream re-introduced a get_db-held session via parameter {name!r} — "
+                "it would stay open for the entire stream (issue #2572, T-136)"
+            )

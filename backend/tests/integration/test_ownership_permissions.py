@@ -1135,6 +1135,63 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
         # Should only delete the owned file; other_file is skipped (but skipped count not in response)
         assert result["deleted_files"] == 1
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_delete_hard_deletes_external_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, db_session, tmp_path
+    ):
+        """External files bypass the trash entirely (#2819): bulk-delete unlinks
+        their thumbnail (the file's own bytes are NAS-owned and left alone),
+        hard-deletes the row instead of stamping ``deleted_at``, and clears
+        ``library_file_id`` off any print_queue row that pointed at it."""
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        thumb_path = tmp_path / "thumb.png"
+        thumb_path.write_bytes(b"fake-thumbnail-bytes")
+
+        file = await library_file_factory(
+            filename="external.3mf",
+            is_external=True,
+            thumbnail_path=str(thumb_path),
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+
+        queue_item = PrintQueueItem(
+            library_file_id=file.id,
+            status="pending",
+            position=0,
+        )
+        db_session.add(queue_item)
+        await db_session.commit()
+        await db_session.refresh(queue_item)
+
+        response = await async_client.post(
+            "/api/v1/library/bulk-delete",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [file.id], "folder_ids": []},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["deleted_files"] == 1
+
+        # Thumbnail unlinked from disk...
+        assert not thumb_path.exists()
+
+        # ...but the row is gone for good, not just soft-deleted -- query
+        # bypassing .active() so a deleted_at stamp wouldn't hide it.
+        row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == file.id))).scalar_one_or_none()
+        assert row is None
+
+        # The queue item row survives (release_queue_references cancels
+        # pending work, it never deletes the row) but no longer points at
+        # the file that's gone.
+        await db_session.refresh(queue_item)
+        assert queue_item.library_file_id is None
+
 
 class TestAuthDisabledPermissions:
     """Tests that verify all operations are allowed when auth is disabled."""

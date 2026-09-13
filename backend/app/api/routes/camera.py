@@ -1855,7 +1855,6 @@ async def camera_grid_stream(
     quality: int | None = Query(default=None, ge=2, le=31),
     scale: float | None = Query(default=None, ge=0.1, le=1.0),
     force: bool = Query(False, description="Force restart producers with new quality settings"),
-    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Multiplexed camera stream for the camera grid.
@@ -1880,78 +1879,90 @@ async def camera_grid_stream(
     if not printer_ids:
         raise HTTPException(400, "No printer IDs provided")
 
-    # Resolve quality preset from DB when no explicit params provided
+    # Resolve the quality preset AND run the printer batch query in a short-lived
+    # session so the pooled DB connection is released BEFORE we start streaming.
+    # A grid stream runs for as long as the browser tab stays open (potentially
+    # hours); holding a Depends(get_db) session across it pinned one pooled
+    # connection per open camera-wall tab — the single-printer stream hit the
+    # exact same issue and was fixed the same way (issue #2572).
+    #
+    # Reference async_session via the module (not a top-level import binding) so
+    # the session maker is looked up at call time — that keeps it in sync with
+    # reinitialize_database() and lets the test harness's patch of
+    # backend.app.core.database.async_session take effect here.
     threads = 0
     gpu_accel = False
     skip_frames = False
     preset_label = "custom"
-    if fps is None and quality is None and scale is None:
-        fps, quality, scale, threads, gpu_accel, skip_frames, preset_label = await _resolve_quality_from_settings(
-            db, len(printer_ids), "grid"
-        )
-        force = True  # Ensure producers match preset params
-    else:
-        fps = fps or 5
-        quality = quality or 15
-        scale = scale or 0.5
-
-    # Deduplicate while preserving order
-    printer_ids = list(dict.fromkeys(printer_ids))
-
-    if len(printer_ids) > 30:
-        raise HTTPException(400, "Maximum 30 printers per grid stream")
-
-    # Start producers for all requested printers.
-    # First, collect IDs that already have a live producer (fast path — no DB).
-    entries, need_db = await _hub.get_existing_batch(printer_ids)
-
-    # When force=True, check existing producers for param mismatches.
-    # Without this, quality preset changes are silently ignored for already-running producers.
-    if force and entries:
-        for pid in list(entries):
-            new_entry = await _ensure_producer(
-                pid,
-                db,
-                fps,
-                quality,
-                scale,
-                force_quality=True,
-                threads=threads,
-                gpu_accel=gpu_accel,
-                skip_frames=skip_frames,
+    async with database.async_session() as db:
+        # Resolve quality preset from DB when no explicit params provided
+        if fps is None and quality is None and scale is None:
+            fps, quality, scale, threads, gpu_accel, skip_frames, preset_label = await _resolve_quality_from_settings(
+                db, len(printer_ids), "grid"
             )
-            if new_entry is not None:
-                entries[pid] = new_entry
+            force = True  # Ensure producers match preset params
+        else:
+            fps = fps or 5
+            quality = quality or 15
+            scale = scale or 0.5
 
-    # Single batch DB query for printers that need a new producer.
-    if need_db:
-        result = await db.execute(select(Printer).where(Printer.id.in_(need_db)))
-        printers_by_id = {p.id: p for p in result.scalars().all()}
-        for i, pid in enumerate(need_db):
-            printer = printers_by_id.get(pid)
-            if printer is None:
-                continue
-            if i > 0:
-                # Increase stagger under load to reduce spawn pressure
-                load = _check_system_load()
-                stagger = (
-                    1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
+        # Deduplicate while preserving order
+        printer_ids = list(dict.fromkeys(printer_ids))
+
+        if len(printer_ids) > 30:
+            raise HTTPException(400, "Maximum 30 printers per grid stream")
+
+        # Start producers for all requested printers.
+        # First, collect IDs that already have a live producer (fast path — no DB).
+        entries, need_db = await _hub.get_existing_batch(printer_ids)
+
+        # When force=True, check existing producers for param mismatches.
+        # Without this, quality preset changes are silently ignored for already-running producers.
+        if force and entries:
+            for pid in list(entries):
+                new_entry = await _ensure_producer(
+                    pid,
+                    db,
+                    fps,
+                    quality,
+                    scale,
+                    force_quality=True,
+                    threads=threads,
+                    gpu_accel=gpu_accel,
+                    skip_frames=skip_frames,
                 )
-                await asyncio.sleep(stagger)
-            entry = await _ensure_producer(
-                pid,
-                db,
-                fps,
-                quality,
-                scale,
-                printer=printer,
-                force_quality=force,
-                threads=threads,
-                gpu_accel=gpu_accel,
-                skip_frames=skip_frames,
-            )
-            if entry is not None:
-                entries[pid] = entry
+                if new_entry is not None:
+                    entries[pid] = new_entry
+
+        # Single batch DB query for printers that need a new producer.
+        if need_db:
+            result = await db.execute(select(Printer).where(Printer.id.in_(need_db)))
+            printers_by_id = {p.id: p for p in result.scalars().all()}
+            for i, pid in enumerate(need_db):
+                printer = printers_by_id.get(pid)
+                if printer is None:
+                    continue
+                if i > 0:
+                    # Increase stagger under load to reduce spawn pressure
+                    load = _check_system_load()
+                    stagger = (
+                        1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
+                    )
+                    await asyncio.sleep(stagger)
+                entry = await _ensure_producer(
+                    pid,
+                    db,
+                    fps,
+                    quality,
+                    scale,
+                    printer=printer,
+                    force_quality=force,
+                    threads=threads,
+                    gpu_accel=gpu_accel,
+                    skip_frames=skip_frames,
+                )
+                if entry is not None:
+                    entries[pid] = entry
 
     if not entries:
         raise HTTPException(404, "No valid printers found")
