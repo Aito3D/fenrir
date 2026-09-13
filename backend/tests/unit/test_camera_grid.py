@@ -4,6 +4,7 @@ Tests _cleanup_stale_frame_buffers(), SharedStreamHub.get_existing/get_existing_
 and the NaN/Inf guard in generate_rtsp_mjpeg_stream.
 """
 
+import struct
 import time
 from unittest.mock import patch
 
@@ -1094,3 +1095,209 @@ class TestAbortStreamCleanup:
         assert "1-aborttest2" not in cam._disconnect_events
         assert "1-aborttest2" not in cam._state.active_streams
         assert 999_991 not in cam._state.spawned_ffmpeg_pids
+
+
+# ---------------------------------------------------------------------------
+# TestGridStreamGenerateLoop
+# ---------------------------------------------------------------------------
+
+
+class _StubRequest:
+    """Minimal stand-in for fastapi.Request exposing only is_disconnected().
+
+    Returns False for the first ``disconnect_after`` calls, then True.
+    """
+
+    def __init__(self, disconnect_after: int = 1):
+        self._calls = 0
+        self._disconnect_after = disconnect_after
+
+    async def is_disconnected(self) -> bool:
+        self._calls += 1
+        return self._calls > self._disconnect_after
+
+
+class _FakeTime:
+    """Proxies the stdlib ``time`` module but makes ``monotonic()`` advance by
+    a fixed step on every call.
+
+    generate()'s disconnect check is throttled to "once per real second"
+    (``now - last_disconnect_check > 1.0``). With a step bigger than 1.0,
+    every single loop iteration's ``now = time.monotonic()`` call is far
+    enough past the previous one to re-trigger that check deterministically,
+    with zero real sleeping required.
+    """
+
+    def __init__(self, start: float = 1_000_000.0, step: float = 1.5):
+        self._t = start
+        self._step = step
+
+    def monotonic(self) -> float:
+        self._t += self._step
+        return self._t
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
+class _FakeSessionCtx:
+    """Stand-in for ``async with database.async_session() as db: ...``.
+
+    Neither test below reaches a real query (get_existing_batch is
+    monkeypatched to hand back an already-live producer), so the session
+    object itself is never touched.
+    """
+
+    async def __aenter__(self):
+        from unittest.mock import AsyncMock
+
+        return AsyncMock()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestGridStreamGenerateLoop:
+    """Drives camera_grid_stream()'s generate() closure directly (T-132).
+
+    TestCameraGridStreamValidation (integration) never reaches the
+    StreamingResponse body: every one of its scenarios 400/401/404s before
+    entries is non-empty. These tests call the route coroutine directly with
+    a stub Request and a patched hub/async_session/clock so they can step
+    generate() one ``__anext__()`` at a time.
+    """
+
+    @staticmethod
+    def _live_entry(frame: bytes = b"\xff\xd8fake-jpeg-bytes\xff\xd9"):
+        from backend.app.api.routes.camera import _SharedStream
+
+        entry = _SharedStream(params_key="200-15-0.5-0-False-False")
+        entry.alive = True
+        entry.frame = frame
+        entry.frame_seq = 1
+        # Far in the "future" relative to the fake clock's starting point so
+        # the "no frame for 30s" stale-producer check inside generate() never
+        # fires for this entry.
+        entry.last_frame_produced = 2_000_000.0
+        return entry
+
+    @pytest.mark.asyncio
+    async def test_one_frame_then_disconnect_resets_viewer_count(self):
+        """One live producer: a single frame is yielded with the exact binary
+        framing, then is_disconnected() flips True and the generator's
+        finally block (disconnect cleanup) returns viewer_count to 0."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid = 7001
+        entry = self._live_entry()
+        request = _StubRequest(disconnect_after=1)
+
+        with (
+            patch(
+                "backend.app.api.routes.camera._hub.get_existing_batch", new=AsyncMock(return_value=({pid: entry}, []))
+            ),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+            patch("backend.app.api.routes.camera.time", _FakeTime()),
+        ):
+            resp = await cam.camera_grid_stream(request, ids=str(pid), fps=200, quality=15, scale=0.5, force=False)
+
+            # generate() is an async generator function: calling it just builds
+            # the generator object, it doesn't run any of its body (including
+            # the viewer_count += 1 registration) until the first __anext__().
+            assert entry.viewer_count == 0
+
+            chunk = await resp.body_iterator.__anext__()
+            expected = struct.pack("<II", pid, len(entry.frame)) + entry.frame
+            assert chunk == expected
+
+            # Now that the generator has run up to its first yield, the
+            # viewer-registration step has executed.
+            assert entry.viewer_count == 1
+
+            # Second poll: is_disconnected() now returns True -> the loop
+            # breaks and the finally block runs, ending the generator.
+            with pytest.raises(StopAsyncIteration):
+                await resp.body_iterator.__anext__()
+
+        assert entry.viewer_count == 0
+
+    @pytest.mark.asyncio
+    async def test_dead_producer_mid_loop_schedules_restart_without_crashing(self):
+        """One dead producer alongside one live one: the dead entry must be
+        dropped from `entries` and scheduled for a backoff restart — not raise,
+        and not have a replacement producer created on the very next cycle
+        (the scheduled retry time is still in the future). A second, live
+        entry is kept alongside it purely so the generator still hits a
+        `yield` (letting the test inspect its suspended frame) instead of
+        running the whole dead-only case to completion in one opaque hop."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_dead = 7002
+        pid_alive = 7003
+        entry_dead = self._live_entry()
+        entry_dead.alive = False  # producer died between get_existing_batch and generate()
+        entry_alive = self._live_entry()
+        request = _StubRequest(disconnect_after=1)
+
+        # Dead entry first so it is popped from `entries` and queued for
+        # restart *before* the loop reaches the live entry's `yield` below —
+        # letting us inspect that scheduling from the still-suspended frame.
+        batch_result = ({pid_dead: entry_dead, pid_alive: entry_alive}, [])
+
+        old_killed = cam._state.watchdog_killed_printers.copy()
+        try:
+            with (
+                patch(
+                    "backend.app.api.routes.camera._hub.get_existing_batch",
+                    new=AsyncMock(return_value=batch_result),
+                ),
+                patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.time", _FakeTime()),
+                patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
+            ):
+                resp = await cam.camera_grid_stream(
+                    request, ids=f"{pid_dead},{pid_alive}", fps=200, quality=15, scale=0.5, force=False
+                )
+
+                # Nothing has run yet — generate() only executes up to its
+                # first yield once driven.
+                assert entry_dead.viewer_count == 0
+                assert entry_alive.viewer_count == 0
+
+                # First frame comes from the still-alive entry; the dead one
+                # never yields anything.
+                chunk = await resp.body_iterator.__anext__()
+                expected = struct.pack("<II", pid_alive, len(entry_alive.frame)) + entry_alive.frame
+                assert chunk == expected
+
+                # Both entries were registered as viewers before the loop
+                # started inspecting them for aliveness.
+                assert entry_dead.viewer_count == 1
+                assert entry_alive.viewer_count == 1
+
+                # The generator is suspended at that `yield`, so its frame is
+                # still alive — inspect the restart bookkeeping directly to
+                # confirm the dead producer landed in the scheduling path
+                # rather than crashing the loop.
+                local_vars = resp.body_iterator.ag_frame.f_locals
+                assert pid_dead in local_vars["pending_restarts"]
+                assert pid_dead not in local_vars["entries"]
+                assert pid_alive in local_vars["entries"]
+                mock_ensure.assert_not_called()  # retry time is still in the future
+
+                # Second poll: is_disconnected() now returns True -> the loop
+                # breaks and the finally block runs, ending the generator.
+                with pytest.raises(StopAsyncIteration):
+                    await resp.body_iterator.__anext__()
+
+            mock_ensure.assert_not_called()
+        finally:
+            cam._state.watchdog_killed_printers.clear()
+            cam._state.watchdog_killed_printers.update(old_killed)
+
+        assert entry_dead.viewer_count == 0
+        assert entry_alive.viewer_count == 0

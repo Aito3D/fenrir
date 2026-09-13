@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import field
 from typing import Literal
 
@@ -564,29 +564,19 @@ class SharedStreamHub:
                 old_task = entry.task if entry.task and not entry.task.done() else None
                 del self._streams[printer_id]
 
-        # Await old task outside lock so its finally block (ffmpeg kill) completes
-        if old_task is not None:
-            try:
-                await asyncio.wait_for(old_task, timeout=8.0)
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass  # Best effort — task will clean up on its own eventually
-
-        # Re-acquire lock to create new entry (guard against concurrent calls)
-        async with self._lock:
-            existing = self._streams.get(printer_id)
-            if existing is not None and existing.alive:
-                existing.last_accessed = time.monotonic()
-                return existing
-            entry = _SharedStream(params_key=params_key)
-            self._streams[printer_id] = entry
-            entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
-            logger.info(
+        return await self._replace_producer(
+            printer_id,
+            starter_fn,
+            params_key,
+            old_task,
+            reuse_existing=lambda _existing: True,
+            log_new_producer=lambda total: logger.info(
                 "Started new producer for printer %s (params=%s, total_producers=%s)",
                 printer_id,
                 params_key,
-                len(self._streams),
-            )
-            return entry
+                total,
+            ),
+        )
 
     async def restart(self, printer_id: int, starter_fn, params_key: str) -> _SharedStream:
         """Stop the existing producer and start a new one with different params.
@@ -639,22 +629,50 @@ class SharedStreamHub:
                 old_task = old.task if old.task and not old.task.done() else None
                 del self._streams[printer_id]
 
-        # Phase 2 — await old task outside lock (lets ffmpeg terminate fully)
+        # Phase 2 & 3 — await old task outside lock, then re-acquire lock to create new entry
+        return await self._replace_producer(
+            printer_id,
+            starter_fn,
+            params_key,
+            old_task,
+            reuse_existing=lambda existing: existing.params_key == params_key,
+            log_new_producer=lambda _total: logger.info(
+                "Started new producer for printer %s (params=%s)", printer_id, params_key
+            ),
+        )
+
+    async def _replace_producer(
+        self,
+        printer_id: int,
+        starter_fn,
+        params_key: str,
+        old_task: asyncio.Task | None,
+        reuse_existing: Callable[[_SharedStream], bool],
+        log_new_producer: Callable[[int], None],
+    ) -> _SharedStream:
+        """Shared phase-2/phase-3 body for get_or_start() and restart().
+
+        Phase 2 (no lock): await the old task so its finally block (ffmpeg kill)
+        completes before a new producer is started for the same printer.
+        Phase 3 (re-acquire lock): guard against a concurrently created entry —
+        if `reuse_existing` accepts it, return it as-is; otherwise cancel it and
+        register a fresh producer for `params_key`.
+        """
+        # Await old task outside lock so its finally block (ffmpeg kill) completes
         if old_task is not None:
             try:
                 await asyncio.wait_for(old_task, timeout=8.0)
             except (asyncio.CancelledError, TimeoutError, Exception):
                 pass  # Best effort — task will clean up on its own eventually
 
-        # Phase 3 — re-acquire lock to create new entry
+        # Re-acquire lock to create new entry (guard against concurrent calls)
         async with self._lock:
-            # Guard: another caller may have started a producer during our gap
             existing = self._streams.get(printer_id)
             if existing is not None and existing.alive:
-                if existing.params_key == params_key:
+                if reuse_existing(existing):
                     existing.last_accessed = time.monotonic()
                     return existing
-                # Different params — cancel this entry and create a new one
+                # Not reusable (e.g. different params) — cancel it and create a new one
                 existing.alive = False
                 if existing.task:
                     existing.task.cancel()
@@ -662,7 +680,7 @@ class SharedStreamHub:
             entry = _SharedStream(params_key=params_key)
             self._streams[printer_id] = entry
             entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
-            logger.info("Started new producer for printer %s (params=%s)", printer_id, params_key)
+            log_new_producer(len(self._streams))
             return entry
 
     # NOTE: viewer_count uses plain += which is safe because all access

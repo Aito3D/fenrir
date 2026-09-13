@@ -69,6 +69,30 @@ class TestSharedStreamHubGetOrStart:
         assert new_entry.params_key == "new"
         await hub.stop_all()
 
+    @pytest.mark.asyncio
+    async def test_reuses_entry_created_concurrently_during_replace(self):
+        """Shared _replace_producer re-check: an entry that appears while we await the
+        old task (regardless of its params) is reused as-is by get_or_start."""
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        concurrent_entry = _SharedStream(params_key="concurrent")
+
+        async def old_task_body():
+            # Simulate another caller finishing its own producer registration
+            # while we are still awaiting our old task in phase 2.
+            hub._streams[1] = concurrent_entry
+
+        dead_entry = _SharedStream(params_key="old")
+        dead_entry.alive = False
+        dead_entry.task = asyncio.create_task(old_task_body())
+        hub._streams[1] = dead_entry
+
+        entry = await hub.get_or_start(1, _make_frame_source(), params_key="new")
+
+        assert entry is concurrent_entry
+        await hub.stop_all()
+
 
 class TestSharedStreamHubRestart:
     """Tests for SharedStreamHub.restart() three-phase protocol."""
@@ -135,6 +159,46 @@ class TestSharedStreamHubRestart:
         assert entry2 is not entry1
         assert 1 in hub._streams
         assert hub._streams[1] is entry2
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_cancels_entry_created_concurrently_with_different_params(self):
+        """Shared _replace_producer re-check: an entry that appears with different params
+        while we await the old task is cancelled and replaced by restart()."""
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        concurrent_entry = _SharedStream(params_key="concurrent-params")
+        concurrent_task_started = asyncio.Event()
+
+        async def concurrent_producer():
+            concurrent_task_started.set()
+            await asyncio.sleep(10)
+
+        async def old_task_body():
+            # Simulate another caller finishing its own producer registration
+            # while we are still awaiting our old task in phase 2.
+            hub._streams[1] = concurrent_entry
+            concurrent_entry.task = asyncio.create_task(concurrent_producer())
+            await concurrent_task_started.wait()
+
+        dead_entry = _SharedStream(params_key="old")
+        dead_entry.alive = False
+        dead_entry.task = asyncio.create_task(old_task_body())
+        hub._streams[1] = dead_entry
+
+        new_entry = await hub.restart(1, _make_frame_source(), params_key="requested-params")
+
+        assert new_entry is not concurrent_entry
+        assert concurrent_entry.alive is False
+        assert new_entry.alive is True
+        assert new_entry.params_key == "requested-params"
+        assert hub._streams[1] is new_entry
+
+        try:
+            await asyncio.wait_for(concurrent_entry.task, timeout=1.0)
+        except (asyncio.CancelledError, TimeoutError):
+            pass
         await hub.stop_all()
 
 
