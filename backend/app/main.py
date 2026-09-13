@@ -40,6 +40,7 @@ from backend.app.api.routes import (
     github_backup,
     groups,
     ha_sensors,
+    heimdall,
     inventory,
     kprofiles,
     labels,
@@ -9346,6 +9347,7 @@ app.include_router(bug_report.router, prefix=app_settings.api_prefix)
 app.include_router(calculator.router, prefix=app_settings.api_prefix)
 app.include_router(aito.router, prefix=app_settings.api_prefix)
 app.include_router(zoho.router, prefix=app_settings.api_prefix)
+app.include_router(heimdall.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(

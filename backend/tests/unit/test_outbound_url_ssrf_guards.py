@@ -580,6 +580,9 @@ GUARDED_BODY_URLS = {
     ("HATestConnectionRequest", "url"),  # homeassistant._validate_url
     ("RESTTestConnectionRequest", "url"),  # rest_smart_plug._validate_url
     ("TestConnectionRequest", "url"),  # obico_detection.test_connection
+    # Fork: Settings card's Heimdall test-connection button, guarded inline by
+    # the field_validator in schemas.heimdall (same assert_safe_lan_service_url).
+    ("HeimdallTestRequest", "base_url"),
     ("OIDCProviderCreate", "issuer_url"),  # public tier, via schemas.auth
     ("OIDCProviderCreate", "icon_url"),
     ("OIDCProviderUpdate", "issuer_url"),
