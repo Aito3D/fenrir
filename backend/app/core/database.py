@@ -287,6 +287,7 @@ async def init_db():
         active_print_session,
         active_print_spoolman,
         aito_event,
+        aito_payment_link,
         aito_project,
         aito_task,
         aito_tracking_view,
@@ -5187,6 +5188,36 @@ async def run_migrations(conn):
     await _safe_execute(
         conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_project_id ON aito_tracking_views(project_id)"
     )
+
+    # Migration: payment-link ledger + the two project facts it reads
+    # (2026-09-12). See models/aito_payment_link.py.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_expiry_date VARCHAR(10)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN retainer_paid_total FLOAT")
+    await _safe_execute(
+        conn,
+        "CREATE TABLE IF NOT EXISTS aito_payment_links ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " project_id INTEGER NOT NULL,"
+        " idempotency_key VARCHAR(64) NOT NULL UNIQUE,"
+        " heimdall_id VARCHAR(36) UNIQUE,"
+        " reference VARCHAR(64) NOT NULL,"
+        " amount INTEGER NOT NULL,"
+        " currency VARCHAR(3) NOT NULL DEFAULT 'XPF',"
+        " expires_on VARCHAR(10) NOT NULL,"
+        " url VARCHAR(500),"
+        " status VARCHAR(20) NOT NULL DEFAULT 'pending',"
+        " paid_at DATETIME,"
+        " checked_at DATETIME,"
+        " sync_error TEXT,"
+        " sync_failures INTEGER NOT NULL DEFAULT 0,"
+        " superseded_at DATETIME,"
+        " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+        " updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_payment_links_project_id ON aito_payment_links(project_id)"
+    )
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_aito_payment_links_status ON aito_payment_links(status)")
 
     await _backfill_aito_events(conn)
 
