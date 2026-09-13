@@ -509,6 +509,35 @@ class _SharedStream:
         self.last_frame_produced: float = 0.0
 
 
+async def _await_displaced_task(task: asyncio.Task, timeout: float) -> None:
+    """Best-effort wait for a producer task that a caller is displacing.
+
+    Used after cancelling (or discovering the natural death of) a producer
+    task that is about to be replaced, so its ``finally`` block (ffmpeg/SSL
+    teardown) completes before the printer's camera slot is handed to a new
+    producer or considered free. Any outcome of *task* itself — result,
+    exception, or its own cancellation — is irrelevant here and ignored.
+
+    Deliberately uses ``asyncio.wait`` rather than ``asyncio.wait_for``:
+    ``wait_for`` always force-cancels and awaits its target before
+    propagating a ``CancelledError``, so by the time it raises, the target
+    is already done — indistinguishable from the target having merely
+    cancelled/failed on its own. That made the *caller's own* cancellation
+    (e.g. an HTTP client disconnecting mid-swap) look identical to routine
+    "old task finished" cleanup and get swallowed too, leaking a producer
+    for a viewer that already left. ``asyncio.wait`` never cancels its
+    members and never raises based on their outcome — it only propagates a
+    ``CancelledError`` when the *caller* of this function is itself
+    cancelled, which is exactly the case we want to let through here.
+    """
+    _done, pending = await asyncio.wait({task}, timeout=timeout)
+    if pending:
+        # Timed out — mirror wait_for's behavior of forcing completion
+        # before the caller proceeds to claim/free the camera slot.
+        task.cancel()
+        await asyncio.wait({task})
+
+
 class SharedStreamHub:
     """One camera source per printer, shared across multiple viewers.
 
@@ -660,10 +689,7 @@ class SharedStreamHub:
         """
         # Await old task outside lock so its finally block (ffmpeg kill) completes
         if old_task is not None:
-            try:
-                await asyncio.wait_for(old_task, timeout=8.0)
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass  # Best effort — task will clean up on its own eventually
+            await _await_displaced_task(old_task, timeout=8.0)
 
         # Re-acquire lock to create new entry (guard against concurrent calls)
         async with self._lock:
@@ -824,10 +850,7 @@ class SharedStreamHub:
             count += 1
         for _, entry in entries:
             if entry.task and not entry.task.done():
-                try:
-                    await asyncio.wait_for(entry.task, timeout=5.0)
-                except (asyncio.CancelledError, TimeoutError, Exception):
-                    pass
+                await _await_displaced_task(entry.task, timeout=5.0)
         return count
 
     async def stop(self, printer_id: int) -> bool:
@@ -842,10 +865,7 @@ class SharedStreamHub:
         # Cancel and await the producer so its finally block runs (closes ffmpeg/SSL)
         if entry.task and not entry.task.done():
             entry.task.cancel()
-            try:
-                await asyncio.wait_for(entry.task, timeout=5.0)
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass  # Best effort — task will clean up on its own eventually
+            await _await_displaced_task(entry.task, timeout=5.0)
         return True
 
     def is_active(self, printer_id: int) -> bool:

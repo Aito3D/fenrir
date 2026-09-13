@@ -106,6 +106,14 @@ router = APIRouter(prefix="/library", tags=["library"])
 # Path of the embedded slicer config inside a BambuStudio/OrcaSlicer 3MF.
 _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
 
+# generate_stl_thumbnail() renders via matplotlib's pyplot global state
+# (plt.figure()/plt.subplots_adjust() operate on the process-wide "current
+# figure"). Both the backfill task and the batch-generation route below run
+# it in a worker thread via asyncio.to_thread; this lock keeps the two call
+# sites from ever rendering concurrently, preserving the pre-thread-offload
+# guarantee that renders never overlap.
+_stl_render_lock = asyncio.Lock()
+
 
 def _ensure_library_file_visible(
     library_file: LibraryFile | None,
@@ -848,7 +856,8 @@ async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
             except OSError:
                 continue
             try:
-                thumb_path = generate_stl_thumbnail(abs_path, thumbnails_dir)
+                async with _stl_render_lock:
+                    thumb_path = await asyncio.to_thread(generate_stl_thumbnail, abs_path, thumbnails_dir)
             except Exception as exc:  # noqa: BLE001 — never let one bad STL kill the rest
                 logger.debug("STL thumbnail backfill skipped %s: %s", abs_path, exc)
                 continue
@@ -2833,7 +2842,8 @@ async def batch_generate_stl_thumbnails(
             continue
 
         try:
-            thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
+            async with _stl_render_lock:
+                thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
 
             if thumbnail_path:
                 # Update database with relative path

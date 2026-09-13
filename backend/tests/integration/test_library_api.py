@@ -1226,6 +1226,143 @@ endsolid cube"""
                 if os.path.exists(p):
                     os.unlink(p)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backfill_external_stl_thumbnails_runs_off_the_event_loop(
+        self, test_engine, db_session, file_factory, monkeypatch
+    ):
+        """T-145: the external-folder backfill task must render off the event
+        loop, exactly like the batch route (T-144), instead of blocking it for
+        the whole scan."""
+        import os
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.api.routes.library import _backfill_external_stl_thumbnails
+        from backend.app.models.library import LibraryFolder
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write("solid test\n" + ("x" * 200) + "\nendsolid test")
+            stl_path = f.name
+
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "backfill_thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+        # The task opens its own session via the module-level `async_session`
+        # (the request session is long gone by the time it runs); point that
+        # at the test engine so the query/commit land where the fixture can see them.
+        test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr("backend.app.api.routes.library.async_session", test_session_maker)
+
+        try:
+            # folder_id must be a real value, not NULL: `IN (NULL)` never
+            # matches NULL rows in SQL, so the backfill query would find
+            # nothing if the file were left folder-less.
+            folder = LibraryFolder(name="backfill-thread-check")
+            db_session.add(folder)
+            await db_session.commit()
+            await db_session.refresh(folder)
+
+            stl_file = await file_factory(
+                filename="backfill_thread_check.stl",
+                file_path=stl_path,
+                thumbnail_path=None,
+                folder_id=folder.id,
+            )
+
+            await _backfill_external_stl_thumbnails([stl_file.folder_id])
+
+            await db_session.refresh(stl_file)
+            assert stl_file.thumbnail_path is not None
+            # generate_stl_thumbnail must have run off the event-loop thread
+            assert thread_is_not_main == [True]
+        finally:
+            if os.path.exists(stl_path):
+                os.unlink(stl_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_concurrent_backfills_never_render_two_stls_at_once(
+        self, test_engine, db_session, file_factory, monkeypatch
+    ):
+        """T-145: generate_stl_thumbnail() drives matplotlib's process-global
+        pyplot state, so two renders dispatched to worker threads at the same
+        time could corrupt each other's output. The shared `_stl_render_lock`
+        must keep two concurrent backfill calls from ever rendering at once,
+        even though each render now runs in a thread instead of blocking the
+        loop."""
+        import asyncio
+        import os
+        import time
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.api.routes.library import _backfill_external_stl_thumbnails
+        from backend.app.models.library import LibraryFolder
+
+        active = 0
+        max_active = 0
+        entries = 0
+        state_lock = threading.Lock()
+
+        def fake_generate(file_path, thumbnails_dir):
+            nonlocal active, max_active, entries
+            with state_lock:
+                active += 1
+                entries += 1
+                max_active = max(max_active, active)
+            time.sleep(0.15)
+            with state_lock:
+                active -= 1
+            return thumbnails_dir / "concurrent_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+        test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr("backend.app.api.routes.library.async_session", test_session_maker)
+
+        stl_paths = []
+        try:
+            for _ in range(2):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\n" + ("x" * 200) + "\nendsolid test")
+                    stl_paths.append(f.name)
+
+            folder_a = LibraryFolder(name="concurrent-backfill-a")
+            folder_b = LibraryFolder(name="concurrent-backfill-b")
+            db_session.add_all([folder_a, folder_b])
+            await db_session.commit()
+            await db_session.refresh(folder_a)
+            await db_session.refresh(folder_b)
+
+            file_a = await file_factory(
+                filename="concurrent_a.stl",
+                file_path=stl_paths[0],
+                thumbnail_path=None,
+                folder_id=folder_a.id,
+            )
+            file_b = await file_factory(
+                filename="concurrent_b.stl",
+                file_path=stl_paths[1],
+                thumbnail_path=None,
+                folder_id=folder_b.id,
+            )
+
+            await asyncio.gather(
+                _backfill_external_stl_thumbnails([file_a.folder_id]),
+                _backfill_external_stl_thumbnails([file_b.folder_id]),
+            )
+
+            assert entries == 2
+            assert max_active == 1, "renders overlapped despite the shared _stl_render_lock"
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
 
 class TestLibraryPathHelpers:
     """Tests for path handling utilities used for backup portability."""

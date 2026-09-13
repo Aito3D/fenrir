@@ -202,6 +202,145 @@ class TestSharedStreamHubRestart:
         await hub.stop_all()
 
 
+class TestSharedStreamHubOwnCancellationPropagates:
+    """T-140: get_or_start()/restart()/stop() must propagate the *caller's
+    own* cancellation while awaiting a displaced/old producer task, instead
+    of swallowing it as "best effort" cleanup.
+
+    Swallowing it let a request-task cancellation (e.g. a grid client
+    disconnecting mid producer-swap) go unnoticed: the route would carry on
+    and spawn a fresh producer for a viewer that had already left, orphaning
+    it until the idle timeout. A *normal* swap — where the awaited old task
+    was cancelled by the hub itself and finishes on its own — must still be
+    swallowed; only the cancellation of the coroutine doing the awaiting is
+    now let through.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_or_start_propagates_cancellation_and_registers_nothing(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        old_task_started = asyncio.Event()
+        never = asyncio.Event()
+
+        async def old_task_body():
+            old_task_started.set()
+            await never.wait()  # never resolves on its own
+
+        # Entry dead but its task is still "cleaning up" — get_or_start()
+        # awaits this task in _replace_producer's phase 2.
+        dead_entry = _SharedStream(params_key="old")
+        dead_entry.alive = False
+        dead_entry.task = asyncio.create_task(old_task_body())
+        hub._streams[1] = dead_entry
+
+        await old_task_started.wait()
+
+        caller = asyncio.create_task(hub.get_or_start(1, _make_frame_source(), params_key="new"))
+        # Let the caller run until it is parked awaiting the displaced task.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not caller.done()
+
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+
+        # Our own cancellation must NOT force the displaced task to
+        # completion first, and no new producer may be registered.
+        assert not dead_entry.task.done()
+        assert 1 not in hub._streams
+
+        dead_entry.task.cancel()
+        try:
+            await dead_entry.task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_restart_propagates_cancellation_and_registers_nothing(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        old_task_started = asyncio.Event()
+        never = asyncio.Event()
+
+        async def old_producer_body():
+            old_task_started.set()
+            await never.wait()
+
+        # Alive entry with different params — restart() cancels it and then
+        # awaits it in phase 2, same as the displaced-task path above.
+        entry = _SharedStream(params_key="old-params")
+        entry.alive = True
+        entry.task = asyncio.create_task(old_producer_body())
+        hub._streams[1] = entry
+
+        await old_task_started.wait()
+
+        caller = asyncio.create_task(hub.restart(1, _make_frame_source(), params_key="new-params"))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not caller.done()
+
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+
+        assert 1 not in hub._streams
+
+        try:
+            await entry.task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_stop_propagates_cancellation_without_forcing_task_done(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        task_started = asyncio.Event()
+        never = asyncio.Event()
+
+        async def long_running():
+            task_started.set()
+            try:
+                await never.wait()
+            except asyncio.CancelledError:
+                # Simulate a slow finally block (e.g. killing ffmpeg) so this
+                # task is still not done() while `caller` is cancelled below,
+                # regardless of exact event-loop scheduling order.
+                await never.wait()
+
+        entry = _SharedStream(params_key="5-15-0.5")
+        entry.alive = True
+        entry.task = asyncio.create_task(long_running())
+        hub._streams[1] = entry
+
+        await task_started.wait()
+
+        caller = asyncio.create_task(hub.stop(1))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not caller.done()
+
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+
+        # stop() already cancelled entry.task itself, but our own
+        # cancellation must propagate immediately rather than forcing
+        # entry.task to finish first.
+        assert not entry.task.done()
+
+        entry.task.cancel()
+        try:
+            await entry.task
+        except asyncio.CancelledError:
+            pass
+
+
 class TestSharedStreamHubIdleTimeout:
     """Tests for producer auto-stop after IDLE_TIMEOUT without viewer activity."""
 
