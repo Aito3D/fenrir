@@ -279,7 +279,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
     # The Pushcut URL embeds its secret token — write-only, like the above.
     settings_dict["pushcut_sms_url"] = ""
 
-    # The Heimdall bearer token is the whole credential — write-only, like the above.
+    # The Heimdall API token is the whole credential — write-only, like the above.
     settings_dict["heimdall_api_token"] = ""
 
     if is_api_key:

@@ -417,7 +417,7 @@ def _to_response(
     replacing the row — so an endpoint that quietly returned zeros, an empty
     shipping_names map, or a blank external_url when one is configured, would
     blank a card's badges — or its shipping service name, or its tracking
-    link — and nothing would fail. Requiring all three makes every call site
+    link — and nothing would fail. Requiring all four makes every call site
     state its intent instead of forgetting one silently.
 
     `shipping_names` and `external_url` are each resolved ONCE per request by
@@ -1362,7 +1362,13 @@ async def create_project(
 _AI_RATE_LIMIT_WINDOW_S = 60.0
 _AI_RATE_LIMIT_MAX_CALLS = 30
 _AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try again."
-# principal key -> call timestamps (module's own `time.monotonic`, see below).
+# Spec §7.1: the panel's Retry button. Its own, much smaller budget in its own
+# bucket — a Retry mints or polls a link at Heimdall, so it must not be
+# click-spammable, and it must not eat (or be starved by) the AI budget.
+_PAYMENT_LINK_REFRESH_MAX_CALLS = 10
+_PAYMENT_LINK_REFRESH_DETAIL = "Too many payment link refreshes. Please wait a moment and try again."
+# "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
+# see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
 
 
@@ -1376,9 +1382,14 @@ def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
     return f"ip:{host}"
 
 
-def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
-    """Raise 429 once a principal exceeds _AI_RATE_LIMIT_MAX_CALLS calls in
-    _AI_RATE_LIMIT_WINDOW_S seconds. Enforced before the OpenRouter call.
+def _check_rate_limit(request: Request, current_user: User | None, *, bucket: str, max_calls: int, detail: str) -> None:
+    """Raise 429 once a principal exceeds `max_calls` calls to `bucket` in
+    _AI_RATE_LIMIT_WINDOW_S seconds. Enforced before the expensive call the
+    budget is protecting (the OpenRouter request, the Heimdall round trip).
+
+    `bucket` prefixes the principal key so each concern gets its OWN sliding
+    window: exhausting the AI budget must not disable the panel's Retry, and
+    vice versa.
 
     Reads the clock through the module's own `time` name (`time.monotonic()`)
     rather than importing `monotonic` directly, so a test can rebind
@@ -1386,13 +1397,35 @@ def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
     `time.monotonic` in an async test — asyncio's own loop internals
     (timeouts, call_later) depend on it too.
     """
-    key = _ai_rate_limit_key(request, current_user)
+    key = f"{bucket}:{_ai_rate_limit_key(request, current_user)}"
     now = time.monotonic()
     calls = _ai_rate_limit_calls.setdefault(key, [])
     calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]
-    if len(calls) >= _AI_RATE_LIMIT_MAX_CALLS:
-        raise HTTPException(status_code=429, detail=_AI_RATE_LIMIT_DETAIL)
+    if len(calls) >= max_calls:
+        raise HTTPException(status_code=429, detail=detail)
     calls.append(now)
+
+
+def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
+    """The OpenRouter budget: _AI_RATE_LIMIT_MAX_CALLS per principal per window."""
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="ai",
+        max_calls=_AI_RATE_LIMIT_MAX_CALLS,
+        detail=_AI_RATE_LIMIT_DETAIL,
+    )
+
+
+def _check_payment_link_refresh_rate_limit(request: Request, current_user: User | None) -> None:
+    """The panel Retry budget (spec §7.1): 10 per principal per minute."""
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="payment_link_refresh",
+        max_calls=_PAYMENT_LINK_REFRESH_MAX_CALLS,
+        detail=_PAYMENT_LINK_REFRESH_DETAIL,
+    )
 
 
 @router.post("/summarize", response_model=AitoSummarizeResponse)
@@ -3332,14 +3365,23 @@ async def regenerate_tracking_token(
 @router.post("/{project_id}/payment-link/refresh", response_model=AitoProjectResponse)
 async def refresh_payment_link(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Reconcile and poll this one project's payment link now, instead of
     waiting for the loop's tick — the panel's Retry. Never raises on a
-    Heimdall failure: the row's sync_error carries it to the panel."""
+    Heimdall failure: the row's sync_error carries it to the panel.
+
+    `force=True`: Retry is only OFFERED while the row carries a sync_error,
+    which is exactly when the row is inside its own backoff window — without
+    the bypass the button would be a no-op for the next 5–30 minutes. The
+    rate limit above is what keeps that bypass from becoming a way to hammer
+    Heimdall past its own backoff.
+    """
+    _check_payment_link_refresh_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
-    await reconcile_payment_links(db, only_project_id=project.id)
+    await reconcile_payment_links(db, only_project_id=project.id, force=True)
     await db.refresh(project)
     return await _project_response(db, project)
 
