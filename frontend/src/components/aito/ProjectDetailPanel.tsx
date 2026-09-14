@@ -896,6 +896,12 @@ export function ProjectDetailPanel({
   const stepsDone = stageWork.reduce((sum, s) => sum + s.stepsDone, 0);
   const stepsTotal = stageWork.reduce((sum, s) => sum + s.stepsTotal, 0);
   const currency = useCurrency();
+  // Same `['settings']` query `useCurrency` above already runs — React Query
+  // dedupes them onto one fetch, this just reads the one field useCurrency
+  // does not expose. Feeds PaymentLinkRow's paid-but-total-moved warning via
+  // BillingCard below.
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
+  const depositPct = settingsQuery.data?.aito_deposit_pct ?? 0;
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -1315,6 +1321,7 @@ export function ProjectDetailPanel({
                       canUpdate={canUpdate}
                       onRetrySync={() => updateMutation.mutate({ description: project.description })}
                       retryPending={updateMutation.isPending}
+                      depositPct={depositPct}
                     />
                     <RecordCard
                       project={project}

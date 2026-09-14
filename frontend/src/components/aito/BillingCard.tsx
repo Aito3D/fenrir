@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
+import { PaymentLinkRow } from './PaymentLinkRow';
 import { QuoteDownloadButton } from './QuoteDownloadButton';
 import { QuotePrintButton } from './QuotePrintButton';
 import { SendQuoteButton } from './SendQuoteButton';
@@ -30,6 +31,7 @@ export function BillingCard({
   canUpdate,
   onRetrySync,
   retryPending,
+  depositPct = 0,
 }: {
   project: AitoProject;
   canUpdate: boolean;
@@ -37,6 +39,9 @@ export function BillingCard({
    *  unchanged description — see the panel's `updateMutation`). */
   onRetrySync: () => void;
   retryPending: boolean;
+  /** `AppSettings.aito_deposit_pct`, passed through to `PaymentLinkRow` so it
+   *  can tell whether a paid link still covers the current quote total. */
+  depositPct?: number;
 }) {
   const { t } = useTranslation();
   const { syncLabelKey, blockKey, hasQuoteMessage } = deriveQuoteSync(project);
@@ -83,6 +88,11 @@ export function BillingCard({
               </>
             )}
           </dl>
+
+          {/* The online payment link's row — part of the same quote story as
+              Number and Status above, so it sits inside this card, under
+              them, before the actions. Renders itself away without a link. */}
+          <PaymentLinkRow project={project} canUpdate={canUpdate} depositPct={depositPct} />
 
           {/* Print / download / send as one segmented control; the labels
               live on aria-label + title (see quoteActionGroup.ts for the
