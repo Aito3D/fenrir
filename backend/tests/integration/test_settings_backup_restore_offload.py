@@ -354,3 +354,271 @@ class TestRestoreSuccessPath:
                 db_path.write_bytes(original_bytes)
             else:
                 db_path.unlink(missing_ok=True)
+
+
+class TestRestoreRejectsZipSlipPaths:
+    """T-211: restore_backup rejects any ZIP entry whose resolved path would
+    land outside the temp extraction directory, before ``zf.extractall`` is
+    ever called — the ZipSlip / path-traversal guard described in the code
+    comment (CVE-2006-5456-style) at settings.py ~1263-1275. No existing test
+    built a ZIP with a traversal or absolute-path entry, so the guard's raise
+    branch had zero coverage.
+
+    ``restore_backup``'s ``tempfile.TemporaryDirectory()`` is created with no
+    ``dir=`` argument, so it always resolves via ``tempfile.gettempdir()``.
+    Both tests below monkeypatch that to relocate the extraction dir under
+    ``tmp_path``, so the malicious entry's *would-be* destination is a path
+    this test fully controls: a canary file directly under ``tmp_path``. If
+    the guard were ever removed or broken, ``zf.extractall`` would write that
+    canary file for real; asserting it does not exist (and that
+    ``extractall`` was never even called) proves the traversal never reached
+    disk, not just that some 400 was returned.
+    """
+
+    @staticmethod
+    def _spy_extractall(monkeypatch):
+        calls: list[object] = []
+        real_extractall = zipfile.ZipFile.extractall
+
+        def spy(self, *args, **kwargs):
+            calls.append(self)
+            return real_extractall(self, *args, **kwargs)
+
+        monkeypatch.setattr(zipfile.ZipFile, "extractall", spy)
+        return calls
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_rejects_relative_path_traversal_entry(self, async_client, monkeypatch, tmp_path):
+        import tempfile
+
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        extractall_calls = self._spy_extractall(monkeypatch)
+
+        # restore_backup's TemporaryDirectory() is created directly under
+        # gettempdir() (relocated to tmp_path above), so one level of ".."
+        # from inside it lands exactly at tmp_path.
+        canary = tmp_path / "zipslip-relative-canary.txt"
+        assert not canary.exists()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("../zipslip-relative-canary.txt", "pwned")
+            zf.writestr("bambuddy.db", "fake-db-bytes")
+        buf.seek(0)
+
+        response = await async_client.post(
+            "/api/v1/settings/restore",
+            files={"file": ("backup.zip", buf, "application/zip")},
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "unsafe path in zip" in detail.lower()
+        assert "../zipslip-relative-canary.txt" in detail
+
+        assert not canary.exists(), "ZipSlip guard failed: traversal entry was written outside the extraction dir"
+        assert extractall_calls == [], "extractall must never run once an unsafe entry is found in the ZIP"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_rejects_absolute_path_entry(self, async_client, monkeypatch, tmp_path):
+        import tempfile
+
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        extractall_calls = self._spy_extractall(monkeypatch)
+
+        # An absolute-path entry overrides the extraction dir entirely
+        # (Path(temp_dir) / "/abs/path" == Path("/abs/path")); point it at a
+        # path under tmp_path so the "would-be write" is something this test
+        # can safely assert against, rather than a real system path.
+        canary = tmp_path / "zipslip-absolute-canary.txt"
+        assert not canary.exists()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(str(canary), "pwned")
+            zf.writestr("bambuddy.db", "fake-db-bytes")
+        buf.seek(0)
+
+        response = await async_client.post(
+            "/api/v1/settings/restore",
+            files={"file": ("backup.zip", buf, "application/zip")},
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "unsafe path in zip" in detail.lower()
+        assert str(canary) in detail
+
+        assert not canary.exists(), "ZipSlip guard failed: absolute-path entry was written outside the extraction dir"
+        assert extractall_calls == [], "extractall must never run once an unsafe entry is found in the ZIP"
+
+
+class TestRestoreDataDirectoryStagingContract:
+    """T-212: ``_restore_data_directory`` — the T-017 stage-then-atomic-move
+    fix — has no direct test. ``TestRestoreSuccessPath`` only exercises it
+    indirectly through the full ``/restore`` endpoint, with a single flat
+    file and a destination that doesn't pre-exist, so it never reaches the
+    "stale staging dir left over from a previous failed attempt" branch, the
+    ``shutil.copytree`` (sub-*directory*, not file) branch, or the "clear an
+    existing destination" branch.
+
+    These tests call ``_restore_data_directory(name, src_dir, dest_dir)``
+    directly, matching the docstring's contract line by line:
+      - the backup is copied into a sibling ``.{dest_dir.name}.restore-staging``
+        directory first
+      - only once that copy fully succeeds is ``dest_dir`` cleared and the
+        staged files moved in (a same-filesystem rename)
+      - if the staging copy raises ``OSError``, ``dest_dir`` is never
+        touched and the exception propagates
+      - the staging directory is removed in all cases (success or failure)
+    """
+
+    @staticmethod
+    def _tree(root, files: dict[str, str]):
+        """Create ``root`` and populate it with the given relative
+        file paths -> contents (parent dirs created as needed)."""
+        root.mkdir(parents=True, exist_ok=True)
+        for rel_path, content in files.items():
+            full = root / rel_path
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text(content)
+        return root
+
+    def test_happy_path_replaces_dest_contents_with_src_contents(self, tmp_path):
+        """dest_dir's old files/subdirs are gone afterwards; src_dir's are
+        all present with their original content, and the staging dir left
+        behind by this run is cleaned up."""
+        from backend.app.api.routes.settings import _restore_data_directory
+
+        src_dir = self._tree(
+            tmp_path / "src",
+            {
+                "top.txt": "src-top",
+                "nested/inner.txt": "src-nested",
+            },
+        )
+        dest_dir = self._tree(
+            tmp_path / "dest",
+            {
+                "stale.txt": "old-stale-file",
+                "stale_dir/old.txt": "old-nested-file",
+            },
+        )
+
+        _restore_data_directory("icons", src_dir, dest_dir)
+
+        # Old destination contents are gone.
+        assert not (dest_dir / "stale.txt").exists()
+        assert not (dest_dir / "stale_dir").exists()
+
+        # New (src) contents are present, file and directory alike.
+        assert (dest_dir / "top.txt").read_text() == "src-top"
+        assert (dest_dir / "nested" / "inner.txt").read_text() == "src-nested"
+
+        # The staging directory used for this restore is cleaned up.
+        stage_dir = dest_dir.parent / f".{dest_dir.name}.restore-staging"
+        assert not stage_dir.exists()
+
+    def test_dest_dir_missing_is_created(self, tmp_path):
+        """dest_dir need not pre-exist: it's created and populated from
+        src_dir (the ``else: dest_dir.mkdir(...)`` branch)."""
+        from backend.app.api.routes.settings import _restore_data_directory
+
+        src_dir = self._tree(tmp_path / "src", {"only.txt": "only-content"})
+        dest_dir = tmp_path / "dest-does-not-exist"
+        assert not dest_dir.exists()
+
+        _restore_data_directory("archive", src_dir, dest_dir)
+
+        assert (dest_dir / "only.txt").read_text() == "only-content"
+
+    def test_src_dir_empty_leaves_dest_dir_empty(self, tmp_path):
+        """An empty backup directory still clears out dest_dir's stale
+        contents (the staging copy trivially "succeeds" with nothing to
+        copy), leaving dest_dir present but empty."""
+        from backend.app.api.routes.settings import _restore_data_directory
+
+        src_dir = tmp_path / "src-empty"
+        src_dir.mkdir()
+        dest_dir = self._tree(tmp_path / "dest", {"stale.txt": "old-stale-file"})
+
+        _restore_data_directory("timelapse", src_dir, dest_dir)
+
+        assert dest_dir.exists()
+        assert list(dest_dir.iterdir()) == []
+
+    def test_stale_staging_dir_from_a_previous_failed_attempt_is_cleared_first(self, tmp_path):
+        """A staging directory left behind by an earlier crashed/failed
+        restore is removed before this run stages into it, rather than the
+        new copy landing on top of (or being confused by) old leftovers."""
+        from backend.app.api.routes.settings import _restore_data_directory
+
+        src_dir = self._tree(tmp_path / "src", {"fresh.txt": "fresh-content"})
+        dest_dir = self._tree(tmp_path / "dest", {"stale.txt": "old-stale-file"})
+
+        stage_dir = dest_dir.parent / f".{dest_dir.name}.restore-staging"
+        stage_dir.mkdir(parents=True)
+        (stage_dir / "leftover-from-crash.txt").write_text("leftover")
+
+        _restore_data_directory("icons", src_dir, dest_dir)
+
+        assert (dest_dir / "fresh.txt").read_text() == "fresh-content"
+        assert not (dest_dir / "stale.txt").exists()
+        # The stale leftover never made it into the restored destination,
+        # and the (fresh) staging dir used by this run is cleaned up too.
+        assert not (dest_dir / "leftover-from-crash.txt").exists()
+        assert not stage_dir.exists()
+
+    def test_mid_staging_oserror_leaves_dest_dir_completely_untouched(self, tmp_path, monkeypatch):
+        """The T-017 bug this function fixes: dest_dir must never be
+        cleared until the staging copy has *fully* succeeded. Simulate a
+        mid-copy failure (e.g. ENOSPC) via a real ``shutil.copytree`` that
+        raises after copying the first of two source entries, and assert
+        the exception propagates while dest_dir's original files are all
+        still there, byte-for-byte."""
+        import shutil
+
+        from backend.app.api.routes.settings import _restore_data_directory
+
+        src_dir = self._tree(
+            tmp_path / "src",
+            {
+                "aaa_first/file.txt": "src-first-dir",
+                "zzz_second/file.txt": "src-second-dir",
+            },
+        )
+        dest_dir = self._tree(
+            tmp_path / "dest",
+            {
+                "keep.txt": "must-survive",
+                "keep_dir/inner.txt": "must-also-survive",
+            },
+        )
+
+        real_copytree = shutil.copytree
+        call_count = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise OSError("ENOSPC: simulated mid-copy disk-full failure")
+            return real_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="ENOSPC"):
+            _restore_data_directory("archive", src_dir, dest_dir)
+
+        # dest_dir is completely untouched — not partially cleared, not
+        # deleted.
+        assert dest_dir.exists()
+        assert (dest_dir / "keep.txt").read_text() == "must-survive"
+        assert (dest_dir / "keep_dir" / "inner.txt").read_text() == "must-also-survive"
+
+        # The staging dir (with its now-abandoned partial copy) is still
+        # cleaned up by the ``finally`` block even on this failure path.
+        stage_dir = dest_dir.parent / f".{dest_dir.name}.restore-staging"
+        assert not stage_dir.exists()
