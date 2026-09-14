@@ -11792,3 +11792,136 @@ in a browser tab before this deploy self-heals to a fully-scoped one within, at 
 load or 50 minutes, without a page reload. A caller who legitimately has `library:read_own`/`library:read_all`
 sees no change at all once their token is re-minted.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 11 · T-155 — 2026-09-13 — user-approved behavior change
+
+`extract_zip_file()` (backend/app/api/routes/library.py:~2569) saved the uploaded ZIP with `content = await
+file.read()` / `tmp.write(content)` — the exact same unbounded read T-147 fixed in `upload_file()` — and
+then, for every entry, decompressed it fully into memory with `file_content = zf.read(zip_path)` before
+writing it to disk. Nothing inspected `ZipInfo.file_size` or tracked a cumulative decompressed total, so a
+small deflate-bomb ZIP (a few MB compressed) could expand to tens of GB and OOM-kill the uvicorn process,
+taking printer monitoring and MQTT down with it. Reachable by any caller with `Permission.LIBRARY_UPLOAD`
+(held by the default Operators group).
+
+Fixed in two parts. First, the ZIP body itself is now streamed to disk through a new shared helper,
+`_stream_upload_to_path()`, extracted from T-147's inline `upload_file()` logic (declared-size fast-reject,
+`while chunk := await file.read(1 << 20)`, incremental sha256, abort-and-delete on 413) with an
+`on_first_chunk` callback so `upload_file()` can still run its magic-byte sniff on just the first chunk;
+`upload_file()` now calls this helper instead of duplicating the loop, and `extract_zip_file()` calls it
+too, against the existing `library_max_upload_bytes` cap — same 413 body (`"Upload exceeds the maximum size
+of {cap} bytes"`), same partial-file cleanup, verified byte-identical against the T-147 tests. Second, a new
+`Settings.library_max_zip_extract_bytes` field (backend/app/core/config.py, default `4 * 1024 * 1024 *
+1024` = 4 GiB, override via the `LIBRARY_MAX_ZIP_EXTRACT_BYTES` env var, declared exactly like
+`library_max_upload_bytes`) bounds the *decompressed* total. Before extracting anything,
+`extract_zip_file()` sums `zi.file_size` over `zf.infolist()` and rejects with `413 {"detail": "ZIP expands
+to {total} bytes, above the maximum of {cap} bytes"}` if the declared total alone exceeds the cap — no
+entry is touched, and the temp ZIP file is removed (existing `finally` block). Because a ZIP's local header
+can lie about an entry's uncompressed size, each entry is *also* streamed via `zf.open(zip_path)` +
+manual chunked copy (replacing `zf.read(zip_path)`), with a request-wide running total
+(`zip_extract_total_bytes`) checked after every 1 MiB chunk; if a lying header lets the real bytes push the
+running total past the cap mid-stream, a new internal `_ZipExtractCapExceeded` signal aborts the entry
+(deleting its partial file) and propagates past the per-entry `except Exception` handler (which would
+otherwise just log the one file as failed and keep going) to abort the whole request. The outer handler
+then undoes every entry this request had already extracted and committed — via a
+`(library_file_id, file_path, thumbnail_path)` list built alongside the existing `extracted_files` response
+list — unlinking each file and any thumbnail from disk and hard-deleting the `LibraryFile` rows in one
+`delete(LibraryFile).where(LibraryFile.id.in_(...))` + commit, before raising the 413. Hashing is unchanged:
+`calculate_file_hash(file_path)` already re-reads the file from disk after it's written, so streaming the
+write produces an identical digest to the old read-then-write-then-rehash path. `file_size` on each
+`LibraryFile` row now comes from the streamed byte count (`entry_bytes_written`) instead of
+`len(file_content)` — same value for any entry under the cap. Folder creation (including
+`create_folder_from_zip`), filename handling, path-traversal rejection, and the response shape are
+unchanged; filename validation is explicitly out of scope (T-157).
+
+Five tests added/extended in `backend/tests/integration/test_library_api.py`:
+`test_extract_zip_basic` now asserts each extracted row's `file_hash`/`file_size` against the source
+content (pins byte-identical streaming); a new `TestLibraryZipExtractSizeCap` class covers an honest
+declared total above a small test cap (413 before any extraction, temp ZIP file confirmed removed via a
+`tempfile.mkstemp` capture), a lying `ZipInfo.file_size` (patched via `zipfile.ZipFile.infolist`, which the
+route's upfront sum reads, while `zf.open()`'s real per-name lookup is left untouched) causing a mid-stream
+413 that rolls back an already-committed earlier entry in the same archive, the same lying-header scenario
+with nothing extracted yet (empty-list branch of the cleanup), the ZIP body itself exceeding
+`library_max_upload_bytes` (413 before the archive is even opened), and the cap being honoured when raised
+above the archive's real size (still succeeds). No existing assertion was weakened.
+
+Confirmed via `snapshot.py verify`: `app-settings` was the only probe to mismatch, and the diff was exactly
+the new `library_max_zip_extract_bytes` field (default `"4294967296"`, `int`, not required); recorded via
+`snapshot.py record` (only `snapshots/app-settings.golden` changed). `SURFACE.md` was regenerated and its
+only diff is the new `library_max_zip_extract_bytes = 4294967296` line in the settings/environment surface
+section.
+
+User-visible change: `POST /api/v1/library/files/extract-zip` now rejects a ZIP whose entries declare (or,
+if a header lies, whose entries actually decompress to) more than 4 GiB (4294967296 bytes) total with 413
+— `{"detail": "ZIP expands to {N} bytes, above the maximum of 4294967296 bytes"}` for an honest oversized
+header, or `{"detail": "ZIP expands to more than 4294967296 bytes once extracted, above the maximum
+allowed"}` for a lying one — instead of decompressing every entry into memory with no limit. The cap is
+configurable via the `LIBRARY_MAX_ZIP_EXTRACT_BYTES` environment variable; the uploaded ZIP body itself
+remains capped at `library_max_upload_bytes` (2 GiB by default, `LIBRARY_MAX_UPLOAD_BYTES`), unchanged from
+T-147. Users with genuinely huge (but honest, non-lying) model archives above 4 GiB uncompressed would need
+`LIBRARY_MAX_ZIP_EXTRACT_BYTES` raised. Archives under the cap extract with identical responses, DB rows,
+and file hashes as before.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 11 · T-157 — 2026-09-13 — user-approved behavior change
+
+`extract_zip_file()` (backend/app/api/routes/library.py) logged the raw upload filename before validating
+it and never validated any per-entry name either. After the existing `.zip` suffix check, the archive
+filename reached `logger.info(f"ZIP extraction: create_folder_from_zip={create_folder_from_zip},
+folder_id={folder_id}, filename={file.filename}")` (an eager f-string, not lazy `%s` args) untouched, and
+was also used verbatim as a folder name when `create_folder_from_zip` was set. Unlike `upload_file()`,
+which calls `validate_print_filename(filename)` (backend/app/utils/filename.py, rejects the FAT32/exFAT-
+illegal set `< > : " / \ | ? *`, ASCII control characters below `0x20`, trailing space/dot, `.`/`..`, and
+names over 255 UTF-8 bytes, from #1540) and maps `InvalidFilenameError` to a 400, `extract_zip_file()`
+validated neither the archive name nor `filename = os.path.basename(zip_path)` for each entry before
+storing/logging it — a control character in either forges/corrupts log lines in bambuddy.log, which users
+routinely attach to public issues.
+
+Fixed by mirroring `upload_file()`'s own validation exactly, in two places. (1) Archive name: right after
+the `.zip` suffix check — and before the "save ZIP to temp file" step, so nothing is written to disk for a
+rejected request — `validate_print_filename(file.filename)` now runs, with `InvalidFilenameError` mapped to
+`HTTPException(status_code=400, detail=str(e)) from e`, the identical mapping `upload_file()` uses. The
+`logger.info(...)` line right after (now unconditionally passed a pre-validated name) was also switched
+from the eager f-string to lazy `%s` args (`logger.info("ZIP extraction: create_folder_from_zip=%s,
+folder_id=%s, filename=%s", create_folder_from_zip, folder_id, file.filename)`) — the message text is
+otherwise identical. (2) Entry names: right after `filename = os.path.basename(zip_path)` inside the
+per-entry loop, the same `validate_print_filename(filename)` call now runs; an invalid entry is *not*
+fatal to the request — it's skipped via `continue` (after an `await db.rollback()` to undo any
+preserve_structure folder flushed-but-not-committed for that entry, matching the generic per-entry
+exception handler a few lines below) and reported through the *existing* `errors: list[ZipExtractError]`
+response field (same `{filename, error}` shape every other per-entry extraction failure already uses — no
+new response field was added). The skip is also logged, but via `logger.warning("Skipping ZIP entry with
+invalid filename: %s", e)` — lazy args, and deliberately omitting the raw `zip_path`/`filename` (unlike the
+generic handler's `logger.error("Failed to extract %s: %s", zip_path, e)`, which still logs the raw
+archive-internal path) so the warning itself can never carry a raw control character into the log. The
+T-155 streaming/cap logic (running `zip_extract_total_bytes`, per-entry chunked copy, mid-stream rollback)
+is untouched; validation runs before any bytes of the entry are read.
+
+Two tests added to `backend/tests/integration/test_library_api.py::TestLibraryZipExtractAPI`. Both use an
+ANSI escape byte (`\x1b`) rather than a raw `\r`/`\n` as the injected control character: httpx (like other
+well-behaved HTTP clients) percent-encodes `\r`/`\n` in a multipart `filename=` parameter before it ever
+reaches the wire — confirmed empirically (`evil\r\nX.zip` arrived server-side as the literal text
+`evil%0D%0AX.zip`, no real control character) — while other C0 controls such as `\x1b` pass through
+untouched, since only `\r`/`\n` are structurally significant to HTTP header framing. `\x1b` is itself a
+real log/terminal-injection vector (ANSI escape sequences), so the test still exercises a genuine attack
+surface end-to-end through the real multipart stack rather than a synthetic one. Test 1 posts an archive
+named `"evil\x1bBAD.zip"` and asserts a 400 with `"control character"` in `detail` and zero `LibraryFile`
+rows created. Test 2 posts a ZIP with one normal entry (`good.txt`) and one entry named
+`"bad\x1bInjected.txt"`; it asserts `extracted == 1`, only `good.txt` is in `files`/the DB, the bad entry is
+reported as the sole item in `errors` with `"control character"` in its `error` field, and — via
+`caplog.at_level(logging.WARNING, logger="backend.app.api.routes.library")` — that `"\x1b"` never appears
+anywhere in `caplog.text`. No existing assertion was weakened.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (no schema change — the fix reuses the existing
+`ZipExtractError`/`errors` field rather than adding one). `SURFACE.md` was regenerated and is unchanged.
+
+User-visible change: `POST /api/v1/library/files/extract-zip` now **rejects** a request with `400
+{"detail": "<validate_print_filename message>"}` (e.g. `"Filename contains a control character"` or
+`"Filename contains invalid character: <"`) when the *archive's own filename* contains a FAT32/exFAT-
+illegal character or control character — nothing is extracted and no temp file is written, exactly like
+`upload_file()` already rejects such a filename today. Separately, any *entry inside* the ZIP whose
+basename contains such a character is now **skipped** rather than extracted: it is omitted from `files`,
+counted out of `extracted`, and instead appears in the response's existing `errors` list as `{"filename":
+"<the entry's basename>", "error": "<validate_print_filename message>"}` — the same mechanism already used
+today for any other per-entry extraction failure. All other entries in the same archive still extract
+normally. Archives and entries with no such characters extract identically to before.
+User-approved 2026-09-13.

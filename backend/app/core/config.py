@@ -108,6 +108,16 @@ class Settings(BaseSettings):
     # Override with LIBRARY_MAX_UPLOAD_BYTES env var.
     library_max_upload_bytes: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
 
+    # ZIP extraction (POST /library/files/extract-zip): before extracting
+    # anything, the route sums the *declared* (uncompressed) size of every
+    # entry and rejects (413) if the total exceeds this cap, then re-checks
+    # the running total while streaming each entry to disk in case an
+    # entry's header understates its real size. Deflate bombs can expand a
+    # few-MB upload to tens of GB and OOM the process; this cap is separate
+    # from library_max_upload_bytes, which only bounds the compressed ZIP
+    # body itself. Override with LIBRARY_MAX_ZIP_EXTRACT_BYTES env var.
+    library_max_zip_extract_bytes: int = Field(default=4 * 1024 * 1024 * 1024, gt=0)
+
     # API
     api_prefix: str = "/api/v1"
 

@@ -837,14 +837,28 @@ class TestLibraryZipExtractAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_extract_zip_basic(self, async_client: AsyncClient, db_session):
-        """Verify basic ZIP extraction works."""
+        """Verify basic ZIP extraction works.
+
+        Also pins the per-file hash/size (T-155): extraction now streams
+        each entry to disk in bounded chunks instead of decompressing it
+        fully into memory first, and this must produce byte-identical
+        hashes/sizes to the pre-streaming behaviour.
+        """
+        import hashlib
         import io
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        content1 = b"Content of file 1"
+        content2 = b"Content of file 2"
 
         # Create a simple ZIP file in memory
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("test1.txt", "Content of file 1")
-            zf.writestr("test2.txt", "Content of file 2")
+            zf.writestr("test1.txt", content1)
+            zf.writestr("test2.txt", content2)
         zip_buffer.seek(0)
 
         files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
@@ -854,6 +868,13 @@ class TestLibraryZipExtractAPI:
         assert result["extracted"] == 2
         assert len(result["files"]) == 2
         assert len(result["errors"]) == 0
+
+        expected = {"test1.txt": content1, "test2.txt": content2}
+        for entry in result["files"]:
+            row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == entry["file_id"]))).scalar_one()
+            content = expected[entry["filename"]]
+            assert row.file_size == len(content)
+            assert row.file_hash == hashlib.sha256(content).hexdigest()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -951,6 +972,74 @@ class TestLibraryZipExtractAPI:
         assert folder_response.status_code == 200
         folder = folder_response.json()
         assert folder["name"] == "MyProject"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_rejects_archive_name_with_control_character(self, async_client: AsyncClient, db_session):
+        """T-157: an archive name carrying a raw control character (here an
+        ANSI escape byte, a real log/terminal-injection vector — \\r and
+        \\n themselves get percent-encoded by well-behaved HTTP clients
+        before they'd ever reach the server, unlike other C0 controls)
+        must be rejected the same way ``upload_file`` rejects a bad
+        filename (#1540) — with a 400 and that helper's own detail message
+        — before anything is extracted. Nothing is even streamed to a temp
+        file for this request: the check runs before the ZIP body is
+        saved."""
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("file1.txt", "Content 1")
+        zip_buffer.seek(0)
+
+        files = {"file": ("evil\x1bBAD.zip", zip_buffer.read(), "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        assert response.status_code == 400
+        assert "control character" in response.json()["detail"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == [], "nothing should be extracted when the archive name itself is rejected"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_skips_entry_with_control_character_in_name(
+        self, async_client: AsyncClient, db_session, caplog
+    ):
+        """T-157: an entry whose basename carries a control character is
+        skipped (not fatal) and reported through the existing per-entry
+        ``errors`` list — the rest of the archive still extracts — and the
+        warning logged for the skip never carries the raw control
+        character, which would otherwise forge/corrupt a log line the same
+        way an unvalidated archive name would."""
+        import logging
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("good.txt", "Good content")
+            zf.writestr("bad\x1bInjected.txt", "Bad content")
+        zip_buffer.seek(0)
+
+        files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.library"):
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        assert result["files"][0]["filename"] == "good.txt"
+        assert len(result["errors"]) == 1
+        assert "control character" in result["errors"][0]["error"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].filename == "good.txt"
+
+        assert "\x1b" not in caplog.text, "the raw entry name must never reach the log"
 
 
 class TestLibraryStlThumbnailAPI:
@@ -2437,3 +2526,212 @@ class TestLibraryUploadSizeCap:
         row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == result["id"]))).scalar_one()
         assert row.file_hash == hashlib.sha256(payload).hexdigest()
         assert row.file_size == len(payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestLibraryZipExtractSizeCap:
+    """T-155: ``POST /library/files/extract-zip`` streams the ZIP body and
+    every entry it extracts instead of decompressing everything fully into
+    memory, and rejects archives whose (declared or actual) uncompressed
+    size crosses ``settings.library_max_zip_extract_bytes`` with 413."""
+
+    def _make_zip_bytes(self, entries: dict[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name, content in entries.items():
+                zf.writestr(name, content)
+        return buf.getvalue()
+
+    def _patch_mkstemp_capture(self, monkeypatch) -> list[str]:
+        """Record every path handed out by ``tempfile.mkstemp`` during the
+        request so a test can assert the temp ZIP file was cleaned up."""
+        captured: list[str] = []
+        original_mkstemp = tempfile.mkstemp
+
+        def _capturing_mkstemp(*args, **kwargs):
+            fd, path = original_mkstemp(*args, **kwargs)
+            captured.append(path)
+            return fd, path
+
+        monkeypatch.setattr(tempfile, "mkstemp", _capturing_mkstemp)
+        return captured
+
+    async def test_declared_total_above_cap_is_rejected_before_extraction(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """A ZIP whose entries honestly declare a total bigger than a small
+        test cap is rejected up front — nothing is extracted and the
+        uploaded ZIP's temp file is removed."""
+        from sqlalchemy import select
+
+        from backend.app.api.routes.library import get_library_files_dir
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10)
+        captured_tmp_paths = self._patch_mkstemp_capture(monkeypatch)
+
+        files_dir = get_library_files_dir()
+        before = set(files_dir.iterdir())
+
+        zip_bytes = self._make_zip_bytes({"big.txt": b"x" * 500})
+        files = {"file": ("test.zip", zip_bytes, "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 413
+        assert "10" in response.json()["detail"]
+
+        assert set(files_dir.iterdir()) == before, "nothing should be extracted above the declared-size cap"
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+        assert captured_tmp_paths, "the route should have created a temp file for the uploaded ZIP"
+        for tmp_path in captured_tmp_paths:
+            assert not Path(tmp_path).exists(), "the temp ZIP file must be cleaned up"
+
+    async def test_lying_header_is_caught_mid_stream_and_rolled_back(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """A ZIP entry whose ``ZipInfo.file_size`` understates its real size
+        must still be caught once the actual streamed bytes cross the cap —
+        including undoing an earlier entry in the same archive that had
+        already been extracted and committed."""
+        import zipfile as zipfile_module
+
+        from sqlalchemy import select
+
+        from backend.app.api.routes.library import get_library_files_dir
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 1000)
+
+        # The route trusts ZipInfo.file_size (from infolist()) only for the
+        # upfront declared-size check; extraction itself streams via
+        # zf.open(name), which looks the entry up by name and is unaffected
+        # by tampering with the *list* infolist() returns. So patching
+        # infolist() to report a tiny size while leaving the real per-name
+        # lookup untouched reproduces a lying/understated header without
+        # corrupting the actual decompression the route relies on.
+        class _TinyInfo:
+            def __init__(self, filename: str) -> None:
+                self.filename = filename
+                self.file_size = 1
+
+        original_infolist = zipfile_module.ZipFile.infolist
+
+        def _lying_infolist(self):
+            # Fresh, disconnected stand-ins — the real ZipInfo objects that
+            # zf.open()/zf.getinfo() look up by name are never mutated, so
+            # actual decompression still sees the true size.
+            return [_TinyInfo(info.filename) for info in original_infolist(self)]
+
+        monkeypatch.setattr(zipfile_module.ZipFile, "infolist", _lying_infolist)
+
+        files_dir = get_library_files_dir()
+        before = set(files_dir.iterdir())
+
+        zip_bytes = self._make_zip_bytes(
+            {
+                "first.txt": b"a" * 200,  # extracted+committed before the lie is caught
+                "second.txt": b"b" * 5000,  # real size blows past the cap once streamed
+            }
+        )
+        files = {"file": ("test.zip", zip_bytes, "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 413
+
+        assert set(files_dir.iterdir()) == before, (
+            "the mid-stream cap breach must roll back every file extracted this request, "
+            "including the earlier one already committed"
+        )
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_lying_header_caught_on_the_very_first_entry(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """Same lying-header scenario as above, but the cap is blown on the
+        first entry with nothing extracted yet — the cleanup path must be a
+        no-op rather than erroring on an empty ``extracted_this_request``."""
+        import zipfile as zipfile_module
+
+        from sqlalchemy import select
+
+        from backend.app.api.routes.library import get_library_files_dir
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 100)
+
+        class _TinyInfo:
+            def __init__(self, filename: str) -> None:
+                self.filename = filename
+                self.file_size = 1
+
+        original_infolist = zipfile_module.ZipFile.infolist
+
+        def _lying_infolist(self):
+            return [_TinyInfo(info.filename) for info in original_infolist(self)]
+
+        monkeypatch.setattr(zipfile_module.ZipFile, "infolist", _lying_infolist)
+
+        files_dir = get_library_files_dir()
+        before = set(files_dir.iterdir())
+
+        zip_bytes = self._make_zip_bytes({"only.txt": b"z" * 5000})
+        files = {"file": ("test.zip", zip_bytes, "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 413
+        assert set(files_dir.iterdir()) == before
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_zip_upload_body_above_upload_cap_is_rejected_before_extraction(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """The ZIP body itself is streamed to disk with the same
+        ``library_max_upload_bytes`` cap as the plain upload route (T-147) —
+        a body above that cap is rejected before the archive is even
+        opened."""
+        from sqlalchemy import select
+
+        from backend.app.api.routes.library import get_library_files_dir
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        files_dir = get_library_files_dir()
+        before = set(files_dir.iterdir())
+
+        zip_bytes = self._make_zip_bytes({"small.txt": b"hello"}) + b"\x00" * 500
+        files = {"file": ("test.zip", zip_bytes, "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 413
+        assert "100" in response.json()["detail"]
+        assert set(files_dir.iterdir()) == before
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_zip_extract_cap_setting_honoured_when_raised(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """Raising ``library_max_zip_extract_bytes`` above the archive's real
+        uncompressed size lets extraction succeed — confirms the cap is read
+        from settings at request time, not hardcoded."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10_000)
+
+        zip_bytes = self._make_zip_bytes({"ok.txt": b"y" * 2000})
+        files = {"file": ("test.zip", zip_bytes, "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        assert len(result["errors"]) == 0

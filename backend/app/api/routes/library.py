@@ -12,13 +12,14 @@ import re
 import shutil
 import uuid
 import zipfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
-from sqlalchemy import distinct, func, or_, select
+from sqlalchemy import delete, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -2323,6 +2324,59 @@ async def check_file_duplicates(
     return CheckDuplicatesResponse(duplicates=duplicates)
 
 
+async def _stream_upload_to_path(
+    file: UploadFile,
+    dest_path: Path,
+    max_bytes: int,
+    on_first_chunk: Callable[[bytes], None] | None = None,
+) -> tuple[int, str]:
+    """Stream ``file`` to ``dest_path`` in bounded chunks, hashing as it goes.
+
+    Shared by the plain file upload and the ZIP-upload step of extract-zip
+    (T-147 / T-155): reading the whole body into memory first would let a
+    single multi-GB upload — or a handful of concurrent ones — sit fully in
+    RSS before a byte reaches disk. Rejects with 413 as soon as the declared
+    (``file.size``) or accumulated streamed size crosses ``max_bytes``;
+    ``file.size`` is None for chunked/unknown-length uploads, so the running
+    total is what actually enforces the cap for those. ``on_first_chunk``
+    runs exactly once, against the first chunk read (or ``b""`` for an empty
+    upload), so callers can sniff magic bytes without buffering the whole
+    body up front. On any 413, ``dest_path`` is removed before the exception
+    propagates.
+
+    Returns ``(total_bytes, sha256_hexdigest)``.
+    """
+
+    def _too_large() -> HTTPException:
+        return HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {max_bytes} bytes")
+
+    if file.size is not None and file.size > max_bytes:
+        raise _too_large()
+
+    sha256_hash = hashlib.sha256()
+    total_bytes = 0
+    first_chunk_seen = False
+    try:
+        with open(dest_path, "wb") as f:
+            while chunk := await file.read(1 << 20):
+                if not first_chunk_seen:
+                    if on_first_chunk is not None:
+                        on_first_chunk(chunk)
+                    first_chunk_seen = True
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise _too_large()
+                sha256_hash.update(chunk)
+                f.write(chunk)
+        if not first_chunk_seen and on_first_chunk is not None:
+            on_first_chunk(b"")
+    except HTTPException:
+        if dest_path.exists():
+            dest_path.unlink()
+        raise
+    return total_bytes, sha256_hash.hexdigest()
+
+
 @router.post("/files", response_model=FileUploadResponse)
 @router.post("/files/", response_model=FileUploadResponse)
 async def upload_file(
@@ -2377,43 +2431,16 @@ async def upload_file(
         # actually enforces the cap for those.
         max_upload_bytes = app_settings.library_max_upload_bytes
 
-        def _too_large() -> HTTPException:
-            return HTTPException(
-                status_code=413,
-                detail=f"Upload exceeds the maximum size of {max_upload_bytes} bytes",
-            )
-
-        if file.size is not None and file.size > max_upload_bytes:
-            raise _too_large()
-
         # The 3MF magic-byte sniff (#1401) only needs the first chunk —
         # validate_print_file_upload() only ever inspects a content prefix —
         # so it runs inline with the first chunk read rather than requiring
-        # the whole body up front.
-        sha256_hash = hashlib.sha256()
-        total_bytes = 0
-        validated = False
-        try:
-            with open(file_path, "wb") as f:
-                while chunk := await file.read(1 << 20):
-                    if not validated:
-                        validate_print_file_upload(filename, chunk)
-                        validated = True
-                    total_bytes += len(chunk)
-                    if total_bytes > max_upload_bytes:
-                        raise _too_large()
-                    sha256_hash.update(chunk)
-                    f.write(chunk)
-            if not validated:
-                # Zero-byte upload: the pre-streaming code always ran the
-                # validator once, even against an empty ``content``.
-                validate_print_file_upload(filename, b"")
-        except HTTPException:
-            if file_path.exists():
-                file_path.unlink()
-            raise
+        # the whole body up front. Zero-byte upload: the pre-streaming code
+        # always ran the validator once, even against an empty ``content``;
+        # ``_stream_upload_to_path`` calls ``on_first_chunk(b"")`` in that case.
+        def _validate_first_chunk(chunk: bytes) -> None:
+            validate_print_file_upload(filename, chunk)
 
-        file_hash = sha256_hash.hexdigest()
+        total_bytes, file_hash = await _stream_upload_to_path(file, file_path, max_upload_bytes, _validate_first_chunk)
 
         # Check for duplicates
         dup_result = await db.execute(
@@ -2528,6 +2555,15 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
+class _ZipExtractCapExceeded(Exception):
+    """Internal signal only: the running decompressed byte count for a ZIP
+    extraction crossed ``library_max_zip_extract_bytes`` mid-stream — i.e. a
+    per-entry ``ZipInfo.file_size`` header understated the real size (T-155).
+    Raised inside the per-entry loop so it can bypass that loop's normal
+    per-file error handling and abort the whole request instead of just
+    skipping one file."""
+
+
 @router.post("/files/extract-zip", response_model=ZipExtractResponse)
 async def extract_zip_file(
     file: UploadFile = File(...),
@@ -2552,6 +2588,15 @@ async def extract_zip_file(
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are supported")
 
+    # Reject FAT32/exFAT-incompatible / control-character archive names up
+    # front, same as upload_file (#1540) — the name is logged below and
+    # stored as a folder name when create_folder_from_zip is set, so an
+    # unvalidated CR/LF here would forge log lines (T-157).
+    try:
+        validate_print_filename(file.filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     # Verify target folder exists if specified
     if folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
@@ -2574,13 +2619,18 @@ async def extract_zip_file(
                 ),
             )
 
-    # Save ZIP to temp file
+    # Save ZIP to temp file, streaming it in bounded chunks (same helper and
+    # cap as the plain upload route, T-147/T-155) rather than reading the
+    # whole body into memory first.
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_fd)
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        await _stream_upload_to_path(file, Path(tmp_path), app_settings.library_max_upload_bytes)
+    except HTTPException:
+        raise
     except Exception as e:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
         raise HTTPException(status_code=500, detail=f"Failed to save ZIP file: {str(e)}")
 
     extracted_files: list[ZipExtractResult] = []
@@ -2591,7 +2641,10 @@ async def extract_zip_file(
     # If create_folder_from_zip is True, create a folder named after the ZIP file
     zip_folder_id = folder_id
     logger.info(
-        f"ZIP extraction: create_folder_from_zip={create_folder_from_zip}, folder_id={folder_id}, filename={file.filename}"
+        "ZIP extraction: create_folder_from_zip=%s, folder_id=%s, filename=%s",
+        create_folder_from_zip,
+        folder_id,
+        file.filename,
     )
     if create_folder_from_zip and file.filename:
         # Remove .zip extension to get folder name
@@ -2617,8 +2670,34 @@ async def extract_zip_file(
             folders_created += 1
             logger.info("Created new folder '%s' with id=%s", zip_folder_name, zip_folder_id)
 
+    max_extract_bytes = app_settings.library_max_zip_extract_bytes
+    # Bytes actually copied to disk so far this request, across every entry
+    # extracted — checked against max_extract_bytes as each entry streams so
+    # a per-entry header that understates the real size still gets caught.
+    zip_extract_total_bytes = 0
+    # (library_file_id, on-disk file path, thumbnail path or None) for every
+    # entry successfully extracted this request, so a mid-stream cap breach
+    # can undo them (T-155).
+    extracted_this_request: list[tuple[int, Path, str | None]] = []
+
     try:
         with zipfile.ZipFile(tmp_path, "r") as zf:
+            # Reject archives whose entries declare they'll expand well past
+            # what local disk / the container can hold before extracting a
+            # single one — a small deflate-bomb ZIP can otherwise expand to
+            # tens of GB and OOM the process (T-155). This reads only the
+            # local-header sizes, so it doesn't decompress anything yet;
+            # each entry is still re-checked as it streams below in case a
+            # header understates the real size.
+            total_declared_bytes = sum(zi.file_size for zi in zf.infolist())
+            if total_declared_bytes > max_extract_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"ZIP expands to {total_declared_bytes} bytes, above the maximum of {max_extract_bytes} bytes"
+                    ),
+                )
+
             # Filter out directories and hidden/system files
             file_list = [
                 name
@@ -2681,6 +2760,22 @@ async def extract_zip_file(
 
                     # Extract file
                     filename = os.path.basename(zip_path)
+                    # Reject FAT32/exFAT-incompatible / control-character entry
+                    # names before they're stored or logged (T-157) — an
+                    # unvalidated CR/LF here would forge log lines the same
+                    # way an unvalidated archive name would. This entry is
+                    # skipped, not fatal to the request, same as the other
+                    # per-entry problems reported through `errors` below.
+                    try:
+                        validate_print_filename(filename)
+                    except InvalidFilenameError as e:
+                        logger.warning("Skipping ZIP entry with invalid filename: %s", e)
+                        errors.append(ZipExtractError(filename=filename, error=str(e)))
+                        # Undo any folder flushed-but-not-committed for this
+                        # entry's preserve_structure path, same as the
+                        # generic per-entry failure handler below.
+                        await db.rollback()
+                        continue
                     ext = os.path.splitext(filename)[1].lower()
                     file_type = classify_file_type(filename)
 
@@ -2690,10 +2785,24 @@ async def extract_zip_file(
                         get_library_files_dir() / unique_filename
                     )  # SEC-PATH-OK: unique_filename = uuid.uuid4().hex + ext
 
-                    # Extract and save file
-                    file_content = zf.read(zip_path)
-                    with open(file_path, "wb") as f:
-                        f.write(file_content)
+                    # Extract and save file, streaming it in bounded chunks
+                    # rather than decompressing the whole entry into memory
+                    # first (T-155). The running zip_extract_total_bytes is
+                    # checked as each chunk lands so a ZipInfo.file_size that
+                    # understates the real size still gets caught.
+                    entry_bytes_written = 0
+                    try:
+                        with zf.open(zip_path) as src, open(file_path, "wb") as dst:
+                            while chunk := src.read(1 << 20):
+                                entry_bytes_written += len(chunk)
+                                if zip_extract_total_bytes + entry_bytes_written > max_extract_bytes:
+                                    raise _ZipExtractCapExceeded()
+                                dst.write(chunk)
+                    except _ZipExtractCapExceeded:
+                        with contextlib.suppress(OSError):
+                            file_path.unlink()
+                        raise
+                    zip_extract_total_bytes += entry_bytes_written
 
                     # Calculate hash
                     file_hash = calculate_file_hash(file_path)
@@ -2760,7 +2869,7 @@ async def extract_zip_file(
                         # even a single triangle, and bulk-uploaded ZIPs of
                         # stub STLs would otherwise log one debug line per
                         # file via the empty-mesh branch in trimesh.load.
-                        if generate_stl_thumbnails and len(file_content) >= MIN_USABLE_STL_BYTES:
+                        if generate_stl_thumbnails and entry_bytes_written >= MIN_USABLE_STL_BYTES:
                             thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
                     # Create database entry (store relative paths for portability)
@@ -2769,7 +2878,7 @@ async def extract_zip_file(
                         filename=filename,
                         file_path=to_relative_path(file_path),
                         file_type=file_type,
-                        file_size=len(file_content),
+                        file_size=entry_bytes_written,
                         file_hash=file_hash,
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=_without_print_name(metadata) if metadata else None,
@@ -2786,11 +2895,17 @@ async def extract_zip_file(
                             folder_id=target_folder_id,
                         )
                     )
+                    extracted_this_request.append((library_file.id, file_path, thumbnail_path))
 
                     # Commit after each file to release database lock
                     # This prevents long-running transactions from blocking other requests
                     await db.commit()
 
+                except _ZipExtractCapExceeded:
+                    # Abort the whole request rather than skipping just this
+                    # entry — a lying header means we can no longer trust
+                    # the remaining entries' declared sizes either.
+                    raise
                 except Exception as e:
                     logger.error("Failed to extract %s: %s", zip_path, e)
                     errors.append(ZipExtractError(filename=os.path.basename(zip_path), error=str(e)))
@@ -2804,6 +2919,28 @@ async def extract_zip_file(
             errors=errors,
         )
 
+    except HTTPException:
+        raise
+    except _ZipExtractCapExceeded:
+        # A per-entry header lied about its size and the running total
+        # crossed the cap mid-stream: undo every file and DB row this
+        # request extracted before failing, so nothing from an oversized
+        # archive is left behind (T-155).
+        for _extracted_id, extracted_path, extracted_thumbnail in extracted_this_request:
+            with contextlib.suppress(OSError):
+                extracted_path.unlink()
+            if extracted_thumbnail:
+                with contextlib.suppress(OSError):
+                    Path(extracted_thumbnail).unlink()
+        if extracted_this_request:
+            await db.execute(
+                delete(LibraryFile).where(LibraryFile.id.in_([eid for eid, _, _ in extracted_this_request]))
+            )
+            await db.commit()
+        raise HTTPException(
+            status_code=413,
+            detail=(f"ZIP expands to more than {max_extract_bytes} bytes once extracted, above the maximum allowed"),
+        )
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid or corrupted ZIP file")
     except Exception as e:
