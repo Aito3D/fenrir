@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Building2, Eye, GripVertical, Lock, User } from 'lucide-react';
+import { AlertTriangle, Building2, CreditCard, Eye, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
 import { TaskMiniRows, TaskStepsSummary } from './TaskMiniRows';
 import type { AitoFlag, AitoProject } from '../../api/client';
@@ -364,6 +364,19 @@ export function CardView({
               reader does next. The job's age moved down to the footer
               (2026-09-08) so the name keeps the row. */}
           <DueDateBadge dueDate={project.due_date ?? null} column={project.column} />
+          {/* Money already in: a paid online link. Pending is deliberately
+              silent — the board must not get noisier for something the
+              client has not done yet. */}
+          {project.payment_link?.state === 'paid' && (
+            <span
+              data-testid="aito-card-paid-online"
+              title={t('aito.paidOnline')}
+              className="flex-none inline-flex items-center rounded-full bg-bambu-green/15 p-1 text-bambu-green"
+            >
+              <CreditCard className="w-3 h-3" aria-hidden="true" />
+              <span className="sr-only">{t('aito.paidOnline')}</span>
+            </span>
+          )}
           {dragHandleProps && !placeholder ? (
             <button
               type="button"

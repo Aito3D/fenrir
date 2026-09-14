@@ -10,6 +10,7 @@ const buckets = (over: Partial<Record<FollowupKey, FollowupBucket>> = {}) => ({
   notTold: empty('notTold'),
   notCollected: empty('notCollected'),
   unpaid: empty('unpaid'),
+  linkExpiring: empty('linkExpiring'),
   ...over,
 });
 

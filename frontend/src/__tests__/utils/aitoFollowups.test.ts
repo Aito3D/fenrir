@@ -72,7 +72,7 @@ function project(overrides: Partial<AitoProject>): AitoProject {
   };
 }
 
-const T = { quoteDays: 5, pickupDays: 7 };
+const T = { quoteDays: 5, pickupDays: 7, linkDays: 3 };
 const run = (projects: AitoProject[]) => followups(projects, T, NOW, TODAY);
 
 describe('daysSince', () => {
@@ -152,6 +152,31 @@ describe('unpaid', () => {
     const r = run([overdue, nonIso]);
     expect(r.unpaid.ids).toEqual([overdue.id]);
     expect(r.unpaid.maxDays).toBe(9);
+  });
+});
+
+describe('linkExpiring', () => {
+  // TODAY here is 2026-09-10 (not the brief's 2026-09-12): 9/12 is 2 days
+  // out, 9/08 is 2 days past, 9/18 is beyond the 3-day threshold.
+  const link = { state: 'pending' as const, amount: 1, currency: 'XPF', url: 'u', expires_on: '2026-09-12', paid_at: null, sync_error: null };
+
+  it('flags a pending link on a sent quote within the threshold, longest-expired first', () => {
+    const soon = project({ quote_status: 'sent', payment_link: link });
+    const later = project({ quote_status: 'viewed', payment_link: { ...link, expires_on: '2026-09-18' } });
+    const overdue = project({ quote_status: 'sent', payment_link: { ...link, expires_on: '2026-09-08' } });
+    const r = followups([soon, later, overdue], T, NOW, TODAY);
+    expect(r.linkExpiring.ids).toEqual([overdue.id, soon.id]);
+    expect(r.linkExpiring.maxDays).toBe(2);
+  });
+
+  it('ignores paid, dead, accepted and link-less cards', () => {
+    const rows = [
+      project({ quote_status: 'sent', payment_link: { ...link, state: 'paid' } }),
+      project({ quote_status: 'sent', payment_link: { ...link, state: 'expired' } }),
+      project({ quote_status: 'accepted', payment_link: link }),
+      project({ quote_status: 'sent', payment_link: null }),
+    ];
+    expect(followups(rows, T, NOW, TODAY).linkExpiring.ids).toEqual([]);
   });
 });
 

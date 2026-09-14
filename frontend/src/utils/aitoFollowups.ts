@@ -10,10 +10,10 @@ import { needsClientContact } from './aitoBoard';
 import { parseUTCDateStrict, parseLocalDateKey } from './date';
 import type { AitoProject } from '../api/client';
 
-export type FollowupKey = 'quoteOut' | 'notTold' | 'notCollected' | 'unpaid';
+export type FollowupKey = 'quoteOut' | 'notTold' | 'notCollected' | 'unpaid' | 'linkExpiring';
 
 /** Fixed chip order. */
-export const FOLLOWUP_KEYS: FollowupKey[] = ['quoteOut', 'notTold', 'notCollected', 'unpaid'];
+export const FOLLOWUP_KEYS: FollowupKey[] = ['quoteOut', 'notTold', 'notCollected', 'unpaid', 'linkExpiring'];
 
 export interface FollowupBucket {
   key: FollowupKey;
@@ -26,6 +26,8 @@ export interface FollowupBucket {
 export interface FollowupThresholds {
   quoteDays: number;
   pickupDays: number;
+  /** Days before a pending payment link expires that it joins the strip. */
+  linkDays: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -68,6 +70,22 @@ const RULES: Record<FollowupKey, Rule> = {
     // comparison here could read a day short (ahead of UTC) or long (behind
     // it). `Math.round`, not floor, so a DST day doesn't drop a day.
     return Math.max(0, Math.round((parseLocalDateKey(today).getTime() - parseLocalDateKey(p.invoice_due_date).getTime()) / DAY_MS));
+  },
+  // A pending payment link about to die on a quote the client has not
+  // answered: the moment to resend the link. `left` counts DOWN to the
+  // expiry day (0 = expires today, negative = already dead at OSB but not
+  // yet observed). Listed once `left <= linkDays`; the bucket sorts longest
+  // wait first, so the returned number is the days PAST expiry (0 while
+  // still alive) — an expired link outranks one expiring tomorrow, and ties
+  // among live links fall back to id order, same as every other rule.
+  linkExpiring: (p, t, _now, today) => {
+    const link = p.payment_link;
+    if (!link || link.state !== 'pending') return null;
+    if (p.quote_status !== 'sent' && p.quote_status !== 'viewed') return null;
+    if (!isIsoDateKey(link.expires_on)) return null;
+    const left = Math.round((parseLocalDateKey(link.expires_on).getTime() - parseLocalDateKey(today).getTime()) / DAY_MS);
+    if (left > t.linkDays) return null;
+    return left < 0 ? -left : 0;
   },
 };
 
