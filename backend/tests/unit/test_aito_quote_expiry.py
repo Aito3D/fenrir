@@ -10,7 +10,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.services import aito_quote_sync
 from backend.app.services.aito_quote_sync import _apply_estimate, _create_quote, _paid_retainer_total, expiry_for
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
 
 async def _configure_zoho(db) -> None:
@@ -193,3 +193,62 @@ async def test_sweep_uses_the_fresh_total_from_the_estimate_not_the_stale_cache(
     assert p.quote_total == 10000.0
     assert p.retainer_paid_total == 10000.0
     assert p.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_trigger_b_acceptance_survives_a_failed_books_push(db_session, monkeypatch):
+    """The retainer auto-accept writes locally first and pushes to Books
+    best-effort. A FAILED push rolls the session back, which expires every ORM
+    object it tracks — `project` included. Everything the sweep reads off the
+    project afterwards (the comment-pull decision, immediately below Trigger B)
+    must still work: before the re-fetch, that first bare attribute read raised
+    MissingGreenlet, was caught by sync_project's catch-all, and flipped the
+    card to quote_sync_state='error' for a tick in which the acceptance had
+    actually SUCCEEDED."""
+    await _configure_zoho(db_session)
+    p = AitoProject(
+        description="x",
+        board_column="devis",
+        position=0,
+        status="active",
+        client_id="z1",
+        quote_id="EST1",
+        quote_number="DEV-1",
+        quote_total=10000.0,
+        quote_status="sent",
+        quote_sync_state="idle",
+    )
+    db_session.add(p)
+    await db_session.commit()
+    await db_session.refresh(p)
+
+    async def fake_get_estimate(db, estimate_id):
+        return {
+            "estimate_id": "EST1",
+            "status": "sent",
+            "total": 10000,
+            "is_inclusive_tax": True,
+            "retainerinvoices": [{"status": "paid", "total": 10000}],
+            "last_modified_time": "x",
+        }
+
+    async def boom(db, estimate_id, target, current=None):
+        raise ZohoUpstreamError("Books is down")
+
+    async def ok(db, estimate_id, target, current=None):
+        return None
+
+    async def no_comments(db, estimate_id):
+        return []
+
+    monkeypatch.setattr(zoho_service, "get_estimate", fake_get_estimate)
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", boom)
+    monkeypatch.setattr(zoho_service, "books_app_url", ok)
+    monkeypatch.setattr(zoho_service, "list_estimate_comments", no_comments)
+    # No raise: the sweep runs to completion despite the expired identity map.
+    await aito_quote_sync.sync_project(db_session, p)
+    await db_session.refresh(p)
+    assert p.quote_status == "accepted"
+    # The push failed, so Books has NOT confirmed — but that is not a sync
+    # error, and the card must not be painted as one.
+    assert p.quote_sync_state != "error"

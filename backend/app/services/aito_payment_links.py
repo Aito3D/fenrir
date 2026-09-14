@@ -10,6 +10,7 @@ import math
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,6 +26,9 @@ from backend.app.services.heimdall import (
     LinkView,
     heimdall_service,
 )
+
+if TYPE_CHECKING:  # the runtime import stays function-level (import cycle)
+    from backend.app.schemas.aito import AitoPaymentLinkView
 
 logger = logging.getLogger(__name__)
 
@@ -271,11 +275,18 @@ async def _cancel(
     now: datetime,
     reason: str,
     record_event: bool = True,
-) -> None:
+) -> bool:
     """`record_event=False` lets a caller that already records its OWN event
     for this transition (a renumber, which records `payment_link.replaced`
     with `detail.reason` instead) suppress the `payment_link.cancelled` that
-    would otherwise double up the story."""
+    would otherwise double up the story.
+
+    Returns True when the link turned out to be PAID instead of cancellable —
+    money wins over the cancel we were attempting. Callers must branch on
+    this return value and never on `row.status` afterwards: the `_became_paid`
+    below reaches `accept_quote`, whose best-effort Books push rolls the
+    session back on failure and EXPIRES `row`, so a bare `row.status` read
+    after this call can raise `MissingGreenlet`."""
     try:
         view = await heimdall_service.cancel_link(db, row.heimdall_id)
         _adopt(row, view, now)
@@ -285,8 +296,13 @@ async def _cancel(
         _adopt(row, await heimdall_service.get_payment(db, row.heimdall_id), now)
         if row.status == "paid":
             if was != "paid":
-                await _became_paid(db, row, now=now)
-            return  # money wins over the cancel we were attempting
+                await _became_paid(db, row, now=now)  # commits (and may roll back)
+            else:
+                # Unreachable today (a paid row never reaches a cancel), but
+                # `_adopt` has already dirtied the session: commit rather than
+                # return with pending writes for someone else to trip over.
+                await db.commit()
+            return True  # money wins over the cancel we were attempting
     if record_event:
         await record(
             db,
@@ -298,6 +314,7 @@ async def _cancel(
             detail={"reference": row.reference, "reason": reason, "heimdall_id": row.heimdall_id},
         )
     await db.commit()
+    return False
 
 
 def _cancel_reason(project: AitoProject, amount: int | None) -> str:
@@ -309,11 +326,23 @@ def _cancel_reason(project: AitoProject, amount: int | None) -> str:
         return "invoiced"
     if amount is not None and (project.retainer_paid_total or 0) >= amount:
         return "retainer"
+    # Outside the spec's cancel vocabulary (declined/expired/invoiced/retainer/
+    # trashed) on purpose: reached only when `required_amount` came back None,
+    # i.e. the quote total dropped to zero or below and there is simply nothing
+    # left to pay. The timeline renders the token raw; mapping tokens to
+    # translated phrases is a phase-2 lead.
     return "nothing_to_pay"
 
 
 async def reconcile_project(
-    db: AsyncSession, project: AitoProject, *, pct: int, validity_days: int, today: date, now: datetime
+    db: AsyncSession,
+    project: AitoProject,
+    *,
+    pct: int,
+    validity_days: int,
+    today: date,
+    now: datetime,
+    force: bool = False,
 ) -> None:
     """Spec §5.4, one project. Commits its own work; a Heimdall failure is
     stored on the row and never raises past here — except a 429, which the
@@ -322,13 +351,18 @@ async def reconcile_project(
     read before the try, so even a stale/expired `project` handed in by a
     caller (a bare attribute access raises `MissingGreenlet`, a
     `SQLAlchemyError` subclass) is caught and isolated like any other
-    failure, rather than escaping and aborting the whole pass."""
+    failure, rather than escaping and aborting the whole pass.
+
+    `force=True` bypasses the per-row backoff. The loop never passes it; the
+    panel's Retry (routes/aito.py:refresh_payment_link) always does, because
+    Retry is only OFFERED while the row carries a sync_error — which is
+    precisely when the row is inside its backoff window."""
     project_id: int | None = None
     try:
         project_id = project.id
         wanted = wanted_link(project, pct=pct, validity_days=validity_days, today=today)
         row = await current_link(db, project_id)
-        if row is not None and _in_backoff(row, now):
+        if row is not None and not force and _in_backoff(row, now):
             return
         if row is None:
             if wanted is not None:
@@ -355,9 +389,16 @@ async def reconcile_project(
         if row.reference != wanted.reference:
             # One event for a renumber (payment_link.replaced, reason
             # carried in its detail), not a cancelled/replaced pair.
-            await _cancel(db, project, row, now=now, reason="renumbered", record_event=False)
-            if row.status == "paid":
-                return
+            #
+            # Branch on the RETURN value, never on `row.status`: the paid
+            # branch inside `_cancel` reaches `accept_quote`, whose failed
+            # Books push rolls the session back and expires `row` — a bare
+            # re-read here would raise `MissingGreenlet`, be caught below, and
+            # stamp sync_error/sync_failures on a row that had just turned
+            # PAID (and is therefore never re-adopted, so the error would
+            # stick forever).
+            if await _cancel(db, project, row, now=now, reason="renumbered", record_event=False):
+                return  # the client paid the old link; nothing to replace
             row.superseded_at = now
             await db.commit()
             await _create(
@@ -428,10 +469,15 @@ async def reconcile_payment_links(
     create_only: bool = False,
     now: datetime | None = None,
     today: date | None = None,
+    force: bool = False,
 ) -> int:
     """One pass: reconcile every quoted project, then poll pending links.
     Returns the number of projects visited. Silent no-op when Heimdall is not
     configured or the 429 throttle is armed.
+
+    `force=True` bypasses the per-row backoff in BOTH halves (reconcile and
+    poll) — the panel's Retry, which is only offered on a row that IS backed
+    off. The loop never sets it.
 
     Ids are materialised up front and each row/project is re-fetched with
     `db.get()` INSIDE its own loop iteration, never held onto across
@@ -465,12 +511,16 @@ async def reconcile_payment_links(
     visited = 0
     try:
         for pid in project_ids:
-            project = await db.get(AitoProject, pid)
-            if project is None:
-                continue
-            visited += 1
+            # The `db.get` is INSIDE the try: a previous iteration's rollback
+            # can leave the session in a state where even the fetch raises,
+            # and a fetch error must isolate to its own item rather than
+            # abort the whole pass.
             try:
-                await reconcile_project(db, project, pct=pct, validity_days=validity, today=today, now=now)
+                project = await db.get(AitoProject, pid)
+                if project is None:
+                    continue
+                visited += 1
+                await reconcile_project(db, project, pct=pct, validity_days=validity, today=today, now=now, force=force)
             except SQLAlchemyError as exc:
                 logger.warning("payment link reconcile: project %s failed unexpectedly: %s", pid, exc)
                 await db.rollback()
@@ -490,10 +540,10 @@ async def reconcile_payment_links(
                 pending = pending.where(AitoPaymentLink.project_id == only_project_id)
             pending_ids = list((await db.execute(pending)).scalars().all())
             for rid in pending_ids:
-                row = await db.get(AitoPaymentLink, rid)
-                if row is None or _in_backoff(row, now):
-                    continue
                 try:
+                    row = await db.get(AitoPaymentLink, rid)
+                    if row is None or (not force and _in_backoff(row, now)):
+                        continue
                     await poll_link(db, row, now=now)
                 except SQLAlchemyError as exc:
                     logger.warning("payment link poll: row %s failed unexpectedly: %s", rid, exc)
@@ -505,7 +555,7 @@ async def reconcile_payment_links(
     return visited
 
 
-def link_view(row: AitoPaymentLink | None):
+def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
     """The API shape of a ledger row; None for no row and for a reservation
     that never completed (nothing to copy, nothing to pay)."""
     from backend.app.schemas.aito import AitoPaymentLinkView

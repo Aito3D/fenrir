@@ -579,6 +579,71 @@ async def test_backoff_skips_a_failing_row_for_a_few_ticks(db_session, fake):
 
 
 @pytest.mark.asyncio
+async def test_force_bypasses_the_backoff(db_session, fake):
+    """The panel's Retry is only OFFERED while the row carries a sync_error —
+    which is exactly when the row is inside its backoff window. Without the
+    bypass the button would be a no-op for the next 5–30 minutes."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    # A failed row that also has work waiting for it (a moved total), so a
+    # bypassed pass has something to call Heimdall about.
+    (r,) = await _rows(db_session, pid)
+    r.sync_failures = 1
+    r.sync_error = "down"
+    r.checked_at = NOW
+    p = await db_session.get(AitoProject, pid)
+    p.quote_total = 13000.0
+    await db_session.commit()
+    later = NOW + timedelta(seconds=100)
+
+    fake.calls.clear()
+    p = await db_session.get(AitoProject, pid)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    assert fake.calls == []
+
+    p = await db_session.get(AitoProject, pid)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later, force=True)
+    assert fake.calls == [("patch", "L1", 13000, None)]  # amount only; the expiry did not move
+    (r,) = await _rows(db_session, pid)
+    assert r.amount == 13000 and r.sync_error is None and r.sync_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_a_renumber_that_finds_the_old_link_paid_survives_a_failed_books_push(db_session, fake, monkeypatch):
+    """R8's renumber cancels the old link first, and that cancel can come back
+    409/paid — the client paid while we were renumbering. The acceptance that
+    follows pushes to Books best-effort, and a FAILED push rolls the session
+    back, expiring the row. Re-reading `row.status` there raised
+    MissingGreenlet, which the handler caught and turned into
+    sync_error/sync_failures on a row that had just turned PAID — and a paid
+    row is never re-adopted, so that error would have stuck forever."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.set_status("L1", "paid")  # paid at OSB; our row still says pending
+
+    async def boom(db, estimate_id, target, current=None):
+        raise ZohoUpstreamError("Books is down")
+
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", boom)
+    p = await db_session.get(AitoProject, pid)
+    p.quote_number = "DEV-2026-9999"
+    await db_session.commit()
+    p = await db_session.get(AitoProject, pid)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    rows = await _rows(db_session, pid)
+    assert len(rows) == 1, "money wins: the paid link is not superseded by a replacement"
+    assert rows[0].status == "paid" and rows[0].superseded_at is None
+    assert rows[0].sync_error is None and rows[0].sync_failures == 0
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" in kinds
+    assert "payment_link.replaced" not in kinds
+    assert (await db_session.get(AitoProject, pid)).quote_status == "accepted"
+
+
+@pytest.mark.asyncio
 async def test_not_configured_is_a_silent_no_op(db_session, monkeypatch):
     async def off(db):
         return False

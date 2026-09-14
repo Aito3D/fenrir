@@ -1174,7 +1174,11 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
             await zoho_service.update_estimate_fields(
                 db, project.quote_id, {"expiry_date": expiry_for(estimate.get("date"), await quote_validity_days(db))}
             )
-        except ZohoUpstreamError:
+        except (ZohoUpstreamError, ZohoNotConfiguredError, ValueError):
+            # ValueError too: `expiry_for` parses the estimate's own `date`,
+            # and a non-ISO value from Books makes it raise before a request
+            # is even made. None of the three may cost the line-item push
+            # below — an expiry is a nicety, the lines are the job.
             logger.warning("expiry_date not written on estimate %s", project.quote_id, exc_info=True)
     updated = await zoho_service.update_estimate_lines(
         db, project.quote_id, line_items, notes=await notes_with_tracking(db, project, estimate.get("notes"))
@@ -1484,9 +1488,24 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
             project.retainer_paid_total = paid
             needed = required_amount(project.quote_total, await deposit_pct(db))
             if needed is not None and paid >= needed and project.quote_status != "accepted":
-                await accept_quote(
+                accepted = await accept_quote(
                     db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
                 )
+                if accepted:
+                    # `accept_quote`'s Books push is best-effort, and a FAILED
+                    # push rolls the session back — which expires every ORM
+                    # object it tracks, `project` included. The very next bare
+                    # attribute read (should_pull_comments, just below) would
+                    # then raise MissingGreenlet, get caught by sync_project's
+                    # catch-all, and flip the card to quote_sync_state='error'
+                    # for a tick in which the acceptance actually SUCCEEDED.
+                    # Re-fetch by id (an awaited load, so no lazy IO off the
+                    # greenlet) before anything reads the project again. A None
+                    # here means the row vanished under us — fall through with
+                    # what we have rather than inventing a failure.
+                    refreshed = await db.get(AitoProject, project_id)
+                    if refreshed is not None:
+                        project = refreshed
 
             now = datetime.utcnow()
             if should_pull_comments(project, estimate, now):
