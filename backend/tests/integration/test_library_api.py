@@ -1820,11 +1820,25 @@ class TestPrintFileUploadValidation:
     @pytest.mark.integration
     async def test_library_accepts_valid_gcode_3mf_upload(self, async_client: AsyncClient, db_session):
         """A real ``.gcode.3mf`` zip uploads successfully — the existing
-        happy path is not regressed by the new validation."""
+        happy path is not regressed by the new validation.
+
+        T-147 follow-up: also pins the response/DB ``file_size`` and
+        ``file_hash`` to the pre-streaming values (``len(content)`` and a
+        whole-content ``sha256``) now that the route streams the upload to
+        disk and hashes it incrementally instead of reading it fully into
+        memory first.
+        """
+        import hashlib
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        content = self._valid_3mf_bytes()
         files = {
             "file": (
                 "plate_1.gcode.3mf",
-                self._valid_3mf_bytes(),
+                content,
                 "application/zip",
             )
         }
@@ -1832,6 +1846,11 @@ class TestPrintFileUploadValidation:
         assert response.status_code == 200
         result = response.json()
         assert result["filename"] == "plate_1.gcode.3mf"
+        assert result["file_size"] == len(content)
+
+        row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == result["id"]))).scalar_one()
+        assert row.file_hash == hashlib.sha256(content).hexdigest()
+        assert row.file_size == len(content)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2028,3 +2047,130 @@ class TestPrintFileUploadValidation:
         bad_errors = [e for e in body["errors"] if e["filename"] == "bad.3mf"]
         assert bad_errors, body
         assert "ZIP container" in bad_errors[0]["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestLibraryUploadSizeCap:
+    """T-147: ``POST /library/files`` streams the upload to disk in bounded
+    chunks and rejects it with 413 once it crosses
+    ``settings.library_max_upload_bytes``, instead of reading the whole body
+    into memory with no cap at all."""
+
+    async def test_upload_over_declared_size_cap_is_rejected(self, async_client: AsyncClient, db_session, monkeypatch):
+        """A body whose real (and therefore reported ``file.size``) length
+        exceeds a small test cap is rejected before any file or DB row is
+        created."""
+        from sqlalchemy import select
+
+        from backend.app.api.routes.library import get_library_files_dir
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        files_dir = get_library_files_dir()
+        before = set(files_dir.iterdir())
+
+        files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 413
+        assert "100" in response.json()["detail"]
+
+        assert set(files_dir.iterdir()) == before, "no file should reach disk when the declared size exceeds the cap"
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_upload_exceeding_cap_mid_stream_is_rejected_and_cleaned_up(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """When the declared size can't be trusted (a misdeclared or
+        unknown-length body), the running byte count accumulated while
+        streaming to disk must still catch an oversized upload and delete
+        the partial file — the whole point of streaming instead of trusting
+        ``file.size`` alone."""
+        from sqlalchemy import select
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+
+        from backend.app.api.routes.library import get_library_files_dir
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        # Simulate a misdeclared/unknown-length upload: starlette normally
+        # accumulates the real size into `UploadFile.size` as it parses the
+        # multipart body, so patch `write` to forget it happened, leaving
+        # `size` at its initial (too-small) value.
+        original_write = StarletteUploadFile.write
+
+        async def _write_then_forget_size(self, data: bytes) -> None:
+            await original_write(self, data)
+            self.size = 0
+
+        monkeypatch.setattr(StarletteUploadFile, "write", _write_then_forget_size)
+
+        files_dir = get_library_files_dir()
+        before = set(files_dir.iterdir())
+
+        files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 413
+        assert "100" in response.json()["detail"]
+
+        assert set(files_dir.iterdir()) == before, "the partial file must be removed once the streamed cap is crossed"
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_upload_setting_honoured_when_raised(self, async_client: AsyncClient, db_session, monkeypatch):
+        """Raising the cap above the payload size lets the upload succeed —
+        confirms the cap is actually read from settings at request time, not
+        hardcoded."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 10_000)
+
+        payload = b"solid test\nendsolid test"
+        files = {"file": ("test.stl", payload, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == len(payload)
+
+    async def test_upload_empty_file_still_runs_content_validator_once(self, async_client: AsyncClient, db_session):
+        """A zero-byte upload never enters the ``while chunk := ...`` loop —
+        the content-sniffing validator (#1401) must still run once against
+        an empty payload afterwards, matching the pre-streaming behaviour
+        where ``content`` was simply ``b""``."""
+        files = {"file": ("empty.stl", b"", "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == 0
+
+    async def test_upload_larger_than_one_chunk_hashes_across_chunk_boundary(
+        self, async_client: AsyncClient, db_session
+    ):
+        """A body bigger than the 1 MiB read chunk exercises the loop's
+        second iteration — the magic-byte validator must not re-run (it
+        already validated the first chunk), and hashing/byte-counting must
+        stay correct across the chunk boundary."""
+        import hashlib
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        payload = b"a" * (1 << 20) + b"b" * 1024  # bigger than one 1 MiB chunk
+        files = {"file": ("big.stl", payload, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["file_size"] == len(payload)
+
+        row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == result["id"]))).scalar_one()
+        assert row.file_hash == hashlib.sha256(payload).hexdigest()
+        assert row.file_size == len(payload)

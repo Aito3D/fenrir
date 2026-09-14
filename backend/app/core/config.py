@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     log_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     log_backup_count: int = Field(default=3, ge=0)
 
+    # Library uploads: the route streams incoming files to disk in bounded
+    # chunks and rejects (413) once the declared or accumulated streamed size
+    # crosses this cap, so a single huge upload — or a handful of concurrent
+    # ones — can't materialise gigabytes of RSS and OOM the container.
+    # Override with LIBRARY_MAX_UPLOAD_BYTES env var.
+    library_max_upload_bytes: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
+
     # API
     api_prefix: str = "/api/v1"
 

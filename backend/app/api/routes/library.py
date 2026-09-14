@@ -1907,7 +1907,8 @@ async def scan_external_folder(
                 # and old rows scanned before this field existed get backfilled.
                 tracked = existing_files[file_path_str]
                 try:
-                    fs_mtime = _mtime_to_datetime(filepath.stat().st_mtime)
+                    fs_stat = await asyncio.to_thread(filepath.stat)
+                    fs_mtime = _mtime_to_datetime(fs_stat.st_mtime)
                 except OSError:
                     fs_mtime = None
                 if fs_mtime is not None and tracked.fs_modified_at != fs_mtime:
@@ -1916,7 +1917,7 @@ async def scan_external_folder(
 
             # Get file info
             try:
-                stat = filepath.stat()
+                stat = await asyncio.to_thread(filepath.stat)
             except OSError:
                 continue
 
@@ -1931,8 +1932,7 @@ async def scan_external_folder(
             file_metadata = None
             if file_type in ("3mf", "gcode.3mf"):
                 try:
-                    parser = ThreeMFParser(str(filepath))
-                    raw_metadata = parser.parse()
+                    raw_metadata = await asyncio.to_thread(lambda fp=filepath: ThreeMFParser(str(fp)).parse())
                     if raw_metadata:
                         # Extract thumbnail before cleaning metadata
                         thumb_data = raw_metadata.get("_thumbnail_data")
@@ -1943,7 +1943,7 @@ async def scan_external_folder(
                             thumb_full = (
                                 thumb_dir / thumb_filename
                             )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
-                            thumb_full.write_bytes(thumb_data)
+                            await asyncio.to_thread(thumb_full.write_bytes, thumb_data)
                             thumbnail_path = to_relative_path(thumb_full)
 
                         # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
@@ -1971,17 +1971,19 @@ async def scan_external_folder(
 
             # Extract gcode thumbnail
             if file_type == "gcode" and thumbnail_path is None:
-                thumb_data = extract_gcode_thumbnail(filepath)
+                thumb_data = await asyncio.to_thread(extract_gcode_thumbnail, filepath)
                 if thumb_data:
                     thumb_dir = get_library_thumbnails_dir()
                     thumb_filename = f"{uuid.uuid4().hex}.png"
                     thumb_full = thumb_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
-                    thumb_full.write_bytes(thumb_data)
+                    await asyncio.to_thread(thumb_full.write_bytes, thumb_data)
                     thumbnail_path = to_relative_path(thumb_full)
 
             # Create thumbnail for image files
             if ext.lower() in IMAGE_EXTENSIONS and thumbnail_path is None:
-                thumbnail_path_str = create_image_thumbnail(filepath, get_library_thumbnails_dir())
+                thumbnail_path_str = await asyncio.to_thread(
+                    create_image_thumbnail, filepath, get_library_thumbnails_dir()
+                )
                 if thumbnail_path_str:
                     thumbnail_path = to_relative_path(Path(thumbnail_path_str))
 
@@ -2018,7 +2020,7 @@ async def scan_external_folder(
     # cleaned up. External file_path is the absolute on-disk path.
     if not walk_was_partial:
         for path_str, db_file in existing_files.items():
-            if path_str not in found_paths and not os.path.exists(path_str):
+            if path_str not in found_paths and not await asyncio.to_thread(os.path.exists, path_str):
                 # Clean up thumbnail if we generated one
                 if db_file.thumbnail_path:
                     try:
@@ -2350,17 +2352,53 @@ async def upload_file(
         # ordering / tests.
         file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
 
-        # Read upload now so the validation can sniff magic bytes; the file
-        # is written to disk only after the checks. #1401.
-        content = await file.read()
-        validate_print_file_upload(filename, content)
+        # Stream the upload to disk in bounded chunks rather than reading it
+        # all into memory first — a single multi-GB STL/3MF would otherwise
+        # sit in RSS before a byte reaches disk, and a handful of concurrent
+        # uploads can OOM the container. Reject by declared size first (fast
+        # path when Content-Length is set), then bail the moment the
+        # accumulated streamed size crosses the cap — file.size is None for
+        # chunked/unknown-length uploads, so the running total is what
+        # actually enforces the cap for those.
+        max_upload_bytes = app_settings.library_max_upload_bytes
 
-        # Save file
-        with open(file_path, "wb") as f:
-            f.write(content)
+        def _too_large() -> HTTPException:
+            return HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds the maximum size of {max_upload_bytes} bytes",
+            )
 
-        # Calculate hash
-        file_hash = calculate_file_hash(file_path)
+        if file.size is not None and file.size > max_upload_bytes:
+            raise _too_large()
+
+        # The 3MF magic-byte sniff (#1401) only needs the first chunk —
+        # validate_print_file_upload() only ever inspects a content prefix —
+        # so it runs inline with the first chunk read rather than requiring
+        # the whole body up front.
+        sha256_hash = hashlib.sha256()
+        total_bytes = 0
+        validated = False
+        try:
+            with open(file_path, "wb") as f:
+                while chunk := await file.read(1 << 20):
+                    if not validated:
+                        validate_print_file_upload(filename, chunk)
+                        validated = True
+                    total_bytes += len(chunk)
+                    if total_bytes > max_upload_bytes:
+                        raise _too_large()
+                    sha256_hash.update(chunk)
+                    f.write(chunk)
+            if not validated:
+                # Zero-byte upload: the pre-streaming code always ran the
+                # validator once, even against an empty ``content``.
+                validate_print_file_upload(filename, b"")
+        except HTTPException:
+            if file_path.exists():
+                file_path.unlink()
+            raise
+
+        file_hash = sha256_hash.hexdigest()
 
         # Check for duplicates
         dup_result = await db.execute(
@@ -2449,7 +2487,7 @@ async def upload_file(
             filename=filename,
             file_path=_stored_file_path(file_path, is_external_upload),
             file_type=file_type,
-            file_size=len(content),
+            file_size=total_bytes,
             file_hash=file_hash,
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=_without_print_name(metadata) if metadata else None,

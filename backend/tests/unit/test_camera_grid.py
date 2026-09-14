@@ -1002,6 +1002,186 @@ class TestStderrCategorization:
             cam._state.stderr_recent_errors.clear()
             cam._state.stderr_recent_errors.update(old_recent)
 
+    @pytest.mark.asyncio
+    async def test_repeated_restarts_leave_one_latest_summary_per_printer(self):
+        """A failing camera's stderr summary must not grow without bound.
+
+        The grid restart loop mints a fresh stream_id for the same printer on
+        every retry. ``_drain_stderr``'s ``finally`` evicts the printer's
+        older stream_id summaries right after writing its own, so N completed
+        attempts must leave exactly one entry per printer in each of the
+        three dicts — the most recent attempt — never one per attempt. An
+        unrelated (live) printer's entry, and hub-status's view of it, must
+        be untouched.
+        """
+        import backend.app.api.routes.camera as cam
+
+        def make_mock_process(lines: list[bytes]):
+            class MockStderr:
+                def __init__(self):
+                    self._data = [*lines, b""]
+                    self._idx = 0
+
+                async def read(self, _n):
+                    if self._idx >= len(self._data):
+                        return b""
+                    data = self._data[self._idx]
+                    self._idx += 1
+                    return data
+
+            class MockProcess:
+                stderr = MockStderr()
+
+            return MockProcess()
+
+        old_counts = dict(cam._state.stderr_error_counts)
+        old_details = dict(cam._state.stderr_error_details)
+        old_recent = dict(cam._state.stderr_recent_errors)
+
+        failing_pid = 999001
+        other_pid = 999002
+        other_stream = f"{other_pid}-aaaaaaaa"
+
+        try:
+            cam._state.stderr_error_counts.clear()
+            cam._state.stderr_error_details.clear()
+            cam._state.stderr_recent_errors.clear()
+
+            # An unrelated (live) printer's entry must survive the failing
+            # printer's restarts untouched (prefix eviction must not
+            # over-match).
+            cam._state.stderr_error_counts[other_stream] = 5
+            cam._state.stderr_error_details[other_stream] = {"fatal": 5}
+            cam._state.stderr_recent_errors[other_stream] = ["other printer error"]
+
+            # 12 restart attempts of the same failing camera, each completing
+            # (and writing its summary) before the next one starts.
+            last_stream_id = None
+            for i in range(12):
+                stream_id = f"{failing_pid}-{i:08x}"
+                last_stream_id = stream_id
+                await cam._drain_stderr(make_mock_process([f"[h264] error attempt {i}\n".encode()]), stream_id)
+
+            matching = [k for k in cam._state.stderr_error_counts if k.startswith(f"{failing_pid}-")]
+            assert len(matching) == 1, f"expected exactly one bounded entry, got {matching}"
+            assert matching == [last_stream_id]
+            assert cam._state.stderr_error_details[last_stream_id] == {"generic_error": 1}
+            assert cam._state.stderr_recent_errors[last_stream_id] == ["[h264] error attempt 11"]
+
+            # The unrelated printer's entry is untouched.
+            assert cam._state.stderr_error_counts[other_stream] == 5
+            assert cam._state.stderr_error_details[other_stream] == {"fatal": 5}
+
+            # hub-status surfaces the bounded, most-recent-only summary for
+            # the failing printer and leaves the live printer's summary
+            # (raw dicts and per-printer aggregate) unaffected.
+            status = await cam.camera_hub_status(_=None)
+            raw_failing_keys = [k for k in status["stderr_error_counts"] if k.startswith(f"{failing_pid}-")]
+            assert raw_failing_keys == [last_stream_id]
+            assert status["stderr_error_counts"][other_stream] == 5
+            assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
+            assert status["per_printer_status"][str(failing_pid)]["last_error_category"] == "generic_error"
+            assert status["per_printer_status"][str(other_pid)]["error_counts"] == {"fatal": 5}
+        finally:
+            cam._state.stderr_error_counts.clear()
+            cam._state.stderr_error_counts.update(old_counts)
+            cam._state.stderr_error_details.clear()
+            cam._state.stderr_error_details.update(old_details)
+            cam._state.stderr_recent_errors.clear()
+            cam._state.stderr_recent_errors.update(old_recent)
+
+    @pytest.mark.asyncio
+    async def test_previous_attempt_summary_stays_visible_during_in_flight_retry(self):
+        """The previous completed attempt's summary must not vanish mid-retry.
+
+        Eviction happens in ``_drain_stderr``'s ``finally``, after the new
+        attempt's own summary has been written — not at stream_id mint time.
+        So while a new attempt is still draining (no summary written yet),
+        the previous attempt's entry for that printer must still be present
+        in the raw dicts and in hub-status's per-printer aggregate.
+        """
+        import asyncio
+
+        import backend.app.api.routes.camera as cam
+
+        old_counts = dict(cam._state.stderr_error_counts)
+        old_details = dict(cam._state.stderr_error_details)
+        old_recent = dict(cam._state.stderr_recent_errors)
+
+        failing_pid = 999003
+        stream_1 = f"{failing_pid}-11111111"
+        stream_2 = f"{failing_pid}-22222222"
+
+        reached_block = asyncio.Event()
+        release = asyncio.Event()
+
+        class MockStderr:
+            def __init__(self):
+                self._sent = False
+
+            async def read(self, _n):
+                if not self._sent:
+                    self._sent = True
+                    return b"[h264] error two\n"
+                reached_block.set()
+                await release.wait()
+                return b""
+
+        class MockProcess:
+            stderr = MockStderr()
+
+        try:
+            cam._state.stderr_error_counts.clear()
+            cam._state.stderr_error_details.clear()
+            cam._state.stderr_recent_errors.clear()
+
+            # First attempt completes normally.
+            class FirstMockStderr:
+                def __init__(self):
+                    self._data = [b"[h264] error one\n", b""]
+                    self._idx = 0
+
+                async def read(self, _n):
+                    if self._idx >= len(self._data):
+                        return b""
+                    data = self._data[self._idx]
+                    self._idx += 1
+                    return data
+
+            class FirstMockProcess:
+                stderr = FirstMockStderr()
+
+            await cam._drain_stderr(FirstMockProcess(), stream_1)
+            assert cam._state.stderr_error_counts[stream_1] == 1
+
+            # Second attempt starts producing errors but is still in flight
+            # (blocked reading more stderr) — its finally has not run yet.
+            task = asyncio.create_task(cam._drain_stderr(MockProcess(), stream_2))
+            await asyncio.wait_for(reached_block.wait(), timeout=5)
+
+            # Still in flight: the previous attempt's summary is still there,
+            # and the new attempt hasn't written (or evicted) anything yet.
+            assert stream_1 in cam._state.stderr_error_counts
+            assert stream_2 not in cam._state.stderr_error_counts
+            status = await cam.camera_hub_status(_=None)
+            assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
+
+            # Let the attempt finish — it should now replace the previous one.
+            release.set()
+            await asyncio.wait_for(task, timeout=5)
+
+            assert stream_2 in cam._state.stderr_error_counts
+            assert stream_1 not in cam._state.stderr_error_counts
+            status = await cam.camera_hub_status(_=None)
+            assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
+        finally:
+            cam._state.stderr_error_counts.clear()
+            cam._state.stderr_error_counts.update(old_counts)
+            cam._state.stderr_error_details.clear()
+            cam._state.stderr_error_details.update(old_details)
+            cam._state.stderr_recent_errors.clear()
+            cam._state.stderr_recent_errors.update(old_recent)
+
 
 # ---------------------------------------------------------------------------
 # TestAbortStreamCleanup

@@ -272,6 +272,39 @@ class TestExternalFolderScan:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_scan_parses_3mf_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, external_folder, monkeypatch
+    ):
+        """T-146: the per-file 3MF parse during an external scan must run via
+        asyncio.to_thread instead of blocking the event loop for the whole
+        walk, following the same pattern as the T-144/T-145 thumbnail tasks."""
+        import threading
+
+        import backend.app.api.routes.library as library_module
+
+        thread_is_not_main: list[bool] = []
+
+        class FakeThreeMFParser:
+            def __init__(self, path):
+                self.path = path
+
+            def parse(self):
+                thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+                return None
+
+        monkeypatch.setattr(library_module, "ThreeMFParser", FakeThreeMFParser)
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "success"
+        assert result["added"] == 4
+
+        # benchy.3mf is the only 3mf in the fixture, so parse() ran exactly once.
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_scan_idempotent(self, async_client: AsyncClient, db_session, external_folder):
         """Verify scanning twice doesn't duplicate files."""
         response1 = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
@@ -297,6 +330,85 @@ class TestExternalFolderScan:
         assert result["status"] == "success"
         assert result["removed"] == 1
         assert result["added"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_creates_image_thumbnail_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir, monkeypatch
+    ):
+        """T-146: the per-file image-thumbnail creation during an external
+        scan must run via asyncio.to_thread instead of blocking the event
+        loop, same as the gcode/3mf thumbnail paths."""
+        import threading
+
+        import backend.app.api.routes.library as library_module
+
+        (external_dir / "photo.png").write_bytes(b"fake png bytes")
+
+        thread_is_not_main: list[bool] = []
+
+        def fake_create_image_thumbnail(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return str(thumbnails_dir / "fake_image_thumb.png")
+
+        monkeypatch.setattr(library_module, "create_image_thumbnail", fake_create_image_thumbnail)
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "success"
+        # benchy.3mf, bracket.stl, print.gcode, nested.stl (existing) + photo.png
+        assert result["added"] == 5
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        files = response.json()
+        photo_file = next(f for f in files if f["filename"] == "photo.png")
+        assert photo_file["thumbnail_path"]
+
+        # create_image_thumbnail must have run off the event-loop thread.
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_removal_pass_unlinks_thumbnail_of_deleted_file(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir
+    ):
+        """A tracked file that already has a generated thumbnail (e.g. a gcode
+        with an embedded preview) must have that thumbnail unlinked from disk
+        when a normal (non-partial) scan's removal pass drops its row — this
+        exercises the thumbnail-cleanup branch, not just the
+        asyncio.to_thread-wrapped os.path.exists() check that gates it."""
+        thumb_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        (external_dir / "with_thumb.gcode").write_text(
+            f"; thumbnail begin 32x32 1234\n; {thumb_b64}\n; thumbnail end\nG28\nG1 X10 Y10\n"
+        )
+
+        first = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        first_result = first.json()
+        assert first_result["status"] == "success"
+        assert first_result["added"] == 5
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        before_files = response.json()
+        thumb_file = next(f for f in before_files if f["filename"] == "with_thumb.gcode")
+        assert thumb_file["thumbnail_path"]
+        thumb_abs_path = to_absolute_path(thumb_file["thumbnail_path"])
+        assert thumb_abs_path.exists()
+
+        # Delete the tracked file from disk, then run a normal scan (no walk
+        # errors, no vanished root) so the removal pass actually runs.
+        (external_dir / "with_thumb.gcode").unlink()
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "success"
+        assert result["removed"] == 1
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        after_files = response.json()
+        assert "with_thumb.gcode" not in {f["filename"] for f in after_files}
+        assert not thumb_abs_path.exists()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -81,6 +81,11 @@
   "required": false,
   "type": "<class 'bool'>"
  },
+ "library_max_upload_bytes": {
+  "default": "2147483648",
+  "required": false,
+  "type": "<class 'int'>"
+ },
  "log_backup_count": {
   "default": "3",
   "required": false,

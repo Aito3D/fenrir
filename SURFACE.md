@@ -977,6 +977,7 @@ db_pool_size = None
 db_pool_timeout = None
 db_pool_use_lifo = None
 debug = False
+library_max_upload_bytes = 2147483648
 log_backup_count = 3
 log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/logs')
 log_level = 'INFO'

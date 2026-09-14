@@ -11468,3 +11468,85 @@ fresh attempt and clears the terminal state if the new attempt succeeds. 5xx err
 (408), and rate-limiting (429) still show the existing "Connection lost" / reconnecting overlay with
 backoff exactly as before.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 8 · T-139 — 2026-09-13 — user-approved behavior change
+
+`_drain_stderr()` (backend/app/api/routes/camera.py:~1257-1341) records one summary per stream_id in
+`_state.stderr_error_counts`/`stderr_error_details`/`stderr_recent_errors`, keyed by the per-spawn
+`f"{printer_id}-{uuid4().hex[:8]}"`. The only eviction was the 300s sweep in
+`_cleanup_stale_frame_buffers`, keyed off `last_frame_times` — a camera that never produces a frame
+never enters that dict, so it never gets swept. The grid restart loop respawns a failing producer with a
+fresh stream_id every 1.5-20s, so one unreachable camera added 3 dict entries (plus up to
+`_STDERR_RECENT_CAP` error strings) per retry attempt, forever, for the process lifetime, and
+`GET /camera/hub-status` (~L2867-2934) serialises all of it — both the raw stream_id-keyed dicts verbatim
+and a `per_printer_status` aggregate that *sums* `error_counts` across every stream_id for that printer
+and derives `last_error_category` from that sum.
+
+Fixed by adding `_evict_printer_stderr_summary(printer_id, keep_stream_id=None)` (camera.py:~1257), which
+pops every `stderr_error_counts`/`_details`/`_recent_errors` key with the `f"{printer_id}-"` prefix other
+than `keep_stream_id`. It is called from `_drain_stderr`'s `finally` block, right after that attempt
+writes its own three entries (only reached when `error_count > 0`, i.e. once the attempt has actually
+completed), passing `keep_stream_id=stream_id` — not at stream_id mint time in `_ensure_producer`, which
+would have made the printer briefly disappear from hub-status while a new attempt was still in flight and
+hadn't written its summary yet. `_cleanup_stale_frame_buffers`'s inline per-stream-id loop was replaced
+with a call to the same helper (`_evict_printer_stderr_summary(pid)`, no `keep_stream_id`) as a backstop
+for printers that stop respawning entirely and so never hit the `_drain_stderr` eviction path.
+
+Confirmed via `snapshot.py verify` (11/11, unchanged) and `SURFACE.md` (no diff) — no schema or response
+shape changed; `hub-status` has no `response_model` and its JSON keys are identical, only the *values* of
+already-existing keys are now bounded to the latest completed attempt per printer.
+
+User-visible change: `GET /api/v1/camera/hub-status` now reports each printer's stderr summary from only
+its most recently *completed* attempt, not accumulated across every retry since the producer first
+started failing. Measured over 12 retries of one failing camera: the raw `stderr_error_counts` /
+`stderr_error_details` / `stderr_recent_errors` dicts go from 12 stream_id keys for that printer down to
+1 (the latest); `per_printer_status[pid].error_counts` goes from summing across all attempts (e.g.
+`{"network_timeout": 78}`) to just the latest attempt's own counts (e.g. `{"network_timeout": 12}`);
+`last_error_category` is now derived from the latest attempt's counts instead of the all-time sum, so it
+can differ from what it would have reported before if an earlier attempt's dominant error category
+differed from the latest one. While a retry is in flight (the new attempt hasn't finished draining
+stderr yet), the *previous* attempt's summary remains visible in both the raw dicts and
+`per_printer_status` — it is evicted only once the new attempt's own summary has actually been written,
+so the printer never disappears from hub-status mid-retry.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 8 · T-147 — 2026-09-13 — user-approved behavior change
+
+`upload_file()` (backend/app/api/routes/library.py:~2311, upload read at ~2357) read the entire
+multipart body into memory with `content = await file.read()`, then wrote it in one shot with
+`f.write(content)` and derived `file_size=len(content)`. There was no `Content-Length` check and no cap
+anywhere in the request path — a single multi-GB STL/3MF upload materialised the whole file in RSS
+before a byte reached disk, and a handful of concurrent uploads could OOM-kill the container, taking
+every printer connection with it.
+
+Fixed by adding `Settings.library_max_upload_bytes` (backend/app/core/config.py, default `2 * 1024 *
+1024 * 1024` = 2 GiB, override via the `LIBRARY_MAX_UPLOAD_BYTES` env var — same auto-mapped
+pydantic-settings convention as every other int field on `Settings`, no separate registration needed)
+and rewriting the read/write in `upload_file()` to follow the declared-size-then-streamed-size pattern
+already used by `inventory.py`'s CSV import (`MAX_CSV_IMPORT_BYTES`): reject immediately with 413 when
+`file.size` is declared and already exceeds the cap, otherwise stream `while chunk := await
+file.read(1 << 20)` straight into the destination file, hashing (`sha256`) and counting bytes
+incrementally, and aborting with 413 — deleting the partial file — the instant the running total
+crosses the cap. The 3MF magic-byte sniff (`validate_print_file_upload`, #1401) only ever inspects a
+content *prefix*, so it now runs against the first chunk read instead of the full buffered body,
+producing an identical result. `file_hash` and `file_size` on the success path now come from the
+incremental hash/counter rather than a full re-read of the written file plus `len(content)` — same
+algorithm, same digest, same on-disk bytes, so the response and DB row are unchanged for any upload
+under the cap. `extract_zip_file`'s identical `content = await file.read()` (library.py:~2529) is
+untouched — that is T-155, a separate task.
+
+Confirmed via `snapshot.py verify`: `app-settings` was the only probe to mismatch, and the diff was
+exactly the new `library_max_upload_bytes` field (default `"2147483648"`, `int`, not required); recorded
+via `snapshot.py record` (only `snapshots/app-settings.golden` changed). `app-openapi-index` is
+unaffected — the new 413 is raised as a plain `HTTPException` with no `responses=` declaration, the same
+undocumented way the route's existing 400/403/404/409 already are, so it never enters the OpenAPI spec.
+`SURFACE.md` was regenerated and its only diff is the new `library_max_upload_bytes = 2147483648` line
+in the settings/environment surface section.
+
+User-visible change: `POST /api/v1/library/files` now rejects an upload whose declared or actual body
+size exceeds 2 GiB (2147483648 bytes) with `413 {"detail": "Upload exceeds the maximum size of
+2147483648 bytes"}` instead of accepting it and buffering the whole file in memory first. The cap is
+configurable via the `LIBRARY_MAX_UPLOAD_BYTES` environment variable. Uploads at or under the cap are
+unaffected: identical response fields, identical `file_hash`/`file_size`, identical on-disk bytes, and
+identical DB row.
+User-approved 2026-09-13.

@@ -199,12 +199,11 @@ async def _cleanup_stale_frame_buffers() -> None:
         _state.stream_start_times.pop(pid, None)
         _state.per_printer_cooldown.pop(pid, None)
         _state.watchdog_killed_printers.discard(pid)
-        # Clean stderr tracking keyed by stream_id (format: "{printer_id}-{uuid}")
-        for key in list(_state.stderr_error_counts):
-            if key.startswith(f"{pid}-"):
-                _state.stderr_error_counts.pop(key, None)
-                _state.stderr_error_details.pop(key, None)
-                _state.stderr_recent_errors.pop(key, None)
+        # Backstop: _drain_stderr already evicts a printer's older stream_id
+        # summaries as soon as a new attempt's summary is written (see
+        # _evict_printer_stderr_summary), but a printer that stops respawning
+        # entirely still needs its last stderr summary swept once it goes stale.
+        _evict_printer_stderr_summary(pid)
     if stale_ids:
         logger.info("Cleaned up stale frame buffers for printers: %s", stale_ids)
 
@@ -1255,6 +1254,34 @@ _STDERR_ERROR_KEYWORDS = (
 )
 
 
+def _evict_printer_stderr_summary(printer_id: int, keep_stream_id: str | None = None) -> None:
+    """Drop the stderr summaries of every stream_id for ``printer_id`` except ``keep_stream_id``.
+
+    stream_ids are minted per attempt (format ``"{printer_id}-{uuid}"`` or
+    ``"{printer_id}-ext-{uuid}"``), and the grid restart loop mints a fresh one
+    on every retry (1.5-20s apart) — so a camera that never produces a frame
+    would otherwise grow ``stderr_error_counts``/``_details``/``_recent_errors``
+    by 3 entries (plus up to ``_STDERR_RECENT_CAP`` strings) per retry, forever,
+    for as long as it stays unreachable, since the periodic sweep in
+    ``_cleanup_stale_frame_buffers`` is keyed off ``last_frame_times`` and a
+    camera that never frames never enters it.
+
+    ``GET /camera/hub-status`` aggregates these dicts by printer_id to answer
+    "why did my camera fail", so only the most recent completed attempt's
+    summary needs to stay user-visible. Called from ``_drain_stderr``'s
+    ``finally`` right after it records its own stream_id's summary — not at
+    stream_id mint time — so the previous attempt's summary remains visible
+    for the whole duration of an in-flight retry, and disappears only once the
+    new attempt has actually produced one to replace it.
+    """
+    prefix = f"{printer_id}-"
+    for key in list(_state.stderr_error_counts):
+        if key.startswith(prefix) and key != keep_stream_id:
+            _state.stderr_error_counts.pop(key, None)
+            _state.stderr_error_details.pop(key, None)
+            _state.stderr_recent_errors.pop(key, None)
+
+
 async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> None:
     """Continuously read stderr to prevent pipe buffer deadlock.
 
@@ -1302,6 +1329,18 @@ async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> 
                 error_count,
                 ", ".join(f"{k}={v}" for k, v in sorted(categories.items())),
             )
+            # This attempt's summary is now recorded — evict any older
+            # stream_id summaries for the same printer so hub-status keeps at
+            # most one (the latest completed attempt) per printer. Done here,
+            # after writing, rather than at stream_id mint time, so a
+            # previous attempt's summary stays visible for the whole duration
+            # of an in-flight retry.
+            try:
+                printer_id = int(stream_id.split("-")[0])
+            except (ValueError, IndexError):
+                pass
+            else:
+                _evict_printer_stderr_summary(printer_id, keep_stream_id=stream_id)
 
 
 async def generate_rtsp_mjpeg_stream(
