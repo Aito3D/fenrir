@@ -607,3 +607,74 @@ class TestModeSwitchClearsAssignments:
             select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == test_printer.id)
         )
         assert rows.scalars().all() == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_switch_to_spoolman_mode_clears_legacy_spool_assignments(
+        self, async_client: AsyncClient, db_session, test_printer
+    ):
+        """Switching Spoolman ON deletes legacy spool_assignment rows — the
+        symmetric counterpart of clearing spoolman_slot_assignments rows when
+        switching OFF (see test_switch_to_internal_mode_clears_spoolman_slot_assignments
+        above)."""
+        from backend.app.models.settings import Settings
+        from backend.app.models.spool import Spool
+        from backend.app.models.spool_assignment import SpoolAssignment
+
+        db_session.add(Settings(key="spoolman_enabled", value="false"))
+        spool = Spool(material="PLA")
+        db_session.add(spool)
+        await db_session.commit()
+        await db_session.refresh(spool)
+
+        db_session.add(SpoolAssignment(spool_id=spool.id, printer_id=test_printer.id, ams_id=0, tray_id=0))
+        await db_session.commit()
+
+        resp = await async_client.put("/api/v1/settings/spoolman", json={"spoolman_enabled": "true"})
+        assert resp.status_code == 200
+
+        rows = await db_session.execute(select(SpoolAssignment).where(SpoolAssignment.printer_id == test_printer.id))
+        assert rows.scalars().all() == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_settings_get_put_round_trip(self, async_client: AsyncClient):
+        """PUT /settings/spoolman returns the updated settings, and a
+        subsequent GET reflects the same persisted values.
+
+        Enabling Spoolman with a URL set triggers a best-effort location
+        sync against the real Spoolman client (services.location_service);
+        that side effect is out of scope here, so it's patched out to keep
+        this test hermetic.
+        """
+        with patch(
+            "backend.app.services.location_service.maybe_sync_spoolman_locations",
+            AsyncMock(return_value=False),
+        ):
+            put_resp = await async_client.put(
+                "/api/v1/settings/spoolman",
+                json={
+                    "spoolman_enabled": "true",
+                    "spoolman_url": "http://spoolman.local:7912",
+                    "spoolman_sync_mode": "manual",
+                    "spoolman_disable_weight_sync": "true",
+                    "spoolman_report_partial_usage": "false",
+                    "auto_add_unknown_rfid": "false",
+                },
+            )
+        assert put_resp.status_code == 200
+        put_body = put_resp.json()
+
+        get_resp = await async_client.get("/api/v1/settings/spoolman")
+        assert get_resp.status_code == 200
+        get_body = get_resp.json()
+
+        assert get_body == put_body
+        assert get_body == {
+            "spoolman_enabled": "true",
+            "spoolman_url": "http://spoolman.local:7912",
+            "spoolman_sync_mode": "manual",
+            "spoolman_disable_weight_sync": "true",
+            "spoolman_report_partial_usage": "false",
+            "auto_add_unknown_rfid": "false",
+        }

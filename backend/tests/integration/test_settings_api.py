@@ -3,6 +3,7 @@
 Tests the full request/response cycle for /api/v1/settings/ endpoints.
 """
 
+import logging
 import os
 
 import pytest
@@ -291,6 +292,37 @@ class TestSettingsAPI:
         assert result["mqtt_password"] == "testpass"
         assert result["mqtt_topic_prefix"] == "myprefix"
         assert result["mqtt_use_tls"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_mqtt_settings_logs_reconfigure_failure(self, async_client: AsyncClient, monkeypatch, caplog):
+        """A broken MQTT reconfiguration must not fail the request, but must be logged (#T-202)."""
+        from backend.app.services.mqtt_relay import mqtt_relay
+
+        async def boom(self, settings):
+            raise RuntimeError("broker unreachable")
+
+        monkeypatch.setattr(type(mqtt_relay), "configure", boom)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.settings"):
+            response = await async_client.put(
+                "/api/v1/settings/",
+                json={
+                    "mqtt_enabled": True,
+                    "mqtt_broker": "mqtt.example.com",
+                    "mqtt_port": 8883,
+                    "mqtt_username": "testuser",
+                    "mqtt_password": "testpass",
+                    "mqtt_topic_prefix": "myprefix",
+                    "mqtt_use_tls": True,
+                },
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["mqtt_broker"] == "mqtt.example.com"
+        assert result["mqtt_port"] == 8883
+        assert "MQTT relay reconfiguration failed" in caplog.text
 
     @pytest.mark.asyncio
     @pytest.mark.integration

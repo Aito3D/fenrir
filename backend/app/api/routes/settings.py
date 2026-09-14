@@ -400,7 +400,8 @@ async def update_settings(
             }
             await mqtt_relay.configure(mqtt_settings)
         except Exception:
-            pass  # Don't fail the settings update if MQTT reconfiguration fails
+            logger.warning("MQTT relay reconfiguration failed", exc_info=True)
+            # Don't fail the settings update if MQTT reconfiguration fails
 
     # Restart camera streams if camera settings changed
     camera_keys = {"camera_quality", "camera_gpu_accel", "camera_engine"}
@@ -412,7 +413,8 @@ async def update_settings(
             if stopped:
                 logger.info("Stopped %d camera stream(s) after camera settings change", stopped)
         except Exception:
-            pass  # Don't fail settings update if camera restart fails
+            logger.warning("Camera engine reconfiguration failed", exc_info=True)
+            # Don't fail settings update if camera restart fails
 
     # Start/stop go2rtc if camera_engine changed
     if "camera_engine" in update_data:
@@ -425,7 +427,8 @@ async def update_settings(
             elif new_engine != "go2rtc" and go2rtc_service.running:
                 await go2rtc_service.stop()
         except Exception:
-            pass  # Don't fail settings update if go2rtc management fails
+            logger.warning("go2rtc management failed", exc_info=True)
+            # Don't fail settings update if go2rtc management fails
 
     # Return updated settings (never scrub secrets on PUT — caller has SETTINGS_UPDATE permission)
     return await _build_settings_response(db, is_api_key=False)
