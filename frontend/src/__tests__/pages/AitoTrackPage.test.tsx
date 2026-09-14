@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll } from 'vitest';
 import i18n from '../../i18n';
 import { screen, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -418,5 +418,39 @@ describe('AitoTrackPage language', () => {
     expect(await screen.findByText("Ce lien de suivi n'est plus valide")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByTestId('track-language'), 'es');
     expect(await screen.findByText('Este enlace de seguimiento ya no es válido')).toBeInTheDocument();
+  });
+});
+
+describe('AitoTrackPage — online payment', () => {
+  // The preceding language describe leaves i18n on whatever language its
+  // last test selected — pin it back to French here too.
+  beforeEach(() => i18n.changeLanguage('fr'));
+
+  it('unpaid: a "Projet non réglé" card with a Pay online link in a new tab', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'unpaid');
+    expect(within(card).getByText('Projet non réglé')).toBeInTheDocument();
+    const pay = within(card).getByRole('link', { name: 'Payer en ligne' });
+    expect(pay).toHaveAttribute('href', 'https://secure.osb.pf/pay/abc');
+    expect(pay).toHaveAttribute('target', '_blank');
+    expect(pay).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('paid: the quiet paid line, worded for a deposit when it was one', async () => {
+    mockTrack({ ...FIXTURE, payment: { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'paid');
+    expect(within(card).getByText('Acompte reçu')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Payer en ligne' })).not.toBeInTheDocument();
+  });
+
+  it('an invoice outranks the payment link', async () => {
+    mockTrack({ ...FIXTURE, invoice: 'unpaid', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    expect(await screen.findByTestId('track-invoice')).toBeInTheDocument();
+    expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
   });
 });
