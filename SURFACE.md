@@ -28,10 +28,13 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/aito/{project_id}/events ['POST']
 /api/v1/aito/{project_id}/flag ['PATCH']
 /api/v1/aito/{project_id}/invoice ['GET']
+/api/v1/aito/{project_id}/invoice ['POST']
 /api/v1/aito/{project_id}/invoice-email ['GET']
 /api/v1/aito/{project_id}/invoice-email ['POST']
+/api/v1/aito/{project_id}/invoice-preview ['GET']
 /api/v1/aito/{project_id}/invoice.pdf ['GET']
 /api/v1/aito/{project_id}/move ['PATCH']
+/api/v1/aito/{project_id}/payment-link/refresh ['POST']
 /api/v1/aito/{project_id}/pickup-message ['POST']
 /api/v1/aito/{project_id}/pickup-sms ['POST']
 /api/v1/aito/{project_id}/quote-email ['GET']
@@ -301,6 +304,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/ha-sensors/{sensor_id} ['GET']
 /api/v1/ha-sensors/{sensor_id} ['PATCH']
 /api/v1/ha-sensors/{sensor_id} ['DELETE']
+/api/v1/heimdall/test ['POST']
 /api/v1/inventory/assignments ['GET']
 /api/v1/inventory/assignments ['POST']
 /api/v1/inventory/assignments/{printer_id}/{ams_id}/{tray_id} ['DELETE']
@@ -960,15 +964,15 @@ websocket:connect
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "from backend.app.core.config import settings; [print(n, \"=\", repr(f.default)) for n, f in sorted(type(settings).model_fields.items())]" 2>/dev/null```
 ```
 api_prefix = '/api/v1'
-app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
+app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c16')
 app_name = 'Bambuddy'
-archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')
+archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c16/archive')
 bambu_studio_api_url = 'http://localhost:3001'
 bambu_studio_bundle_dir = None
 bambu_studio_user_dirs = None
 bambu_user_id = '1961034787'
-base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
-database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'
+base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c16')
+database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-c16/bambuddy.db'
 db_max_overflow = None
 db_pool_recycle = None
 db_pool_size = None
@@ -976,20 +980,23 @@ db_pool_timeout = None
 db_pool_use_lifo = None
 debug = False
 log_backup_count = 3
-log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')
+log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c16/logs')
 log_level = 'INFO'
 log_max_bytes = 5242880
 log_to_file = True
-plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')
+plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c16/data/plate_calibration')
 slicer_api_url = 'http://localhost:3003'
-static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')
+static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c16/static')
 ```
 
 ## Backend service top-level defs (count per signature)
 ```regen: grep -hE "^(def|class|async def) [a-zA-Z]" backend/app/services/*.py | sort | uniq -c | sed "s/^ *//"```
 ```
+1 async def accept_quote(
 1 async def apply_camera_rotation_to_file(path: Path, rotation: int, logger: logging.Logger) -> None:
 1 async def apply_print_charge_for_archive(
+1 async def apply_quote_decision(
+1 async def apply_retainers(
 1 async def auto_assign_spool(
 1 async def backfill_batch_statuses(db: AsyncSession) -> int:
 1 async def build_printer_file(
@@ -1024,9 +1031,12 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "asyncio.Server"]:
 1 async def create_token(
 1 async def create_welcome_email_from_template(
+1 async def current_link(db: AsyncSession, project_id: int) -> AitoPaymentLink | None:
+1 async def current_links(db: AsyncSession, project_ids: list[int]) -> dict[int, AitoPaymentLink]:
 1 async def delete_archived_timelapse(
 1 async def delete_dependent_variants(db: AsyncSession, file_ids: list[int]) -> None:
 1 async def delete_file_async(
+1 async def deposit_pct(db: AsyncSession) -> int:
 1 async def derive_today_yesterday(
 1 async def detect_gpu_hwaccels() -> list[str]:
 1 async def detect_vaapi_support() -> dict:
@@ -1102,17 +1112,24 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 async def on_print_complete(printer_id: int) -> Path | None:
 1 async def on_print_start(
 1 async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPreview:
+1 async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingPayment | None:
 1 async def perform_ssh_update(device_id: str, ip_address: str, install_path: str | None = None) -> None:
 1 async def persist_session(
 1 async def pickup_message(
+1 async def plan_invoice(db: AsyncSession, project: AitoProject) -> InvoicePlan:
+1 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
 1 async def pop_frame(nonce: str) -> bytes | None:
 1 async def prepare_internal_spool_payload(db: AsyncSession, data: dict, fields_set: set[str]) -> dict:
 1 async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
 1 async def prune_stale_printer_file_bundles() -> None:
 1 async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedelta(days=400)) -> int:
+1 async def push_quote_status(db: AsyncSession, project: AitoProject, status: str) -> bool:
+1 async def quote_validity_days(db: AsyncSession) -> int:
 1 async def read_chamber_image_frame(
 1 async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float = 10.0) -> bytes | None:
 1 async def reclassify_presets(db: AsyncSession) -> dict:
+1 async def reconcile_payment_links(
+1 async def reconcile_project(
 1 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
 1 async def record_tray_change(db: AsyncSession, printer_id: int, tray_global: int, layer_num: int) -> None:
 1 async def record(
@@ -1216,6 +1233,13 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class GitHubRestoreService:
 1 class Go2RTCService:
 1 class HASensorManager:
+1 class HeimdallAuthError(HeimdallUpstreamError):
+1 class HeimdallConflict(HeimdallUpstreamError):
+1 class HeimdallNotConfigured(Exception):
+1 class HeimdallNotFound(HeimdallUpstreamError):
+1 class HeimdallRateLimited(HeimdallUpstreamError):
+1 class HeimdallService:
+1 class HeimdallUpstreamError(Exception):
 1 class HMSAction(StrEnum):
 1 class HMSError:
 1 class HomeAssistantService:
@@ -1223,12 +1247,14 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class ImportPreview(BaseModel):
 1 class ImportResult(BaseModel):
 1 class ImportRowResult(BaseModel):
+1 class InvoicePlan:
 1 class KProfile:
 1 class LabelData:
 1 class LDAPConfig:
 1 class LDAPSearchResult:
 1 class LDAPUserInfo:
 1 class LibraryTrashService:
+1 class LinkView:
 1 class LocalBackupService:
 1 class LogEntry(BaseModel):
 1 class LogFinding(BaseModel):
@@ -1281,6 +1307,8 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class PushcutUpstreamError(Exception):
 1 class ResolvedProfile(NamedTuple):
 1 class RESTSmartPlugService:
+1 class RetainerApplication:
+1 class RetainerCredit:
 1 class ScanResult(BaseModel):
 1 class SensorReading:
 1 class ShippingCatalogueUnavailable(Exception):
@@ -1316,6 +1344,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class TimelapseSession:
 1 class Trigger:
 1 class UploadCancelled(Exception):
+1 class Wanted:
 1 class ZohoAmbiguousReferenceError(ZohoUpstreamError):
 1 class ZohoFilamentMappingError(RuntimeError):
 1 class ZohoFilamentRefreshBusyError(RuntimeError):
@@ -1347,7 +1376,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
 1 def build_camera_url(ip_address: str, access_code: str, model: str | None) -> str:
 1 def build_description(service: str, task: ExportTask) -> str:
+1 def build_invoice_payload(plan: InvoicePlan) -> dict:
 1 def build_line_items(
+1 def build_line_items(estimate_lines: list[dict]) -> list[dict]:
 1 def build_match_index(catalogue: list[FilamentProduct]) -> CatalogueIndex:
 1 def build_preview(
 1 def build_shipping_description(shipping: ExportShipping) -> str:
@@ -1385,6 +1416,8 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def end_gcode_injected(printer_id: int) -> bool:
 1 def evaluate(quote_status: str | None, stored_column: str, pending: Collection[str]) -> tuple[str, str | None]:
 1 def evaluate(sensor: PrinterHASensor, payload: dict | None) -> SensorReading:
+1 def expires_in_days(expires_on: str, today: date) -> int:
+1 def expiry_for(quote_date: str | None, validity_days: int) -> str:
 1 def external_storage_present(state: object | None) -> bool:
 1 def extract_core_fields(data: dict) -> dict:
 1 def extract_design_process_overrides(zip_bytes: bytes) -> list[DesignOverride]:
@@ -1448,6 +1481,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def island_label(island: str | None) -> str | None:
 1 def kinds_for_depth(depth: str) -> list[str]:
 1 def last_print_storage_verdict(state: object | None) -> StorageVerdict:
+1 def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
 1 def list_usb_cameras() -> list[dict]:
 1 def load_export_shipping(project: AitoProject, catalogue: Catalogue) -> ExportShipping | None:
 1 def location_name_key(name: str) -> str:
@@ -1461,6 +1495,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict[str, dict]:
 1 def mint_token() -> str:
 1 def missing_start_gcode_message(printer_preset_name: str) -> str:
+1 def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
 1 def net_cost(task: Any, service: str) -> float | None:
 1 def normalise_process_overrides(overrides: dict[str, object]) -> dict[str, str | list[str]]:
 1 def normalize_3mf_name(name: str) -> str:
@@ -1473,6 +1508,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def overrides_from_config(config: Any) -> list[DesignOverride]:
 1 def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
 1 def parse_base_preset_file(path: Path) -> dict[str, str]:
+1 def parse_credential(token: str) -> tuple[str, str]:
 1 def parse_description(
 1 def parse_filament_name(name: str) -> ParsedName:
 1 def parse_ldap_config(settings: dict[str, str]) -> LDAPConfig | None:
@@ -1504,6 +1540,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def render_template(template_str: str, variables: dict[str, Any]) -> str:
 1 def request_debounced_sync() -> None:
 1 def request_immediate_sync() -> None:
+1 def required_amount(quote_total: float | None, pct: int) -> int | None:
 1 def reset_cache() -> None:
 1 def reset_upload_state(printer_id: int):
 1 def resolve_display_stem(filename: str) -> str:
@@ -1527,7 +1564,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def service_for_island(island: str | None) -> str | None:
 1 def service_for_sku(sku: str | None) -> str | None:
 4 def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
+1 def share_out(retainers: list[RetainerCredit], balance: float) -> list[tuple[RetainerCredit, list[dict]]]:
 1 def should_pull_comments(project: AitoProject, estimate: dict, now: datetime) -> bool:
+1 def sign(method: str, path: str, body: bytes, secret: str, timestamp: int, nonce: str) -> str:
 1 def start_aito_quote_sync() -> None:
 1 def start_gcode_is_missing(content: bytes, *, export_3mf: bool) -> bool:
 1 def start_loop_watchdog() -> None:
@@ -1556,7 +1595,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def url_is_external_storage(project_url: str | None) -> bool | None:
 1 def verify_3mf_candidate(
 1 def waiting_reason_for_codes(codes: list[int]) -> str:
+1 def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: date) -> Wanted | None:
 1 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
+1 def with_tracking_sms(message: str, url: str) -> str:
 ```
 
 ## Frontend exported symbols — utils + hooks
@@ -1611,6 +1652,7 @@ export const MIN_SAMPLE
 export const NOZZLE_TEMP_DEFAULTS
 export const num
 export const PAGE_TABS
+export const PANEL_TAB_STORAGE_KEY
 export const PREHEAT_FILAMENT_ORDER
 export const PRESET_CATEGORIES
 export const PRESS
@@ -1881,6 +1923,7 @@ export function readNewProjectDraft
 export function realityCheckImpact
 export function registerPresenceSender
 export function replaceProject
+export function requiredAmount
 export function resolveDesktopSlicer
 export function resolveDryingPresetKey
 export function resolveInteropDefault
@@ -1948,6 +1991,7 @@ export function useColumnMoveMutation
 export function useColumnReflow
 export function useCombinedGridStats
 export function useContactedMutation
+export function useCreateInvoiceMutation
 export function useCurrency
 export function useDismissableDialog
 export function useDueDateMutation
@@ -1971,6 +2015,7 @@ export function useMultiPrinterFilamentMapping
 export function useNewProjectDraft
 export function useOptimisticBoardMutation
 export function usePageFileDrop
+export function usePanelTab
 export function usePrintProgressTitle
 export function useProjectEvents
 export function useProjectTasks
@@ -2175,6 +2220,7 @@ confirmEnableEmailOTP
 connectPrinter
 connectSpoolman
 controlSmartPlug
+createAitoInvoice
 createAitoProject
 createAitoTask
 createAPIKey
@@ -2316,6 +2362,7 @@ getAitoEvents
 getAitoInvoice
 getAitoInvoiceEmail
 getAitoInvoicePdf
+getAitoInvoicePreview
 getAitoProjects
 getAitoQuoteEmail
 getAitoQuotePdf
@@ -2603,6 +2650,7 @@ provisionLDAPUser
 rebuildBalanceLedger
 rebuildSearchIndex
 recalculateCosts
+refreshAitoPaymentLink
 refreshAmsSlot
 refreshBaseProfileCache
 refreshOIDCProviderIcon
@@ -2712,6 +2760,7 @@ testExternalCamera
 testGitHubConnection
 testGitHubStoredConnection
 testHAConnection
+testHeimdall
 testLDAP
 testNotificationConfig
 testNotificationProvider
@@ -2838,7 +2887,8 @@ UsersPage.tsx
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "import backend.app.main; from backend.app.core.database import Base; [print(n, len(t.columns)) for n, t in sorted(Base.metadata.tables.items())]" 2>/dev/null```
 ```
 aito_events 15
-aito_projects 51
+aito_payment_links 17
+aito_projects 53
 aito_tasks 31
 aito_tracking_views 3
 ams_labels 6
@@ -2874,7 +2924,7 @@ maintenance_history 5
 maintenance_types 10
 notification_digest_queue 8
 notification_logs 10
-notification_providers 47
+notification_providers 48
 notification_templates 8
 oidc_providers 20
 orca_base_profiles 5
