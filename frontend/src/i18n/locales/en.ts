@@ -3669,6 +3669,8 @@ export default {
     aitoFollowupQuoteDaysDescription: 'A sent or viewed quote with no answer joins the follow-ups strip after this many days.',
     aitoFollowupPickupDays: 'Chase a pickup after (days)',
     aitoFollowupPickupDaysDescription: 'A finished job whose client was told but has not collected it joins the strip after this many days.',
+    aitoFollowupLinkDays: 'Payment link expiring (days)',
+    aitoFollowupLinkDaysDescription: 'Flag quotes whose payment link expires within this many days',
   },
 
   // Notifications (for push notifications)
@@ -5962,6 +5964,26 @@ export default {
     testOk: 'Connected to Zoho Books',
     testUnreachable: 'Configured, but Zoho Books is unreachable',
     testNotConfigured: 'Zoho Books is not configured',
+  },
+
+  heimdall: {
+    title: 'Heimdall payments',
+    subtitle: 'Mint an online payment link for every Aito quote through the Heimdall POS bridge. A paid link accepts the quote automatically.',
+    baseUrl: 'Heimdall URL',
+    token: 'API token',
+    tokenHint: 'Write-only — leave blank to keep the current token',
+    depositPct: 'Deposit (%)',
+    depositPctDescription: '0 asks for the full quote; otherwise the link is for this share of it.',
+    validityDays: 'Quote validity (days)',
+    validityDaysDescription: 'Expiry written on every new quote; the payment link ends the same day.',
+    save: 'Save',
+    saved: 'Heimdall settings saved',
+    test: 'Test connection',
+    testOk: 'Connected to Heimdall',
+    testUnauthorized: 'Heimdall refused the token',
+    testForbidden: 'The key is missing the payments:read or payments:write scope',
+    testUnreachable: 'Heimdall is unreachable',
+    testNotConfigured: 'Heimdall is not configured',
   },
 
   // Backup

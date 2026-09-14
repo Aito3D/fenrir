@@ -42,6 +42,7 @@ export function AiSettings() {
   // Follow-up thresholds — prefilled from settings, kept as strings for the inputs.
   const [quoteDays, setQuoteDays] = useState('5');
   const [pickupDays, setPickupDays] = useState('7');
+  const [linkDays, setLinkDays] = useState('3');
 
   const { data: settings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['settings'],
@@ -60,6 +61,7 @@ export function AiSettings() {
       setApiKey('');
       setQuoteDays(String(settings.aito_followup_quote_days ?? 5));
       setPickupDays(String(settings.aito_followup_pickup_days ?? 7));
+      setLinkDays(String(settings.aito_followup_link_days ?? 3));
     }
   }, [settings]);
 
@@ -84,6 +86,7 @@ export function AiSettings() {
       ...(pushcutUrl.trim() ? { pushcut_sms_url: pushcutUrl.trim() } : {}),
       aito_followup_quote_days: clampDays(quoteDays, settings?.aito_followup_quote_days ?? 5),
       aito_followup_pickup_days: clampDays(pickupDays, settings?.aito_followup_pickup_days ?? 7),
+      aito_followup_link_days: clampDays(linkDays, settings?.aito_followup_link_days ?? 3),
     });
   };
 
@@ -142,7 +145,7 @@ export function AiSettings() {
           <p className="text-sm text-bambu-gray mt-1">{t('settings.pushcutUrlDescription')}</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label htmlFor="aito-followup-quote-days" className="block text-sm text-bambu-gray mb-1">
               {t('settings.aitoFollowupQuoteDays')}
@@ -174,6 +177,22 @@ export function AiSettings() {
               className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             />
             <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupPickupDaysDescription')}</p>
+          </div>
+          <div>
+            <label htmlFor="aito-followup-link-days" className="block text-sm text-bambu-gray mb-1">
+              {t('settings.aitoFollowupLinkDays')}
+            </label>
+            <input
+              id="aito-followup-link-days"
+              type="number"
+              min={1}
+              max={365}
+              step={1}
+              value={linkDays}
+              onChange={(e) => setLinkDays(e.target.value)}
+              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            />
+            <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupLinkDaysDescription')}</p>
           </div>
         </div>
 

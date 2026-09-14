@@ -3624,6 +3624,8 @@ export default {
     aitoFollowupQuoteDaysDescription: 'Un devis envoyé ou consulté sans réponse rejoint la barre de relance après ce délai.',
     aitoFollowupPickupDays: 'Relancer un retrait après (jours)',
     aitoFollowupPickupDaysDescription: 'Un travail terminé dont le client a été prévenu mais qui n’est pas venu le chercher rejoint la barre après ce délai.',
+    aitoFollowupLinkDays: 'Lien de paiement expirant (jours)',
+    aitoFollowupLinkDaysDescription: 'Signale les devis dont le lien de paiement expire dans ce délai',
   },
 
   // Notifications (for push notifications)
@@ -5903,6 +5905,26 @@ export default {
     testOk: 'Connecté à Zoho Books',
     testUnreachable: 'Configuré, mais Zoho Books est injoignable',
     testNotConfigured: 'Zoho Books n\'est pas configuré',
+  },
+
+  heimdall: {
+    title: 'Paiements Heimdall',
+    subtitle: 'Crée un lien de paiement en ligne pour chaque devis Aito via la passerelle Heimdall. Un lien payé accepte le devis automatiquement.',
+    baseUrl: 'URL Heimdall',
+    token: 'Jeton API',
+    tokenHint: 'Écriture seule — laisser vide pour conserver le jeton actuel',
+    depositPct: 'Acompte (%)',
+    depositPctDescription: '0 demande le devis complet ; sinon le lien porte sur cette part.',
+    validityDays: 'Validité du devis (jours)',
+    validityDaysDescription: "Date d'expiration inscrite sur chaque nouveau devis ; le lien de paiement expire le même jour.",
+    save: 'Enregistrer',
+    saved: 'Réglages Heimdall enregistrés',
+    test: 'Tester la connexion',
+    testOk: 'Connecté à Heimdall',
+    testUnauthorized: 'Heimdall a refusé le jeton',
+    testForbidden: 'La clé n’a pas les droits payments:read ou payments:write',
+    testUnreachable: 'Heimdall est injoignable',
+    testNotConfigured: 'Heimdall n’est pas configuré',
   },
 
   // Backup
