@@ -767,8 +767,16 @@ async def verify_slicer_download_token(token: str, resource_type: str, resource_
 CAMERA_STREAM_TOKEN_EXPIRE_MINUTES = 60
 
 
-async def create_camera_stream_token() -> str:
-    """Create a reusable token for camera stream/snapshot access."""
+async def create_camera_stream_token(username: str | None = None) -> str:
+    """Create a reusable token for camera stream/snapshot access.
+
+    Mirrors ``create_websocket_token``: records the issuing principal in the
+    ``username`` field — for JWT callers this is the actual username, for
+    API-keyed callers (and the auth-disabled path) this is the empty string
+    (T-154 / audit-security: the library-thumbnail routes trust this field to
+    resolve who is behind the token; callers that pass nothing keep getting
+    an unattributed ``""`` row exactly as before this parameter existed).
+    """
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=CAMERA_STREAM_TOKEN_EXPIRE_MINUTES)
     token = secrets.token_urlsafe(24)
@@ -784,6 +792,7 @@ async def create_camera_stream_token() -> str:
             AuthEphemeralToken(
                 token=token,
                 token_type="camera_stream",
+                username=username or "",
                 expires_at=expires_at,
             )
         )
@@ -882,6 +891,50 @@ async def verify_camera_stream_token(token: str) -> bool:
 
         record = await verify_long_lived(db, token, scope=STREAM_SCOPES)
         return record is not None
+
+
+async def resolve_camera_stream_token_principal(token: str) -> str | None:
+    """Resolve the identity behind a short-lived camera-stream token (T-154).
+
+    Left next to (and does not alter) ``verify_camera_stream_token`` — every
+    camera stream/snapshot route keeps using that bare boolean check
+    unchanged. This function backs the *library*-thumbnail routes, which need
+    to know WHO the token belongs to so they can apply LIBRARY_READ_ALL /
+    LIBRARY_READ_OWN scoping instead of blindly trusting CAMERA_VIEW.
+
+    Only the short-lived, per-session ``camera_stream`` row is honoured —
+    long-lived tokens (#1108, ``camera_stream``/``overlay`` scope) are
+    intentionally NOT accepted here, even though they pass
+    ``verify_camera_stream_token``: they carry no per-row identity, and the
+    approval for this change is explicit that they must stop loading library
+    thumbnails.
+
+    Returns:
+        - ``None`` if no matching, unexpired, short-lived ``camera_stream``
+          row exists (missing / unknown / expired / would only match via the
+          long-lived path) — the caller should treat this exactly like an
+          invalid camera-stream token.
+        - ``""`` if the row exists but carries no usable identity: either it
+          was minted before this field existed (``username`` is ``NULL`` in
+          the database) or it was minted by an API key (which has no per-row
+          user to attribute — see ``create_camera_stream_token``). Distinct
+          from ``None`` so callers can tell "token is valid" from "token has
+          nobody behind it" and answer 403 rather than 401.
+        - Otherwise the recorded username.
+    """
+    now = datetime.now(timezone.utc)
+    async with async_session() as db:
+        result = await db.execute(
+            select(AuthEphemeralToken).where(
+                AuthEphemeralToken.token == token,
+                AuthEphemeralToken.token_type == "camera_stream",
+                AuthEphemeralToken.expires_at > now,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return row.username or ""
 
 
 async def verify_overlay_token(token: str) -> bool:
@@ -2059,6 +2112,74 @@ def require_camera_stream_token_if_auth_enabled():
 
 
 RequireCameraStreamTokenIfAuthEnabled = Depends(require_camera_stream_token_if_auth_enabled())
+
+
+def require_library_thumbnail_access_if_auth_enabled():
+    """Dependency for the two library-thumbnail routes only (T-154 / audit-security).
+
+    Those routes are loaded via ``<img src>`` tags (no Authorization header),
+    so — like camera stream/snapshot — they take an opaque ``?token=xxx``
+    query param. Unlike camera stream/snapshot, a library thumbnail is a
+    LIBRARY-scoped resource: LIBRARY_READ_ALL / LIBRARY_READ_OWN, not
+    CAMERA_VIEW, decide which file ids a caller may read. Reusing the bare
+    ``RequireCameraStreamTokenIfAuthEnabled`` check let anyone holding only
+    camera:view — or a long-lived kiosk camera token — enumerate and read
+    every user's library thumbnails.
+
+    Resolves the caller BEHIND the token via
+    ``resolve_camera_stream_token_principal`` (short-lived ``camera_stream``
+    tokens only — long-lived camera/overlay tokens are rejected) and returns
+    ``(user, can_read_all)``, the same shape ``require_ownership_permission``
+    returns, so route bodies can pass it straight to
+    ``_ensure_library_file_visible`` unchanged.
+
+    - Auth disabled → ``(None, True)``.
+    - Missing / expired / unknown / long-lived-only token → 401 (the same
+      status the plain camera-stream dependency raises for an invalid
+      token).
+    - Token valid but carries no resolvable identity (minted before this
+      field existed, or minted by an API key with no per-row identity) → 403.
+    - Token resolves to a username that no longer maps to an active row in
+      ``users`` → 403.
+    - Otherwise → ``(user, user.has_permission(Permission.LIBRARY_READ_ALL))``.
+    """
+
+    async def checker(token: str | None = None) -> tuple[User | None, bool]:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return None, True  # Auth disabled, allow access to any file
+
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid camera stream token required. Obtain one from POST /api/v1/printers/camera/stream-token",
+            )
+
+        principal = await resolve_camera_stream_token_principal(token)
+        if principal is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid camera stream token required. Obtain one from POST /api/v1/printers/camera/stream-token",
+            )
+        if not principal:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Camera stream token does not carry a library-scoped identity",
+            )
+
+        async with async_session() as db:
+            user = await get_user_by_username(db, principal)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Camera stream token does not carry a library-scoped identity",
+            )
+        return user, user.has_permission(Permission.LIBRARY_READ_ALL.value)
+
+    return checker
+
+
+RequireLibraryThumbnailAccessIfAuthEnabled = Depends(require_library_thumbnail_access_if_auth_enabled())
 
 
 def require_overlay_token_if_auth_enabled():

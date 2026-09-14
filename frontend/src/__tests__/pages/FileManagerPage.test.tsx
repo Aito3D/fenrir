@@ -555,6 +555,82 @@ describe('FileManagerPage', () => {
     });
   });
 
+  describe('move files', () => {
+    // Select all 3 mock files, open the move modal, pick "Functional Parts"
+    // as the target, and confirm — leaving the mocked POST response (set up
+    // per-test via server.use) to drive the toast assertions below.
+    const selectAllAndConfirmMove = async (user: ReturnType<typeof userEvent.setup>) => {
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Select All')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Select All'));
+
+      await waitFor(() => {
+        expect(screen.getByText('3 selected')).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: 'Move' }));
+
+      let modal: HTMLElement;
+      await waitFor(() => {
+        const heading = screen.getByText('Move 3 File(s)');
+        modal = heading.closest('.animate-modal-in') as HTMLElement;
+        expect(modal).toBeInTheDocument();
+      });
+      await user.click(within(modal!).getByText('Functional Parts'));
+      await user.click(within(modal!).getByRole('button', { name: 'Move' }));
+    };
+
+    it('shows the plain success toast when nothing is skipped', async () => {
+      server.use(
+        http.post('/api/v1/library/files/move', () => {
+          return HttpResponse.json({ status: 'success', moved: 3, skipped: 0, skipped_reasons: [] });
+        })
+      );
+      const user = userEvent.setup();
+
+      await selectAllAndConfirmMove(user);
+
+      await waitFor(() => {
+        expect(screen.getByText('Files moved')).toBeInTheDocument();
+      });
+      // Selection cleared and modal closed, same as before this change.
+      expect(screen.queryByText('Move 3 File(s)')).not.toBeInTheDocument();
+      expect(screen.queryByText('3 selected')).not.toBeInTheDocument();
+    });
+
+    it('shows a warning toast naming skipped files and reasons when some files are skipped', async () => {
+      server.use(
+        http.post('/api/v1/library/files/move', () => {
+          return HttpResponse.json({
+            status: 'success',
+            moved: 2,
+            skipped: 3,
+            skipped_reasons: [
+              { file_id: 1, code: 'name_collision', reason: 'a file named "x" already exists in target' },
+              { file_id: 2, code: 'name_collision', reason: 'a file named "y" already exists in target' },
+              { file_id: 3, code: 'source_missing', reason: 'source file missing on disk' },
+            ],
+          });
+        })
+      );
+      const user = userEvent.setup();
+
+      await selectAllAndConfirmMove(user);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('2 moved, 3 skipped: 2 filename collision, 1 file no longer on disk')
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Files moved')).not.toBeInTheDocument();
+      // Selection cleared and modal closed exactly as the success path does.
+      expect(screen.queryByText('Move 3 File(s)')).not.toBeInTheDocument();
+      expect(screen.queryByText('3 selected')).not.toBeInTheDocument();
+    });
+  });
+
   describe('STL thumbnail generation', () => {
     it('shows Generate Thumbnails button', async () => {
       render(<FileManagerPage />);

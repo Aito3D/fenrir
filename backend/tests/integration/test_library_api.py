@@ -1816,6 +1816,223 @@ class TestLibraryPermissions:
         assert response.status_code == 403
 
 
+class TestLibraryThumbnailTokenAuth(TestLibraryPermissions):
+    """T-154 / audit-security: the two library-thumbnail routes must resolve
+    the caller from the camera-stream token and enforce LIBRARY_READ_ALL /
+    LIBRARY_READ_OWN scoping — not just a bare CAMERA_VIEW-gated token.
+
+    User-approved behavior change (2026-09-13): previously ANY valid camera-
+    stream token (short-lived or long-lived) loaded any library thumbnail by
+    id. Now the token must carry an identity (minted by ``POST
+    /camera/stream-token`` after this change) that maps to a real ``User``
+    with ``library:read_own``/``library:read_all``, and ownership is enforced
+    per file exactly like every other library read route.
+    """
+
+    @pytest.fixture
+    async def operator2_user(self, db_session):
+        """A second Operators-group user, distinct from ``auth_setup``'s
+        ``operator_lib``, for the cross-user 404 case."""
+        from sqlalchemy import select
+
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.user import User
+
+        operator_group = (await db_session.execute(select(Group).where(Group.name == "Operators"))).scalar_one()
+        user = User(username="operator_lib2", password_hash=get_password_hash("password"), is_active=True)
+        user.groups.append(operator_group)
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+        token = create_access_token(data={"sub": user.username})
+        return {"user": user, "token": token}
+
+    async def _make_library_file(self, db_session, tmp_path, kind: str, *, created_by_id: int | None):
+        """Build a LibraryFile backed by a REAL file on disk so the route's
+        existence check passes, for either thumbnail route ``kind``."""
+        from backend.app.models.library import LibraryFile
+
+        if kind == "thumbnail":
+            thumb_path = tmp_path / "thumb.png"
+            thumb_path.write_bytes(b"\x89PNG\r\n\x1a\nfake-thumbnail-bytes")
+            lib_file = LibraryFile(
+                filename="thumb_test.gcode.3mf",
+                file_path=str(tmp_path / "thumb_test.gcode.3mf"),
+                file_type="gcode.3mf",
+                file_size=100,
+                thumbnail_path=str(thumb_path),
+                created_by_id=created_by_id,
+            )
+        else:
+            zip_path = tmp_path / "plate_test.gcode.3mf"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("Metadata/plate_1.png", b"\x89PNG\r\n\x1a\nfake-plate-thumbnail")
+            lib_file = LibraryFile(
+                filename="plate_test.gcode.3mf",
+                file_path=str(zip_path),
+                file_type="gcode.3mf",
+                file_size=zip_path.stat().st_size,
+                created_by_id=created_by_id,
+            )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+        return lib_file
+
+    @staticmethod
+    def _url_for(kind: str, file_id: int) -> str:
+        if kind == "thumbnail":
+            return f"/api/v1/library/files/{file_id}/thumbnail"
+        return f"/api/v1/library/files/{file_id}/plate-thumbnail/1"
+
+    @staticmethod
+    async def _mint_stream_token(async_client: AsyncClient, jwt: str) -> str:
+        resp = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["token"]
+
+    @staticmethod
+    async def _mint_long_lived_token(async_client: AsyncClient, jwt: str) -> str:
+        resp = await async_client.post(
+            "/api/v1/auth/tokens",
+            headers={"Authorization": f"Bearer {jwt}"},
+            json={"name": "kiosk", "expires_in_days": 30},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_owner_stream_token_loads_thumbnail(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """Unchanged happy path: a library:read_own user's own stream token
+        (minted after this fix) still loads their own file's thumbnail."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["operator_token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 200
+        assert len(response.content) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_other_read_own_user_gets_404(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, operator2_user, kind
+    ):
+        """A different library:read_own user's own (valid, identity-carrying)
+        stream token must NOT load someone else's thumbnail."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, operator2_user["token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 404
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_admin_stream_token_loads_any_thumbnail(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """library:read_all (admin) can load any file's thumbnail via their
+        own stream token."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["admin_token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 200
+        assert len(response.content) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_long_lived_camera_token_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """A long-lived camera/overlay-scoped token (#1108) — previously
+        accepted by the bare camera-stream check — must now be rejected: it
+        carries no per-row identity to scope a library read to."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        long_lived = await self._mint_long_lived_token(async_client, auth_setup["operator_token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": long_lived})
+        assert response.status_code == 401
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_pre_upgrade_token_with_no_recorded_identity_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """A ``camera_stream`` row minted before this change carries no
+        ``username`` (NULL). It is a genuinely valid, unexpired token, but it
+        no longer resolves to a library-scoped identity, so it is now
+        rejected with 403 rather than silently granted the old blanket
+        access."""
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        legacy_token = secrets.token_urlsafe(24)
+        db_session.add(
+            AuthEphemeralToken(
+                token=legacy_token,
+                token_type="camera_stream",
+                username=None,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": legacy_token})
+        assert response.status_code == 403
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_auth_disabled_loads_thumbnail(self, async_client: AsyncClient, db_session, tmp_path, kind):
+        """Auth disabled (the default in these tests) — no token required,
+        every thumbnail loads, exactly like before this change."""
+        lib_file = await self._make_library_file(db_session, tmp_path, kind, created_by_id=None)
+        response = await async_client.get(self._url_for(kind, lib_file.id))
+        assert response.status_code == 200
+        assert len(response.content) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_missing_token_rejected_when_auth_enabled(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """No ``?token=`` at all, with auth enabled, is the same 401 the old
+        bare camera-stream dependency raised."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        response = await async_client.get(self._url_for(kind, lib_file.id))
+        assert response.status_code == 401
+
+
 class TestPrintFileUploadValidation:
     """#1401: pre-flight rejection of unprintable uploads at the library +
     archive routes. Smoke tests the shared ``validate_print_file_upload``

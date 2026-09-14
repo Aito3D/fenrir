@@ -8481,7 +8481,12 @@ export const api = {
     withStreamToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
   getLibraryFileGcodeUrl: (id: number) => `${API_BASE}/library/files/${id}/gcode`,
   moveLibraryFiles: (fileIds: number[], folderId: number | null) =>
-    request<{ status: string; moved: number }>('/library/files/move', {
+    request<{
+      status: string;
+      moved: number;
+      skipped: number;
+      skipped_reasons: { file_id: number; code: string; reason: string }[];
+    }>('/library/files/move', {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds, folder_id: folderId }),
     }),

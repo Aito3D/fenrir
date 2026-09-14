@@ -11602,3 +11602,193 @@ files per response than before if it has more than 500 in scope. The bundled in-
 project-detail views are unaffected end-to-end — they now call `getAllLibraryFiles`, which transparently
 pages through the capped responses and still renders the complete list.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 10 · T-151 — 2026-09-13 — user-approved behavior change
+
+`moveFilesMutation.onSuccess` (frontend/src/pages/FileManagerPage.tsx:1617) took no argument at all, so
+the `moved`/`skipped`/`skipped_reasons` fields returned by `POST /library/files/move`
+(backend/app/api/routes/library.py:5527 `move_files`, response built at line 5653) were discarded — every
+move, including one where every file was skipped (ownership, read-only source/target, missing source,
+misconfigured/inaccessible/unwritable target, unsafe filename, name collision, or a failed byte copy —
+the ten `_MoveSkip`/inline codes the endpoint can emit: `not_owner`, `source_readonly`, `source_missing`,
+`target_readonly`, `target_misconfigured`, `target_inaccessible`, `target_unwritable`, `invalid_filename`,
+`name_collision`, `copy_failed`), showed the same unconditional green "Files moved" toast, cleared the
+selection, and closed the modal.
+
+Fixed by having `onSuccess` take the mutation's response and branch on `response.skipped`: when it is `0`
+the behavior is byte-for-byte unchanged (same `success` toast, same invalidate/clear-selection/close-modal
+sequence). When `skipped > 0`, the same invalidate/clear-selection/close-modal sequence still runs, but
+the toast is now a `warning` toast built from `response.skipped_reasons`: the codes are tallied with a
+`Map<string, number>`, and the message groups each code's count through a new localised
+`fileManager.toast.moveSkipReason.<code>` key, joined with `, `, and interpolated into a new
+`fileManager.toast.moveSkipped` key as `"{{moved}} moved, {{skipped}} skipped: {{reasons}}"` (e.g. "2
+moved, 3 skipped: 2 filename collision, 1 file no longer on disk"). `moveLibraryFiles` in
+`frontend/src/api/client.ts` was widened to declare `skipped: number` and
+`skipped_reasons: { file_id: number; code: string; reason: string }[]` on its response type (both already
+sent by the backend; only the frontend type was narrower) — no new export, no backend change.
+
+The 11 new i18n keys (`fileManager.toast.moveSkipped` + one `fileManager.toast.moveSkipReason.<code>` per
+backend code) were added to `en.ts` and all 12 other locale files with real, distinct-from-English
+translations (not placeholders), since the repo's i18n parity gate rejects English-identical values in
+non-English locales.
+
+Two tests were added to `frontend/src/__tests__/pages/FileManagerPage.test.tsx` under a new `describe('move
+files', ...)`: one confirms the `skipped: 0` response still shows the plain "Files moved" success toast
+(extending the existing unconditional-success coverage), and one confirms a `moved: 2, skipped: 3` response
+with mixed `name_collision`/`source_missing` codes shows the warning toast with the exact counts and
+translated reasons text, and that the selection is still cleared and the modal still closes in that path.
+
+Confirmed via `snapshot.py verify`: `fe-i18n-parity` was the only probe to mismatch, and the diff was
+exactly `en_key_count`/every locale's `key_count` moving from 7291 to 7302 (the 11 new keys), with
+`missing_vs_en`/`extra_vs_en`/`placeholder_mismatch_vs_en` staying empty for every locale; recorded via
+`snapshot.py record` (only `snapshots/fe-i18n-parity.golden` changed, 13 insertions/13 deletions).
+`SURFACE.md` is unchanged — no new exports.
+
+User-visible change: a file move where every file was moved successfully still shows the plain green
+"Files moved" toast, unchanged. A move where one or more files were skipped now shows a warning toast
+reading "{{moved}} moved, {{skipped}} skipped: {{reasons}}" (e.g. "2 moved, 3 skipped: 2 filename
+collision, 1 file no longer on disk") instead of the previous unconditional "Files moved" success toast;
+the selection still clears and the move modal still closes in both cases.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 10 · T-153 — 2026-09-13 — user-approved behavior change
+
+`get_variant_group` (backend/app/api/routes/library_variants.py:268, `GET /api/v1/library/variant-groups/{group_id}`)
+resolved its ownership pair (`auth_result: tuple[User | None, bool] = Depends(require_ownership_permission(
+Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN))`) into `user, can_read_all` and then never used
+either: the whole body was `return await _group_response(db, await _get_group_or_404(db, group_id))`, and
+`_group_response` (line 132) lists every active (untrashed) member of the group with `filename=f.filename`
+regardless of `created_by_id`. The sibling route directly above, `get_group_for_file` (line 242), already
+scopes its one anchor file through `_load_files(db, [file_id], user, can_read_all)` before returning the
+group, so a library:read_own caller could not reach a group at all through that route without owning the
+file they named — but could walk small sequential group ids straight into `get_variant_group` and read the
+sliced filenames of every active member, including files that `GET /library/files/{id}` answers 404 for.
+
+Fixed by scoping only the ownership question, not the "does anything active remain" question that
+`_group_response` already answers by returning `members: []` for every caller (that behavior — an all-
+trashed group renders empty rather than 404, for `*_ALL`/auth-disabled callers included, because the group
+row itself is never dissolved by trashing a file — predates this fix and is unrelated to ownership, so it
+had to stay exactly as it was). For a `*_OWN` caller only (`not can_read_all`; `*_ALL` and auth-disabled
+never run this check), `get_variant_group` now collects every member's id with a plain `LibraryFile.id`
+query scoped to `variant_group_id == group.id` (no active/ownership filter, matching
+`_dissolve_if_too_small` and `update_variant_group`'s existing member queries); if that set is non-empty it
+checks whether any of those ids is still active via `_load_files(db, member_ids, None, True)`, and whether
+any is visible to the caller via `_load_files(db, member_ids, user, can_read_all)`. Only when active members
+exist and none of them is visible to the caller does the route raise the same `404 "Variant group not
+found"` that `_get_group_or_404` already raises for a nonexistent id; every other case — no members at all,
+all members trashed, or at least one active member visible — falls through unchanged to
+`_group_response(db, group)`, which behaves exactly as it did before this fix (full active-member list,
+including members the caller does not own, once the caller clears the new check). `_group_response`'s
+output shape and the route's `Depends(require_ownership_permission(...))` declaration are both unchanged;
+only the use of the value it already produced changed.
+
+Seven tests were added to `backend/tests/integration/test_library_variants_api.py` in a new
+`TestVariantGroupOwnershipPermissions` class (using the `TestOwnershipPermissionsSetup` operator/operator2/
+admin fixture pattern from `test_ownership_permissions.py`): one confirms a library:read_own caller who owns
+none of a group's *active* members gets a 404 with neither member's filename anywhere in the response body;
+one builds a group from one active file the read_own caller owns and one they do not, and asserts
+`GET .../variant-groups/{group_id}` and `GET .../variant-groups/by-file/{owned_file_id}` return the
+identical status code and JSON body for that caller; one confirms an admin (library:read_all) still sees
+the full group with both members' real filenames; one confirms the auth-disabled path (`user is None`,
+`can_read_all=True`) is byte-for-byte unchanged, returning the full group regardless of ownership; and three
+cover the all-members-trashed case — an admin, an auth-disabled caller, and a library:read_own caller who
+owns none of the (now trashed) members all get `200` with `members: []`, none of them the new 404, because
+trashing every member leaves nothing active to hide from anyone.
+
+Confirmed via `snapshot.py verify`: 11/11 probes matched, including `app-route-perms` (still counts the
+same number of `RequirePermissionIfAuthEnabled(...)`/ownership-dependency occurrences — the route's
+`Depends(...)` declaration was not touched, only how its result is used) and `app-openapi-index` (no schema
+change — same request/response models, same status codes already documented for this path). `SURFACE.md`
+regenerated with no diff — no new exports.
+
+User-visible change: `GET /api/v1/library/variant-groups/{group_id}` now answers 404 for a library:read_own
+caller when the group has at least one active (untrashed) member and the caller owns none of them, where it
+previously returned the group with every active member's filename. A library:read_own caller who owns
+*some* of the group's active members sees the exact same response `GET .../variant-groups/by-file/{file_id}`
+already gives them for one of their own member files in that group — the full active-member list, every
+filename included, unchanged from before this fix. A group whose members have all been trashed (the group
+row survives; nothing dissolves it) still returns `200` with `members: []` for every caller, including
+library:read_own callers who own none of the (trashed) members — that emptiness was already true before
+this fix and is not part of the ownership check. Admin/library:read_all and the auth-disabled path are
+completely unaffected in every case, including the all-trashed one.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 10 · T-154 — 2026-09-13 — user-approved behavior change
+
+`get_thumbnail` and `get_library_file_plate_thumbnail` (backend/app/api/routes/library.py, `GET
+/api/v1/library/files/{file_id}/thumbnail` and `GET /api/v1/library/files/{file_id}/plate-thumbnail/{plate_index}`)
+gated on `_: None = RequireCameraStreamTokenIfAuthEnabled` and then never checked ownership — they loaded
+the row with a bare `result.scalar_one_or_none()` and served the bytes straight off disk. That dependency
+(`require_camera_stream_token_if_auth_enabled`, core/auth.py) validates a `?token=` query param via
+`verify_camera_stream_token`, which returns a plain `bool` for any unexpired `camera_stream`-type ephemeral
+row *or* any long-lived token scoped `camera_stream`/`overlay` (#1108) — it carries no identity at all. The
+token itself is minted by `POST /camera/stream-token` behind `Permission.CAMERA_VIEW` alone. So a caller
+holding only `camera:view` — or the holder of a multi-day kiosk/Home-Assistant camera token pasted into a
+third-party dashboard — could enumerate library file ids and read every user's model/per-plate thumbnails,
+bypassing the `LIBRARY_READ_ALL`/`LIBRARY_READ_OWN` scoping every other library read route enforces via
+`_ensure_library_file_visible`.
+
+Fix, in three parts, all in backend/app/core/auth.py plus the two call sites in library.py:
+
+1. `create_camera_stream_token()` (core/auth.py:770) gained an optional `username: str | None = None`
+   parameter, written into the existing nullable `AuthEphemeralToken.username` column exactly the way
+   `create_websocket_token` already records its issuing principal — `username or ""`, so an API-key-minted
+   or auth-disabled call still writes a row (empty string) rather than erroring. `create_stream_token`
+   (backend/app/api/routes/camera.py, `POST /printers/camera/stream-token`) now captures its
+   `current_user` (previously discarded as `_`) and passes `current_user.username if current_user is not
+   None else None` — the same pattern `mint_websocket_token` already uses. No other caller of
+   `create_camera_stream_token` exists. `verify_camera_stream_token` and every camera stream/snapshot route
+   that depends on `RequireCameraStreamTokenIfAuthEnabled` are byte-for-byte unchanged — they still see a
+   bare boolean and do not care who minted the token.
+2. A new `resolve_camera_stream_token_principal(token) -> str | None` sits beside (and does not alter)
+   `verify_camera_stream_token`: for a valid, unexpired, short-lived `camera_stream` row it returns the
+   recorded `username` (coalesced to `""` for a `NULL` value from a token minted before this change, or for
+   an API-key-minted token with no per-row identity); it returns `None` only when no such row exists at all
+   — including when the token only matches via the long-lived path, which this function deliberately never
+   checks, so long-lived camera/overlay tokens cannot resolve a library identity.
+3. A new dependency `require_library_thumbnail_access_if_auth_enabled()` /
+   `RequireLibraryThumbnailAccessIfAuthEnabled` (core/auth.py, next to
+   `require_camera_stream_token_if_auth_enabled`) accepts the same `?token=` query param, and returns
+   `(user, can_read_all)` — the same shape `require_ownership_permission` already returns — so the two
+   routes can call the module's existing `_ensure_library_file_visible(lib_file, user, can_read_all)`
+   unchanged: auth disabled → `(None, True)`; missing/expired/unknown/long-lived-only token → 401 (the same
+   status the old bare dependency raised); a valid token whose resolved principal is `""` (pre-upgrade or
+   API-key-minted, no identity) or whose username no longer maps to a `User` row → 403; otherwise
+   `(user, user.has_permission(Permission.LIBRARY_READ_ALL.value))`.
+
+Ten integration tests were added in a new `TestLibraryThumbnailTokenAuth(TestLibraryPermissions)` class in
+backend/tests/integration/test_library_api.py, each parametrized over both routes (`thumbnail` and
+`plate_thumbnail`, 20 test runs total): an operator's own stream token still loads their own file (unchanged
+happy path); a second operator's own stream token 404s on the first operator's file, with neither
+`fake-thumbnail-bytes` nor `fake-plate-thumbnail` in the response; an admin's stream token loads any file;
+a long-lived token minted via `POST /auth/tokens` is rejected 401; a hand-inserted `camera_stream` row with
+`username=None` (simulating a token minted before this upgrade) is rejected 403; a missing `?token=`
+with auth enabled is 401; and auth-disabled loads the thumbnail with no token at all. No existing test
+asserted that a bare camera token loads a library thumbnail, so no assertion needed to be changed —
+the module previously had zero token-based tests for these two routes.
+
+Confirmed via `snapshot.py verify`: 11/11 probes matched, including `app-route-perms` (this design adds no
+`RequirePermissionIfAuthEnabled(...)` occurrences — the new dependency is its own distinct callable, not a
+wrapped instance of that helper) and `app-openapi-index` (both routes keep the same `token: str | None`
+query parameter shape; the dependency's return type is not part of the request schema). `SURFACE.md`
+regenerated with no diff — no new exports. Whole-tree backend suite: 13318 passed, 1 skipped, coverage 73%
+(Stmts 72893, Miss 18016 — no drop from the 73% / Miss 18031 baseline after T-153).
+
+User-visible change: `GET /library/files/{id}/thumbnail` and `GET /library/files/{id}/plate-thumbnail/{n}`
+now require the caller's camera-stream token to carry a resolvable identity with `library:read_all` or
+`library:read_own`, and enforce per-file ownership the same way every other library read route does.
+`_ensure_library_file_visible`'s owner branch does not itself check any library-read permission, so a
+caller whose token resolves to a user holding only `camera:view` still gets a 200 for a file they own,
+unchanged from before this fix; the change for that same caller is on a file they do NOT own, which now
+404s instead of loading. A token that is long-lived (`bblt_...`, #1108) is rejected 401 regardless of
+ownership. A short-lived token that resolves to no recorded user (minted before this upgrade, or by an
+API key) is rejected 403. A long-lived camera/Home-Assistant/kiosk token will no longer load library thumbnails at
+all — only the short-lived per-session token from `POST /camera/stream-token` can, and only once it has
+been re-minted under this fix. Frontend consumers (`withStreamToken`/`useStreamTokenSync` in
+frontend/src/api/client.ts and frontend/src/hooks/useCameraStreamToken.ts) already fetch a fresh stream
+token on login and refresh it every 50 minutes (tokens expire at 60) — and separately auto-refresh
+immediately on the first `<img>`/`<video>` load error against a token-protected URL — so any token cached
+in a browser tab before this deploy self-heals to a fully-scoped one within, at most, one failed thumbnail
+load or 50 minutes, without a page reload. A caller who legitimately has `library:read_own`/`library:read_all`
+sees no change at all once their token is re-minted.
+User-approved 2026-09-13.

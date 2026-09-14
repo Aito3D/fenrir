@@ -8,6 +8,8 @@ has to mean before the scheduler acts on it without a human in the loop.
 import pytest
 from httpx import AsyncClient
 
+from backend.tests.integration.test_ownership_permissions import TestOwnershipPermissionsSetup
+
 
 @pytest.fixture
 async def sliced_file_factory(db_session):
@@ -244,3 +246,172 @@ class TestVariantGroupOrdering:
         r = await async_client.get(f"/api/v1/library/variant-groups/by-file/{b.id}")
         assert r.status_code == 200
         assert r.json()["id"] == gid
+
+
+class TestVariantGroupOwnershipPermissions(TestOwnershipPermissionsSetup):
+    """GET /library/variant-groups/{group_id} must scope to what the caller
+    may read (T-153): a library:read_own caller who owns none of a group's
+    members gets the same 404 as a nonexistent group, matching the anchor-file
+    check already done by GET /library/variant-groups/by-file/{file_id}."""
+
+    @pytest.fixture
+    async def variant_group_factory(self, db_session):
+        """Wire up a variant group directly, bypassing the create endpoint's
+        own-all-members requirement so members can belong to different users."""
+
+        async def _create(*files, name="Test Group"):
+            from backend.app.models.library import FileVariantGroup
+
+            group = FileVariantGroup(name=name)
+            db_session.add(group)
+            await db_session.flush()
+            for position, lib_file in enumerate(files):
+                lib_file.variant_group_id = group.id
+                lib_file.variant_position = position
+            await db_session.commit()
+            await db_session.refresh(group)
+            return group
+
+        return _create
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_read_own_caller_owning_no_members_gets_404(
+        self, async_client: AsyncClient, auth_setup, sliced_file_factory, variant_group_factory
+    ):
+        """An operator with only library:read_own who owns none of the
+        group's members must not be able to read their filenames."""
+        h2s = await sliced_file_factory("H2S", created_by_id=auth_setup["operator2_user"]["id"])
+        h2c = await sliced_file_factory("H2C", created_by_id=auth_setup["operator2_user"]["id"])
+        group = await variant_group_factory(h2s, h2c)
+
+        response = await async_client.get(
+            f"/api/v1/library/variant-groups/{group.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 404
+        assert h2s.filename not in response.text
+        assert h2c.filename not in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_read_own_caller_owning_some_members_matches_lookup_by_file(
+        self, async_client: AsyncClient, auth_setup, sliced_file_factory, variant_group_factory
+    ):
+        """Whatever GET .../by-file/{file_id} gives a read_own caller for their
+        own member, GET .../{group_id} must give for the same group."""
+        own = await sliced_file_factory("H2S", created_by_id=auth_setup["operator_user"]["id"])
+        other = await sliced_file_factory("H2C", created_by_id=auth_setup["operator2_user"]["id"])
+        group = await variant_group_factory(own, other)
+        headers = {"Authorization": f"Bearer {auth_setup['operator_token']}"}
+
+        by_file = await async_client.get(f"/api/v1/library/variant-groups/by-file/{own.id}", headers=headers)
+        by_group = await async_client.get(f"/api/v1/library/variant-groups/{group.id}", headers=headers)
+
+        assert by_file.status_code == 200
+        assert by_group.status_code == by_file.status_code
+        assert by_group.json() == by_file.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_sees_full_group_regardless_of_ownership(
+        self, async_client: AsyncClient, auth_setup, sliced_file_factory, variant_group_factory
+    ):
+        """An admin (library:read_all) still sees every member unchanged."""
+        h2s = await sliced_file_factory("H2S", created_by_id=auth_setup["operator_user"]["id"])
+        h2c = await sliced_file_factory("H2C", created_by_id=auth_setup["operator2_user"]["id"])
+        group = await variant_group_factory(h2s, h2c)
+
+        response = await async_client.get(
+            f"/api/v1/library/variant-groups/{group.id}",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
+        filenames = {m["filename"] for m in response.json()["members"]}
+        assert filenames == {h2s.filename, h2c.filename}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_sees_full_group_unchanged(self, async_client: AsyncClient, sliced_file_factory):
+        """With auth disabled, ownership plays no role — the full group comes
+        back exactly as before this fix."""
+        h2s = await sliced_file_factory("H2S")
+        h2c = await sliced_file_factory("H2C")
+        gid = (await _create_group(async_client, h2s.id, h2c.id)).json()["id"]
+
+        response = await async_client.get(f"/api/v1/library/variant-groups/{gid}")
+
+        assert response.status_code == 200
+        filenames = {m["filename"] for m in response.json()["members"]}
+        assert filenames == {h2s.filename, h2c.filename}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_all_members_trashed_group_is_empty_for_admin(
+        self, async_client: AsyncClient, auth_setup, sliced_file_factory, variant_group_factory
+    ):
+        """A group whose members have all since been trashed already renders
+        as an empty ``members: []`` (the group row itself survives — nothing
+        dissolves it), for every caller. Trashing is not an ownership
+        question, so an admin (library:read_all) sees the same empty group
+        rather than a 404."""
+        h2s = await sliced_file_factory("H2S", created_by_id=auth_setup["operator_user"]["id"])
+        h2c = await sliced_file_factory("H2C", created_by_id=auth_setup["operator2_user"]["id"])
+        group = await variant_group_factory(h2s, h2c)
+        admin_headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+        for lib_file in (h2s, h2c):
+            trash_response = await async_client.delete(f"/api/v1/library/files/{lib_file.id}", headers=admin_headers)
+            assert trash_response.status_code == 200
+
+        response = await async_client.get(f"/api/v1/library/variant-groups/{group.id}", headers=admin_headers)
+
+        assert response.status_code == 200
+        assert response.json()["members"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_all_members_trashed_group_is_empty_when_auth_disabled(
+        self, async_client: AsyncClient, sliced_file_factory
+    ):
+        """Same all-trashed case as above, with auth disabled entirely — no
+        ownership check applies, so it must be exactly as unaffected as the
+        admin case."""
+        h2s = await sliced_file_factory("H2S")
+        h2c = await sliced_file_factory("H2C")
+        gid = (await _create_group(async_client, h2s.id, h2c.id)).json()["id"]
+        for lib_file in (h2s, h2c):
+            trash_response = await async_client.delete(f"/api/v1/library/files/{lib_file.id}")
+            assert trash_response.status_code == 200
+
+        response = await async_client.get(f"/api/v1/library/variant-groups/{gid}")
+
+        assert response.status_code == 200
+        assert response.json()["members"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_all_members_trashed_group_is_empty_for_read_own_caller_who_owns_none(
+        self, async_client: AsyncClient, auth_setup, sliced_file_factory, variant_group_factory
+    ):
+        """A read_own caller who owns none of a group's members still gets the
+        group back with an empty member list once every member is trashed:
+        there is no active member left to hide from them, so this is not the
+        ownership-scoping 404 path added for T-153 — it is the pre-existing
+        trashed-members-render-empty behavior, unaffected by that fix."""
+        h2s = await sliced_file_factory("H2S", created_by_id=auth_setup["operator2_user"]["id"])
+        h2c = await sliced_file_factory("H2C", created_by_id=auth_setup["operator2_user"]["id"])
+        group = await variant_group_factory(h2s, h2c)
+        admin_headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+        for lib_file in (h2s, h2c):
+            trash_response = await async_client.delete(f"/api/v1/library/files/{lib_file.id}", headers=admin_headers)
+            assert trash_response.status_code == 200
+
+        response = await async_client.get(
+            f"/api/v1/library/variant-groups/{group.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["members"] == []

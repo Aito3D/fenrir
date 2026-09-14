@@ -2367,14 +2367,20 @@ async def camera_grid_stream(
 
 @router.post("/camera/stream-token")
 async def create_stream_token(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Create a reusable token for camera stream/snapshot access.
 
     Returns a token valid for 60 minutes that can be appended as ?token=xxx
     to camera stream/snapshot URLs loaded via <img> tags.
+
+    Records the issuing principal on the token (T-154 / audit-security): the
+    library-thumbnail routes resolve the caller behind this same token to
+    apply LIBRARY_READ_ALL/OWN scoping, mirroring how ``/ws-token`` already
+    records its principal for ``verify_websocket_token``.
     """
-    return {"token": await create_camera_stream_token()}
+    username = current_user.username if current_user is not None else None
+    return {"token": await create_camera_stream_token(username)}
 
 
 @router.get("/{printer_id}/camera/stream")
