@@ -3013,6 +3013,8 @@
     "query:folder_id",
     "query:include_root",
     "query:internal_only",
+    "query:limit",
+    "query:offset",
     "query:project_id",
     "query:recursive",
     "query:tag_ids"
@@ -3032,6 +3034,8 @@
     "query:folder_id",
     "query:include_root",
     "query:internal_only",
+    "query:limit",
+    "query:offset",
     "query:project_id",
     "query:recursive",
     "query:tag_ids"

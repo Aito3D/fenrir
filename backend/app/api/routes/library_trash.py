@@ -230,10 +230,7 @@ async def empty_trash(
 
     rows_result = await db.execute(select(LibraryFile).where(*conditions))
     rows = rows_result.scalars().all()
-    deleted = 0
-    for row in rows:
-        await library_trash_service.hard_delete_now(db, row)
-        deleted += 1
+    deleted = await library_trash_service.hard_delete_many(db, rows)
     return EmptyTrashResponse(deleted=deleted)
 
 

@@ -2105,6 +2105,8 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
+    limit: int = Query(default=500, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -2136,6 +2138,10 @@ async def list_files(
                  intentionally bypassed — tags are cross-cutting and the user
                  wants "every file with this tag" regardless of where it lives.
                  ``recursive`` becomes irrelevant in that case.
+        limit: Page size, capped to keep the response bounded on large libraries.
+               Total matching row count is returned in the ``X-Total-Count``
+               response header so callers can page through the full result.
+        offset: Number of matching rows to skip (paired with ``limit``).
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -2187,7 +2193,15 @@ async def list_files(
     elif external_only:
         query = query.where(LibraryFile.is_external.is_(True))
 
-    query = query.order_by(LibraryFile.filename)
+    # Total matching row count (before paging), exposed via X-Total-Count so
+    # the client can page through the full result without the server ever
+    # serialising more than `limit` rows at once (#3xxx). Wrapping the fully
+    # filtered/joined/grouped query in a subquery reuses every filter above
+    # (including the tag_ids GROUP BY/HAVING) without duplicating the logic.
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total_count = int(count_result.scalar() or 0)
+
+    query = query.order_by(LibraryFile.filename).offset(offset).limit(limit)
     result = await db.execute(query)
     files = result.scalars().unique().all() if tag_ids else result.scalars().all()
 
@@ -2219,6 +2233,7 @@ async def list_files(
 
     # Prevent browser caching of file list
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["X-Total-Count"] = str(total_count)
 
     file_list = []
     for f in files:

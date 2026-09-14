@@ -109,11 +109,16 @@ async def test_restore_from_trash(async_client: AsyncClient, file_factory, db_se
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_hard_delete_from_trash(async_client: AsyncClient, file_factory, db_session):
-    """Hard-delete from trash removes the DB row immediately."""
+async def test_hard_delete_from_trash(async_client: AsyncClient, file_factory, db_session, tmp_path):
+    """Hard-delete from trash removes the DB row and unlinks its bytes."""
     from backend.app.models.library import LibraryFile
 
-    f = await file_factory()
+    file_disk_path = tmp_path / "hard_delete.3mf"
+    thumb_disk_path = tmp_path / "hard_delete.png"
+    file_disk_path.write_bytes(b"payload")
+    thumb_disk_path.write_bytes(b"thumb")
+
+    f = await file_factory(file_path=str(file_disk_path), thumbnail_path=str(thumb_disk_path))
     file_id = f.id
     await async_client.delete(f"/api/v1/library/files/{file_id}")
 
@@ -123,6 +128,51 @@ async def test_hard_delete_from_trash(async_client: AsyncClient, file_factory, d
     db_session.expire_all()
     row = await db_session.get(LibraryFile, file_id)
     assert row is None
+    assert not file_disk_path.exists()
+    assert not thumb_disk_path.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hard_delete_keeps_bytes_and_row_when_commit_fails(file_factory, db_session, tmp_path, monkeypatch):
+    """A failed commit must leave both the bytes and the row untouched (#T-148).
+
+    Regression guard for the unlink/commit ordering: bytes must never be
+    removed from disk before the row deletion is durably committed.
+    """
+    from backend.app.models.library import LibraryFile
+    from backend.app.services.library_trash import library_trash_service
+
+    file_disk_path = tmp_path / "commit_fail.3mf"
+    thumb_disk_path = tmp_path / "commit_fail.png"
+    file_disk_path.write_bytes(b"payload")
+    thumb_disk_path.write_bytes(b"thumb")
+
+    f = await file_factory(
+        file_path=str(file_disk_path),
+        thumbnail_path=str(thumb_disk_path),
+        deleted_at=datetime.now(timezone.utc),
+    )
+    file_id = f.id
+
+    async def _boom():
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(db_session, "commit", _boom)
+
+    with pytest.raises(RuntimeError):
+        await library_trash_service.hard_delete_now(db_session, f)
+
+    # Bytes must survive a failed commit.
+    assert file_disk_path.exists()
+    assert thumb_disk_path.exists()
+
+    # Undo the mid-transaction (uncommitted) delete the same way production's
+    # get_db does on error, then confirm the row is still there, trashed.
+    await db_session.rollback()
+    row = await db_session.get(LibraryFile, file_id)
+    assert row is not None
+    assert row.deleted_at is not None
 
 
 @pytest.mark.asyncio
@@ -143,6 +193,307 @@ async def test_empty_trash(async_client: AsyncClient, file_factory, db_session):
 
     count = await db_session.execute(select(func.count(LibraryFile.id)).where(LibraryFile.deleted_at.isnot(None)))
     assert (count.scalar() or 0) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_empty_trash_batches_variants_queue_refs_and_bytes_in_one_commit(
+    file_factory, queue_factory, db_session, tmp_path, monkeypatch
+):
+    """#T-149: emptying the trash must do the whole batch in a single commit.
+
+    Builds 3 trashed files — one with a pending queue reference, one with a
+    dependent ``PrintQueueVariant`` — and drives them through the same
+    ``hard_delete_many`` batch that ``empty_trash()`` now calls (previously
+    ``empty_trash()`` looped, committing once per file). Everything must land
+    in the same end state as the old per-row loop, but with exactly one commit
+    for the whole batch.
+    """
+    from sqlalchemy import select
+
+    from backend.app.models.library import LibraryFile
+    from backend.app.models.print_queue import PrintQueueVariant
+    from backend.app.services.library_trash import library_trash_service
+
+    disk_paths = []
+    files = []
+    for i in range(3):
+        file_disk_path = tmp_path / f"batch_{i}.3mf"
+        thumb_disk_path = tmp_path / f"batch_{i}.png"
+        file_disk_path.write_bytes(b"payload")
+        thumb_disk_path.write_bytes(b"thumb")
+        disk_paths.append((file_disk_path, thumb_disk_path))
+        f = await file_factory(
+            filename=f"batch_{i}.3mf",
+            file_path=str(file_disk_path),
+            thumbnail_path=str(thumb_disk_path),
+            deleted_at=datetime.now(timezone.utc),
+        )
+        files.append(f)
+
+    # One file has a pending queue reference that must be released/cancelled.
+    waiting = await queue_factory(files[0])
+    waiting_id = waiting.id
+
+    # Another has a dependent variant that must be dropped.
+    variant_owner_item = await queue_factory(files[1])
+    variant = PrintQueueVariant(
+        queue_item_id=variant_owner_item.id,
+        position=0,
+        library_file_id=files[2].id,
+        target_model="X1C",
+    )
+    db_session.add(variant)
+    await db_session.commit()
+    variant_id = variant.id
+
+    ids = [f.id for f in files]
+    rows_result = await db_session.execute(select(LibraryFile).where(LibraryFile.id.in_(ids)))
+    rows = rows_result.scalars().all()
+    assert len(rows) == 3
+
+    commit_calls = []
+    real_commit = db_session.commit
+
+    async def counting_commit():
+        commit_calls.append(1)
+        return await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", counting_commit)
+
+    deleted = await library_trash_service.hard_delete_many(db_session, rows)
+
+    assert deleted == 3
+    assert len(commit_calls) == 1
+
+    db_session.expire_all()
+    for file_id in ids:
+        assert await db_session.get(LibraryFile, file_id) is None
+    for file_disk_path, thumb_disk_path in disk_paths:
+        assert not file_disk_path.exists()
+        assert not thumb_disk_path.exists()
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    waiting_row = (
+        await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == waiting_id))
+    ).scalar_one_or_none()
+    assert waiting_row is not None
+    assert waiting_row.status == "cancelled"
+    assert waiting_row.library_file_id is None
+
+    remaining_variant = await db_session.get(PrintQueueVariant, variant_id)
+    assert remaining_variant is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_empty_trash_all_or_nothing_on_commit_failure(
+    async_client: AsyncClient, file_factory, db_session, tmp_path, monkeypatch
+):
+    """#T-149: a failed commit during empty-trash must leave everything intact.
+
+    Regression guard for the batch refactor: if the single commit blows up
+    partway through, no row may be deleted and no byte may be unlinked —
+    matching the pre-existing fail-closed behavior (T-141) where the auth
+    middleware turns an unhandled exception into a 503.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from backend.app.models.library import LibraryFile
+
+    file_disk_path = tmp_path / "fail_closed.3mf"
+    thumb_disk_path = tmp_path / "fail_closed.png"
+    file_disk_path.write_bytes(b"payload")
+    thumb_disk_path.write_bytes(b"thumb")
+
+    f = await file_factory(file_path=str(file_disk_path), thumbnail_path=str(thumb_disk_path))
+    file_id = f.id
+    await async_client.delete(f"/api/v1/library/files/{file_id}")
+
+    real_commit = AsyncSession.commit
+    state = {"armed": False, "triggered": False}
+
+    async def flaky_commit(self):
+        if state["armed"] and not state["triggered"]:
+            state["triggered"] = True
+            raise RuntimeError("database is locked")
+        return await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+    state["armed"] = True
+    response = await async_client.delete("/api/v1/library/trash")
+    assert state["triggered"], "the commit patch never fired — test would be a false positive"
+    # Same fail-closed behavior as T-141: any unhandled exception from the
+    # request pipeline becomes a 503 (GHSA-6mf4-q26m-47pv).
+    assert response.status_code == 503
+
+    assert file_disk_path.exists()
+    assert thumb_disk_path.exists()
+
+    db_session.expire_all()
+    row = await db_session.get(LibraryFile, file_id)
+    assert row is not None
+    assert row.deleted_at is not None
+
+
+# ---------------------------------------------------------------------------
+# File-tag association cleanup on hard-delete (#T-149 follow-up)
+#
+# `hard_delete_many`'s Core bulk DELETE bypasses the ORM unit-of-work that used
+# to drop `library_file_tags` rows for free when `db.delete(file)` was called
+# per-row. SQLite runs here with foreign keys off, so nothing else would clean
+# those rows up — leaving an orphaned association that (a) inflates the tag's
+# `file_count` projection and (b) gets silently inherited by the next inserted
+# file once SQLite reuses the deleted row's id (plain INTEGER PRIMARY KEY, no
+# AUTOINCREMENT).
+# ---------------------------------------------------------------------------
+
+
+async def _assoc_rows(db_session) -> list[tuple[int, int]]:
+    from sqlalchemy import select
+
+    from backend.app.models.library import LibraryFileTag
+
+    rows = (await db_session.execute(select(LibraryFileTag.file_id, LibraryFileTag.tag_id))).all()
+    return sorted(tuple(r) for r in rows)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hard_delete_from_trash_removes_tag_association_and_updates_file_count(
+    async_client: AsyncClient, file_factory, db_session
+):
+    """Hard-deleting one tagged file drops only its association row.
+
+    The other file's row on the same tag survives, and the tag's file_count
+    (as returned by PATCH /library/tags/{id}) reflects it correctly afterwards.
+    """
+    keep = await file_factory()
+    doomed = await file_factory()
+    keep_id, doomed_id = keep.id, doomed.id
+
+    tag_resp = await async_client.post("/api/v1/library/tags", json={"name": "toy"})
+    assert tag_resp.status_code == 201
+    tag_id = tag_resp.json()["id"]
+
+    assign = await async_client.post(
+        "/api/v1/library/tags/bulk-assign",
+        json={"file_ids": [keep_id, doomed_id], "tag_ids": [tag_id], "action": "add"},
+    )
+    assert assign.status_code == 200
+
+    assert await _assoc_rows(db_session) == sorted([(keep_id, tag_id), (doomed_id, tag_id)])
+
+    await async_client.delete(f"/api/v1/library/files/{doomed_id}")
+    resp = await async_client.delete(f"/api/v1/library/trash/{doomed_id}")
+    assert resp.status_code == 200
+
+    db_session.expire_all()
+    assert await _assoc_rows(db_session) == [(keep_id, tag_id)]
+
+    rename = await async_client.patch(f"/api/v1/library/tags/{tag_id}", json={"name": "toy"})
+    assert rename.status_code == 200
+    assert rename.json()["file_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hard_delete_frees_row_id_without_leaking_tags_to_new_file(
+    async_client: AsyncClient, file_factory, db_session
+):
+    """A file created after a hard-delete must never inherit the freed id's tags,
+    even if SQLite reuses the deleted row's rowid for the new insert."""
+    from backend.app.models.library import LibraryFile
+
+    doomed = await file_factory()
+    doomed_id = doomed.id
+
+    tag_resp = await async_client.post("/api/v1/library/tags", json={"name": "reused-id"})
+    tag_id = tag_resp.json()["id"]
+    assign = await async_client.post(
+        "/api/v1/library/tags/bulk-assign",
+        json={"file_ids": [doomed_id], "tag_ids": [tag_id], "action": "add"},
+    )
+    assert assign.status_code == 200
+
+    await async_client.delete(f"/api/v1/library/files/{doomed_id}")
+    resp = await async_client.delete(f"/api/v1/library/trash/{doomed_id}")
+    assert resp.status_code == 200
+
+    new_file = await file_factory()
+    new_file_id = new_file.id
+    db_session.expire_all()
+    reused_id = new_file_id == doomed_id  # informational — SQLite may or may not reuse it
+
+    new_assoc = await _assoc_rows(db_session)
+    assert (new_file_id, tag_id) not in new_assoc, f"leaked tag onto new file (reused_id={reused_id})"
+
+    fresh = await db_session.get(LibraryFile, new_file_id)
+    assert fresh is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_empty_trash_removes_tag_associations_for_all_deleted_files(
+    async_client: AsyncClient, file_factory, db_session
+):
+    """Emptying the trash drops every deleted file's association rows."""
+    a = await file_factory()
+    b = await file_factory()
+    a_id, b_id = a.id, b.id
+
+    tag_resp = await async_client.post("/api/v1/library/tags", json={"name": "batch-tag"})
+    tag_id = tag_resp.json()["id"]
+    assign = await async_client.post(
+        "/api/v1/library/tags/bulk-assign",
+        json={"file_ids": [a_id, b_id], "tag_ids": [tag_id], "action": "add"},
+    )
+    assert assign.status_code == 200
+
+    await async_client.delete(f"/api/v1/library/files/{a_id}")
+    await async_client.delete(f"/api/v1/library/files/{b_id}")
+
+    resp = await async_client.delete("/api/v1/library/trash")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] >= 2
+
+    db_session.expire_all()
+    assoc = await _assoc_rows(db_session)
+    assert (a_id, tag_id) not in assoc
+    assert (b_id, tag_id) not in assoc
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sweeper_removes_tag_associations_before_hard_deleting(
+    async_client: AsyncClient, file_factory, db_session
+):
+    """The retention sweep must drop tag associations the same way."""
+    from backend.app.services.library_trash import library_trash_service
+
+    keep = await file_factory()
+    swept = await file_factory(filename="swept_tagged.3mf")
+    keep_id, swept_id = keep.id, swept.id
+    swept.deleted_at = datetime.now(timezone.utc) - timedelta(days=400)
+    await db_session.commit()
+
+    tag_resp = await async_client.post("/api/v1/library/tags", json={"name": "swept-tag"})
+    tag_id = tag_resp.json()["id"]
+    assign = await async_client.post(
+        "/api/v1/library/tags/bulk-assign",
+        json={"file_ids": [keep_id, swept_id], "tag_ids": [tag_id], "action": "add"},
+    )
+    assert assign.status_code == 200
+
+    deleted = await library_trash_service._sweep(db_session)
+    assert deleted >= 1
+
+    db_session.expire_all()
+    assoc = await _assoc_rows(db_session)
+    assert (swept_id, tag_id) not in assoc
+    assert (keep_id, tag_id) in assoc
 
 
 @pytest.mark.asyncio
@@ -278,13 +629,19 @@ async def test_trash_settings_rejects_out_of_range(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_sweeper_hard_deletes_past_retention(db_session):
-    """The background sweeper clears rows whose deleted_at is older than retention."""
+async def test_sweeper_hard_deletes_past_retention(db_session, tmp_path):
+    """The background sweeper clears rows whose deleted_at is older than retention,
+    and unlinks the swept row's bytes on disk."""
     from backend.app.models.library import LibraryFile
     from backend.app.services.library_trash import library_trash_service
 
     # Retention = 30 days; stamp one row 40 days ago, one 5 days ago.
     await library_trash_service.set_retention_days(db_session, 30)
+
+    stale_file_path = tmp_path / "stale.3mf"
+    stale_thumb_path = tmp_path / "stale.png"
+    stale_file_path.write_bytes(b"payload")
+    stale_thumb_path.write_bytes(b"thumb")
 
     fresh = LibraryFile(
         filename="fresh.3mf",
@@ -295,7 +652,8 @@ async def test_sweeper_hard_deletes_past_retention(db_session):
     )
     stale = LibraryFile(
         filename="stale.3mf",
-        file_path="/test/library/stale.3mf",
+        file_path=str(stale_file_path),
+        thumbnail_path=str(stale_thumb_path),
         file_size=2048,
         file_type="3mf",
         deleted_at=datetime.now(timezone.utc) - timedelta(days=40),
@@ -314,6 +672,51 @@ async def test_sweeper_hard_deletes_past_retention(db_session):
     assert remaining is None
     still_there = await db_session.get(LibraryFile, fresh_id)
     assert still_there is not None
+    assert not stale_file_path.exists()
+    assert not stale_thumb_path.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sweeper_keeps_bytes_and_row_when_commit_fails(db_session, tmp_path, monkeypatch):
+    """A failed sweeper commit must leave both the bytes and the row untouched (#T-148)."""
+    from backend.app.models.library import LibraryFile
+    from backend.app.services.library_trash import library_trash_service
+
+    await library_trash_service.set_retention_days(db_session, 30)
+
+    stale_file_path = tmp_path / "stale_commit_fail.3mf"
+    stale_thumb_path = tmp_path / "stale_commit_fail.png"
+    stale_file_path.write_bytes(b"payload")
+    stale_thumb_path.write_bytes(b"thumb")
+
+    stale = LibraryFile(
+        filename="stale_commit_fail.3mf",
+        file_path=str(stale_file_path),
+        thumbnail_path=str(stale_thumb_path),
+        file_size=2048,
+        file_type="3mf",
+        deleted_at=datetime.now(timezone.utc) - timedelta(days=40),
+    )
+    db_session.add(stale)
+    await db_session.commit()
+    stale_id = stale.id
+
+    async def _boom():
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(db_session, "commit", _boom)
+
+    with pytest.raises(RuntimeError):
+        await library_trash_service._sweep(db_session)
+
+    assert stale_file_path.exists()
+    assert stale_thumb_path.exists()
+
+    await db_session.rollback()
+    row = await db_session.get(LibraryFile, stale_id)
+    assert row is not None
+    assert row.deleted_at is not None
 
 
 @pytest.mark.asyncio

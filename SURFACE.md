@@ -2341,6 +2341,7 @@ getAitoTracking
 getAitoTrackingLink
 getAitoTrash
 getAllCloudFields
+getAllLibraryFiles
 getAllTransactions
 getAllUsageHistory
 getAMSHistory

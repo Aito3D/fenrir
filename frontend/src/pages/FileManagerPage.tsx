@@ -1370,7 +1370,7 @@ export function FileManagerPage() {
     // union of every external folder (#1621). include_root stays false so the
     // listing still descends into subfolders (regression guard from #1499).
     queryFn: () =>
-      api.getLibraryFiles(
+      api.getAllLibraryFiles(
         selectedFolderId,
         false,
         undefined,

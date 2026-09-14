@@ -8228,6 +8228,8 @@ export const api = {
     scope?: 'internal' | 'external',
     recursive = false,
     tagIds: number[] = [],
+    limit?: number,
+    offset?: number,
   ) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
@@ -8250,7 +8252,36 @@ export const api = {
     for (const tagId of tagIds) {
       params.append('tag_ids', String(tagId));
     }
+    // T-150: server caps a single response (default 500, max 2000 rows) and
+    // reports the full matching count via the X-Total-Count response header.
+    // Optional so every pre-existing caller keeps getting the server default.
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
+  },
+  /** Pages through `getLibraryFiles` at the server's max page size until a
+   * page comes back short, concatenating results in order (#T-150). `request`
+   * doesn't expose response headers, so this uses the short-page rule instead
+   * of reading X-Total-Count. Lets in-app consumers keep showing every file
+   * while the server never serialises more than one page at a time. */
+  getAllLibraryFiles: async (
+    folderId?: number | null,
+    includeRoot = true,
+    projectId?: number,
+    scope?: 'internal' | 'external',
+    recursive = false,
+    tagIds: number[] = [],
+  ): Promise<LibraryFileListItem[]> => {
+    const PAGE_SIZE = 2000;
+    const all: LibraryFileListItem[] = [];
+    let offset = 0;
+    for (;;) {
+      const page = await api.getLibraryFiles(folderId, includeRoot, projectId, scope, recursive, tagIds, PAGE_SIZE, offset);
+      all.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+    return all;
   },
   getLibraryFolderReadme: (folderId: number) =>
     request<{ filename: string; content: string; truncated: boolean }>(

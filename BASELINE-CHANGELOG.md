@@ -11550,3 +11550,55 @@ configurable via the `LIBRARY_MAX_UPLOAD_BYTES` environment variable. Uploads at
 unaffected: identical response fields, identical `file_hash`/`file_size`, identical on-disk bytes, and
 identical DB row.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 9 · T-150 — 2026-09-13 — user-approved behavior change
+
+`list_files()` (backend/app/api/routes/library.py:~2099, GET `/library/files` and `/library/files/`) took
+`folder_id`/`project_id`/`tag_ids`/`recursive`/`include_root`/`internal_only`/`external_only` but no
+`limit` or `offset`, and built its query with `selectinload(LibraryFile.created_by)` +
+`selectinload(LibraryFile.tags)` and no `.limit(...)` at all — the only `.limit()` calls in the file were
+the dedup probes elsewhere. `include_root=False` with no `folder_id` returned every non-deleted row the
+caller was allowed to see. The File Manager's "All Files" view on a library with tens of thousands of
+files pulled all of them plus their tag rows into memory and shipped a multi-megabyte JSON body, blocking
+the event loop through serialisation and making the page unusable.
+
+Fixed by adding `limit: int = Query(default=500, ge=1, le=2000)` and `offset: int = Query(default=0,
+ge=0)` to `list_files()`, applying `.offset(offset).limit(limit)` to the existing query after its
+existing (and unchanged) `order_by(LibraryFile.filename)`, and computing the total matching row count
+with a separate `select(func.count()).select_from(query.subquery())` over the exact same
+filtered/joined/grouped query object (so the `tag_ids` GROUP BY/HAVING branch is reused rather than
+duplicated) before paging is applied. The total is exposed via a new `X-Total-Count` response header; the
+response body shape is unchanged — still `list[FileListResponse]` — so every existing client keeps
+parsing it exactly as before. Every existing filter (`folder_id`, `project_id`, `tag_ids`, `recursive`,
+`include_root`, `internal_only`/`external_only`, ownership scoping) and the existing `Cache-Control:
+no-cache, no-store, must-revalidate` header are untouched.
+
+On the frontend, `getLibraryFiles()` (frontend/src/api/client.ts) grew two new optional trailing
+parameters, `limit` and `offset`, appended after the existing `tagIds` parameter — every pre-existing call
+site that omits them keeps getting the server's default page (500 rows) exactly as before. A new exported
+helper, `getAllLibraryFiles(...)`, takes the same leading arguments as `getLibraryFiles` (minus
+limit/offset) and pages through it at the server's max page size (2000) until a page comes back shorter
+than the requested limit, concatenating results in request order; it uses the short-page rule rather than
+reading `X-Total-Count` because `request<T>()` in client.ts returns only the parsed JSON body and does not
+expose response headers to callers. The two in-app consumers that render "every file" —
+`FileManagerPage.tsx`'s "All Files" / folder-listing query and `ProjectDetailPage.tsx`'s bulk
+project-files query — were switched from `getLibraryFiles` to `getAllLibraryFiles` (one-line change each,
+same arguments), so the in-app UI keeps showing every file the user is allowed to see; only the wire
+format changed to bounded pages under the hood. No other in-app caller of `getLibraryFiles` exists
+(grepped `getLibraryFiles(` outside `__tests__`).
+
+Confirmed via `snapshot.py verify`: `app-openapi-index` was the only probe to mismatch, and the diff was
+exactly the two new `query:limit` / `query:offset` parameters on both the `/library/files` and
+`/library/files/` operations; recorded via `snapshot.py record` (only
+`snapshots/app-openapi-index.golden` changed, 4 insertions). The new `X-Total-Count` response header is
+not tracked by that probe (it indexes parameters, not response headers), so it does not show up in the
+diff. `SURFACE.md` was regenerated and its only diff is the new `getAllLibraryFiles` export line.
+
+User-visible change: `GET /api/v1/library/files` (and the trailing-slash alias) now defaults to returning
+at most 500 files per call (previously unbounded) and rejects `limit=0` or `limit>2000` with a 422; the
+full matching count is available via the new `X-Total-Count` response header for any client that wants to
+page. Any external client calling this endpoint directly without passing `limit`/`offset` will see fewer
+files per response than before if it has more than 500 in scope. The bundled in-app File Manager and
+project-detail views are unaffected end-to-end — they now call `getAllLibraryFiles`, which transparently
+pages through the capped responses and still renders the complete list.
+User-approved 2026-09-13.

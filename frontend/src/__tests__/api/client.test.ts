@@ -394,3 +394,64 @@ describe('Project cover image URL (#1155)', () => {
     expect(params.get('token')).toBe('a&b=c');
   });
 });
+
+describe('getAllLibraryFiles pagination (#T-150)', () => {
+  const makeFile = (id: number) => ({
+    id,
+    filename: `file-${id}.3mf`,
+    file_path: `/library/file-${id}.3mf`,
+    file_size: 1024,
+    file_type: '3mf',
+    folder_id: null,
+    thumbnail_path: null,
+    print_name: null,
+    print_time_seconds: 0,
+    print_count: 0,
+    duplicate_count: 0,
+    created_at: '2024-01-01T00:00:00Z',
+  });
+
+  it('pages through 2 full pages + 1 short page and concatenates results in order (3 requests)', async () => {
+    // getAllLibraryFiles always asks for the server's max page size (2000).
+    // Fake that boundary: the first two requests each return exactly `limit`
+    // rows (built cheaply from the requested offset, no giant fixture array),
+    // the third returns a short page, terminating the loop after 3 requests.
+    const requestedOffsets: number[] = [];
+
+    server.use(
+      http.get('/api/v1/library/files', ({ request }) => {
+        const url = new URL(request.url);
+        const limit = Number(url.searchParams.get('limit'));
+        const offset = Number(url.searchParams.get('offset') ?? '0');
+        requestedOffsets.push(offset);
+        const pageLength = offset < 4000 ? limit : 500; // 2 full pages, then a short one
+        const page = Array.from({ length: pageLength }, (_, i) => makeFile(offset + i + 1));
+        return HttpResponse.json(page);
+      }),
+    );
+
+    const result = await api.getAllLibraryFiles();
+
+    expect(requestedOffsets).toEqual([0, 2000, 4000]);
+    expect(result).toHaveLength(4500);
+    // Concatenated in request order: ids 1..4500 with no gaps or reordering.
+    expect(result.map((f) => f.id)).toEqual(Array.from({ length: 4500 }, (_, i) => i + 1));
+  });
+
+  it('stops after a single request when the first page comes back short', async () => {
+    const files = [makeFile(1), makeFile(2)];
+    let requestCount = 0;
+
+    server.use(
+      http.get('/api/v1/library/files', () => {
+        requestCount += 1;
+        return HttpResponse.json(files);
+      }),
+    );
+
+    const result = await api.getAllLibraryFiles();
+
+    expect(result.map((f) => f.id)).toEqual([1, 2]);
+    expect(requestCount).toBe(1);
+  });
+});

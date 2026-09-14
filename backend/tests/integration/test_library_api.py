@@ -598,6 +598,52 @@ class TestLibraryFilesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_list_files_pagination_limit_offset_and_total_count(self, async_client: AsyncClient, file_factory):
+        """T-150: limit/offset page through the listing; X-Total-Count reports
+        the full matching count regardless of the page size."""
+        files = [await file_factory(filename=f"page_{i:02d}.3mf") for i in range(7)]
+        expected_order = sorted((f.id for f in files), key=lambda fid: next(f.filename for f in files if f.id == fid))
+
+        first_page = await async_client.get("/api/v1/library/files?limit=3&offset=0")
+        assert first_page.status_code == 200
+        assert first_page.headers["X-Total-Count"] == "7"
+        first_ids = [f["id"] for f in first_page.json()]
+        assert first_ids == expected_order[:3]
+
+        last_page = await async_client.get("/api/v1/library/files?limit=3&offset=6")
+        assert last_page.status_code == 200
+        assert last_page.headers["X-Total-Count"] == "7"
+        last_ids = [f["id"] for f in last_page.json()]
+        assert last_ids == expected_order[6:7]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_pagination_filters_still_apply_to_total_count(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """X-Total-Count reflects the same folder scoping as the paged body,
+        not the whole unfiltered table."""
+        folder = await folder_factory()
+        in_folder = [await file_factory(folder_id=folder.id, filename=f"f_{i}.3mf") for i in range(4)]
+        await file_factory(filename="root.3mf")  # outside the folder — must not count
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={folder.id}&limit=2&offset=0")
+        assert response.status_code == 200
+        assert response.headers["X-Total-Count"] == str(len(in_folder))
+        assert len(response.json()) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_limit_out_of_range_rejected(self, async_client: AsyncClient):
+        """limit=0 and limit over the 2000 cap are both invalid (422)."""
+        too_low = await async_client.get("/api/v1/library/files?limit=0")
+        assert too_low.status_code == 422
+
+        too_high = await async_client.get("/api/v1/library/files?limit=5000")
+        assert too_high.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_folder_readme_returns_first_markdown(
         self, async_client: AsyncClient, folder_factory, file_factory
     ):
