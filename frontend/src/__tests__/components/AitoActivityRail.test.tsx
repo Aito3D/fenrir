@@ -422,6 +422,30 @@ describe('ActivityRail', () => {
     expect(screen.getByText(/oldest-event/)).toBeInTheDocument();
   });
 
+  // `payment_link.*` kinds reach the rail from the backend registry; without
+  // an EVENT_LABEL_KEY entry they render as the raw wire string
+  // ("payment_link.paid") rather than a sentence, which is the regression
+  // this pins. The suite runs in English, like every other assertion here.
+  it('labels a payment_link.paid event instead of showing the raw kind', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({
+      events: [
+        event({
+          kind: 'payment_link.paid',
+          actor_class: 'system',
+          actor_name: null,
+          subject_type: 'project',
+          subject_label: null,
+          detail: { amount: 12500, reference: 'DEV-1' },
+        }),
+      ],
+      has_more: false,
+    });
+    render(<ActivityRail projectId={12} />);
+
+    expect(await screen.findByText('Paid online')).toBeInTheDocument();
+    expect(screen.queryByText('payment_link.paid')).not.toBeInTheDocument();
+  });
+
   // ElapsedGutter (EventItem.tsx) only renders at Story depth, between an
   // event and the next-older one. `elapsedBucket` (eventKinds.ts) buckets the
   // gap into null (<60s, no row), minute, hour, or day — largest whole unit

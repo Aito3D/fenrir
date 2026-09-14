@@ -56,6 +56,7 @@ function buildProvider(overrides: Partial<NotificationProvider> = {}): Notificat
     on_queue_completed: false,
     on_stock_reorder_alert: false,
     on_stock_break_alert: false,
+    on_aito_payment_received: false,
     quiet_hours_enabled: false,
     quiet_hours_start: null,
     quiet_hours_end: null,
