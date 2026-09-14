@@ -1,5 +1,7 @@
 """The public page's payment block: derived from the ledger row, never from
-Heimdall; invoice precedence is the page's, the payload carries both."""
+Heimdall; invoice precedence is the page's, the payload carries both. A
+pending link is offered only once the quote is accepted — the client pays
+what they have validated, never a quote still under discussion."""
 
 from datetime import datetime
 
@@ -60,8 +62,8 @@ async def test_no_link_means_null(db_session):
 
 
 @pytest.mark.asyncio
-async def test_pending_link_is_unpaid_with_the_url(db_session):
-    p = await _project(db_session)
+async def test_pending_link_is_unpaid_with_the_url_once_accepted(db_session):
+    p = await _project(db_session, quote_status="accepted")
     await _link(db_session, p.id)
     payment = (await _track(db_session)).payment
     assert payment.model_dump() == {"state": "unpaid", "url": "https://osb/pay/L1", "deposit": False}
@@ -87,9 +89,26 @@ async def test_a_dead_current_link_is_null(db_session, dead):
 
 @pytest.mark.asyncio
 async def test_a_superseded_paid_row_does_not_leak_past_a_pending_one(db_session):
-    p = await _project(db_session)
+    p = await _project(db_session, quote_status="accepted")
     await _link(
         db_session, p.id, idempotency_key=f"aito:{p.id}:1", heimdall_id="L1", status="expired", superseded_at=NOW
     )
     await _link(db_session, p.id, idempotency_key=f"aito:{p.id}:2", heimdall_id="L2", url="https://osb/pay/L2")
     assert (await _track(db_session)).payment.url == "https://osb/pay/L2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", "sent", "viewed", None])
+async def test_a_pending_link_is_hidden_until_the_quote_is_accepted(db_session, status):
+    p = await _project(db_session, quote_status=status)
+    await _link(db_session, p.id)
+    assert (await _track(db_session)).payment is None
+
+
+@pytest.mark.asyncio
+async def test_a_paid_link_shows_whatever_the_quote_status(db_session):
+    # Money wins: a paid link accepts the quote on the next tick, and the
+    # page must not flicker back to nothing in between.
+    p = await _project(db_session, quote_status="sent")
+    await _link(db_session, p.id, status="paid")
+    assert (await _track(db_session)).payment.state == "paid"

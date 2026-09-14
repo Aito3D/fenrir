@@ -241,14 +241,19 @@ def invoice_state(status: str | None) -> str | None:
     return _INVOICE_STATE.get(status or "")
 
 
-async def payment_state(db: AsyncSession, project_id: int) -> AitoTrackingPayment | None:
+async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingPayment | None:
     """Read off the ledger only — the public page must never trigger a
-    Heimdall call. Pending -> unpaid with the URL; paid -> paid; a dead or
-    absent link -> None."""
+    Heimdall call. Pending -> unpaid with the URL, but only once the quote
+    is accepted (the client pays what they validated, never a quote still
+    under discussion — the operator hands the link out by hand before that);
+    paid -> paid whatever the quote says (money wins, and the acceptance
+    lands a tick later); a dead or absent link -> None."""
     from backend.app.services.aito_payment_links import current_link, deposit_pct
 
-    row = await current_link(db, project_id)
+    row = await current_link(db, project.id)
     if row is None or row.heimdall_id is None or row.status not in ("pending", "paid"):
+        return None
+    if row.status == "pending" and project.quote_status != "accepted":
         return None
     return AitoTrackingPayment(
         state="paid" if row.status == "paid" else "unpaid", url=row.url, deposit=(await deposit_pct(db)) > 0
@@ -379,6 +384,6 @@ async def compute_tracking(
         invoice=invoice_state(project.invoice_status),
         reference=project.quote_number or None,
         updated_at=updated_at,
-        payment=await payment_state(db, project.id),
+        payment=await payment_state(db, project),
     )
     return project.id, data

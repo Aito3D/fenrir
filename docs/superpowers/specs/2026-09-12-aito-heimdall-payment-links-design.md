@@ -250,7 +250,7 @@ The masthead never grows a row (memory `aito-panel-header-height`); everything g
 - Tracking (`AitoTrackPage`): precedence
   1. `invoice != null` → today's `TrackingInvoice`, unchanged;
   2. `payment.state == 'paid'` → the quiet paid style; title *Acompte reçu* when `aito_deposit_pct > 0` (the tracking payload carries a `deposit: bool` so the page needs no setting), else *Paiement reçu*;
-  3. `payment.state == 'unpaid'` and `url` → the bordered card: *Projet non réglé* + **Payer en ligne** (`<a target="_blank" rel="noopener noreferrer">`), the payment-terms toggle beside it;
+  3. `payment.state == 'unpaid'` and `url` → the bordered card: *Projet non réglé* + **Payer en ligne** (`<a target="_blank" rel="noopener noreferrer">`), the payment-terms toggle beside it. The payload only carries a pending link once `quote_status == 'accepted'` (decided 2026-09-14): the client pays what they validated; before that the operator hands the link out from the panel;
   4. otherwise nothing.
   The page never calls Heimdall. 13-locale copy.
 
