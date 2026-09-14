@@ -453,4 +453,11 @@ describe('AitoTrackPage — online payment', () => {
     expect(await screen.findByTestId('track-invoice')).toBeInTheDocument();
     expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
   });
+
+  it('unpaid with no link yet renders nothing', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: null, deposit: false } });
+    renderAt('tok');
+    await screen.findByRole('heading', { level: 2, name: 'Devis en préparation' });
+    expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
+  });
 });
