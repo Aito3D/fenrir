@@ -505,6 +505,154 @@ class TestSettingsAPI:
         assert "auto_resolved_quality" in result
         assert result["auto_resolved_quality"] in ["low", "medium", "high"]
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_quality_change_stops_active_streams(self, async_client: AsyncClient, monkeypatch):
+        """A camera_keys change must stop active camera streams via the shared hub (#T-241)."""
+        from backend.app.api.routes.camera import _hub
+
+        calls = {"count": 0}
+
+        async def fake_stop_all(self):
+            calls["count"] += 1
+            return 2
+
+        monkeypatch.setattr(type(_hub), "stop_all", fake_stop_all)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_quality": "high"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_quality"] == "high"
+        assert calls["count"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_stream_stop_failure_logged_and_swallowed(
+        self, async_client: AsyncClient, monkeypatch, caplog
+    ):
+        """A broken camera stream stop must not fail the request, but must be logged (#T-241)."""
+        from backend.app.api.routes.camera import _hub
+
+        async def boom(self):
+            raise RuntimeError("ffmpeg pipe broken")
+
+        monkeypatch.setattr(type(_hub), "stop_all", boom)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.settings"):
+            response = await async_client.put("/api/v1/settings/", json={"camera_quality": "medium"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_quality"] == "medium"
+        assert "Camera engine reconfiguration failed" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_to_go2rtc_starts_service(self, async_client: AsyncClient, monkeypatch):
+        """Switching camera_engine to 'go2rtc' while stopped must start the go2rtc service (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"start": 0, "stop": 0}
+
+        async def fake_start(self):
+            calls["start"] += 1
+
+        async def fake_stop(self):
+            calls["stop"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: False))
+        monkeypatch.setattr(type(go2rtc_service), "start", fake_start)
+        monkeypatch.setattr(type(go2rtc_service), "stop", fake_stop)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "go2rtc"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_engine"] == "go2rtc"
+        assert calls["start"] == 1
+        assert calls["stop"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_to_go2rtc_noop_when_already_running(
+        self, async_client: AsyncClient, monkeypatch
+    ):
+        """Switching camera_engine to 'go2rtc' while already running must not restart it (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"start": 0}
+
+        async def fake_start(self):
+            calls["start"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: True))
+        monkeypatch.setattr(type(go2rtc_service), "start", fake_start)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "go2rtc"})
+
+        assert response.status_code == 200
+        assert calls["start"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_away_from_go2rtc_stops_service(self, async_client: AsyncClient, monkeypatch):
+        """Switching camera_engine away from 'go2rtc' while running must stop the go2rtc service (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"stop": 0}
+
+        async def fake_stop(self):
+            calls["stop"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: True))
+        monkeypatch.setattr(type(go2rtc_service), "stop", fake_stop)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "ffmpeg"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_engine"] == "ffmpeg"
+        assert calls["stop"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_away_from_go2rtc_noop_when_already_stopped(
+        self, async_client: AsyncClient, monkeypatch
+    ):
+        """Switching camera_engine away from 'go2rtc' while already stopped must not call stop() (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"stop": 0}
+
+        async def fake_stop(self):
+            calls["stop"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: False))
+        monkeypatch.setattr(type(go2rtc_service), "stop", fake_stop)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "ffmpeg"})
+
+        assert response.status_code == 200
+        assert calls["stop"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_go2rtc_management_failure_logged_and_swallowed(
+        self, async_client: AsyncClient, monkeypatch, caplog
+    ):
+        """A broken go2rtc start/stop must not fail the request, but must be logged (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        async def boom(self):
+            raise RuntimeError("go2rtc binary not found")
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: False))
+        monkeypatch.setattr(type(go2rtc_service), "start", boom)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.settings"):
+            response = await async_client.put("/api/v1/settings/", json={"camera_engine": "go2rtc"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_engine"] == "go2rtc"
+        assert "go2rtc management failed" in caplog.text
+
     # ========================================================================
     # Per-printer mapping settings tests
     # ========================================================================

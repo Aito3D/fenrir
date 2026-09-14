@@ -798,19 +798,21 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             # Export data from Postgres to SQLite
             async with engine.connect() as conn:
                 for table in metadata.sorted_tables:
-                    result = await conn.execute(table.select())
-                    rows = result.fetchall()
-                    if not rows:
-                        continue
-                    columns = list(result.keys())
-                    placeholders = ", ".join(["?"] * len(columns))
-                    col_list = ", ".join(columns)
-                    insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
+                    # Stream via a server-side cursor and copy in bounded chunks
+                    # instead of fetchall() — a large table (archives, print_log,
+                    # notification_log) would otherwise be materialised in full
+                    # here and again as a serialized list before executemany().
+                    async with conn.stream(table.select()) as result:
+                        columns = list(result.keys())
+                        placeholders = ", ".join(["?"] * len(columns))
+                        col_list = ", ".join(columns)
+                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
 
-                    def _serialize_row(row):
-                        return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
+                        def _serialize_row(row):
+                            return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
 
-                    dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
+                        async for chunk in result.partitions(1000):
+                            dst.executemany(insert_sql, [_serialize_row(row) for row in chunk])
 
             dst.commit()
             dst.close()
