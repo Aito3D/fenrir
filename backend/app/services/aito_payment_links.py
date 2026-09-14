@@ -114,6 +114,24 @@ def _fields_match(row: AitoPaymentLink, wanted: Wanted) -> bool:
     return row.amount == wanted.amount and row.expires_on == wanted.expires_on
 
 
+def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
+    """Would `reconcile_project` do anything for this pair? The §5.4 table
+    read as a predicate, with no Heimdall call: the wake path uses it to
+    visit only the projects whose link drifted from the quote (a total or
+    expiry moved, a renumber, an invoicing, a link still owed) and leave
+    the steady state alone."""
+    if row is None:
+        return wanted is not None
+    if row.heimdall_id is None:
+        return True  # a reservation is always completed
+    if row.status == "paid":
+        return False
+    if row.status in _DEAD_STATUSES:
+        return wanted is not None
+    # pending
+    return wanted is None or row.reference != wanted.reference or not _fields_match(row, wanted)
+
+
 def _adopt(row: AitoPaymentLink, view: LinkView, now: datetime) -> None:
     row.heimdall_id = view.id
     row.status = view.status
@@ -466,7 +484,7 @@ async def reconcile_payment_links(
     db: AsyncSession,
     *,
     only_project_id: int | None = None,
-    create_only: bool = False,
+    changes_only: bool = False,
     now: datetime | None = None,
     today: date | None = None,
     force: bool = False,
@@ -478,6 +496,13 @@ async def reconcile_payment_links(
     `force=True` bypasses the per-row backoff in BOTH halves (reconcile and
     poll) — the panel's Retry, which is only offered on a row that IS backed
     off. The loop never sets it.
+
+    `changes_only=True` is the wake path (the drain right after a quote was
+    created or pushed): it visits only the projects `needs_action` flags —
+    a link still owed, or one whose amount, expiry or reference no longer
+    matches the quote Books just confirmed — and skips the poll half, so a
+    wake spends nothing of the polling budget. A changed total reaches
+    Heimdall within seconds of the push instead of at the next full tick.
 
     Ids are materialised up front and each row/project is re-fetched with
     `db.get()` INSIDE its own loop iteration, never held onto across
@@ -505,9 +530,15 @@ async def reconcile_payment_links(
     if only_project_id is not None:
         stmt = stmt.where(AitoProject.id == only_project_id)
     project_ids = list((await db.execute(stmt.order_by(AitoProject.id))).scalars().all())
-    if create_only:
+    if changes_only:
         have = await current_links(db, project_ids)
-        project_ids = [pid for pid in project_ids if pid not in have]
+        projects = (await db.execute(select(AitoProject).where(AitoProject.id.in_(project_ids)))).scalars()
+        drifted = {
+            p.id
+            for p in projects
+            if needs_action(have.get(p.id), wanted_link(p, pct=pct, validity_days=validity, today=today))
+        }
+        project_ids = [pid for pid in project_ids if pid in drifted]
     visited = 0
     try:
         for pid in project_ids:
@@ -524,7 +555,7 @@ async def reconcile_payment_links(
             except SQLAlchemyError as exc:
                 logger.warning("payment link reconcile: project %s failed unexpectedly: %s", pid, exc)
                 await db.rollback()
-        if not create_only:
+        if not changes_only:
             _throttled_until = None
             pending = (
                 select(AitoPaymentLink.id)

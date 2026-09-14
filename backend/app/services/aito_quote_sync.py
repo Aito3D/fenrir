@@ -2333,15 +2333,20 @@ async def run_sync_loop() -> None:
                 async with async_session() as db:
                     if await sync_enabled(db) and await zoho_service.is_configured(db):
                         await run_sync_once(db, pending_only=True)
-                        # A quote just created owes its link now, not next
-                        # tick: creates only, so the Copy button lights up
+                        # A quote just created owes its link now, and a
+                        # quote just pushed with a new total owes Heimdall
+                        # the new amount now, not next tick — a client on
+                        # the tracking page must never be offered a stale
+                        # figure. Changes only (create / patch / cancel for
+                        # the projects that drifted), no polling, so the
+                        # Copy button lights up and the amount follows
                         # within seconds without spending the poll budget.
                         try:
                             from backend.app.services.aito_payment_links import reconcile_payment_links
 
-                            await reconcile_payment_links(db, create_only=True)
+                            await reconcile_payment_links(db, changes_only=True)
                         except Exception:
-                            logger.exception("Payment-link create drain failed")
+                            logger.exception("Payment-link change drain failed")
             except asyncio.CancelledError:
                 raise
             except Exception:

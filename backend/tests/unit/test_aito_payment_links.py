@@ -651,3 +651,77 @@ async def test_not_configured_is_a_silent_no_op(db_session, monkeypatch):
     monkeypatch.setattr(heimdall_service, "is_configured", off)
     await _project(db_session)
     assert await reconcile_payment_links(db_session, now=NOW, today=TODAY) == 0
+
+
+# --- changes-only (the wake path) --------------------------------------------
+W = Wanted("DEV-1", 12500, "2026-09-27")
+
+
+def _row(**fields) -> AitoPaymentLink:
+    base = {
+        "project_id": 1,
+        "heimdall_id": "L1",
+        "reference": "DEV-1",
+        "amount": 12500,
+        "expires_on": "2026-09-27",
+        "status": "pending",
+    }
+    base.update(fields)
+    return AitoPaymentLink(**base)
+
+
+@pytest.mark.parametrize(
+    "row, wanted, expected",
+    [
+        (None, W, True),  # nothing yet, a link owed
+        (None, None, False),  # nothing yet, nothing owed
+        (_row(heimdall_id=None), W, True),  # a reservation always completes
+        (_row(heimdall_id=None), None, True),
+        (_row(), W, False),  # pending and in agreement: the steady state
+        (_row(), None, True),  # pending, no longer wanted: cancel
+        (_row(amount=9000), W, True),  # total moved: patch
+        (_row(expires_on="2026-10-01"), W, True),  # expiry moved: patch
+        (_row(reference="DEV-0"), W, True),  # renumbered: replace
+        (_row(status="paid"), W, False),  # paid is never touched
+        (_row(status="paid", amount=1), None, False),
+        (_row(status="expired"), W, True),  # dead but owed: replace
+        (_row(status="cancelled"), None, False),  # dead and settled
+    ],
+)
+def test_needs_action_mirrors_the_transition_table(row, wanted, expected):
+    assert svc.needs_action(row, wanted) is expected
+
+
+@pytest.mark.asyncio
+async def test_changes_only_patches_a_moved_total_and_polls_nothing(db_session, fake):
+    """The wake path after a quote push: a project whose total just changed
+    gets its link patched right away, one in agreement is left alone, one
+    without a link still gets one, and no polling budget is spent."""
+    moved = await _project(db_session, quote_number="DEV-1")
+    steady = await _project(db_session, quote_number="DEV-2")
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fresh = await _project(db_session, quote_number="DEV-3")
+    fake.calls.clear()
+
+    moved.quote_total = 9000.0
+    await db_session.commit()
+    n = await reconcile_payment_links(db_session, now=NOW, today=TODAY, changes_only=True)
+
+    assert n == 2
+    assert [c[0] for c in fake.calls] == ["patch", "create"]
+    assert (await current_link(db_session, moved.id)).amount == 9000
+    assert (await current_link(db_session, steady.id)).amount == 12500
+    assert (await current_link(db_session, fresh.id)).heimdall_id is not None
+    assert not [c for c in fake.calls if c[0] == "get"]
+
+
+@pytest.mark.asyncio
+async def test_changes_only_cancels_a_link_the_drain_just_invoiced(db_session, fake):
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.calls.clear()
+    p.quote_invoiced = True
+    await db_session.commit()
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY, changes_only=True)
+    assert [c[0] for c in fake.calls] == ["cancel"]
+    assert (await current_link(db_session, p.id)).status == "cancelled"
