@@ -1179,3 +1179,110 @@ class TestDisableLocalLoginLockoutGuard:
 
         assert response.status_code == 200
         assert response.json()["local_login_enabled"] is False
+
+
+class TestResetSettings:
+    """POST /settings/reset (T-239): wipes every ``Settings`` row and returns
+    ``DEFAULT_SETTINGS``.
+
+    This characterizes the handler exactly as it exists today, including its
+    known breadth: it deletes every row in the table, not just the ones a
+    particular subsystem owns (e.g. ``auth_enabled`` gets wiped too). That is
+    a separately tracked concern — these tests pin current behavior, they do
+    not fix it.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_returns_defaults_and_empties_table(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Seed several settings rows via the normal update path, POST
+        /reset, and verify: 200 with the DEFAULT_SETTINGS body, the Settings
+        table is empty afterward, and a subsequent GET reflects the reset
+        (returns defaults again)."""
+        from sqlalchemy import func, select
+
+        from backend.app.api.routes.settings import DEFAULT_SETTINGS
+        from backend.app.models.settings import Settings
+
+        seed_response = await async_client.put(
+            "/api/v1/settings/",
+            json={"currency": "GBP", "date_format": "iso", "time_format": "12h"},
+        )
+        assert seed_response.status_code == 200
+        assert seed_response.json()["currency"] == "GBP"
+
+        count_before = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+        assert count_before > 0, "seeding via PUT /settings/ must have written at least one row"
+
+        response = await async_client.post("/api/v1/settings/reset")
+
+        assert response.status_code == 200
+        assert response.json() == DEFAULT_SETTINGS.model_dump(mode="json")
+
+        count_after = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+        assert count_after == 0, "reset must delete every row in the Settings table"
+
+        get_response = await async_client.get("/api/v1/settings/")
+        assert get_response.status_code == 200
+        assert get_response.json()["currency"] == DEFAULT_SETTINGS.currency
+        assert get_response.json()["date_format"] == DEFAULT_SETTINGS.date_format
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_denied_for_caller_without_settings_update(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A caller in the Viewers group (SETTINGS_READ but not
+        SETTINGS_UPDATE) must get 403, and the table must be left untouched."""
+        from sqlalchemy import func, insert, select
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.group import Group, user_groups
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+
+        # Bootstrap auth (also seeds the default groups, e.g. Viewers).
+        token = await _setup_auth_and_login(async_client, "reset_denied_admin", "ResetDeniedPw1!")
+
+        viewer = User(
+            username="reset_denied_viewer",
+            email="reset_denied_viewer@example.com",
+            password_hash=get_password_hash("ResetDeniedViewer1!"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(viewer)
+        await db_session.flush()
+
+        viewers_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one_or_none()
+        assert viewers_group is not None, "Viewers group must be seeded by setup"
+
+        await db_session.execute(insert(user_groups).values(user_id=viewer.id, group_id=viewers_group.id))
+        await db_session.commit()
+
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "reset_denied_viewer", "password": "ResetDeniedViewer1!"},
+        )
+        assert login.status_code == 200, login.text
+        viewer_token = login.json()["access_token"]
+
+        count_before = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+
+        response = await async_client.post(
+            "/api/v1/settings/reset",
+            headers={"Authorization": f"Bearer {viewer_token}"},
+        )
+
+        assert response.status_code == 403
+
+        count_after = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+        assert count_after == count_before, "a denied reset must not delete any settings rows"
+
+        # The admin token confirms SETTINGS_UPDATE really would have been
+        # accepted, isolating the 403 above to the permission check.
+        allowed_response = await async_client.post(
+            "/api/v1/settings/reset",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert allowed_response.status_code == 200
