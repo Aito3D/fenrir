@@ -135,14 +135,19 @@ describe('AitoTrackPage', () => {
       const box = await screen.findByTestId('track-invoice');
       expect(box).toHaveAttribute('data-state', invoice);
       expect(box).toHaveTextContent(text);
-      expect(box.textContent).not.toMatch(/\d/);
+      // Never an amount: the card itself carries no digit. The collapsed
+      // payment-methods panel underneath legitimately does (IBAN, RIB).
+      const collapse = box.querySelector('[data-testid="track-collapse"]');
+      expect(box.textContent!.replace(collapse?.textContent ?? '', '')).not.toMatch(/\d/);
       const toggle = within(box).queryByRole('button', { name: 'Voir les modalités' });
       expect(!!toggle).toBe(hasTerms);
-      if (toggle) {
+      expect(!!collapse).toBe(hasTerms);
+      if (toggle && collapse) {
         // The terms stay mounted for the symmetric collapse; closed means
         // out of the accessibility tree and the tab order, not absent.
-        const terms = screen.getByText(/Règlement par virement/);
-        const collapse = terms.closest('[data-testid="track-collapse"]')!;
+        const terms = within(box).getByTestId('track-payment-methods');
+        expect(within(terms).getByText('FR76 1746 9000 3120 6624 2000 041')).toBeInTheDocument();
+        expect(within(terms).getByText(/Indiquez le numéro de devis EST-000142/)).toBeInTheDocument();
         expect(collapse).toHaveAttribute('aria-hidden', 'true');
         expect(collapse).toHaveAttribute('inert');
         expect(terms).not.toHaveClass('animate-rise');
@@ -436,6 +441,21 @@ describe('AitoTrackPage — online payment', () => {
     expect(pay).toHaveAttribute('href', 'https://secure.osb.pf/pay/abc');
     expect(pay).toHaveAttribute('target', '_blank');
     expect(pay).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('unpaid: the terms toggle reveals the same payment-methods panel, with the quote number', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    const panel = within(card).getByTestId('track-payment-methods');
+    const collapse = panel.closest('[data-testid="track-collapse"]')!;
+    expect(collapse).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.click(within(card).getByRole('button', { name: 'Voir les modalités' }));
+    expect(collapse).toHaveAttribute('aria-hidden', 'false');
+    expect(panel).toHaveClass('animate-rise');
+    expect(within(panel).getByText(/Indiquez le numéro de devis EST-000142/)).toBeInTheDocument();
+    expect(within(panel).getByText('@paul3482')).toBeInTheDocument();
+    expect(within(panel).getByText('@paulteloe')).toBeInTheDocument();
   });
 
   it('paid: the quiet paid line, worded for a deposit when it was one', async () => {

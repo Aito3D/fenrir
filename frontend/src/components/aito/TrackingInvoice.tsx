@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingInvoice } from '../../api/client';
 import { TrackCollapse } from './TrackCollapse';
+import { TrackingPaymentMethods } from './TrackingPaymentMethods';
 
 const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid: 'bg-amber-500', overdue: 'bg-red-500' };
 
@@ -11,7 +12,7 @@ const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid:
  *  Unpaid/overdue are a bordered secondary card with an outlined button
  *  that reveals the shop's payment terms, so the line is an action and
  *  not a dead end. */
-export function TrackingInvoice({ state }: { state: AitoTrackingInvoice }) {
+export function TrackingInvoice({ state, reference }: { state: AitoTrackingInvoice; reference: string | null }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const copy = { title: t(`aito.track.invoice.${state}Title`), sub: t(`aito.track.invoice.${state}Sub`), terms: state !== 'paid' };
@@ -51,7 +52,7 @@ export function TrackingInvoice({ state }: { state: AitoTrackingInvoice }) {
       </div>
       {copy.terms && (
         <TrackCollapse open={open}>
-          <p className={`${open ? 'animate-rise' : ''} mt-[12px] px-[16px] text-[13px] text-aito-muted`}>{t('aito.track.paymentTerms')}</p>
+          <TrackingPaymentMethods open={open} reference={reference} />
         </TrackCollapse>
       )}
     </div>

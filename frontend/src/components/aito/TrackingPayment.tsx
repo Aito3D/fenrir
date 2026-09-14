@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingPayment } from '../../api/client';
 import { TrackCollapse } from './TrackCollapse';
+import { TrackingPaymentMethods } from './TrackingPaymentMethods';
 
 /** The online payment as a STATE plus, while unpaid, the one action the
  *  client can take from here: pay. Mirrors TrackingInvoice — paid is the
  *  quiet dot-and-line, unpaid is the bordered secondary card — so the two
- *  read as the same kind of thing. The page never shows both: an invoice,
+ *  read as the same kind of thing — and both disclose the same
+ *  TrackingPaymentMethods panel behind the terms toggle. The page never shows both: an invoice,
  *  when there is one, is the truer story and wins. The pay link opens in a
  *  new tab so the tracking page stays open behind OSB's checkout. */
-export function TrackingPayment({ payment }: { payment: AitoTrackingPayment }) {
+export function TrackingPayment({ payment, reference }: { payment: AitoTrackingPayment; reference: string | null }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -48,7 +50,7 @@ export function TrackingPayment({ payment }: { payment: AitoTrackingPayment }) {
         </button>
       </div>
       <TrackCollapse open={open}>
-        <p className={`${open ? 'animate-rise' : ''} mt-[12px] px-[16px] text-[13px] text-aito-muted`}>{t('aito.track.paymentTerms')}</p>
+        <TrackingPaymentMethods open={open} reference={reference} />
       </TrackCollapse>
     </div>
   );
