@@ -878,7 +878,16 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                         arcname = file_path.relative_to(temp_path)
                         zf.write(file_path, arcname)
 
-        await asyncio.to_thread(_build_zip)
+        try:
+            await asyncio.to_thread(_build_zip)
+        except Exception:
+            if output_path is None:
+                # T-201: mkstemp created this file outside any directory the
+                # caller manages; on failure nobody else will ever unlink it,
+                # so each retry after e.g. ENOSPC leaks another partial
+                # multi-GB ZIP in the temp dir.
+                zip_file.unlink(missing_ok=True)
+            raise
 
     return zip_file, filename
 

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { settingsInputCls as INPUT } from './formStyles';
 
 export function ZohoSettings() {
   const queryClient = useQueryClient();
@@ -139,7 +140,7 @@ export function ZohoSettings() {
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -156,7 +157,7 @@ export function ZohoSettings() {
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder={zohoStatus?.configured ? '••••••••' : ''}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -173,7 +174,7 @@ export function ZohoSettings() {
               value={refreshToken}
               onChange={(e) => setRefreshToken(e.target.value)}
               placeholder={zohoStatus?.configured ? '••••••••' : ''}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -186,7 +187,7 @@ export function ZohoSettings() {
               type="text"
               value={organizationId}
               onChange={(e) => setOrganizationId(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -199,7 +200,7 @@ export function ZohoSettings() {
               type="text"
               value={defaultContactId}
               onChange={(e) => setDefaultContactId(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -212,7 +213,7 @@ export function ZohoSettings() {
               type="text"
               value={defaultContactName}
               onChange={(e) => setDefaultContactName(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -226,7 +227,7 @@ export function ZohoSettings() {
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://www.zohoapis.eu"
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -240,7 +241,7 @@ export function ZohoSettings() {
               value={accountsUrl}
               onChange={(e) => setAccountsUrl(e.target.value)}
               placeholder="https://accounts.zoho.eu"
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
         </div>

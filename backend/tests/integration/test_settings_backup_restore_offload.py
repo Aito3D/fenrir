@@ -146,6 +146,80 @@ class TestCreateBackupZipOffloadsBlockingWork:
             await ticker_task
 
 
+class TestCreateBackupTempFileCleanupOnFailure:
+    """T-201: in the ``output_path is None`` branch (used by the
+    ``GET /settings/backup`` download endpoint), ``create_backup_zip``
+    creates its ZIP with ``tempfile.mkstemp``. The only unlink for that file
+    was the ``BackgroundTask`` attached to a *successful* ``FileResponse``,
+    so if ``_build_zip`` raised (e.g. ENOSPC deflating a large archive tree)
+    the partially-written temp ZIP was never cleaned up — every retry left
+    another one behind."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_build_zip_failure_unlinks_the_mkstemp_file_and_still_returns_500(self, async_client, monkeypatch):
+        import tempfile
+        from pathlib import Path
+
+        created_paths: list[str] = []
+        real_mkstemp = tempfile.mkstemp
+
+        def spy_mkstemp(*args, **kwargs):
+            fd, path = real_mkstemp(*args, **kwargs)
+            created_paths.append(path)
+            return fd, path
+
+        monkeypatch.setattr(tempfile, "mkstemp", spy_mkstemp)
+
+        def raise_enospc(self, *args, **kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(zipfile.ZipFile, "write", raise_enospc)
+
+        response = await async_client.get("/api/v1/settings/backup")
+
+        # Same 500 create_backup's `except Exception` produces today for any
+        # failure in create_backup_zip — the fix must not change this.
+        assert response.status_code == 500
+        assert response.json() == {
+            "success": False,
+            "message": "Backup failed. Check server logs for details.",
+        }
+
+        assert created_paths, "expected tempfile.mkstemp to have been called for the mkstemp branch"
+        for path in created_paths:
+            assert not Path(path).exists(), f"mkstemp'd backup ZIP {path} leaked after a failed build"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_build_zip_success_still_schedules_cleanup_after_download(self, async_client, monkeypatch):
+        """The fix must not touch the existing success path: a completed
+        backup still returns 200 and its BackgroundTask still unlinks the
+        mkstemp'd ZIP once the download finishes."""
+        import tempfile
+        from pathlib import Path
+
+        created_paths: list[str] = []
+        real_mkstemp = tempfile.mkstemp
+
+        def spy_mkstemp(*args, **kwargs):
+            fd, path = real_mkstemp(*args, **kwargs)
+            created_paths.append(path)
+            return fd, path
+
+        monkeypatch.setattr(tempfile, "mkstemp", spy_mkstemp)
+
+        response = await async_client.get("/api/v1/settings/backup")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/zip"
+        assert created_paths, "expected tempfile.mkstemp to have been called for the mkstemp branch"
+        for path in created_paths:
+            assert not Path(path).exists(), (
+                "success path's BackgroundTask should still have unlinked the mkstemp'd ZIP after download"
+            )
+
+
 class TestRestoreUploadIsStreamedNotBuffered:
     """T-019: the uploaded backup ZIP must be streamed to disk, never fully
     materialised as a single in-memory ``bytes`` object."""
