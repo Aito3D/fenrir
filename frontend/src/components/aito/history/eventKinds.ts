@@ -78,8 +78,11 @@ export function formatValue(value: unknown): string {
  *    shape) carries the reason in `detail.error`, or the two sides of a
  *    disagreement in `detail.ours`/`detail.theirs` — without this a card
  *    that failed last week can say THAT it failed but never WHY.
- *  - `payment_link.cancelled` carries WHY the link went away in
- *    `detail.reason` — a replacement, an expiry, a person's click.
+ *  - `payment_link.cancelled` and `payment_link.replaced` carry WHY the link
+ *    went away in `detail.reason` — a decline, an expiry, an invoice, a
+ *    covering retainer, a renumbered quote. The renumber records its reason
+ *    on the `replaced` event (it deliberately emits no `cancelled` pair), so
+ *    both kinds must read it or that story loses its only explanation.
  *  - `quote.accepted` carries `detail.source`, but only the two automatic
  *    sources (`payment_link`, `retainer`) are shown: for a person's click
  *    the actor line already names who, and "user" would only repeat it.
@@ -107,7 +110,7 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
     return hasSides ? `${formatValue(detail.ours)} → ${formatValue(detail.theirs)}` : null;
   }
 
-  if (kind === 'payment_link.cancelled') {
+  if (kind === 'payment_link.cancelled' || kind === 'payment_link.replaced') {
     return typeof detail.reason === 'string' && detail.reason ? detail.reason : null;
   }
 
