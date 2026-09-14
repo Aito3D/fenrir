@@ -7,6 +7,7 @@ import os
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TestSettingsAPI:
@@ -1023,3 +1024,126 @@ class TestSimplifiedBackupRestore:
 
         assert response.status_code == 400
         assert "not a valid zip" in response.json()["detail"].lower()
+
+
+async def _setup_auth_and_login(client: AsyncClient, username: str, password: str) -> str:
+    """Enable auth, create the first (admin) user, and return their access token.
+
+    Mirrors ``_setup_and_login`` in ``test_security.py``: POST /auth/setup with
+    ``auth_enabled=True`` creates the first local admin, then /auth/login
+    returns a JWT. Duplicated locally rather than imported so this file's
+    auth-enabled tests don't couple to test_security.py's internals.
+    """
+    resp = await client.post(
+        "/api/v1/auth/setup",
+        json={"auth_enabled": True, "admin_username": username, "admin_password": password},
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["access_token"]
+
+
+class TestDisableLocalLoginLockoutGuard:
+    """The PUT /settings/ handler refuses to disable local login (#1589) when
+    doing so would lock every admin out of the install. Two independent
+    refusal branches, plus the success path once both are satisfied.
+
+    Note: the caller-link check (``if current_user is not None``) only runs
+    when there IS an authenticated caller. With auth disabled (the default
+    test client), ``current_user`` is always ``None``, so only the
+    "no OIDC provider enabled" branch is reachable — the caller-link branch
+    requires auth to be enabled and an authenticated request.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_local_login_rejected_without_enabled_oidc_provider(self, async_client: AsyncClient):
+        """No enabled OIDCProvider exists at all -> 400, regardless of auth state."""
+        response = await async_client.put("/api/v1/settings/", json={"local_login_enabled": False})
+
+        assert response.status_code == 400
+        assert "no oidc provider is enabled" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_local_login_rejected_without_caller_oidc_link(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """An enabled OIDCProvider exists, but the authenticated caller has no
+        UserOIDCLink of their own -> 400 (they would lock themselves out)."""
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import OIDCProvider
+        from backend.app.models.user import User
+
+        token = await _setup_auth_and_login(async_client, "lockout_no_link_admin", "LockoutPw1!")
+
+        provider = OIDCProvider(
+            name="LockoutGuardProvider",
+            issuer_url="https://lockout-guard.example.com",
+            client_id="lockout-client",
+            client_secret="lockout-secret",
+            is_enabled=True,
+        )
+        db_session.add(provider)
+        await db_session.commit()
+
+        # Sanity check the admin user exists and truly has no OIDC link.
+        result = await db_session.execute(select(User).where(User.username == "lockout_no_link_admin"))
+        assert result.scalar_one_or_none() is not None
+
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"local_login_enabled": False},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 400
+        assert "no oidc link" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_local_login_succeeds_when_caller_is_linked(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """An enabled OIDCProvider exists AND the authenticated caller has a
+        UserOIDCLink to it -> the update succeeds."""
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+        from backend.app.models.user import User
+
+        token = await _setup_auth_and_login(async_client, "lockout_linked_admin", "LockoutPw1!")
+
+        provider = OIDCProvider(
+            name="LockoutGuardLinkedProvider",
+            issuer_url="https://lockout-guard-linked.example.com",
+            client_id="lockout-linked-client",
+            client_secret="lockout-linked-secret",
+            is_enabled=True,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        result = await db_session.execute(select(User).where(User.username == "lockout_linked_admin"))
+        admin = result.scalar_one()
+
+        db_session.add(
+            UserOIDCLink(
+                user_id=admin.id,
+                provider_id=provider.id,
+                provider_user_id="lockout-linked-sub",
+                provider_email="lockout_linked_admin@example.com",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"local_login_enabled": False},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["local_login_enabled"] is False

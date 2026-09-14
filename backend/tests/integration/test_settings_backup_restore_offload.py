@@ -204,3 +204,153 @@ class TestRestoreUploadIsStreamedNotBuffered:
 
         assert response.status_code == 400
         assert "not a valid zip" in response.json()["detail"].lower()
+
+
+class TestRestoreSuccessPath:
+    """T-210: the DB swap through the final success response (lines ~1290-1504
+    of restore_backup) had zero coverage. Every existing restore test either
+    400s before the swap (missing/corrupt zip) or forces the PostgreSQL branch
+    (``is_sqlite`` patched ``False``) to dodge the real ``sqlite3`` backup
+    call entirely (see ``test_security.py``'s ``test_restore_writes_key_files_
+    with_chmod_0600`` and friends).
+
+    This builds a genuine backup ZIP with a real SQLite ``bambuddy.db``
+    (containing a marker row) plus a data directory, restores it for real —
+    ``is_sqlite()`` and the ``sqlite3`` online-backup call are NOT mocked —
+    and asserts:
+      - HTTP 200 with the documented success body
+      - the on-disk SQLite file the app is configured against
+        (``app_settings.database_url``) was actually replaced: the marker row
+        is readable back out of it
+      - the ``icons`` data directory was restored from the backup
+      - the paused background services stay paused on success (no restart —
+        a successful restore requires a container restart anyway)
+
+    ``reinitialize_database``/``init_db`` are mocked, matching the established
+    pattern in ``test_security.py``'s restore tests, purely to avoid reseeding
+    the shared disposable app-db file that lives for the lifetime of the
+    xdist worker process (conftest's ``_TEST_APP_DB_DIR``) — the file itself
+    is snapshotted and restored around the test so the real (unmocked)
+    ``sqlite3`` backup swap this test exercises can never leak into sibling
+    tests sharing that worker.
+    """
+
+    @staticmethod
+    def _mock_paused_services(monkeypatch):
+        """Mock the three background services and the virtual printer
+        manager so the test observes calls instead of touching real
+        singletons / spawning real background loops."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from backend.app.services.notification_service import notification_service
+        from backend.app.services.print_scheduler import scheduler as print_scheduler
+        from backend.app.services.smart_plug_manager import smart_plug_manager
+        from backend.app.services.virtual_printer import virtual_printer_manager
+
+        monkeypatch.setattr(print_scheduler, "stop", MagicMock())
+        monkeypatch.setattr(print_scheduler, "run", AsyncMock())
+        monkeypatch.setattr(smart_plug_manager, "stop_scheduler", MagicMock())
+        monkeypatch.setattr(smart_plug_manager, "start_scheduler", MagicMock())
+        monkeypatch.setattr(notification_service, "stop_digest_scheduler", MagicMock())
+        monkeypatch.setattr(notification_service, "start_digest_scheduler", MagicMock())
+
+        # is_enabled is a plain `len(self._instances) > 0` property; fake a
+        # running virtual printer without touching the class descriptor.
+        monkeypatch.setattr(virtual_printer_manager, "_instances", {1: object()})
+        monkeypatch.setattr(virtual_printer_manager, "configure", AsyncMock())
+        monkeypatch.setattr(virtual_printer_manager, "sync_from_db", AsyncMock())
+
+        return print_scheduler, smart_plug_manager, notification_service, virtual_printer_manager
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_success_swaps_db_and_returns_200(self, async_client, monkeypatch, tmp_path):
+        import io
+        import sqlite3
+        import zipfile
+        from pathlib import Path
+        from unittest.mock import AsyncMock, patch
+
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        print_scheduler, smart_plug_manager, notification_service, virtual_printer_manager = self._mock_paused_services(
+            monkeypatch
+        )
+
+        # Build a real SQLite backup source with a marker row so a
+        # successful restore can be proven by reading it back afterwards.
+        backup_db_path = tmp_path / "backup-source.db"
+        marker_value = "T-210-restore-marker-df93a1"
+        src_conn = sqlite3.connect(str(backup_db_path))
+        try:
+            src_conn.execute("CREATE TABLE restore_marker (key TEXT PRIMARY KEY, value TEXT)")
+            src_conn.execute("INSERT INTO restore_marker (key, value) VALUES ('marker', ?)", (marker_value,))
+            src_conn.commit()
+        finally:
+            src_conn.close()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(backup_db_path, "bambuddy.db")
+            zf.writestr("icons/marker-icon.txt", "restored-icon-bytes")
+        buf.seek(0)
+
+        db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
+        # The physical file backing `backend.app.core.database.engine` is
+        # shared for the lifetime of this xdist worker (conftest's
+        # _TEST_APP_DB_DIR) — snapshot it so the real backup swap below can
+        # never leak state into a test that runs after this one.
+        pre_existing = db_path.exists()
+        original_bytes = db_path.read_bytes() if pre_existing else None
+
+        try:
+            with (
+                patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock) as reinit_mock,
+                patch("backend.app.core.database.init_db", new_callable=AsyncMock) as init_mock,
+            ):
+                resp = await async_client.post(
+                    "/api/v1/settings/restore",
+                    files={"file": ("backup.zip", buf, "application/zip")},
+                )
+
+            assert resp.status_code == 200, resp.text
+            assert resp.json() == {
+                "success": True,
+                "message": "Backup restored successfully. Please restart Bambuddy for changes to take effect.",
+            }
+            reinit_mock.assert_awaited_once()
+            init_mock.assert_awaited_once()
+
+            # The DB swap itself (the sqlite3 online-backup call) ran for
+            # real, unmocked: the file the app is configured against must now
+            # contain the marker row from the uploaded backup.
+            assert db_path.exists()
+            restored_conn = sqlite3.connect(str(db_path))
+            try:
+                row = restored_conn.execute("SELECT value FROM restore_marker WHERE key = 'marker'").fetchone()
+            finally:
+                restored_conn.close()
+            assert row == (marker_value,)
+
+            # Data-directory restore (step 6) also ran for real.
+            assert (tmp_path / "icons" / "marker-icon.txt").read_text() == "restored-icon-bytes"
+
+            # A successful restore intentionally leaves the paused services
+            # stopped (a restart is required anyway) rather than restarting
+            # them.
+            virtual_printer_manager.configure.assert_awaited_once()
+            print_scheduler.stop.assert_called_once()
+            smart_plug_manager.stop_scheduler.assert_called_once()
+            notification_service.stop_digest_scheduler.assert_called_once()
+            print_scheduler.run.assert_not_called()
+            smart_plug_manager.start_scheduler.assert_not_called()
+            notification_service.start_digest_scheduler.assert_not_called()
+            virtual_printer_manager.sync_from_db.assert_not_awaited()
+        finally:
+            if pre_existing:
+                db_path.write_bytes(original_bytes)
+            else:
+                db_path.unlink(missing_ok=True)
