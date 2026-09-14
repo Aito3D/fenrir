@@ -75,6 +75,12 @@ describe('PaymentLinkRow', () => {
     await waitFor(() => expect(hits).toBe(1));
   });
 
+  it('a sync error without canUpdate shows the text but no Retry', () => {
+    render(<PaymentLinkRow project={project({ payment_link: { ...link, sync_error: 'Heimdall HTTP 502 unavailable: OSB down' } })} canUpdate={false} />);
+    expect(screen.getByText('Heimdall HTTP 502 unavailable: OSB down')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
   it('a dead link shows its state and no copy button', () => {
     render(<PaymentLinkRow project={project({ payment_link: { ...link, state: 'expired' } })} canUpdate />);
     expect(screen.getByText('Expired')).toBeInTheDocument();

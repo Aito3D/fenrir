@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy } from 'lucide-react';
@@ -27,6 +27,16 @@ export function PaymentLinkRow({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
+  // Same recipe as TrackingLinkControl's `copiedTimers`: keep the pending
+  // timeout's id so a second copy within the 2s window clears the first
+  // rather than racing it, and so unmounting mid-window (closing the panel
+  // right after a copy) doesn't call setState on a gone component.
+  const copiedTimer = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    };
+  }, []);
   const link = project.payment_link;
 
   const refresh = useMutation({
@@ -45,8 +55,9 @@ export function PaymentLinkRow({
   const copy = async () => {
     if (!link.url) return;
     if (await copyTextToClipboard(link.url)) {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
     } else {
       showToast(t('common.errorLoading'), 'error');
     }
