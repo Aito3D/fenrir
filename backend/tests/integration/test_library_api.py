@@ -3151,6 +3151,42 @@ class TestLibraryUploadContentLengthGate:
         ).scalar_one()
         assert Path(row.file_path).parent == files_dir
 
+    async def test_over_cap_total_body_rejects_even_when_file_part_itself_is_under_cap(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """The gate has no way to see where the ``file`` part ends before the
+        body is parsed, so it measures the WHOLE request's declared
+        ``Content-Length`` against the cap plus the overhead allowance, not
+        just the ``file`` part's size the in-route check measures. A request
+        whose ``file`` part is itself comfortably under the cap, but which
+        also carries an additional multipart part large enough to push the
+        total body past cap + the allowance, is rejected here even though
+        the in-route check would have accepted it (it silently discards any
+        part beyond ``file``, which is the only body field either upload
+        route declares). No shipped client ever sends more than that one
+        ``file`` part, so this is a real but unreachable-by-contract
+        difference — see BASELINE-CHANGELOG.md."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "the body must never be spooled once the gate rejects it"):
+            files = {
+                "file": ("small.stl", b"solid test\nendsolid test", "application/octet-stream"),
+                "extra_part_no_route_declares": ("junk.bin", b"y" * 20_000, "application/octet-stream"),
+            }
+            response = await async_client.post("/api/v1/library/files", files=files)
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
     async def test_missing_content_length_still_rejected_by_in_route_check_when_oversized(
         self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):

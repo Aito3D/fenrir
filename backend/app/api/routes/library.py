@@ -2371,14 +2371,21 @@ async def _stream_upload_to_path(
     return total_bytes, sha256_hash.hexdigest()
 
 
-# Multipart requests carry more bytes than just the file content itself: the
-# boundary delimiters, the per-part `Content-Disposition`/`Content-Type`
-# headers (including the filename), and the closing boundary. This is picked
-# generously above any realistic overhead so that a Content-Length within
-# this margin of the cap can only be rejected below if the file content
-# itself would already be over `library_max_upload_bytes` — i.e. the gate
-# below can only reject a request the in-route checks in
-# `_stream_upload_to_path` would also reject, just earlier (T-166).
+# The gate below measures the WHOLE request's declared Content-Length, not
+# just the `file` part's size — it runs before the body is parsed, so it has
+# no way to know where the `file` part ends and cannot single it out the way
+# the in-route check in `_stream_upload_to_path` does. Multipart requests
+# carry more bytes than just the file content itself (boundary delimiters,
+# the per-part `Content-Disposition`/`Content-Type` headers including the
+# filename, and the closing boundary), so this margin is picked generously
+# above any realistic overhead from THAT alone. It does not cover a request
+# that adds extra multipart parts beyond `file`: a body whose `file` part is
+# under the cap but whose total size exceeds cap + this margin would be
+# rejected here even though the in-route check would have accepted it after
+# discarding the unrecognized extra part(s). Both upload routes' OpenAPI
+# contracts declare a single `file` field and no shipped client sends more
+# than that, so this only matters for a caller that adds parts the contract
+# doesn't declare (T-166).
 _UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES = 8 * 1024
 
 # The same permission the upload routes require via their own `Depends`
@@ -2408,11 +2415,11 @@ class _ContentLengthCappedRoute(APIRoute):
     routes' own dependency — an unauthenticated or unauthorized caller gets
     the same 401/403 they get today and learns nothing about the configured
     cap. Only once that succeeds (or auth is disabled) is the
-    Content-Length compared against the cap; a strict backstop, not a new
-    limit, since it only rejects a Content-Length above
-    ``library_max_upload_bytes`` plus a generous multipart-overhead
-    allowance, reusing the exact status code and detail string
-    ``_stream_upload_to_path`` already produces (T-166).
+    Content-Length compared against the cap plus
+    ``_UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES`` (see that constant's comment
+    for exactly what it does and does not cover), reusing the exact status
+    code and detail string ``_stream_upload_to_path`` already produces
+    (T-166).
 
     A request that is both over-cap and would otherwise fail one of the
     route's own body-dependent checks (bad file type, a missing target

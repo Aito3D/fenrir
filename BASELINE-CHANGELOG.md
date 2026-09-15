@@ -12207,7 +12207,7 @@ harmless auth check — the same cost every other permission-gated route already
 difference visible to the caller). `auth.py` was not edited; only its existing public `security` object and
 `require_permission_if_auth_enabled` factory were imported and reused.
 
-Six tests were added to a new `TestLibraryUploadContentLengthGate` class in
+Seven tests were added to a new `TestLibraryUploadContentLengthGate` class in
 `backend/tests/integration/test_library_api.py` (fixtures follow the T-161 per-test isolation pattern):
 an over-cap `Content-Length` from an authorized admin caller is rejected with the pre-existing 413 detail
 string before `_stream_upload_to_path` ever runs (monkeypatched to fail the test if called) and before any
@@ -12218,8 +12218,11 @@ restored to this fix; the same shape from an authenticated caller who lacks `lib
 403 `"Missing required permissions: library:upload"`, not 413; a file just under the cap (whose multipart
 envelope pushes the request's own `Content-Length` slightly over it) still succeeds; a request with no
 `Content-Length` header falls through unchanged to the pre-existing in-route check for both the
-over-cap-rejected and under-cap-succeeds cases; and the extract-zip route's ZIP-body upload step gets the
-same pre-spool rejection. No existing test or assertion was weakened or removed.
+over-cap-rejected and under-cap-succeeds cases; the extract-zip route's ZIP-body upload step gets the
+same pre-spool rejection; and a request whose `file` part is small (well under the cap) but which also
+carries a large additional multipart part beyond `file` is rejected 413 by the whole-body measure described
+above, pinning that real behavior with a test instead of only asserting it in prose. No existing test or
+assertion was weakened or removed.
 
 **What a user sees, in two parts:**
 
@@ -12240,9 +12243,16 @@ same pre-spool rejection. No existing test or assertion was weakened or removed.
      request is also over-cap.
    - `POST /library/files` (or extract-zip) with no `file` field at all: was FastAPI's 422 required-field
      validation error, now 413, if the request is also over-cap.
-   A request that is under the cap, or that has no `Content-Length` header at all (e.g. genuinely chunked),
-   is completely unaffected by any of this and keeps producing exactly the pre-existing error for each of
-   these four shapes.
+   A request whose `file` part is under the cap, or that has no `Content-Length` header at all (e.g.
+   genuinely chunked), keeps producing exactly the pre-existing error for each of these four shapes — WITH
+   ONE CAVEAT: the pre-body gate has no way to see where the `file` part ends, so it measures the WHOLE
+   request's declared `Content-Length` against `library_max_upload_bytes` plus an 8 KiB allowance, not just
+   the `file` part's size the in-route check measures. A request whose `file` part is itself under the cap
+   but whose total multipart body exceeds cap + 8 KiB — because it carries additional parts beyond `file` —
+   is now rejected with 413 where it previously succeeded (the extra parts are silently discarded once the
+   body is parsed, so the in-route check never saw them). No shipped client can produce this: both routes'
+   OpenAPI contracts declare exactly one body field, `file` (`folder_id` and the other parameters are query
+   parameters, not body parts), and `frontend/src/api/client.ts` sends exactly that one part.
 
 Confirmed via `snapshot.py verify`: 11/11 probes match, including `app-middleware-stack` (no middleware was
 added — the gate is a per-route `APIRoute` subclass wired through `route_class_override`, the same
@@ -12252,6 +12262,8 @@ decorator). `app-route-perms`'s literal grep for `RequirePermissionIfAuthEnabled
 unaffected — this fix calls the lowercase `require_permission_if_auth_enabled` factory directly, the same
 call already used by both routes' own dependencies, not the capitalized convenience wrapper the probe
 counts, and no such literal was added to any comment or docstring. `SURFACE.md` is unchanged. Backend suite:
-13370 passed, 1 skipped; coverage 73% / 75.417% lines (Stmts 72968, Miss 17938), no drop from the
-73% / 75.411% baseline (Stmts 72946, Miss 17937).
+13374 passed, 1 skipped (plus one pre-existing load-flaky failure in
+`test_scheduler_concurrent_dispatch.py::TestSharedLibraryRow::test_plain_library_file_still_fans_out_in_parallel`,
+confirmed to pass alone and unrelated to this change); coverage 73% / 75.422% lines (Stmts 72968,
+Miss 17934), no drop from the 73% / 75.418% baseline (Stmts 72968, Miss 17937).
 User-approved 2026-09-14.
