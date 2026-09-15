@@ -661,6 +661,69 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_status_reports_switch_readiness_on_the_first_load(self, async_client: AsyncClient, printer_factory):
+        """``ready`` has to be computed by the REST route, not just the WebSocket.
+
+        This response is what the page has before any push arrives. Leaving the
+        field at its default would tell a correctly set-up machine that its
+        switch is not set up, and the AMS menu refuses Load on that.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import FilaSwitchState, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.fila_switch = FilaSwitchState(installed=True)
+        state.raw_data = {"ams": [{"id": "0", "tray": []}, {"id": "1", "tray": []}]}
+        state.ams_switch_inlet = {"0": "A"}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            unbound = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+            state.ams_switch_inlet = {"0": "A", "1": "B"}
+            bound = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert unbound.json()["fila_switch"]["ready"] is False
+        assert bound.json()["fila_switch"]["ready"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_reports_which_hotend_holds_which_slot(self, async_client: AsyncClient, printer_factory):
+        """Also needed on the first load: it decides which hotend Load may offer."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import ExtruderSlot, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.extruder_slots = {
+            0: ExtruderSlot(ams_id=0, slot_id=2, has_filament=True),
+            1: ExtruderSlot(),
+        }
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.json()["extruder_slots"] == {
+            "0": {"ams_id": 0, "slot_id": 2, "has_filament": True},
+            "1": {"ams_id": None, "slot_id": None, "has_filament": False},
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_cover_uses_dispatched_plate_when_gcode_file_lacks_path(
         self, async_client: AsyncClient, printer_factory, db_session, tmp_path
     ):
@@ -1324,7 +1387,7 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5")
 
             assert response.status_code == 200
-            mock_client.ams_load_filament.assert_called_once_with(5)
+            mock_client.ams_load_filament.assert_called_once_with(5, extruder_id=None)
             assert "AMS 1" in response.json()["message"]
 
     @pytest.mark.asyncio
@@ -1342,7 +1405,7 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=254")
 
             assert response.status_code == 200
-            mock_client.ams_load_filament.assert_called_once_with(254)
+            mock_client.ams_load_filament.assert_called_once_with(254, extruder_id=None)
             assert "external" in response.json()["message"].lower()
 
     @pytest.mark.asyncio
@@ -1360,7 +1423,7 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=255")
 
             assert response.status_code == 200
-            mock_client.ams_load_filament.assert_called_once_with(255)
+            mock_client.ams_load_filament.assert_called_once_with(255, extruder_id=None)
             assert "Ext-R" in response.json()["message"]
 
     @pytest.mark.asyncio
@@ -1378,6 +1441,33 @@ class TestAMSLoadUnloadAPI:
 
             assert response.status_code == 500
             assert "failed" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_forwards_the_chosen_hotend(self, async_client: AsyncClient, printer_factory):
+        """A printer with a Filament Track Switch has to name the hotend to feed."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5&extruder_id=1")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(5, extruder_id=1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_rejects_a_hotend_that_does_not_exist(self, async_client: AsyncClient, printer_factory):
+        """Only 0 and 1 are real hotends; anything else is a client bug."""
+        printer = await printer_factory(name="P")
+
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5&extruder_id=2")
+
+        assert response.status_code == 422
 
     # ── unload ───────────────────────────────────────────────────────────────
 
@@ -1414,8 +1504,56 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
 
             assert response.status_code == 200
-            mock_client.ams_unload_filament.assert_called_once_with()
+            mock_client.ams_unload_filament.assert_called_once_with(None)
             assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_forwards_the_slot(self, async_client: AsyncClient, printer_factory):
+        """The slot is what tells a dual-nozzle printer which hotend to unload."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=2")
+
+            assert response.status_code == 200
+            mock_client.ams_unload_filament.assert_called_once_with(2)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_of_an_unloaded_slot_is_a_conflict_not_a_fault(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """Clicking Unload on an idle slot is a no-op the operator can understand.
+
+        A 500 would read as a broken printer; the menu is per-slot and picking a
+        slot no hotend is fed from is an ordinary mistake.
+        """
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=2")
+
+            assert response.status_code == 409
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_rejects_an_invalid_slot(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=99")
+
+        assert response.status_code == 400
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1570,8 +1708,19 @@ class TestConfigureAMSSlotAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_sent_directly(self, async_client: AsyncClient, printer_factory):
-        """PFUS* cloud-synced custom preset IDs are sent to the printer."""
+    async def test_configure_pfus_never_reaches_tray_info_idx(self, async_client: AsyncClient, printer_factory):
+        """A PFUS* cloud setting_id is refused as tray_info_idx (#3003).
+
+        The printer's tray_info_idx field is 8 characters. An 18-character PFUS
+        is stored truncated and acknowledged as a success -- measured on the A1
+        in the #3003 bundle, which sent PFUS9ddc938fe3ab8f and read back
+        PFUS9DDC. That leaves the slot holding an id nothing resolves, so the
+        slicer shows "Generic" and the calibration table loses the slot too.
+        A generic for the material is strictly better, and the preset reference
+        survives in setting_id, which does accept a PFUS.
+
+        Reverses the contract #1053 pinned; see the route's own comment.
+        """
         printer = await printer_factory(name="H2D")
 
         mock_client = MagicMock()
@@ -1600,12 +1749,20 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
+            # No tray to reuse -> generic for the material, never the raw PFUS.
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            # The preset reference is not lost: it moves to the field that holds it.
+            assert call_kwargs.kwargs["setting_id"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_takes_priority_over_slot(self, async_client: AsyncClient, printer_factory):
-        """Provided PFUS* preset takes priority over slot's existing preset."""
+    async def test_configure_pfus_falls_back_to_slot_preset(self, async_client: AsyncClient, printer_factory):
+        """With a PFUS refused, the slot's own resolvable preset is reused (#3003).
+
+        The slot already carries P4d64437 -- a local preset id, 8 characters, so
+        the printer can actually store it -- for the same material. That beats a
+        generic, and it is what the slot's calibration is keyed by.
+        """
         printer = await printer_factory(name="H2D")
 
         mock_client = MagicMock()
@@ -1651,13 +1808,19 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Provided preset wins over slot's existing one
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
+            # Slot's own storable preset wins over both the PFUS and a generic.
+            assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
+            assert call_kwargs.kwargs["setting_id"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_used_regardless_of_slot_material(self, async_client: AsyncClient, printer_factory):
-        """Provided PFUS* preset is used even when slot has a different material."""
+    async def test_configure_pfus_generic_when_slot_material_differs(self, async_client: AsyncClient, printer_factory):
+        """A slot holding a different material is not reused (#3003).
+
+        Slot has generic PETG, the user is configuring PLA. Neither the refused
+        PFUS nor the mismatched slot can supply a filament id, so the generic
+        for the requested material does.
+        """
         printer = await printer_factory(name="H2D")
 
         mock_client = MagicMock()
@@ -1696,8 +1859,8 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Provided preset wins — slot's material is irrelevant
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            assert call_kwargs.kwargs["setting_id"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1735,13 +1898,19 @@ class TestConfigureAMSSlotAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_preserves_setting_id_pair(self, async_client: AsyncClient, printer_factory):
-        """Both tray_info_idx=PFUS* and setting_id=PFUS* are forwarded untouched.
+    async def test_configure_pfus_pair_splits_into_generic_and_setting_id(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """A PFUS sent in BOTH fields is kept only in setting_id (#3003).
 
-        Pins the end-to-end contract the frontend #1053 fix relies on: when the
-        user configures a slot with a custom cloud preset whose cloud detail
-        has filament_id=null, the frontend sends the setting_id in BOTH fields
-        and the backend must not collapse either to a generic GF* ID.
+        This is the shape the frontend produced when a custom cloud preset's
+        detail had filament_id=null, and what #1053 pinned. The A1 measurement
+        in #3003 showed where it ends up: the printer truncates tray_info_idx
+        to 8 characters, so the slot resolves to nothing and the slicer falls
+        back to "Generic" anyway -- the very outcome #1053 set out to avoid,
+        plus a broken calibration key. Sending the generic deliberately gets
+        the same slicer result honestly and keeps the slot calibratable, and
+        setting_id still carries the user's preset.
         """
         printer = await printer_factory(name="H2D")
 
@@ -1772,10 +1941,47 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUSa8fb76f9733e3c"
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFB99"
             assert call_kwargs.kwargs["setting_id"] == "PFUSa8fb76f9733e3c"
-            # Explicitly assert no generic-collapse happened for this HT slot.
-            assert call_kwargs.kwargs["tray_info_idx"] != "GFB99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_pfcn_refused_as_tray_info_idx(self, async_client: AsyncClient, printer_factory):
+        """PFCN* shared / partner presets are refused the same way (#3003, #1648).
+
+        Same 18-character shape as a PFUS, same truncation. Polymaker's
+        "(Custom)" H2D variants are the ones that reach this in the wild.
+        """
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        mock_status = MagicMock()
+        mock_status.raw_data = {"ams": {"ams": []}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/0/1/configure",
+                params={
+                    "tray_info_idx": "PFCN2a91c7d0e4b118",
+                    "tray_type": "PETG",
+                    "tray_sub_brands": "Polymaker PETG (Custom)",
+                    "tray_color": "0000FFFF",
+                    "nozzle_temp_min": 220,
+                    "nozzle_temp_max": 260,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFG99"
+            assert call_kwargs.kwargs["setting_id"] == "PFCN2a91c7d0e4b118"
 
 
 class TestSkipObjectsAPI:
@@ -2576,8 +2782,14 @@ class TestApplyPaAfterRefresh:
     async def test_spoolman_kp_when_no_local(self, db_session, printer_factory):
         """No local assignment + Spoolman SlotAssignment + SpoolmanKProfile → Spoolman cali_idx."""
         from backend.app.api.routes.printers import _apply_pa_after_refresh
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory()
         db_session.add(
@@ -2622,7 +2834,13 @@ class TestApplyPaAfterRefresh:
     async def test_spoolman_no_kp_uses_live(self, db_session, printer_factory):
         """Spoolman SlotAssignment but no SpoolmanKProfile → live cali_idx (Stage 3)."""
         from backend.app.api.routes.printers import _apply_pa_after_refresh
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory()
         db_session.add(
@@ -3131,8 +3349,14 @@ class TestConfigureAmsSlotPersistsKProfile:
         printer_factory,
     ):
         """SpoolmanSlotAssignment present → SpoolmanKProfile row created with cali_idx + k_value + name."""
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory(model="H2D")
         db_session.add(
@@ -3309,8 +3533,14 @@ class TestConfigureAmsSlotPersistsKProfile:
         printer_factory,
     ):
         """cali_idx=-1 (no profile selected) → no DB write even when assignment exists."""
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory(model="H2D")
         db_session.add(
@@ -3368,8 +3598,14 @@ class TestConfigureAmsSlotPersistsKProfile:
         printer_factory,
     ):
         """cali_idx=0 is the first valid profile slot (NOT a sentinel for missing)."""
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory(model="H2D")
         db_session.add(
@@ -3425,8 +3661,14 @@ class TestConfigureAmsSlotPersistsKProfile:
         printer_factory,
     ):
         """Repeated POSTs update the same row (UNIQUE on spool_id+printer+extruder+nozzle_diameter)."""
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory(model="H2D")
         db_session.add(
@@ -3635,7 +3877,13 @@ class TestConfigureAmsSlotPersistsKProfile:
         so we shouldn't return 500 to the user. The error is logged and the
         endpoint returns success.
         """
+        from backend.app.models.settings import Settings
         from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        # A spoolman_slot_assignments row only exists in Spoolman mode, and
+        # since #2812 the mode is asked for explicitly rather than inferred
+        # from which table happens to hold rows.
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
 
         printer = await printer_factory(model="H2D")
         db_session.add(

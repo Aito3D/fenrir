@@ -20,6 +20,7 @@ const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
   'zh-TW': () => import('./locales/zh-TW'),
   tr: () => import('./locales/tr'),
   ru: () => import('./locales/ru'),
+  nl: () => import('./locales/nl'),
   uk: () => import('./locales/uk'),
 };
 
@@ -46,7 +47,7 @@ const resources = {
   en: { translation: en },
 };
 
-const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'ru', 'tr', 'uk', 'zh-CN', 'zh-TW'];
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
 
 i18n
@@ -126,6 +127,7 @@ export const availableLanguages = [
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
   { code: 'it', name: 'Italian', nativeName: 'Italiano' },
   { code: 'ko', name: 'Korean', nativeName: '한국어' },
+  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
   { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
