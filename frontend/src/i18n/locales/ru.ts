@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: 'Этап и оставшаяся работа',
     panelTabDetails: 'Детали',
     billingLabel: 'Выставление счетов',
-    depositPaid: 'Аванс получен',
+    depositAvailable: 'Доступный аванс',
     descriptionShowMore: 'Показать больше',
     descriptionShowLess: 'Свернуть',
     panelTabAttention: 'Требует внимания',

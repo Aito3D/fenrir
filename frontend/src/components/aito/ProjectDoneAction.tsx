@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Plane } from 'lucide-react';
 import { HoldButton } from './HoldButton';
+import { canMarkDone } from './canMarkDone';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
 import { type AitoProject } from '../../api/client';
 
@@ -61,12 +62,14 @@ export function ProjectDoneAction({
   // the instant the optimistic write lands, and a gate above the hook would
   // change the hook order on that exact render. Same rule QuoteStatusActions
   // follows for its own `accepted` early return.
-  // The third half of the gate, and the one that keeps this button honest: a
-  // project whose client has not been told cannot be archived — `move_project`
-  // 409s it — so offering the pill here would be offering a button that can
-  // only fail. The panel's own way to record the contact is `ContactedControl`
-  // in the header row, which is what appears in its place.
-  if (project.column !== 'finish' || project.move_lock !== null || project.client_contacted_at === null) {
+  // The gate is the shared `canMarkDone`, the same one the board card reads:
+  // column, rules lock, client told, and — for a quoted project — invoiced.
+  // Each clause is a `move_project` refusal, so a pill shown past any of them
+  // would be a button that can only fail. What appears in its place is the
+  // step that is actually open: `ContactedControl` in the header row until
+  // the client is told, then `CreateInvoiceButton` beside this on the bar
+  // until the quote is invoiced.
+  if (!canMarkDone(project)) {
     return null;
   }
 

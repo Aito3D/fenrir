@@ -180,7 +180,7 @@ export default {
     stageAndWorkLeft: 'Stage & work left',
     panelTabDetails: 'Details',
     billingLabel: 'Billing',
-    depositPaid: 'Deposit paid',
+    depositAvailable: 'Deposit available',
     descriptionShowMore: 'Show more',
     descriptionShowLess: 'Show less',
     panelTabAttention: 'Needs attention',

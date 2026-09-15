@@ -80,6 +80,7 @@ async def _make_engine():
         await conn.execute(text("DROP TABLE aito_payment_links"))
         await conn.execute(text("ALTER TABLE aito_projects DROP COLUMN quote_expiry_date"))
         await conn.execute(text("ALTER TABLE aito_projects DROP COLUMN retainer_paid_total"))
+        await conn.execute(text("ALTER TABLE aito_projects DROP COLUMN customer_credit_total"))
     return engine
 
 
@@ -91,7 +92,7 @@ async def test_migration_creates_table_and_columns_on_a_bare_schema():
     async with engine.begin() as conn:
         await run_migrations(conn)
         cols = {r[1] for r in (await conn.execute(text("PRAGMA table_info(aito_projects)"))).fetchall()}
-        assert {"quote_expiry_date", "retainer_paid_total"} <= cols
+        assert {"quote_expiry_date", "retainer_paid_total", "customer_credit_total"} <= cols
         link_cols = {r[1] for r in (await conn.execute(text("PRAGMA table_info(aito_payment_links)"))).fetchall()}
         assert {"idempotency_key", "heimdall_id", "status", "superseded_at"} <= link_cols
     await engine.dispose()

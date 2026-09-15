@@ -73,6 +73,7 @@ from backend.app.schemas.aito import (
 from backend.app.services import aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
+from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
@@ -458,6 +459,7 @@ def _to_response(
         invoice_checked_at=p.invoice_checked_at,
         quote_expiry_date=p.quote_expiry_date,
         retainer_paid_total=p.retainer_paid_total,
+        customer_credit_total=p.customer_credit_total,
         payment_link=payment_link,
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
@@ -1868,6 +1870,11 @@ async def create_invoice(
         except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
             logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
     applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
+    # The deposits just spent must leave "deposit available" NOW, not at the
+    # sweep's next tick: the panel re-renders off this response's board
+    # refetch. Best-effort like the sweep's own read — None keeps the old
+    # figure, and the sweep corrects it within the tick.
+    credit = await read_customer_credit(db, plan.customer_id)
 
     try:
         # Adopt the fact locally, in the same transaction as the event. The
@@ -1878,6 +1885,8 @@ async def create_invoice(
         # sweep's own selection. Books is the authority and Books has just
         # confirmed — there is nothing to wait for.
         project.quote_invoiced = True
+        if credit is not None:
+            project.customer_credit_total = credit
         await record(
             db,
             project_pk,
@@ -2981,6 +2990,20 @@ async def move_project(
                 status_code=409,
                 detail="Tell the client the project is ready before archiving it",
             )
+
+        # The second step of the same sequence: the job is billed when the
+        # client comes for it, and archived once they have paid and left.
+        # A quoted project reaches Done only once its quote is invoiced in
+        # Books — `quote_invoiced` is what the create route writes the moment
+        # Books confirms, and what the hourly sweep sets for an invoice raised
+        # by hand. Same one-direction shape as the contact gate above, for the
+        # same reason: nothing archived before this rule must be stranded.
+        #
+        # A card with no quote is exempt: it never went through Books, so
+        # nothing here could ever invoice it, and the gate would hold it in
+        # Finish forever.
+        if payload.column == "done" and project.quote_id and not project.quote_invoiced:
+            raise HTTPException(status_code=409, detail="Create the invoice before archiving it")
 
     source_column = project.board_column
     destination = await _active_in_column(db, payload.column, exclude_id=project.id)

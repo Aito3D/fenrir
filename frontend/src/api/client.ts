@@ -4200,6 +4200,10 @@ export interface AitoProject {
   quote_expiry_date: string | null;
   /** Paid retainers as last read by the sweep, or null. */
   retainer_paid_total: number | null;
+  /** The customer's unspent deposits across every retainer, quote-linked or
+   *  not, as last read by the sweep — the panel's "deposit available". Null
+   *  until Books has been asked. */
+  customer_credit_total: number | null;
   /** The current online payment link, or null when there is none. */
   payment_link: AitoPaymentLink | null;
   /** The worker's push state for this project's quote. Always present —

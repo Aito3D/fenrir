@@ -111,6 +111,15 @@ class AitoProject(Base):
     # invoice_balance — never edited in the panel, not versioned. Drives the
     # paid-retainer auto-accept and tells the link reconciler to stand down.
     retainer_paid_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # What the CUSTOMER still has on account across every deposit — the sum
+    # of their payments' unused amounts, as last read by the status reconcile
+    # (see services/aito_customer_credit.py for why this is not the figure
+    # above). The panel's "deposit available". A retainer raised by hand in
+    # Books references no quote and only ever shows up here; a deposit spent
+    # on any invoice drops out of here on the next tick, and at once when
+    # this app raised the invoice. Background fact like the one above —
+    # never edited in the panel, not versioned.
+    customer_credit_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     # A local board signal with four states: NULL, 'urgent' ("this job is late
     # / promised / on fire"), 'sav' ("it came back and needs handling again"),
     # or 'pause' ("set this aside for now"). Mutually exclusive by

@@ -5205,6 +5205,9 @@ async def run_migrations(conn):
     # (2026-09-12). See models/aito_payment_link.py.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_expiry_date VARCHAR(10)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN retainer_paid_total FLOAT")
+    # Migration: the customer's unspent deposits, customer-wide (2026-09-15).
+    # See models/aito_project.py customer_credit_total.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN customer_credit_total FLOAT")
     await _safe_execute(
         conn,
         "CREATE TABLE IF NOT EXISTS aito_payment_links ("

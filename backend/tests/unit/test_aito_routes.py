@@ -988,6 +988,7 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "invoice_checked_at": None,
         "quote_expiry_date": None,
         "retainer_paid_total": None,
+        "customer_credit_total": None,
         "payment_link": None,
         "created_by": None,
         "quote_sync_state": "idle",

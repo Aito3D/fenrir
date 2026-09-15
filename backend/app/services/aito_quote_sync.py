@@ -34,6 +34,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_board_rules import AWAY_STATUSES
+from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import record
 from backend.app.services.aito_invoice_sweep import sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
@@ -1355,8 +1356,15 @@ def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
     _throttled_until = time.monotonic() + window
 
 
-async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
+async def sync_project(
+    db: AsyncSession, project: AitoProject, credit_cache: dict[str, float] | None = None
+) -> bool | None:
     """One project's whole state machine. Never raises: every outcome is a state.
+
+    ``credit_cache`` is the sweep's per-tick memo for the customer-credit side
+    read (aito_customer_credit.read_customer_credit): ``run_sync_once`` hands
+    one dict to every project of the tick so N projects of one customer cost
+    one Books call. A direct caller passes nothing and simply reads.
 
     Returns True only when the failure just handled was a Zoho rate limit
     (HTTP 429, see the ``ZohoRateLimited`` handler below) — ``run_sync_once``
@@ -1486,6 +1494,19 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
             # before this tick's read.
             paid = _paid_retainer_total(estimate)
             project.retainer_paid_total = paid
+            # Beside it, the CUSTOMER's unspent deposits — a different figure
+            # with a different meaning (see aito_customer_credit): what they
+            # still have on account across every retainer, quote-linked or
+            # raised by hand, which is what the panel shows as "deposit
+            # available". One extra Books call per customer per tick, memoed
+            # in `credit_cache`; best-effort, so None leaves the stored
+            # figure alone. The estimate's customer, not the row's client_id,
+            # for the same reason plan_invoice bills the estimate's customer.
+            credit = await read_customer_credit(
+                db, str(estimate.get("customer_id") or project.client_id or ""), credit_cache
+            )
+            if credit is not None:
+                project.customer_credit_total = credit
             needed = required_amount(project.quote_total, await deposit_pct(db))
             if needed is not None and paid >= needed and project.quote_status != "accepted":
                 accepted = await accept_quote(
@@ -1986,6 +2007,10 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
         (await db.execute(select(AitoProject.id).where(selected).order_by(AitoProject.id))).scalars().all()
     )
     attempted = 0
+    # One customer-credit memo for the whole tick, so the projects of one
+    # customer share a single payments read. Dies with the tick: nothing to
+    # expire, and the next tick sees fresh figures.
+    credit_cache: dict[str, float] = {}
     for project_id in project_ids:
         # Re-fetched fresh on every iteration rather than loaded once as a
         # list of instances before the loop. This looks like it trades away a
@@ -2018,7 +2043,7 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             # wake path promises never to spend.
             continue
         attempted += 1
-        rate_limited = await sync_project(db, project)
+        rate_limited = await sync_project(db, project, credit_cache)
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
         # would still make every project's durability depend on none of its

@@ -91,14 +91,20 @@ export function BillingCard({
                 </dd>
               </>
             )}
-            {/* Retainer invoices Books reports as PAID, summed by the status
-                reconcile (`retainer_paid_total`). Shown only once something
-                was paid, so the operator can see the quote is partially
-                covered before any invoice exists. */}
-            {project.retainer_paid_total != null && project.retainer_paid_total > 0 && (
+            {/* What the CUSTOMER still has on account across every deposit
+                (`customer_credit_total`, read by the status reconcile from
+                their payments' unused amounts) — not the estimate's own paid
+                retainers (`retainer_paid_total`, which drives the quote-level
+                auto-accept and payment link). A retainer raised by hand in
+                Books references no quote and only ever shows here; a deposit
+                spent on any invoice leaves here on the next tick, at once
+                when this app raised the invoice. Shown only while there is
+                something to spend, so the operator can see the bill will be
+                partly covered before it exists. */}
+            {project.customer_credit_total != null && project.customer_credit_total > 0 && (
               <>
-                <dt className="text-bambu-gray">{t('aito.depositPaid')}</dt>
-                <dd className="text-right text-bambu-green">{formatMoney(project.retainer_paid_total, currency)}</dd>
+                <dt className="text-bambu-gray">{t('aito.depositAvailable')}</dt>
+                <dd className="text-right text-bambu-green">{formatMoney(project.customer_credit_total, currency)}</dd>
               </>
             )}
           </dl>

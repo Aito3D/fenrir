@@ -592,6 +592,9 @@ class AitoProjectResponse(BaseModel):
     quote_expiry_date: str | None
     # Paid retainers as last read by the sweep — see the column comment.
     retainer_paid_total: float | None
+    # The customer's unspent deposits across every retainer, linked to this
+    # quote or not — see the column comment. The panel's "deposit available".
+    customer_credit_total: float | None
     # The current online payment link, or null when the project has none.
     payment_link: AitoPaymentLinkView | None
     created_by: str | None

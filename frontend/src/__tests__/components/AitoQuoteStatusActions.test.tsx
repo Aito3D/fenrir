@@ -279,19 +279,51 @@ describe('QuoteStatusActions', () => {
 });
 
 describe('ProjectDoneAction — glyph swap in the panel footer', () => {
+  // The fixture's project is quoted (`quote_id: 'EST-1'`), so it has to be
+  // invoiced before the pill exists at all — see the gate tests below.
+  const archivable = (over: Partial<AitoProject> = {}) =>
+    makeProject({
+      column: 'finish',
+      move_lock: null,
+      client_contacted_at: '2026-08-20T09:00:00Z',
+      quote_invoiced: true,
+      ...over,
+    });
+
   it('shows a check on a Finish card with no shipping', () => {
-    render(<ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: null, client_contacted_at: '2026-08-20T09:00:00Z' })} />);
+    render(<ProjectDoneAction project={archivable({ shipping_island: null })} />);
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.querySelector('.lucide-check')).toBeTruthy();
     expect(done.querySelector('.lucide-plane')).toBeFalsy();
   });
 
   it('shows a plane on a Finish card that has shipping', () => {
-    render(
-      <ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: 'rangiroa', client_contacted_at: '2026-08-20T09:00:00Z' })} />,
-    );
+    render(<ProjectDoneAction project={archivable({ shipping_island: 'rangiroa' })} />);
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.querySelector('.lucide-plane')).toBeTruthy();
     expect(done.querySelector('.lucide-check')).toBeFalsy();
+  });
+});
+
+describe('ProjectDoneAction — the job has to be billed before it is closed', () => {
+  // Same gate as the board card's Done icon (BoardColumn), read through the
+  // one shared helper: the server refuses Finish -> Done on a quoted project
+  // with no invoice, so the pill would be a button that can only fail.
+  const contacted = (over: Partial<AitoProject> = {}) =>
+    makeProject({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z', ...over });
+
+  it('renders nothing on a quoted project whose quote is not invoiced', () => {
+    render(<ProjectDoneAction project={contacted({ quote_invoiced: false })} />);
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the pill once the quote is invoiced', () => {
+    render(<ProjectDoneAction project={contacted({ quote_invoiced: true })} />);
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+  });
+
+  it('renders the pill for a project with no quote — nothing to invoice', () => {
+    render(<ProjectDoneAction project={contacted({ quote_id: null, quote_invoiced: false })} />);
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
   });
 });
