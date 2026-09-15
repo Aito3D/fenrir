@@ -341,6 +341,55 @@ class TestSharedStreamHubOwnCancellationPropagates:
             pass
 
 
+class TestAwaitDisplacedTaskTimeout:
+    """T-171: _await_displaced_task's timeout branch — if the displaced task
+    is still pending when the deadline passes, it must be force-cancelled
+    (mirroring wait_for's own behavior) before the helper returns normally.
+    This is distinct from TestSharedStreamHubOwnCancellationPropagates above,
+    which covers the *caller's own* cancellation propagating instead of being
+    swallowed; here the caller is never cancelled, only the displaced task
+    outlives its budget.
+    """
+
+    @pytest.mark.asyncio
+    async def test_timeout_force_cancels_the_still_pending_task(self):
+        from backend.app.api.routes.camera import _await_displaced_task
+
+        never = asyncio.Event()  # never set, so the task blocks forever
+
+        async def stuck_forever():
+            await never.wait()
+
+        task = asyncio.create_task(stuck_forever())
+        await asyncio.sleep(0)  # let it start
+        assert not task.done()
+
+        # Returns normally (does not raise) once the short timeout elapses,
+        # having force-cancelled the still-pending task first.
+        await _await_displaced_task(task, timeout=0.05)
+
+        assert task.done()
+        assert task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_task_finishing_before_deadline_is_not_cancelled(self):
+        from backend.app.api.routes.camera import _await_displaced_task
+
+        async def finishes_quickly():
+            await asyncio.sleep(0.01)
+            return "done"
+
+        task = asyncio.create_task(finishes_quickly())
+
+        # Timeout is comfortably longer than the task's own runtime, so it
+        # should complete on its own without ever being cancelled.
+        await _await_displaced_task(task, timeout=1.0)
+
+        assert task.done()
+        assert not task.cancelled()
+        assert task.result() == "done"
+
+
 class TestSharedStreamHubIdleTimeout:
     """Tests for producer auto-stop after IDLE_TIMEOUT without viewer activity."""
 
