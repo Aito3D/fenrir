@@ -1947,6 +1947,13 @@ async def oidc_authorize(
     db: AsyncSession = Depends(get_db),
 ) -> OIDCAuthorizeResponse:
     """Return the OIDC authorization URL for the given provider."""
+    # T-123: the body carries this browser's single-use state, nonce and PKCE
+    # code_challenge, and the route is public (PUBLIC_API_PREFIXES in main.py),
+    # so the GET arrives with no Authorization header — precisely the case
+    # RFC 9111 lets a shared cache store. Set on the injected `response`, which
+    # only applies to the 200 this returns; the raises below build their own
+    # responses and carry no secrets.
+    response.headers["Cache-Control"] = "no-store"
     if _oidc_authorize_rate_limited(request):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

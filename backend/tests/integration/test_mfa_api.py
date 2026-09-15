@@ -3632,6 +3632,19 @@ class TestOIDCStateBindingCookie:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_authorize_response_is_not_cacheable(self, async_client: AsyncClient):
+        """T-123: the authorize body carries this browser's single-use state,
+        nonce and PKCE code_challenge, and the route is public (no
+        Authorization header), which is exactly when RFC 9111 lets a shared
+        cache store the response. It must say no-store, as the tracking
+        routes already do."""
+        issuer = "https://oidcnostore1.example.com"
+        provider_id = await self._create_provider(async_client, name="oidcnostore1", issuer=issuer)
+        resp = await self._authorize(async_client, provider_id, issuer)
+        assert resp.headers["cache-control"] == "no-store"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_authorize_sets_binding_cookie_matching_stored_challenge_id(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
