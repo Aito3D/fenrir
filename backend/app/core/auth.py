@@ -2169,7 +2169,7 @@ def require_library_thumbnail_access_if_auth_enabled():
 
         async with async_session() as db:
             user = await get_user_by_username(db, principal)
-        if user is None:
+        if user is None or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Camera stream token does not carry a library-scoped identity",

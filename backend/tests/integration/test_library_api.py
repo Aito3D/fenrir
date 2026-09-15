@@ -1,6 +1,7 @@
 """Integration tests for Library API endpoints."""
 
 import asyncio
+import contextlib
 import io
 import tempfile
 import threading
@@ -2412,6 +2413,33 @@ class TestLibraryThumbnailTokenAuth(TestLibraryPermissions):
     @pytest.mark.asyncio
     @pytest.mark.integration
     @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_deactivated_owner_stream_token_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """T-164 / audit-security, user-approved 2026-09-14: a stream token
+        minted while the owning account was active must stop working the
+        moment that account is deactivated, instead of staying valid for the
+        remainder of the token's 60-minute life. Same 403 + detail as the
+        no-recorded-identity case above — deactivated must not be
+        distinguishable from unknown to an unauthenticated caller."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["operator_token"])
+
+        auth_setup["operator_user"].is_active = False
+        db_session.add(auth_setup["operator_user"])
+        await db_session.commit()
+
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Camera stream token does not carry a library-scoped identity"
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
     async def test_auth_disabled_loads_thumbnail(self, async_client: AsyncClient, db_session, tmp_path, kind):
         """Auth disabled (the default in these tests) — no token required,
         every thumbnail loads, exactly like before this change."""
@@ -2714,6 +2742,37 @@ class TestPrintFileUploadValidation:
         assert "ZIP container" in bad_errors[0]["error"]
 
 
+def _isolate_library_files_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Patch the route's file-storage directory to a per-test ``tmp_path``.
+
+    ``get_library_files_dir()`` resolves through ``app_settings.archive_dir``,
+    which is fixed at process-import time from ``DATA_DIR`` and never
+    re-read — so every test in a pytest process (and every xdist worker
+    sharing the repo) otherwise shares one real, on-disk directory. Any
+    other test that legitimately writes a file there between a snapshot and
+    its assertion makes the size-cap tests below flaky (T-161). Patching the
+    route's module-level reference instead gives each test its own
+    directory that only *that* test's request can touch.
+    """
+    isolated_dir = tmp_path / "library_files"
+    isolated_dir.mkdir()
+    monkeypatch.setattr("backend.app.api.routes.library.get_library_files_dir", lambda: isolated_dir)
+    return isolated_dir
+
+
+@contextlib.contextmanager
+def _assert_directory_unchanged(directory: Path, message: str):
+    """Snapshot ``directory`` on entry and assert it is unchanged on exit.
+
+    Factors out the repeated ``before = set(files_dir.iterdir())`` /
+    ``assert set(files_dir.iterdir()) == before`` pattern shared by the
+    size-cap rejection tests below.
+    """
+    before = set(directory.iterdir())
+    yield
+    assert set(directory.iterdir()) == before, message
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 class TestLibraryUploadSizeCap:
@@ -2722,33 +2781,32 @@ class TestLibraryUploadSizeCap:
     ``settings.library_max_upload_bytes``, instead of reading the whole body
     into memory with no cap at all."""
 
-    async def test_upload_over_declared_size_cap_is_rejected(self, async_client: AsyncClient, db_session, monkeypatch):
+    async def test_upload_over_declared_size_cap_is_rejected(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
         """A body whose real (and therefore reported ``file.size``) length
         exceeds a small test cap is rejected before any file or DB row is
         created."""
         from sqlalchemy import select
 
-        from backend.app.api.routes.library import get_library_files_dir
         from backend.app.core.config import settings
         from backend.app.models.library import LibraryFile
 
         monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
-        files_dir = get_library_files_dir()
-        before = set(files_dir.iterdir())
+        with _assert_directory_unchanged(files_dir, "no file should reach disk when the declared size exceeds the cap"):
+            files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+            response = await async_client.post("/api/v1/library/files", files=files)
 
-        files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
-        response = await async_client.post("/api/v1/library/files", files=files)
+            assert response.status_code == 413
+            assert "100" in response.json()["detail"]
 
-        assert response.status_code == 413
-        assert "100" in response.json()["detail"]
-
-        assert set(files_dir.iterdir()) == before, "no file should reach disk when the declared size exceeds the cap"
         rows = (await db_session.execute(select(LibraryFile))).scalars().all()
         assert rows == []
 
     async def test_upload_exceeding_cap_mid_stream_is_rejected_and_cleaned_up(
-        self, async_client: AsyncClient, db_session, monkeypatch
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):
         """When the declared size can't be trusted (a misdeclared or
         unknown-length body), the running byte count accumulated while
@@ -2758,7 +2816,6 @@ class TestLibraryUploadSizeCap:
         from sqlalchemy import select
         from starlette.datastructures import UploadFile as StarletteUploadFile
 
-        from backend.app.api.routes.library import get_library_files_dir
         from backend.app.core.config import settings
         from backend.app.models.library import LibraryFile
 
@@ -2776,26 +2833,41 @@ class TestLibraryUploadSizeCap:
 
         monkeypatch.setattr(StarletteUploadFile, "write", _write_then_forget_size)
 
-        files_dir = get_library_files_dir()
-        before = set(files_dir.iterdir())
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
-        files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
-        response = await async_client.post("/api/v1/library/files", files=files)
+        with _assert_directory_unchanged(
+            files_dir, "the partial file must be removed once the streamed cap is crossed"
+        ):
+            files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+            response = await async_client.post("/api/v1/library/files", files=files)
 
-        assert response.status_code == 413
-        assert "100" in response.json()["detail"]
+            assert response.status_code == 413
+            assert "100" in response.json()["detail"]
 
-        assert set(files_dir.iterdir()) == before, "the partial file must be removed once the streamed cap is crossed"
         rows = (await db_session.execute(select(LibraryFile))).scalars().all()
         assert rows == []
 
-    async def test_upload_setting_honoured_when_raised(self, async_client: AsyncClient, db_session, monkeypatch):
+    async def test_upload_setting_honoured_when_raised(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
         """Raising the cap above the payload size lets the upload succeed —
         confirms the cap is actually read from settings at request time, not
-        hardcoded."""
+        hardcoded.
+
+        Also proves the isolation helper used by the rejection tests above
+        actually redirects this route's writes: if patching
+        ``get_library_files_dir`` did nothing, the file below would land in
+        the real library directory instead of ``files_dir``, and this
+        assertion would fail — so a regression that broke the patch would be
+        caught here rather than silently making the rejection tests vacuous.
+        """
+        from sqlalchemy import select
+
         from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
 
         monkeypatch.setattr(settings, "library_max_upload_bytes", 10_000)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
         payload = b"solid test\nendsolid test"
         files = {"file": ("test.stl", payload, "application/octet-stream")}
@@ -2803,6 +2875,11 @@ class TestLibraryUploadSizeCap:
 
         assert response.status_code == 200
         assert response.json()["file_size"] == len(payload)
+
+        row = (
+            await db_session.execute(select(LibraryFile).where(LibraryFile.id == response.json()["id"]))
+        ).scalar_one()
+        assert Path(row.file_path).parent == files_dir, "the upload should have been written into the patched dir"
 
     async def test_upload_empty_file_still_runs_content_validator_once(self, async_client: AsyncClient, db_session):
         """A zero-byte upload never enters the ``while chunk := ...`` loop —
@@ -2871,39 +2948,36 @@ class TestLibraryZipExtractSizeCap:
         return captured
 
     async def test_declared_total_above_cap_is_rejected_before_extraction(
-        self, async_client: AsyncClient, db_session, monkeypatch
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):
         """A ZIP whose entries honestly declare a total bigger than a small
         test cap is rejected up front — nothing is extracted and the
         uploaded ZIP's temp file is removed."""
         from sqlalchemy import select
 
-        from backend.app.api.routes.library import get_library_files_dir
         from backend.app.core.config import settings
         from backend.app.models.library import LibraryFile
 
         monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10)
         captured_tmp_paths = self._patch_mkstemp_capture(monkeypatch)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
-        files_dir = get_library_files_dir()
-        before = set(files_dir.iterdir())
+        with _assert_directory_unchanged(files_dir, "nothing should be extracted above the declared-size cap"):
+            zip_bytes = self._make_zip_bytes({"big.txt": b"x" * 500})
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
 
-        zip_bytes = self._make_zip_bytes({"big.txt": b"x" * 500})
-        files = {"file": ("test.zip", zip_bytes, "application/zip")}
-        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+            assert response.status_code == 413
+            assert "10" in response.json()["detail"]
 
-        assert response.status_code == 413
-        assert "10" in response.json()["detail"]
-
-        assert set(files_dir.iterdir()) == before, "nothing should be extracted above the declared-size cap"
         rows = (await db_session.execute(select(LibraryFile))).scalars().all()
         assert rows == []
         assert captured_tmp_paths, "the route should have created a temp file for the uploaded ZIP"
-        for tmp_path in captured_tmp_paths:
-            assert not Path(tmp_path).exists(), "the temp ZIP file must be cleaned up"
+        for captured_path in captured_tmp_paths:
+            assert not Path(captured_path).exists(), "the temp ZIP file must be cleaned up"
 
     async def test_lying_header_is_caught_mid_stream_and_rolled_back(
-        self, async_client: AsyncClient, db_session, monkeypatch
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):
         """A ZIP entry whose ``ZipInfo.file_size`` understates its real size
         must still be caught once the actual streamed bytes cross the cap —
@@ -2913,7 +2987,6 @@ class TestLibraryZipExtractSizeCap:
 
         from sqlalchemy import select
 
-        from backend.app.api.routes.library import get_library_files_dir
         from backend.app.core.config import settings
         from backend.app.models.library import LibraryFile
 
@@ -2941,29 +3014,29 @@ class TestLibraryZipExtractSizeCap:
 
         monkeypatch.setattr(zipfile_module.ZipFile, "infolist", _lying_infolist)
 
-        files_dir = get_library_files_dir()
-        before = set(files_dir.iterdir())
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
-        zip_bytes = self._make_zip_bytes(
-            {
-                "first.txt": b"a" * 200,  # extracted+committed before the lie is caught
-                "second.txt": b"b" * 5000,  # real size blows past the cap once streamed
-            }
-        )
-        files = {"file": ("test.zip", zip_bytes, "application/zip")}
-        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
-
-        assert response.status_code == 413
-
-        assert set(files_dir.iterdir()) == before, (
+        with _assert_directory_unchanged(
+            files_dir,
             "the mid-stream cap breach must roll back every file extracted this request, "
-            "including the earlier one already committed"
-        )
+            "including the earlier one already committed",
+        ):
+            zip_bytes = self._make_zip_bytes(
+                {
+                    "first.txt": b"a" * 200,  # extracted+committed before the lie is caught
+                    "second.txt": b"b" * 5000,  # real size blows past the cap once streamed
+                }
+            )
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+
         rows = (await db_session.execute(select(LibraryFile))).scalars().all()
         assert rows == []
 
     async def test_lying_header_caught_on_the_very_first_entry(
-        self, async_client: AsyncClient, db_session, monkeypatch
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):
         """Same lying-header scenario as above, but the cap is blown on the
         first entry with nothing extracted yet — the cleanup path must be a
@@ -2972,7 +3045,6 @@ class TestLibraryZipExtractSizeCap:
 
         from sqlalchemy import select
 
-        from backend.app.api.routes.library import get_library_files_dir
         from backend.app.core.config import settings
         from backend.app.models.library import LibraryFile
 
@@ -2990,20 +3062,20 @@ class TestLibraryZipExtractSizeCap:
 
         monkeypatch.setattr(zipfile_module.ZipFile, "infolist", _lying_infolist)
 
-        files_dir = get_library_files_dir()
-        before = set(files_dir.iterdir())
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
-        zip_bytes = self._make_zip_bytes({"only.txt": b"z" * 5000})
-        files = {"file": ("test.zip", zip_bytes, "application/zip")}
-        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        with _assert_directory_unchanged(files_dir, "nothing should be left behind by a first-entry cap breach"):
+            zip_bytes = self._make_zip_bytes({"only.txt": b"z" * 5000})
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
 
-        assert response.status_code == 413
-        assert set(files_dir.iterdir()) == before
+            assert response.status_code == 413
+
         rows = (await db_session.execute(select(LibraryFile))).scalars().all()
         assert rows == []
 
     async def test_zip_upload_body_above_upload_cap_is_rejected_before_extraction(
-        self, async_client: AsyncClient, db_session, monkeypatch
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):
         """The ZIP body itself is streamed to disk with the same
         ``library_max_upload_bytes`` cap as the plain upload route (T-147) —
@@ -3011,34 +3083,44 @@ class TestLibraryZipExtractSizeCap:
         opened."""
         from sqlalchemy import select
 
-        from backend.app.api.routes.library import get_library_files_dir
         from backend.app.core.config import settings
         from backend.app.models.library import LibraryFile
 
         monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
-        files_dir = get_library_files_dir()
-        before = set(files_dir.iterdir())
+        with _assert_directory_unchanged(
+            files_dir, "nothing should be extracted when the ZIP body itself is oversized"
+        ):
+            zip_bytes = self._make_zip_bytes({"small.txt": b"hello"}) + b"\x00" * 500
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
 
-        zip_bytes = self._make_zip_bytes({"small.txt": b"hello"}) + b"\x00" * 500
-        files = {"file": ("test.zip", zip_bytes, "application/zip")}
-        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+            assert response.status_code == 413
+            assert "100" in response.json()["detail"]
 
-        assert response.status_code == 413
-        assert "100" in response.json()["detail"]
-        assert set(files_dir.iterdir()) == before
         rows = (await db_session.execute(select(LibraryFile))).scalars().all()
         assert rows == []
 
     async def test_zip_extract_cap_setting_honoured_when_raised(
-        self, async_client: AsyncClient, db_session, monkeypatch
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
     ):
         """Raising ``library_max_zip_extract_bytes`` above the archive's real
         uncompressed size lets extraction succeed — confirms the cap is read
-        from settings at request time, not hardcoded."""
+        from settings at request time, not hardcoded.
+
+        Also proves the isolation helper used by the rejection tests above
+        actually redirects this route's writes into ``files_dir``, so a
+        regression that broke the patch wouldn't leave those tests silently
+        vacuous.
+        """
+        from sqlalchemy import select
+
         from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
 
         monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10_000)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
 
         zip_bytes = self._make_zip_bytes({"ok.txt": b"y" * 2000})
         files = {"file": ("test.zip", zip_bytes, "application/zip")}
@@ -3048,6 +3130,9 @@ class TestLibraryZipExtractSizeCap:
         result = response.json()
         assert result["extracted"] == 1
         assert len(result["errors"]) == 0
+
+        row = (await db_session.execute(select(LibraryFile))).scalar_one()
+        assert Path(row.file_path).parent == files_dir, "the extracted entry should have landed in the patched dir"
 
 
 @pytest.mark.asyncio

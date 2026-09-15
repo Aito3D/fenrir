@@ -547,10 +547,11 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
 def _clean_3mf_metadata(obj):
     """Strip bytes and thumbnail-carrier keys so the payload is JSON-storable.
 
-    Shared by ``upload_file`` and :func:`save_3mf_bytes_to_library` — the
-    ``ThreeMFParser`` output embeds the thumbnail bytes under
-    ``_thumbnail_data``/``_thumbnail_ext`` and may also include raw bytes in
-    other fields, none of which can be JSON-encoded.
+    Shared by ``upload_file``, ``extract_zip_file``, ``scan_external_folder``
+    and :func:`save_3mf_bytes_to_library` — the ``ThreeMFParser`` output
+    embeds the thumbnail bytes under ``_thumbnail_data``/``_thumbnail_ext``
+    and may also include raw bytes in other fields, none of which can be
+    JSON-encoded.
     """
     if isinstance(obj, dict):
         return {
@@ -1949,20 +1950,7 @@ async def scan_external_folder(
                             thumbnail_path = to_relative_path(thumb_full)
 
                         # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
-                        def clean_metadata(obj):
-                            if isinstance(obj, dict):
-                                return {
-                                    k: clean_metadata(v)
-                                    for k, v in obj.items()
-                                    if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                                }
-                            elif isinstance(obj, list):
-                                return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                            elif isinstance(obj, bytes):
-                                return None
-                            return obj
-
-                        file_metadata = clean_metadata(raw_metadata)
+                        file_metadata = _clean_3mf_metadata(raw_metadata)
                 except Exception as e:
                     logger.debug("Failed to extract metadata from external 3mf %s: %s", filepath, e)
 
@@ -2477,20 +2465,7 @@ async def upload_file(
                     thumbnail_path = str(thumb_path)
 
                 # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
-                def clean_metadata(obj):
-                    if isinstance(obj, dict):
-                        return {
-                            k: clean_metadata(v)
-                            for k, v in obj.items()
-                            if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                        }
-                    elif isinstance(obj, list):
-                        return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                    elif isinstance(obj, bytes):
-                        return None
-                    return obj
-
-                metadata = clean_metadata(raw_metadata)
+                metadata = _clean_3mf_metadata(raw_metadata)
             except Exception as e:
                 logger.warning("Failed to parse 3MF: %s", e)
 
@@ -2834,20 +2809,7 @@ async def extract_zip_file(
                                     f.write(thumbnail_data)
                                 thumbnail_path = str(thumb_path)
 
-                            def clean_metadata(obj):
-                                if isinstance(obj, dict):
-                                    return {
-                                        k: clean_metadata(v)
-                                        for k, v in obj.items()
-                                        if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                                    }
-                                elif isinstance(obj, list):
-                                    return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                                elif isinstance(obj, bytes):
-                                    return None
-                                return obj
-
-                            metadata = clean_metadata(raw_metadata)
+                            metadata = _clean_3mf_metadata(raw_metadata)
                         except Exception as e:
                             logger.warning("Failed to parse 3MF from ZIP: %s", e)
 

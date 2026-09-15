@@ -12023,3 +12023,53 @@ User-visible change: `POST /library/generate-stl-thumbnails`'s `remaining` field
 number of matching STL files left unprocessed (e.g. 4200) where it previously saturated at 1; a caller that
 displayed or summed it was being told one file was left when thousands were.
 User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 13 · T-164 — 2026-09-14 — user-approved behavior change
+
+`backend/app/core/auth.py:2170-2177`, inside `require_library_thumbnail_access_if_auth_enabled`'s
+`checker`, resolved the camera-stream token's principal to a `User` row with `get_user_by_username` and
+only checked `if user is None: raise HTTPException(403, ...)` before returning `(user,
+user.has_permission(Permission.LIBRARY_READ_ALL.value))`. `get_user_by_username` (auth.py:1055-1060) is a
+plain lookup with no `is_active` filter, so a user deactivated after minting a stream token kept resolving
+to a real, permission-bearing `User` row for the rest of that token's 60-minute life. Every other
+principal-resolution site in this file pairs the lookup with an explicit `is_active` check (e.g. auth.py:583
+`if user is None or not user.is_active: raise credentials_exception`) — this dependency was the one
+exception — and its own docstring at auth.py:2142-2143 already promised "Token resolves to a username that
+no longer maps to an active row in `users` -> 403", which the code did not actually enforce.
+
+Fixed by widening the guard to `if user is None or not user.is_active:`, raising the exact same
+`HTTPException(403, detail="Camera stream token does not carry a library-scoped identity")` the None branch
+already raised — deactivated and unknown accounts get identical treatment so an unauthenticated caller
+cannot distinguish "no such user" from "user exists but is disabled" from the response. No other line in
+the checker changed. The docstring at auth.py:2142-2143 already described this behavior accurately (it was
+aspirational relative to the code, not wrong), so it needed no edit.
+
+The JWT paths in this file additionally call `_is_token_fresh(iat, user)` to invalidate credentials minted
+before a password change. This dependency's token is an opaque `camera_stream` row in
+`auth_ephemeral_tokens`, not a JWT, so it carries no `iat` claim. `AuthEphemeralToken.created_at` and
+`User.password_changed_at` both already exist as columns, so no schema change would be needed to compare
+them — but `require_library_thumbnail_access_if_auth_enabled`'s checker only receives the resolved
+`username` string from `resolve_camera_stream_token_principal`, not the token row itself, so wiring a
+freshness check through would mean changing `resolve_camera_stream_token_principal`'s return shape (and
+its one other caller's expectations), which goes beyond "the same dependency and its docstring" this task
+was scoped to. Freshness was therefore left unimplemented; filed as a follow-up for the orchestrator
+(exposing the token row's `created_at` from `resolve_camera_stream_token_principal` alongside the
+principal, then comparing it to `user.password_changed_at` the way `_is_token_fresh` does for JWTs).
+
+Two tests added to `backend/tests/integration/test_library_api.py::TestLibraryThumbnailTokenAuth`, parametrized
+across both thumbnail routes like every other test in that class:
+`test_deactivated_owner_stream_token_rejected` mints a stream token for the operator user, flips
+`is_active` to `False` and commits, then asserts the token now returns 403 with the exact same detail
+string as the existing no-recorded-identity 403 case, and that neither route leaks the file's bytes. The
+existing `test_owner_stream_token_loads_thumbnail` (owner still active) was left unmodified and stays
+green. No existing assertion was weakened or removed.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (`app-route-perms` counts
+`RequirePermissionIfAuthEnabled` occurrences, none of which were touched; no schema change). `SURFACE.md`
+was regenerated and is unchanged.
+
+User-visible change: a user whose account is deactivated while a camera-stream token is outstanding
+currently keeps loading their own library thumbnails for the remainder of that token's 60-minute life;
+after the fix those `<img>` requests return 403 immediately. The token-freshness half (invalidating a
+still-active user's stream token after a password change) was not implemented — see follow-up above.
+User-approved 2026-09-14.
