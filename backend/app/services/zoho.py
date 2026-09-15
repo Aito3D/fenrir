@@ -965,6 +965,41 @@ class ZohoService:
         """
         return (await self._request(db, "POST", "/invoices", json=payload)).get("invoice", {})
 
+    async def list_customer_payments(self, db: AsyncSession, customer_id: str) -> list[dict]:
+        """Every payment Books holds for this customer, with what is unspent.
+
+        This is where a customer's deposits actually live: a retainer's
+        payment is booked as an advance with an ``unused_amount`` that drops
+        the moment it is applied to any invoice, and a row carries the
+        ``retainerinvoice_id`` it came from (empty for a plain advance). One
+        call answers "what does this customer still have on account" for
+        every deposit at once — linked to a quote or raised by hand — where
+        the estimate's own ``retainerinvoices`` list only knows the ones
+        raised from it, and keeps calling them paid after they are spent.
+
+        ``customer_id`` MUST be non-empty, for the same reason as
+        ``list_project_invoices``: Books reads an empty filter as no filter
+        and answers with the org's entire payment list.
+
+        First page only. Books pages at 200 rows and a single customer with
+        more payments than that is not a case this shop has.
+        """
+        if not customer_id:
+            return []
+        payload = await self._request(db, "GET", "/customerpayments", params={"customer_id": customer_id})
+        return list(payload.get("customerpayments") or [])
+
+    async def list_customer_retainers(self, db: AsyncSession, customer_id: str) -> list[dict]:
+        """The customer's retainer invoices, summarised (id, number, status,
+        total). Read once at invoice time to put a RET number beside each
+        payment the dialog lists — a payment row knows its retainer only by
+        id. Same empty-filter refusal as ``list_customer_payments``.
+        """
+        if not customer_id:
+            return []
+        payload = await self._request(db, "GET", "/retainerinvoices", params={"customer_id": customer_id})
+        return list(payload.get("retainerinvoices") or [])
+
     async def get_retainer_invoice(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
         """One retainer invoice in full — specifically its ``payments``.
 

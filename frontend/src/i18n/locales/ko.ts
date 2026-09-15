@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: '단계 및 남은 작업',
     panelTabDetails: '세부 정보',
     billingLabel: '청구',
-    depositPaid: '수령한 선금',
+    depositAvailable: '사용 가능한 선금',
     descriptionShowMore: '더 보기',
     descriptionShowLess: '접기',
     panelTabAttention: '확인 필요',

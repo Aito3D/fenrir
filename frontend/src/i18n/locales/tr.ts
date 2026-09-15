@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: 'Aşama ve kalan iş',
     panelTabDetails: 'Ayrıntılar',
     billingLabel: 'Faturalama',
-    depositPaid: 'Alınan ön ödeme',
+    depositAvailable: 'Kullanılabilir ön ödeme',
     descriptionShowMore: 'Daha fazla göster',
     descriptionShowLess: 'Daha az göster',
     panelTabAttention: 'Dikkat gerekli',

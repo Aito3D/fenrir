@@ -452,7 +452,7 @@ async def test_run_sync_once_reloads_the_project_before_apply_rules_after_a_term
     await db_session.commit()
     project_id = project.id
 
-    async def fake_sync_project(db, proj):
+    async def fake_sync_project(db, proj, credit_cache=None):
         # A real flush failure -- the same "poisons the session" mechanism
         # every real terminal handler relies on (an IntegrityError from a
         # racing zoho_comment_id, or a duplicate quote_id under
@@ -6386,3 +6386,109 @@ async def test_still_selected_agrees_with_the_sweep_select_across_the_full_state
         "(id, status, quote_id, quote_sync_state, board_column, quote_status, "
         f"quote_status_confirmed, sql_selected, still_selected): {mismatches}"
     )
+
+
+_PAYMENTS = [
+    {"payment_id": "P1", "amount": 10000, "unused_amount": 10000, "retainerinvoice_id": "RI1"},
+    {"payment_id": "P2", "amount": 80000, "unused_amount": 0, "retainerinvoice_id": "RI2"},
+    {"payment_id": "P3", "amount": 5700, "unused_amount": 700, "retainerinvoice_id": ""},
+]
+
+
+def _accepted_estimate_with_retainer() -> dict:
+    return {
+        "estimate": {
+            "estimate_id": "E1",
+            "customer_id": "C1",
+            "status": "accepted",
+            "is_transaction_created": True,
+            "invoiced_amount": 0,
+            "invoice_ids": [],
+            "retainerinvoices": _RETAINER,
+            "is_inclusive_tax": True,
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_sweep_reads_the_customers_unspent_deposits_beside_the_estimates_retainers(db_session):
+    """Two figures, two meanings. `retainer_paid_total` stays the estimate's
+    own paid retainers (it drives auto-accept and the payment link, which
+    are per-quote). `customer_credit_total` is what the customer still has
+    on account across ALL their deposits — the panel's "deposit available",
+    which drops the moment a payment is spent on any invoice."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _accepted_estimate_with_retainer(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/customerpayments"): {"customerpayments": _PAYMENTS},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 28500.0
+    assert project.customer_credit_total == 10700.0
+    assert project.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_sweep_asks_books_once_per_customer_per_tick(db_session):
+    """Two projects of one customer, one payments read."""
+    for _ in range(2):
+        project = await _project_with_quote(db_session, impression_cost=1000)
+        project.quote_status = "accepted"
+        project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _accepted_estimate_with_retainer(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/customerpayments"): {"customerpayments": _PAYMENTS},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 2
+    assert [path for method, path, _ in seen if path.endswith("/customerpayments")] == ["/books/v3/customerpayments"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_deposit_read_leaves_the_figure_and_the_sync_alone(db_session):
+    """No /customerpayments route: the read 404s. The estimate reconcile
+    already succeeded, so the card stays idle and the stored figure is kept."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    project.customer_credit_total = 4200.0
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _accepted_estimate_with_retainer(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.customer_credit_total == 4200.0

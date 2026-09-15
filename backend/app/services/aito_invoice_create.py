@@ -15,13 +15,23 @@ also means the client is invoiced for exactly the document they accepted,
 down to the rounding, which is the only defensible thing to put on an
 invoice.
 
-The retainers come from ``estimate["retainerinvoices"]`` — the same field
-``aito_quote_sync._is_locked`` already trusts. A retainer is a deposit the
-client has already paid; Books records that payment as a customer ADVANCE,
-and applying it to an invoice means pointing that advance payment at the
-invoice (``POST /invoices/{id}/credits``), which is why this module chases
-``retainer -> payments[] -> payment_id`` rather than sending an amount.
-Verified against the live org (project 35, RET-00269, FA-26-4100).
+The deposits come from the CUSTOMER's payments (``GET /customerpayments``),
+not from ``estimate["retainerinvoices"]``. A retainer invoice is a customer
+document in Books: one raised from the quote appears in the estimate's list,
+one raised by hand references no estimate and appears nowhere but on the
+customer. Either way its payment is a customer ADVANCE with an
+``unused_amount``, and applying it to an invoice means pointing that advance
+at the invoice (``POST /invoices/{id}/credits``) — which is why this module
+deals in ``payment_id`` rather than sending an amount. The payments list
+carries the unused figure itself, so no per-retainer detail read is needed.
+Verified against the live org (project 35, RET-00269, FA-26-4100; the
+payments shape on HUNA DESIGN, 2026-09-15).
+
+The estimate's own retainer list is still read for one thing: a retainer
+with nothing left to spend — unpaid, or already drawn on another invoice —
+is REPORTED, struck through, rather than dropped. A deposit missing from the
+dialog reads as "there was no deposit", which is what makes someone bill it
+twice.
 """
 
 import logging
@@ -50,8 +60,10 @@ _LINE_FIELDS = ("item_id", "name", "description", "rate", "quantity", "unit", "t
 
 @dataclass
 class RetainerCredit:
-    """One retainer invoice hanging off the quote, and what of it can be spent.
+    """One deposit on the customer's account, and what of it can be spent.
 
+    Usually a retainer invoice (named by its RET number), sometimes a plain
+    advance payment with no retainer behind it (named by its payment number).
     ``applicable`` is the sum of its payments' UNUSED amounts, not its total:
     a retainer already drawn against an earlier invoice still reads
     ``status: paid`` with a full ``total``, and treating that as money would
@@ -122,31 +134,70 @@ def build_line_items(estimate_lines: list[dict]) -> list[dict]:
     return lines
 
 
-async def _retainer_credit(db: AsyncSession, entry: dict) -> RetainerCredit:
-    """One summary entry from the estimate, enriched with its payments.
+def _unused(payment: dict) -> float:
+    try:
+        return float(payment.get("unused_amount") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
-    The estimate's own ``retainerinvoices`` entries carry the number, status
-    and total but no payment ids, so each one costs a detail read. That is
-    one call per retainer, and a project has one — this is not the sweep.
+
+async def customer_credits(db: AsyncSession, estimate: dict) -> list[RetainerCredit]:
+    """Every deposit the estimate's customer can spend, plus the estimate's
+    own retainers that cannot be, reported.
+
+    Spendable first, oldest first — Books lists payments newest first, and
+    spending the oldest deposit first is what an accountant would do
+    (``share_out`` spends in list order). Payments of one retainer are one
+    row, keyed by the retainer's id and named by its RET number; a plain
+    advance with no retainer behind it is its own row, named by its payment
+    number since it has no other name. The RET numbers cost one list read of
+    the customer's retainers, and only when some payment came from one.
+
+    Then the estimate's retainers with nothing on account — unpaid, or drawn
+    on an earlier invoice — with ``applicable`` 0, so the dialog strikes
+    them through instead of hiding them.
     """
-    retainer_id = str(entry.get("retainerinvoice_id") or "")
-    number = str(entry.get("retainerinvoice_number") or retainer_id)
-    total = float(entry.get("total") or 0)
-    credit = RetainerCredit(
-        id=retainer_id, number=number, status=str(entry.get("status") or ""), total=total, applicable=0.0
-    )
-    if not retainer_id:
-        # No id, no detail read, no payments: reported as fully unapplied
-        # rather than dropped, so the operator still sees the deposit exists.
-        return credit
-    detail = await zoho_service.get_retainer_invoice(db, retainer_id)
-    for payment in detail.get("payments") or []:
+    customer_id = str(estimate.get("customer_id") or "")
+    payments = [p for p in await zoho_service.list_customer_payments(db, customer_id) if _unused(p) > 0]
+    # Undated rows (which Books never sends, but a fake might) sort last
+    # rather than first, so a missing date never jumps a real deposit.
+    payments.sort(key=lambda p: (not p.get("date"), str(p.get("date") or "")))
+    numbers: dict[str, str] = {}
+    if any(p.get("retainerinvoice_id") for p in payments):
+        for retainer in await zoho_service.list_customer_retainers(db, customer_id):
+            numbers[str(retainer.get("retainerinvoice_id") or "")] = str(retainer.get("retainerinvoice_number") or "")
+
+    by_id: dict[str, RetainerCredit] = {}
+    for payment in payments:
         payment_id = str(payment.get("payment_id") or "")
-        unused = float(payment.get("unused_payment_amount") or 0)
-        if payment_id and unused > 0:
-            credit.payments.append((payment_id, unused))
-            credit.applicable += unused
-    return credit
+        retainer_id = str(payment.get("retainerinvoice_id") or "")
+        unused = _unused(payment)
+        key = retainer_id or payment_id
+        credit = by_id.get(key)
+        if credit is None:
+            number = numbers.get(retainer_id) if retainer_id else None
+            if not number:
+                number = f"#{payment.get('payment_number')}" if payment.get("payment_number") else key
+            credit = by_id[key] = RetainerCredit(id=key, number=number, status="paid", total=0.0, applicable=0.0)
+        credit.total += float(payment.get("amount") or 0)
+        credit.applicable += unused
+        credit.payments.append((payment_id, unused))
+
+    credits = list(by_id.values())
+    for entry in estimate.get("retainerinvoices") or []:
+        retainer_id = str(entry.get("retainerinvoice_id") or "")
+        if retainer_id and retainer_id in by_id:
+            continue
+        credits.append(
+            RetainerCredit(
+                id=retainer_id,
+                number=str(entry.get("retainerinvoice_number") or retainer_id),
+                status=str(entry.get("status") or ""),
+                total=float(entry.get("total") or 0),
+                applicable=0.0,
+            )
+        )
+    return credits
 
 
 async def plan_invoice(db: AsyncSession, project: AitoProject) -> InvoicePlan:
@@ -158,7 +209,7 @@ async def plan_invoice(db: AsyncSession, project: AitoProject) -> InvoicePlan:
     re-reads its recipients: a client-supplied plan is not a plan.
     """
     estimate = await zoho_service.get_estimate(db, project.quote_id or "")
-    retainers = [await _retainer_credit(db, entry) for entry in estimate.get("retainerinvoices") or []]
+    retainers = await customer_credits(db, estimate)
     return InvoicePlan(
         estimate=estimate,
         estimate_id=str(estimate.get("estimate_id") or project.quote_id or ""),

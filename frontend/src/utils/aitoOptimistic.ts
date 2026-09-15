@@ -439,6 +439,7 @@ export function placeholderProject(fields: {
     invoice_checked_at: null,
     quote_expiry_date: null,
     retainer_paid_total: null,
+    customer_credit_total: null,
     payment_link: null,
     quote_sync_state: 'pending',
     quote_invoiced: false,

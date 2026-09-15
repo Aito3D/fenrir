@@ -67,6 +67,22 @@ RETAINER = {
     "payments": [{"payment_id": "pay-1", "amount": 1000.0, "unused_payment_amount": 1000.0}],
 }
 
+# What `GET /customerpayments?customer_id=z1` answers: the customer's
+# advances, each with what is still unspent. A retainer's payment carries
+# the retainer's id; a plain advance carries none. This — not the estimate's
+# own retainer list — is where the deposits to apply come from, because a
+# retainer raised by hand in Books references no estimate at all.
+PAYMENTS = [
+    {
+        "payment_id": "pay-1",
+        "payment_number": "4579",
+        "amount": 1000.0,
+        "unused_amount": 1000.0,
+        "retainerinvoice_id": "ret-1",
+        "date": "2026-09-10",
+    }
+]
+
 CREATED = {
     "invoice_id": "inv-1",
     "invoice_number": "FA-26-4100",
@@ -119,6 +135,7 @@ def books(monkeypatch):
         "calls": [],
         "estimate": dict(ESTIMATE),
         "retainer": dict(RETAINER),
+        "payments": [dict(p) for p in PAYMENTS],
         "created": dict(CREATED),
         "detail": dict(DETAIL),  # what GET /invoices/{id} answers
         "listed": [],  # what GET /invoices answers; empty = not yet invoiced
@@ -149,10 +166,27 @@ def books(monkeypatch):
             if linked:
                 state["listed"] = [dict(LISTED)]
             return {"invoice": dict(state["detail"])}
+        if path.startswith("/invoices/") and path.endswith("/credits") and method == "POST":
+            # Books spends the advance: its unused amount drops by what was
+            # applied, which is what the customer's credit is re-read from.
+            for entry in (json or {}).get("invoice_payments") or []:
+                for payment in state["payments"]:
+                    if payment["payment_id"] == entry["payment_id"]:
+                        payment["unused_amount"] = payment["unused_amount"] - entry["amount_applied"]
+            return {}
         if path.startswith("/invoices/") and method == "GET":
             return {"invoice": dict(state["detail"])}
         if path.startswith("/estimates/"):
             return {"estimate": dict(state["estimate"])}
+        if path == "/customerpayments":
+            return {"customerpayments": [dict(p) for p in state["payments"]]}
+        if path == "/retainerinvoices":
+            # The customer's retainers, summarised: how a payment's
+            # `retainerinvoice_id` becomes the RET number the dialog shows.
+            summary = {
+                k: state["retainer"][k] for k in ("retainerinvoice_id", "retainerinvoice_number", "status", "total")
+            }
+            return {"retainerinvoices": [summary]}
         if path.startswith("/retainerinvoices/"):
             return {"retainerinvoice": dict(state["retainer"])}
         return {}
@@ -310,11 +344,7 @@ async def test_a_paid_retainer_is_applied_as_payment(async_client, db_session, b
 async def test_the_application_is_capped_at_the_invoice_balance(async_client, db_session, books):
     """A deposit larger than the final bill is real — a job that shrank after
     the deposit was taken. Books rejects an over-application outright."""
-    books["retainer"] = {
-        **RETAINER,
-        "total": 9000.0,
-        "payments": [{"payment_id": "pay-1", "unused_payment_amount": 9000.0}],
-    }
+    books["payments"] = [{**PAYMENTS[0], "amount": 9000.0, "unused_amount": 9000.0}]
     project_id = await _project(db_session)
 
     body = (await async_client.post(f"/api/v1/aito/{project_id}/invoice")).json()
@@ -347,23 +377,30 @@ async def test_two_deposits_are_shared_out_first_come_first_served(async_client,
             return {"invoice": dict(CREATED)}
         if path.startswith("/estimates/"):
             return {"estimate": dict(books["estimate"])}
-        if path == "/retainerinvoices/ret-1":
+        if path == "/customerpayments":
+            # Oldest first, as Books lists them: the split spends pay-1 first.
             return {
-                "retainerinvoice": {
-                    "retainerinvoice_number": "RET-1",
-                    "status": "paid",
-                    "total": 2000.0,
-                    "payments": [{"payment_id": "pay-1", "unused_payment_amount": 2000.0}],
-                }
+                "customerpayments": [
+                    {"payment_id": "pay-1", "amount": 2000.0, "unused_amount": 2000.0, "retainerinvoice_id": "ret-1"},
+                    {"payment_id": "pay-2", "amount": 2000.0, "unused_amount": 2000.0, "retainerinvoice_id": "ret-2"},
+                ]
             }
-        if path == "/retainerinvoices/ret-2":
+        if path == "/retainerinvoices":
             return {
-                "retainerinvoice": {
-                    "retainerinvoice_number": "RET-2",
-                    "status": "paid",
-                    "total": 2000.0,
-                    "payments": [{"payment_id": "pay-2", "unused_payment_amount": 2000.0}],
-                }
+                "retainerinvoices": [
+                    {
+                        "retainerinvoice_id": "ret-1",
+                        "retainerinvoice_number": "RET-1",
+                        "status": "paid",
+                        "total": 2000.0,
+                    },
+                    {
+                        "retainerinvoice_id": "ret-2",
+                        "retainerinvoice_number": "RET-2",
+                        "status": "paid",
+                        "total": 2000.0,
+                    },
+                ]
             }
         return {}
 
@@ -384,6 +421,13 @@ async def test_an_unpaid_retainer_is_reported_and_the_invoice_still_lands(async_
     retainer missing from the report entirely would read as "there was no
     deposit", which is what makes someone bill it twice."""
     books["retainer"] = {**RETAINER, "status": "sent", "payments": []}
+    books["estimate"] = {
+        **ESTIMATE,
+        "retainerinvoices": [
+            {"retainerinvoice_id": "ret-1", "retainerinvoice_number": "RET-00269", "status": "sent", "total": 1000.0}
+        ],
+    }
+    books["payments"] = []  # nothing received, so nothing on account
     project_id = await _project(db_session)
 
     response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
@@ -397,13 +441,74 @@ async def test_an_unpaid_retainer_is_reported_and_the_invoice_still_lands(async_
 async def test_a_retainer_already_drawn_is_not_spent_twice(async_client, db_session, books):
     """A retainer consumed by an earlier invoice still reads `status: paid`
     with a full total. Only its UNUSED amount is money."""
-    books["retainer"] = {**RETAINER, "payments": [{"payment_id": "pay-1", "unused_payment_amount": 0}]}
+    books["payments"] = [{**PAYMENTS[0], "unused_amount": 0.0, "invoice_numbers": "FA-26-3999"}]
     project_id = await _project(db_session)
 
     body = (await async_client.post(f"/api/v1/aito/{project_id}/invoice")).json()
 
     assert "/invoices/inv-1/credits" not in _paths(books)
-    assert body["retainers"][0]["applied"] == 0.0
+    assert body["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
+
+
+@pytest.mark.asyncio
+async def test_a_deposit_raised_by_hand_with_no_quote_link_is_applied_too(async_client, db_session, books):
+    """A retainer invoice is a CUSTOMER document in Books; one raised by hand
+    references no estimate, so it never appears in the estimate's own
+    retainer list. The customer's payments are where every deposit shows,
+    linked or not — and an unlinked one is named by its payment number,
+    since it has no RET number to show."""
+    books["payments"] = [
+        dict(PAYMENTS[0]),
+        {
+            "payment_id": "pay-2",
+            "payment_number": "4580",
+            "amount": 500.0,
+            "unused_amount": 500.0,
+            "retainerinvoice_id": "",
+            "date": "2026-09-12",
+        },
+    ]
+    project_id = await _project(db_session)
+
+    preview = (await async_client.get(f"/api/v1/aito/{project_id}/invoice-preview")).json()
+    body = (await async_client.post(f"/api/v1/aito/{project_id}/invoice")).json()
+
+    assert [(r["number"], r["applicable"]) for r in preview["retainers"]] == [("RET-00269", 1000.0), ("#4580", 500.0)]
+    credits = [c["json"]["invoice_payments"] for c in books["calls"] if c["path"] == "/invoices/inv-1/credits"]
+    assert credits == [
+        [{"payment_id": "pay-1", "amount_applied": 1000.0}],
+        [{"payment_id": "pay-2", "amount_applied": 500.0}],
+    ]
+    assert body["retainers"] == [
+        {"number": "RET-00269", "total": 1000.0, "applied": 1000.0},
+        {"number": "#4580", "total": 500.0, "applied": 500.0},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_no_retainer_detail_is_read_any_more(async_client, db_session, books):
+    """The payments list carries the unused amounts itself; the per-retainer
+    detail read that used to fetch them is one Books call per deposit that
+    no longer needs spending."""
+    project_id = await _project(db_session)
+
+    await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert not [p for p in _paths(books) if p.startswith("/retainerinvoices/")]
+    assert "/customerpayments" in _paths(books)
+
+
+@pytest.mark.asyncio
+async def test_the_deposit_available_is_refreshed_the_moment_it_is_spent(async_client, db_session, books):
+    """The panel's "deposit available" must not keep showing money that this
+    very invoice just consumed until the sweep's next tick."""
+    project_id = await _project(db_session, customer_credit_total=1000.0)
+
+    await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.customer_credit_total == 0.0
 
 
 @pytest.mark.asyncio

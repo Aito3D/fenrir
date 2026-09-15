@@ -27,7 +27,7 @@ function project(overrides: Partial<AitoProject> = {}): AitoProject {
     client_phone: null, client_email: null, client_is_company: null, client_social_network: null, client_social_handle: null,
     quote_id: 'E1', quote_number: 'DEV-2026-1234', quote_date: '2026-09-12', quote_total: 12500, quote_url: null, quote_salesperson: null,
     quote_status: 'sent', quote_accepted_at: null, quote_sent_at: null, invoice_status: null, invoice_balance: null,
-    invoice_due_date: null, invoice_checked_at: null, quote_expiry_date: '2026-09-27', retainer_paid_total: null, payment_link: link,
+    invoice_due_date: null, invoice_checked_at: null, quote_expiry_date: '2026-09-27', retainer_paid_total: null, customer_credit_total: null, payment_link: link,
     quote_sync_state: 'idle', quote_invoiced: false, flag: null, client_contacted_at: null, due_date: null, quote_sync_error: null,
     quote_status_block: null, quote_status_remote: null, created_by: null, task_count: 0, tasks_total: 0, task_services: [],
     task_pending: [], steps_total: 0, steps_done: 0, print_minutes_pending: 0, task_steps: [], move_lock: null, shipping_island: null,

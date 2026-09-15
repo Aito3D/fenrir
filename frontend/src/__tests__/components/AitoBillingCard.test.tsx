@@ -27,20 +27,26 @@ function renderCard(p: AitoProject) {
 }
 
 describe('BillingCard deposit row', () => {
-  it('shows the total paid by retainer invoices so the operator sees the quote is partially paid', () => {
-    renderCard(project({ retainer_paid_total: 36700 }));
-    expect(screen.getByText('Deposit paid')).toBeInTheDocument();
+  // The row is the CUSTOMER's unspent deposits (`customer_credit_total`),
+  // not the estimate's own paid retainers (`retainer_paid_total`): a
+  // retainer raised by hand in Books references no quote and only shows up
+  // in the former, and a deposit spent on another invoice drops out of it.
+  it('shows what the customer still has on account across every deposit', () => {
+    renderCard(project({ customer_credit_total: 36700, retainer_paid_total: 10000 }));
+    expect(screen.getByText('Deposit available')).toBeInTheDocument();
     // formatMoney renders XPF as "36 700 FCFP" (thin space + NBSP); match the digits.
     expect(screen.getByText(/36.700/)).toBeInTheDocument();
+    expect(screen.queryByText(/10.000/)).not.toBeInTheDocument();
   });
 
-  it('has no deposit row when Books reports no paid retainer', () => {
-    renderCard(project({ retainer_paid_total: null }));
+  it('has no deposit row before the sweep has read the customer', () => {
+    renderCard(project({ customer_credit_total: null, retainer_paid_total: 10000 }));
+    expect(screen.queryByText('Deposit available')).not.toBeInTheDocument();
     expect(screen.queryByText('Deposit paid')).not.toBeInTheDocument();
   });
 
-  it('has no deposit row for a zero retainer total', () => {
-    renderCard(project({ retainer_paid_total: 0 }));
-    expect(screen.queryByText('Deposit paid')).not.toBeInTheDocument();
+  it('has no deposit row once every deposit has been spent', () => {
+    renderCard(project({ customer_credit_total: 0, retainer_paid_total: 10000 }));
+    expect(screen.queryByText('Deposit available')).not.toBeInTheDocument();
   });
 });

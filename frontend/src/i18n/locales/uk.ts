@@ -178,7 +178,7 @@ export default {
     stageAndWorkLeft: "Етап і залишок роботи",
     panelTabDetails: 'Деталі',
     billingLabel: 'Виставлення рахунків',
-    depositPaid: 'Аванс отримано',
+    depositAvailable: 'Доступний аванс',
     descriptionShowMore: 'Показати більше',
     descriptionShowLess: 'Згорнути',
     panelTabAttention: 'Потребує уваги',

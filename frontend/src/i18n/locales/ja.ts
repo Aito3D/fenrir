@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: '工程と残作業',
     panelTabDetails: '詳細',
     billingLabel: '請求',
-    depositPaid: '入金済みの前受金',
+    depositAvailable: '利用可能な前受金',
     descriptionShowMore: 'もっと見る',
     descriptionShowLess: '閉じる',
     panelTabAttention: '要確認',

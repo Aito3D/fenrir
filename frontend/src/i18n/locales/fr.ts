@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: 'Étape et travail restant',
     panelTabDetails: 'Détails',
     billingLabel: 'Facturation',
-    depositPaid: 'Acompte reçu',
+    depositAvailable: 'Acompte disponible',
     descriptionShowMore: 'Voir plus',
     descriptionShowLess: 'Voir moins',
     panelTabAttention: 'Attention requise',

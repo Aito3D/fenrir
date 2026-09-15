@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: 'Phase & verbleibende Arbeit',
     panelTabDetails: 'Details',
     billingLabel: 'Abrechnung',
-    depositPaid: 'Anzahlung erhalten',
+    depositAvailable: 'Verfügbare Anzahlung',
     descriptionShowMore: 'Mehr anzeigen',
     descriptionShowLess: 'Weniger anzeigen',
     panelTabAttention: 'Aufmerksamkeit erforderlich',

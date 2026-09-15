@@ -61,6 +61,7 @@ function createdProject(overrides: Record<string, unknown>) {
     tracking_configured: false,
     quote_expiry_date: null,
     retainer_paid_total: null,
+    customer_credit_total: null,
     payment_link: null,
     version: 1,
     created_at: '2026-07-26T00:00:00Z',

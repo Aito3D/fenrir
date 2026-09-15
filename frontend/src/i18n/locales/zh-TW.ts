@@ -177,7 +177,7 @@ export default {
     stageAndWorkLeft: '階段與剩餘工作',
     panelTabDetails: '詳細',
     billingLabel: '帳單',
-    depositPaid: '已收訂金',
+    depositAvailable: '可用訂金',
     descriptionShowMore: '展開',
     descriptionShowLess: '收合',
     panelTabAttention: '需要注意',
