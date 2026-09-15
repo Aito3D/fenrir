@@ -2440,6 +2440,52 @@ class TestLibraryThumbnailTokenAuth(TestLibraryPermissions):
     @pytest.mark.asyncio
     @pytest.mark.integration
     @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_deleted_owner_stream_token_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """T-172 / audit-tests: a stream token minted while the owning account
+        still existed must stop working once that ``users`` row is deleted
+        outright — not merely deactivated. ``AuthEphemeralToken.username`` is
+        a bare string column (no FK to ``users``), and this app's SQLite
+        connections never turn ``PRAGMA foreign_keys`` on (verified — see
+        ``library_trash.py`` / ``print_scheduler.py``), so deleting the user
+        does NOT cascade-delete the token row: the token stays put, resolves
+        to a username that ``get_user_by_username`` can no longer find, and
+        must be rejected with the SAME 403 + detail as the no-recorded-
+        identity case — a deleted account must be indistinguishable from an
+        unknown one to an unauthenticated caller."""
+        from sqlalchemy import delete, select
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+        from backend.app.models.user import User
+
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["operator_token"])
+        operator_id = auth_setup["operator_user"].id
+
+        await db_session.execute(delete(User).where(User.id == operator_id))
+        await db_session.commit()
+
+        # Confirm the premise: the token row survives the user's deletion
+        # unharmed (no FK cascade), so the request below actually exercises
+        # the "row is gone" branch rather than the sibling 401 no-token path.
+        row = (
+            await db_session.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == token))
+        ).scalar_one_or_none()
+        assert row is not None
+        assert row.username == "operator_lib"
+
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Camera stream token does not carry a library-scoped identity"
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
     async def test_auth_disabled_loads_thumbnail(self, async_client: AsyncClient, db_session, tmp_path, kind):
         """Auth disabled (the default in these tests) — no token required,
         every thumbnail loads, exactly like before this change."""
