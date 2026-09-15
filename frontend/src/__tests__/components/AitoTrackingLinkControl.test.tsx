@@ -154,9 +154,40 @@ describe('TrackingLinkControl', () => {
     await waitFor(() => expect(screen.queryByTestId('tracking-copied')).not.toBeInTheDocument());
   });
 
+  it('opens the link in a tab opened before the request, so the click still owns it', async () => {
+    server.use(
+      http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: 'https://x.pf/t/abc' })),
+    );
+    const tab = { location: { href: '' }, opener: {} as unknown, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /open tracking link/i }));
+    // The blank tab is opened synchronously, inside the click (Safari drops a
+    // window.open issued after an await), and only pointed at the URL once
+    // the endpoint has minted it.
+    expect(openSpy).toHaveBeenCalledWith('', '_blank');
+    await waitFor(() => expect(tab.location.href).toBe('https://x.pf/t/abc'));
+    expect(tab.opener).toBeNull();
+    expect(tab.close).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it('closes the blank tab and toasts when the link endpoint fails on open', async () => {
+    server.use(http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ detail: 'x' }, { status: 500 })));
+    const tab = { location: { href: '' }, opener: {} as unknown, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /open tracking link/i }));
+    await waitFor(() => expect(tab.close).toHaveBeenCalled());
+    expect(tab.location.href).toBe('');
+    expect(await screen.findByText(/error/i)).toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
   it('is disabled with a settings hint when the external URL is not configured', () => {
     render(<TrackingLinkControl project={{ ...project, tracking_configured: false }} />);
     expect(screen.getByRole('button', { name: /copy tracking link/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /open tracking link/i })).toBeDisabled();
     expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings?tab=network');
   });
 

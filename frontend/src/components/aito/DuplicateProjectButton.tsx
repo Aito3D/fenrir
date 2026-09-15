@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Loader2 } from 'lucide-react';
+import { CopyPlus, Loader2 } from 'lucide-react';
 import { ConfirmModal } from '../ConfirmModal';
 import { readNewProjectDraft, writeNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { isBlankPersistedDraft, seedFromProject } from '../../utils/projectSeed';
@@ -119,7 +119,7 @@ export function DuplicateProjectButton({
         title={t('aito.duplicateProject')}
         className={`inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-bambu-gray transition-colors hover:text-white disabled:opacity-50 ${focusRingCls}`}
       >
-        {waiting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+        {waiting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CopyPlus className="h-3.5 w-3.5" />}
         {t('aito.duplicateProject')}
       </button>
       {confirming && (

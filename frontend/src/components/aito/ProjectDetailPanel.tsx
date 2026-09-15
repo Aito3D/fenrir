@@ -730,7 +730,7 @@ function RecordCard({
           {/* -mr-1 pulls the icon buttons' own padding off the card's right
               edge so the glyphs line up with the values above them, which are
               flush to it. */}
-          <div className="-my-1 -mr-1">
+          <div className="-my-1 -mr-1.5">
             <TrackingLinkControl project={project} />
           </div>
         </div>

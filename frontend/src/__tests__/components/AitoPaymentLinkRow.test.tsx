@@ -57,9 +57,19 @@ describe('PaymentLinkRow', () => {
     const expires = screen.getByText('Expires in 13 days');
     expect(expires).toBeInTheDocument();
     expect(expires).toHaveAttribute('title', expect.stringMatching(/\d{4}/));
+    // Open is a real anchor to a new tab, beside Copy, in the tracking row's
+    // vocabulary (see linkActions.tsx): the URL is already in hand, so no
+    // window.open dance is needed.
+    const open = screen.getByRole('link', { name: 'Open payment link' });
+    expect(open).toHaveAttribute('href', 'https://osb/pay/L1');
+    expect(open).toHaveAttribute('target', '_blank');
+    expect(open).toHaveAttribute('rel', expect.stringContaining('noopener'));
     await userEvent.click(screen.getByRole('button', { name: 'Copy payment link' }));
     expect(copyTextToClipboard).toHaveBeenCalledWith('https://osb/pay/L1');
-    expect(await screen.findByText('Copied')).toBeInTheDocument();
+    const copied = await screen.findByTestId('payment-link-copied');
+    expect(copied).toHaveTextContent('Copied');
+    expect(copied).toHaveClass('animate-rise-sm');
+    expect(screen.getByRole('button', { name: 'Copy payment link' }).querySelector('svg')).toHaveClass('animate-tick-in');
   });
 
   it('paid: the check, and a warning when the total has moved', () => {
@@ -103,5 +113,6 @@ describe('PaymentLinkRow', () => {
     render(<PaymentLinkRow project={project({ payment_link: { ...link, state: 'expired' } })} canUpdate />);
     expect(screen.getByText('Expired')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy payment link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open payment link' })).not.toBeInTheDocument();
   });
 });
