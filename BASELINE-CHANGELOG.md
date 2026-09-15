@@ -12162,3 +12162,96 @@ genuinely restricted key's allowlist has any effect — matching how every other
 this codebase already behaves when auth is off. JWT/session callers and unrestricted (global) API keys are
 unaffected in both configurations.
 User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 15 · T-166 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/library.py`, `_stream_upload_to_path()` (shared by `POST /library/files` and
+`POST /library/files/extract-zip`) only enforced `settings.library_max_upload_bytes` after Starlette's
+`MultiPartParser` had already spooled the entire multipart body to a `SpooledTemporaryFile` on the OS temp
+filesystem (a 1 MB in-memory spool, then disk). FastAPI's `get_request_handler` resolves `UploadFile =
+File(...)` by calling `await request.form()` *before* any of the route's own `Depends()` run — body parsing
+happens ahead of dependency solving in `fastapi.routing.get_request_handler` — so the pre-existing in-route
+size check, and any plain `Depends`, could only run after the whole oversized body was already written to
+disk. Any caller holding `library:upload` could send a single request declaring (or actually sending) many
+gigabytes and force that much disk I/O before the 413 fired, repeatedly and concurrently — an attacker-
+controlled disk-exhaustion vector, not merely a slow rejection.
+
+**First attempt, dropped (commit c4035908e):** wrapped both routes in a custom `APIRoute` subclass
+(`_ContentLengthCappedRoute`) whose `get_route_handler()` compared the request's declared `Content-Length`
+header against the cap (plus a small multipart-overhead margin) and raised the in-route check's own 413
+*before* calling the original handler at all — i.e. before FastAPI resolved any dependency, including the
+route's own `_: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD))`. The
+blind verifier reproduced five request shapes against the running app with the cap toggled between two
+values and found the size gate sat in front of authentication: `X-API-Key: bb_bogus` with auth enabled went
+from 401 `"Authentication required"` to 413 echoing the *configured cap* — i.e. an unauthenticated caller
+learned the server's upload limit before ever being asked to prove who they were. The same ordering problem
+also flipped four other pre-existing error shapes (a non-`.zip` file to extract-zip, a nonexistent
+`folder_id`, an empty filename, and a request with no `file` field at all) to 413. The user approved a retry
+with the auth-before-size ordering fixed.
+
+**This fix** keeps the same `_ContentLengthCappedRoute` mechanism (both routes are re-registered via
+`router.add_api_route(..., route_class_override=_ContentLengthCappedRoute)` instead of the `@router.post`
+decorator, because `route_class_override` is only accepted by `add_api_route`, not by the decorator) but
+reorders the two checks inside `get_route_handler()`: it now resolves the caller *first*, using the exact
+same permission check the routes' own dependency uses — `security(request)` (the same `HTTPBearer(
+auto_error=False)` instance FastAPI would inject) for the `Authorization` header, `request.headers.get(
+"x-api-key")` for the API-key header, and a single module-level `_library_upload_permission_checker =
+require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)` built once and called directly with those two
+values — the identical function object the route's own `Depends()` uses elsewhere in this file, not a
+hand-rolled reimplementation. That call raises the exact 401/403 `auth.py` already raises for a bad
+JWT, a bogus API key, missing credentials, or a caller lacking `library:upload`, and does so before a single
+byte of the multipart body is read. Only once it returns successfully (a real caller, or auth disabled) does
+the unchanged `Content-Length`-vs-cap comparison run, followed by `return await original_route_handler(
+request)`, which re-resolves the same dependency again during normal FastAPI dependency solving (a second,
+harmless auth check — the same cost every other permission-gated route already pays once — not a behavior
+difference visible to the caller). `auth.py` was not edited; only its existing public `security` object and
+`require_permission_if_auth_enabled` factory were imported and reused.
+
+Six tests were added to a new `TestLibraryUploadContentLengthGate` class in
+`backend/tests/integration/test_library_api.py` (fixtures follow the T-161 per-test isolation pattern):
+an over-cap `Content-Length` from an authorized admin caller is rejected with the pre-existing 413 detail
+string before `_stream_upload_to_path` ever runs (monkeypatched to fail the test if called) and before any
+file reaches the isolated files directory; the same shape from a bogus `X-API-Key` with auth enabled gets
+401 `"Authentication required"`, not 413 — this is the regression test for the dropped patch's finding, and
+it was confirmed to fail (413 instead of 401) when run against that patch's `library.py` before being
+restored to this fix; the same shape from an authenticated caller who lacks `library:upload` (a Viewer) gets
+403 `"Missing required permissions: library:upload"`, not 413; a file just under the cap (whose multipart
+envelope pushes the request's own `Content-Length` slightly over it) still succeeds; a request with no
+`Content-Length` header falls through unchanged to the pre-existing in-route check for both the
+over-cap-rejected and under-cap-succeeds cases; and the extract-zip route's ZIP-body upload step gets the
+same pre-spool rejection. No existing test or assertion was weakened or removed.
+
+**What a user sees, in two parts:**
+
+1. Authentication and authorization responses are unchanged. A caller with a bogus, missing, or expired
+   credential still gets exactly the same 401 it gets today; a caller who is authenticated but lacks
+   `library:upload` still gets exactly the same 403 it gets today — in both cases with no indication of the
+   configured upload-size cap. This is true regardless of whether the request also happens to be over-cap.
+2. For an authenticated, authorized caller, an over-cap request now fails faster (before the body is
+   spooled to disk) with the identical 413 status and detail string it already produced, EXCEPT for four
+   narrower cases the route's own body-dependent checks can no longer win, because those checks need the
+   parsed multipart body — the very thing this fix avoids touching when the declared size is already over
+   the cap:
+   - `POST /library/files/extract-zip` with a non-`.zip` filename: was 400 `"Only ZIP files are supported"`,
+     now 413, if the request is also over-cap.
+   - `POST /library/files/extract-zip` with a nonexistent `folder_id`: was 404 `"Target folder not found"`,
+     now 413, if the request is also over-cap.
+   - `POST /library/files` with an empty filename: was a 400/422 filename-required error, now 413, if the
+     request is also over-cap.
+   - `POST /library/files` (or extract-zip) with no `file` field at all: was FastAPI's 422 required-field
+     validation error, now 413, if the request is also over-cap.
+   A request that is under the cap, or that has no `Content-Length` header at all (e.g. genuinely chunked),
+   is completely unaffected by any of this and keeps producing exactly the pre-existing error for each of
+   these four shapes.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match, including `app-middleware-stack` (no middleware was
+added — the gate is a per-route `APIRoute` subclass wired through `route_class_override`, the same
+app-wide-middleware-free approach the dropped first attempt used) and `app-openapi-index` (the two routes'
+path, method, and `response_model` are unchanged, only re-registered via `add_api_route` instead of the
+decorator). `app-route-perms`'s literal grep for `RequirePermissionIfAuthEnabled(Permission.X)` is also
+unaffected — this fix calls the lowercase `require_permission_if_auth_enabled` factory directly, the same
+call already used by both routes' own dependencies, not the capitalized convenience wrapper the probe
+counts, and no such literal was added to any comment or docstring. `SURFACE.md` is unchanged. Backend suite:
+13370 passed, 1 skipped; coverage 73% / 75.417% lines (Stmts 72968, Miss 17938), no drop from the
+73% / 75.411% baseline (Stmts 72946, Miss 17937).
+User-approved 2026-09-14.

@@ -2920,6 +2920,337 @@ class TestLibraryUploadSizeCap:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+class TestLibraryUploadContentLengthGate:
+    """T-166: ``POST /library/files`` and ``POST /library/files/extract-zip``
+    reject a body whose declared ``Content-Length`` already exceeds
+    ``library_max_upload_bytes`` (plus a small multipart-overhead margin)
+    before Starlette spools it to disk — but only *after* the caller has
+    been authenticated and authorized exactly as the route's own dependency
+    would, so an unauthenticated or unauthorized caller learns nothing about
+    the cap (user-approved 2026-09-14).
+
+    A first attempt at this (dropped, commit c4035908e) put the size check
+    ahead of authentication and was rejected by the verifier for exactly
+    that reason — ``test_over_cap_content_length_with_bogus_api_key_is_still_401_not_413``
+    below is that regression test; it fails against the dropped patch.
+    """
+
+    @pytest.fixture
+    async def upload_auth_setup(self, db_session):
+        """A caller with LIBRARY_UPLOAD (admin) and one without it (viewer),
+        with the ``auth_enabled`` setting turned on in the DB — the same
+        shape ``TestLibraryPermissions.auth_setup`` uses elsewhere in this
+        file."""
+        from sqlalchemy import select
+
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
+
+        admin_group = (await db_session.execute(select(Group).where(Group.name == "Administrators"))).scalar_one()
+        viewer_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one()
+
+        password_hash = get_password_hash("password")
+        admin_user = User(username="admin_cl_gate", password_hash=password_hash, role="admin", is_active=True)
+        admin_user.groups.append(admin_group)
+        viewer_user = User(username="viewer_cl_gate", password_hash=password_hash, is_active=True)
+        viewer_user.groups.append(viewer_group)
+
+        db_session.add_all([admin_user, viewer_user])
+        await db_session.commit()
+
+        return {
+            "admin_token": create_access_token(data={"sub": admin_user.username}),
+            "viewer_token": create_access_token(data={"sub": viewer_user.username}),
+        }
+
+    async def test_over_cap_content_length_rejected_before_body_is_spooled_for_authorized_caller(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path, upload_auth_setup
+    ):
+        """A Content-Length far above the cap must be rejected without ever
+        calling ``_stream_upload_to_path`` — i.e. before a single byte of
+        the upload reaches disk — once the caller has already been
+        authenticated and authorized to upload."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        def _fail_if_called(*_args, **_kwargs):
+            raise AssertionError("_stream_upload_to_path must not run when the Content-Length gate rejects the body")
+
+        monkeypatch.setattr("backend.app.api.routes.library._stream_upload_to_path", _fail_if_called)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "the body must never be spooled once the gate rejects it"):
+            files = {"file": ("big.stl", b"x" * 20_000, "application/octet-stream")}
+            response = await async_client.post(
+                "/api/v1/library/files",
+                files=files,
+                headers={"Authorization": f"Bearer {upload_auth_setup['admin_token']}"},
+            )
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_over_cap_content_length_with_bogus_api_key_is_still_401_not_413(
+        self, async_client: AsyncClient, monkeypatch, tmp_path, upload_auth_setup
+    ):
+        """Regression test for the dropped first attempt (commit
+        c4035908e): with auth enabled, a bogus API key must still get the
+        same 401 it gets today — the same response
+        ``require_permission_if_auth_enabled`` produces for any other
+        route — never the 413 that would leak the configured cap to a
+        caller who has not even authenticated yet. This is the exact
+        request shape the verifier used to fail the dropped patch (it
+        turned into a 413 echoing the cap there); it must fail if run
+        against that patch."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("big.stl", b"x" * 20_000, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files, headers={"X-API-Key": "bb_bogus"})
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Authentication required"
+
+    async def test_over_cap_content_length_with_caller_lacking_permission_is_still_403_not_413(
+        self, async_client: AsyncClient, monkeypatch, tmp_path, upload_auth_setup
+    ):
+        """A caller who is authenticated but lacks ``library:upload`` (a
+        Viewer) must still get the same 403 the in-route dependency
+        produces today, not the 413 from the Content-Length gate."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("big.stl", b"x" * 20_000, "application/octet-stream")}
+        response = await async_client.post(
+            "/api/v1/library/files",
+            files=files,
+            headers={"Authorization": f"Bearer {upload_auth_setup['viewer_token']}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Missing required permissions: library:upload"
+
+    async def test_over_cap_content_length_rejected_before_zip_body_is_spooled(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """Same gate, same proof, for the ``extract-zip`` route's ZIP-body
+        upload step (auth disabled — the default in this test suite — so
+        this exercises the size gate itself, not the auth ordering, which
+        is covered above)."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        def _fail_if_called(*_args, **_kwargs):
+            raise AssertionError("_stream_upload_to_path must not run when the Content-Length gate rejects the body")
+
+        monkeypatch.setattr("backend.app.api.routes.library._stream_upload_to_path", _fail_if_called)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "the body must never be spooled once the gate rejects it"):
+            files = {"file": ("test.zip", b"x" * 20_000, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_content_length_just_under_cap_still_succeeds(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """A file just under the cap has a whole-request Content-Length
+        slightly *above* the raw cap once multipart boundary/header overhead
+        is counted — the gate's overhead margin must not treat that as an
+        over-cap body, or every upload near the cap would start failing."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 5000)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        payload = b"x" * 4950  # under the 5000-byte cap, but the multipart
+        # envelope around it (boundary + headers) pushes the request's own
+        # Content-Length a little past 5000.
+        files = {"file": ("test.stl", payload, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == len(payload)
+
+        row = (
+            await db_session.execute(select(LibraryFile).where(LibraryFile.id == response.json()["id"]))
+        ).scalar_one()
+        assert Path(row.file_path).parent == files_dir
+
+    async def test_missing_content_length_still_rejected_by_in_route_check_when_oversized(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """No ``Content-Length`` header (e.g. a chunked/unknown-length
+        request) skips the new gate entirely and falls through to today's
+        behaviour: the in-route check in ``_stream_upload_to_path`` still
+        catches an oversized upload, with the same status and detail as
+        before this change."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "no file should reach disk when the streamed size exceeds the cap"):
+            files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+            response = await _post_multipart_without_content_length(async_client, "/api/v1/library/files", files)
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_missing_content_length_still_succeeds_when_under_cap(
+        self, async_client: AsyncClient, db_session, tmp_path, monkeypatch
+    ):
+        """No ``Content-Length`` header and a body under the cap must behave
+        exactly as a normal upload."""
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        payload = b"solid test\nendsolid test"
+        files = {"file": ("test.stl", payload, "application/octet-stream")}
+        response = await _post_multipart_without_content_length(async_client, "/api/v1/library/files", files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == len(payload)
+
+        row = (
+            await db_session.execute(select(LibraryFile).where(LibraryFile.id == response.json()["id"]))
+        ).scalar_one()
+        assert row.file_size == len(payload)
+
+    # --- The four remaining shapes the verifier used against the dropped
+    # first attempt. These document what this fix can and cannot preserve:
+    # body-dependent validation (file type, folder existence, filename,
+    # missing field) all need the parsed body, which this gate exists to
+    # avoid touching, so when a request is BOTH over-cap AND malformed, the
+    # 413 still wins — this is the "remaining ordering change" called out
+    # in BASELINE-CHANGELOG.md, not a bug in this fix.
+
+    async def test_over_cap_non_zip_file_to_extract_zip_gets_413_not_400(
+        self, async_client: AsyncClient, monkeypatch, tmp_path
+    ):
+        """Before T-166 this was 400 "Only ZIP files are supported" (the
+        in-route check runs on the parsed body); it is now 413 because the
+        Content-Length gate runs first and never reaches that check."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("not-a-zip.txt", b"x" * 20_000, "text/plain")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+    async def test_over_cap_missing_folder_gets_413_not_404(self, async_client: AsyncClient, monkeypatch, tmp_path):
+        """Before T-166 this was 404 "Target folder not found" (the
+        in-route check needs the parsed ``folder_id`` query param, which
+        FastAPI still resolves from the parsed body/query before this
+        error — but the Content-Length gate now runs first and short-
+        circuits before any of that)."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("test.zip", b"x" * 20_000, "application/zip")}
+        response = await async_client.post(
+            "/api/v1/library/files/extract-zip", files=files, params={"folder_id": 999999}
+        )
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+    async def test_over_cap_empty_filename_gets_413_not_400(self, async_client: AsyncClient, monkeypatch, tmp_path):
+        """Before T-166 an empty filename was rejected in-route (400/422);
+        it is now 413 for the same reason as the other shapes above."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("", b"x" * 20_000, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+    async def test_over_cap_missing_file_field_gets_413_not_422(self, async_client: AsyncClient, monkeypatch, tmp_path):
+        """Before T-166 a request with no ``file`` field at all was a 422
+        (FastAPI's own required-field validation); with a Content-Length
+        over the cap it is now 413, for the same reason as the other shapes
+        above — the gate runs before the body (and therefore the missing
+        field) is ever parsed."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        # No "file" field at all — just enough other multipart data to make
+        # the request's own Content-Length exceed the cap.
+        files = {"not_file": ("notes.txt", b"x" * 20_000, "text/plain")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+
+async def _post_multipart_without_content_length(async_client: AsyncClient, url: str, files: dict):
+    """Send ``files`` to ``url`` the same way ``async_client.post(url,
+    files=files)`` would, except with the ``Content-Length`` header
+    stripped: build the request normally (so the multipart body/boundary are
+    byte-identical to a real upload), then replay its already-materialised
+    body through an async generator, which httpx never assigns a
+    Content-Length to (T-166: proves the new gate falls through unchanged
+    when the header is absent, e.g. a chunked/unknown-length request)."""
+    built = async_client.build_request("POST", url, files=files)
+    body_bytes = await built.aread()
+    headers = dict(built.headers)
+    headers.pop("content-length", None)
+
+    async def _body():
+        yield body_bytes
+
+    return await async_client.post(url, content=_body(), headers=headers)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 class TestLibraryZipExtractSizeCap:
     """T-155: ``POST /library/files/extract-zip`` streams the ZIP body and
     every entry it extracts instead of decompressing everything fully into

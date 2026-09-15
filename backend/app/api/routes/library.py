@@ -17,8 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
+from fastapi.routing import APIRoute
 from sqlalchemy import delete, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,6 +29,7 @@ from backend.app.core.auth import (
     RequireLibraryThumbnailAccessIfAuthEnabled,
     require_ownership_permission,
     require_permission_if_auth_enabled,
+    security,
 )
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
@@ -2369,8 +2371,82 @@ async def _stream_upload_to_path(
     return total_bytes, sha256_hash.hexdigest()
 
 
-@router.post("/files", response_model=FileUploadResponse)
-@router.post("/files/", response_model=FileUploadResponse)
+# Multipart requests carry more bytes than just the file content itself: the
+# boundary delimiters, the per-part `Content-Disposition`/`Content-Type`
+# headers (including the filename), and the closing boundary. This is picked
+# generously above any realistic overhead so that a Content-Length within
+# this margin of the cap can only be rejected below if the file content
+# itself would already be over `library_max_upload_bytes` — i.e. the gate
+# below can only reject a request the in-route checks in
+# `_stream_upload_to_path` would also reject, just earlier (T-166).
+_UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES = 8 * 1024
+
+# The same permission the upload routes require via their own `Depends`
+# below, built once here so the pre-body gate authorizes a caller the exact
+# same way instead of a hand-rolled copy of the check (T-166).
+_library_upload_permission_checker = require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)
+
+
+class _ContentLengthCappedRoute(APIRoute):
+    """Route class for the two multipart upload endpoints (``POST /files``
+    and ``POST /files/extract-zip``) that rejects an over-cap body from its
+    declared ``Content-Length`` header *before* Starlette spools it to disk.
+
+    FastAPI resolves ``UploadFile = File(...)`` by calling
+    ``await request.form()`` before any of the route's ``Depends()`` run —
+    body parsing happens ahead of dependency solving in
+    ``fastapi.routing.get_request_handler`` — so a plain dependency cannot
+    intercept the request before the multipart body is fully written to a
+    temp file by ``starlette.formparsers.MultiPartParser``. Only wrapping
+    the route's ASGI handler itself, via ``route_class_override`` in the
+    ``router.add_api_route(...)`` calls below, runs ahead of that. This is
+    scoped to these two routes only and never touches the app-wide
+    middleware stack.
+
+    Authentication runs first, using the identical check
+    ``_library_upload_permission_checker`` above already performs for these
+    routes' own dependency — an unauthenticated or unauthorized caller gets
+    the same 401/403 they get today and learns nothing about the configured
+    cap. Only once that succeeds (or auth is disabled) is the
+    Content-Length compared against the cap; a strict backstop, not a new
+    limit, since it only rejects a Content-Length above
+    ``library_max_upload_bytes`` plus a generous multipart-overhead
+    allowance, reusing the exact status code and detail string
+    ``_stream_upload_to_path`` already produces (T-166).
+
+    A request that is both over-cap and would otherwise fail one of the
+    route's own body-dependent checks (bad file type, a missing target
+    folder, an empty filename, a missing ``file`` field) still gets this
+    413 first: those checks all need the parsed body, which is the very
+    thing this gate exists to avoid touching. See BASELINE-CHANGELOG.md for
+    the exact list of orderings this leaves changed.
+    """
+
+    def get_route_handler(self):
+        original_route_handler = super().get_route_handler()
+
+        async def route_handler(request: Request) -> Response:
+            credentials = await security(request)
+            x_api_key = request.headers.get("x-api-key")
+            await _library_upload_permission_checker(credentials, x_api_key)
+
+            content_length_header = request.headers.get("content-length")
+            if content_length_header is not None:
+                try:
+                    declared_bytes = int(content_length_header)
+                except ValueError:
+                    declared_bytes = None
+                if declared_bytes is not None:
+                    max_bytes = app_settings.library_max_upload_bytes
+                    if declared_bytes > max_bytes + _UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES:
+                        raise HTTPException(
+                            status_code=413, detail=f"Upload exceeds the maximum size of {max_bytes} bytes"
+                        )
+            return await original_route_handler(request)
+
+        return route_handler
+
+
 async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
@@ -2535,6 +2611,25 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
+# Registered via add_api_route (rather than the @router.post decorator used
+# elsewhere in this module) so the Content-Length gate above can be attached
+# through route_class_override — see _ContentLengthCappedRoute (T-166).
+router.add_api_route(
+    "/files",
+    upload_file,
+    methods=["POST"],
+    response_model=FileUploadResponse,
+    route_class_override=_ContentLengthCappedRoute,
+)
+router.add_api_route(
+    "/files/",
+    upload_file,
+    methods=["POST"],
+    response_model=FileUploadResponse,
+    route_class_override=_ContentLengthCappedRoute,
+)
+
+
 class _ZipExtractCapExceeded(Exception):
     """Internal signal only: the running decompressed byte count for a ZIP
     extraction crossed ``library_max_zip_extract_bytes`` mid-stream — i.e. a
@@ -2544,7 +2639,6 @@ class _ZipExtractCapExceeded(Exception):
     skipping one file."""
 
 
-@router.post("/files/extract-zip", response_model=ZipExtractResponse)
 async def extract_zip_file(
     file: UploadFile = File(...),
     folder_id: int | None = Query(default=None),
@@ -2922,6 +3016,16 @@ async def extract_zip_file(
             os.unlink(tmp_path)
         except OSError:
             pass  # Best-effort temp file cleanup; ignore if already removed
+
+
+# See the equivalent add_api_route calls after upload_file above (T-166).
+router.add_api_route(
+    "/files/extract-zip",
+    extract_zip_file,
+    methods=["POST"],
+    response_model=ZipExtractResponse,
+    route_class_override=_ContentLengthCappedRoute,
+)
 
 
 # ============ STL Thumbnail Batch Generation ============
