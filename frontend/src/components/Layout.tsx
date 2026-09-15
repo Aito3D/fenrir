@@ -473,7 +473,12 @@ export function Layout() {
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
   }, [hasPermission]);
 
-  // Global keyboard shortcuts for navigation
+  // Global keyboard shortcuts. The 1-9 "jump to sidebar entry" keys that used
+  // to live here are gone on purpose: the input/textarea guard below does not
+  // cover every field a number can be typed into (custom comboboxes, code
+  // squares, a field that just lost focus), and a stray page switch mid-typing
+  // costs far more than the shortcut ever saved. Only `?` (help) and Escape
+  // remain.
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
     // Ignore if typing in an input/textarea
@@ -481,32 +486,7 @@ export function Layout() {
       return;
     }
 
-    // Number keys for navigation (1-9) - follows sidebar order including external links
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-      const keyNum = parseInt(e.key);
-      if (keyNum >= 1 && keyNum <= orderedSidebarIds.length && keyNum <= 9) {
-        const id = orderedSidebarIds[keyNum - 1];
-        e.preventDefault();
-
-        if (isExternalSidebarItemId(id)) {
-          // External link
-          const extLink = extLinksMap.get(id);
-          if (extLink?.open_in_new_tab) {
-            window.open(extLink.url, '_blank', 'noopener,noreferrer');
-          } else {
-            const linkId = id.replace('ext-', '');
-            navigate(`/external/${linkId}`);
-          }
-        } else {
-          // Internal nav item
-          const navItem = navItemsMap.get(id);
-          if (navItem) {
-            navigate(navItem.to, { viewTransition: true });
-          }
-        }
-        return;
-      }
-
       switch (e.key) {
         case '?':
           e.preventDefault();
@@ -517,7 +497,7 @@ export function Layout() {
           break;
       }
     }
-  }, [navigate, orderedSidebarIds, navItemsMap, extLinksMap]);
+  }, []);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
@@ -991,15 +971,6 @@ export function Layout() {
       {showShortcuts && (
         <KeyboardShortcutsModal
           onClose={() => setShowShortcuts(false)}
-          sidebarItems={orderedSidebarIds.map(id => {
-            if (isExternalSidebarItemId(id)) {
-              const extLink = extLinksMap.get(id);
-              return extLink ? { type: 'external' as const, label: extLink.name } : null;
-            } else {
-              const navItem = navItemsMap.get(id);
-              return navItem ? { type: 'nav' as const, label: navItem.labelKey, labelKey: navItem.labelKey } : null;
-            }
-          }).filter(Boolean) as { type: 'nav' | 'external'; label: string; labelKey?: string }[]}
         />
       )}
 

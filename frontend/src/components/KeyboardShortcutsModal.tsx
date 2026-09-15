@@ -1,73 +1,29 @@
 import { useEffect } from 'react';
-import { X, Keyboard, ExternalLink } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { X, Keyboard } from 'lucide-react';
 import { Card, CardContent } from './Card';
-
-interface NavItem {
-  id: string;
-  to: string;
-  labelKey: string;
-}
-
-interface SidebarItem {
-  type: 'nav' | 'external';
-  label: string;
-  labelKey?: string;
-}
 
 interface KeyboardShortcutsModalProps {
   onClose: () => void;
-  navItems?: NavItem[];
-  sidebarItems?: SidebarItem[];
 }
 
-function getShortcuts(
-  sidebarItems: SidebarItem[] | undefined,
-  navItems: NavItem[] | undefined,
-  t: (key: string) => string
-) {
-  // Use sidebarItems if provided (new format), otherwise fall back to navItems
-  const navShortcuts = sidebarItems
-    ? sidebarItems.slice(0, 9).map((item, index) => ({
-        keys: [String(index + 1)],
-        description: item.type === 'external'
-          ? `Open ${item.label}`
-          : `Go to ${item.labelKey ? t(item.labelKey) : item.label}`,
-        isExternal: item.type === 'external',
-      }))
-    : navItems
-    ? navItems.map((item, index) => ({
-        keys: [String(index + 1)],
-        description: `Go to ${t(item.labelKey)}`,
-        isExternal: false,
-      }))
-    : [
-        { keys: ['1'], description: 'Go to Printers', isExternal: false },
-        { keys: ['2'], description: 'Go to Archives', isExternal: false },
-        { keys: ['3'], description: 'Go to Queue', isExternal: false },
-        { keys: ['4'], description: 'Go to Statistics', isExternal: false },
-        { keys: ['5'], description: 'Go to Cloud Profiles', isExternal: false },
-        { keys: ['6'], description: 'Go to Settings', isExternal: false },
-      ];
-
-  return [
-    { category: 'Navigation', items: navShortcuts },
-    { category: 'Archives', items: [
-      { keys: ['/'], description: 'Focus search', isExternal: false },
-      { keys: ['U'], description: 'Open upload modal', isExternal: false },
-      { keys: ['Esc'], description: 'Clear selection / blur input', isExternal: false },
-      { keys: ['Right-click'], description: 'Context menu on cards', isExternal: false },
-    ]},
-    { category: 'K-Profiles', items: [
-      { keys: ['R'], description: 'Refresh profiles', isExternal: false },
-      { keys: ['N'], description: 'New profile', isExternal: false },
-      { keys: ['Esc'], description: 'Exit selection mode', isExternal: false },
-    ]},
-    { category: 'General', items: [
-      { keys: ['?'], description: 'Show this help', isExternal: false },
-    ]},
-  ];
-}
+/** No Navigation section: the 1-9 sidebar shortcuts were removed from Layout
+ *  (they fired while typing numbers into non-native fields). */
+const SHORTCUTS = [
+  { category: 'Archives', items: [
+    { keys: ['/'], description: 'Focus search' },
+    { keys: ['U'], description: 'Open upload modal' },
+    { keys: ['Esc'], description: 'Clear selection / blur input' },
+    { keys: ['Right-click'], description: 'Context menu on cards' },
+  ]},
+  { category: 'K-Profiles', items: [
+    { keys: ['R'], description: 'Refresh profiles' },
+    { keys: ['N'], description: 'New profile' },
+    { keys: ['Esc'], description: 'Exit selection mode' },
+  ]},
+  { category: 'General', items: [
+    { keys: ['?'], description: 'Show this help' },
+  ]},
+];
 
 function KeyBadge({ children }: { children: string }) {
   return (
@@ -77,9 +33,7 @@ function KeyBadge({ children }: { children: string }) {
   );
 }
 
-export function KeyboardShortcutsModal({ onClose, navItems, sidebarItems }: KeyboardShortcutsModalProps) {
-  const { t } = useTranslation();
-  const shortcuts = getShortcuts(sidebarItems, navItems, t);
+export function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps) {
 
   // Close on Escape key
   useEffect(() => {
@@ -110,18 +64,13 @@ export function KeyboardShortcutsModal({ onClose, navItems, sidebarItems }: Keyb
 
           {/* Shortcuts List */}
           <div className="p-4 space-y-6 max-h-[60vh] overflow-y-auto">
-            {shortcuts.map((section) => (
+            {SHORTCUTS.map((section) => (
               <div key={section.category}>
                 <h3 className="text-sm font-medium text-bambu-gray mb-3">{section.category}</h3>
                 <div className="space-y-2">
                   {section.items.map((shortcut) => (
                     <div key={shortcut.description} className="flex items-center justify-between">
-                      <span className="text-white text-sm flex items-center gap-1.5">
-                        {shortcut.description}
-                        {shortcut.isExternal && (
-                          <ExternalLink className="w-3 h-3 text-bambu-gray" />
-                        )}
-                      </span>
+                      <span className="text-white text-sm">{shortcut.description}</span>
                       <div className="flex gap-1">
                         {shortcut.keys.map((key) => (
                           <KeyBadge key={key}>{key}</KeyBadge>
