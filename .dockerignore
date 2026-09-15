@@ -58,3 +58,50 @@ docs/
 Dockerfile
 docker-compose*.yml
 .dockerignore
+
+# ---------------------------------------------------------------------------
+# Local-only runtime state
+# ---------------------------------------------------------------------------
+# None of these exist on a CI checkout, so this section changes nothing about
+# the images GitHub Actions builds. It matters for `docker build` / test_docker.sh
+# on a developer machine, where the build context is whatever the working tree
+# happens to hold: `archive/` alone measured 9.4 GB on this checkout, and every
+# byte of it was being packed and streamed to the daemon before the first layer
+# could start. All of these are gitignored runtime directories that no COPY in
+# either Dockerfile references.
+archive/
+firmware/
+virtual_printer/
+/data/
+.cache/
+.hypothesis/
+.ruff_cache/
+.mypy_cache/
+screenshots/
+debug_logs/
+db_backup/
+support-packages/
+backups/
+advertisements/
+security/
+spoolbuddy/ssh/
+frontend/coverage/
+node_modules/
+
+# SQLite sidecar files. `*.db` above already covers the database itself; the
+# write-ahead log is a separate file and is routinely larger than the schema.
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Secrets that live at the repo root in a local dev setup. Nothing copies them
+# into an image today; keeping them out of the context means a future COPY
+# cannot pick them up by accident either.
+.jwt_secret
+.mfa_encryption_key
+*.sarif
+
+# Agent/tooling scratch space
+.claude/
+.superpowers/
+plans/

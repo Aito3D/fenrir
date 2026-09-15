@@ -43,24 +43,23 @@ services:
     volumes:
       - integration_test_data:/app/data
 
-  # Integration test runner
-  integration-test-runner:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-      target: backend-test
-    container_name: bambuddy-integration-runner
-    depends_on:
-      integration:
-        condition: service_healthy
-    environment:
-      - BAMBUDDY_TEST_URL=http://integration:8000
-      - TESTING=1
-    # -v dropped + -n auto so integration tests inherit the same noise /
-    # parallelism profile as the backend-test image (see Dockerfile.test CMD).
-    command: ["pytest", "backend/tests/integration/", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
-    volumes:
-      - ./backend:/app/backend:ro
+# There is deliberately no `integration-test-runner` service. It used to run
+# `pytest backend/tests/integration/` in an image built from Dockerfile.test
+# target backend-test — byte for byte the same image, interpreter and code the
+# `backend-test` service above already runs `pytest backend/tests/` (the
+# superset) in. The one thing that could have made it a distinct test, the
+# BAMBUDDY_TEST_URL=http://integration:8000 it set so the suite would exercise
+# the live container next to it, was read by nothing: no backend module ever
+# looked the variable up, so the tests built their own in-process TestClient
+# exactly as they do everywhere else, and `depends_on: integration` bought a
+# healthy container that no assertion touched.
+#
+# The live container is still worth starting — that is what the `integration`
+# service is for — but what probes it is the health/API/static curl checks in
+# test_docker.sh and .github/workflows/ci.yml, not a second copy of the unit
+# suite. If you want container-level integration tests back, give them their
+# own directory and make them actually read a base URL; do not reintroduce a
+# service whose only difference is an env var nothing reads.
 
 volumes:
   integration_test_data:

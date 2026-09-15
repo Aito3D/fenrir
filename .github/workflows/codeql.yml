@@ -3,18 +3,47 @@ name: "CodeQL"
 on:
   push:
     branches: [main]
+    # Documentation-only commits change nothing any of the three analyses read
+    # (the `actions` analysis reads .github/workflows, the other two read
+    # source). The weekly scheduled run below still covers the whole tree
+    # unconditionally, so nothing drifts out of analysis.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/FUNDING.yml'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/FUNDING.yml'
   schedule:
     - cron: '0 6 * * 1'
 
 permissions:
   contents: read
 
+# Supersede an in-flight analysis when the same ref is pushed again — three
+# 3-4 minute jobs per run is enough to be worth not doing twice for a commit
+# nobody is looking at any more. github.event_name is part of the group on
+# purpose: without it, a push to main would cancel the Monday scheduled scan
+# (both run against refs/heads/main), and that scan is the one that keeps the
+# alert set fresh for paths the push filter above skipped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       security-events: write
     strategy:

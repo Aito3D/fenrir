@@ -6,8 +6,42 @@ on:
     # matched: a `v*` tag must point at a commit CI already passed, and
     # docker-publish.yml checks that before publishing the version tag.
     branches: ['**']
+    # Documentation-only commits cannot change any tested behaviour: every path
+    # listed here is excluded from the Docker build context by .dockerignore
+    # (`docs/`, `*.md`) or is not read by any build/test step at all. Measured
+    # on the last 60 commits of main, 10 of them (17%) were documentation-only
+    # and each burned ~75 runner-minutes for a guaranteed-green result.
+    #
+    # Semantics: GitHub skips the run only when *every* changed path matches, so
+    # a commit touching docs plus code still runs the whole suite.
+    #
+    # Two consequences to know about before adding entries here:
+    #   * A skipped workflow reports no status at all. If branch protection is
+    #     ever enabled on "CI OK", documentation-only PRs would block forever —
+    #     the fix then is a `changes` job rather than a longer ignore list.
+    #   * No CI run on main means docker-publish.yml's `workflow_run` trigger
+    #     does not fire, so `:latest` keeps pointing at the previous commit's
+    #     image. That image is byte-identical in content (docs are not in the
+    #     build context), only the `sha-<short>` tag for the docs commit is
+    #     missing.
+    # (GitHub Actions' workflow parser does not support YAML anchors, so this
+    # list is repeated verbatim under pull_request below — keep the two in sync.)
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/FUNDING.yml'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/FUNDING.yml'
   workflow_dispatch:
 
 # PRs authored by the repo owner skip CI: their branch already ran the full
@@ -27,6 +61,29 @@ concurrency:
 permissions:
   contents: read
 
+# ============================================================================
+# Job-concurrency budget
+# ============================================================================
+# The Aito3D org is on the GitHub Free plan, which caps the account at 20
+# concurrent GitHub-hosted jobs. Every job below has `needs` only where a real
+# data dependency exists, so the whole workflow starts in one wave — which
+# means the shard counts ARE the concurrency budget:
+#
+#   backend-tests          5  (main pushes, PRs and dispatch only — see the
+#                              note above that job)
+#   docker-backend-tests   5
+#   frontend-tests         2
+#   single-runner jobs     6  (backend-lint, backend-security, frontend-lint,
+#                              frontend-security, frontend-build, docker-test)
+#   -------------------------
+#   peak                  18   on main pushes and PRs, leaving 2 slots for
+#                              CodeQL, which runs on those same events.
+#                         13   on a feature-branch push, where the 3.11 matrix
+#                              sits out and CodeQL does not run at all.
+#
+# Raising any shard count past that budget makes GitHub *queue* a job, and the
+# queued one is arbitrary — quite possibly a long test shard, which costs more
+# wall-clock than the extra shard saves. Keep the total at or below 18.
 jobs:
   # ============================================================================
   # Backend Checks
@@ -35,6 +92,7 @@ jobs:
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     steps:
       - uses: actions/checkout@v6
@@ -59,6 +117,7 @@ jobs:
   backend-security:
     name: Backend Security
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     continue-on-error: true
     steps:
@@ -68,6 +127,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
@@ -92,18 +153,48 @@ jobs:
             --ignore-vuln CVE-2026-4539 \
             --ignore-vuln CVE-2025-45768
 
+  # Host-side run of the backend suite on Python 3.11 — the oldest interpreter
+  # Bambuddy claims to support beyond 3.10 (pyproject: requires-python >=3.10)
+  # and the one bare-metal installs are most likely to be on. It is the same
+  # ~13.6k tests that docker-backend-tests runs on 3.13, so between them they
+  # were ~46 of the workflow's ~59 runner-minutes for one suite.
+  #
+  # The version-parity signal is only load-bearing where code lands, so this
+  # matrix now runs on pushes to main, on pull requests (all of which target
+  # main — see the trigger at the top of the file), and on manual dispatch.
+  # A feature-branch push still runs the whole suite via docker-backend-tests,
+  # on the interpreter the image actually ships. Where it skips, ci-ok counts
+  # "skipped" as OK by design (see the gate at the bottom).
+  #
+  # Be clear-eyed about what this costs. For a contributor PR the 3.11 result
+  # arrives pre-merge as before. For the repo owner's own work it does not:
+  # owner PRs skip CI entirely (the `if` every job carries), so the first 3.11
+  # run for an owner change is the push to main after the merge. The guarantee
+  # that survives is the one that matters for users — docker-publish.yml
+  # refuses to publish any commit without a successful CI run recorded for it,
+  # so a 3.11 regression blocks the deploy channel even though it landed on
+  # main. If you would rather have it pre-merge, add
+  # `|| github.event_name == 'push'` back to the condition below; that returns
+  # this matrix to every branch push and costs ~23 runner-minutes per push.
   backend-tests:
-    name: Backend Tests (shard ${{ matrix.shard }}/4)
+    name: Backend Tests (shard ${{ matrix.shard }}/5)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    needs: backend-lint
+    timeout-minutes: 25
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'pull_request' && github.event.pull_request.user.login != github.repository_owner)
+      || github.event_name == 'workflow_dispatch'
+    # No `needs: backend-lint`. Lint is a 9-second job, so gating on it bought
+    # nothing but a guaranteed ~12s of dead time at the head of every run
+    # (job hand-off included) on the 99% of runs where lint is green. A lint
+    # failure is reported by backend-lint itself and fails the gate either way.
     strategy:
       # Don't cancel sibling shards if one fails — we want every shard's
       # failure list, not just the first one, so a single PR push shows
       # all broken tests in one go.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v6
 
@@ -116,24 +207,48 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          # Both requirements files are installed below, so both belong in the
+          # key — a requirements-dev.txt bump used to leave the key untouched
+          # and silently reuse a cache that was missing the new wheels.
+          # restore-keys is kept deliberately: this is a *download* cache, so a
+          # near-miss still saves every unchanged wheel, and pip re-validates
+          # what it reuses against the pinned versions.
+          key: ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
           restore-keys: |
+            ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run tests (shard ${{ matrix.shard }}/4)
-        timeout-minutes: 15
+      - name: Run tests (shard ${{ matrix.shard }}/5)
+        timeout-minutes: 20
         run: |
           cd backend
           # -v dropped: 5300+ "PASSED foo::bar" lines per worker eat 30-60s
           # of stdout I/O time on 2-vCPU runners. --tb=short is enough.
-          # --splits 4 --group N uses pytest-split to slice the collected
-          # test set across the 4 matrix shards, balanced by the recorded
+          #
+          # -n logical, not -n auto. `auto` asks psutil for *physical* cores
+          # (psutil is a runtime dependency, so xdist always finds it) and the
+          # GitHub-hosted ubuntu runner reports 2 physical cores behind its
+          # 4 vCPUs — every run to date started exactly "2 workers" on a
+          # 4-vCPU box. `logical` uses the vCPU count instead. It is never
+          # worse than `auto`: on a runner without SMT the two numbers are
+          # equal. Revert to `auto` if the extra contention ever proves to
+          # cost more in per-test slowdown than it wins in throughput.
+          #
+          # --timeout=120, raised from 60. The timeout is a hang detector, and
+          # 60s stopped being a safe margin: the slowest single test
+          # (unit/test_aito_routes.py::test_import_accepts_a_thousand_projects)
+          # records 29.3s in .test_durations on a developer machine, which is
+          # already ~55-60s of runner time before the extra worker contention
+          # from -n logical is counted. 120s still catches a real hang inside
+          # the job's own 20-minute step budget.
+          #
+          # --splits 5 --group N uses pytest-split to slice the collected
+          # test set across the 5 matrix shards, balanced by the recorded
           # per-test timings in backend/.test_durations. Without that file
           # the name-hash fallback put ~10 min of integration tests in
           # shard 1 and 2-4 min in the others, so shard 1 sat on the step
@@ -147,10 +262,10 @@ jobs:
           # repo root, changing every node id.
           python -m pytest tests/ \
             --tb=short \
-            --timeout=60 --timeout-method=thread \
-            -n auto \
+            --timeout=120 --timeout-method=thread \
+            -n logical \
             --durations-path=.test_durations \
-            --splits 4 --group ${{ matrix.shard }}
+            --splits 5 --group ${{ matrix.shard }}
 
   # ============================================================================
   # Frontend Checks
@@ -159,6 +274,7 @@ jobs:
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     steps:
       - uses: actions/checkout@v6
@@ -178,9 +294,19 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Check i18n parity
+        # Lifted out of `npm run test:run` (which is `vitest run && npm run
+        # check:i18n`). The vitest half is now sharded across several runners,
+        # and this check must run exactly once per commit, not once per shard.
+        # It is a 0.4s node script over the locale JSON, so it rides along with
+        # lint rather than owning a runner.
+        working-directory: frontend
+        run: npm run check:i18n
+
   frontend-security:
     name: Frontend Security
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     continue-on-error: true
     steps:
@@ -256,33 +382,30 @@ jobs:
               print('exempted (documented, unreachable): ' + ', '.join(exempted))
           "
 
-  frontend-typecheck:
-    name: Frontend Type Check
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run TypeScript check
-        working-directory: frontend
-        run: npx tsc --noEmit
+  # There is no separate "Frontend Type Check" job any more, and nothing was
+  # lost by removing it: it ran `npx tsc --noEmit`, and frontend/tsconfig.json
+  # is a solution-style config (`"files": []` plus project references), so that
+  # command type-checks *nothing*. It completed in 0.0-0.3s in every recorded
+  # run and would have stayed green through any type error in src/.
+  #
+  # The real type check is `tsc -b`, which frontend-build already runs as the
+  # first half of `npm run build` (~20s locally, and the only form that honours
+  # project references). frontend-build now starts in the first wave alongside
+  # everything else, so type errors surface just as early as before — they just
+  # surface from a check that actually looks at the code.
 
   frontend-tests:
-    name: Frontend Tests
+    name: Frontend Tests (shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    needs: [frontend-lint, frontend-typecheck]
+    # No `needs`. This used to wait on frontend-lint and frontend-typecheck,
+    # neither of which produces anything the test run consumes; ESLint alone
+    # pushed the start of every frontend test run out by ~92s.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v6
 
@@ -297,16 +420,28 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run tests
-        timeout-minutes: 10
+      - name: Run tests (shard ${{ matrix.shard }}/2)
+        timeout-minutes: 15
         working-directory: frontend
-        run: npm run test:run
+        # vitest's own --shard, not a hand-rolled file split: it partitions the
+        # collected suite deterministically and covers every file exactly once
+        # across the shards. Two shards, not more — see the concurrency budget
+        # at the top of this file.
+        #
+        # `npm run test:run` is not used here because it appends the i18n parity
+        # check, which must run once per commit rather than once per shard; it
+        # now lives in frontend-lint.
+        run: npx vitest run --shard=${{ matrix.shard }}/2
 
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    needs: [frontend-tests]
+    # No `needs: frontend-tests`. The bundle does not depend on the test run,
+    # and this job is also the repository's only real TypeScript check (see the
+    # note above frontend-tests), so it should start as early as possible
+    # rather than ~7 minutes into the run.
     steps:
       - uses: actions/checkout@v6
 
@@ -322,6 +457,8 @@ jobs:
         run: npm ci
 
       - name: Build
+        # `tsc -b && vite build` — the tsc half is the project-reference-aware
+        # type check.
         working-directory: frontend
         run: npm run build
 
@@ -329,22 +466,21 @@ jobs:
   # Docker Tests (matches test_docker.sh)
   # ============================================================================
 
-  # Run the FULL backend test suite inside the test image, sharded 4-way
+  # Run the FULL backend test suite inside the test image, sharded 5-way
   # so wall-clock matches the host-side backend-tests job. Catches the
   # rare-but-real cases where a test passes on the GHA host but fails in
   # the python:3.13-slim test image (system-binary version differences,
-  # locale/timezone, container vs host user, cwd assumptions). Without
-  # sharding this was a 5-10 min single-runner job; with sharding it's
-  # ~120-150s per shard running in parallel, gated by max(shard).
+  # locale/timezone, container vs host user, cwd assumptions) — the host
+  # job runs Python 3.11, this one runs the interpreter Bambuddy ships.
   docker-backend-tests:
-    name: Docker Backend Tests (shard ${{ matrix.shard }}/4)
+    name: Docker Backend Tests (shard ${{ matrix.shard }}/5)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v6
 
@@ -352,9 +488,9 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       # Build the backend-test image with GHA BuildKit cache backend so
-      # the pip-install layer is shared across the 4 matrix shards AND
+      # the pip-install layer is shared across the matrix shards AND
       # across CI runs. First run on a given requirements.txt is cold
-      # (~60-90s); subsequent runs are ~5-10s.
+      # (~60-90s); subsequent runs are ~40s.
       - name: Build backend test image (cached)
         uses: docker/build-push-action@v7
         with:
@@ -366,7 +502,9 @@ jobs:
           cache-from: type=gha,scope=backend-test
           cache-to: type=gha,scope=backend-test,mode=max
 
-      - name: Run backend tests in Docker (shard ${{ matrix.shard }}/4)
+      - name: Run backend tests in Docker (shard ${{ matrix.shard }}/5)
+        # Flags mirror the host-side backend-tests step; see the long comment
+        # there for why -n logical and --timeout=120.
         run: |
           docker run --rm \
             -e TESTING=1 \
@@ -374,22 +512,35 @@ jobs:
             bambuddy-backend-test:latest \
             pytest backend/tests/ \
               --tb=short \
-              --timeout=60 --timeout-method=thread \
+              --timeout=120 --timeout-method=thread \
               -p no:cacheprovider \
-              -n auto \
+              -n logical \
               --durations-path=backend/.test_durations \
-              --splits 4 --group ${{ matrix.shard }}
+              --splits 5 --group ${{ matrix.shard }}
 
   docker-test:
     name: Docker Build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     timeout-minutes: 20
-    needs: [backend-tests, frontend-build]
+    # No `needs`. This job builds the production image from source and probes
+    # it; it consumes no artifact from any other job, so `needs: [backend-tests,
+    # frontend-build]` only pinned a ~100s job to the very end of the run. It
+    # used to be a 12-minute job, which made gating it look like a saving —
+    # that 12 minutes was the redundant pytest run removed below, not the build.
     steps:
       - uses: actions/checkout@v6
 
-      # Test 1: Docker Build
+      # Deliberately the classic builder rather than buildx + type=gha: the
+      # production Dockerfile is already ordered so that a source-only change
+      # invalidates nothing before `COPY backend/`, and the whole cold build
+      # measures ~74s on a GitHub runner (apt 28s, npm ci 52s and the Vite
+      # build 32s run in parallel across the two stages). A GHA layer cache
+      # would save perhaps 30s of that while adding buildx setup (~12s), a
+      # ~1.5GB image load back into the daemon, and — the real cost — a third
+      # mode=max scope competing for the repository's 10GB Actions cache against
+      # the publish-linux/{amd64,arm64} scopes that take docker-publish.yml from
+      # ~8 minutes to ~1m45s. Not a good trade.
       - name: Build production image
         run: docker build -t bambuddy:test .
 
@@ -399,52 +550,76 @@ jobs:
       - name: Verify static files exist
         run: docker run --rm bambuddy:test test -d /app/static
 
-      # Test 4: Integration Tests
-      - name: Build integration container
-        run: docker compose -f docker-compose.test.yml build integration
-
-      - name: Start integration container
+      # Smoke-test the real production image over a published port. This is the
+      # only place anything exercises the shipped image as a running service, so
+      # it stays. docker compose is no longer involved: its `integration`
+      # service would rebuild the very image just built here.
+      - name: Start the production image
         run: |
-          docker compose -f docker-compose.test.yml up -d integration
-          echo "Waiting for container to be healthy..."
-          for _ in {1..30}; do
-            if docker compose -f docker-compose.test.yml ps integration | grep -q "healthy"; then
+          docker run -d --name bambuddy-integration \
+            -e TESTING=1 \
+            -e DATA_DIR=/app/data \
+            -p 8001:8000 \
+            bambuddy:test
+
+      - name: Wait for the health endpoint
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8001/health | grep -q healthy; then
               echo "Container is healthy"
-              break
+              exit 0
             fi
             sleep 2
           done
-
-      - name: Test health endpoint
-        run: |
-          HEALTH=$(docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:8000/health)
-          echo "$HEALTH"
-          echo "$HEALTH" | grep -q "healthy"
+          echo "::error::Container never reported healthy within 120s"
+          exit 1
 
       - name: Test API endpoint
         run: |
-          docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:8000/api/v1/settings
+          set -euo pipefail
+          # `|| true` so a refused connection still reaches the echo below with
+          # curl's own "000" rather than aborting the step on set -e with no
+          # diagnostic.
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/api/v1/settings || true)
+          echo "GET /api/v1/settings -> $STATUS"
+          # Any answered request passes, as before; only a server error (or no
+          # response at all, which curl reports as 000) is treated as a failure.
+          [ "$STATUS" != "000" ] && [ "$STATUS" -lt 500 ]
 
       - name: Test static files served
         run: |
-          STATUS=$(docker compose -f docker-compose.test.yml exec -T integration curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/)
+          set -euo pipefail
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/ || true)
           echo "Static files HTTP status: $STATUS"
           [ "$STATUS" = "200" ]
 
-      # Test 5: Integration Test Suite (pytest)
-      - name: Build integration test runner
-        run: docker compose -f docker-compose.test.yml build integration-test-runner
-
-      - name: Run integration test suite
-        run: docker compose -f docker-compose.test.yml run --rm integration-test-runner
+      # The step that used to live here — `docker compose run
+      # integration-test-runner`, 598 seconds, the single largest item in the
+      # whole workflow — was removed because it added no coverage:
+      #
+      #   * It ran `pytest backend/tests/integration/` inside an image built
+      #     from Dockerfile.test target backend-test — the same image, same
+      #     Python, same code as docker-backend-tests, which already runs
+      #     `pytest backend/tests/` (the superset) across its shards.
+      #   * The one thing that could have made it different, the
+      #     BAMBUDDY_TEST_URL=http://integration:8000 the compose service set,
+      #     was read by nothing: `grep -rn BAMBUDDY_TEST_URL backend/` matched
+      #     zero lines. The tests never talked to the live container next to
+      #     them; they built their own in-process TestClient exactly as they do
+      #     in every other job. No test carries the `docker` marker either.
+      #
+      # Every assertion it made is still made, on the same interpreter, in
+      # docker-backend-tests. The compose service itself has since been deleted
+      # from docker-compose.test.yml, which carries the same note.
 
       - name: Show logs on failure
         if: failure()
-        run: docker compose -f docker-compose.test.yml logs
+        run: docker logs bambuddy-integration || true
 
       - name: Cleanup
         if: always()
-        run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+        run: docker rm -f bambuddy-integration || true
 
   # ============================================================================
   # Gate
@@ -462,12 +637,12 @@ jobs:
   ci-ok:
     name: CI OK
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
     needs:
       - backend-lint
       - backend-tests
       - frontend-lint
-      - frontend-typecheck
       - frontend-tests
       - frontend-build
       - docker-backend-tests
