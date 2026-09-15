@@ -12073,3 +12073,92 @@ currently keeps loading their own library thumbnails for the remainder of that t
 after the fix those `<img>` requests return 403 immediately. The token-freshness half (invalidating a
 still-active user's stream token after a password change) was not implemented — see follow-up above.
 User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 14 · T-165 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/camera.py:1927-1936`, `camera_grid_stream()` (the multiplexed
+`GET /printers/camera/grid-stream` endpoint) gated on
+`_: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)` alone.
+`require_permission_if_auth_enabled` returns `None` for API-key callers after only checking the key's
+`can_read_status` scope flag (the broadest read scope) — it never consults the key row's own `printer_ids`
+allowlist. That allowlist is a real, enforced boundary everywhere else a route touches a specific printer:
+`check_printer_access` (auth.py:1676) raises a 403 naming the printer, and
+`require_printer_permission_if_auth_enabled` wires it in for 65+ call sites across `routes/printers.py`,
+`ams_history.py`, and `printer_sensor_history.py`. The grid-stream route takes *many* printer ids in one
+request and was the one multi-printer surface that never routed through either. An API key restricted to
+`printer_ids=[1]` could request `ids=1,2,3,...` and receive live JPEG frames for every printer in the
+fleet, not just printer 1.
+
+Fixed by adding `api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled)` to the route and,
+after the existing id-parsing, dedup, and 30-printer cap checks run unchanged, filtering the requested
+`printer_ids` down to the ones `check_printer_access` accepts for that key. Disallowed ids are DROPPED, not
+403'd — the option chosen here, matching how the frontend's camera wall already tolerates ids that produce
+no frames (a printer offline or mid-restart looks identical to one silently filtered out) and how the
+sibling `test_dedup_before_limit_check` case already treats a request as "the ids that survive filtering",
+not "all-or-nothing". If every requested id is filtered out, the route falls through to the exact 404
+(`"No valid printers found"`) it already raised for an all-missing batch — no new status code. The
+30-printer cap is checked BEFORE the allowlist filter runs, against the ids the caller actually sent, so a
+request that would have been capped before this fix is capped identically now; only `check_printer_access`
+here decides which of the (already-capped) ids are resolved into producers. A caller with no API key, a
+JWT/session caller, or a key with `printer_ids=None` (global key) skips the new filter entirely — `if
+api_key is not None:` — so their code path is unchanged. `auth.py` was not edited; `check_printer_access`
+and `validated_api_key_from_request` were reused as-is.
+
+**Auth-disabled carve-out (fixed after the first landing of this task, same commit day):** the first cut of
+this fix resolved the key with `Depends(current_api_key_if_present)`, which calls
+`validated_api_key_from_request` unconditionally and raises 401 for any unvalidatable key candidate — with
+no regard for whether auth is enabled at all. That regressed an auth-disabled instance: a client that still
+sent a stale/bogus `X-API-Key` header used to sail straight through this endpoint (auth off means no
+principal is checked, key or otherwise) but started getting a bare 401 instead. Every other
+`RequirePermissionIfAuthEnabled`-gated dependency in this codebase asks `is_auth_enabled(db)` first
+(auth.py:1870) and returns immediately when it is `False`, without ever inspecting the key. Replaced the
+dependency with a small wrapper local to `camera.py`, `_grid_stream_api_key_if_auth_enabled`, that asks the
+same `is_auth_enabled(db)` question first and only calls `validated_api_key_from_request` when auth is on.
+Net effect: **when auth is disabled, `api_key` is always `None`, exactly as it was before this whole task**
+— no API key, valid or invalid, restricted or global, is ever consulted, so the T-165 filter engages ONLY
+when auth is enabled. This matches the pre-existing behavior of `RequirePermissionIfAuthEnabled(Permission.
+CAMERA_VIEW)` itself on this same route, which likewise no-ops when auth is off.
+
+Seven tests added to `backend/tests/integration/test_camera_api.py::TestCameraGridStreamAPIKeyPrinterScope`:
+with auth enabled, a key scoped to `[1]` requesting `ids=1,2,3` reaches the stream hub with only `[1]`; a
+global key (`printer_ids=None`) and a JWT/session caller both still reach the hub with the full `[1, 2,
+3]`; a key scoped to `[1]` requesting only disallowed ids (`2,3`) hits the existing "no valid printers
+found" 404, not a new error; 31 ids with a restricted key still trip the existing "Maximum 30 printers" 400
+(the cap sees the requested list, not the filtered one); and, for the auth-disabled carve-out, a request
+carrying an unrecognized/bogus `X-API-Key` header is asserted byte-identical (status code AND JSON body) to
+the same request with no key header at all (not 401), and a request carrying a genuinely VALID key scoped
+to `[1]` still reaches the hub with the full unfiltered `[1, 2, 3]` — auth being off means the restriction
+is not enforced, the same as it would not be enforced for that key on any other
+`RequirePermissionIfAuthEnabled`-gated route today. An eighth test,
+`test_camera_grid.py::TestGridStreamAPIKeyPrinterScope::test_restricted_key_only_streams_the_allowed_printer`,
+drives `camera_grid_stream()` directly (the established `TestGridStreamGenerateLoop` idiom) and reads the
+actual `StreamingResponse` body: with a key scoped to one of two requested printers, exactly one binary
+frame is produced and it is the allowed printer's — the disallowed id never even reaches
+`get_existing_batch`. A companion test confirms an unrestricted key still streams both. The two pre-existing
+direct-call tests in `TestGridStreamGenerateLoop` were updated to pass `api_key=None` explicitly (they call
+the route coroutine directly, bypassing FastAPI's dependency injection, so the new parameter's
+`Depends(...)` default would otherwise reach `check_printer_access` as a bare `Depends` object instead of
+`None`) — this only makes their existing "no API key" scenario explicit; no assertion in either test was
+changed or weakened.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match, including `app-route-perms` and `app-openapi-index`
+— the new dependency is `Depends(_grid_stream_api_key_if_auth_enabled)`, a local wrapper in `camera.py`, not
+a second `RequirePermissionIfAuthEnabled(Permission.X)`, so the probe that counts those occurrences was
+unaffected and no golden needed re-recording. (A first pass at this wrapper's docstring spelled out
+`RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)` as a literal cross-reference, which — once compiled
+to bytecode as that docstring's constant — made `app-route-perms`'s plain-text `grep -r` over
+`backend/app/api/routes/` match one extra time; reworded the docstring to describe the same fact without
+spelling out that exact parenthesized form, and confirmed the count returned to the recorded 19 after
+clearing stale `__pycache__`.) `SURFACE.md` was regenerated and is unchanged (no route path or method
+changed).
+
+User-visible change: an integration using an API key restricted to a subset of printers currently receives
+frames for every printer it asks for; after the fix, on an instance with auth ENABLED, those printer ids
+are dropped from the multiplexed stream (the request is not rejected outright — a partially-restricted key
+keeps working for the printers it may see), so a camera wall driven by such a key shows fewer tiles. On an
+instance with auth DISABLED, behavior is completely unchanged from before this task: no API key (valid,
+invalid, restricted, or global) is ever consulted by this endpoint, so neither a stale/bogus key nor a
+genuinely restricted key's allowlist has any effect — matching how every other permission-gated route on
+this codebase already behaves when auth is off. JWT/session callers and unrestricted (global) API keys are
+unaffected in both configurations.
+User-approved 2026-09-14.

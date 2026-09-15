@@ -1381,7 +1381,9 @@ class TestGridStreamGenerateLoop:
             patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
             patch("backend.app.api.routes.camera.time", _FakeTime()),
         ):
-            resp = await cam.camera_grid_stream(request, ids=str(pid), fps=200, quality=15, scale=0.5, force=False)
+            resp = await cam.camera_grid_stream(
+                request, ids=str(pid), fps=200, quality=15, scale=0.5, force=False, api_key=None
+            )
 
             # generate() is an async generator function: calling it just builds
             # the generator object, it doesn't run any of its body (including
@@ -1440,7 +1442,7 @@ class TestGridStreamGenerateLoop:
                 patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
             ):
                 resp = await cam.camera_grid_stream(
-                    request, ids=f"{pid_dead},{pid_alive}", fps=200, quality=15, scale=0.5, force=False
+                    request, ids=f"{pid_dead},{pid_alive}", fps=200, quality=15, scale=0.5, force=False, api_key=None
                 )
 
                 # Nothing has run yet — generate() only executes up to its
@@ -1481,3 +1483,424 @@ class TestGridStreamGenerateLoop:
 
         assert entry_dead.viewer_count == 0
         assert entry_alive.viewer_count == 0
+
+    @staticmethod
+    def _incrementing_entry(frame: bytes = b"\xff\xd8helper-jpeg\xff\xd9"):
+        """A live entry whose ``frame_seq`` increments on every read.
+
+        A plain ``_live_entry()`` only ever looks "new" once — after generate()
+        sends its one frame, ``seen_seqs`` catches up and it never yields
+        again. Since generate() is a single continuous coroutine that only
+        returns control to the caller's ``__anext__()`` at a ``yield``, a test
+        that needs to step through several outer-loop passes (to advance the
+        fake clock past a restart's ``next_retry``) needs *something* to yield
+        on every single pass. This entry does that, purely as a test harness
+        device — its incrementing counter is never inspected for content.
+        """
+        from backend.app.api.routes.camera import _SharedStream
+
+        class _IncrementingFrameEntry(_SharedStream):
+            __slots__ = ("_seq_counter",)
+
+            def __init__(self) -> None:
+                super().__init__(params_key="incrementing-helper")
+                self._seq_counter = 0
+
+            @property
+            def frame_seq(self):
+                self._seq_counter += 1
+                return self._seq_counter
+
+            @frame_seq.setter
+            def frame_seq(self, _value):
+                pass  # base __init__ assigns frame_seq = 0; nothing to store
+
+        entry = _IncrementingFrameEntry()
+        entry.alive = True
+        entry.frame = frame
+        entry.last_frame_produced = 2_000_000.0
+        return entry
+
+    @pytest.mark.asyncio
+    async def test_restart_executes_after_next_retry_elapses(self):
+        """Once the fake clock advances past a pending restart's ``next_retry``,
+        generate() must actually call ``_ensure_producer`` again, replace the
+        dead entry in ``entries``/``registered_entries``, record
+        ``restart_history``, and decrement the old entry's viewer_count."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_dead = 7010
+        pid_helper = 7011
+        entry_dead = self._live_entry()
+        entry_dead.alive = False
+        entry_helper = self._incrementing_entry()
+        new_entry = self._live_entry(frame=b"\xff\xd8replacement\xff\xd9")
+
+        batch_result = ({pid_dead: entry_dead, pid_helper: entry_helper}, [])
+        # _FakeTime's default step (1.5) exactly matches _GRID_RESTART_BASE_DELAY,
+        # so the restart becomes due within the first couple of iterations.
+        # disconnect_after is set high — the test ends the generator with
+        # aclose() instead of driving it all the way to a disconnect.
+        request = _StubRequest(disconnect_after=1000)
+
+        old_killed = cam._state.watchdog_killed_printers.copy()
+        old_cooldown = cam._state.per_printer_cooldown.copy()
+        old_fleet_cooldown = cam._state.fleet_cooldown_until
+        # Other test classes in this module (e.g. TestFleetCpuWatchdog) can
+        # leave a real-clock fleet cooldown in place; reset it so this test's
+        # restart-processing isn't skipped by an unrelated leftover cooldown.
+        cam._state.fleet_cooldown_until = 0.0
+        try:
+            with (
+                patch(
+                    "backend.app.api.routes.camera._hub.get_existing_batch",
+                    new=AsyncMock(return_value=batch_result),
+                ),
+                patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.time", _FakeTime()),
+                patch(
+                    "backend.app.api.routes.camera._resolve_quality_from_settings",
+                    new=AsyncMock(return_value=(200, 15, 0.5, 0, False, False, "custom")),
+                ),
+                patch(
+                    "backend.app.api.routes.camera._ensure_producer", new=AsyncMock(return_value=new_entry)
+                ) as mock_ensure,
+            ):
+                resp = await cam.camera_grid_stream(
+                    request,
+                    ids=f"{pid_dead},{pid_helper}",
+                    fps=200,
+                    quality=15,
+                    scale=0.5,
+                    force=False,
+                    api_key=None,
+                )
+
+                # Step the loop, one outer-loop pass per __anext__() call (the
+                # incrementing helper forces a yield every pass), until the
+                # dead entry has been replaced by the restarted producer.
+                local_vars = {}
+                for _ in range(20):
+                    await resp.body_iterator.__anext__()
+                    local_vars = resp.body_iterator.ag_frame.f_locals
+                    if local_vars["entries"].get(pid_dead) is new_entry:
+                        break
+                else:
+                    pytest.fail("restart was never executed within 20 outer-loop iterations")
+
+                assert local_vars["registered_entries"][pid_dead] is new_entry
+                assert pid_dead not in local_vars["pending_restarts"]
+                assert local_vars["restart_history"][pid_dead][0] == 1
+                mock_ensure.assert_called_once()
+                assert mock_ensure.call_args.args[0] == pid_dead
+                assert entry_dead.viewer_count == 0  # decremented on replacement
+                assert new_entry.viewer_count == 1
+
+                # Close the generator directly (equivalent to a disconnect)
+                # so the finally block resets viewer counts.
+                await resp.body_iterator.aclose()
+        finally:
+            cam._state.watchdog_killed_printers.clear()
+            cam._state.watchdog_killed_printers.update(old_killed)
+            cam._state.per_printer_cooldown.clear()
+            cam._state.per_printer_cooldown.update(old_cooldown)
+            cam._state.fleet_cooldown_until = old_fleet_cooldown
+
+        assert entry_dead.viewer_count == 0
+        assert new_entry.viewer_count == 0
+        assert entry_helper.viewer_count == 0
+
+    @pytest.mark.asyncio
+    async def test_fleet_cooldown_skips_pending_restarts(self):
+        """While ``_state.fleet_cooldown_until`` is in the future, generate()
+        must skip the whole restart-processing loop for every pending
+        restart — ``_ensure_producer`` must never be called during an active
+        fleet cooldown, and the pending restart's attempt count must stay
+        untouched."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_dead = 7020
+        pid_helper = 7021
+        entry_dead = self._live_entry()
+        entry_dead.alive = False
+        entry_helper = self._incrementing_entry()
+
+        batch_result = ({pid_dead: entry_dead, pid_helper: entry_helper}, [])
+        request = _StubRequest(disconnect_after=1000)
+
+        old_cooldown_until = cam._state.fleet_cooldown_until
+        old_killed = cam._state.watchdog_killed_printers.copy()
+        # Far beyond anything the fake clock (default step 1.5) reaches in a
+        # handful of iterations.
+        cam._state.fleet_cooldown_until = 5_000_000.0
+        try:
+            with (
+                patch(
+                    "backend.app.api.routes.camera._hub.get_existing_batch",
+                    new=AsyncMock(return_value=batch_result),
+                ),
+                patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.time", _FakeTime()),
+                patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
+            ):
+                resp = await cam.camera_grid_stream(
+                    request,
+                    ids=f"{pid_dead},{pid_helper}",
+                    fps=200,
+                    quality=15,
+                    scale=0.5,
+                    force=False,
+                    api_key=None,
+                )
+
+                # Iteration 1 schedules the restart; several more all fall
+                # inside the (far-future) fleet cooldown window.
+                local_vars = {}
+                for _ in range(5):
+                    await resp.body_iterator.__anext__()
+                    local_vars = resp.body_iterator.ag_frame.f_locals
+
+                assert pid_dead in local_vars["pending_restarts"]
+                assert local_vars["pending_restarts"][pid_dead][0] == 0  # attempt count untouched
+                mock_ensure.assert_not_called()
+
+                await resp.body_iterator.aclose()
+
+            mock_ensure.assert_not_called()
+        finally:
+            cam._state.fleet_cooldown_until = old_cooldown_until
+            cam._state.watchdog_killed_printers.clear()
+            cam._state.watchdog_killed_printers.update(old_killed)
+
+        assert entry_dead.viewer_count == 0
+        assert entry_helper.viewer_count == 0
+
+    @pytest.mark.asyncio
+    async def test_slow_retry_cadence_after_max_restarts_without_giving_up(self):
+        """Once a pending restart's attempt count reaches ``_GRID_MAX_RESTARTS``,
+        generate() must stop calling ``_ensure_producer`` for that cycle and
+        instead reschedule at the (jittered) slow-retry base delay — it must
+        never permanently give up on the printer."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_dead = 7030
+        pid_helper = 7031
+        entry_dead = self._live_entry()
+        entry_dead.alive = False
+        entry_helper = self._incrementing_entry()
+
+        batch_result = ({pid_dead: entry_dead, pid_helper: entry_helper}, [])
+        # A step bigger than the largest possible ordinary backoff delay
+        # (_GRID_RESTART_MAX_DELAY * 1.3 = 26s) guarantees every outer-loop
+        # iteration's restart-processing lands past the previous cycle's
+        # next_retry, so each iteration after the first drives exactly one
+        # restart attempt.
+        fake_time = _FakeTime(step=30.0)
+        request = _StubRequest(disconnect_after=1000)
+
+        old_killed = cam._state.watchdog_killed_printers.copy()
+        old_cooldown = cam._state.per_printer_cooldown.copy()
+        old_fleet_cooldown = cam._state.fleet_cooldown_until
+        # Other test classes in this module (e.g. TestFleetCpuWatchdog) can
+        # leave a real-clock fleet cooldown in place; reset it so this test's
+        # restart-processing isn't skipped by an unrelated leftover cooldown.
+        cam._state.fleet_cooldown_until = 0.0
+        try:
+            with (
+                patch(
+                    "backend.app.api.routes.camera._hub.get_existing_batch",
+                    new=AsyncMock(return_value=batch_result),
+                ),
+                patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.time", fake_time),
+                patch(
+                    "backend.app.api.routes.camera._resolve_quality_from_settings",
+                    new=AsyncMock(return_value=(200, 15, 0.5, 0, False, False, "custom")),
+                ),
+                patch(
+                    "backend.app.api.routes.camera._ensure_producer", new=AsyncMock(return_value=None)
+                ) as mock_ensure,
+            ):
+                resp = await cam.camera_grid_stream(
+                    request,
+                    ids=f"{pid_dead},{pid_helper}",
+                    fps=200,
+                    quality=15,
+                    scale=0.5,
+                    force=False,
+                    api_key=None,
+                )
+
+                # Step the loop until a failed restart attempt has pushed the
+                # attempt count up to _GRID_MAX_RESTARTS (each failed
+                # _ensure_producer call increments it by exactly one).
+                attempts = -1
+                now_before = None
+                for _ in range(30):
+                    await resp.body_iterator.__anext__()
+                    local_vars = resp.body_iterator.ag_frame.f_locals
+                    attempts, _next_retry = local_vars["pending_restarts"][pid_dead]
+                    now_before = local_vars["now"]
+                    if attempts >= cam._GRID_MAX_RESTARTS:
+                        break
+                else:
+                    pytest.fail("attempts never reached _GRID_MAX_RESTARTS within 30 outer-loop iterations")
+
+                assert attempts == cam._GRID_MAX_RESTARTS
+                assert mock_ensure.call_count == cam._GRID_MAX_RESTARTS
+
+                # The next iteration's restart-processing hits the
+                # attempts >= _GRID_MAX_RESTARTS branch: no producer call,
+                # cadence resets to the base slow-retry delay with jitter,
+                # and the printer stays pending rather than being dropped.
+                await resp.body_iterator.__anext__()
+
+                local_vars = resp.body_iterator.ag_frame.f_locals
+                new_attempts, next_retry_after = local_vars["pending_restarts"][pid_dead]
+                assert new_attempts == cam._GRID_MAX_RESTARTS + 1
+                assert mock_ensure.call_count == cam._GRID_MAX_RESTARTS  # unchanged: no new producer call
+                delay = next_retry_after - now_before
+                assert cam._GRID_RESTART_MAX_DELAY <= delay <= cam._GRID_RESTART_MAX_DELAY * 1.3 + 1e-6
+
+                # Close the generator directly (equivalent to a disconnect)
+                # so the finally block resets viewer counts.
+                await resp.body_iterator.aclose()
+        finally:
+            cam._state.watchdog_killed_printers.clear()
+            cam._state.watchdog_killed_printers.update(old_killed)
+            cam._state.per_printer_cooldown.clear()
+            cam._state.per_printer_cooldown.update(old_cooldown)
+            cam._state.fleet_cooldown_until = old_fleet_cooldown
+
+        assert entry_dead.viewer_count == 0
+        assert entry_helper.viewer_count == 0
+
+
+class TestGridStreamAPIKeyPrinterScope:
+    """T-165: an API key's ``printer_ids`` allowlist must be honoured by the
+    multiplexed grid stream, not just the single-printer camera routes.
+
+    Drives ``camera_grid_stream()`` directly (same idiom as
+    ``TestGridStreamGenerateLoop``) so the assertions are on the actual
+    StreamingResponse body — the printer allowed by the key is the only one
+    whose frame is ever produced, and the disallowed id never reaches
+    ``get_existing_batch`` (no producer is ever started for it, matching how
+    the frontend already tolerates ids that never yield a frame).
+    """
+
+    @staticmethod
+    def _live_entry(frame: bytes = b"\xff\xd8fake-jpeg-bytes\xff\xd9"):
+        return TestGridStreamGenerateLoop._live_entry(frame)
+
+    @staticmethod
+    def _scoped_key(printer_ids):
+        from backend.app.models.api_key import APIKey
+
+        return APIKey(
+            name="scoped",
+            key_hash="x",
+            key_prefix="bb_x",
+            can_read_status=True,
+            printer_ids=printer_ids,
+            enabled=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_restricted_key_only_streams_the_allowed_printer(self):
+        """ids=allowed,disallowed with a key scoped to [allowed] yields only
+        the allowed printer's frame, and the disallowed id never reaches
+        get_existing_batch at all."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_allowed = 7101
+        pid_disallowed = 7102
+        entry_allowed = self._live_entry()
+        api_key = self._scoped_key([pid_allowed])
+        request = _StubRequest(disconnect_after=1)
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {pid: e for pid, e in {pid_allowed: entry_allowed}.items() if pid in printer_ids}, [
+                pid for pid in printer_ids if pid != pid_allowed
+            ]
+
+        with (
+            patch("backend.app.api.routes.camera._hub.get_existing_batch", new=AsyncMock(side_effect=mock_batch)),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+            patch("backend.app.api.routes.camera.time", _FakeTime()),
+        ):
+            resp = await cam.camera_grid_stream(
+                request,
+                ids=f"{pid_allowed},{pid_disallowed}",
+                fps=200,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=api_key,
+            )
+
+            # The disallowed id was dropped before the hub was ever consulted.
+            assert captured_ids == [pid_allowed]
+
+            chunk = await resp.body_iterator.__anext__()
+            expected = struct.pack("<II", pid_allowed, len(entry_allowed.frame)) + entry_allowed.frame
+            assert chunk == expected
+
+            with pytest.raises(StopAsyncIteration):
+                await resp.body_iterator.__anext__()
+
+    @pytest.mark.asyncio
+    async def test_unrestricted_key_streams_every_requested_printer(self):
+        """An API key with printer_ids=None (global key) is byte-identical to
+        an unauthenticated/JWT caller — nothing is filtered."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_a = 7103
+        pid_b = 7104
+        entry_a = self._live_entry()
+        entry_b = self._live_entry()
+        api_key = self._scoped_key(None)
+        request = _StubRequest(disconnect_after=2)
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {pid_a: entry_a, pid_b: entry_b}, []
+
+        with (
+            patch("backend.app.api.routes.camera._hub.get_existing_batch", new=AsyncMock(side_effect=mock_batch)),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+            patch("backend.app.api.routes.camera.time", _FakeTime()),
+        ):
+            resp = await cam.camera_grid_stream(
+                request,
+                ids=f"{pid_a},{pid_b}",
+                fps=200,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=api_key,
+            )
+
+            assert captured_ids == [pid_a, pid_b]
+
+            seen = set()
+            for _ in range(2):
+                chunk = await resp.body_iterator.__anext__()
+                seen.add(chunk[:4])
+            assert seen == {struct.pack("<I", pid_a), struct.pack("<I", pid_b)}

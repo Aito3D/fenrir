@@ -16,11 +16,12 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import field
-from typing import Literal
+from typing import Annotated, Literal
 
 import psutil
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,11 +30,16 @@ from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    check_printer_access,
     create_camera_stream_token,
+    is_auth_enabled,
+    security,
+    validated_api_key_from_request,
 )
 from backend.app.core.database import async_session, get_db
 from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
+from backend.app.models.api_key import APIKey
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -1924,6 +1930,28 @@ async def _ensure_producer(
     return entry
 
 
+async def _grid_stream_api_key_if_auth_enabled(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> "APIKey | None":
+    """Resolve the calling API key for the grid stream's ``printer_ids`` filter —
+    but only when auth is enabled.
+
+    Mirrors ``require_permission_if_auth_enabled``'s own gate (auth.py:1870):
+    when auth is disabled, an ``X-API-Key``/``Authorization: Bearer bb_...``
+    header is not even looked at, so a stale or bogus key does not 401 a
+    request that would otherwise sail through unauthenticated — matching how
+    the CAMERA_VIEW permission dependency just above already treats this
+    route when auth is off. Only once auth is enabled does an attached key
+    get validated (and, if invalid, rejected) the normal way via
+    ``validated_api_key_from_request``.
+    """
+    async with database.async_session() as db:
+        if not await is_auth_enabled(db):
+            return None
+    return await validated_api_key_from_request(credentials, x_api_key)
+
+
 @router.get("/camera/grid-stream")
 async def camera_grid_stream(
     request: Request,
@@ -1933,6 +1961,7 @@ async def camera_grid_stream(
     scale: float | None = Query(default=None, ge=0.1, le=1.0),
     force: bool = Query(False, description="Force restart producers with new quality settings"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
 ):
     """Multiplexed camera stream for the camera grid.
 
@@ -1988,6 +2017,24 @@ async def camera_grid_stream(
 
         if len(printer_ids) > 30:
             raise HTTPException(400, "Maximum 30 printers per grid stream")
+
+        # An API key restricted to a printer_ids allowlist only ever sees the
+        # printers it is scoped to — the same boundary check_printer_access
+        # enforces on the single-printer camera routes. Ids outside the
+        # allowlist are dropped rather than rejecting the whole request, so a
+        # camera wall driven by a partially-restricted key keeps working for
+        # the printers it can see. This runs AFTER the 30-printer cap so the
+        # cap error a caller sees always reflects the ids they actually asked
+        # for, not the filtered set.
+        if api_key is not None:
+            allowed_ids = []
+            for pid in printer_ids:
+                try:
+                    check_printer_access(api_key, pid)
+                except HTTPException:
+                    continue
+                allowed_ids.append(pid)
+            printer_ids = allowed_ids
 
         # Start producers for all requested printers.
         # First, collect IDs that already have a live producer (fast path — no DB).

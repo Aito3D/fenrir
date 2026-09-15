@@ -852,6 +852,225 @@ class TestCameraGridStreamValidation:
         assert response.status_code != 400
 
 
+class TestCameraGridStreamAPIKeyPrinterScope:
+    """T-165: /camera/grid-stream must honour an API key's ``printer_ids``
+    allowlist the same way the single-printer camera/control routes do
+    (``check_printer_access`` / ``RequirePrinterPermissionIfAuthEnabled``).
+
+    Before this fix, ``RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)``
+    only checked the key's ``can_read_status`` scope flag — the per-key
+    ``printer_ids`` restriction was never consulted, so a key scoped to one
+    printer could stream frames for the whole fleet through this endpoint.
+    """
+
+    @staticmethod
+    async def _make_key(db_session, *, printer_ids):
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name=f"grid-scope-{printer_ids}",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                can_read_status=True,
+                printer_ids=printer_ids,
+                enabled=True,
+            )
+        )
+        await db_session.commit()
+        return full_key
+
+    @staticmethod
+    async def _enable_auth(async_client: AsyncClient, *, username: str):
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": username,
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_drops_disallowed_ids_before_the_hub(self, async_client: AsyncClient, db_session):
+        """A key scoped to printer 1 requesting ids=1,2,3 must only ever ask
+        the stream hub for printer 1 — 2 and 3 are dropped up front."""
+        await self._enable_auth(async_client, username="gridscope1")
+        full_key = await self._make_key(db_session, printer_ids=[1])
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            await async_client.get(
+                "/api/v1/printers/camera/grid-stream",
+                params={"ids": "1,2,3", "scale": "0.5"},
+                headers={"X-API-Key": full_key},
+            )
+
+        assert captured_ids == [1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unrestricted_key_is_unaffected(self, async_client: AsyncClient, db_session):
+        """A global key (printer_ids=None) sees every requested id, byte-
+        identical to a request with no API key at all."""
+        await self._enable_auth(async_client, username="gridscope2")
+        full_key = await self._make_key(db_session, printer_ids=None)
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            await async_client.get(
+                "/api/v1/printers/camera/grid-stream",
+                params={"ids": "1,2,3", "scale": "0.5"},
+                headers={"X-API-Key": full_key},
+            )
+
+        assert captured_ids == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwt_session_caller_is_unaffected(self, async_client: AsyncClient):
+        """A JWT/session caller has no printer_ids concept at all — every
+        requested id must still reach the hub, same as before this fix."""
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "gridscope3",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "gridscope3", "password": "AdminPass1!"},
+        )
+        token = login.json()["access_token"]
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            await async_client.get(
+                "/api/v1/printers/camera/grid-stream",
+                params={"ids": "1,2,3", "scale": "0.5"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert captured_ids == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_with_only_disallowed_ids_hits_existing_404(
+        self, async_client: AsyncClient, db_session
+    ):
+        """When every requested id is filtered out, the route must fall
+        through to the SAME 404 it already raises for "no valid printers
+        found" — not a new/different error."""
+        await self._enable_auth(async_client, username="gridscope4")
+        full_key = await self._make_key(db_session, printer_ids=[1])
+
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream",
+            params={"ids": "2,3", "scale": "0.5"},
+            headers={"X-API-Key": full_key},
+        )
+
+        assert response.status_code == 404
+        assert "no valid printers" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_30_printer_cap_applies_to_the_requested_ids_not_the_filtered_set(
+        self, async_client: AsyncClient, db_session
+    ):
+        """The 30-printer cap must trigger on the ids the caller actually
+        asked for — filtering a restricted key's disallowed ids out must not
+        let a request that would have been capped slip through, nor should
+        the caller see a different error just because a key is attached."""
+        await self._enable_auth(async_client, username="gridscope5")
+        full_key = await self._make_key(db_session, printer_ids=[1])
+        ids = ",".join(str(i) for i in range(1, 32))  # 31 unique IDs
+
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream",
+            params={"ids": ids, "scale": "0.5"},
+            headers={"X-API-Key": full_key},
+        )
+
+        assert response.status_code == 400
+        assert "30" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_unrecognized_key_behaves_like_no_key_at_all(self, async_client: AsyncClient):
+        """With auth disabled (default test config, no /auth/setup call), a
+        stale/bogus ``X-API-Key`` header must NOT be validated at all — the
+        request must behave exactly like one with no key header, not 401.
+
+        Regression guard: ``current_api_key_if_present`` (reused directly, pre
+        this fix) called ``validated_api_key_from_request`` unconditionally,
+        which raises 401 for any unvalidatable key candidate regardless of
+        whether auth is enabled — unlike ``require_permission_if_auth_enabled``
+        (auth.py:1870), which returns immediately when auth is disabled without
+        ever looking at the key. That made an auth-disabled instance whose
+        client still sent a stale key 401 on this endpoint even though the
+        stream worked fine for it before this whole task.
+        """
+        baseline = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1"})
+        with_bogus_key = await async_client.get(
+            "/api/v1/printers/camera/grid-stream",
+            params={"ids": "1"},
+            headers={"X-API-Key": "bb_totally_bogus_and_unrecognized_00000000"},
+        )
+
+        assert with_bogus_key.status_code != 401
+        assert with_bogus_key.status_code == baseline.status_code
+        assert with_bogus_key.json() == baseline.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_valid_restricted_key_is_also_unfiltered(self, async_client: AsyncClient, db_session):
+        """With auth disabled, even a VALID key carrying a real ``printer_ids``
+        restriction is not consulted — auth being off means no principal
+        (user OR key) is checked at all here, matching every other
+        ``RequirePermissionIfAuthEnabled``-gated route's behavior when auth is
+        off. The filter added for T-165 only ever engages once auth is on."""
+        full_key = await self._make_key(db_session, printer_ids=[1])
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            response = await async_client.get(
+                "/api/v1/printers/camera/grid-stream",
+                params={"ids": "1,2,3", "scale": "0.5"},
+                headers={"X-API-Key": full_key},
+            )
+
+        assert response.status_code != 401
+        assert captured_ids == [1, 2, 3]
+
+
 class TestCameraStreamValidation:
     """Tests for single-stream scale validation at /{id}/camera/stream."""
 
