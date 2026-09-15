@@ -3293,6 +3293,27 @@ describe('ProjectDetailPanel create invoice', () => {
     );
     expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
   });
+
+  // The operator's sequence on a finished job — tell the client, raise the
+  // invoice when they arrive, archive once they have paid and left — is one
+  // footer slot advancing. Done never shares the bar with Create invoice:
+  // the server refuses Finish -> Done on a quoted project with no invoice,
+  // so the two are mutually exclusive by the same gate the board card uses.
+  const contacted = { ...billable, move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' } as const;
+
+  it('offers Create invoice, not Done, once the client is told but nothing is billed', () => {
+    show({ ...contacted, quote_invoiced: false });
+    const footer = within(screen.getByTestId('panel-footer'));
+    expect(footer.getByRole('button', { name: /create invoice/i })).toBeEnabled();
+    expect(footer.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers Done, not Create invoice, once the quote is invoiced', () => {
+    show({ ...contacted, quote_invoiced: true });
+    const footer = within(screen.getByTestId('panel-footer'));
+    expect(footer.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+    expect(footer.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+  });
 });
 
 describe('ProjectDetailPanel description clamp', () => {

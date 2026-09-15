@@ -2893,6 +2893,20 @@ async def move_project(
                 detail="Tell the client the project is ready before archiving it",
             )
 
+        # The second step of the same sequence: the job is billed when the
+        # client comes for it, and archived once they have paid and left.
+        # A quoted project reaches Done only once its quote is invoiced in
+        # Books — `quote_invoiced` is what the create route writes the moment
+        # Books confirms, and what the hourly sweep sets for an invoice raised
+        # by hand. Same one-direction shape as the contact gate above, for the
+        # same reason: nothing archived before this rule must be stranded.
+        #
+        # A card with no quote is exempt: it never went through Books, so
+        # nothing here could ever invoice it, and the gate would hold it in
+        # Finish forever.
+        if payload.column == "done" and project.quote_id and not project.quote_invoiced:
+            raise HTTPException(status_code=409, detail="Create the invoice before archiving it")
+
     source_column = project.board_column
     destination = await _active_in_column(db, payload.column, exclude_id=project.id)
     # The client's `position` is an index into the DISPLAYED order, which puts

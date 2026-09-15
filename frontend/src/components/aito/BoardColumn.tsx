@@ -5,7 +5,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { useTranslation } from 'react-i18next';
 import { Check, Phone, Plane, Send, ThumbsUp } from 'lucide-react';
 import { CardView } from './CardView';
+import { CreateInvoiceButton } from './CreateInvoiceButton';
 import { HoldButton } from './HoldButton';
+import { canMarkDone } from './canMarkDone';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
@@ -188,10 +190,19 @@ function SortableCard({
               </HoldButton>
             )}
             {project.column === 'finish' && !awaitingContact && project.move_lock === null && (
-              // Both halves of the gate matter. The column is where the card
-              // has to be; `move_lock === null` is the rules' own release, and
-              // it is what keeps this off a declined quote — those sit in Done
-              // with move_lock 'declined', and the endpoint would refuse.
+              // Step two of three, in the same slot: the job is billed when
+              // the client arrives, and only then archived. Renders itself
+              // away once the quote is invoiced (canCreateInvoice), which is
+              // exactly when canMarkDone below opens — so the slot advances
+              // Phone -> FileText -> Check and never shows two steps at once.
+              // A card with no quote skips this step: nothing to bill.
+              <CreateInvoiceButton project={project} variant="icon" />
+            )}
+            {canMarkDone(project) && (
+              // The one shared gate (canMarkDone): column, rules lock, client
+              // told, and — for a quoted project — invoiced. The panel footer
+              // reads the same helper, so the two surfaces offering this one
+              // transition can never disagree about when it is available.
               <HoldButton
                 onHold={() => markDone.mutate()}
                 durationMs={500}

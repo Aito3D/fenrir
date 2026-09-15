@@ -471,3 +471,71 @@ describe('board card actions — the client has to be told before the job is clo
     }
   });
 });
+
+describe('board card actions — the job has to be billed before it is closed', () => {
+  // The same footer slot, now three steps: tell the client, raise the
+  // invoice, archive. Which one shows IS the server's gate made visible —
+  // `move_project` 409s Finish -> Done on a quoted project with no invoice
+  // (backend test_aito_done_gate.py), so a Done button there could only lie.
+  const billable = (over: Partial<AitoProject> = {}) =>
+    card({
+      column: 'finish',
+      move_lock: null,
+      quote_id: 'EST-1',
+      quote_number: 'DEV26-1',
+      quote_status: 'accepted',
+      client_contacted_at: '2026-08-20T09:00:00Z',
+      quote_invoiced: false,
+      ...over,
+    });
+
+  it('offers Create invoice, not Done, once the client is told but nothing is billed', () => {
+    renderColumn(billable());
+    expect(screen.getByRole('button', { name: /create invoice/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers Done, not Create invoice, once the quote is invoiced', () => {
+    renderColumn(billable({ quote_invoiced: true }));
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('offers neither while nobody has told the client', () => {
+    renderColumn(billable({ client_contacted_at: null }));
+    expect(screen.getByRole('button', { name: /mark client as contacted/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('holds Create invoice back while an edit is still syncing to Books', () => {
+    renderColumn(billable({ quote_sync_state: 'pending' }));
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('opens the invoice dialog on a click without opening the card', async () => {
+    const preview = vi.spyOn(api, 'getAitoInvoicePreview').mockImplementation(() => new Promise(() => {}));
+    const onExpand = vi.fn();
+    const project = billable();
+    const meta = COLUMNS.find((c) => c.id === project.column)!;
+    render(
+      <DndContext>
+        <BoardColumn
+          column={meta}
+          projects={[project]}
+          isDropTarget={false}
+          onExpandCard={onExpand}
+          transitionConfig={null}
+          shouldAnimateIn={() => false}
+        />
+      </DndContext>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /create invoice/i }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(preview).toHaveBeenCalledWith(project.id);
+    expect(onExpand).not.toHaveBeenCalled();
+  });
+});
