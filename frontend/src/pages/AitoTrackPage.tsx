@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { TrackingInvoice } from '../components/aito/TrackingInvoice';
+import { TrackingPayment } from '../components/aito/TrackingPayment';
 import { TrackingLanguageSelect } from '../components/aito/TrackingLanguageSelect';
 import { TrackingRail } from '../components/aito/TrackingRail';
 import { Footer, Logo } from '../components/aito/trackingShell';
@@ -263,9 +264,11 @@ export function AitoTrackPage() {
                   );
                 })()}
               </section>
-              {data.invoice && (
+              {(data.invoice || data.payment) && (
                 <div className={`mt-[32px] ${entrance ? 'animate-rise' : ''}`} style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}>
-                  <TrackingInvoice state={data.invoice} />
+                  {/* The invoice, when there is one, is the truer story; the
+                      online payment link speaks only before it exists. */}
+                  {data.invoice ? <TrackingInvoice state={data.invoice} reference={data.reference} /> : <TrackingPayment payment={data.payment!} reference={data.reference} />}
                 </div>
               )}
             </div>

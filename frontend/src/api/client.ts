@@ -1462,9 +1462,16 @@ export interface AppSettings {
   openrouter_model: string;
   // Pushcut pickup-SMS relay (write-only — the URL embeds its secret token)
   pushcut_sms_url: string;
+  // Heimdall payment bridge (token is write-only)
+  heimdall_base_url: string;
+  heimdall_api_token: string;
+  /** 0 = payment links ask for the full quote; otherwise the deposit share. */
+  aito_deposit_pct: number;
+  aito_quote_validity_days: number;
   /** Aito follow-ups strip thresholds, in days. */
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;
+  aito_followup_link_days: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2866,6 +2873,7 @@ export interface NotificationProvider {
   on_print_progress: boolean;
   on_print_missing_spool_assignment: boolean;
   on_billing_charge_failed: boolean;
+  on_aito_payment_received: boolean;
   // Printer status events
   on_printer_offline: boolean;
   on_printer_error: boolean;
@@ -2929,6 +2937,7 @@ export interface NotificationProviderCreate {
   on_print_progress?: boolean;
   on_print_missing_spool_assignment?: boolean;
   on_billing_charge_failed?: boolean;
+  on_aito_payment_received?: boolean;
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
@@ -2985,6 +2994,7 @@ export interface NotificationProviderUpdate {
   on_print_progress?: boolean;
   on_print_missing_spool_assignment?: boolean;
   on_billing_charge_failed?: boolean;
+  on_aito_payment_received?: boolean;
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
@@ -4097,6 +4107,7 @@ export interface AitoTracking {
   shipping: { island: string; service: string; lta: string | null } | null;
   done_at: string | null;
   invoice: AitoTrackingInvoice | null;
+  payment: AitoTrackingPayment | null;
   reference: string | null;
   updated_at: string;
 }
@@ -4105,6 +4116,35 @@ export interface AitoTrackingLink {
   tracking_url: string | null;
   /** Regenerate only: whether the Zoho quote's notes took the new link. */
   quote_notes?: 'updated' | 'failed' | null;
+}
+
+export type AitoPaymentLinkState = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
+
+/** The project's current online payment link (Heimdall/OSB), or null. `url`
+ *  is the public payment page — safe on the board payload like quote_url. */
+export interface AitoPaymentLink {
+  state: AitoPaymentLinkState;
+  amount: number;
+  currency: string;
+  url: string | null;
+  /** ISO `YYYY-MM-DD` — the link dies at the end of that UTC day. */
+  expires_on: string;
+  paid_at: string | null;
+  /** Last Heimdall failure for this link, or null. */
+  sync_error: string | null;
+}
+
+export interface AitoTrackingPayment {
+  state: 'unpaid' | 'paid';
+  url: string | null;
+  /** True when the link asked for a deposit share rather than the whole quote. */
+  deposit: boolean;
+}
+
+export interface HeimdallStatus {
+  configured: boolean;
+  reachable: boolean | null;
+  error: 'unauthorized' | 'forbidden' | 'unreachable' | null;
 }
 
 export type AitoFlag = 'urgent' | 'sav' | 'pause';
@@ -4156,6 +4196,12 @@ export interface AitoProject {
   invoice_balance: number | null;
   invoice_due_date: string | null;
   invoice_checked_at: string | null;
+  /** Books' expiry_date for the quote (ISO date), copied back by the sync. */
+  quote_expiry_date: string | null;
+  /** Paid retainers as last read by the sweep, or null. */
+  retainer_paid_total: number | null;
+  /** The current online payment link, or null when there is none. */
+  payment_link: AitoPaymentLink | null;
   /** The worker's push state for this project's quote. Always present —
    *  never null — even on hand-made cards that have never had a quote
    *  ('idle'). 'pending' while the worker has not yet caught up with the
@@ -4344,6 +4390,51 @@ export interface AitoInvoice {
   /** Books allows an estimate to be invoiced in parts. The card renders the
    *  newest and says so when this is greater than 1. */
   invoice_count: number;
+}
+
+/** One deposit already taken against a quote, as the create-invoice confirm
+ *  dialog lists it. `applicable` is what can actually be put on the new
+ *  invoice — the sum of the retainer's UNUSED advance payments, which is 0
+ *  both for an unpaid retainer and for one already drawn against an earlier
+ *  invoice. `total - applicable` is the part the dialog reports as not
+ *  applied. See schemas/aito.py:AitoRetainerPreview. */
+export interface AitoRetainerPreview {
+  id: string;
+  number: string;
+  /** Books' retainer vocabulary — draft / sent / paid / partially_paid. */
+  status: string;
+  total: number;
+  applicable: number;
+}
+
+/** What "Create invoice" is about to do, read from Books before it does it.
+ *  Display data only: the POST re-reads every figure server-side rather than
+ *  trusting anything sent back. */
+export interface AitoInvoicePreview {
+  quote_number: string;
+  currency_code: string;
+  total: number;
+  line_count: number;
+  retainers: AitoRetainerPreview[];
+  /** What the invoice will still owe once the applicable retainers are on
+   *  it. Computed server-side so the dialog and the result cannot disagree. */
+  projected_balance: number;
+}
+
+/** What actually happened to one retainer, reported after the invoice was
+ *  raised. `applied` can be less than `applicable` promised — the deposit
+ *  application is allowed to fail without failing the invoice. */
+export interface AitoRetainerApplied {
+  number: string;
+  total: number;
+  applied: number;
+}
+
+/** The freshly-raised invoice, in the exact shape the Invoice card renders,
+ *  plus the deposit report. Extends AitoInvoice so the caller can seed the
+ *  ['aito-invoice', id] cache straight from it. */
+export interface AitoInvoiceCreated extends AitoInvoice {
+  retainers: AitoRetainerApplied[];
 }
 
 export interface AitoShippingIsland {
@@ -7800,6 +7891,21 @@ export const api = {
    *  is none — which is the ordinary state of a job that has not been billed
    *  yet, not an error. Hits Zoho on every call, so callers should cache. */
   getAitoInvoice: (projectId: number) => request<AitoInvoice | null>(`/aito/${projectId}/invoice`),
+  /** What raising the invoice would do — the confirm dialog's contents.
+   *  Runs the same guards the POST does (Finish column, a quote, no pending
+   *  sync, not already invoiced), so a dialog can never open on a project
+   *  the create would then refuse. */
+  getAitoInvoicePreview: (projectId: number) =>
+    request<AitoInvoicePreview>(`/aito/${projectId}/invoice-preview`),
+  /** Raise the invoice for a finished project and pay it down with the
+   *  deposits already taken against its quote.
+   *
+   *  Irreversible from this app: it creates a real draft invoice in Books
+   *  and points the client's paid retainers at it. The server refuses a
+   *  second call while an invoice exists, but the UI must still confirm
+   *  first. Nothing is emailed. */
+  createAitoInvoice: (projectId: number) =>
+    request<AitoInvoiceCreated>(`/aito/${projectId}/invoice`, { method: 'POST' }),
   /** What Books would send if this invoice were emailed now — preview only.
    *  The POST re-reads it server-side rather than trusting anything sent
    *  back, so this is safe to treat as display data.
@@ -7895,10 +8001,14 @@ export const api = {
     request<void>(`/aito/${id}`, { method: 'DELETE' }),
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
+  refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),
 
   // Zoho Books integration
   getZohoStatus: (probe = false) =>
     request<ZohoStatus>(`/zoho/status${probe ? '?probe=true' : ''}`),
+  // Heimdall payment bridge
+  testHeimdall: (body: { base_url?: string; token?: string }) =>
+    request<HeimdallStatus>('/heimdall/test', { method: 'POST', body: JSON.stringify(body) }),
   searchZohoContacts: (q: string) => request<ZohoContact[]>(`/zoho/contacts?q=${encodeURIComponent(q)}`),
   /** An empty query lists the most recent quotes, so the picker is useful
    *  before the user types anything. */

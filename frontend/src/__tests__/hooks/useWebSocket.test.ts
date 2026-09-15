@@ -795,6 +795,31 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-invoice', 12] });
     });
 
+    it('invalidates the invoice card immediately on invoice too', async () => {
+      // The create path's twin of the case above: raising a bill changes
+      // nothing on the project row either, so a second operator's open panel
+      // would otherwise sit on an empty Invoice card for up to five minutes
+      // after a real invoice was raised.
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'invoice', project_id: 12, actor: 'Marie' });
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-invoice', 12] });
+    });
+
     it('leaves the invoice card alone for every other aito_changed action', async () => {
       // The negative half of the test above: an unrelated action (here,
       // 'update') must not invalidate a cache the action did not touch —

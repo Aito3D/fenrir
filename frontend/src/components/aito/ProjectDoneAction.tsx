@@ -32,7 +32,21 @@ import { type AitoProject } from '../../api/client';
  *  reaches Finish on an accepted quote, and `QuoteStatusActions` renders
  *  nothing once the quote is accepted, so exactly one of the two blocks is ever
  *  on the bar. */
-export function ProjectDoneAction({ project }: { project: AitoProject }) {
+export function ProjectDoneAction({
+  project,
+  /** Called the moment the hold commits, after the move is issued — the
+   *  panel passes its own `onClose`. Same contract as `UnacceptHoldPill` in
+   *  the header, and for the same reason: the board defers a card's flight
+   *  while the panel is open (AitoPage's `suspended: 'defer'`), so a Done
+   *  that left the modal up celebrated over it and never showed the card
+   *  travelling to the archive. Closing here, not in `onSuccess`, because
+   *  the optimistic write has already moved the card and holding the modal
+   *  open for a round trip would only delay what the user already did. */
+  onDone,
+}: {
+  project: AitoProject;
+  onDone: () => void;
+}) {
   const { t } = useTranslation();
   // Where the celebration comes from on THIS surface: the pill itself.
   // The board card's version fires out of the card, but the panel is a
@@ -61,6 +75,7 @@ export function ProjectDoneAction({ project }: { project: AitoProject }) {
       onHold={(origin) => {
         originRef.current = origin;
         markDone.mutate();
+        onDone();
       }}
       durationMs={500}
       disabled={markDone.isPending}

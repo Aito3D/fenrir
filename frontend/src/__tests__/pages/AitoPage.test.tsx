@@ -30,6 +30,9 @@ const project = {
   shipping_island: null, shipping_service: null, shipping_first_name: null, shipping_last_name: null,
   shipping_phone: null, shipping_price: null, shipping_service_name: null,
   tracking_configured: false,
+  quote_expiry_date: null,
+  retainer_paid_total: null,
+  payment_link: null,
   version: 1,
   created_at: '2026-07-01T10:00:00Z', updated_at: '2026-07-02T10:00:00Z',
 };
@@ -92,6 +95,9 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_lta: null,
     shipping_service_name: null,
     tracking_configured: false,
+    quote_expiry_date: null,
+    retainer_paid_total: null,
+    payment_link: null,
     version: 1,
     created_at: '2026-07-27T00:00:00',
     updated_at: '2026-07-27T00:00:00',
@@ -379,8 +385,9 @@ describe('AitoPage (backend board)', () => {
     expect(within(panel).getByTestId('stage-node-devis')).toHaveAttribute('data-state', 'current');
     // The heading itself, not a text match: StageRail's own 'devis' node also
     // reads "Quote" (aito.columns.devis), so an unscoped text query would
-    // still pass with the Quote card deleted entirely.
-    expect(within(panel).getAllByTestId('panel-card-heading').map((n) => n.textContent)).toContain('Quote');
+    // still pass with the Billing card deleted entirely. Billing sits behind
+    // the right column's Details tab, which is the tab a fresh panel opens on.
+    expect(within(panel).getAllByTestId('panel-card-heading').map((n) => n.textContent)).toContain('Billing');
   });
 
   it('opens the panel from the keyboard via the card body', async () => {
@@ -766,6 +773,9 @@ describe('AitoPage (backend board)', () => {
       shipping_lta: null,
       shipping_service_name: null,
       tracking_configured: false,
+      quote_expiry_date: null,
+      retainer_paid_total: null,
+      payment_link: null,
       version: 1,
       created_at: '2026-07-01T10:00:00Z',
       updated_at: '2026-07-02T10:00:00Z',

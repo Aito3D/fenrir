@@ -19,7 +19,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
-from backend.app.schemas.aito import AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
+from backend.app.schemas.aito import AitoTrackingPayment, AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
 from backend.app.services.aito_shipping import SERVICE_LABELS
 
 # Crockford's base32: digits and capitals minus I, L, O and U, so no symbol
@@ -53,7 +53,11 @@ NOTES_CODE_PREFIX = "Code de suivi : "
 # Wordings this app wrote before 2026-09-08. Stripped on merge, so a card
 # re-synced after the change carries one tracking block, not two.
 _LEGACY_NOTES_PREFIXES = ("Suivez votre commande : ",)
-SMS_PREFIX = "\n\nSuivi : "
+SMS_PREFIX = "\nSuivi : "
+SMS_SIGNATURE = "Aito3D"
+# The blank line before the signature: the link is the message's last word,
+# « Aito3D » is the sign-off under it.
+SMS_SIGNATURE_SEP = "\n\n"
 
 
 def mint_token() -> str:
@@ -113,6 +117,23 @@ def tracking_notes(url: str, token: str) -> str:
     if len(token) == TOKEN_LENGTH:
         text += f"\n{NOTES_CODE_PREFIX}{token}"
     return text
+
+
+def with_tracking_sms(message: str, url: str) -> str:
+    """The pickup SMS with its tracking link — and the signature kept last.
+
+    The draft ends « ...\\nAito3D » (see openrouter._normalize_pickup), and
+    a link simply appended would land under the signature, reading as an
+    afterthought. So the signature is lifted off, the link goes on the very
+    next line, and « Aito3D » goes back after a blank line — the layout of a
+    signed note. A draft without the signature just gets the link at the
+    end."""
+    body = message.rstrip()
+    signed = body.endswith(SMS_SIGNATURE)
+    if signed:
+        body = body.removesuffix(SMS_SIGNATURE).rstrip()
+    text = f"{body}{SMS_PREFIX}{url}"
+    return f"{text}{SMS_SIGNATURE_SEP}{SMS_SIGNATURE}" if signed else text
 
 
 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
@@ -218,6 +239,25 @@ _INVOICE_STATE = {
 
 def invoice_state(status: str | None) -> str | None:
     return _INVOICE_STATE.get(status or "")
+
+
+async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingPayment | None:
+    """Read off the ledger only — the public page must never trigger a
+    Heimdall call. Pending -> unpaid with the URL, but only once the quote
+    is accepted (the client pays what they validated, never a quote still
+    under discussion — the operator hands the link out by hand before that);
+    paid -> paid whatever the quote says (money wins, and the acceptance
+    lands a tick later); a dead or absent link -> None."""
+    from backend.app.services.aito_payment_links import current_link, deposit_pct
+
+    row = await current_link(db, project.id)
+    if row is None or row.heimdall_id is None or row.status not in ("pending", "paid"):
+        return None
+    if row.status == "pending" and project.quote_status != "accepted":
+        return None
+    return AitoTrackingPayment(
+        state="paid" if row.status == "paid" else "unpaid", url=row.url, deposit=(await deposit_pct(db)) > 0
+    )
 
 
 # (cost column, quantity column) per service — the quantity of a service
@@ -344,5 +384,6 @@ async def compute_tracking(
         invoice=invoice_state(project.invoice_status),
         reference=project.quote_number or None,
         updated_at=updated_at,
+        payment=await payment_state(db, project),
     )
     return project.id, data

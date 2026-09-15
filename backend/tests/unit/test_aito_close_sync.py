@@ -100,6 +100,9 @@ def _estimate(**overrides) -> dict:
         "total": 27500,
         "last_modified_time": "2026-08-05T10:00:00-1000",
         "is_inclusive_tax": True,
+        # Already set: keeps _update_quote's expiry-once guard from firing an
+        # extra PUT these tests are not about.
+        "expiry_date": "2026-08-20",
     }
     body.update(overrides)
     return {"estimate": body}

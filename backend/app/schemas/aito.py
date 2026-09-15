@@ -540,6 +540,20 @@ class AitoTaskStepsResponse(BaseModel):
     title: str = ""
 
 
+class AitoPaymentLinkView(BaseModel):
+    """The project's CURRENT online payment link (services/aito_payment_links.py).
+    `state` is Heimdall's unified status. `url` is public — the payment page
+    the client opens — so it rides on the board payload like quote_url."""
+
+    state: Literal["pending", "paid", "failed", "cancelled", "expired"]
+    amount: int
+    currency: str
+    url: str | None
+    expires_on: str
+    paid_at: datetime | None
+    sync_error: str | None
+
+
 class AitoProjectResponse(BaseModel):
     id: int
     description: str
@@ -573,6 +587,13 @@ class AitoProjectResponse(BaseModel):
     invoice_balance: float | None
     invoice_due_date: str | None
     invoice_checked_at: datetime | None
+    # Books' expiry_date for the quote, copied back like quote_date; the
+    # payment link ends the same day.
+    quote_expiry_date: str | None
+    # Paid retainers as last read by the sweep — see the column comment.
+    retainer_paid_total: float | None
+    # The current online payment link, or null when the project has none.
+    payment_link: AitoPaymentLinkView | None
     created_by: str | None
     # 'idle' | 'pending' | 'error' | 'locked' | 'unmanaged' — see the column
     # comment on AitoProject.quote_sync_state for what each means.
@@ -806,6 +827,75 @@ class AitoInvoiceResponse(BaseModel):
     invoice_count: int
 
 
+class AitoRetainerPreview(BaseModel):
+    """One deposit already taken against this quote, and what of it is spendable.
+
+    ``applicable`` is what can be put on the new invoice: the sum of the
+    retainer's UNUSED advance payments, which is 0 for a retainer that is
+    unpaid and also 0 for one already drawn against an earlier invoice.
+    ``total - applicable`` is the part the dialog reports as not applied —
+    the operator needs to see the deposit exists either way, because a
+    retainer silently missing from the confirm dialog reads as "there was no
+    deposit", which is the one thing that would make them bill it twice.
+    """
+
+    id: str
+    number: str
+    status: str
+    total: float
+    applicable: float
+
+
+class AitoInvoicePreview(BaseModel):
+    """What "Create invoice" is about to do, read from Books before it does it.
+
+    Feeds the confirm dialog only. The create route re-reads all of it rather
+    than trusting what comes back — see ``create_invoice`` — so nothing here
+    is load-bearing beyond the sentence the operator reads.
+    """
+
+    quote_number: str
+    currency_code: str
+    total: float
+    line_count: int
+    retainers: list[AitoRetainerPreview]
+    # What the invoice will still owe once the applicable retainers are on
+    # it. Computed server-side so the dialog and the result cannot disagree
+    # about the arithmetic.
+    projected_balance: float
+
+
+class AitoRetainerApplied(BaseModel):
+    """What actually happened to one retainer, reported after the fact."""
+
+    number: str
+    total: float
+    applied: float
+
+
+class AitoInvoiceCreatedResponse(BaseModel):
+    """The new invoice, in the exact shape the Invoice card already renders.
+
+    Extends ``AitoInvoiceResponse`` rather than sitting beside it so the
+    frontend can seed the ``['aito-invoice', id]`` cache straight from this
+    response, the way the send route's does — the card then appears with no
+    second round trip. ``retainers`` is the extra, and it is what the success
+    toast reports.
+    """
+
+    id: str
+    number: str
+    date: str
+    due_date: str
+    total: float
+    balance: float
+    currency_code: str
+    status: str
+    url: str
+    invoice_count: int
+    retainers: list[AitoRetainerApplied]
+
+
 class AitoEventResponse(BaseModel):
     id: int
     occurred_at: datetime
@@ -1007,6 +1097,16 @@ class AitoTrackingTask(BaseModel):
     quantity: int | None
 
 
+class AitoTrackingPayment(BaseModel):
+    """The online payment link as the client sees it: a state and, while
+    unpaid, the page to pay on. `deposit` says whether the link was for a
+    deposit share rather than the whole quote — the page's wording differs."""
+
+    state: Literal["unpaid", "paid"]
+    url: str | None
+    deposit: bool
+
+
 class AitoTrackingResponse(BaseModel):
     """Everything the public tracking page draws — and nothing else. See
     docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md."""
@@ -1024,6 +1124,9 @@ class AitoTrackingResponse(BaseModel):
     # (services/aito_tracking.py:last_activity) — the page's "Mis à jour …"
     # line. Real data only.
     updated_at: datetime
+    # The online payment link, or None when the project has no live one.
+    # The page ranks the invoice above this — an invoice is the truer story.
+    payment: AitoTrackingPayment | None
 
 
 class AitoTrackingLinkResponse(BaseModel):

@@ -2,7 +2,6 @@ import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import { useAitoInvoice } from './useAitoInvoice';
-import { PanelCard } from './PanelCard';
 import { InvoiceDownloadButton } from './InvoiceDownloadButton';
 import { InvoicePrintButton } from './InvoicePrintButton';
 import { SendInvoiceButton } from './SendInvoiceButton';
@@ -13,18 +12,21 @@ import { ACTION_GROUP } from './quoteActionGroup';
 
 /** The Zoho invoice raised from this project's quote.
  *
- *  The Quote card's twin, one card lower — same PanelCard shell, same
- *  definition-list rows, same link-out affordance on the number. The
- *  difference that matters is where the data comes from: every quote field is
- *  a snapshot on the project row and renders with Zoho unreachable, while
- *  this is fetched live on panel open. That is deliberate (see
- *  `AitoInvoiceResponse`) — a stored "Unpaid" is wrong the moment the client
- *  pays, and a stale payment status is worse than an absent card.
+ *  The lower half of the Billing card — a hairline, then the same
+ *  definition-list rows and the same link-out affordance on the number as the
+ *  quote rows above it. It used to be a card of its own under a "Invoice"
+ *  heading; the two read as one story in that order, so they share one card
+ *  now and this block labels its first row "Invoice" instead. The difference
+ *  that matters is where the data comes from: every quote field is a snapshot
+ *  on the project row and renders with Zoho unreachable, while this is
+ *  fetched live on panel open. That is deliberate (see `AitoInvoiceResponse`)
+ *  — a stored "Unpaid" is wrong the moment the client pays, and a stale
+ *  payment status is worse than an absent block.
  *
  *  Renders nothing at all while loading, on error, and when there is no
- *  invoice. An empty "Invoice" heading over a spinner would be exactly the
- *  noise the Quote card's own gating comment argues against, and the card is
- *  additive information: a panel without it is still complete.
+ *  invoice. A hairline over a spinner would be exactly the noise the Billing
+ *  card's own gating argues against, and the block is additive information:
+ *  a card without it is still complete.
  */
 export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canUpdate: boolean }) {
   const { t } = useTranslation();
@@ -46,15 +48,15 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
   const currency = invoice.currency_code || appCurrency;
 
   return (
-    <PanelCard title={t('aito.invoiceLabel')}>
+    <div data-testid="invoice-block" className="mt-3 border-t border-bambu-dark-tertiary pt-3">
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
-        <dt className="text-bambu-gray">{t('aito.invoiceNumberLabel')}</dt>
+        <dt className="text-bambu-gray">{t('aito.invoiceLabel')}</dt>
         <dd className="text-right min-w-0">
           {/* `url` is normally never empty — GET /invoice 502s rather than
               returning one. The one path that produces `""` is the send
               route's own post-send degrade (see routes/aito.py), and
               `useSendInvoiceMutation` writes that response straight into this
-              card's cache. An `<a href="">` self-navigates: it reloads the
+              block's cache. An `<a href="">` self-navigates: it reloads the
               whole SPA and drops the panel, which reads as far worse than a
               plain-text row the next 5-minute refetch quietly upgrades back
               into a link. */}
@@ -116,7 +118,7 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
         )}
       </dl>
 
-      {/* Books can invoice one estimate in parts. The card shows the newest,
+      {/* Books can invoice one estimate in parts. The block shows the newest,
           and says so rather than letting it look like the only one — an
           operator who prints "the" invoice on a part-billed job would
           otherwise never learn there were others. */}
@@ -126,13 +128,10 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
         </p>
       )}
 
-      {/* Print and Send, both flex-1: the pair mirrors the Quote card's own
-          row so the two cards read as one family. "Open in Zoho" is still
-          absent for the same reason it always was — the number above already
-          goes there. */}
-      {/* The same segmented control as the Quote card's row, deliberately: the
-          two cards share that 230.4px column and are meant to read as one
-          family. See quoteActionGroup.ts. */}
+      {/* The same segmented control as the quote rows above, deliberately:
+          the two halves of this card are meant to read as one family. See
+          quoteActionGroup.ts. "Open in Zoho" is still absent for the same
+          reason it always was — the number above already goes there. */}
       {/* Both PDF buttons sit out a pending quote sync: the invoice has no
           sync state of its own, so the project's is the only signal that an
           edit is still on its way to Zoho — and until it lands, the PDF
@@ -152,9 +151,9 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
           disabled={project.quote_sync_state === 'pending'}
         />
         {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
-            same call site pattern, as SendQuoteButton one card up. */}
+            same call site pattern, as SendQuoteButton in the quote rows. */}
         {canUpdate && <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} />}
       </div>
-    </PanelCard>
+    </div>
   );
 }

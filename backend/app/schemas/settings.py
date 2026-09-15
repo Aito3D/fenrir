@@ -35,6 +35,10 @@ LAN_SERVICE_URL_SETTINGS = (
     # admin-editable fetch target all the same — same reasoning as the Zoho
     # pair above.
     "pushcut_sms_url",
+    # Fork: the Heimdall payment bridge the Aito board mints payment links
+    # through. Normally a LAN host (http://<host>:8081) — hence the LAN tier,
+    # not the public one.
+    "heimdall_base_url",
 )
 
 # ``docker_compose_dir`` is unusual among the string settings: it is not
@@ -146,6 +150,9 @@ class AppSettings(BaseModel):
     )
     aito_followup_pickup_days: int = Field(
         default=7, ge=1, le=365, description="Days before an uncollected finished job is chased"
+    )
+    aito_followup_link_days: int = Field(
+        default=3, ge=1, le=365, description="Days before a payment link expires that the strip flags it"
     )
 
     # Queue auto-drying settings
@@ -645,6 +652,22 @@ class AppSettings(BaseModel):
     # secret token, hence write-only.
     pushcut_sms_url: str = Field(default="", description="Pushcut SMS notification webhook URL (write-only)")
 
+    # Heimdall — the shop's POS/payment bridge (../heimdall). Aito mints an OSB
+    # payment link per quote through its /api/v1 machine API. The token is
+    # the full `hmd_live.<id>.<secret>` credential, hence write-only.
+    heimdall_base_url: str = Field(
+        default="", description="Heimdall base URL (origin only), e.g. http://192.168.1.20:8081"
+    )
+    heimdall_api_token: str = Field(
+        default="", description="Heimdall /api/v1 credential hmd_live.<id>.<secret> (write-only)"
+    )
+    # 0 = the payment link asks for the full quote total; otherwise the deposit
+    # share (ceil). Also the threshold the paid-retainer auto-accept uses.
+    aito_deposit_pct: int = Field(default=0, ge=0, le=100, description="Deposit share of the quote, in percent")
+    # expiry_date written on every quote Aito creates; the payment link dies
+    # the same day.
+    aito_quote_validity_days: int = Field(default=15, ge=1, le=365, description="Days a new quote stays valid")
+
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
     obico_ml_url: str = Field(
@@ -725,6 +748,7 @@ class AppSettingsUpdate(BaseModel):
     printer_sensor_history_retention_days: int | None = None
     aito_followup_quote_days: int | None = Field(default=None, ge=1, le=365)
     aito_followup_pickup_days: int | None = Field(default=None, ge=1, le=365)
+    aito_followup_link_days: int | None = Field(default=None, ge=1, le=365)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
@@ -834,6 +858,10 @@ class AppSettingsUpdate(BaseModel):
     openrouter_api_key: str | None = None
     openrouter_model: str | None = None
     pushcut_sms_url: str | None = None
+    heimdall_base_url: str | None = None
+    heimdall_api_token: str | None = None
+    aito_deposit_pct: int | None = Field(default=None, ge=0, le=100)
+    aito_quote_validity_days: int | None = Field(default=None, ge=1, le=365)
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     obico_ml_token: str | None = None

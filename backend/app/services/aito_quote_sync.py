@@ -36,6 +36,7 @@ from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_events import record
 from backend.app.services.aito_invoice_sweep import sweep_invoices
+from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
     Catalogue,
@@ -44,7 +45,7 @@ from backend.app.services.aito_quote_export import (
     build_line_items,
     enabled_services,
 )
-from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
@@ -440,6 +441,8 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
         project.quote_number = estimate["estimate_number"]
     if estimate.get("date") is not None:
         project.quote_date = estimate["date"]
+    if estimate.get("expiry_date") is not None:
+        project.quote_expiry_date = estimate["expiry_date"]
     # `or 0` is intentional here, not a bug: an absent/None total means the
     # quote genuinely has no lines yet, and 0 is exactly the right value —
     # unlike the string fields above, there's no falsy-but-valid float this
@@ -597,10 +600,14 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = None
         project.quote_sync_failures = 0
         return
+    # The payment link is minted by reconcile_payment_links right after this
+    # tick's run_sync_once (run_sync_loop), keyed on quote_number.
     payload = {
         "customer_id": project.client_id,
         "reference_number": reference_number,
         "is_inclusive_tax": True,
+        # The payment link dies the same day (services/aito_payment_links.py).
+        "expiry_date": expiry_for(None, await quote_validity_days(db)),
         "line_items": line_items,
     }
     estimate = await zoho_service.create_estimate(db, payload)
@@ -1159,6 +1166,20 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         catalogue,
         shipping=load_export_shipping(project, catalogue),
     )
+    # Pre-existing quotes get an expiry ONCE; one set by hand in Books is
+    # never overwritten. Its own call, not folded into the line-item PUT, so
+    # a rejected expiry can never cost a line-item push (and vice versa).
+    if not estimate.get("expiry_date"):
+        try:
+            await zoho_service.update_estimate_fields(
+                db, project.quote_id, {"expiry_date": expiry_for(estimate.get("date"), await quote_validity_days(db))}
+            )
+        except (ZohoUpstreamError, ZohoNotConfiguredError, ValueError):
+            # ValueError too: `expiry_for` parses the estimate's own `date`,
+            # and a non-ISO value from Books makes it raise before a request
+            # is even made. None of the three may cost the line-item push
+            # below — an expiry is a nicety, the lines are the job.
+            logger.warning("expiry_date not written on estimate %s", project.quote_id, exc_info=True)
     updated = await zoho_service.update_estimate_lines(
         db, project.quote_id, line_items, notes=await notes_with_tracking(db, project, estimate.get("notes"))
     )
@@ -1449,8 +1470,42 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
             # just made, where an absent total genuinely means "this quote has
             # no lines". This reads an estimate that already exists, so a
             # partial payload would zero a real quote's total instead.
+            #
+            # Done BEFORE Trigger B below on purpose: that block's money math
+            # must read the total Books just reported, never the stale cached
+            # figure from our last push — a total edited directly in Books
+            # would otherwise feed the auto-accept threshold from a value
+            # already known to be wrong.
             if estimate.get("total") is not None:
                 project.quote_total = float(estimate["total"])
+
+            # Trigger B (spec §6.3): paid retainers that cover the required
+            # amount are the client's go-ahead. Read off the estimate the
+            # reconcile above already paid for — zero extra Books calls. Uses
+            # `project.quote_total` as just refreshed above, not a value from
+            # before this tick's read.
+            paid = _paid_retainer_total(estimate)
+            project.retainer_paid_total = paid
+            needed = required_amount(project.quote_total, await deposit_pct(db))
+            if needed is not None and paid >= needed and project.quote_status != "accepted":
+                accepted = await accept_quote(
+                    db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
+                )
+                if accepted:
+                    # `accept_quote`'s Books push is best-effort, and a FAILED
+                    # push rolls the session back — which expires every ORM
+                    # object it tracks, `project` included. The very next bare
+                    # attribute read (should_pull_comments, just below) would
+                    # then raise MissingGreenlet, get caught by sync_project's
+                    # catch-all, and flip the card to quote_sync_state='error'
+                    # for a tick in which the acceptance actually SUCCEEDED.
+                    # Re-fetch by id (an awaited load, so no lazy IO off the
+                    # greenlet) before anything reads the project again. A None
+                    # here means the row vanished under us — fall through with
+                    # what we have rather than inventing a failure.
+                    refreshed = await db.get(AitoProject, project_id)
+                    if refreshed is not None:
+                        project = refreshed
 
             now = datetime.utcnow()
             if should_pull_comments(project, estimate, now):
@@ -2056,6 +2111,42 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
 # two of them exhausted a Standard plan. See test_aito_quote_sync_interval.
 _DEFAULT_INTERVAL_SECONDS = 300
 
+_DEFAULT_QUOTE_VALIDITY_DAYS = 15
+
+
+async def quote_validity_days(db: AsyncSession) -> int:
+    from backend.app.api.routes.settings import get_setting
+
+    raw = await get_setting(db, "aito_quote_validity_days")
+    try:
+        return max(1, min(365, int(raw))) if raw else _DEFAULT_QUOTE_VALIDITY_DAYS
+    except ValueError:
+        return _DEFAULT_QUOTE_VALIDITY_DAYS
+
+
+def expiry_for(quote_date: str | None, validity_days: int) -> str:
+    """The estimate's expiry_date: quote date + validity, ISO YYYY-MM-DD.
+    Today when the quote has no date yet (a create, whose date Books
+    assigns as today anyway)."""
+    from datetime import date, timedelta
+
+    start = date.fromisoformat(quote_date) if quote_date else date.today()
+    return (start + timedelta(days=validity_days)).isoformat()
+
+
+def _paid_retainer_total(estimate: dict) -> float:
+    """Sum of the estimate's retainer invoices Books reports as paid. The
+    same `retainerinvoices` list _is_locked and aito_invoice_create trust."""
+    total = 0.0
+    for entry in estimate.get("retainerinvoices") or []:
+        if str(entry.get("status") or "") == "paid":
+            try:
+                total += float(entry.get("total") or 0)
+            except (TypeError, ValueError):
+                continue
+    return total
+
+
 # How long an EDIT waits before the drain it asked for actually runs. The
 # window exists to keep the outbox's burst-collapsing: ten task ticks made
 # while the operator works through a card still cost one PUT, not ten. Ten
@@ -2202,6 +2293,15 @@ async def run_sync_loop() -> None:
                     await purge_tracking_views(db)
                 except Exception as exc:
                     logger.warning("Tracking-view purge failed: %s", exc)
+                # Payment links: gated on Heimdall, not Books — a link can
+                # be polled with Books down. Its own try/except like the
+                # purge: one failed pass costs this tick, never the loop.
+                try:
+                    from backend.app.services.aito_payment_links import reconcile_payment_links
+
+                    await reconcile_payment_links(db)
+                except Exception:
+                    logger.exception("Payment-link reconcile failed")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -2233,6 +2333,20 @@ async def run_sync_loop() -> None:
                 async with async_session() as db:
                     if await sync_enabled(db) and await zoho_service.is_configured(db):
                         await run_sync_once(db, pending_only=True)
+                        # A quote just created owes its link now, and a
+                        # quote just pushed with a new total owes Heimdall
+                        # the new amount now, not next tick — a client on
+                        # the tracking page must never be offered a stale
+                        # figure. Changes only (create / patch / cancel for
+                        # the projects that drifted), no polling, so the
+                        # Copy button lights up and the amount follows
+                        # within seconds without spending the poll budget.
+                        try:
+                            from backend.app.services.aito_payment_links import reconcile_payment_links
+
+                            await reconcile_payment_links(db, changes_only=True)
+                        except Exception:
+                            logger.exception("Payment-link change drain failed")
             except asyncio.CancelledError:
                 raise
             except Exception:

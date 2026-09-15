@@ -37,6 +37,7 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
     "zoho_refresh_token",
     "openrouter_api_key",
     "pushcut_sms_url",
+    "heimdall_api_token",
 )
 
 
@@ -232,6 +233,9 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "printer_sensor_history_retention_days",
             "aito_followup_quote_days",
             "aito_followup_pickup_days",
+            "aito_followup_link_days",
+            "aito_deposit_pct",
+            "aito_quote_validity_days",
             "ftp_retry_count",
             "ftp_retry_delay",
             "ftp_timeout",
@@ -274,6 +278,9 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
 
     # The Pushcut URL embeds its secret token — write-only, like the above.
     settings_dict["pushcut_sms_url"] = ""
+
+    # The Heimdall API token is the whole credential — write-only, like the above.
+    settings_dict["heimdall_api_token"] = ""
 
     if is_api_key:
         for field in _SENSITIVE_FIELDS_FOR_API_KEY:

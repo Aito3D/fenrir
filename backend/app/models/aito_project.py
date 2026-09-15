@@ -101,6 +101,16 @@ class AitoProject(Base):
     invoice_balance: Mapped[float | None] = mapped_column(Float, nullable=True)
     invoice_due_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     invoice_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The estimate's expiry_date as Books reports it, copied back like
+    # quote_date (services/aito_quote_sync._apply_estimate). Books is the
+    # source of truth: the payment link's expiry is derived from this, so an
+    # expiry edited in Books moves the link. Not in VERSIONED_FIELDS.
+    quote_expiry_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Sum of the estimate's PAID retainer invoices as last read by the status
+    # reconcile (aito_quote_sync.sync_project). A background fact like
+    # invoice_balance — never edited in the panel, not versioned. Drives the
+    # paid-retainer auto-accept and tells the link reconciler to stand down.
+    retainer_paid_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     # A local board signal with four states: NULL, 'urgent' ("this job is late
     # / promised / on fire"), 'sav' ("it came back and needs handling again"),
     # or 'pause' ("set this aside for now"). Mutually exclusive by

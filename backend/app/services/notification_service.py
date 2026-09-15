@@ -1415,6 +1415,35 @@ class NotificationService:
             variables=variables,
         )
 
+    async def on_aito_payment_received(
+        self,
+        db: AsyncSession,
+        *,
+        project_id: int,
+        client_name: str | None,
+        reference: str | None,
+        amount: int | float,
+        currency: str,
+        source: str,
+    ) -> None:
+        """An Aito quote was paid — online link or covering retainer. No
+        printer: fan out to every enabled provider with the flag on."""
+        providers = await self._get_providers_for_event(db, "on_aito_payment_received")
+        if not providers:
+            return
+        variables = {
+            "project_id": project_id,
+            "client_name": client_name or "",
+            "reference": reference or "",
+            "amount": amount,
+            "currency": currency,
+            "source": source,
+        }
+        title, message = await self._build_message_from_template(db, "aito_payment_received", variables)
+        await self._send_to_providers(
+            providers, title, message, db, "aito_payment_received", force_immediate=True, variables=variables
+        )
+
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
         providers = await self._get_providers_for_event(db, "on_printer_offline", printer_id)

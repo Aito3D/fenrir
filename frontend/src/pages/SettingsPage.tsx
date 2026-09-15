@@ -42,6 +42,7 @@ import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { ZohoSettings } from '../components/ZohoSettings';
 import { AiSettings } from '../components/AiSettings';
+import { HeimdallSettings } from '../components/HeimdallSettings';
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
@@ -108,6 +109,7 @@ registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP A
 registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywords: 'backup github restore download cloud sync profiles archives', anchor: 'card-backup' });
 registerSettingsSearch({ labelKey: 'zoho.title', tab: 'zoho', keywords: 'zoho books client crm contacts api oauth aito', anchor: 'card-zoho' });
 registerSettingsSearch({ labelKey: 'settings.openrouterTitle', tab: 'zoho', keywords: 'openrouter ai summary model api key aito pushcut sms', anchor: 'card-openrouter' });
+registerSettingsSearch({ labelKey: 'heimdall.title', tab: 'zoho', keywords: 'heimdall payment link osb deposit pos aito', anchor: 'card-heimdall' });
 // Sidebar (system pages and external links settings is rendered in the General tab)
 registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
@@ -7265,6 +7267,7 @@ export function SettingsPage() {
         <div id="card-zoho-tab" className="space-y-3">
           <ZohoSettings />
           <AiSettings />
+          <HeimdallSettings />
         </div>
       )}
 

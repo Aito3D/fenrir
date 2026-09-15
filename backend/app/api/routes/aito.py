@@ -31,10 +31,13 @@ from backend.app.schemas.aito import (
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
+    AitoInvoiceCreatedResponse,
     AitoInvoiceEmailContent,
     AitoInvoiceEmailRequest,
+    AitoInvoicePreview,
     AitoInvoiceResponse,
     AitoNoteCreate,
+    AitoPaymentLinkView,
     AitoPickupMessageResponse,
     AitoPickupSmsRequest,
     AitoPickupSmsResponse,
@@ -51,6 +54,8 @@ from backend.app.schemas.aito import (
     AitoQuoteEmailResponse,
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
+    AitoRetainerApplied,
+    AitoRetainerPreview,
     AitoShippingIsland,
     AitoShippingService,
     AitoShippingServicesResponse,
@@ -69,7 +74,14 @@ from backend.app.services import aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
-from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_invoice_create import (
+    apply_retainers,
+    build_invoice_payload,
+    plan_invoice,
+    share_out,
+)
+from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
+from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
     notes_with_tracking,
@@ -83,12 +95,12 @@ from backend.app.services.aito_shipping import (
 )
 from backend.app.services.aito_stats import compute_aito_stats
 from backend.app.services.aito_tracking import (
-    SMS_PREFIX,
     build_tracking_url,
     compute_tracking,
     external_url as tracking_external_url,
     mint_unique_token,
     tracking_url,
+    with_tracking_sms,
 )
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
@@ -393,15 +405,21 @@ async def _shipping_rates(db: AsyncSession) -> dict[str, float]:
 
 
 def _to_response(
-    p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str], external_url: str
+    p: AitoProject,
+    summary: TaskSummary,
+    shipping_names: dict[str, str],
+    external_url: str,
+    payment_link: AitoPaymentLinkView | None,
 ) -> AitoProjectResponse:
-    """`summary`, `shipping_names` and `external_url` are all required, never
-    defaulted. The detail panel writes PATCH (and move / quote-status /
+    """`summary`, `shipping_names`, `external_url` and `payment_link` are all
+    required, never defaulted — `payment_link` for the same reason: resolved
+    once per request by the caller via `current_links`/`current_link`, never
+    defaulted to None here. The detail panel writes PATCH (and move / quote-status /
     restore) responses straight into the board cache with setQueryData,
     replacing the row — so an endpoint that quietly returned zeros, an empty
     shipping_names map, or a blank external_url when one is configured, would
     blank a card's badges — or its shipping service name, or its tracking
-    link — and nothing would fail. Requiring all three makes every call site
+    link — and nothing would fail. Requiring all four makes every call site
     state its intent instead of forgetting one silently.
 
     `shipping_names` and `external_url` are each resolved ONCE per request by
@@ -438,6 +456,9 @@ def _to_response(
         invoice_balance=p.invoice_balance,
         invoice_due_date=p.invoice_due_date,
         invoice_checked_at=p.invoice_checked_at,
+        quote_expiry_date=p.quote_expiry_date,
+        retainer_paid_total=p.retainer_paid_total,
+        payment_link=payment_link,
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
         # Mirrors quote_sync_state's fallback above: the Python-side default
@@ -488,9 +509,9 @@ def _to_response(
 async def _project_response(
     db: AsyncSession, p: AitoProject, summary: TaskSummary | None = None
 ) -> AitoProjectResponse:
-    """`_to_response(p, summary, shipping_names, external_url)` with
-    `shipping_names` and `external_url` always resolved here via
-    `_shipping_names` and `_external_url`, and `summary` resolved via
+    """`_to_response(p, summary, shipping_names, external_url, payment_link)` with
+    `shipping_names`, `external_url` and `payment_link` always resolved here via
+    `_shipping_names`, `_external_url` and `current_link`, and `summary` resolved via
     `_summary_for` too when the caller has none in hand yet.
 
     Callers that already computed `summary` earlier — because a step before
@@ -502,7 +523,9 @@ async def _project_response(
     """
     if summary is None:
         summary = await _summary_for(db, p.id)
-    return _to_response(p, summary, await _shipping_names(db), await _external_url(db))
+    return _to_response(
+        p, summary, await _shipping_names(db), await _external_url(db), link_view(await current_link(db, p.id))
+    )
 
 
 def _task_to_response(t: AitoTask) -> AitoTaskResponse:
@@ -926,7 +949,11 @@ async def list_projects(
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
     external_url = await _external_url(db)
-    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url) for p in projects]
+    links = await current_links(db, [p.id for p in projects])
+    return [
+        _to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url, link_view(links.get(p.id)))
+        for p in projects
+    ]
 
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
@@ -944,7 +971,11 @@ async def list_trash(
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
     shipping_names = await _shipping_names(db)
     external_url = await _external_url(db)
-    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url) for p in projects]
+    links = await current_links(db, [p.id for p in projects])
+    return [
+        _to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url, link_view(links.get(p.id)))
+        for p in projects
+    ]
 
 
 @router.get("/stats", response_model=AitoStatsResponse)
@@ -1420,7 +1451,13 @@ async def create_project(
 _AI_RATE_LIMIT_WINDOW_S = 60.0
 _AI_RATE_LIMIT_MAX_CALLS = 30
 _AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try again."
-# principal key -> call timestamps (module's own `time.monotonic`, see below).
+# Spec §7.1: the panel's Retry button. Its own, much smaller budget in its own
+# bucket — a Retry mints or polls a link at Heimdall, so it must not be
+# click-spammable, and it must not eat (or be starved by) the AI budget.
+_PAYMENT_LINK_REFRESH_MAX_CALLS = 10
+_PAYMENT_LINK_REFRESH_DETAIL = "Too many payment link refreshes. Please wait a moment and try again."
+# "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
+# see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
 
 
@@ -1434,9 +1471,14 @@ def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
     return f"ip:{host}"
 
 
-def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
-    """Raise 429 once a principal exceeds _AI_RATE_LIMIT_MAX_CALLS calls in
-    _AI_RATE_LIMIT_WINDOW_S seconds. Enforced before the OpenRouter call.
+def _check_rate_limit(request: Request, current_user: User | None, *, bucket: str, max_calls: int, detail: str) -> None:
+    """Raise 429 once a principal exceeds `max_calls` calls to `bucket` in
+    _AI_RATE_LIMIT_WINDOW_S seconds. Enforced before the expensive call the
+    budget is protecting (the OpenRouter request, the Heimdall round trip).
+
+    `bucket` prefixes the principal key so each concern gets its OWN sliding
+    window: exhausting the AI budget must not disable the panel's Retry, and
+    vice versa.
 
     Reads the clock through the module's own `time` name (`time.monotonic()`)
     rather than importing `monotonic` directly, so a test can rebind
@@ -1444,13 +1486,35 @@ def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
     `time.monotonic` in an async test — asyncio's own loop internals
     (timeouts, call_later) depend on it too.
     """
-    key = _ai_rate_limit_key(request, current_user)
+    key = f"{bucket}:{_ai_rate_limit_key(request, current_user)}"
     now = time.monotonic()
     calls = _ai_rate_limit_calls.setdefault(key, [])
     calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]
-    if len(calls) >= _AI_RATE_LIMIT_MAX_CALLS:
-        raise HTTPException(status_code=429, detail=_AI_RATE_LIMIT_DETAIL)
+    if len(calls) >= max_calls:
+        raise HTTPException(status_code=429, detail=detail)
     calls.append(now)
+
+
+def _check_ai_rate_limit(request: Request, current_user: User | None) -> None:
+    """The OpenRouter budget: _AI_RATE_LIMIT_MAX_CALLS per principal per window."""
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="ai",
+        max_calls=_AI_RATE_LIMIT_MAX_CALLS,
+        detail=_AI_RATE_LIMIT_DETAIL,
+    )
+
+
+def _check_payment_link_refresh_rate_limit(request: Request, current_user: User | None) -> None:
+    """The panel Retry budget (spec §7.1): 10 per principal per minute."""
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="payment_link_refresh",
+        max_calls=_PAYMENT_LINK_REFRESH_MAX_CALLS,
+        detail=_PAYMENT_LINK_REFRESH_DETAIL,
+    )
 
 
 @router.post("/summarize", response_model=AitoSummarizeResponse)
@@ -1660,6 +1724,249 @@ async def get_invoice(
         logger.warning("Aito invoice lookup failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoInvoiceResponse(**newest, url=url, invoice_count=len(invoices))
+
+
+async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoProject:
+    """The project, or the reason it must not be billed right now.
+
+    Every guard here is also the button's own visibility rule on the
+    frontend, restated server-side because the button is not the only way to
+    reach this endpoint and because raising a real invoice is the one Aito
+    action nothing in this app can undo.
+
+    409 throughout rather than 422: none of these is a malformed request, it
+    is a request that is right but arrives at the wrong moment, and the
+    frontend distinguishes them only by the message it shows.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=409, detail="This project has no Zoho quote to invoice")
+    if project.board_column != "finish":
+        # The rule the operator asked for: a job is billed when it is
+        # finished, not while it is still on a printer.
+        raise HTTPException(status_code=409, detail="Only a project in Finish can be invoiced")
+    if project.quote_sync_state == "pending":
+        # An edit is still on its way to Books. Billing now would invoice the
+        # lines as they were BEFORE that edit landed, and no amount of
+        # re-syncing afterwards would correct a document already issued.
+        raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
+    return project
+
+
+@router.get("/{project_id}/invoice-preview", response_model=AitoInvoicePreview)
+async def get_invoice_preview(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """What "Create invoice" would do, so the confirm dialog can say it.
+
+    Reads only. Runs the same guards as the create route so the dialog can
+    never open on a project the create would refuse — the alternative is an
+    operator reading a full confirmation and then being told no.
+    """
+    project = await _project_ready_to_invoice(db, project_id)
+    try:
+        existing = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        if existing:
+            raise HTTPException(status_code=409, detail="This project already has an invoice in Zoho")
+        plan = await plan_invoice(db, project)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice preview failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    # The SAME split the create will perform — capped, first-listed-first-spent
+    # — not each retainer's raw unused amount. Two deposits that together
+    # exceed a shrunken job would otherwise both display in full under a
+    # balance that had already netted them off, and the dialog would be
+    # promising a split the create does not do.
+    shares = share_out(plan.retainers, plan.total)
+    applied = sum(p["amount_applied"] for _retainer, payments in shares for p in payments)
+    return AitoInvoicePreview(
+        quote_number=plan.estimate_number,
+        currency_code=plan.currency_code,
+        total=plan.total,
+        line_count=len(plan.line_items),
+        retainers=[
+            AitoRetainerPreview(
+                id=retainer.id,
+                number=retainer.number,
+                status=retainer.status,
+                total=retainer.total,
+                applicable=sum(p["amount_applied"] for p in payments),
+            )
+            for retainer, payments in shares
+        ],
+        projected_balance=round(plan.total - applied, 2),
+    )
+
+
+@router.post("/{project_id}/invoice", response_model=AitoInvoiceCreatedResponse)
+async def create_invoice(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Raise the invoice for a finished project, paid down by its deposits.
+
+    ZOHO-FIRST, like ``send_invoice_email``: the invoice IS the act, and
+    nothing is written locally until Books confirms it exists. A timeline
+    entry for an invoice that was never raised is worse than none.
+
+    The plan is re-read here rather than taken from the preview the dialog
+    showed, for the same reason the send route re-reads its recipients: what
+    the client echoes back is not evidence. That costs one extra estimate
+    read and buys the guarantee that the lines billed are the lines Books
+    holds at the moment of billing.
+
+    The retainer application deliberately cannot fail this request. Once
+    ``create_invoice`` returns, a real document exists in the client's
+    account; a 500 after that point would invite a retry that raises a
+    SECOND one. So ``apply_retainers`` swallows its own upstream errors and
+    reports what it managed, and the response says which deposits landed.
+
+    One consequence worth naming: the new invoice makes
+    ``aito_quote_sync._is_locked`` true (non-empty ``invoice_ids``), so the
+    quote stops accepting line edits from this app on the next sync pass.
+    That is the existing, intended rule — an invoiced estimate is accounting,
+    not a draft — and it is why the confirm dialog exists.
+    """
+    project = await _project_ready_to_invoice(db, project_id)
+    # Captured before any Zoho call: every rollback below expires `project`
+    # in the identity map, and reading an expired attribute from async code
+    # raises MissingGreenlet rather than lazily re-loading it. Same rule, and
+    # the same hard-won reason, as send_invoice_email.
+    project_pk, quote_id, client_id = project.id, project.quote_id, project.client_id or ""
+
+    try:
+        existing = await zoho_service.list_project_invoices(db, quote_id, client_id)
+        if existing:
+            # Idempotency, not politeness: two operators on the same card, or
+            # one double-click, would otherwise bill the client twice.
+            raise HTTPException(status_code=409, detail="This project already has an invoice in Zoho")
+        plan = await plan_invoice(db, project)
+        if not plan.line_items:
+            raise HTTPException(status_code=409, detail="This quote has no lines to invoice")
+        created = await zoho_service.create_invoice(db, build_invoice_payload(plan))
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice creation failed for project %s: %s", project_id, e)
+        await db.rollback()
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    invoice_id = str(created.get("invoice_id") or "")
+    invoice_number = str(created.get("invoice_number") or invoice_id)
+    if invoice_id and not str(created.get("estimate_id") or ""):
+        # Books took the invoice but did not link it to the quote. Repaired
+        # here rather than reported, because an unlinked invoice is invisible
+        # to `list_project_invoices` and therefore to the duplicate-invoice
+        # guard — the one thing standing between a double-click and a client
+        # billed twice. Never fatal: the invoice is already real, and a 500
+        # now would invite exactly the retry the guard cannot catch.
+        try:
+            await zoho_service.link_invoice_to_estimate(db, invoice_id, quote_id)
+        except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+            logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
+    applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
+
+    try:
+        # Adopt the fact locally, in the same transaction as the event. The
+        # hourly quote-sync sweep would set this eventually, but three
+        # surfaces read it NOW: `canCreateInvoice` (or the button stays
+        # offering to bill a billed job), `mayHaveInvoice` (or reopening the
+        # panel hides the Invoice card for a real invoice), and the invoice
+        # sweep's own selection. Books is the authority and Books has just
+        # confirmed — there is nothing to wait for.
+        project.quote_invoiced = True
+        await record(
+            db,
+            project_pk,
+            "invoice.created",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project_pk,
+            detail={
+                "invoice_number": invoice_number,
+                "total": float(created.get("total") or 0),
+                "retainers_applied": round(sum(a.applied for a in applications), 2),
+            },
+        )
+        await db.commit()
+    except SQLAlchemyError as e:
+        # Never 500 past the create, for the reason in the docstring: the
+        # invoice exists, and a retry would raise a second one. The timeline
+        # loses an entry; the books do not gain a duplicate.
+        logger.error(
+            "Aito invoice %s for project %s WAS RAISED in Books but recording the local "
+            "invoice.created event failed: %s",
+            invoice_number,
+            project_id,
+            e,
+        )
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
+            pass
+
+    # Re-read BY ID, not through the estimate filter: the create response was
+    # written before `apply_retainers` ran, so it still says draft and owes
+    # the full total, and the deposits are exactly what the operator is
+    # waiting to see land. Reading the invoice itself also means the card is
+    # right even when the estimate link did not stick — that is a
+    # discoverability bug (below), not a reason to show stale money.
+    # Degrades to the create response rather than 500ing, same rule as
+    # send_invoice_email's post-send re-read.
+    fresh, url, count = None, "", 1
+    try:
+        fresh = await zoho_service.get_invoice(db, invoice_id) or None
+        if fresh:
+            url = await zoho_service.books_invoice_url(db, invoice_id)
+        # Only for "and N more" on the card. A failure to count must not cost
+        # the figures above, so it rides its own try.
+        try:
+            linked = await zoho_service.list_project_invoices(db, quote_id, client_id)
+        except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError):
+            linked = []
+        count = len(linked) or 1
+        if not any(i["id"] == invoice_id for i in linked):
+            # Raised, but not reachable from the quote. Every other invoice
+            # surface keys off the estimate — the card on reopen, the
+            # duplicate-invoice guard, the balance sweep, `_is_locked` — so
+            # this is the difference between a bill the app can see and one
+            # it cannot. Loud, because nothing else in the request fails.
+            logger.warning(
+                "Aito invoice %s for project %s is not listed under estimate %s — the estimate link "
+                "did not stick, so the Invoice card and the duplicate guard cannot see it",
+                invoice_number,
+                project_id,
+                quote_id,
+            )
+    except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
+        logger.warning("Aito invoice re-read failed for project %s after creating it: %s", project_id, e)
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — see above
+            pass
+    if fresh is None:
+        fresh = {
+            "id": invoice_id,
+            "number": invoice_number,
+            "date": str(created.get("date") or ""),
+            "due_date": str(created.get("due_date") or ""),
+            "total": float(created.get("total") or 0),
+            "balance": float(created.get("balance") or 0),
+            "currency_code": str(created.get("currency_code") or plan.currency_code),
+            "status": str(created.get("status") or ""),
+        }
+
+    await _broadcast_changed("invoice", project_pk, _actor(current_user))
+    return AitoInvoiceCreatedResponse(
+        **fresh,
+        url=url,
+        invoice_count=count,
+        retainers=[AitoRetainerApplied(number=a.number, total=a.total, applied=a.applied) for a in applications],
+    )
 
 
 async def _resolve_project_invoice(db: AsyncSession, project: AitoProject, invoice_id: str | None) -> tuple[dict, int]:
@@ -2624,7 +2931,7 @@ async def import_legacy_projects(
     # project can have a shipment — an empty map is correct here, not merely
     # a shortcut.
     external_url = await _external_url(db)
-    return [_to_response(p, TaskSummary(), {}, external_url) for p in created]
+    return [_to_response(p, TaskSummary(), {}, external_url, None) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
@@ -3144,6 +3451,30 @@ async def regenerate_tracking_token(
     return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project), quote_notes=quote_notes)
 
 
+@router.post("/{project_id}/payment-link/refresh", response_model=AitoProjectResponse)
+async def refresh_payment_link(
+    project_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Reconcile and poll this one project's payment link now, instead of
+    waiting for the loop's tick — the panel's Retry. Never raises on a
+    Heimdall failure: the row's sync_error carries it to the panel.
+
+    `force=True`: Retry is only OFFERED while the row carries a sync_error,
+    which is exactly when the row is inside its own backoff window — without
+    the bypass the button would be a no-op for the next 5–30 minutes. The
+    rate limit above is what keeps that bypass from becoming a way to hammer
+    Heimdall past its own backoff.
+    """
+    _check_payment_link_refresh_rate_limit(request, current_user)
+    project = await _get_active_project_or_404(db, project_id)
+    await reconcile_payment_links(db, only_project_id=project.id, force=True)
+    await db.refresh(project)
+    return await _project_response(db, project)
+
+
 async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:
     """409 unless the project's DERIVED column is finish/done — the same gate,
     for the same reason, as set_project_contacted: "your part is ready" is not
@@ -3190,7 +3521,7 @@ async def generate_pickup_message(
         raise HTTPException(status_code=502, detail=str(e)) from e
     url = await build_tracking_url(db, project)
     if url:
-        message = f"{message}{SMS_PREFIX}{url}"
+        message = with_tracking_sms(message, url)
     await db.commit()  # the minted token must outlive this draft request
     return AitoPickupMessageResponse(message=message, model=model)
 
@@ -3383,82 +3714,22 @@ async def set_quote_status(
             },
         )
 
-    # Decided before adopt overwrites the old status: a revoked acceptance is
-    # recorded as its own kind so the timeline never passes it off as an
-    # ordinary "marked sent" — the audit trail is how the shop reconstructs
-    # who un-authorised work the board had already released.
-    unaccepting = project.quote_status == "accepted" and payload.status == "sent"
-    adopt_quote_status(project, payload.status)
-    # Our side just moved, so any recorded block describes an attempt that no
-    # longer exists. This is what lets quote_status_remote alone identify a
-    # blocked attempt — see the column comments on AitoProject.
-    project.quote_status_block = None
-    project.quote_status_remote = None
-    # T-026: a fresh local decision is, by definition, not yet observed to
-    # agree with Books — the push below is best-effort and may fail (Books
-    # unreachable), in which case this is the ONLY record that the local and
-    # remote statuses have diverged. Set True below only if the push actually
-    # succeeds. See AitoProject.quote_status_confirmed's own docstring for
-    # why this gates the reconcile sweep's terminal-card exclusion.
-    project.quote_status_confirmed = False
-    summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary, actor=_actor(current_user))
-    await record(
+    await apply_quote_decision(
         db,
-        project.id,
-        "quote.unaccepted" if unaccepting else f"quote.{payload.status}",
+        project,
+        payload.status,
         actor_class="user",
         actor_name=_actor(current_user),
-        subject_type="project",
-        subject_id=project.id,
+        source="user",
     )
-    await db.commit()
-    await _broadcast_changed("quote-status", project.id, _actor(current_user))
-    await db.refresh(project)
-
-    # Built BEFORE the Zoho call, not after: the project's data cannot change
-    # in between, and a DB-layer failure inside set_estimate_status's
-    # _request (a token-refresh write, a settings read) can leave the session
-    # needing a rollback — a following _project_response call would then
-    # raise PendingRollbackError instead of the intended best-effort
-    # zoho_synced=False response. Same reasoning covers _shipping_names: it
-    # is itself a DB read, so it has to happen up here too.
+    # Built BEFORE the Zoho call: push_quote_status rolls the session back
+    # on failure, which expires this row, and a _project_response after
+    # that would raise instead of returning the intended best-effort
+    # zoho_synced=False.
+    summary = await _summary_for(db, project.id)
     project_response = await _project_response(db, project, summary)
-
-    zoho_synced = False
-    if project.quote_id:
-        try:
-            # No `current`: this pays for one read rather than trusting
-            # project.quote_status, which the model documents as a snapshot
-            # that goes stale.
-            await zoho_service.advance_estimate_status(db, project.quote_id, payload.status)
-            zoho_synced = True
-            # T-026: a direct observation that Books now agrees with the
-            # decision just written above. Persisted by get_db's own implicit
-            # commit after this handler returns (see the rollback comment
-            # just below for the failure twin of that same mechanism) — no
-            # explicit commit needed here, and the response built above
-            # deliberately does not reflect it (this column is internal-only,
-            # never serialised on AitoQuoteStatusResponse).
-            project.quote_status_confirmed = True
-        except Exception:
-            logger.warning(
-                "Could not set Zoho estimate %s to %s for project %s",
-                project.quote_id,
-                payload.status,
-                project.id,
-                exc_info=True,
-            )
-            # A DB-layer failure inside set_estimate_status can leave this
-            # session needing a rollback; without it, get_db's own implicit
-            # commit() after this handler returns would raise
-            # PendingRollbackError and turn this best-effort push into a 500.
-            await db.rollback()
-
-    return AitoQuoteStatusResponse(
-        project=project_response,
-        zoho_synced=zoho_synced,
-    )
+    zoho_synced = await push_quote_status(db, project, payload.status)
+    return AitoQuoteStatusResponse(project=project_response, zoho_synced=zoho_synced)
 
 
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)

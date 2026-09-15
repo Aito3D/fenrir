@@ -9,6 +9,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.sent': 'aito.history.quoteSent',
   'quote.emailed': 'aito.history.quoteEmailed',
   'invoice.emailed': 'aito.history.invoiceEmailed',
+  'invoice.created': 'aito.history.invoiceCreated',
   'quote.viewed': 'aito.history.quoteViewed',
   'quote.accepted': 'aito.history.quoteAccepted',
   'quote.unaccepted': 'aito.history.quoteUnaccepted',
@@ -43,6 +44,10 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.due.cleared': 'aito.history.projectDueCleared',
   'project.sms.sent': 'aito.history.smsSent',
   'tracking.regenerated': 'aito.history.trackingRegenerated',
+  'payment_link.created': 'aito.history.paymentLinkCreated',
+  'payment_link.replaced': 'aito.history.paymentLinkReplaced',
+  'payment_link.paid': 'aito.history.paymentLinkPaid',
+  'payment_link.cancelled': 'aito.history.paymentLinkCancelled',
 };
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
@@ -73,6 +78,14 @@ export function formatValue(value: unknown): string {
  *    shape) carries the reason in `detail.error`, or the two sides of a
  *    disagreement in `detail.ours`/`detail.theirs` — without this a card
  *    that failed last week can say THAT it failed but never WHY.
+ *  - `payment_link.cancelled` and `payment_link.replaced` carry WHY the link
+ *    went away in `detail.reason` — a decline, an expiry, an invoice, a
+ *    covering retainer, a renumbered quote. The renumber records its reason
+ *    on the `replaced` event (it deliberately emits no `cancelled` pair), so
+ *    both kinds must read it or that story loses its only explanation.
+ *  - `quote.accepted` carries `detail.source`, but only the two automatic
+ *    sources (`payment_link`, `retainer`) are shown: for a person's click
+ *    the actor line already names who, and "user" would only repeat it.
  *
  *  `detail` is `Record<string, unknown> | null` from the wire, so every read
  *  here is narrowed before use — never rendered as an object.
@@ -95,6 +108,16 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
     const hasSides =
       (typeof detail.ours === 'string' && detail.ours) || (typeof detail.theirs === 'string' && detail.theirs);
     return hasSides ? `${formatValue(detail.ours)} → ${formatValue(detail.theirs)}` : null;
+  }
+
+  if (kind === 'payment_link.cancelled' || kind === 'payment_link.replaced') {
+    return typeof detail.reason === 'string' && detail.reason ? detail.reason : null;
+  }
+
+  if (kind === 'quote.accepted') {
+    // Only the automatic acceptances carry a source worth showing; a
+    // person's click says who in the actor line already.
+    return detail.source === 'payment_link' || detail.source === 'retainer' ? String(detail.source) : null;
   }
 
   return null;

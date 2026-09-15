@@ -574,9 +574,15 @@ GUARDED_BODY_URLS = {
     # Fork: Pushcut webhook the Aito pickup SMS is relayed through — guarded
     # by the LAN-service validator via LAN_SERVICE_URL_SETTINGS.
     ("AppSettingsUpdate", "pushcut_sms_url"),
+    # Fork: the Heimdall payment bridge Aito mints payment links through —
+    # guarded by the LAN-service validator via LAN_SERVICE_URL_SETTINGS.
+    ("AppSettingsUpdate", "heimdall_base_url"),
     ("HATestConnectionRequest", "url"),  # homeassistant._validate_url
     ("RESTTestConnectionRequest", "url"),  # rest_smart_plug._validate_url
     ("TestConnectionRequest", "url"),  # obico_detection.test_connection
+    # Fork: Settings card's Heimdall test-connection button, guarded inline by
+    # the field_validator in schemas.heimdall (same assert_safe_lan_service_url).
+    ("HeimdallTestRequest", "base_url"),
     ("OIDCProviderCreate", "issuer_url"),  # public tier, via schemas.auth
     ("OIDCProviderCreate", "icon_url"),
     ("OIDCProviderUpdate", "issuer_url"),

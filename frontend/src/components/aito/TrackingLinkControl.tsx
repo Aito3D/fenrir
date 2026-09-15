@@ -1,66 +1,69 @@
-import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Check, Link2, RotateCcw } from 'lucide-react';
+import { Check, Copy, ExternalLink, RotateCcw } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 import { HoldButton } from './HoldButton';
 import { useToast } from '../../contexts/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
-import { focusRingCls } from '../formStyles';
+import { LINK_ICON_BUTTON_CLS, LINK_ICON_CLS, openFetchedLink, useCopiedFlash } from './linkActionHelpers';
+import { CopiedLabel } from './linkActions';
 
-const ICON_BUTTON_CLS = `p-2 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-bambu-gray ${focusRingCls}`;
-const COPIED_HOLD_MS = 1500;
-const COPIED_EXIT_MS = 150; // matches .animate-fade-out-sm
-
-/** Copy / Regenerate for the card's public tracking link, in the panel's
- *  Record card, under the provenance rows it belongs with.
+/** Open / Copy / Regenerate for the card's public tracking link, in the
+ *  panel's Record card, under the provenance rows it belongs with. Same
+ *  vocabulary as the Billing card's payment-link row (`linkActions.tsx`).
  *
- *  Copy goes through the link endpoint rather than reading `project.tracking_url`
- *  straight from the board cache — the first call is also what mints the
- *  token for a card that has never had one. Regenerate is a hold, like
+ *  Open and Copy both go through the link endpoint rather than reading a URL
+ *  off the board cache — the board response carries none, and the first call
+ *  is also what mints the token for a card that has never had one. Open
+ *  therefore opens the tab BEFORE the request (see `openFetchedLink`), so
+ *  the browser still attributes it to the click. Regenerate is a hold, like
  *  delete, because it kills the link the client may already have in hand:
  *  a stray click should not silently break a link someone printed on a
  *  shipping label.
  *
- *  Both are disabled — with a pointer at Settings — until `external_url` is
- *  set: `tracking_configured` mirrors that (see `AitoProject.tracking_configured`
- *  / `_to_response` in `routes/aito.py`), and there is no useful link to copy
- *  or regenerate without it. */
+ *  All three are disabled — with a pointer at Settings — until `external_url`
+ *  is set: `tracking_configured` mirrors that (see `AitoProject.tracking_configured`
+ *  / `_to_response` in `routes/aito.py`), and there is no useful link to open,
+ *  copy or regenerate without it. */
 export function TrackingLinkControl({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  // The "Copié" confirmation: rises in (`animate-rise-sm`), holds, fades out
-  // (`animate-fade-out-sm`, index.css) and only then unmounts — the same
-  // tick-in vocabulary the panel's other confirmations use, instead of a
-  // label that appears and vanishes in one frame.
-  const [copied, setCopied] = useState<'in' | 'out' | null>(null);
-  const copiedTimers = useRef<number[]>([]);
-  useEffect(() => () => copiedTimers.current.forEach((id) => window.clearTimeout(id)), []);
+  const [copied, flashCopied] = useCopiedFlash();
   const configured = project.tracking_configured;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
 
   const copy = useMutation({
     mutationFn: () => api.getAitoTrackingLink(project.id),
     onSuccess: async ({ tracking_url }) => {
+      // Both failure paths toast rather than dying quietly (T-090): an empty
+      // `tracking_url` means the endpoint minted nothing,
+      // and a false from `copyTextToClipboard` means the browser refused the
+      // write. PaymentLinkRow's copy already toasts on refusal, so this also
+      // keeps the two link rows behaving alike.
       if (!tracking_url) {
         showToast(t('common.errorLoading'), 'error');
         return;
       }
       if (await copyTextToClipboard(tracking_url)) {
-        copiedTimers.current.forEach((id) => window.clearTimeout(id));
-        setCopied('in');
-        copiedTimers.current = [
-          window.setTimeout(() => setCopied('out'), COPIED_HOLD_MS),
-          window.setTimeout(() => setCopied(null), COPIED_HOLD_MS + COPIED_EXIT_MS),
-        ];
+        flashCopied();
       } else {
         showToast(t('common.errorLoading'), 'error');
       }
       invalidate();
     },
+    onError: () => showToast(t('common.errorLoading'), 'error'),
+  });
+
+  const open = useMutation({
+    mutationFn: () =>
+      openFetchedLink(async () => {
+        const { tracking_url } = await api.getAitoTrackingLink(project.id);
+        return tracking_url;
+      }),
+    onSuccess: invalidate,
     onError: () => showToast(t('common.errorLoading'), 'error'),
   });
 
@@ -83,35 +86,50 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
   // string, since that hint is the one place a reader would otherwise have
   // no idea why the button won't respond.
   const hint = configured ? t('aito.holdToConfirm') : t('aito.trackingNeedsExternalUrl');
+  const disabledTitle = !configured ? t('aito.trackingNeedsExternalUrl') : undefined;
 
   return (
-    <span className="inline-flex items-center gap-1">
-      <button
-        type="button"
-        disabled={!configured || copy.isPending}
-        title={!configured ? t('aito.trackingNeedsExternalUrl') : copied ? t('aito.trackingCopied') : t('aito.trackingCopy')}
-        aria-label={t('aito.trackingCopy')}
-        onClick={() => copy.mutate()}
-        className={ICON_BUTTON_CLS}
-      >
-        {copied ? <Check className="w-4 h-4 text-bambu-green animate-tick-in" /> : <Link2 className="w-4 h-4" />}
-      </button>
-      {copied && (
-        <span className={`text-xs text-bambu-green ${copied === 'out' ? 'animate-fade-out-sm' : 'animate-rise-sm'}`} data-testid="tracking-copied">
-          {t('aito.trackingCopied')}
-        </span>
-      )}
-      <HoldButton
-        onHold={() => regenerate.mutate()}
-        durationMs={500}
-        label={t('aito.trackingRegenerate')}
-        hint={hint}
-        disabled={!configured || regenerate.isPending}
-        progress="ring"
-        className={ICON_BUTTON_CLS}
-      >
-        <RotateCcw className="w-4 h-4" />
-      </HoldButton>
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+      {/* Left of the buttons, not after them, so it never pushes the group
+          off the card's right edge; the payment row places its own there too. */}
+      <CopiedLabel phase={copied} text={t('aito.trackingCopied')} testId="tracking-copied" />
+      <span className="inline-flex items-center gap-0.5">
+        <button
+          type="button"
+          disabled={!configured || open.isPending}
+          title={disabledTitle ?? t('aito.trackingOpen')}
+          aria-label={t('aito.trackingOpen')}
+          onClick={() => open.mutate()}
+          className={LINK_ICON_BUTTON_CLS}
+        >
+          <ExternalLink className={LINK_ICON_CLS} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          disabled={!configured || copy.isPending}
+          title={disabledTitle ?? (copied ? t('aito.trackingCopied') : t('aito.trackingCopy'))}
+          aria-label={t('aito.trackingCopy')}
+          onClick={() => copy.mutate()}
+          className={LINK_ICON_BUTTON_CLS}
+        >
+          {copied ? (
+            <Check className={`${LINK_ICON_CLS} text-bambu-green animate-tick-in`} aria-hidden="true" />
+          ) : (
+            <Copy className={LINK_ICON_CLS} aria-hidden="true" />
+          )}
+        </button>
+        <HoldButton
+          onHold={() => regenerate.mutate()}
+          durationMs={500}
+          label={t('aito.trackingRegenerate')}
+          hint={hint}
+          disabled={!configured || regenerate.isPending}
+          progress="ring"
+          className={LINK_ICON_BUTTON_CLS}
+        >
+          <RotateCcw className={LINK_ICON_CLS} aria-hidden="true" />
+        </HoldButton>
+      </span>
       {!configured && (
         <Link to="/settings?tab=network" className="text-xs text-bambu-green hover:underline">
           {t('aito.trackingSettingsLink')}

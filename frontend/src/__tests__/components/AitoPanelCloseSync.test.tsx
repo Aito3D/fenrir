@@ -67,6 +67,9 @@ const project: AitoProject = {
   shipping_lta: null,
   shipping_service_name: null,
   tracking_configured: false,
+  quote_expiry_date: null,
+  retainer_paid_total: null,
+  payment_link: null,
   version: 1,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
@@ -110,7 +113,9 @@ describe('ProjectDetailPanel close sync', () => {
     const { unmount } = render(
       <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
     );
-    await screen.findByRole('region', { name: /activity/i });
+    // Settled on the tasks fetch, which the panel always issues; the Activity
+    // rail sits behind a tab and is not mounted on open.
+    await waitFor(() => expect(api.getAitoTasks).toHaveBeenCalled());
 
     unmount();
 

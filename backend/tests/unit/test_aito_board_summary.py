@@ -124,7 +124,9 @@ def test_to_response_carries_the_step_counters():
         updated_at=datetime.now(),
     )
     summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
-    response = _to_response(project, summary, {}, "")  # no shipment, no external_url on this in-memory project
+    response = _to_response(
+        project, summary, {}, "", None
+    )  # no shipment, no external_url, no payment link on this in-memory project
     assert response.steps_total == 2
     assert response.steps_done == 1
     assert "tracking_url" not in response.model_dump()
@@ -151,7 +153,9 @@ def test_to_response_carries_the_pending_services():
         updated_at=datetime.now(),
     )
     summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
-    response = _to_response(project, summary, {}, "")  # no shipment, no external_url on this in-memory project
+    response = _to_response(
+        project, summary, {}, "", None
+    )  # no shipment, no external_url, no payment link on this in-memory project
     assert response.task_services == ["scan", "impression"]
     assert response.task_pending == ["impression"]
 

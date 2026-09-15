@@ -49,17 +49,32 @@ async def test_pickup_draft_ends_with_the_link_when_configured(async_client, db_
     project = await _create_finished(async_client)
 
     async def fake(db, description, client_name=None, parts=None):
-        return "Bonjour, c'est prêt.", "model"
+        return "Bonjour, c'est prêt.\nAito3D", "model"
 
     _patch_pickup_message(monkeypatch, fake)
     await _set_external_url(db_session, "https://aito.example")
 
     body = (await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")).json()
-    assert body["message"].startswith("Bonjour, c'est prêt.")
-    assert "\n\nSuivi : https://aito.example/t/" in body["message"]
+    # The signature stays the last line: the link slots in between the
+    # message and « Aito3D », not after it.
+    assert body["message"].startswith("Bonjour, c'est prêt.\nSuivi : https://aito.example/t/")
+    assert body["message"].endswith("\n\nAito3D")
     # The draft request committed the minted token: the public link works.
-    token = body["message"].rsplit("/", 1)[1]
+    token = body["message"].splitlines()[1].rsplit("/", 1)[1]
     assert (await async_client.get(f"/api/v1/aito/track/{token}")).status_code == 200
+
+
+def test_with_tracking_sms_seats_the_signature_under_the_link():
+    from backend.app.services.aito_tracking import with_tracking_sms
+
+    url = "https://aito.example/t/K7F3XQ"
+    # Link glued to the message, blank line, signature.
+    assert with_tracking_sms("Prêt.\nAito3D", url) == f"Prêt.\nSuivi : {url}\n\nAito3D"
+    # A draft without the signature (edited, or a model that dropped it)
+    # simply gets the link at the end.
+    assert with_tracking_sms("Prêt.", url) == f"Prêt.\nSuivi : {url}"
+    # Stray whitespace around the signature never survives.
+    assert with_tracking_sms("Prêt.\n\nAito3D  ", url) == f"Prêt.\nSuivi : {url}\n\nAito3D"
 
 
 @pytest.mark.asyncio
@@ -201,6 +216,10 @@ async def test_update_estimate_lines_passes_notes_through(db_session, monkeypatc
             "is_transaction_created": False,
             "invoiced_amount": 0,
             "is_inclusive_tax": True,
+            # Already set: keeps the expiry-once guard in _update_quote from
+            # calling the (here unmocked) update_estimate_fields — this test
+            # is about notes, not expiry.
+            "expiry_date": "2026-08-13",
             "line_items": [],
             "notes": remote_notes,
         }
@@ -251,6 +270,10 @@ async def test_update_estimate_lines_passes_notes_through(db_session, monkeypatc
             "is_transaction_created": False,
             "invoiced_amount": 0,
             "is_inclusive_tax": True,
+            # Already set: keeps the expiry-once guard in _update_quote from
+            # calling the (here unmocked) update_estimate_fields — this test
+            # is about notes, not expiry.
+            "expiry_date": "2026-08-13",
             "line_items": [],
             "notes": remote_notes,
         }

@@ -37,6 +37,11 @@ KINDS: dict[str, str] = {
     # the only record that an invoice was ever sent — nothing on the project
     # row stores that.
     "invoice.emailed": "story",
+    # The bill was raised. Distinct from invoice.emailed (the bill went OUT)
+    # and from the quote.* family: this is the moment the job stops being a
+    # price and becomes a receivable, and it is the only local record that
+    # the invoice was raised from Aito rather than by hand in Books.
+    "invoice.created": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
     # Acceptance revoked by hand (the detail panel's hold-to-unaccept pill) —
@@ -73,6 +78,13 @@ KINDS: dict[str, str] = {
     # one does NOT set the contacted mark. Story depth for the same reason
     # the contacted pair has it: it is part of "who told them, and when".
     "project.sms.sent": "story",
+    # The online payment link's life (services/aito_payment_links.py). Story
+    # depth: "the client paid" is the narrative, and a link cancelled because
+    # a retainer covered it explains why the panel shows no link.
+    "payment_link.created": "story",
+    "payment_link.replaced": "story",
+    "payment_link.paid": "story",
+    "payment_link.cancelled": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

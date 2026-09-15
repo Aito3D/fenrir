@@ -582,6 +582,11 @@ class ZohoService:
             "estimate", {}
         )
 
+    async def update_estimate_fields(self, db: AsyncSession, estimate_id: str, fields: dict) -> dict:
+        """PUT a partial estimate body (e.g. {"expiry_date": ...}). Books
+        merges partial PUTs, the same way update_estimate_notes relies on."""
+        return (await self._request(db, "PUT", f"/estimates/{_seg(estimate_id)}", json=fields)).get("estimate", {})
+
     async def set_estimate_status(self, db: AsyncSession, estimate_id: str, status: str) -> None:
         """`sent`, `accepted` or `declined`. There is no `draft`: Books offers
         no way back, so declining an estimate is one-way through the API."""
@@ -866,6 +871,34 @@ class ZohoService:
         invoices.sort(key=lambda i: i.get("date") or "", reverse=True)
         return [_map_invoice(i) for i in invoices]
 
+    async def link_invoice_to_estimate(self, db: AsyncSession, invoice_id: str, estimate_id: str) -> None:
+        """Attach an already-raised invoice to the estimate it was billed from.
+
+        Same field as the create, ``invoiced_estimate_id``, and the same
+        effect: Books fills the invoice's ``estimate_id``, moves the estimate
+        to status ``invoiced`` and lists the invoice in its ``invoice_ids``.
+        Nothing else on the invoice moves — verified on FA-26-4331, which was
+        paid in full when it was linked and stayed paid in full.
+
+        Exists because the link is the only thing that makes an invoice
+        visible to this app (see ``list_project_invoices``), so a create that
+        comes back unlinked needs a way to be repaired rather than a warning
+        in a log nobody reads.
+        """
+        await self._request(db, "PUT", f"/invoices/{_seg(invoice_id)}", json={"invoiced_estimate_id": estimate_id})
+
+    async def get_invoice(self, db: AsyncSession, invoice_id: str) -> dict:
+        """One invoice by id, in the flat shape the Invoice card renders.
+
+        Reads the invoice ITSELF rather than looking for it in
+        ``list_project_invoices``: the estimate filter answers with what Books
+        has linked to the quote, and a caller that already holds an invoice id
+        wants that invoice's own figures — after a payment lands, say, when
+        the create response it is holding still says draft.
+        """
+        invoice = (await self._request(db, "GET", f"/invoices/{_seg(invoice_id)}")).get("invoice", {})
+        return _map_invoice(invoice) if invoice else {}
+
     async def get_invoice_pdf(self, db: AsyncSession, invoice_id: str) -> bytes:
         """The invoice rendered as a PDF, for printing.
 
@@ -917,6 +950,49 @@ class ZohoService:
         status of its own.
         """
         await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/email", json={"to_mail_ids": to_mail_ids})
+
+    async def create_invoice(self, db: AsyncSession, payload: dict) -> dict:
+        """Raise an invoice. Returns Books' own copy, ids and totals included.
+
+        There is no conversion endpoint to use instead — Zoho's KB states
+        plainly that an estimate cannot be converted to an invoice through
+        the API — so the caller builds the body and passes ``estimate_id`` to
+        link the two. See ``aito_invoice_create`` for what goes in it.
+
+        Created as a DRAFT: no ``status`` is sent and Books' default for a
+        new invoice is draft, which is what the Aito button promises. Nothing
+        here emails anything.
+        """
+        return (await self._request(db, "POST", "/invoices", json=payload)).get("invoice", {})
+
+    async def get_retainer_invoice(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
+        """One retainer invoice in full — specifically its ``payments``.
+
+        The estimate's own ``retainerinvoices`` summary carries the number,
+        status and total but no payment ids, and it is the payment id that
+        applying a deposit to an invoice actually needs.
+        """
+        return (await self._request(db, "GET", f"/retainerinvoices/{_seg(retainer_invoice_id)}")).get(
+            "retainerinvoice", {}
+        )
+
+    async def apply_invoice_credits(self, db: AsyncSession, invoice_id: str, invoice_payments: list[dict]) -> None:
+        """Point existing customer payments at an invoice.
+
+        This is how a paid retainer becomes a payment on the bill: Books
+        books a retainer's payment as a customer ADVANCE with an
+        ``unused_amount``, and applying it is adding the invoice to that
+        payment rather than recording a new one. Each entry is
+        ``{"payment_id": ..., "amount_applied": ...}``; Books rejects a total
+        that exceeds the invoice balance, so the caller caps it.
+
+        The endpoint is named for credit notes, which share it — the invoice
+        that results shows the money under ``payment_made``, not
+        ``credits_applied`` (verified on FA-26-4100).
+        """
+        await self._request(
+            db, "POST", f"/invoices/{_seg(invoice_id)}/credits", json={"invoice_payments": invoice_payments}
+        )
 
     async def create_contact(
         self,

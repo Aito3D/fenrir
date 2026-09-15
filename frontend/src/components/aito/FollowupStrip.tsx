@@ -17,6 +17,7 @@ const PILL_CLS: Record<FollowupKey, string> = {
   notTold: 'border-cyan-400/30 bg-cyan-400/[0.12] text-cyan-400',
   notCollected: 'border-orange-400/30 bg-orange-400/[0.12] text-orange-400',
   unpaid: 'border-red-400/30 bg-red-400/[0.12] text-red-400',
+  linkExpiring: 'border-violet-400/30 bg-violet-400/[0.12] text-violet-400',
 };
 
 const LABEL_KEY: Record<FollowupKey, string> = {
@@ -24,6 +25,7 @@ const LABEL_KEY: Record<FollowupKey, string> = {
   notTold: 'aito.followups.notTold',
   notCollected: 'aito.followups.notCollected',
   unpaid: 'aito.followups.unpaid',
+  linkExpiring: 'aito.followups.linkExpiring',
 };
 
 /** The "to chase" pills in the board header: one per non-empty bucket.

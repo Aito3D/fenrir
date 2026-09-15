@@ -62,6 +62,9 @@ const project: AitoProject = {
   shipping_lta: null,
   shipping_service_name: null,
   tracking_configured: false,
+  quote_expiry_date: null,
+  retainer_paid_total: null,
+  payment_link: null,
   version: 1,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
@@ -1106,5 +1109,15 @@ describe('CardView — the client still has to be told', () => {
     // operator about every one of them would make the archive unreadable.
     render(<CardView project={{ ...project, column: 'done', client_contacted_at: null }} onExpand={vi.fn()} />);
     expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+  });
+});
+
+describe('paid-online badge', () => {
+  it('shows the paid-online badge only for a paid link', () => {
+    const paid = { state: 'paid' as const, amount: 12500, currency: 'XPF', url: 'u', expires_on: '2026-09-27', paid_at: '2026-09-13T10:00:00', sync_error: null };
+    const { rerender } = render(<CardView project={{ ...project, payment_link: paid }} />);
+    expect(screen.getByTestId('aito-card-paid-online')).toHaveAttribute('title', 'Paid online');
+    rerender(<CardView project={{ ...project, payment_link: { ...paid, state: 'pending' } }} />);
+    expect(screen.queryByTestId('aito-card-paid-online')).not.toBeInTheDocument();
   });
 });

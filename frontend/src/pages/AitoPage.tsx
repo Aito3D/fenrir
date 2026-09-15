@@ -145,12 +145,13 @@ export function AitoPage() {
   const thresholds = {
     quoteDays: settingsQuery.data?.aito_followup_quote_days ?? 5,
     pickupDays: settingsQuery.data?.aito_followup_pickup_days ?? 7,
+    linkDays: settingsQuery.data?.aito_followup_link_days ?? 3,
   };
   const followupClock = useFollowupClock();
   const buckets = useMemo(
     () => followups(aitoQuery.data ?? [], thresholds, followupClock.now, followupClock.today),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- thresholds is rebuilt each render; its two numbers are the real deps
-    [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays, followupClock.now, followupClock.today],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- thresholds is rebuilt each render; its three numbers are the real deps
+    [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays, thresholds.linkDays, followupClock.now, followupClock.today],
   );
   const followupIds = useMemo(() => (followup ? new Set(buckets[followup].ids) : null), [buckets, followup]);
   const filtering = search.trim().length > 0 || followup !== null;

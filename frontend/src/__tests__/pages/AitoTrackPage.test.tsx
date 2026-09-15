@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import i18n from '../../i18n';
 import { screen, within, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -36,7 +36,7 @@ const FIXTURE: AitoTracking = {
   column: 'print',
   tasks: [{ title: 'Support GoPro', quantity: null }, { title: 'Pièce 2', quantity: 2 }],
   due_date: '2026-09-20', shipping: null, done_at: null,
-  invoice: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
+  invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
 };
 
 function mockTrack(body: AitoTracking | null) {
@@ -135,14 +135,19 @@ describe('AitoTrackPage', () => {
       const box = await screen.findByTestId('track-invoice');
       expect(box).toHaveAttribute('data-state', invoice);
       expect(box).toHaveTextContent(text);
-      expect(box.textContent).not.toMatch(/\d/);
+      // Never an amount: the card itself carries no digit. The collapsed
+      // payment-methods panel underneath legitimately does (IBAN, RIB).
+      const collapse = box.querySelector('[data-testid="track-collapse"]');
+      expect(box.textContent!.replace(collapse?.textContent ?? '', '')).not.toMatch(/\d/);
       const toggle = within(box).queryByRole('button', { name: 'Voir les modalités' });
       expect(!!toggle).toBe(hasTerms);
-      if (toggle) {
+      expect(!!collapse).toBe(hasTerms);
+      if (toggle && collapse) {
         // The terms stay mounted for the symmetric collapse; closed means
         // out of the accessibility tree and the tab order, not absent.
-        const terms = screen.getByText(/Règlement par virement/);
-        const collapse = terms.closest('[data-testid="track-collapse"]')!;
+        const terms = within(box).getByTestId('track-payment-methods');
+        expect(within(terms).getByText('FR76 1746 9000 3120 6624 2000 041')).toBeInTheDocument();
+        expect(within(terms).getByText(/Indiquez le numéro de devis EST-000142/)).toBeInTheDocument();
         expect(collapse).toHaveAttribute('aria-hidden', 'true');
         expect(collapse).toHaveAttribute('inert');
         expect(terms).not.toHaveClass('animate-rise');
@@ -519,5 +524,61 @@ describe('AitoTrackPage language', () => {
     expect(await screen.findByText("Ce lien de suivi n'est plus valide")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByTestId('track-language'), 'es');
     expect(await screen.findByText('Este enlace de seguimiento ya no es válido')).toBeInTheDocument();
+  });
+});
+
+describe('AitoTrackPage — online payment', () => {
+  // The preceding language describe leaves i18n on whatever language its
+  // last test selected — pin it back to French here too.
+  beforeEach(() => i18n.changeLanguage('fr'));
+
+  it('unpaid: a "Projet non réglé" card with a Pay online link in a new tab', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'unpaid');
+    expect(within(card).getByText('Projet non réglé')).toBeInTheDocument();
+    const pay = within(card).getByRole('link', { name: 'Payer en ligne' });
+    expect(pay).toHaveAttribute('href', 'https://secure.osb.pf/pay/abc');
+    expect(pay).toHaveAttribute('target', '_blank');
+    expect(pay).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('unpaid: the terms toggle reveals the same payment-methods panel, with the quote number', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    const panel = within(card).getByTestId('track-payment-methods');
+    const collapse = panel.closest('[data-testid="track-collapse"]')!;
+    expect(collapse).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.click(within(card).getByRole('button', { name: 'Voir les modalités' }));
+    expect(collapse).toHaveAttribute('aria-hidden', 'false');
+    expect(panel).toHaveClass('animate-rise');
+    expect(within(panel).getByText(/Indiquez le numéro de devis EST-000142/)).toBeInTheDocument();
+    expect(within(panel).getByText('@paul3482')).toBeInTheDocument();
+    expect(within(panel).getByText('@paulteloe')).toBeInTheDocument();
+  });
+
+  it('paid: the quiet paid line, worded for a deposit when it was one', async () => {
+    mockTrack({ ...FIXTURE, payment: { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'paid');
+    expect(within(card).getByText('Acompte reçu')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Payer en ligne' })).not.toBeInTheDocument();
+  });
+
+  it('an invoice outranks the payment link', async () => {
+    mockTrack({ ...FIXTURE, invoice: 'unpaid', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    expect(await screen.findByTestId('track-invoice')).toBeInTheDocument();
+    expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
+  });
+
+  it('unpaid with no link yet renders nothing', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: null, deposit: false } });
+    renderAt('tok');
+    await screen.findByRole('heading', { level: 2, name: 'Devis en préparation' });
+    expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
   });
 });

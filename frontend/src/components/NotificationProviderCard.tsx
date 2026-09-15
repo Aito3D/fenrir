@@ -135,6 +135,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_billing_charge_failed && (
               <span className="px-2 py-0.5 bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-300 text-xs rounded">{t('notifications.billingChargeFailedLabel')}</span>
             )}
+            {provider.on_aito_payment_received && (
+              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs rounded">{t('notifications.aitoPaymentReceivedLabel')}</span>
+            )}
             {provider.on_print_progress && (
               <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs rounded">{t('notifications.progress')}</span>
             )}
@@ -341,6 +344,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_print_missing_spool_assignment ?? false}
                     onChange={(checked) => updateMutation.mutate({ on_print_missing_spool_assignment: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.aitoPaymentReceivedLabel')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.aitoPaymentReceivedDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_aito_payment_received ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_aito_payment_received: checked })}
                   />
                 </div>
 
