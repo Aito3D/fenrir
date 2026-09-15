@@ -145,7 +145,7 @@ if [ "$RUN_FRONTEND" = true ]; then
     IMAGES_TO_BUILD="$IMAGES_TO_BUILD frontend-test"
 fi
 if [ "$RUN_INTEGRATION" = true ]; then
-    IMAGES_TO_BUILD="$IMAGES_TO_BUILD integration integration-test-runner"
+    IMAGES_TO_BUILD="$IMAGES_TO_BUILD integration"
 fi
 
 if [ -n "$IMAGES_TO_BUILD" ]; then
@@ -267,12 +267,13 @@ if [ "$RUN_INTEGRATION" = true ]; then
             print_failure "Static files not served (HTTP $STATIC_RESPONSE)"
         fi
 
-        # Run pytest integration tests if they exist
-        if sudo docker compose -f docker-compose.test.yml run --rm integration-test-runner 2>/dev/null; then
-            print_success "Integration test suite passed"
-        else
-            print_info "No Docker-specific integration tests found (this is OK)"
-        fi
+        # backend/tests/integration/ is deliberately NOT re-run here. Test 2
+        # above already runs the whole suite (unit + integration) inside the
+        # same image via the backend-test service; the runner that used to sit
+        # at this point ran a strict subset of it in an identical container
+        # and, despite the name, never talked to the application container it
+        # waited for -- nothing reads the BAMBUDDY_TEST_URL it was given. The
+        # checks above are what exercise the running image.
     fi
 
     # Cleanup integration containers

@@ -31,6 +31,13 @@ env:
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '22'
 
+# Supersede an in-flight scan when the same ref is pushed again. The scheduled
+# Monday run is kept out of the push/PR group (see codeql.yml for the same
+# reasoning) so a push can never cancel the weekly audit that files the issues.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 # Default permissions for all jobs
 permissions:
   contents: read
@@ -39,6 +46,7 @@ jobs:
   bandit:
     name: Python Security Analysis (Bandit)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
@@ -67,14 +75,31 @@ jobs:
   trivy:
     name: Container Security Scan (Trivy)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
     steps:
       - uses: actions/checkout@v6
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Read-only reuse of the layer cache docker-publish.yml writes for the
+      # amd64 production build. Trivy needs the same image, and the expensive
+      # half of it (apt, the Tailscale repo install, go2rtc, pip install) is
+      # invalidated only by Dockerfile/requirements.txt changes — so on a normal
+      # source-only commit this build is mostly cache hits instead of a ~2m45s
+      # cold build. No cache-to on purpose: another mode=max scope would compete
+      # with the publish scopes for the repository's 10GB Actions cache, and
+      # those are what keep docker-publish.yml at ~1m45s per platform.
       - name: Build Docker image
-        run: docker build -t bambuddy:security-scan .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: bambuddy:security-scan
+          cache-from: type=gha,scope=publish-linux/amd64
 
       # Bump `version` when it ages rather than leaving it. Old Trivy releases
       # are deleted upstream — only the last handful of minors are kept — so a
@@ -124,6 +149,14 @@ jobs:
   backend-audit:
     name: Backend Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Scheduled/manual only. On push and pull_request this job was a verbatim
+    # duplicate of ci.yml's `backend-security` (same pip install, same
+    # pip-audit, same ignore list) — except that one is a gate on the run that
+    # is already happening, while this one exists to open and close the weekly
+    # tracking issue. Running both on every push paid for the dependency
+    # install twice for one result.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       issues: write
@@ -282,6 +315,11 @@ jobs:
   frontend-audit:
     name: Frontend Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Scheduled/manual only — same reasoning as backend-audit above; ci.yml's
+    # `frontend-security` is the push/PR-time gate and runs the identical
+    # npm audit filter.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       issues: write
