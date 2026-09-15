@@ -11925,3 +11925,101 @@ counted out of `extracted`, and instead appears in the response's existing `erro
 today for any other per-entry extraction failure. All other entries in the same archive still extract
 normally. Archives and entries with no such characters extract identically to before.
 User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 12 · T-160 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/library.py` has a module-level `_stl_render_lock` (an `asyncio.Lock`, ~L110-116)
+whose comment explained that `generate_stl_thumbnail()` renders via matplotlib's process-global pyplot
+state (`plt.figure()`/`plt.subplots_adjust()` act on the "current figure"), and that the backfill task and
+the batch-generation route both run the render in a worker thread via `asyncio.to_thread` while holding
+this lock, "keeping the two call sites from ever rendering concurrently." In fact there are four call
+sites, not two. `_backfill_external_stl_thumbnails` (~L861) and `batch_generate_stl_thumbnails` (~L3040)
+already honored the lock+`asyncio.to_thread` contract, but `upload_file` (~L2520) and `extract_zip_file`'s
+per-entry loop (~L2875) called `generate_stl_thumbnail()` synchronously inline — no lock, no
+`asyncio.to_thread`. This blocked the event loop for the 1-5s render the code's own comment at L2959-2962
+warns about, and let an upload's or a ZIP extraction's render race the backfill/batch render against
+matplotlib's shared pyplot state, exactly the hazard the lock exists to prevent (mis-cropped thumbnails, or
+an exception swallowed as "thumbnail generation failed").
+
+Fixed by wrapping both direct call sites the same way as the other two: `async with _stl_render_lock:
+thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)`, inside the
+existing `try`/`except OSError` in `upload_file` and inside the existing per-entry `try`/`except Exception`
+in `extract_zip_file` — neither surrounding exception-handling shape changed. Both call sites are already
+inside `async def` routes, so `await` was available with no other restructuring. No metadata/thumbnail
+logic was otherwise touched (the duplicated `clean_metadata` closure at both sites is a separate, already-
+filed issue, T-159, left alone here). The module-level comment at L110-116 was corrected to name all four
+call sites — `upload_file`, `extract_zip_file`'s per-entry loop, the backfill task, and the batch-generation
+route — instead of claiming there are two.
+
+Three tests added to `backend/tests/integration/test_library_api.py::TestLibraryStlThumbnailAPI`, mirroring
+the existing T-144/T-145 off-the-event-loop pattern (monkeypatching `generate_stl_thumbnail` and recording
+`threading.current_thread() is not threading.main_thread()`). `test_upload_stl_thumbnail_runs_off_the_event_loop`
+uploads an STL via `POST /api/v1/library/files` and asserts the render ran off the main thread.
+`test_extract_zip_stl_entry_runs_off_the_event_loop` does the same for an STL entry inside a ZIP via `POST
+/api/v1/library/files/extract-zip`. `test_upload_and_batch_render_never_overlap` extends the existing
+`test_concurrent_backfills_never_render_two_stls_at_once` (T-145) lock-contention pattern to a *different*
+pair of call sites: it calls `upload_file()` and `batch_generate_stl_thumbnails()` directly (each given its
+own DB session, exactly as two independent requests would get), with a fake render that flags
+`overlap_detected` if it is ever entered while another invocation of itself is still active, and asserts no
+overlap after running both concurrently via `asyncio.gather`. That test also monkeypatches a *fresh*
+`asyncio.Lock()` onto `library._stl_render_lock` before running: `asyncio.Lock` only binds to an event loop
+the first time it is genuinely contended, and pytest-asyncio's default `auto` mode runs each test on its
+own loop, so reusing the real module-level lock as-is would inherit a stale loop binding from
+`test_concurrent_backfills_never_render_two_stls_at_once`'s own contention earlier in the same session and
+fail with "bound to a different event loop" — an existing test-suite hazard around this specific lock, not
+a change in the lock's production behavior. No existing assertion was weakened or removed.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (no schema change). `SURFACE.md` was regenerated and
+is unchanged.
+
+User-visible change: uploads and zip-extracts with a large STL no longer block the event loop during the
+render, and wait briefly if a batch/backfill render is already in flight, so those requests can take longer
+under concurrent load while thumbnails stop being corrupted by concurrent pyplot use.
+User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 12 · T-158 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/library.py:3019-3021` computed `POST /library/generate-stl-thumbnails`'s
+`remaining` field by over-fetching `STL_THUMBNAIL_BATCH_LIMIT + 1` rows and subtracting the limit from
+however many rows actually came back: `result = await db.execute(query.limit(STL_THUMBNAIL_BATCH_LIMIT +
+1)); matched_files = result.scalars().all(); remaining = max(0, len(matched_files) -
+STL_THUMBNAIL_BATCH_LIMIT)`. Because the query itself was capped at limit+1 rows, `matched_files` could
+never contain more than 101 rows, so `remaining` could only ever be 0 or 1 — it could never report "50 more
+to go" when 50 or more actually remained. The schema comment at `backend/app/schemas/library.py:447-448`
+(`# Matching STL files not processed in this call (batch is capped); 0 when complete.`) read as a true
+count, but an admin with 4300 STLs missing thumbnails got `{processed: 100, remaining: 1}` after every
+single call until the very last one.
+
+Fixed by replacing the `+1` over-fetch trick with a real count: a separate `select(func.count()).select_from
+(query.subquery())` runs over the exact same filtered `query` (mirroring `list_files()`'s existing
+X-Total-Count computation at ~L2198-2204) before the page is fetched with a plain `query.limit
+(STL_THUMBNAIL_BATCH_LIMIT)` — no more +1. `remaining` is now `max(0, total_count - processed)`, computed
+after the page renders (so it reflects `processed`, the actual per-file count already returned in the
+response). The three selection modes (`file_ids`, `folder_id`, `all_missing`) are unchanged — the count
+query is built from the identical `query` object the page query is filtered from, so it automatically
+respects whichever filter was applied; this query carries no GROUP BY, so no HAVING-count edge case
+applies. The batch cap, filtering, and per-file processing logic are otherwise untouched. The schema
+comment at `backend/app/schemas/library.py:447-448` was corrected to describe a true leftover count instead
+of implying a value that saturates.
+
+Four tests added to `backend/tests/integration/test_library_api.py::TestLibraryStlThumbnailAPI`, alongside
+the existing T-144 `test_batch_generate_thumbnails_batch_limit_and_remaining` (which stays green unchanged,
+since 3 files with limit 2 still correctly reports `remaining: 1`).
+`test_batch_generate_thumbnails_remaining_reports_true_leftover_count` monkeypatches the limit to 2 with 5
+matching files and asserts the first call reports `processed: 2, remaining: 3` (not 1 — this assertion
+fails against the pre-fix code), the second call `remaining: 1`, and the third `remaining: 0`.
+`test_batch_generate_thumbnails_remaining_under_limit_is_zero` confirms `remaining` is 0 and the rest of the
+response is unaffected when fewer files exist than the limit. `test_batch_generate_thumbnails_remaining_
+respects_folder_filter` and `test_batch_generate_thumbnails_remaining_respects_file_ids_filter` each create
+extra STL files outside the requested folder/id set and assert `remaining` counts only the filtered set
+(e.g. 5 in-folder files with 3 more elsewhere, limit 2, reports `remaining: 3`, not `8 - 2 = 6`). No
+existing assertion was weakened or removed.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (the `remaining` field's type and default are
+unchanged, only its computed value differs, so no OpenAPI schema shape moved). `SURFACE.md` was regenerated
+and is unchanged.
+
+User-visible change: `POST /library/generate-stl-thumbnails`'s `remaining` field now reports the true
+number of matching STL files left unprocessed (e.g. 4200) where it previously saturated at 1; a caller that
+displayed or summed it was being told one file was left when thousands were.
+User-approved 2026-09-14.

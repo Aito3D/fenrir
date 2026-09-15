@@ -1,5 +1,6 @@
 """Integration tests for Library API endpoints."""
 
+import asyncio
 import io
 import tempfile
 import threading
@@ -1363,6 +1364,170 @@ endsolid cube"""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_reports_true_leftover_count(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """T-158: `remaining` must report the real leftover count, not saturate at 1.
+
+        With 5 matching files and a batch limit of 2, the old `+1` over-fetch trick
+        could never distinguish "1 left" from "3 left" because the query itself was
+        capped at limit+1 rows. `remaining` must be computed from a real total count.
+        """
+        import os
+
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        stl_paths = []
+        try:
+            for i in range(5):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\nendsolid test")
+                    stl_path = f.name
+                stl_paths.append(stl_path)
+                await file_factory(
+                    filename=f"remaining_count_{i}.stl",
+                    file_path=stl_path,
+                    thumbnail_path=None,
+                )
+
+            data = {"all_missing": True}
+
+            # First call: 5 matching, 2 processed -> 3 must remain (not saturate at 1).
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 2
+            assert result["remaining"] == 3
+
+            # Second call: 3 matching, 2 processed -> 1 remains.
+            response2 = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response2.status_code == 200
+            result2 = response2.json()
+            assert result2["processed"] == 2
+            assert result2["remaining"] == 1
+
+            # Third call: 1 matching, 1 processed -> 0 remain, batch complete.
+            response3 = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response3.status_code == 200
+            result3 = response3.json()
+            assert result3["processed"] == 1
+            assert result3["remaining"] == 0
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_under_limit_is_zero(
+        self, async_client: AsyncClient, file_factory, db_session
+    ):
+        """When fewer matching files exist than the batch limit, remaining is 0
+        and the rest of the response shape is unaffected."""
+        stl_without_thumb1 = await file_factory(filename="under_limit_1.stl", thumbnail_path=None)
+        stl_without_thumb2 = await file_factory(filename="under_limit_2.stl", thumbnail_path=None)
+
+        data = {"all_missing": True}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["processed"] == 2
+        assert result["remaining"] == 0
+        file_ids = {r["file_id"] for r in result["results"]}
+        assert stl_without_thumb1.id in file_ids
+        assert stl_without_thumb2.id in file_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_respects_folder_filter(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """`remaining` must be computed over the same filtered query as the page,
+        not over every matching STL in the library."""
+        import os
+
+        from backend.app.models.library import LibraryFolder
+
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        folder = LibraryFolder(name="Filtered Remaining Folder")
+        db_session.add(folder)
+        await db_session.commit()
+        await db_session.refresh(folder)
+
+        stl_paths = []
+        try:
+            # 5 files in the target folder, 3 files elsewhere (at root).
+            for i in range(5):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\nendsolid test")
+                    stl_path = f.name
+                stl_paths.append(stl_path)
+                await file_factory(
+                    filename=f"in_folder_{i}.stl",
+                    file_path=stl_path,
+                    folder_id=folder.id,
+                    thumbnail_path=None,
+                )
+            for i in range(3):
+                await file_factory(
+                    filename=f"at_root_{i}.stl",
+                    folder_id=None,
+                    thumbnail_path=None,
+                )
+
+            data = {"folder_id": folder.id, "all_missing": True}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            # Only the 5 in-folder files match; 2 processed leaves 3, not the
+            # 8-2=6 it would be if the count ignored the folder_id filter.
+            assert result["processed"] == 2
+            assert result["remaining"] == 3
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_respects_file_ids_filter(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """`remaining` for a file_ids request must only count the requested files,
+        not every matching STL in the library."""
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        selected_ids = []
+        for i in range(4):
+            f = await file_factory(filename=f"selected_{i}.stl", thumbnail_path=None)
+            selected_ids.append(f.id)
+        # Extra files not in the request must not count towards `remaining`.
+        for i in range(3):
+            await file_factory(filename=f"not_selected_{i}.stl", thumbnail_path=None)
+
+        data = {"file_ids": selected_ids}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        # 4 requested files, 2 processed -> 2 remain (not 7-2=5).
+        assert result["processed"] == 2
+        assert result["remaining"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_backfill_external_stl_thumbnails_runs_off_the_event_loop(
         self, test_engine, db_session, file_factory, monkeypatch
     ):
@@ -1497,6 +1662,154 @@ endsolid cube"""
             for p in stl_paths:
                 if os.path.exists(p):
                     os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_stl_thumbnail_runs_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """T-160: upload_file must render off the event-loop thread, exactly
+        like the batch route (T-144) and the backfill task (T-145), instead
+        of calling generate_stl_thumbnail() synchronously inline."""
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "upload_thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+
+        # Padded well past MIN_USABLE_STL_BYTES (200) so the STL branch runs.
+        stl_content = ("solid test\n" + ("x" * 200) + "\nendsolid test").encode()
+        files = {"file": ("thread_check.stl", stl_content, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["thumbnail_path"] is not None
+        # generate_stl_thumbnail must have run off the event-loop thread
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_stl_entry_runs_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """T-160: extract_zip_file's per-entry STL render must also run off
+        the event-loop thread instead of calling generate_stl_thumbnail()
+        synchronously inline."""
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "zip_thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+
+        # Padded well past MIN_USABLE_STL_BYTES (200) so the STL branch runs.
+        stl_content = ("solid test\n" + ("x" * 200) + "\nendsolid test").encode()
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("model.stl", stl_content)
+        zip_buffer.seek(0)
+
+        files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        # generate_stl_thumbnail must have run off the event-loop thread
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_and_batch_render_never_overlap(self, test_engine, file_factory, db_session, monkeypatch):
+        """T-160: an upload's render and a batch-generation render must be
+        serialised by the same `_stl_render_lock`, not just the
+        backfill-vs-backfill case covered by T-145. Calls upload_file() and
+        batch_generate_stl_thumbnails() directly (mirroring how T-145 calls
+        _backfill_external_stl_thumbnails() directly) so each gets its own
+        session, same as two independent requests would. The fake render
+        records whether it was ever entered while another invocation was
+        still active, so any overlap fails the test immediately instead of
+        relying on timing to be observed."""
+        import asyncio
+        import io
+        import os
+        import time
+
+        from fastapi import UploadFile
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.api.routes.library import (
+            batch_generate_stl_thumbnails,
+            upload_file,
+        )
+        from backend.app.schemas.library import BatchThumbnailRequest
+
+        active = False
+        overlap_detected = False
+        state_lock = threading.Lock()
+
+        def fake_generate(file_path, thumbnails_dir):
+            nonlocal active, overlap_detected
+            with state_lock:
+                if active:
+                    overlap_detected = True
+                active = True
+            time.sleep(0.15)
+            with state_lock:
+                active = False
+            return thumbnails_dir / "overlap_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+        # A fresh Lock avoids inheriting an asyncio-loop binding from another
+        # test's contention on the shared module-level lock earlier in this
+        # session (asyncio.Lock binds to whichever loop first contends on
+        # it, and each test function runs on its own loop here) — this test
+        # still exercises the real `_stl_render_lock` object the routes use,
+        # just reset so contention within this test binds it fresh.
+        monkeypatch.setattr("backend.app.api.routes.library._stl_render_lock", asyncio.Lock())
+
+        test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write("solid test\n" + ("x" * 200) + "\nendsolid test")
+            batch_stl_path = f.name
+
+        try:
+            stl_file = await file_factory(
+                filename="overlap_batch.stl",
+                file_path=batch_stl_path,
+                thumbnail_path=None,
+            )
+
+            stl_content = ("solid test\n" + ("x" * 200) + "\nendsolid test").encode()
+            upload = UploadFile(file=io.BytesIO(stl_content), filename="overlap_upload.stl")
+
+            async def _drive_upload():
+                async with test_session_maker() as session:
+                    await upload_file(
+                        file=upload,
+                        folder_id=None,
+                        generate_stl_thumbnails=True,
+                        db=session,
+                        current_user=None,
+                    )
+
+            async def _drive_batch():
+                async with test_session_maker() as session:
+                    await batch_generate_stl_thumbnails(
+                        request=BatchThumbnailRequest(file_ids=[stl_file.id]),
+                        db=session,
+                        _=None,
+                    )
+
+            await asyncio.gather(_drive_upload(), _drive_batch())
+
+            assert not overlap_detected, "upload render and batch render overlapped despite _stl_render_lock"
+        finally:
+            if os.path.exists(batch_stl_path):
+                os.unlink(batch_stl_path)
 
 
 class TestLibraryPathHelpers:
@@ -2735,3 +3048,108 @@ class TestLibraryZipExtractSizeCap:
         result = response.json()
         assert result["extracted"] == 1
         assert len(result["errors"]) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestStreamUploadToPathAbortCleanup:
+    """T-179: ``_stream_upload_to_path`` (shared by ``upload_file`` and
+    ``extract_zip_file``, T-147/T-155) must remove ``dest_path`` on *any*
+    abort while streaming — not only the 413 raised by ``_too_large()`` —
+    so a client disconnect, a task cancellation, or a full-disk ``OSError``
+    can never leave a truncated file behind. These call the helper directly
+    (rather than through the HTTP endpoints used by the size-cap tests
+    above) so each test can assert on its own ``tmp_path``-scoped
+    ``dest_path`` instead of diffing the whole shared library-files
+    directory."""
+
+    @staticmethod
+    def _make_upload(chunks: list[bytes], failure: BaseException | None = None):
+        """A minimal stand-in for ``fastapi.UploadFile``: yields ``chunks``
+        in order, then raises ``failure`` (if given) instead of returning
+        ``b""`` to signal end-of-stream."""
+
+        class _FakeUpload:
+            size = None
+
+            def __init__(self) -> None:
+                self._chunks = list(chunks)
+
+            async def read(self, _n: int) -> bytes:
+                if self._chunks:
+                    return self._chunks.pop(0)
+                if failure is not None:
+                    raise failure
+                return b""
+
+        return _FakeUpload()
+
+    async def test_client_disconnect_mid_stream_leaves_no_file(self, tmp_path):
+        from starlette.requests import ClientDisconnect
+
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "partial.3mf"
+        upload = self._make_upload([b"first-chunk"], failure=ClientDisconnect())
+
+        with pytest.raises(ClientDisconnect):
+            await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert not dest_path.exists(), "a client disconnect mid-stream must not leave a partial file"
+
+    async def test_cancelled_error_mid_stream_leaves_no_file_and_is_not_swallowed(self, tmp_path):
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "partial.3mf"
+        upload = self._make_upload([b"first-chunk"], failure=asyncio.CancelledError())
+
+        # CancelledError is a BaseException (not Exception) since Python 3.8;
+        # it must propagate unchanged, never converted or swallowed.
+        with pytest.raises(asyncio.CancelledError):
+            await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert not dest_path.exists(), "a cancellation mid-stream must not leave a partial file"
+
+    async def test_oserror_from_write_leaves_no_file(self, tmp_path, monkeypatch):
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "partial.3mf"
+        upload = self._make_upload([b"first-chunk", b"second-chunk"])
+
+        real_open = open
+
+        def _open_with_failing_write(path, mode="r", *args, **kwargs):
+            handle = real_open(path, mode, *args, **kwargs)
+            if Path(path) == dest_path and mode == "wb":
+                original_write = handle.write
+
+                def _failing_write(data):
+                    original_write(data)
+                    raise OSError("No space left on device")
+
+                handle.write = _failing_write
+            return handle
+
+        monkeypatch.setattr("backend.app.api.routes.library.open", _open_with_failing_write, raising=False)
+
+        with pytest.raises(OSError):
+            await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert not dest_path.exists(), "a write failure (e.g. a full disk) must not leave a partial file"
+
+    async def test_successful_stream_leaves_exactly_its_own_file(self, tmp_path):
+        import hashlib
+
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "ok.3mf"
+        payload = b"hello world" * 10
+        upload = self._make_upload([payload])
+        upload.size = len(payload)
+
+        total_bytes, digest = await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert total_bytes == len(payload)
+        assert digest == hashlib.sha256(payload).hexdigest()
+        assert dest_path.read_bytes() == payload
+        assert list(tmp_path.iterdir()) == [dest_path]

@@ -444,7 +444,9 @@ class BatchThumbnailResponse(BaseModel):
     succeeded: int
     failed: int
     results: list[BatchThumbnailResult]
-    # Matching STL files not processed in this call (batch is capped); 0 when complete.
+    # True count of matching STL files not yet processed after this call (batch is
+    # capped at STL_THUMBNAIL_BATCH_LIMIT per request); 0 when complete. Callers can
+    # repeat the request until this reaches 0 to work through the full backlog.
     remaining: int = 0
 
 

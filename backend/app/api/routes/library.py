@@ -109,10 +109,11 @@ _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
 
 # generate_stl_thumbnail() renders via matplotlib's pyplot global state
 # (plt.figure()/plt.subplots_adjust() operate on the process-wide "current
-# figure"). Both the backfill task and the batch-generation route below run
-# it in a worker thread via asyncio.to_thread; this lock keeps the two call
-# sites from ever rendering concurrently, preserving the pre-thread-offload
-# guarantee that renders never overlap.
+# figure"). All four call sites — upload_file, extract_zip_file's per-entry
+# loop, the backfill task, and the batch-generation route below — run it in
+# a worker thread via asyncio.to_thread; this lock keeps them from ever
+# rendering concurrently, preserving the pre-thread-offload guarantee that
+# renders never overlap.
 _stl_render_lock = asyncio.Lock()
 
 
@@ -2341,8 +2342,10 @@ async def _stream_upload_to_path(
     total is what actually enforces the cap for those. ``on_first_chunk``
     runs exactly once, against the first chunk read (or ``b""`` for an empty
     upload), so callers can sniff magic bytes without buffering the whole
-    body up front. On any 413, ``dest_path`` is removed before the exception
-    propagates.
+    body up front. On any abort — a 413, a client disconnect, a cancellation,
+    a disk-full ``OSError``, or anything else raised while streaming —
+    ``dest_path`` is removed before the exception propagates, so a truncated
+    file is never left behind.
 
     Returns ``(total_bytes, sha256_hexdigest)``.
     """
@@ -2356,6 +2359,7 @@ async def _stream_upload_to_path(
     sha256_hash = hashlib.sha256()
     total_bytes = 0
     first_chunk_seen = False
+    success = False
     try:
         with open(dest_path, "wb") as f:
             while chunk := await file.read(1 << 20):
@@ -2370,10 +2374,10 @@ async def _stream_upload_to_path(
                 f.write(chunk)
         if not first_chunk_seen and on_first_chunk is not None:
             on_first_chunk(b"")
-    except HTTPException:
-        if dest_path.exists():
+        success = True
+    finally:
+        if not success and dest_path.exists():
             dest_path.unlink()
-        raise
     return total_bytes, sha256_hash.hexdigest()
 
 
@@ -2517,7 +2521,8 @@ async def upload_file(
             if generate_stl_thumbnails:
                 try:
                     if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
-                        thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                        async with _stl_render_lock:
+                            thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
                 except OSError:
                     pass
 
@@ -2870,7 +2875,10 @@ async def extract_zip_file(
                         # stub STLs would otherwise log one debug line per
                         # file via the empty-mesh branch in trimesh.load.
                         if generate_stl_thumbnails and entry_bytes_written >= MIN_USABLE_STL_BYTES:
-                            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                            async with _stl_render_lock:
+                                thumbnail_path = await asyncio.to_thread(
+                                    generate_stl_thumbnail, file_path, thumbnails_dir
+                                )
 
                     # Create database entry (store relative paths for portability)
                     library_file = LibraryFile(
@@ -3008,10 +3016,15 @@ async def batch_generate_stl_thumbnails(
             results=[],
         )
 
-    result = await db.execute(query.limit(STL_THUMBNAIL_BATCH_LIMIT + 1))
-    matched_files = result.scalars().all()
-    remaining = max(0, len(matched_files) - STL_THUMBNAIL_BATCH_LIMIT)
-    stl_files = matched_files[:STL_THUMBNAIL_BATCH_LIMIT]
+    # Total matching row count (before paging), so `remaining` reflects the real
+    # leftover count instead of saturating at 1 (the old +1 over-fetch trick could
+    # never distinguish "1 left" from "4200 left"). Wrapping the fully filtered
+    # query in a subquery mirrors list_files()'s X-Total-Count computation above.
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total_count = int(count_result.scalar() or 0)
+
+    result = await db.execute(query.limit(STL_THUMBNAIL_BATCH_LIMIT))
+    stl_files = result.scalars().all()
 
     succeeded = 0
     failed = 0
@@ -3071,8 +3084,11 @@ async def batch_generate_stl_thumbnails(
 
     await db.commit()
 
+    processed = len(stl_files)
+    remaining = max(0, total_count - processed)
+
     return BatchThumbnailResponse(
-        processed=len(stl_files),
+        processed=processed,
         succeeded=succeeded,
         failed=failed,
         results=results,
