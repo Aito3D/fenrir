@@ -57,6 +57,14 @@ def required_amount(quote_total: float | None, pct: int) -> int | None:
     return int(math.ceil(quote_total * pct / 100))
 
 
+def outstanding_amount(required: int, retainer_paid_total: float | None) -> int:
+    """What is still owed once the estimate's PAID retainer invoices are
+    netted off ``required`` — the link asks for this, not the gross figure.
+    Rounded UP so a fractional retainer never leaves the client a franc
+    short; zero or negative means the retainers cover it."""
+    return int(math.ceil(required - (retainer_paid_total or 0)))
+
+
 MAX_POLLS_PER_TICK = 40
 # One tick of the quote-sync loop; the per-row backoff counts in these.
 _TICK_SECONDS = 300
@@ -91,10 +99,11 @@ def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: da
         return None
     if project.quote_status in _CLOSED_QUOTE_STATUSES or project.quote_invoiced:
         return None
-    amount = required_amount(project.quote_total, pct)
-    if amount is None:
+    required = required_amount(project.quote_total, pct)
+    if required is None:
         return None
-    if (project.retainer_paid_total or 0) >= amount:
+    amount = outstanding_amount(required, project.retainer_paid_total)
+    if amount <= 0:
         return None
     expires_on = project.quote_expiry_date or (today + timedelta(days=validity_days)).isoformat()
     return Wanted(reference=project.quote_number, amount=amount, expires_on=expires_on)

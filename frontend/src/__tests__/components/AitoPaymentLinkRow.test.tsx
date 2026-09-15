@@ -9,9 +9,17 @@ import type { AitoPaymentLink, AitoProject } from '../../api/client';
 
 vi.mock('../../utils/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => true) }));
 import { copyTextToClipboard } from '../../utils/clipboard';
+import { localDateKey } from '../../utils/date';
+
+/** Local date key `n` calendar days from today, so the fixture never goes stale. */
+function inDays(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return localDateKey(d);
+}
 
 const link: AitoPaymentLink = {
-  state: 'pending', amount: 12500, currency: 'XPF', url: 'https://osb/pay/L1', expires_on: '2026-09-27', paid_at: null, sync_error: null,
+  state: 'pending', amount: 12500, currency: 'XPF', url: 'https://osb/pay/L1', expires_on: inDays(13), paid_at: null, sync_error: null,
 };
 
 function project(overrides: Partial<AitoProject> = {}): AitoProject {
@@ -45,11 +53,10 @@ describe('PaymentLinkRow', () => {
     expect(screen.getByText('Online payment')).toBeInTheDocument();
     // formatMoney renders XPF as "12 500 FCFP" (thin space + NBSP); match the digits.
     expect(screen.getByTestId('payment-link-amount')).toHaveTextContent(/12.500/);
-    // `i18n.language` resolves to plain 'en' in tests, and Node's ICU formats
-    // that as month-first ("September 27, 2026") — same convention already
-    // pinned by DueDateControl.test.tsx's "Sep 12, 2026" assertions — not the
-    // day-first order a locale like en-GB would use.
-    expect(screen.getByText(/Expires September 27, 2026/)).toBeInTheDocument();
+    // The expiry reads as a countdown; the exact date stays available as a tooltip.
+    const expires = screen.getByText('Expires in 13 days');
+    expect(expires).toBeInTheDocument();
+    expect(expires).toHaveAttribute('title', expect.stringMatching(/\d{4}/));
     await userEvent.click(screen.getByRole('button', { name: 'Copy payment link' }));
     expect(copyTextToClipboard).toHaveBeenCalledWith('https://osb/pay/L1');
     expect(await screen.findByText('Copied')).toBeInTheDocument();
@@ -79,6 +86,17 @@ describe('PaymentLinkRow', () => {
     render(<PaymentLinkRow project={project({ payment_link: { ...link, sync_error: 'Heimdall HTTP 502 unavailable: OSB down' } })} canUpdate={false} />);
     expect(screen.getByText('Heimdall HTTP 502 unavailable: OSB down')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('counts down to the expiry date: singular day, today, and a pending link past its date', () => {
+    const { unmount } = render(<PaymentLinkRow project={project({ payment_link: { ...link, expires_on: inDays(1) } })} canUpdate />);
+    expect(screen.getByText('Expires in 1 day')).toBeInTheDocument();
+    unmount();
+    const today = render(<PaymentLinkRow project={project({ payment_link: { ...link, expires_on: inDays(0) } })} canUpdate />);
+    expect(screen.getByText('Expires today')).toBeInTheDocument();
+    today.unmount();
+    render(<PaymentLinkRow project={project({ payment_link: { ...link, expires_on: inDays(-2) } })} canUpdate />);
+    expect(screen.getByText('Expired')).toBeInTheDocument();
   });
 
   it('a dead link shows its state and no copy button', () => {

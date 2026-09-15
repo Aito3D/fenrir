@@ -7,7 +7,7 @@ import type { AitoProject } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { formatMoney } from '../../utils/pricing';
-import { parseLocalDateKey } from '../../utils/date';
+import { localDateKey, parseLocalDateKey } from '../../utils/date';
 import { requiredAmount } from '../../utils/aitoPayment';
 
 /** One row in the Quote card: the online payment link's state, a Copy
@@ -64,12 +64,24 @@ export function PaymentLinkRow({
   };
 
   const amount = formatMoney(link.amount, link.currency);
-  const expires = parseLocalDateKey(link.expires_on).toLocaleDateString(i18n.language, {
+  const expiresOn = parseLocalDateKey(link.expires_on);
+  const expiresDate = expiresOn.toLocaleDateString(i18n.language, {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
-  const needed = requiredAmount(project.quote_total, depositPct);
+  // Whole calendar days from local midnight today to the expiry date, so a link
+  // expiring tomorrow reads "1 day" all day long regardless of the current hour.
+  const daysLeft = Math.round(
+    (expiresOn.getTime() - parseLocalDateKey(localDateKey(new Date())).getTime()) / 86_400_000,
+  );
+  const expiresText =
+    daysLeft > 0
+      ? t('aito.paymentLink.expiresIn', { count: daysLeft })
+      : daysLeft === 0
+        ? t('aito.paymentLink.expiresToday')
+        : t('aito.paymentLink.state.expired');
+  const needed = requiredAmount(project.quote_total, depositPct, project.retainer_paid_total);
   const moved = link.state === 'paid' && needed !== null && needed !== link.amount;
 
   return (
@@ -105,7 +117,9 @@ export function PaymentLinkRow({
           </button>
         )}
         {link.state === 'pending' && (
-          <span className="block text-xs text-bambu-gray">{t('aito.paymentLink.expires', { date: expires })}</span>
+          <span className="block text-xs text-bambu-gray" title={expiresDate}>
+            {expiresText}
+          </span>
         )}
         {moved && needed !== null && (
           <span className="block text-xs text-status-error">

@@ -10,6 +10,7 @@ import { SendQuoteButton } from './SendQuoteButton';
 import { ACTION_GROUP } from './quoteActionGroup';
 import { QUOTE_STATUS_TEXT_TONE_CLASSES, quoteStatusText, quoteStatusTone } from './quoteStatus';
 import { deriveQuoteSync } from './quoteSync';
+import { formatMoney } from '../../utils/pricing';
 
 /** The quote and, once Books has raised one, the invoice — one card, in that
  *  order, because they are one story and the two used to sit as twin cards
@@ -32,9 +33,12 @@ export function BillingCard({
   onRetrySync,
   retryPending,
   depositPct = 0,
+  currency,
 }: {
   project: AitoProject;
   canUpdate: boolean;
+  /** The shop currency (`useCurrency()`), for the paid-deposit row. */
+  currency: string;
   /** Re-marks the project pending for the sync worker (a PATCH carrying the
    *  unchanged description — see the panel's `updateMutation`). */
   onRetrySync: () => void;
@@ -85,6 +89,16 @@ export function BillingCard({
                 <dd className={`text-right ${QUOTE_STATUS_TEXT_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}>
                   {quoteStatusText(t, project.quote_status)}
                 </dd>
+              </>
+            )}
+            {/* Retainer invoices Books reports as PAID, summed by the status
+                reconcile (`retainer_paid_total`). Shown only once something
+                was paid, so the operator can see the quote is partially
+                covered before any invoice exists. */}
+            {project.retainer_paid_total != null && project.retainer_paid_total > 0 && (
+              <>
+                <dt className="text-bambu-gray">{t('aito.depositPaid')}</dt>
+                <dd className="text-right text-bambu-green">{formatMoney(project.retainer_paid_total, currency)}</dd>
               </>
             )}
           </dl>

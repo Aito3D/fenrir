@@ -1079,7 +1079,7 @@ export function ProjectDetailPanel({
         // and both spanning the full width, so without it their corners paint
         // over this element's radius and the panel reads as a rectangle with
         // four notched corners.
-        className="bg-bambu-dark rounded-[.85rem] overflow-hidden w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
+        className="bg-bambu-dark rounded-[.85rem] overflow-hidden w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col min-h-[min(720px,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] focus:outline-none"
       >
         <PanelHeader
           project={project}
@@ -1322,6 +1322,7 @@ export function ProjectDetailPanel({
                       onRetrySync={() => updateMutation.mutate({ description: project.description })}
                       retryPending={updateMutation.isPending}
                       depositPct={depositPct}
+                      currency={currency}
                     />
                     <RecordCard
                       project={project}

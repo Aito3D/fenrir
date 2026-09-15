@@ -200,9 +200,36 @@ def test_wanted_link_shapes():
         )
         setattr(q, field, value)
         assert wanted_link(q, pct=0, validity_days=15, today=TODAY) is None, field
-    # A retainer smaller than the required amount changes nothing.
+    # A retainer smaller than the required amount still leaves a link to ask
+    # for — the franc that is still outstanding.
     p.retainer_paid_total = 2999.0
-    assert wanted_link(p, pct=30, validity_days=15, today=TODAY) is not None
+    assert wanted_link(p, pct=30, validity_days=15, today=TODAY) == Wanted("DEV-1", 1, "2026-09-27")
+
+
+def test_wanted_link_asks_only_for_what_the_paid_retainers_leave_outstanding():
+    p = AitoProject(
+        description="x",
+        board_column="devis",
+        position=0,
+        status="active",
+        quote_number="DEV-1",
+        quote_total=1000.0,
+        quote_status="sent",
+        quote_expiry_date="2026-09-20",
+    )
+    # Quote 1000, 400 already paid by a retainer invoice: the link is for 600.
+    p.retainer_paid_total = 400.0
+    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) == Wanted("DEV-1", 600, "2026-09-20")
+    # Never a franc short: a fractional retainer rounds the outstanding UP.
+    p.retainer_paid_total = 400.4
+    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) == Wanted("DEV-1", 600, "2026-09-20")
+    # The deposit share is netted the same way: 60% of 1000 is 600, 400 paid -> 200.
+    assert wanted_link(p, pct=60, validity_days=15, today=TODAY) == Wanted("DEV-1", 200, "2026-09-20")
+    # A retainer covering the deposit share means nothing is outstanding.
+    assert wanted_link(p, pct=40, validity_days=15, today=TODAY) is None
+    # The whole total paid by retainers: no link at all.
+    p.retainer_paid_total = 1000.0
+    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) is None
 
 
 def test_expires_in_days_is_at_least_one():
@@ -262,6 +289,23 @@ async def test_amount_or_expiry_change_patches(db_session, fake):
     assert fake.calls[-1] == ("patch", "L1", 13000, 18)
     (r,) = await _rows(db_session, p.id)
     assert r.amount == 13000 and r.expires_on == "2026-09-30"
+
+
+@pytest.mark.asyncio
+async def test_a_paid_retainer_shrinks_the_live_link_to_the_outstanding_amount(db_session, fake):
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.amount == 12500
+    # Books reports a 5000 retainer paid: the next reconcile patches the link
+    # down to the 7500 still outstanding, exactly like a total change does
+    # (amount only — the expiry did not move, so it is not re-sent).
+    p.retainer_paid_total = 5000.0
+    await db_session.commit()
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    assert fake.calls[-1] == ("patch", "L1", 7500, None)
+    (r,) = await _rows(db_session, p.id)
+    assert r.amount == 7500
 
 
 @pytest.mark.asyncio
