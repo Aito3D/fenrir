@@ -1,0 +1,2575 @@
+### exit: 0
+### stdout:
+{
+ "AppSettings": {
+  "fields": {
+   "aito_deposit_pct": {
+    "constraints": [
+     "Ge(ge=0)",
+     "Le(le=100)"
+    ],
+    "default": "0",
+    "description": "Deposit share of the quote, in percent",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "aito_followup_link_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "3",
+    "description": "Days before a payment link expires that the strip flags it",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "aito_followup_pickup_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "7",
+    "description": "Days before an uncollected finished job is chased",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "aito_followup_quote_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "5",
+    "description": "Days before an unanswered quote is chased",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "aito_quote_validity_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "15",
+    "description": "Days a new quote stays valid",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ambient_drying_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ams_history_retention_days": {
+    "constraints": [],
+    "default": "30",
+    "description": "Number of days to keep AMS sensor history data",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ams_humidity_fair": {
+    "constraints": [],
+    "default": "60",
+    "description": "Humidity threshold for fair (orange): <= this value, > is red",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ams_humidity_good": {
+    "constraints": [],
+    "default": "40",
+    "description": "Humidity threshold for good (green): <= this value",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ams_humidity_thresholds": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON blob of per-filament-type humidity trigger thresholds for auto-drying and alarms. Shape: {\"default\": int, \"PLA\": int, \"ASA\": int, ...}. Empty = fall back to ams_humidity_fair for all types.",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ams_temp_fair": {
+    "constraints": [],
+    "default": "35.0",
+    "description": "Temperature threshold for fair (orange): <= this value, > is red",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "ams_temp_good": {
+    "constraints": [],
+    "default": "28.0",
+    "description": "Temperature threshold for good (blue): <= this value",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "auto_add_unknown_rfid": {
+    "constraints": [],
+    "default": "True",
+    "description": "Automatically add spools with unknown RFID tags to inventory. Disable if you pre-create inventory entries manually to avoid duplicates.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "auto_archive": {
+    "constraints": [],
+    "default": "True",
+    "description": "Automatically archive prints when completed",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "bambu_studio_api_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "BambuStudio sidecar URL (e.g. http://localhost:3001). Empty falls back to the BAMBU_STUDIO_API_URL env var.",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "bed_cooled_threshold": {
+    "constraints": [],
+    "default": "35.0",
+    "description": "Bed temperature threshold for cooled notification (\u00b0C)",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "bed_temp_presets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON array of 3 bed-temperature preset values in C (0-140). Empty = use defaults [55, 75, 90]",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "billing_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable cost-center billing enforcement for print and queue operations",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "camera_engine": {
+    "constraints": [],
+    "default": "'ffmpeg'",
+    "description": "Camera streaming engine: 'ffmpeg' or 'go2rtc'",
+    "required": false,
+    "type": "typing.Literal['ffmpeg', 'go2rtc']"
+   },
+   "camera_gpu_accel": {
+    "constraints": [],
+    "default": "True",
+    "description": "Enable GPU hardware acceleration for ffmpeg camera decoding (-hwaccel auto)",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "camera_quality": {
+    "constraints": [],
+    "default": "'auto'",
+    "description": "Camera quality preset: 'auto', 'low', 'medium', or 'high' \u2014 controls ffmpeg fps/quality/scale for grid and single streams",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "camera_view_mode": {
+    "constraints": [],
+    "default": "'window'",
+    "description": "Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "capture_finish_photo": {
+    "constraints": [],
+    "default": "True",
+    "description": "Capture photo from printer camera when print completes. Bambuddy records a brief timelapse during the print so the photo can be sourced from the moment before the bed drops; the timelapse file is kept if you enabled timelapse for this print, otherwise it is deleted automatically after the photo is captured.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "chamber_temp_presets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON array of 3 chamber-temperature preset values in C (0-65). Empty = use defaults [35, 45, 60]",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "check_printer_firmware": {
+    "constraints": [],
+    "default": "True",
+    "description": "Check for printer firmware updates from Bambu Lab",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "check_updates": {
+    "constraints": [],
+    "default": "True",
+    "description": "Automatically check for updates on startup",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "currency": {
+    "constraints": [],
+    "default": "'USD'",
+    "description": "Currency for cost tracking",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "dark_accent": {
+    "constraints": [],
+    "default": "'green'",
+    "description": "Dark mode accent: green, teal, blue, cyan, orange, purple, red",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "dark_background": {
+    "constraints": [],
+    "default": "'cool'",
+    "description": "Dark mode background: neutral, warm, cool, oled, slate, forest, midnight",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "dark_style": {
+    "constraints": [],
+    "default": "'vibrant'",
+    "description": "Dark mode style: classic, glow, vibrant",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "date_format": {
+    "constraints": [],
+    "default": "'system'",
+    "description": "Date format: system, us, eu, iso",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "default_bed_levelling": {
+    "constraints": [
+     "BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)"
+    ],
+    "default": "'auto'",
+    "description": "Default bed levelling option for new prints",
+    "required": false,
+    "type": "typing.Literal['off', 'on', 'auto']"
+   },
+   "default_filament_cost": {
+    "constraints": [],
+    "default": "25.0",
+    "description": "Default filament cost per kg",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "default_flow_cali": {
+    "constraints": [
+     "BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)"
+    ],
+    "default": "'auto'",
+    "description": "Default flow calibration option for new prints",
+    "required": false,
+    "type": "typing.Literal['off', 'on', 'auto']"
+   },
+   "default_layer_inspect": {
+    "constraints": [],
+    "default": "False",
+    "description": "Default first layer inspection option for new prints",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "default_nozzle_offset_cali": {
+    "constraints": [
+     "BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)"
+    ],
+    "default": "'auto'",
+    "description": "Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
+    "required": false,
+    "type": "typing.Literal['off', 'on', 'auto']"
+   },
+   "default_printer_id": {
+    "constraints": [],
+    "default": "None",
+    "description": "Default printer ID for uploads, reprints, etc.",
+    "required": false,
+    "type": "int | None"
+   },
+   "default_sidebar_order": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON object with 'order' key containing array of sidebar item IDs (empty = no default)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "default_timelapse": {
+    "constraints": [],
+    "default": "False",
+    "description": "Default timelapse option for new prints",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "default_vibration_cali": {
+    "constraints": [],
+    "default": "True",
+    "description": "Default vibration calibration option for new prints",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "disable_filament_warnings": {
+    "constraints": [],
+    "default": "False",
+    "description": "Disable insufficient filament warnings when printing or queueing prints",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "docker_compose_dir": {
+    "constraints": [],
+    "default": "''",
+    "description": "Host directory containing docker-compose.yml, used in the update instructions",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "drying_no_auto_stop": {
+    "constraints": [],
+    "default": "False",
+    "description": "Never auto-stop drying: the scheduler only starts drying sessions; drying ends only when the AMS drying timer expires or it is stopped manually. Queued prints wait for drying to finish instead of stopping it, unless print_drying_enabled is on and the hardware supports Print While Drying \u2014 then prints dispatch while drying continues.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "drying_presets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON blob of drying presets per filament type (empty = use built-in defaults)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "energy_cost_per_kwh": {
+    "constraints": [],
+    "default": "0.15",
+    "description": "Electricity cost per kWh for energy tracking",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "energy_tracking_mode": {
+    "constraints": [],
+    "default": "'total'",
+    "description": "Energy display mode on stats: 'print' shows sum of per-print energy, 'total' shows lifetime plug consumption",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "external_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "External URL where Bambuddy is accessible (for notification images)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "fan_speed_presets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON array of 3 fan-speed preset values in % (0-100). Empty = use defaults [50, 75, 100]",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "finance_budget_reset_day": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=31)"
+    ],
+    "default": "1",
+    "description": "Day of month when monthly finance budget window resets (1-31, clamped for short months)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "finance_budget_reset_timezone": {
+    "constraints": [],
+    "default": "'UTC'",
+    "description": "IANA timezone for finance monthly budget reset calculation (e.g., Europe/Berlin)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "finish_photo_restore_plate": {
+    "constraints": [],
+    "default": "True",
+    "description": "Raise the build plate back into camera framing before taking the finish photo. Bambu's end G-code drops the plate ~100mm as the last thing it does, leaving the finished print far below the camera's natural framing. Bambuddy moves it back to just above the last printed layer, takes the photo, then lowers it again. Skipped when the print height is unknown or another job is queued for the printer.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "forecast_global_lead_time_days": {
+    "constraints": [
+     "Ge(ge=0)"
+    ],
+    "default": "0",
+    "description": "Global lead time floor (days) used in reorder point calculation for all SKUs",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ftp_retry_count": {
+    "constraints": [],
+    "default": "3",
+    "description": "Number of retry attempts for FTP operations (1-10)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ftp_retry_delay": {
+    "constraints": [],
+    "default": "2",
+    "description": "Seconds to wait between FTP retry attempts (1-30)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "ftp_retry_enabled": {
+    "constraints": [],
+    "default": "True",
+    "description": "Enable automatic retry for FTP operations",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ftp_timeout": {
+    "constraints": [],
+    "default": "30",
+    "description": "FTP connection timeout in seconds (10-300)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "gcode_snippets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON: per-model G-code injection snippets {model: {start_gcode, end_gcode}}",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ha_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable Home Assistant integration for smart plug control",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ha_env_managed": {
+    "constraints": [],
+    "default": "False",
+    "description": "Whether HA integration is fully managed by environment variables",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ha_token": {
+    "constraints": [],
+    "default": "''",
+    "description": "Home Assistant Long-Lived Access Token",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ha_token_from_env": {
+    "constraints": [],
+    "default": "False",
+    "description": "Whether HA token is set via HA_TOKEN environment variable",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ha_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "Home Assistant URL (e.g., http://192.168.1.100:8123)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ha_url_from_env": {
+    "constraints": [],
+    "default": "False",
+    "description": "Whether HA URL is set via HA_URL environment variable",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "heimdall_api_token": {
+    "constraints": [],
+    "default": "''",
+    "description": "Heimdall /api/v1 credential hmd_live.<id>.<secret> (write-only)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "heimdall_base_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "Heimdall base URL (origin only), e.g. http://192.168.1.20:8081",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "include_beta_updates": {
+    "constraints": [],
+    "default": "False",
+    "description": "Include beta/prerelease versions in update checks",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "language": {
+    "constraints": [],
+    "default": "'en'",
+    "description": "UI language (en, de, fr, ja, it, pt-BR)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_auto_provision": {
+    "constraints": [],
+    "default": "False",
+    "description": "Auto-create BamBuddy user on first successful LDAP login",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ldap_bind_dn": {
+    "constraints": [],
+    "default": "''",
+    "description": "Bind DN for LDAP searches (e.g., cn=admin,dc=example,dc=com)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_bind_password": {
+    "constraints": [],
+    "default": "''",
+    "description": "Bind password for LDAP searches",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_default_group": {
+    "constraints": [],
+    "default": "''",
+    "description": "Fallback BamBuddy group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable LDAP authentication",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "ldap_group_mapping": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON: LDAP group to BamBuddy group mapping {ldap_group_dn: bambuddy_group_name}",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_search_base": {
+    "constraints": [],
+    "default": "''",
+    "description": "Search base DN (e.g., ou=users,dc=example,dc=com)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_security": {
+    "constraints": [],
+    "default": "'starttls'",
+    "description": "LDAP security: 'starttls' or 'ldaps'",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_server_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "LDAP server URL (e.g., ldap://ldap.example.com:389)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "ldap_user_filter": {
+    "constraints": [],
+    "default": "'(sAMAccountName={username})'",
+    "description": "LDAP user search filter. {username} is replaced with the login username",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "library_archive_mode": {
+    "constraints": [],
+    "default": "'ask'",
+    "description": "When printing from File Manager, create archive entry: 'always', 'never', or 'ask'",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "library_disk_warning_gb": {
+    "constraints": [],
+    "default": "5.0",
+    "description": "Show warning when free disk space falls below this threshold (GB)",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "light_accent": {
+    "constraints": [],
+    "default": "'green'",
+    "description": "Light mode accent: green, teal, blue, cyan, orange, purple, red",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "light_background": {
+    "constraints": [],
+    "default": "'neutral'",
+    "description": "Light mode background: neutral, warm, cool",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "light_style": {
+    "constraints": [],
+    "default": "'classic'",
+    "description": "Light mode style: classic, glow, vibrant",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "local_backup_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable scheduled local backups",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "local_backup_path": {
+    "constraints": [],
+    "default": "''",
+    "description": "Backup output directory (empty = DATA_DIR/backups)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "local_backup_retention": {
+    "constraints": [],
+    "default": "5",
+    "description": "Number of backup files to keep (1-100)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "local_backup_schedule": {
+    "constraints": [],
+    "default": "'daily'",
+    "description": "Backup frequency: hourly, daily, weekly",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "local_backup_time": {
+    "constraints": [],
+    "default": "'03:00'",
+    "description": "Time of day for daily/weekly backups (HH:MM, 24h)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "local_login_enabled": {
+    "constraints": [],
+    "default": "True",
+    "description": "Allow username + password login on /auth/login. Disable when only SSO should be usable. BAMBUDDY_LOCAL_LOGIN=true on the server overrides this to keep a recovery path open.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "low_stock_threshold": {
+    "constraints": [
+     "Ge(ge=0.1)",
+     "Le(le=99.9)"
+    ],
+    "default": "20.0",
+    "description": "Low stock threshold percentage (%) for inventory filtering and display",
+    "required": false,
+    "type": "<class 'float'>"
+   },
+   "mqtt_broker": {
+    "constraints": [],
+    "default": "''",
+    "description": "MQTT broker hostname or IP address",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "mqtt_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable MQTT event publishing to external broker",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "mqtt_password": {
+    "constraints": [],
+    "default": "''",
+    "description": "MQTT password for authentication (optional)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "mqtt_port": {
+    "constraints": [],
+    "default": "1883",
+    "description": "MQTT broker port (default 1883, TLS typically 8883)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "mqtt_topic_prefix": {
+    "constraints": [],
+    "default": "'bambuddy'",
+    "description": "Topic prefix for all published messages",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "mqtt_use_tls": {
+    "constraints": [],
+    "default": "False",
+    "description": "Use TLS/SSL encryption for MQTT connection",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "mqtt_username": {
+    "constraints": [],
+    "default": "''",
+    "description": "MQTT username for authentication (optional)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "notification_language": {
+    "constraints": [],
+    "default": "'en'",
+    "description": "Language for push notifications (en, de)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "nozzle_temp_presets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON array of 3 nozzle-temperature preset values in C (0-320). Empty = use defaults [120, 220, 260]",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "obico_action": {
+    "constraints": [],
+    "default": "'notify'",
+    "description": "Action on detected failure: 'notify', 'pause', or 'pause_and_off'",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "obico_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable Obico AI print failure detection",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "obico_enabled_printers": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON array of printer IDs to monitor (empty = all connected printers)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "obico_ml_token": {
+    "constraints": [],
+    "default": "''",
+    "description": "Bearer token for the Obico ML API, matching the server's ML_API_TOKEN environment variable. Empty when the server runs without one.",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "obico_ml_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "Self-hosted Obico ML API base URL (e.g., http://192.168.1.10:3333)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "obico_poll_interval": {
+    "constraints": [
+     "Ge(ge=5)",
+     "Le(le=120)"
+    ],
+    "default": "10",
+    "description": "Seconds between detection checks while a print is running",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "obico_sensitivity": {
+    "constraints": [],
+    "default": "'medium'",
+    "description": "Detection sensitivity: 'low', 'medium', or 'high' (adjusts LOW/HIGH thresholds)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "open_in_slicer": {
+    "constraints": [],
+    "default": "None",
+    "description": "Desktop slicer for the 'Open in Slicer' button: 'bambu_studio' or 'orcaslicer'. None inherits from preferred_slicer.",
+    "required": false,
+    "type": "str | None"
+   },
+   "openrouter_api_key": {
+    "constraints": [],
+    "default": "''",
+    "description": "OpenRouter API key (write-only)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "openrouter_model": {
+    "constraints": [],
+    "default": "'mistralai/mistral-small'",
+    "description": "OpenRouter model id used to generate French project summaries",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "orcaslicer_api_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "OrcaSlicer sidecar URL (e.g. http://localhost:3003). Empty falls back to the SLICER_API_URL env var.",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "per_printer_mapping_expanded": {
+    "constraints": [],
+    "default": "False",
+    "description": "Expand custom filament mapping by default in print modal",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "pipeline_max_copies": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=1000)"
+    ],
+    "default": "50",
+    "description": "Upper bound on the copies an operator can request when running a Slicer Pipeline. Larger fleets / production rigs can raise this; the hard ceiling at 1000 is a sanity guard against fat-fingered input.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "prefer_lowest_filament": {
+    "constraints": [],
+    "default": "False",
+    "description": "When multiple AMS spools match, prefer the one with lowest remaining filament",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "preferred_slicer": {
+    "constraints": [],
+    "default": "'bambu_studio'",
+    "description": "Slicer used for the server-side API / sidecar: 'bambu_studio' or 'orcaslicer'",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "preheat_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Master toggle / default for new queue items. Per-item preheat_override can flip the decision per print.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "preheat_filament_targets": {
+    "constraints": [],
+    "default": "''",
+    "description": "JSON map of normalized filament type \u2192 chamber target \u00b0C. Empty = bundled defaults (PLA/PETG/TPU/PVA: 0, PETG-CF: 40, ABS/ASA: 45, PA/PC/PC-FR: 50, PA-CF: 55, default: 0). Scheduler picks max across loaded AMS slots; 0 disables chamber phase for that print.",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "preheat_max_wait_seconds": {
+    "constraints": [
+     "Ge(ge=60)",
+     "Le(le=3600)"
+    ],
+    "default": "900",
+    "description": "Maximum time to wait for the chamber to reach the target before falling through to the soak phase (radiant heating on X1C/P2S can take 15-30 min).",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "preheat_soak_seconds": {
+    "constraints": [
+     "Ge(ge=0)",
+     "Le(le=1800)"
+    ],
+    "default": "300",
+    "description": "Additional hold time at temperature after the chamber reaches the target (or after max_wait_seconds elapses). 0 = no soak.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "print_drying_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Allow auto-drying to also fire on a printer that is currently printing, when its model+firmware supports concurrent drying (H2D 01.03.00.00+, H2C/H2S/P2S/H2D Pro 01.02.00.00+, X2D/A2L 01.01.00.00+, X1C 01.11.02.00+). Drying temperature is automatically capped 5 degC below the idle preset (floor 40 degC) to protect spools during print.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "printer_kill_switch_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Immediately stop printer jobs that start without Bambuddy authorization",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "printer_sensor_history_retention_days": {
+    "constraints": [],
+    "default": "30",
+    "description": "Number of days to keep printer heater history data (nozzle / bed / chamber)",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "prometheus_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable Prometheus metrics endpoint at /metrics",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "prometheus_token": {
+    "constraints": [],
+    "default": "''",
+    "description": "Bearer token for Prometheus metrics authentication (optional)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "pushcut_sms_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "Pushcut SMS notification webhook URL (write-only)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "queue_drying_block": {
+    "constraints": [],
+    "default": "False",
+    "description": "Block queue until drying completes (when disabled, prints take priority over drying)",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "queue_drying_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Automatically dry AMS filament between queued prints",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "queue_keep_bed_warm": {
+    "constraints": [],
+    "default": "False",
+    "description": "While a printer is in FINISH state awaiting plate-clear and the next queued item requires chamber heating, hold the bed hot so the chamber stays warm during the bed-clearing window. The bed is the chamber's heating element here: the hold target is queue_keep_warm_bed_temp, or the item's own bed_temperature when the slicer metadata reports a higher one. Only fires for filaments with a non-zero chamber target (ASA, ABS, PA, PC etc.); PLA/PETG prints are skipped automatically.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "queue_keep_warm_bed_temp": {
+    "constraints": [
+     "Ge(ge=40)",
+     "Le(le=110)"
+    ],
+    "default": "90",
+    "description": "Bed temperature (\u00b0C) used when the bed's job is to heat the chamber. 90 sustains chamber warmth on enclosed printers and satisfies bed-threshold-linked aftermarket chamber heaters (which typically activate at bed \u2265 80). Applies in two places: the keep-warm hold between chamber-heated prints, and preheat when a chamber-heated item's slicer metadata carries no bed temperature at all. A parsed bed temperature higher than this always wins, so the bed is never driven cooler than the print needs.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "queue_keep_warm_max_minutes": {
+    "constraints": [
+     "Ge(ge=5)",
+     "Le(le=480)"
+    ],
+    "default": "120",
+    "description": "How long keep-warm may hold the bed on a printer waiting for its plate to be cleared. When this elapses the bed is switched off, and the hold does not re-arm until the printer next becomes a keep-warm candidate \u2014 so a plate nobody clears cannot leave the bed hot indefinitely. Set it to how long you realistically take to reach the printer; the only cost of it being too short is that the next print re-soaks from cold.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "queue_max_concurrent_uploads": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=16)"
+    ],
+    "default": "4",
+    "description": "How many printers the queue may upload to at the same time. Printers are independent machines, so raising this starts a multi-printer batch proportionally sooner; each concurrent upload costs one connection and one thread on the Bambuddy host.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "queue_shortest_first": {
+    "constraints": [],
+    "default": "False",
+    "description": "Shortest Job First \u2014 scheduler prioritizes shorter print jobs over longer ones",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "require_plate_clear": {
+    "constraints": [],
+    "default": "False",
+    "description": "Require per-printer plate-clear confirmation before starting queued prints on finished printers",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "save_thumbnails": {
+    "constraints": [],
+    "default": "True",
+    "description": "Extract and save preview images from 3MF files",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "session_max_hours": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=720)"
+    ],
+    "default": "24",
+    "description": "Maximum session lifetime in hours for user logins (default 24, max 720). Applies to new logins only; already-issued tokens keep their original expiry. Longer sessions reduce automatic logout protection.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "slice_engine": {
+    "constraints": [],
+    "default": "'sidecar'",
+    "description": "Default execution site for slicing: 'sidecar' (server-side API) or 'browser'",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "slicer_stall_timeout_minutes": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=240)"
+    ],
+    "default": "15",
+    "description": "Give up on a slice after this many minutes with no progress from the sidecar. On sidecars that do not report progress, applies to total slicing time instead.",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "spoolman_disable_weight_sync": {
+    "constraints": [],
+    "default": "False",
+    "description": "Disable remaining_weight sync. When enabled, only location is updated for existing spools.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "spoolman_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable Spoolman integration for filament tracking",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "spoolman_report_partial_usage": {
+    "constraints": [],
+    "default": "True",
+    "description": "Report Partial Usage for Failed Prints. When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "spoolman_sync_mode": {
+    "constraints": [],
+    "default": "'auto'",
+    "description": "Sync mode: 'auto' syncs immediately, 'manual' requires button press",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "spoolman_url": {
+    "constraints": [],
+    "default": "''",
+    "description": "Spoolman server URL (e.g., http://localhost:7912)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "stagger_group_size": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=50)"
+    ],
+    "default": "2",
+    "description": "Number of printers to start simultaneously in staggered mode",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "stagger_interval_minutes": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=60)"
+    ],
+    "default": "5",
+    "description": "Minutes between staggered printer groups",
+    "required": false,
+    "type": "<class 'int'>"
+   },
+   "time_format": {
+    "constraints": [],
+    "default": "'system'",
+    "description": "Time format: system, 12h, 24h",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "use_slicer_api": {
+    "constraints": [],
+    "default": "False",
+    "description": "Use the slicer-API sidecar for slicing instead of the desktop slicer URI scheme",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "user_notifications_enabled": {
+    "constraints": [],
+    "default": "True",
+    "description": "Enable user email notifications for print job events (requires Advanced Authentication)",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "virtual_printer_access_code": {
+    "constraints": [],
+    "default": "''",
+    "description": "Access code for virtual printer authentication",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "virtual_printer_archive_name_source": {
+    "constraints": [],
+    "default": "'metadata'",
+    "description": "Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "virtual_printer_enabled": {
+    "constraints": [],
+    "default": "False",
+    "description": "Enable virtual printer for slicer uploads",
+    "required": false,
+    "type": "<class 'bool'>"
+   },
+   "virtual_printer_mode": {
+    "constraints": [],
+    "default": "'archive'",
+    "description": "Mode: 'archive' (archive now), 'review' (pending review), 'queue' (add to print queue), or 'proxy' (relay to real printer)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_accounts_url": {
+    "constraints": [],
+    "default": "'https://accounts.zoho.eu'",
+    "description": "Zoho accounts (OAuth) URL",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_base_url": {
+    "constraints": [],
+    "default": "'https://www.zohoapis.eu'",
+    "description": "Zoho API base URL",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_client_id": {
+    "constraints": [],
+    "default": "''",
+    "description": "Zoho OAuth client id",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_client_secret": {
+    "constraints": [],
+    "default": "''",
+    "description": "Zoho OAuth client secret (write-only)",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_default_contact_id": {
+    "constraints": [],
+    "default": "'66407000001237340'",
+    "description": "Zoho contact used as the default Aito client",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_default_contact_name": {
+    "constraints": [],
+    "default": "'Client de passage'",
+    "description": "Display name of the default Aito client",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_organization_id": {
+    "constraints": [],
+    "default": "''",
+    "description": "Zoho Books organization id",
+    "required": false,
+    "type": "<class 'str'>"
+   },
+   "zoho_refresh_token": {
+    "constraints": [],
+    "default": "''",
+    "description": "Zoho OAuth refresh token (write-only)",
+    "required": false,
+    "type": "<class 'str'>"
+   }
+  },
+  "validators": {
+   "field_validators": {},
+   "model_validators": []
+  }
+ },
+ "AppSettingsUpdate": {
+  "fields": {
+   "aito_deposit_pct": {
+    "constraints": [
+     "Ge(ge=0)",
+     "Le(le=100)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "aito_followup_link_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "aito_followup_pickup_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "aito_followup_quote_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "aito_quote_validity_days": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=365)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ambient_drying_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "ams_history_retention_days": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ams_humidity_fair": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ams_humidity_good": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ams_humidity_thresholds": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ams_temp_fair": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "ams_temp_good": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "auto_add_unknown_rfid": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "auto_archive": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "bambu_studio_api_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "bed_cooled_threshold": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "bed_temp_presets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "billing_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "camera_engine": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "camera_gpu_accel": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "camera_quality": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "camera_view_mode": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "capture_finish_photo": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "chamber_temp_presets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "check_printer_firmware": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "check_updates": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "currency": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "dark_accent": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "dark_background": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "dark_style": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "date_format": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "default_bed_levelling": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]"
+   },
+   "default_filament_cost": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "default_flow_cali": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]"
+   },
+   "default_layer_inspect": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "default_nozzle_offset_cali": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]"
+   },
+   "default_printer_id": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "default_sidebar_order": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "default_timelapse": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "default_vibration_cali": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "disable_filament_warnings": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "docker_compose_dir": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "drying_no_auto_stop": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "drying_presets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "energy_cost_per_kwh": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "energy_tracking_mode": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "external_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "fan_speed_presets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "finance_budget_reset_day": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=31)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "finance_budget_reset_timezone": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "finish_photo_restore_plate": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "forecast_global_lead_time_days": {
+    "constraints": [
+     "Ge(ge=0)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ftp_retry_count": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ftp_retry_delay": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "ftp_retry_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "ftp_timeout": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "gcode_snippets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ha_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "ha_token": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ha_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "heimdall_api_token": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "heimdall_base_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "include_beta_updates": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "language": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_auto_provision": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "ldap_bind_dn": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_bind_password": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_default_group": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "ldap_group_mapping": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_search_base": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_security": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_server_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "ldap_user_filter": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "library_archive_mode": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "library_disk_warning_gb": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "light_accent": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "light_background": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "light_style": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "local_backup_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "local_backup_path": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "local_backup_retention": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "local_backup_schedule": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "local_backup_time": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "local_login_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "low_stock_threshold": {
+    "constraints": [
+     "Ge(ge=0.1)",
+     "Le(le=99.9)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "float | None"
+   },
+   "mqtt_broker": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "mqtt_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "mqtt_password": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "mqtt_port": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "mqtt_topic_prefix": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "mqtt_use_tls": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "mqtt_username": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "notification_language": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "nozzle_temp_presets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "obico_action": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "obico_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "obico_enabled_printers": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "obico_ml_token": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "obico_ml_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "obico_poll_interval": {
+    "constraints": [
+     "Ge(ge=5)",
+     "Le(le=120)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "obico_sensitivity": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "open_in_slicer": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "openrouter_api_key": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "openrouter_model": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "orcaslicer_api_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "per_printer_mapping_expanded": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "pipeline_max_copies": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "prefer_lowest_filament": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "preferred_slicer": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "preheat_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "preheat_filament_targets": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "preheat_max_wait_seconds": {
+    "constraints": [
+     "Ge(ge=60)",
+     "Le(le=3600)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "preheat_soak_seconds": {
+    "constraints": [
+     "Ge(ge=0)",
+     "Le(le=1800)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "print_drying_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "printer_kill_switch_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "printer_sensor_history_retention_days": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "prometheus_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "prometheus_token": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "pushcut_sms_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "queue_drying_block": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "queue_drying_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "queue_keep_bed_warm": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "queue_keep_warm_bed_temp": {
+    "constraints": [
+     "Ge(ge=40)",
+     "Le(le=110)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "queue_keep_warm_max_minutes": {
+    "constraints": [
+     "Ge(ge=5)",
+     "Le(le=480)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "queue_max_concurrent_uploads": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=16)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "queue_shortest_first": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "require_plate_clear": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "save_thumbnails": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "session_max_hours": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=720)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "slice_engine": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "slicer_stall_timeout_minutes": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=240)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "spoolman_disable_weight_sync": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "spoolman_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "spoolman_report_partial_usage": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "spoolman_sync_mode": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "spoolman_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "stagger_group_size": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=50)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "stagger_interval_minutes": {
+    "constraints": [
+     "Ge(ge=1)",
+     "Le(le=60)"
+    ],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "int | None"
+   },
+   "time_format": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "use_slicer_api": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "user_notifications_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "virtual_printer_access_code": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "virtual_printer_archive_name_source": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "virtual_printer_enabled": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "bool | None"
+   },
+   "virtual_printer_mode": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_accounts_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_base_url": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_client_id": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_client_secret": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_default_contact_id": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_default_contact_name": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_organization_id": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   },
+   "zoho_refresh_token": {
+    "constraints": [],
+    "default": "None",
+    "description": null,
+    "required": false,
+    "type": "str | None"
+   }
+  },
+  "validators": {
+   "field_validators": {
+    "validate_bed_temp_presets": [
+     "bed_temp_presets"
+    ],
+    "validate_chamber_temp_presets": [
+     "chamber_temp_presets"
+    ],
+    "validate_default_sidebar_order": [
+     "default_sidebar_order"
+    ],
+    "validate_docker_compose_dir": [
+     "docker_compose_dir"
+    ],
+    "validate_external_url": [
+     "external_url"
+    ],
+    "validate_fan_speed_presets": [
+     "fan_speed_presets"
+    ],
+    "validate_gcode_snippets": [
+     "gcode_snippets"
+    ],
+    "validate_lan_service_url": [
+     "bambu_studio_api_url",
+     "ha_url",
+     "heimdall_base_url",
+     "obico_ml_url",
+     "orcaslicer_api_url",
+     "pushcut_sms_url",
+     "zoho_accounts_url",
+     "zoho_base_url"
+    ],
+    "validate_ldap_group_mapping": [
+     "ldap_group_mapping"
+    ],
+    "validate_nozzle_temp_presets": [
+     "nozzle_temp_presets"
+    ],
+    "validate_obico_action": [
+     "obico_action"
+    ],
+    "validate_obico_enabled_printers": [
+     "obico_enabled_printers"
+    ],
+    "validate_obico_sensitivity": [
+     "obico_sensitivity"
+    ]
+   },
+   "model_validators": []
+  }
+ },
+ "DEFAULT_SETTINGS": {
+  "aito_deposit_pct": 0,
+  "aito_followup_link_days": 3,
+  "aito_followup_pickup_days": 7,
+  "aito_followup_quote_days": 5,
+  "aito_quote_validity_days": 15,
+  "ambient_drying_enabled": false,
+  "ams_history_retention_days": 30,
+  "ams_humidity_fair": 60,
+  "ams_humidity_good": 40,
+  "ams_humidity_thresholds": "",
+  "ams_temp_fair": 35.0,
+  "ams_temp_good": 28.0,
+  "auto_add_unknown_rfid": true,
+  "auto_archive": true,
+  "bambu_studio_api_url": "",
+  "bed_cooled_threshold": 35.0,
+  "bed_temp_presets": "",
+  "billing_enabled": false,
+  "camera_engine": "ffmpeg",
+  "camera_gpu_accel": true,
+  "camera_quality": "auto",
+  "camera_view_mode": "window",
+  "capture_finish_photo": true,
+  "chamber_temp_presets": "",
+  "check_printer_firmware": true,
+  "check_updates": true,
+  "currency": "USD",
+  "dark_accent": "green",
+  "dark_background": "cool",
+  "dark_style": "vibrant",
+  "date_format": "system",
+  "default_bed_levelling": "auto",
+  "default_filament_cost": 25.0,
+  "default_flow_cali": "auto",
+  "default_layer_inspect": false,
+  "default_nozzle_offset_cali": "auto",
+  "default_printer_id": null,
+  "default_sidebar_order": "",
+  "default_timelapse": false,
+  "default_vibration_cali": true,
+  "disable_filament_warnings": false,
+  "docker_compose_dir": "",
+  "drying_no_auto_stop": false,
+  "drying_presets": "",
+  "energy_cost_per_kwh": 0.15,
+  "energy_tracking_mode": "total",
+  "external_url": "",
+  "fan_speed_presets": "",
+  "finance_budget_reset_day": 1,
+  "finance_budget_reset_timezone": "UTC",
+  "finish_photo_restore_plate": true,
+  "forecast_global_lead_time_days": 0,
+  "ftp_retry_count": 3,
+  "ftp_retry_delay": 2,
+  "ftp_retry_enabled": true,
+  "ftp_timeout": 30,
+  "gcode_snippets": "",
+  "ha_enabled": false,
+  "ha_env_managed": false,
+  "ha_token": "",
+  "ha_token_from_env": false,
+  "ha_url": "",
+  "ha_url_from_env": false,
+  "heimdall_api_token": "",
+  "heimdall_base_url": "",
+  "include_beta_updates": false,
+  "language": "en",
+  "ldap_auto_provision": false,
+  "ldap_bind_dn": "",
+  "ldap_bind_password": "",
+  "ldap_default_group": "",
+  "ldap_enabled": false,
+  "ldap_group_mapping": "",
+  "ldap_search_base": "",
+  "ldap_security": "starttls",
+  "ldap_server_url": "",
+  "ldap_user_filter": "(sAMAccountName={username})",
+  "library_archive_mode": "ask",
+  "library_disk_warning_gb": 5.0,
+  "light_accent": "green",
+  "light_background": "neutral",
+  "light_style": "classic",
+  "local_backup_enabled": false,
+  "local_backup_path": "",
+  "local_backup_retention": 5,
+  "local_backup_schedule": "daily",
+  "local_backup_time": "03:00",
+  "local_login_enabled": true,
+  "low_stock_threshold": 20.0,
+  "mqtt_broker": "",
+  "mqtt_enabled": false,
+  "mqtt_password": "",
+  "mqtt_port": 1883,
+  "mqtt_topic_prefix": "bambuddy",
+  "mqtt_use_tls": false,
+  "mqtt_username": "",
+  "notification_language": "en",
+  "nozzle_temp_presets": "",
+  "obico_action": "notify",
+  "obico_enabled": false,
+  "obico_enabled_printers": "",
+  "obico_ml_token": "",
+  "obico_ml_url": "",
+  "obico_poll_interval": 10,
+  "obico_sensitivity": "medium",
+  "open_in_slicer": null,
+  "openrouter_api_key": "",
+  "openrouter_model": "mistralai/mistral-small",
+  "orcaslicer_api_url": "",
+  "per_printer_mapping_expanded": false,
+  "pipeline_max_copies": 50,
+  "prefer_lowest_filament": false,
+  "preferred_slicer": "bambu_studio",
+  "preheat_enabled": false,
+  "preheat_filament_targets": "",
+  "preheat_max_wait_seconds": 900,
+  "preheat_soak_seconds": 300,
+  "print_drying_enabled": false,
+  "printer_kill_switch_enabled": false,
+  "printer_sensor_history_retention_days": 30,
+  "prometheus_enabled": false,
+  "prometheus_token": "",
+  "pushcut_sms_url": "",
+  "queue_drying_block": false,
+  "queue_drying_enabled": false,
+  "queue_keep_bed_warm": false,
+  "queue_keep_warm_bed_temp": 90,
+  "queue_keep_warm_max_minutes": 120,
+  "queue_max_concurrent_uploads": 4,
+  "queue_shortest_first": false,
+  "require_plate_clear": false,
+  "save_thumbnails": true,
+  "session_max_hours": 24,
+  "slice_engine": "sidecar",
+  "slicer_stall_timeout_minutes": 15,
+  "spoolman_disable_weight_sync": false,
+  "spoolman_enabled": false,
+  "spoolman_report_partial_usage": true,
+  "spoolman_sync_mode": "auto",
+  "spoolman_url": "",
+  "stagger_group_size": 2,
+  "stagger_interval_minutes": 5,
+  "time_format": "system",
+  "use_slicer_api": false,
+  "user_notifications_enabled": true,
+  "virtual_printer_access_code": "",
+  "virtual_printer_archive_name_source": "metadata",
+  "virtual_printer_enabled": false,
+  "virtual_printer_mode": "archive",
+  "zoho_accounts_url": "https://accounts.zoho.eu",
+  "zoho_base_url": "https://www.zohoapis.eu",
+  "zoho_client_id": "",
+  "zoho_client_secret": "",
+  "zoho_default_contact_id": "66407000001237340",
+  "zoho_default_contact_name": "Client de passage",
+  "zoho_organization_id": "",
+  "zoho_refresh_token": ""
+ },
+ "compose_dir_allowed": "^[\\w \\-./\\\\:~]+$",
+ "compose_dir_max_len": 512,
+ "falsy": [
+  "0",
+  "false",
+  "no",
+  "off"
+ ],
+ "lan_service_url_settings": [
+  "ha_url",
+  "obico_ml_url",
+  "orcaslicer_api_url",
+  "bambu_studio_api_url",
+  "zoho_base_url",
+  "zoho_accounts_url",
+  "pushcut_sms_url",
+  "heimdall_base_url"
+ ],
+ "sensitive_fields_for_api_key": [
+  "mqtt_password",
+  "ha_token",
+  "prometheus_token",
+  "virtual_printer_access_code",
+  "ldap_bind_password",
+  "zoho_client_secret",
+  "zoho_refresh_token",
+  "openrouter_api_key",
+  "pushcut_sms_url",
+  "heimdall_api_token"
+ ],
+ "truthy": [
+  "1",
+  "on",
+  "true",
+  "yes"
+ ],
+ "ui_preference_fields": [
+  "require_plate_clear",
+  "check_printer_firmware",
+  "camera_view_mode",
+  "time_format",
+  "date_format",
+  "drying_presets",
+  "ams_humidity_thresholds",
+  "ams_humidity_good",
+  "ams_humidity_fair",
+  "ams_temp_good",
+  "ams_temp_fair",
+  "bed_cooled_threshold",
+  "nozzle_temp_presets",
+  "bed_temp_presets",
+  "chamber_temp_presets",
+  "fan_speed_presets"
+ ]
+}
+
+### stderr:
+

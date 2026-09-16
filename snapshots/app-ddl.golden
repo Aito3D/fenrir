@@ -19,6 +19,28 @@ CREATE TABLE aito_events (
 	PRIMARY KEY (id), 
 	UNIQUE (zoho_comment_id)
 );
+CREATE TABLE aito_payment_links (
+	id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	idempotency_key VARCHAR(64) NOT NULL, 
+	heimdall_id VARCHAR(36), 
+	reference VARCHAR(64) NOT NULL, 
+	amount INTEGER NOT NULL, 
+	currency VARCHAR(3) DEFAULT 'XPF' NOT NULL, 
+	expires_on VARCHAR(10) NOT NULL, 
+	url VARCHAR(500), 
+	status VARCHAR(20) DEFAULT 'pending' NOT NULL, 
+	paid_at DATETIME, 
+	checked_at DATETIME, 
+	sync_error TEXT, 
+	sync_failures INTEGER DEFAULT '0' NOT NULL, 
+	superseded_at DATETIME, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (idempotency_key), 
+	UNIQUE (heimdall_id)
+);
 CREATE TABLE aito_projects (
 	id INTEGER NOT NULL, 
 	description TEXT NOT NULL, 
@@ -49,6 +71,8 @@ CREATE TABLE aito_projects (
 	invoice_balance FLOAT, 
 	invoice_due_date VARCHAR(10), 
 	invoice_checked_at DATETIME, 
+	quote_expiry_date VARCHAR(10), 
+	retainer_paid_total FLOAT, 
 	flag VARCHAR(16), 
 	due_date VARCHAR(10), 
 	client_contacted_at DATETIME, 
@@ -592,6 +616,7 @@ CREATE TABLE notification_providers (
 	on_print_progress BOOLEAN, 
 	on_print_missing_spool_assignment BOOLEAN, 
 	on_billing_charge_failed BOOLEAN, 
+	on_aito_payment_received BOOLEAN, 
 	on_printer_offline BOOLEAN, 
 	on_printer_error BOOLEAN, 
 	on_ai_failure_detection BOOLEAN, 

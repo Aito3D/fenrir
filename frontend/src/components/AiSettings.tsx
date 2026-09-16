@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { settingsInputCls as INPUT } from './formStyles';
 
 const DEFAULT_MODEL = 'mistralai/mistral-small';
 
@@ -115,7 +116,7 @@ export function AiSettings() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={t('settings.openrouterApiKeyHint')}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
 
@@ -126,7 +127,7 @@ export function AiSettings() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder={DEFAULT_MODEL}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
           </div>
         </div>
@@ -140,7 +141,7 @@ export function AiSettings() {
             value={pushcutUrl}
             onChange={(e) => setPushcutUrl(e.target.value)}
             placeholder={t('settings.pushcutUrlHint')}
-            className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            className={INPUT}
           />
           <p className="text-sm text-bambu-gray mt-1">{t('settings.pushcutUrlDescription')}</p>
         </div>
@@ -158,7 +159,7 @@ export function AiSettings() {
               step={1}
               value={quoteDays}
               onChange={(e) => setQuoteDays(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
             <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupQuoteDaysDescription')}</p>
           </div>
@@ -174,7 +175,7 @@ export function AiSettings() {
               step={1}
               value={pickupDays}
               onChange={(e) => setPickupDays(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
             <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupPickupDaysDescription')}</p>
           </div>
@@ -190,7 +191,7 @@ export function AiSettings() {
               step={1}
               value={linkDays}
               onChange={(e) => setLinkDays(e.target.value)}
-              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              className={INPUT}
             />
             <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupLinkDaysDescription')}</p>
           </div>

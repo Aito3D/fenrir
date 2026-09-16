@@ -634,3 +634,46 @@ class TestModeSwitchKeepsAssignments:
 
         rows = await db_session.execute(select(SpoolAssignment).where(SpoolAssignment.printer_id == test_printer.id))
         assert len(rows.scalars().all()) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_settings_get_put_round_trip(self, async_client: AsyncClient):
+        """PUT /settings/spoolman returns the updated settings, and a
+        subsequent GET reflects the same persisted values.
+
+        Enabling Spoolman with a URL set triggers a best-effort location
+        sync against the real Spoolman client (services.location_service);
+        that side effect is out of scope here, so it's patched out to keep
+        this test hermetic.
+        """
+        with patch(
+            "backend.app.services.location_service.maybe_sync_spoolman_locations",
+            AsyncMock(return_value=False),
+        ):
+            put_resp = await async_client.put(
+                "/api/v1/settings/spoolman",
+                json={
+                    "spoolman_enabled": "true",
+                    "spoolman_url": "http://spoolman.local:7912",
+                    "spoolman_sync_mode": "manual",
+                    "spoolman_disable_weight_sync": "true",
+                    "spoolman_report_partial_usage": "false",
+                    "auto_add_unknown_rfid": "false",
+                },
+            )
+        assert put_resp.status_code == 200
+        put_body = put_resp.json()
+
+        get_resp = await async_client.get("/api/v1/settings/spoolman")
+        assert get_resp.status_code == 200
+        get_body = get_resp.json()
+
+        assert get_body == put_body
+        assert get_body == {
+            "spoolman_enabled": "true",
+            "spoolman_url": "http://spoolman.local:7912",
+            "spoolman_sync_mode": "manual",
+            "spoolman_disable_weight_sync": "true",
+            "spoolman_report_partial_usage": "false",
+            "auto_add_unknown_rfid": "false",
+        }

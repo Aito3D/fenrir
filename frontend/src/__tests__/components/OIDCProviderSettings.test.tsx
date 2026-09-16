@@ -416,3 +416,222 @@ describe('env-managed provider (#2593)', () => {
     expect(screen.getAllByRole('switch')).toHaveLength(1);
   });
 });
+
+// T-246: create/update/delete/toggle-enabled/icon mutations and the
+// isEdit-&&-!secretChanged branch in handleSave that must omit
+// client_secret from the PATCH payload so an unedited secret is never
+// blanked out.
+describe('OIDCProviderSettings mutations (T-246)', () => {
+  let putBodies: Record<string, unknown>[];
+  let postBodies: Record<string, unknown>[];
+  let deletedIds: number[];
+
+  beforeEach(() => {
+    putBodies = [];
+    postBodies = [];
+    deletedIds = [];
+  });
+
+  it('omits client_secret from the PATCH payload when the edit form is saved without touching the secret field', async () => {
+    server.use(
+      http.put('/api/v1/auth/oidc/providers/1', async ({ request }) => {
+        putBodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ...mockProviders[0] });
+      })
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByText('TestIdP')).toBeInTheDocument());
+    await user.click(screen.getByTestId('edit-provider-1'));
+
+    const saveButton = await screen.findByRole('button', { name: 'Save' });
+    await user.click(saveButton);
+
+    await waitFor(() => expect(putBodies).toHaveLength(1));
+    expect(putBodies[0]).not.toHaveProperty('client_secret');
+    expect(putBodies[0]).toMatchObject({
+      name: 'TestIdP',
+      issuer_url: 'https://idp.example.com',
+      client_id: 'test-client',
+    });
+    expect(await screen.findByText('Provider updated.')).toBeInTheDocument();
+  });
+
+  it('includes the typed client_secret in the PATCH payload when the secret field is changed', async () => {
+    server.use(
+      http.put('/api/v1/auth/oidc/providers/1', async ({ request }) => {
+        putBodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ...mockProviders[0] });
+      })
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByText('TestIdP')).toBeInTheDocument());
+    await user.click(screen.getByTestId('edit-provider-1'));
+
+    const secretInput = await screen.findByPlaceholderText('••••••••');
+    await user.type(secretInput, 'new-secret-value');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(putBodies).toHaveLength(1));
+    expect(putBodies[0]).toMatchObject({ client_secret: 'new-secret-value' });
+  });
+
+  it('creates a new provider and shows the created toast', async () => {
+    server.use(
+      http.post('/api/v1/auth/oidc/providers', async ({ request }) => {
+        postBodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ id: 5, ...mockProviders[0], name: 'NewIdP' });
+      })
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /Add Provider/i })[0]).toBeInTheDocument();
+    });
+    await user.click(screen.getAllByRole('button', { name: /Add Provider/i })[0]);
+
+    await user.type(await screen.findByPlaceholderText('Google'), 'NewIdP');
+    await user.type(screen.getByPlaceholderText('https://accounts.google.com'), 'https://new.example.com');
+    await user.type(screen.getByPlaceholderText('your-client-id'), 'new-client');
+    await user.type(screen.getByPlaceholderText('new secret'), 'shh');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(postBodies).toHaveLength(1));
+    expect(postBodies[0]).toMatchObject({
+      name: 'NewIdP',
+      issuer_url: 'https://new.example.com',
+      client_id: 'new-client',
+      client_secret: 'shh',
+    });
+    expect(await screen.findByText('Provider created.')).toBeInTheDocument();
+  });
+
+  it('deletes a provider through the confirm modal and shows the deleted toast', async () => {
+    server.use(
+      http.delete('/api/v1/auth/oidc/providers/1', () => {
+        deletedIds.push(1);
+        return HttpResponse.json({ message: 'deleted' });
+      })
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByText('TestIdP')).toBeInTheDocument());
+    await user.click(screen.getByTestId('delete-provider-1'));
+
+    const confirmButton = await screen.findByRole('button', { name: 'Delete' });
+    await user.click(confirmButton);
+
+    await waitFor(() => expect(deletedIds).toEqual([1]));
+    expect(await screen.findByText('Provider deleted.')).toBeInTheDocument();
+  });
+
+  it('toggles is_enabled via a PATCH carrying only the flipped flag when the card toggle is clicked', async () => {
+    server.use(
+      http.put('/api/v1/auth/oidc/providers/1', async ({ request }) => {
+        putBodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ...mockProviders[0], is_enabled: false });
+      })
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByText('TestIdP')).toBeInTheDocument());
+    const toggle = screen.getAllByRole('switch')[0];
+    await user.click(toggle);
+
+    await waitFor(() => expect(putBodies).toHaveLength(1));
+    expect(putBodies[0]).toEqual({ is_enabled: false });
+  });
+
+  it('refreshes the provider icon and shows the refreshed toast', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () =>
+        HttpResponse.json([{ ...mockProviders[0], icon_url: 'https://idp.example.com/i.png', has_icon: true }])
+      )
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByTestId('refresh-icon-1')).toBeInTheDocument());
+    await user.click(screen.getByTestId('refresh-icon-1'));
+
+    expect(await screen.findByText('Icon refreshed.')).toBeInTheDocument();
+  });
+
+  it('removes the cached provider icon and shows the removed toast', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () =>
+        HttpResponse.json([{ ...mockProviders[0], icon_url: 'https://idp.example.com/i.png', has_icon: true }])
+      )
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByTestId('remove-icon-1')).toBeInTheDocument());
+    await user.click(screen.getByTestId('remove-icon-1'));
+
+    expect(await screen.findByText('Icon removed.')).toBeInTheDocument();
+  });
+
+  it('shows the API error message via toast when the create mutation fails', async () => {
+    server.use(
+      http.post('/api/v1/auth/oidc/providers', () =>
+        HttpResponse.json({ detail: 'issuer already in use' }, { status: 400 })
+      )
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /Add Provider/i })[0]).toBeInTheDocument();
+    });
+    await user.click(screen.getAllByRole('button', { name: /Add Provider/i })[0]);
+
+    await user.type(await screen.findByPlaceholderText('Google'), 'BadIdP');
+    await user.type(screen.getByPlaceholderText('https://accounts.google.com'), 'https://bad.example.com');
+    await user.type(screen.getByPlaceholderText('your-client-id'), 'bad-client');
+    await user.type(screen.getByPlaceholderText('new secret'), 'shh');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('issuer already in use')).toBeInTheDocument();
+  });
+
+  it('shows the API error message via toast when the update mutation fails', async () => {
+    server.use(
+      http.put('/api/v1/auth/oidc/providers/1', () =>
+        HttpResponse.json({ detail: 'update rejected' }, { status: 400 })
+      )
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByText('TestIdP')).toBeInTheDocument());
+    await user.click(screen.getByTestId('edit-provider-1'));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('update rejected')).toBeInTheDocument();
+  });
+
+  it('shows the API error message via toast when the delete mutation fails', async () => {
+    server.use(
+      http.delete('/api/v1/auth/oidc/providers/1', () =>
+        HttpResponse.json({ detail: 'provider is in use' }, { status: 409 })
+      )
+    );
+    const user = userEvent.setup();
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => expect(screen.getByText('TestIdP')).toBeInTheDocument());
+    await user.click(screen.getByTestId('delete-provider-1'));
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('provider is in use')).toBeInTheDocument();
+  });
+});

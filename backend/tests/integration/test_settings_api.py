@@ -3,10 +3,12 @@
 Tests the full request/response cycle for /api/v1/settings/ endpoints.
 """
 
+import logging
 import os
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TestSettingsAPI:
@@ -379,6 +381,37 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_mqtt_settings_logs_reconfigure_failure(self, async_client: AsyncClient, monkeypatch, caplog):
+        """A broken MQTT reconfiguration must not fail the request, but must be logged (#T-202)."""
+        from backend.app.services.mqtt_relay import mqtt_relay
+
+        async def boom(self, settings):
+            raise RuntimeError("broker unreachable")
+
+        monkeypatch.setattr(type(mqtt_relay), "configure", boom)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.settings"):
+            response = await async_client.put(
+                "/api/v1/settings/",
+                json={
+                    "mqtt_enabled": True,
+                    "mqtt_broker": "mqtt.example.com",
+                    "mqtt_port": 8883,
+                    "mqtt_username": "testuser",
+                    "mqtt_password": "testpass",
+                    "mqtt_topic_prefix": "myprefix",
+                    "mqtt_use_tls": True,
+                },
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["mqtt_broker"] == "mqtt.example.com"
+        assert result["mqtt_port"] == 8883
+        assert "MQTT relay reconfiguration failed" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_mqtt_status_endpoint(self, async_client: AsyncClient):
         """Verify MQTT status endpoint returns expected fields."""
         response = await async_client.get("/api/v1/settings/mqtt/status")
@@ -557,6 +590,154 @@ class TestSettingsAPI:
 
         assert "auto_resolved_quality" in result
         assert result["auto_resolved_quality"] in ["low", "medium", "high"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_quality_change_stops_active_streams(self, async_client: AsyncClient, monkeypatch):
+        """A camera_keys change must stop active camera streams via the shared hub (#T-241)."""
+        from backend.app.api.routes.camera import _hub
+
+        calls = {"count": 0}
+
+        async def fake_stop_all(self):
+            calls["count"] += 1
+            return 2
+
+        monkeypatch.setattr(type(_hub), "stop_all", fake_stop_all)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_quality": "high"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_quality"] == "high"
+        assert calls["count"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_stream_stop_failure_logged_and_swallowed(
+        self, async_client: AsyncClient, monkeypatch, caplog
+    ):
+        """A broken camera stream stop must not fail the request, but must be logged (#T-241)."""
+        from backend.app.api.routes.camera import _hub
+
+        async def boom(self):
+            raise RuntimeError("ffmpeg pipe broken")
+
+        monkeypatch.setattr(type(_hub), "stop_all", boom)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.settings"):
+            response = await async_client.put("/api/v1/settings/", json={"camera_quality": "medium"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_quality"] == "medium"
+        assert "Camera engine reconfiguration failed" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_to_go2rtc_starts_service(self, async_client: AsyncClient, monkeypatch):
+        """Switching camera_engine to 'go2rtc' while stopped must start the go2rtc service (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"start": 0, "stop": 0}
+
+        async def fake_start(self):
+            calls["start"] += 1
+
+        async def fake_stop(self):
+            calls["stop"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: False))
+        monkeypatch.setattr(type(go2rtc_service), "start", fake_start)
+        monkeypatch.setattr(type(go2rtc_service), "stop", fake_stop)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "go2rtc"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_engine"] == "go2rtc"
+        assert calls["start"] == 1
+        assert calls["stop"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_to_go2rtc_noop_when_already_running(
+        self, async_client: AsyncClient, monkeypatch
+    ):
+        """Switching camera_engine to 'go2rtc' while already running must not restart it (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"start": 0}
+
+        async def fake_start(self):
+            calls["start"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: True))
+        monkeypatch.setattr(type(go2rtc_service), "start", fake_start)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "go2rtc"})
+
+        assert response.status_code == 200
+        assert calls["start"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_away_from_go2rtc_stops_service(self, async_client: AsyncClient, monkeypatch):
+        """Switching camera_engine away from 'go2rtc' while running must stop the go2rtc service (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"stop": 0}
+
+        async def fake_stop(self):
+            calls["stop"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: True))
+        monkeypatch.setattr(type(go2rtc_service), "stop", fake_stop)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "ffmpeg"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_engine"] == "ffmpeg"
+        assert calls["stop"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_switch_away_from_go2rtc_noop_when_already_stopped(
+        self, async_client: AsyncClient, monkeypatch
+    ):
+        """Switching camera_engine away from 'go2rtc' while already stopped must not call stop() (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        calls = {"stop": 0}
+
+        async def fake_stop(self):
+            calls["stop"] += 1
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: False))
+        monkeypatch.setattr(type(go2rtc_service), "stop", fake_stop)
+
+        response = await async_client.put("/api/v1/settings/", json={"camera_engine": "ffmpeg"})
+
+        assert response.status_code == 200
+        assert calls["stop"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_engine_go2rtc_management_failure_logged_and_swallowed(
+        self, async_client: AsyncClient, monkeypatch, caplog
+    ):
+        """A broken go2rtc start/stop must not fail the request, but must be logged (#T-241)."""
+        from backend.app.services.go2rtc import go2rtc_service
+
+        async def boom(self):
+            raise RuntimeError("go2rtc binary not found")
+
+        monkeypatch.setattr(type(go2rtc_service), "running", property(lambda self: False))
+        monkeypatch.setattr(type(go2rtc_service), "start", boom)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.settings"):
+            response = await async_client.put("/api/v1/settings/", json={"camera_engine": "go2rtc"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_engine"] == "go2rtc"
+        assert "go2rtc management failed" in caplog.text
 
     # ========================================================================
     # Per-printer mapping settings tests
@@ -1109,3 +1290,233 @@ class TestSimplifiedBackupRestore:
 
         assert response.status_code == 400
         assert "not a valid zip" in response.json()["detail"].lower()
+
+
+async def _setup_auth_and_login(client: AsyncClient, username: str, password: str) -> str:
+    """Enable auth, create the first (admin) user, and return their access token.
+
+    Mirrors ``_setup_and_login`` in ``test_security.py``: POST /auth/setup with
+    ``auth_enabled=True`` creates the first local admin, then /auth/login
+    returns a JWT. Duplicated locally rather than imported so this file's
+    auth-enabled tests don't couple to test_security.py's internals.
+    """
+    resp = await client.post(
+        "/api/v1/auth/setup",
+        json={"auth_enabled": True, "admin_username": username, "admin_password": password},
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["access_token"]
+
+
+class TestDisableLocalLoginLockoutGuard:
+    """The PUT /settings/ handler refuses to disable local login (#1589) when
+    doing so would lock every admin out of the install. Two independent
+    refusal branches, plus the success path once both are satisfied.
+
+    Note: the caller-link check (``if current_user is not None``) only runs
+    when there IS an authenticated caller. With auth disabled (the default
+    test client), ``current_user`` is always ``None``, so only the
+    "no OIDC provider enabled" branch is reachable — the caller-link branch
+    requires auth to be enabled and an authenticated request.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_local_login_rejected_without_enabled_oidc_provider(self, async_client: AsyncClient):
+        """No enabled OIDCProvider exists at all -> 400, regardless of auth state."""
+        response = await async_client.put("/api/v1/settings/", json={"local_login_enabled": False})
+
+        assert response.status_code == 400
+        assert "no oidc provider is enabled" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_local_login_rejected_without_caller_oidc_link(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """An enabled OIDCProvider exists, but the authenticated caller has no
+        UserOIDCLink of their own -> 400 (they would lock themselves out)."""
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import OIDCProvider
+        from backend.app.models.user import User
+
+        token = await _setup_auth_and_login(async_client, "lockout_no_link_admin", "LockoutPw1!")
+
+        provider = OIDCProvider(
+            name="LockoutGuardProvider",
+            issuer_url="https://lockout-guard.example.com",
+            client_id="lockout-client",
+            client_secret="lockout-secret",
+            is_enabled=True,
+        )
+        db_session.add(provider)
+        await db_session.commit()
+
+        # Sanity check the admin user exists and truly has no OIDC link.
+        result = await db_session.execute(select(User).where(User.username == "lockout_no_link_admin"))
+        assert result.scalar_one_or_none() is not None
+
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"local_login_enabled": False},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 400
+        assert "no oidc link" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_local_login_succeeds_when_caller_is_linked(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """An enabled OIDCProvider exists AND the authenticated caller has a
+        UserOIDCLink to it -> the update succeeds."""
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+        from backend.app.models.user import User
+
+        token = await _setup_auth_and_login(async_client, "lockout_linked_admin", "LockoutPw1!")
+
+        provider = OIDCProvider(
+            name="LockoutGuardLinkedProvider",
+            issuer_url="https://lockout-guard-linked.example.com",
+            client_id="lockout-linked-client",
+            client_secret="lockout-linked-secret",
+            is_enabled=True,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        result = await db_session.execute(select(User).where(User.username == "lockout_linked_admin"))
+        admin = result.scalar_one()
+
+        db_session.add(
+            UserOIDCLink(
+                user_id=admin.id,
+                provider_id=provider.id,
+                provider_user_id="lockout-linked-sub",
+                provider_email="lockout_linked_admin@example.com",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"local_login_enabled": False},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["local_login_enabled"] is False
+
+
+class TestResetSettings:
+    """POST /settings/reset (T-239): wipes every ``Settings`` row and returns
+    ``DEFAULT_SETTINGS``.
+
+    This characterizes the handler exactly as it exists today, including its
+    known breadth: it deletes every row in the table, not just the ones a
+    particular subsystem owns (e.g. ``auth_enabled`` gets wiped too). That is
+    a separately tracked concern — these tests pin current behavior, they do
+    not fix it.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_returns_defaults_and_empties_table(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Seed several settings rows via the normal update path, POST
+        /reset, and verify: 200 with the DEFAULT_SETTINGS body, the Settings
+        table is empty afterward, and a subsequent GET reflects the reset
+        (returns defaults again)."""
+        from sqlalchemy import func, select
+
+        from backend.app.api.routes.settings import DEFAULT_SETTINGS
+        from backend.app.models.settings import Settings
+
+        seed_response = await async_client.put(
+            "/api/v1/settings/",
+            json={"currency": "GBP", "date_format": "iso", "time_format": "12h"},
+        )
+        assert seed_response.status_code == 200
+        assert seed_response.json()["currency"] == "GBP"
+
+        count_before = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+        assert count_before > 0, "seeding via PUT /settings/ must have written at least one row"
+
+        response = await async_client.post("/api/v1/settings/reset")
+
+        assert response.status_code == 200
+        assert response.json() == DEFAULT_SETTINGS.model_dump(mode="json")
+
+        count_after = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+        assert count_after == 0, "reset must delete every row in the Settings table"
+
+        get_response = await async_client.get("/api/v1/settings/")
+        assert get_response.status_code == 200
+        assert get_response.json()["currency"] == DEFAULT_SETTINGS.currency
+        assert get_response.json()["date_format"] == DEFAULT_SETTINGS.date_format
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_denied_for_caller_without_settings_update(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A caller in the Viewers group (SETTINGS_READ but not
+        SETTINGS_UPDATE) must get 403, and the table must be left untouched."""
+        from sqlalchemy import func, insert, select
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.group import Group, user_groups
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+
+        # Bootstrap auth (also seeds the default groups, e.g. Viewers).
+        token = await _setup_auth_and_login(async_client, "reset_denied_admin", "ResetDeniedPw1!")
+
+        viewer = User(
+            username="reset_denied_viewer",
+            email="reset_denied_viewer@example.com",
+            password_hash=get_password_hash("ResetDeniedViewer1!"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(viewer)
+        await db_session.flush()
+
+        viewers_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one_or_none()
+        assert viewers_group is not None, "Viewers group must be seeded by setup"
+
+        await db_session.execute(insert(user_groups).values(user_id=viewer.id, group_id=viewers_group.id))
+        await db_session.commit()
+
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "reset_denied_viewer", "password": "ResetDeniedViewer1!"},
+        )
+        assert login.status_code == 200, login.text
+        viewer_token = login.json()["access_token"]
+
+        count_before = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+
+        response = await async_client.post(
+            "/api/v1/settings/reset",
+            headers={"Authorization": f"Bearer {viewer_token}"},
+        )
+
+        assert response.status_code == 403
+
+        count_after = (await db_session.execute(select(func.count()).select_from(Settings))).scalar_one()
+        assert count_after == count_before, "a denied reset must not delete any settings rows"
+
+        # The admin token confirms SETTINGS_UPDATE really would have been
+        # accepted, isolating the 403 above to the permission check.
+        allowed_response = await async_client.post(
+            "/api/v1/settings/reset",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert allowed_response.status_code == 200

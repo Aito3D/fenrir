@@ -8,9 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
-
-const INPUT =
-  'w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none';
+import { settingsInputCls as INPUT } from './formStyles';
 
 function clampInt(raw: string, fallback: number, min: number, max: number): number {
   const n = Number.parseInt(raw, 10);

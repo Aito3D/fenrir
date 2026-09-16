@@ -6404,6 +6404,19 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/payment-link/refresh": {
+   "operationId": "refresh_payment_link_api_v1_aito__project_id__payment_link_refresh_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/pickup-message": {
    "operationId": "generate_pickup_message_api_v1_aito__project_id__pickup_message_post",
    "params": [
@@ -7735,6 +7748,20 @@
    },
    "responses": {
     "200": "PrinterHASensorResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/heimdall/test": {
+   "operationId": "test_heimdall_api_v1_heimdall_test_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "HeimdallTestRequest"
+   },
+   "responses": {
+    "200": "HeimdallStatus",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11487,6 +11514,26 @@
     "note"
    ]
   },
+  "AitoPaymentLinkView": {
+   "properties": {
+    "amount": "integer",
+    "currency": "string",
+    "expires_on": "string",
+    "paid_at": "anyOf(string,null)",
+    "state": "string",
+    "sync_error": "anyOf(string,null)",
+    "url": "anyOf(string,null)"
+   },
+   "required": [
+    "amount",
+    "currency",
+    "expires_on",
+    "paid_at",
+    "state",
+    "sync_error",
+    "url"
+   ]
+  },
   "AitoPickupMessageResponse": {
    "properties": {
     "message": "string",
@@ -11595,10 +11642,12 @@
     "invoice_due_date": "anyOf(string,null)",
     "invoice_status": "anyOf(string,null)",
     "move_lock": "anyOf(string,null)",
+    "payment_link": "anyOf(AitoPaymentLinkView,null)",
     "position": "integer",
     "print_minutes_pending": "integer",
     "quote_accepted_at": "anyOf(string,null)",
     "quote_date": "anyOf(string,null)",
+    "quote_expiry_date": "anyOf(string,null)",
     "quote_id": "anyOf(string,null)",
     "quote_invoiced": "boolean",
     "quote_number": "anyOf(string,null)",
@@ -11611,6 +11660,7 @@
     "quote_sync_state": "string",
     "quote_total": "anyOf(number,null)",
     "quote_url": "anyOf(string,null)",
+    "retainer_paid_total": "anyOf(number,null)",
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
@@ -11652,10 +11702,12 @@
     "invoice_due_date",
     "invoice_status",
     "move_lock",
+    "payment_link",
     "position",
     "print_minutes_pending",
     "quote_accepted_at",
     "quote_date",
+    "quote_expiry_date",
     "quote_id",
     "quote_invoiced",
     "quote_number",
@@ -11668,6 +11720,7 @@
     "quote_sync_state",
     "quote_total",
     "quote_url",
+    "retainer_paid_total",
     "shipping_first_name",
     "shipping_island",
     "shipping_last_name",
@@ -12096,12 +12149,25 @@
     "tracking_url"
    ]
   },
+  "AitoTrackingPayment": {
+   "properties": {
+    "deposit": "boolean",
+    "state": "string",
+    "url": "anyOf(string,null)"
+   },
+   "required": [
+    "deposit",
+    "state",
+    "url"
+   ]
+  },
   "AitoTrackingResponse": {
    "properties": {
     "column": "string",
     "done_at": "anyOf(string,null)",
     "due_date": "anyOf(string,null)",
     "invoice": "anyOf(string,null)",
+    "payment": "anyOf(AitoTrackingPayment,null)",
     "reference": "anyOf(string,null)",
     "shipping": "anyOf(AitoTrackingShipping,null)",
     "tasks": "[AitoTrackingTask]",
@@ -12112,6 +12178,7 @@
     "done_at",
     "due_date",
     "invoice",
+    "payment",
     "reference",
     "shipping",
     "tasks",
@@ -12151,8 +12218,11 @@
   },
   "AppSettings": {
    "properties": {
+    "aito_deposit_pct": "integer",
+    "aito_followup_link_days": "integer",
     "aito_followup_pickup_days": "integer",
     "aito_followup_quote_days": "integer",
+    "aito_quote_validity_days": "integer",
     "ambient_drying_enabled": "boolean",
     "ams_history_retention_days": "integer",
     "ams_humidity_fair": "integer",
@@ -12211,6 +12281,8 @@
     "ha_token_from_env": "boolean",
     "ha_url": "string",
     "ha_url_from_env": "boolean",
+    "heimdall_api_token": "string",
+    "heimdall_base_url": "string",
     "include_beta_updates": "boolean",
     "language": "string",
     "ldap_auto_provision": "boolean",
@@ -12308,8 +12380,11 @@
   },
   "AppSettingsUpdate": {
    "properties": {
+    "aito_deposit_pct": "anyOf(integer,null)",
+    "aito_followup_link_days": "anyOf(integer,null)",
     "aito_followup_pickup_days": "anyOf(integer,null)",
     "aito_followup_quote_days": "anyOf(integer,null)",
+    "aito_quote_validity_days": "anyOf(integer,null)",
     "ambient_drying_enabled": "anyOf(boolean,null)",
     "ams_history_retention_days": "anyOf(integer,null)",
     "ams_humidity_fair": "anyOf(integer,null)",
@@ -12365,6 +12440,8 @@
     "ha_enabled": "anyOf(boolean,null)",
     "ha_token": "anyOf(string,null)",
     "ha_url": "anyOf(string,null)",
+    "heimdall_api_token": "anyOf(string,null)",
+    "heimdall_base_url": "anyOf(string,null)",
     "include_beta_updates": "anyOf(boolean,null)",
     "language": "anyOf(string,null)",
     "ldap_auto_provision": "anyOf(boolean,null)",
@@ -15200,6 +15277,25 @@
     "sensor_kind"
    ]
   },
+  "HeimdallStatus": {
+   "properties": {
+    "configured": "boolean",
+    "error": "anyOf(string,null)",
+    "reachable": "anyOf(boolean,null)"
+   },
+   "required": [
+    "configured",
+    "error",
+    "reachable"
+   ]
+  },
+  "HeimdallTestRequest": {
+   "properties": {
+    "base_url": "anyOf(string,null)",
+    "token": "anyOf(string,null)"
+   },
+   "required": []
+  },
   "HmsActionBody": {
    "properties": {
     "action": "string",
@@ -15900,6 +15996,7 @@
     "enabled": "boolean",
     "name": "string",
     "on_ai_failure_detection": "boolean",
+    "on_aito_payment_received": "boolean",
     "on_ams_drying_suspended": "boolean",
     "on_ams_ht_humidity_high": "boolean",
     "on_ams_ht_temperature_high": "boolean",
@@ -15953,6 +16050,7 @@
     "last_success": "anyOf(string,null)",
     "name": "string",
     "on_ai_failure_detection": "boolean",
+    "on_aito_payment_received": "boolean",
     "on_ams_drying_suspended": "boolean",
     "on_ams_ht_humidity_high": "boolean",
     "on_ams_ht_temperature_high": "boolean",
@@ -16005,6 +16103,7 @@
     "enabled": "anyOf(boolean,null)",
     "name": "anyOf(string,null)",
     "on_ai_failure_detection": "anyOf(boolean,null)",
+    "on_aito_payment_received": "anyOf(boolean,null)",
     "on_ams_drying_suspended": "anyOf(boolean,null)",
     "on_ams_ht_humidity_high": "anyOf(boolean,null)",
     "on_ams_ht_temperature_high": "anyOf(boolean,null)",

@@ -416,7 +416,8 @@ async def update_settings(
             }
             await mqtt_relay.configure(mqtt_settings)
         except Exception:
-            pass  # Don't fail the settings update if MQTT reconfiguration fails
+            logger.warning("MQTT relay reconfiguration failed", exc_info=True)
+            # Don't fail the settings update if MQTT reconfiguration fails
 
     # Restart camera streams if camera settings changed
     camera_keys = {"camera_quality", "camera_gpu_accel", "camera_engine"}
@@ -428,7 +429,8 @@ async def update_settings(
             if stopped:
                 logger.info("Stopped %d camera stream(s) after camera settings change", stopped)
         except Exception:
-            pass  # Don't fail settings update if camera restart fails
+            logger.warning("Camera engine reconfiguration failed", exc_info=True)
+            # Don't fail settings update if camera restart fails
 
     # Start/stop go2rtc if camera_engine changed
     if "camera_engine" in update_data:
@@ -441,7 +443,8 @@ async def update_settings(
             elif new_engine != "go2rtc" and go2rtc_service.running:
                 await go2rtc_service.stop()
         except Exception:
-            pass  # Don't fail settings update if go2rtc management fails
+            logger.warning("go2rtc management failed", exc_info=True)
+            # Don't fail settings update if go2rtc management fails
 
     # Return updated settings (never scrub secrets on PUT — caller has SETTINGS_UPDATE permission)
     return await _build_settings_response(db, is_api_key=False)
@@ -869,19 +872,21 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             # Export data from Postgres to SQLite
             async with engine.connect() as conn:
                 for table in metadata.sorted_tables:
-                    result = await conn.execute(table.select())
-                    rows = result.fetchall()
-                    if not rows:
-                        continue
-                    columns = list(result.keys())
-                    placeholders = ", ".join(["?"] * len(columns))
-                    col_list = ", ".join(columns)
-                    insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
+                    # Stream via a server-side cursor and copy in bounded chunks
+                    # instead of fetchall() — a large table (archives, print_log,
+                    # notification_log) would otherwise be materialised in full
+                    # here and again as a serialized list before executemany().
+                    async with conn.stream(table.select()) as result:
+                        columns = list(result.keys())
+                        placeholders = ", ".join(["?"] * len(columns))
+                        col_list = ", ".join(columns)
+                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
 
-                    def _serialize_row(row):
-                        return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
+                        def _serialize_row(row):
+                            return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
 
-                    dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
+                        async for chunk in result.partitions(1000):
+                            dst.executemany(insert_sql, [_serialize_row(row) for row in chunk])
 
             dst.commit()
             dst.close()
@@ -952,7 +957,16 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                         arcname = file_path.relative_to(temp_path)
                         zf.write(file_path, arcname)
 
-        await asyncio.to_thread(_build_zip)
+        try:
+            await asyncio.to_thread(_build_zip)
+        except Exception:
+            if output_path is None:
+                # T-201: mkstemp created this file outside any directory the
+                # caller manages; on failure nobody else will ever unlink it,
+                # so each retry after e.g. ENOSPC leaks another partial
+                # multi-GB ZIP in the temp dir.
+                zip_file.unlink(missing_ok=True)
+            raise
 
     return zip_file, filename
 
