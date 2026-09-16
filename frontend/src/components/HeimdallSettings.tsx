@@ -118,6 +118,15 @@ export function HeimdallSettings() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-bambu-gray">{t('heimdall.subtitle')}</p>
+        {!settings?.heimdall_base_url && (
+          // Read off the SAVED settings, not the field being typed: the
+          // reconciler is a silent no-op while the URL is empty, and this is
+          // the one place that says so. (The token is write-only, so a saved
+          // URL with no token can only be caught by Test connection.)
+          <p className="text-sm text-status-warning" role="status">
+            {t('heimdall.offNotice')}
+          </p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="heimdall-url" className="block text-sm text-bambu-gray mb-1">

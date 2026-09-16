@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
@@ -23,6 +24,7 @@ from backend.app.services.aito_payment_links import (
 )
 from backend.app.services.heimdall import (
     HeimdallConflict,
+    HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
     LinkView,
@@ -67,11 +69,22 @@ class FakeHeimdall:
         self.by_key[idempotency_key] = d["id"]
         return self._view(d)
 
+    def _get(self, heimdall_id):
+        """Heimdall's 404 for an id it has never seen (or has since lost)."""
+        try:
+            return self.links[heimdall_id]
+        except KeyError:
+            raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}") from None
+
+    def forget(self, heimdall_id):
+        """The link vanished at Heimdall (deleted there, or a restored backup)."""
+        del self.links[heimdall_id]
+
     async def patch_link(self, db, heimdall_id, *, amount=None, expires_in_days=None):
         self.calls.append(("patch", heimdall_id, amount, expires_in_days))
         if self.fail_with:
             raise self.fail_with
-        d = self.links[heimdall_id]
+        d = self._get(heimdall_id)
         if d["status"] != "pending":
             raise HeimdallConflict("not pending", "conflict")
         if amount is not None:
@@ -82,7 +95,7 @@ class FakeHeimdall:
         self.calls.append(("cancel", heimdall_id))
         if self.fail_with:
             raise self.fail_with
-        d = self.links[heimdall_id]
+        d = self._get(heimdall_id)
         if d["status"] != "pending":
             raise HeimdallConflict("not pending", "conflict")
         d["status"] = "cancelled"
@@ -92,7 +105,7 @@ class FakeHeimdall:
         self.calls.append(("get", heimdall_id))
         if self.fail_with:
             raise self.fail_with
-        return self._view(self.links[heimdall_id])
+        return self._view(self._get(heimdall_id))
 
     def set_status(self, heimdall_id, status):
         self.links[heimdall_id]["status"] = status
@@ -769,3 +782,136 @@ async def test_changes_only_cancels_a_link_the_drain_just_invoiced(db_session, f
     await reconcile_payment_links(db_session, now=NOW, today=TODAY, changes_only=True)
     assert [c[0] for c in fake.calls] == ["cancel"]
     assert (await current_link(db_session, p.id)).status == "cancelled"
+
+
+# --- lost links (Heimdall answers 404 for an id we hold) ----------------------
+
+
+async def _details(db, project_id, kind):
+    return [
+        e.detail
+        for e in (
+            await db.execute(
+                select(AitoEvent)
+                .where(AitoEvent.project_id == project_id, AitoEvent.kind == kind)
+                .order_by(AitoEvent.id)
+            )
+        ).scalars()
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_link_lost_at_heimdall_is_replaced_in_the_same_pass(db_session, fake):
+    """A pending link Heimdall no longer knows (deleted there, a restored
+    backup) must not be retried forever under its old id: the row is marked
+    dead and a fresh link is minted in the SAME pass, so the quote never
+    sits without a live link. Reached here through the PATCH a moved total
+    asks for."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+    p.quote_total = 9000.0
+    await db_session.commit()
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    old, new = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
+    assert old.sync_error and "404" in old.sync_error
+    assert old.sync_failures == 0, "a lost link is dead, not backed off"
+    assert new.status == "pending" and new.heimdall_id == "L2" and new.amount == 9000
+    assert (await current_link(db_session, p.id)).id == new.id
+    assert [c[0] for c in fake.calls] == ["patch", "create"]
+    assert await _details(db_session, p.id, "payment_link.replaced") == [
+        {
+            "reference": "DEV-2026-1234",
+            "amount": 9000,
+            "expires_on": "2026-09-27",
+            "heimdall_id": "L2",
+            "reason": "lost",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_lost_link_nobody_wants_anymore_is_marked_dead_and_told(db_session, fake):
+    """The cancel a decline asks for meets a 404: nothing to cancel, nothing
+    to replace — the row goes dead and the story says why, once."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+    p.quote_status = "declined"
+    await db_session.commit()
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    (row,) = await _rows(db_session, p.id)
+    assert row.status == "failed" and row.superseded_at is None
+    assert [c[0] for c in fake.calls] == ["cancel"]
+    assert await _details(db_session, p.id, "payment_link.cancelled") == [
+        {"reference": "DEV-2026-1234", "reason": "lost", "heimdall_id": "L1"}
+    ]
+    # And the next pass leaves it alone: dead and unwanted is settled.
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    assert [c[0] for c in fake.calls] == ["cancel"]
+
+
+@pytest.mark.asyncio
+async def test_a_lost_link_found_by_the_poll_is_replaced_in_the_same_pass(db_session, fake):
+    """Steady state (no drift, so no PATCH) — only the poll can notice the
+    404. The same tick then mints the replacement instead of leaving the
+    quote linkless until the next one."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+
+    await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    old, new = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert new.status == "pending" and new.heimdall_id == "L2"
+    assert [c[0] for c in fake.calls] == ["get", "create"]
+    assert (await _kinds(db_session, p.id)).count("payment_link.replaced") == 1
+
+
+# --- one pass at a time -------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_two_passes_at_once_mint_one_link_not_two(test_engine, fake):
+    """The panel's Retry and the loop's tick can hit the same quote in the
+    same instant. Two passes that both read "no row yet" would both reserve
+    and both POST, leaving a stray live link at OSB. Passes are serialised:
+    the second waits and finds the first's link already pending."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as setup:
+        p = await _project(setup)
+        project_id = p.id
+
+    gate = asyncio.Event()
+    inner = fake.create_link
+
+    async def slow_create(db, **kw):
+        await gate.wait()
+        return await inner(db, **kw)
+
+    heimdall_service.create_link = slow_create  # the fixture restores it
+
+    async with maker() as s1, maker() as s2:
+        t1 = asyncio.create_task(reconcile_payment_links(s1, now=NOW, today=TODAY))
+        t2 = asyncio.create_task(reconcile_payment_links(s2, now=NOW, today=TODAY))
+        await asyncio.sleep(0.05)
+        gate.set()
+        await asyncio.gather(t1, t2)
+
+    async with maker() as check:
+        rows = await _rows(check, project_id)
+    assert len(rows) == 1 and rows[0].status == "pending"
+    assert [c[0] for c in fake.calls if c[0] == "create"] == ["create"]

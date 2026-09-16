@@ -5982,6 +5982,7 @@ export default {
     testForbidden: 'キーに payments:read または payments:write の権限がありません',
     testUnreachable: 'Heimdall に接続できません',
     testNotConfigured: 'Heimdall が設定されていません',
+    offNotice: '支払いリンクは無効です。URL とトークンを保存するまで、見積もりにリンクは作成されません。',
   },
 
   // Backup

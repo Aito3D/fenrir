@@ -5750,6 +5750,7 @@ export default {
     testForbidden: '키에 payments:read 또는 payments:write 권한이 없습니다',
     testUnreachable: 'Heimdall에 연결할 수 없습니다',
     testNotConfigured: 'Heimdall이 구성되지 않았습니다',
+    offNotice: '결제 링크가 꺼져 있습니다. URL과 토큰을 저장할 때까지 어떤 견적에도 링크가 생성되지 않습니다.',
   },
   backup: {
     includesEncryptionKey: '로컬 백업에는 MFA 암호화 키 파일(DATA_DIR/.mfa_encryption_key)이 포함되어 백업 ZIP이 자체 완결됩니다. ZIP 파일을 민감하게 취급하세요 — 파일을 가진 누구나 내부에 저장된 OIDC 클라이언트 비밀과 TOTP 비밀을 복호화할 수 있습니다.',

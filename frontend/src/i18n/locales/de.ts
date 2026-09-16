@@ -5982,6 +5982,7 @@ export default {
     testForbidden: 'Dem Schlüssel fehlt die Berechtigung payments:read oder payments:write',
     testUnreachable: 'Heimdall ist nicht erreichbar',
     testNotConfigured: 'Heimdall ist nicht konfiguriert',
+    offNotice: 'Zahlungslinks sind aus: Kein Angebot erhält einen Link, bis URL und Token gespeichert sind.',
   },
 
   // Backup

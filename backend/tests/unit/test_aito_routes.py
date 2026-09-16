@@ -216,6 +216,37 @@ async def test_trashing_and_restoring_wake_the_worker_too(async_client):
 
 
 @pytest.mark.asyncio
+async def test_trashing_an_imported_quote_wakes_the_worker_for_its_payment_link(async_client):
+    """An imported quote owes Books nothing on trash (not ours to update), but
+    its PAYMENT LINK must be cancelled now, not at the next 300s tick: the
+    wake drain is what runs the link reconciler."""
+    from backend.app.services import aito_quote_sync
+
+    project_id = (await _create(async_client, quote_id="E77", quote_number="DEV26-1")).json()["id"]
+    aito_quote_sync._wake.clear()
+    aito_quote_sync._debounce_deadline = None
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+    assert aito_quote_sync._wake.is_set()
+
+
+@pytest.mark.asyncio
+async def test_declining_a_quote_wakes_the_worker_for_its_payment_link(async_client):
+    """A decline turns the link unwanted; a client holding it must not be
+    able to pay a declined quote for the rest of the tick. Accepting changes
+    nothing about the link, so it need not wake."""
+    from backend.app.services import aito_quote_sync
+
+    project_id = (await _create(async_client, quote_id="E77", quote_number="DEV26-1")).json()["id"]
+    await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})
+
+    aito_quote_sync._wake.clear()
+    aito_quote_sync._debounce_deadline = None
+    r = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "declined"})
+    assert r.status_code == 200, r.text
+    assert aito_quote_sync._wake.is_set()
+
+
+@pytest.mark.asyncio
 async def test_impression_discount_round_trips_through_task_responses(async_client):
     """Regression: _task_to_response used to drop impression_discount_pct, so
     every response reported null. The frontend keeps each mutation's response

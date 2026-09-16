@@ -5971,6 +5971,7 @@ export default {
     testForbidden: 'La clé n’a pas les droits payments:read ou payments:write',
     testUnreachable: 'Heimdall est injoignable',
     testNotConfigured: 'Heimdall n’est pas configuré',
+    offNotice: 'Liens de paiement désactivés : aucun devis ne reçoit de lien tant que l’URL et le jeton ne sont pas enregistrés.',
   },
 
   // Backup

@@ -52,4 +52,23 @@ describe('HeimdallSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(puts[0]).toMatchObject({ heimdall_api_token: 'hmd_live.84f32b71ac095ed2.secret' }));
   });
+
+  it('says plainly that no quote gets a link while the URL is unset', async () => {
+    server.use(
+      http.get('/api/v1/settings/', () =>
+        HttpResponse.json({ heimdall_base_url: '', heimdall_api_token: '', aito_deposit_pct: 0, aito_quote_validity_days: 15 }),
+      ),
+    );
+    render(<HeimdallSettings />);
+    await screen.findByLabelText('Heimdall URL');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Payment links are off: no quote gets a link until the URL and token are saved.',
+    );
+  });
+
+  it('shows no such notice once a URL is saved', async () => {
+    render(<HeimdallSettings />);
+    await screen.findByLabelText('Heimdall URL');
+    expect(screen.queryByText(/Payment links are off/)).not.toBeInTheDocument();
+  });
 });

@@ -5,6 +5,7 @@ Spec: docs/superpowers/specs/2026-09-12-aito-heimdall-payment-links-design.md.
 This module starts with the money rule; the reconcile loop follows.
 """
 
+import asyncio
 import logging
 import math
 import time
@@ -21,6 +22,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
 from backend.app.services.heimdall import (
     HeimdallConflict,
+    HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
     LinkView,
@@ -73,6 +75,13 @@ _DEAD_STATUSES = frozenset({"failed", "cancelled", "expired"})
 _CLOSED_QUOTE_STATUSES = frozenset({"declined", "expired"})
 # time.monotonic() until which the whole reconciler stands down after a 429.
 _throttled_until: float | None = None
+# One pass at a time. The loop's tick and the panel's Retry
+# (routes/aito.py:refresh_payment_link) can reach the same quote in the same
+# instant; two passes that both read "no row yet" would both reserve and both
+# POST, and the loser's reservation dies on the unique idempotency key while
+# a stray live link sits at OSB. Single-process app, so a lock is the whole
+# fix — no partial unique index, no migration.
+_pass_lock = asyncio.Lock()
 
 
 def _arm_throttle(retry_after: float | None) -> None:
@@ -344,6 +353,62 @@ async def _cancel(
     return False
 
 
+async def _record_failure(db: AsyncSession, project_id: int, exc: Exception, now: datetime) -> None:
+    """Store a Heimdall failure on the project's current row (backoff and
+    the panel read it). The caller has already rolled the session back."""
+    row = await current_link(db, project_id)
+    if row is not None:
+        _fail(row, exc, now)
+        await db.commit()
+
+
+async def _replace_lost(
+    db: AsyncSession,
+    project_id: int,
+    exc: HeimdallNotFound,
+    *,
+    now: datetime,
+    pct: int,
+    validity_days: int,
+    today: date,
+) -> None:
+    """Heimdall answered 404 for an id this ledger holds: the link was
+    deleted there, or Heimdall came back from a backup that predates it.
+    Retrying the same id would fail forever, and the quote would sit without
+    a live link. So: the row goes dead (`failed`, the 404 as its error, NO
+    backoff — dead is not "try later"), and if the quote still wants a link
+    a fresh one is minted right now, in the same pass, recorded as a
+    replacement with `reason: "lost"`. Unwanted, it is just told once in the
+    story as a cancellation for the same reason.
+
+    The caller has rolled back; row and project are re-read here."""
+    row = await current_link(db, project_id)
+    project = await db.get(AitoProject, project_id)
+    if row is None or project is None or row.heimdall_id is None:
+        return
+    if row.status == "paid" or row.status in _DEAD_STATUSES:
+        return  # settled already; a poll never touched it, nothing to replace
+    row.status = "failed"
+    row.sync_error = str(exc)[:500]
+    row.checked_at = now
+    wanted = wanted_link(project, pct=pct, validity_days=validity_days, today=today)
+    if wanted is None:
+        await record(
+            db,
+            project_id,
+            "payment_link.cancelled",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project_id,
+            detail={"reference": row.reference, "reason": "lost", "heimdall_id": row.heimdall_id},
+        )
+        await db.commit()
+        return
+    row.superseded_at = now
+    await db.commit()
+    await _create(db, project, wanted, now=now, kind="payment_link.replaced", extra_detail={"reason": "lost"})
+
+
 def _cancel_reason(project: AitoProject, amount: int | None) -> str:
     if project.status != "active":
         return "trashed"
@@ -457,6 +522,23 @@ async def reconcile_project(
                     await db.commit()
     except HeimdallRateLimited:
         raise
+    except HeimdallNotFound as exc:
+        # Before the generic branch (it is a subclass): a 404 is not a
+        # transient failure to back off from, it is a link that no longer
+        # exists. Replace it now — and treat a failure of the replacement
+        # itself exactly like any other Heimdall failure.
+        logger.warning("payment link for project %s is gone at Heimdall, replacing: %s", project_id, exc)
+        await db.rollback()
+        if project_id is None:
+            return
+        try:
+            await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity_days, today=today)
+        except HeimdallRateLimited:
+            raise
+        except (HeimdallUpstreamError, SQLAlchemyError) as exc2:
+            logger.warning("payment link replacement failed for project %s: %s", project_id, exc2)
+            await db.rollback()
+            await _record_failure(db, project_id, exc2, now)
     except (HeimdallUpstreamError, SQLAlchemyError) as exc:
         logger.warning("payment link reconcile failed for project %s: %s", project_id, exc)
         await db.rollback()
@@ -465,17 +547,17 @@ async def reconcile_project(
             # already-expired object handed in) — there is no id to look a
             # row up by, so there is nothing more to record.
             return
-        row = await current_link(db, project_id)
-        if row is not None:
-            _fail(row, exc, now)
-            await db.commit()
+        await _record_failure(db, project_id, exc, now)
 
 
 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
-    """One GET for a pending link. Spec §5.5. `paid` credits and accepts."""
+    """One GET for a pending link. Spec §5.5. `paid` credits and accepts.
+    A 404 propagates: the link is gone at Heimdall and the pass replaces it
+    (`_replace_lost`) — that needs the pass's money settings, which a poll
+    does not carry."""
     try:
         view = await heimdall_service.get_payment(db, row.heimdall_id)
-    except HeimdallRateLimited:
+    except (HeimdallRateLimited, HeimdallNotFound):
         raise
     except HeimdallUpstreamError as exc:
         _fail(row, exc, now)
@@ -522,11 +604,31 @@ async def reconcile_payment_links(
     iterations would turn iteration N's failure into a bare-attribute
     `MissingGreenlet` on iteration N+1; re-fetching by id avoids it.
     """
-    global _throttled_until
     if not await heimdall_service.is_configured(db):
         return 0
     if _throttled_until is not None and time.monotonic() < _throttled_until:
         return 0
+    async with _pass_lock:
+        # Re-checked under the lock: the pass we just waited for may have
+        # hit the 429 that arms this.
+        if _throttled_until is not None and time.monotonic() < _throttled_until:
+            return 0
+        return await _run_pass(
+            db, only_project_id=only_project_id, changes_only=changes_only, now=now, today=today, force=force
+        )
+
+
+async def _run_pass(
+    db: AsyncSession,
+    *,
+    only_project_id: int | None,
+    changes_only: bool,
+    now: datetime | None,
+    today: date | None,
+    force: bool,
+) -> int:
+    """The body of `reconcile_payment_links`, run under `_pass_lock`."""
+    global _throttled_until
     now = now or _now()
     today = today or now.date()
     from backend.app.services.aito_quote_sync import quote_validity_days
@@ -580,11 +682,29 @@ async def reconcile_payment_links(
                 pending = pending.where(AitoPaymentLink.project_id == only_project_id)
             pending_ids = list((await db.execute(pending)).scalars().all())
             for rid in pending_ids:
+                project_id: int | None = None
                 try:
                     row = await db.get(AitoPaymentLink, rid)
                     if row is None or (not force and _in_backoff(row, now)):
                         continue
+                    project_id = row.project_id
                     await poll_link(db, row, now=now)
+                except HeimdallNotFound as exc:
+                    # The poll is the only thing that notices a lost link
+                    # in the steady state (no drift, so the reconcile half
+                    # had nothing to send). Replace it in this same pass.
+                    logger.warning("payment link row %s is gone at Heimdall, replacing: %s", rid, exc)
+                    await db.rollback()
+                    if project_id is None:
+                        continue
+                    try:
+                        await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity, today=today)
+                    except HeimdallRateLimited:
+                        raise
+                    except (HeimdallUpstreamError, SQLAlchemyError) as exc2:
+                        logger.warning("payment link replacement failed for project %s: %s", project_id, exc2)
+                        await db.rollback()
+                        await _record_failure(db, project_id, exc2, now)
                 except SQLAlchemyError as exc:
                     logger.warning("payment link poll: row %s failed unexpectedly: %s", rid, exc)
                     await db.rollback()

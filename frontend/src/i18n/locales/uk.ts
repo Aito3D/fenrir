@@ -5746,6 +5746,7 @@ export default {
     testForbidden: 'Ключ не має дозволу payments:read або payments:write',
     testUnreachable: 'Heimdall недоступний',
     testNotConfigured: 'Heimdall не налаштовано',
+    offNotice: 'Платіжні посилання вимкнено: жоден кошторис не отримає посилання, доки не збережено URL і токен.',
   },
   backup: {
     includesEncryptionKey: "Локальні резервні копії включають файл ключа шифрування MFA (DATA_DIR/.mfa_encryption_key), тому резервна копія ZIP є автономною. Вважайте ZIP конфіденційним — кожен, хто має файл, може розшифрувати секрети клієнта OIDC і секрети TOTP, що зберігаються в ньому.",

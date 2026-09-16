@@ -5741,6 +5741,7 @@ export default {
     testForbidden: 'У ключа нет разрешения payments:read или payments:write',
     testUnreachable: 'Heimdall недоступен',
     testNotConfigured: 'Heimdall не настроен',
+    offNotice: 'Платёжные ссылки отключены: ни одна смета не получит ссылку, пока не сохранены URL и токен.',
   },
 
   backup: {

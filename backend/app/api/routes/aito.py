@@ -3751,6 +3751,14 @@ async def set_quote_status(
     # zoho_synced=False.
     summary = await _summary_for(db, project.id)
     project_response = await _project_response(db, project, summary)
+    if payload.status == "declined":
+        # A decline makes the payment link unwanted; the wake drain runs the
+        # link reconciler, so the cancel reaches Heimdall within seconds
+        # rather than at the next tick — a client holding the link must not
+        # be able to pay a declined quote meanwhile. Immediate, not
+        # debounced: a decision, not an edit with more edits coming.
+        # (Acceptance leaves the link as it is; nothing to wake for.)
+        request_immediate_sync()
     zoho_synced = await push_quote_status(db, project, payload.status)
     return AitoQuoteStatusResponse(project=project_response, zoho_synced=zoho_synced)
 
@@ -3837,4 +3845,10 @@ async def delete_project(
     )
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id)
+    if not queued:
+        # An imported quote owes Books nothing here (`_mark_pending_if_ours`
+        # left it alone), but its payment link still has to be cancelled
+        # now: the wake drain is what runs the link reconciler, and without
+        # this the link would stay payable until the next tick.
+        request_immediate_sync()
     await _broadcast_changed("delete", project_id, _actor(current_user))

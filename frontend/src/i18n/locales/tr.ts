@@ -5959,6 +5959,7 @@ export default {
     testForbidden: 'Anahtarda payments:read veya payments:write izni yok',
     testUnreachable: 'Heimdall erişilemiyor',
     testNotConfigured: 'Heimdall yapılandırılmamış',
+    offNotice: 'Ödeme bağlantıları kapalı: URL ve belirteç kaydedilene kadar hiçbir teklife bağlantı oluşturulmaz.',
   },
 
   // Yedekleme

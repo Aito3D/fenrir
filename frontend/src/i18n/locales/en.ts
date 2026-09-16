@@ -6030,6 +6030,7 @@ export default {
     testForbidden: 'The key is missing the payments:read or payments:write scope',
     testUnreachable: 'Heimdall is unreachable',
     testNotConfigured: 'Heimdall is not configured',
+    offNotice: 'Payment links are off: no quote gets a link until the URL and token are saved.',
   },
 
   // Backup

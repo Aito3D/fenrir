@@ -5970,6 +5970,7 @@ export default {
     testForbidden: '该密钥缺少 payments:read 或 payments:write 权限',
     testUnreachable: '无法访问 Heimdall',
     testNotConfigured: 'Heimdall 未配置',
+    offNotice: '付款链接已关闭：在保存 URL 和令牌之前，报价单不会生成任何链接。',
   },
 
   // Backup

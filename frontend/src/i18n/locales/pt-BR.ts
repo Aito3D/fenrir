@@ -5970,6 +5970,7 @@ export default {
     testForbidden: 'A chave não tem a permissão payments:read ou payments:write',
     testUnreachable: 'O Heimdall está inacessível',
     testNotConfigured: 'O Heimdall não está configurado',
+    offNotice: 'Os links de pagamento estão desativados: nenhum orçamento recebe um link até que a URL e o token sejam salvos.',
   },
 
   // Backup
