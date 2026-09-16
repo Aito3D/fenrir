@@ -96,14 +96,23 @@ def parse_credential(token: str) -> tuple[str, str]:
     return parts[1], parts[2]
 
 
-def sign(method: str, path: str, body: bytes, secret: str, timestamp: int, nonce: str) -> str:
-    """``sha256=<hex>`` over ``METHOD\\npath\\ntimestamp\\nnonce\\nsha256hex(body)``.
+def sign(
+    method: str, path: str, body: bytes, secret: str, timestamp: int, nonce: str, idempotency_key: str = ""
+) -> str:
+    """``sha256=<hex>`` over the SIX canonical lines
+    ``METHOD\\npath\\ntimestamp\\nnonce\\nsha256hex(body)\\nidempotency_key``.
 
     ``body`` must be the exact bytes put on the wire — hashing a
     re-serialised object is the signature bypass the contract warns about.
+    ``idempotency_key`` is the ``Idempotency-Key`` header value exactly as
+    sent, and the empty string (a present, empty sixth line — never an
+    omitted one) when the request carries no such header. Heimdall binds it
+    so the header cannot be swapped after signing; a five-line signer gets
+    ``401 Invalid request signature`` on every call (heimdall/docs/API.md,
+    "Signing", upgrade note).
     """
     body_hash = hashlib.sha256(body).hexdigest()
-    canonical = "\n".join([method.upper(), path, str(timestamp), nonce, body_hash])
+    canonical = "\n".join([method.upper(), path, str(timestamp), nonce, body_hash, idempotency_key])
     return "sha256=" + hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -182,7 +191,7 @@ class HeimdallService:
             "X-Heimdall-Key-Id": key_id,
             "X-Heimdall-Timestamp": str(timestamp),
             "X-Heimdall-Nonce": nonce,
-            "X-Heimdall-Signature": sign(method, path, body, secret, timestamp, nonce),
+            "X-Heimdall-Signature": sign(method, path, body, secret, timestamp, nonce, idempotency_key or ""),
         }
         if json_body is not None:
             headers["Content-Type"] = "application/json"

@@ -1,5 +1,7 @@
 """The Heimdall /api/v1 client: signing, headers, response mapping, error classes."""
 
+import hashlib
+import hmac
 import json
 
 import httpx
@@ -62,21 +64,45 @@ def _link_json(**overrides):
 # --- pure signing -----------------------------------------------------------
 
 
+def _canonical_hmac(secret: bytes, *lines: str) -> str:
+    return "sha256=" + hmac.new(secret, "\n".join(lines).encode(), hashlib.sha256).hexdigest()
+
+
 def test_sign_matches_the_documented_recipe():
-    # Known answer computed with hmac/hashlib over the canonical string
-    # POST\n/api/v1/payments\n1757700000\n<nonce>\nsha256(body).
+    # The six canonical lines, spelled out: METHOD upper-cased, path,
+    # timestamp, nonce, sha256(body) lowercase hex, Idempotency-Key.
     body = b'{"amount":12500,"currency":"XPF","method":"link","reference":"DEV-2026-1234"}'
-    sig = sign("post", "/api/v1/payments", body, "s3cret", 1757700000, "0123456789abcdef0123456789abcdef")
-    assert sig == "sha256=97713194f8190db699a6414694d8a605ff6355bd9d2ad830b11ad8b3f022bfa9"
+    sig = sign("post", "/api/v1/payments", body, "s3cret", 1757700000, "0123456789abcdef0123456789abcdef", "aito:1:1")
+    assert sig == _canonical_hmac(
+        b"s3cret",
+        "POST",
+        "/api/v1/payments",
+        "1757700000",
+        "0123456789abcdef0123456789abcdef",
+        hashlib.sha256(body).hexdigest(),
+        "aito:1:1",
+    )
 
 
 def test_sign_hashes_zero_bytes_for_an_empty_body_and_keeps_the_query_string():
     sig = sign("GET", "/api/v1/payments/abc?x=1", b"", "s3cret", 1757700000, "n0nce-n0nce-n0nce")
-    assert sig == "sha256=418a0f524756062458354d6c5ac9a24f085f2a66fd3817cd790bec4dcc0e1b6e"
+    assert sig == _canonical_hmac(
+        b"s3cret",
+        "GET",
+        "/api/v1/payments/abc?x=1",
+        "1757700000",
+        "n0nce-n0nce-n0nce",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",  # sha256 of zero bytes
+        "",
+    )
 
 
 def test_sign_reproduces_the_contracts_worked_example():
-    # heimdall/docs/API.md "A worked, byte-checkable example".
+    # heimdall/docs/API.md "A worked, byte-checkable example": SIX canonical
+    # lines, the last one the Idempotency-Key header value (`order-42`
+    # here). The value is the doc's own output of Heimdall's signParts, not
+    # something we computed — a five-line signer gets `401 Invalid request
+    # signature` against the live server.
     body = b'{"method":"link","amount":12500,"currency":"XPF","reference":"DEV-000123"}'
     sig = sign(
         "POST",
@@ -85,8 +111,22 @@ def test_sign_reproduces_the_contracts_worked_example():
         "2vy0_YZCo5BscR8UgRTVYTO1NB46EyARcIalbpnJD7o",
         1757707200,
         "n0nce_1757707200abcXYZ",
+        idempotency_key="order-42",
     )
-    assert sig == "sha256=28f5920b36a4c33f77360e45a3cc188a1606a4f3d3e2b19d2a48724857b5a7a2"
+    assert sig == "sha256=a1bb7a336acc3afee8dabca6aa3ee6b0366a88972a91bc1137a1879beb30fc5c"
+
+
+def test_sign_binds_an_empty_sixth_line_when_no_idempotency_key_is_sent():
+    # The contract: "Sixth line is '' (the empty string, not omitted)
+    # whenever the request carries no Idempotency-Key at all." So a GET
+    # signs `...\n<body hash>\n` — one more line than the five-line form,
+    # and a different signature from it.
+    five_line = "GET\n/api/v1/ping\n1757700000\nn0nce-n0nce-n0nce\n" + hashlib.sha256(b"").hexdigest()
+    six_line = five_line + "\n"
+    expected = "sha256=" + hmac.new(b"s3cret", six_line.encode(), hashlib.sha256).hexdigest()
+    sig = sign("GET", "/api/v1/ping", b"", "s3cret", 1757700000, "n0nce-n0nce-n0nce")
+    assert sig == expected
+    assert sig != "sha256=" + hmac.new(b"s3cret", five_line.encode(), hashlib.sha256).hexdigest()
 
 
 def test_credential_splits_on_dots():
@@ -128,11 +168,21 @@ async def test_create_link_sends_signed_request_and_maps_the_response(db_session
     assert h["idempotency-key"] == "aito:12:1"
     assert h["content-type"] == "application/json"
     assert 16 <= len(h["x-heimdall-nonce"]) <= 128
-    # The signature covers the exact bytes sent, verified with the same recipe.
+    # The signature covers the exact bytes sent AND the Idempotency-Key as
+    # sent, verified with the same recipe.
     expected = sign(
-        "POST", "/api/v1/payments", seen["body"], "s3cret", int(h["x-heimdall-timestamp"]), h["x-heimdall-nonce"]
+        "POST",
+        "/api/v1/payments",
+        seen["body"],
+        "s3cret",
+        int(h["x-heimdall-timestamp"]),
+        h["x-heimdall-nonce"],
+        idempotency_key="aito:12:1",
     )
     assert h["x-heimdall-signature"] == expected
+    assert h["x-heimdall-signature"] != sign(
+        "POST", "/api/v1/payments", seen["body"], "s3cret", int(h["x-heimdall-timestamp"]), h["x-heimdall-nonce"]
+    ), "the Idempotency-Key must be bound into the signature, not left out"
     assert json.loads(seen["body"]) == {
         "method": "link",
         "amount": 12500,
