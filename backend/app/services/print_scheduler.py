@@ -466,6 +466,63 @@ def _mapping_is_all_unresolved(mapping: list | None) -> bool:
     return all(t is None or (isinstance(t, int) and t < 0) for t in mapping)
 
 
+# Global tray ids at or above this are the external spool(s), not an AMS slot:
+# 254 is the deputy feed and 255 the main one. Mirrors the sentinel documented
+# on `_mapping_is_all_unresolved`.
+_EXTERNAL_TRAY_ID_MIN = 254
+
+
+def _int_or(value, default: int) -> int:
+    """``int(value)``, or ``default`` when the field is missing or junk.
+
+    AMS telemetry types its ids inconsistently — `"0"` in one firmware, `0` in
+    the next — and a tray id that fails to parse must not take the whole
+    derivation down with it.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _global_tray_id(ams_id: int, tray_id: int) -> int:
+    """Bambu's flat tray addressing: ``ams_id * 4 + tray_id`` for a four-slot
+    unit, and the bare unit id for an AMS-HT (ids from 128, one tray each).
+
+    Mirrors the calculation in ``_build_loaded_filaments``, which is what
+    produces the ids stored in ``PrintQueueItem.ams_mapping`` — the two must
+    agree or a mapping cannot be read back against live tray telemetry.
+    """
+    return ams_id if ams_id >= 128 else ams_id * 4 + tray_id
+
+
+def _used_global_tray_ids(item: PrintQueueItem | None) -> set[int] | None:
+    """The global tray ids ``item`` actually prints from, or None if unknown.
+
+    ``ams_mapping`` is the array the print command carries: position = filament
+    slot, value = global tray id, ``-1`` / ``None`` for a slot this plate does
+    not use. None means "no usable statement" — no mapping, unparseable JSON,
+    an all-unresolved mapping (the artifact ``_mapping_is_all_unresolved``
+    documents), or one that resolves to no tray at all. Callers must treat None
+    as "consider every loaded tray" rather than "consider none": narrowing on
+    an absent mapping would silently drop requirements the print really has.
+    """
+    raw = getattr(item, "ams_mapping", None)
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        try:
+            mapping = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    else:
+        mapping = raw
+    if not isinstance(mapping, list) or _mapping_is_all_unresolved(mapping):
+        return None
+    used = {t for t in mapping if isinstance(t, int) and not isinstance(t, bool) and t >= 0}
+    return used or None
+
+
 def _mqtt_commands_rejected(status) -> bool:
     """True when the printer is currently reporting that it refused a command.
 
@@ -1133,6 +1190,38 @@ class PrintScheduler:
             )
             busy_printers: set[int] = {pid for (pid,) in busy_result.all() if pid is not None}
 
+            # Why each printer left this pass, recorded where the decision is
+            # made rather than re-derived when the summary is logged. #3018's
+            # bundle shows what the old summary produced: "printer 1 not
+            # available -- connected=True, state=IDLE" immediately followed by a
+            # dispatch to printer 1. Two things went wrong at once. The line read
+            # live state at log time, which by then no longer matched the state
+            # the decision was made on; and `busy_printers` holds both printers
+            # that cannot take work and printers this pass has claimed for it,
+            # which are opposite facts. It is the first line anyone greps for
+            # "why did my item not go out", so it has to say which.
+            busy_reasons: dict[int, str] = dict.fromkeys(busy_printers, "an item is already printing on it")
+
+            # Printers this pass is dispatching to. They are in busy_printers so
+            # nothing else in the pass targets them -- that is a reservation, not
+            # an obstruction, and the summary says so.
+            claimed_printers: set[int] = set()
+
+            def mark_busy(printer_id: int, reason: str) -> None:
+                """Take ``printer_id`` out of this pass, recording why.
+
+                First reason wins: a printer already excluded by a stronger fact
+                -- a print running on it -- must not be relabelled by a weaker
+                check that ran later and would have excluded it anyway.
+                """
+                busy_printers.add(printer_id)
+                busy_reasons.setdefault(printer_id, reason)
+
+            def claim_printer(printer_id: int) -> None:
+                """Reserve ``printer_id`` for an item this pass is dispatching."""
+                claimed_printers.add(printer_id)
+                mark_busy(printer_id, "selected for dispatch in this pass")
+
             # Defense-in-depth (#1157): augment busy_printers with any printer
             # still in its post-dispatch hold window. Empirically, the DB seed
             # above can miss in-flight items in a multi-plate batch — same-file
@@ -1143,7 +1232,7 @@ class PrintScheduler:
             # timing.
             for held_printer_id in list(self._dispatch_holds.keys()):
                 if self._printer_in_dispatch_hold(held_printer_id):
-                    busy_printers.add(held_printer_id)
+                    mark_busy(held_printer_id, "still inside its post-dispatch hold window")
 
             # Exclude printers whose upload is still in flight from an earlier
             # pass (#2602). The row is `pending` until the upload finishes and
@@ -1152,7 +1241,7 @@ class PrintScheduler:
             # busy_printers, its auto-drying) out of the pass during the upload.
             for _task, inflight_pid in self._inflight.values():
                 if inflight_pid is not None:
-                    busy_printers.add(inflight_pid)
+                    mark_busy(inflight_pid, "an upload to it is still in flight")
 
             # Snapshot taken here, before the item loop adds anything (#2801).
             #
@@ -1321,11 +1410,11 @@ class PrintScheduler:
                                 printer_idle = self._is_printer_idle(item.printer_id, require_plate_clear)
                             else:
                                 logger.warning("Could not power on printer %s via smart plug", item.printer_id)
-                                busy_printers.add(item.printer_id)
+                                mark_busy(item.printer_id, "smart-plug power-on failed")
                                 continue
                         else:
                             # No plug or auto_on disabled
-                            busy_printers.add(item.printer_id)
+                            mark_busy(item.printer_id, "offline, with no smart plug to power it on")
                             continue
 
                     # Check if printer is idle (busy with another print)
@@ -1368,7 +1457,7 @@ class PrintScheduler:
                                 )
                                 printer_idle = True
                             else:
-                                busy_printers.add(item.printer_id)
+                                mark_busy(item.printer_id, "drying, and the print cannot run alongside it")
                                 continue
                         else:
                             # Never stop drying here (#2801): drying is not one of
@@ -1376,7 +1465,7 @@ class PrintScheduler:
                             # holding this printer, tearing down a cycle could not
                             # have unblocked it. The print-takes-priority stop
                             # happens at dispatch time, when the print will start.
-                            busy_printers.add(item.printer_id)
+                            mark_busy(item.printer_id, "not idle")
                             continue
 
                     # Drying blocks the queue, if the user asked it to. A hold
@@ -1385,13 +1474,13 @@ class PrintScheduler:
                     # that read idle while a cycle runs.
                     if self._drying_in_progress.get(item.printer_id):
                         if block_for_drying:
-                            busy_printers.add(item.printer_id)
+                            mark_busy(item.printer_id, "drying, and drying is set to block the queue")
                             continue
                         # Never-auto-stop mode: the dispatch-time stop below
                         # must never fire, so unless the hardware can dry
                         # through the print, the print waits for the timer.
                         if no_auto_stop and not await self._drying_may_continue_through_print(db, item.printer_id):
-                            busy_printers.add(item.printer_id)
+                            mark_busy(item.printer_id, "drying in never-auto-stop mode, waiting for the timer")
                             continue
 
                     # Check condition (previous print success)
@@ -1437,7 +1526,7 @@ class PrintScheduler:
                     # its place in this printer's queue.
                     if _library_row_conflict(item):
                         skip_reasons["library_row_in_use"] = skip_reasons.get("library_row_in_use", 0) + 1
-                        busy_printers.add(item.printer_id)
+                        mark_busy(item.printer_id, "holding its place while another item releases a library row")
                         continue
 
                     # Print takes priority: stop a cycle Bambuddy armed, now
@@ -1467,7 +1556,7 @@ class PrintScheduler:
                     # immediately, so nothing else in this pass can target it.
                     _claim_library_row(item)
                     dispatch_ids.append(item.id)
-                    busy_printers.add(item.printer_id)
+                    claim_printer(item.printer_id)
 
                     # SJF starvation guard: mark items that were jumped
                     if sjf_enabled and item.print_time_seconds is not None:
@@ -1673,7 +1762,7 @@ class PrintScheduler:
 
                         _claim_library_row(item)
                         dispatch_ids.append(item.id)
-                        busy_printers.add(printer_id)
+                        claim_printer(printer_id)
 
                         # SJF starvation guard: mark model-based items that were jumped
                         if sjf_enabled and item.print_time_seconds is not None:
@@ -1700,20 +1789,24 @@ class PrintScheduler:
             # useless for working out why an item did not go out.
             if skip_reasons:
                 logger.info("Queue skip summary: %s", skip_reasons)
-            if busy_printers:
-                # Log why each printer was busy (first time it was checked)
-                for pid in busy_printers:
-                    state = printer_manager.get_status(pid)
-                    connected = printer_manager.is_connected(pid)
-                    awaiting = printer_manager.is_awaiting_plate_clear(pid)
-                    state_name = state.state if state else "NO_STATUS"
-                    logger.info(
-                        "Queue: printer %d not available — connected=%s, state=%s, awaiting_plate_clear=%s",
-                        pid,
-                        connected,
-                        state_name,
-                        awaiting,
-                    )
+            for pid in sorted(busy_printers):
+                reason = busy_reasons.get(pid, "no reason recorded")
+                if pid in claimed_printers:
+                    logger.info("Queue: printer %d reserved — %s", pid, reason)
+                    continue
+                # The three live fields stay, because they are what someone
+                # reading a bundle wants next -- but they are labelled as read
+                # now, not as the state the decision was made on, which is what
+                # made the old line contradict itself.
+                state = printer_manager.get_status(pid)
+                logger.info(
+                    "Queue: printer %d unavailable — %s (now: connected=%s, state=%s, awaiting_plate_clear=%s)",
+                    pid,
+                    reason,
+                    printer_manager.is_connected(pid),
+                    state.state if state else "NO_STATUS",
+                    printer_manager.is_awaiting_plate_clear(pid),
+                )
 
             # Keep-warm is a comfort feature; dispatch is not. It sits between
             # selection and `_launch_uploads`, so anything raising here would
@@ -4621,44 +4714,90 @@ class PrintScheduler:
         "PA-CF" (no space to split on)."""
         return tray_type.split()[0].upper() if tray_type else ""
 
+    def _target_for_tray_type(self, tray_type: str | None, targets: dict[str, int]) -> int:
+        """Per-filament chamber target for one tray's reported type, or 0 when
+        the tray is empty / RFID-less and reports no type at all.
+
+        A filled or foamed variant wants its base material's chamber when the
+        map has no row of its own: ASA-GF is ASA and needs ASA's 45 degrees,
+        not the 0 an unknown type falls to. The specific type is still tried
+        first, so PETG-CF and PA-CF keep the hotter rows they are listed with
+        (#2902).
+        """
+        normalised = self._normalize_filament_type(tray_type or "")
+        if not normalised:
+            return 0
+        target = targets.get(normalised)
+        if target is None:
+            target = targets.get(normalised.split("-")[0], targets.get("DEFAULT", 0))
+        return target
+
     def _derive_chamber_target(
         self,
         printer: Printer,
         targets: dict[str, int],
+        item: PrintQueueItem | None = None,
     ) -> int:
-        """Look up the chamber target for each loaded AMS tray and return the
-        max. Returns 0 when no AMS data is available (e.g. external-spool
-        prints) or when every loaded slot maps to 0 — the chamber phase then
-        short-circuits in the main loop.
+        """Chamber target for the trays this print actually loads: the max of
+        their per-filament targets. Returns 0 when there is nothing to read (no
+        status, no AMS telemetry — e.g. external-spool prints) or when every
+        tray considered maps to 0, and the chamber phase then short-circuits in
+        the main loop.
+
+        ``item`` narrows the scan to the trays named in its ``ams_mapping``.
+        Scanning the whole unit instead meant one ASA spool parked in the AMS
+        forced a 45°C chamber onto every PLA job sharing it — the full max-wait
+        plus soak burned ahead of each upload, on a printer whose chamber never
+        reaches the target anyway (#2886). An item with no usable mapping falls
+        back to scanning every loaded tray: that is the only signal left, and
+        narrowing to nothing would skip preheat on prints that genuinely need
+        it.
 
         Reads from `printer_manager.get_status(...).raw_data['ams']`, which is
         the same source the dispatcher uses for AMS slot mapping. Empty / RFID-
-        less slots have empty `tray_type` and contribute nothing."""
+        less slots have empty `tray_type` and contribute nothing. The external
+        spool is consulted only when the mapping names it (>= 254); it stays
+        out of the unnarrowed scan, so an item without a mapping derives from
+        the AMS alone exactly as before.
+        """
         state = printer_manager.get_status(printer.id)
         if state is None:
             return 0
-        ams_list = (state.raw_data or {}).get("ams") if state.raw_data else None
+        raw_data = state.raw_data or {}
+        used = _used_global_tray_ids(item)
+        ams_list = raw_data.get("ams")
         # Older Bambu firmware nests AMS as {"ams": {"ams": [...]}} — try both.
         if isinstance(ams_list, dict):
             ams_list = ams_list.get("ams") or []
         if not isinstance(ams_list, list):
-            return 0
+            ams_list = []
         best = 0
         for ams in ams_list:
-            for tray in (ams.get("tray") or []) if isinstance(ams, dict) else []:
-                normalised = self._normalize_filament_type(tray.get("tray_type") or "")
-                if not normalised:
+            if not isinstance(ams, dict):
+                continue
+            ams_id = _int_or(ams.get("id"), 0)
+            for tray in ams.get("tray") or []:
+                # A non-dict entry has never been seen from real firmware, but
+                # `.get` on one raises, and nothing between here and
+                # `_dispatch_one`'s try/finally catches it — the item would be
+                # left holding its dispatch claim. Preheat is best-effort by
+                # contract, so step over it instead.
+                if not isinstance(tray, dict):
                     continue
-                # A filled or foamed variant wants its base material's chamber
-                # when the map has no row of its own: ASA-GF is ASA and needs
-                # ASA's 45 degrees, not the 0 an unknown type falls to. The
-                # specific type is still tried first, so PETG-CF and PA-CF keep
-                # the hotter rows they are listed with (#2902).
-                target = targets.get(normalised)
-                if target is None:
-                    target = targets.get(normalised.split("-")[0], targets.get("DEFAULT", 0))
-                if target > best:
-                    best = target
+                if used is not None and _global_tray_id(ams_id, _int_or(tray.get("id"), 0)) not in used:
+                    continue
+                best = max(best, self._target_for_tray_type(tray.get("tray_type"), targets))
+        if used is not None and any(t >= _EXTERNAL_TRAY_ID_MIN for t in used):
+            for vt in raw_data.get("vt_tray") or []:
+                if not isinstance(vt, dict):
+                    continue
+                # `_build_loaded_filaments` addresses external feeds by the id
+                # the firmware reports — 255 main, 254 deputy — defaulting to
+                # 254 when the field is absent. Same expression here so the two
+                # agree on which entry a mapping's 254/255 refers to.
+                if _int_or(vt.get("id"), _EXTERNAL_TRAY_ID_MIN) not in used:
+                    continue
+                best = max(best, self._target_for_tray_type(vt.get("tray_type"), targets))
         return best
 
     def _release_keep_warm(self, pid: int) -> None:
@@ -4761,7 +4900,11 @@ class PrintScheduler:
         no bed temperature (e.g. OrcaSlicer gcode.3mf exports) therefore still
         get a hold — chamber need is what gates the feature, not metadata.
         Skips entirely for filaments that map to a 0°C chamber target
-        (PLA, PETG, etc.). Printers being dispatched this cycle are excluded:
+        (PLA, PETG, etc.) — read off the trays the next item's ``ams_mapping``
+        names, so a hot-chamber spool it never touches does not hold the bed of
+        a PLA job (#2886). An item still awaiting its mapping is judged on the
+        whole unit, as every item was before. Printers being dispatched this
+        cycle are excluded:
         ``_preheat_and_soak`` already handles their bed temperature.
 
         Bounded by ``queue_keep_warm_max_minutes`` — on timeout the bed is
@@ -4843,7 +4986,8 @@ class PrintScheduler:
                     filament_targets = await self._get_preheat_filament_targets(db)
                 printer_obj = await self._get_printer(db, pid)
                 chamber_needed = (
-                    printer_obj is not None and self._derive_chamber_target(printer_obj, filament_targets) > 0
+                    printer_obj is not None
+                    and self._derive_chamber_target(printer_obj, filament_targets, next_item) > 0
                 )
             if not chamber_needed:
                 continue
@@ -5067,6 +5211,34 @@ class PrintScheduler:
                 return False
         return True
 
+    def _preheat_flap_to_cooling(self, item_id: int, printer: Printer) -> None:
+        """Put the airduct flap back to cooling for a print that wants no chamber heat.
+
+        The full preheat stage does this as part of its own dispatch: an H2D
+        left in heating mode by the ABS job before it would otherwise cook the
+        PLA that follows. The skip path never reaches that code, so it calls
+        this instead -- one idempotent MQTT command, no waiting, and nothing to
+        add to the rollback pin, because a flap set to cooling for a print that
+        needs no heat is where it should have been either way.
+
+        Best-effort like everything else in the stage: a refused command logs
+        and the dispatch carries on.
+        """
+        model = printer.model or ""
+        if not supports_airduct(model):
+            return
+        state = printer_manager.get_status(printer.id)
+        current = getattr(state, "airduct_mode", None) if state else None
+        if current == _AIRDUCT_MODE_COOLING:
+            return
+        client = printer_manager.get_client(printer.id)
+        if client is None:
+            return
+        try:
+            client.set_airduct_mode("cooling")
+        except Exception as exc:
+            logger.warning("Queue item %s: preheat-skip airduct cooling failed: %s", item_id, exc)
+
     async def _preheat_and_soak(
         self,
         db: AsyncSession,
@@ -5089,9 +5261,15 @@ class PrintScheduler:
              even if the global is off.
           2. Chamber target — `item.preheat_chamber_target_override` if non-null;
              else max of `preheat_filament_targets[normalize(t.tray_type)]`
-             across loaded AMS slots; else 0 (skips chamber phase, keeps bed
-             phase + soak timer).
-          3. Three hardware tiers branch the wait loop:
+             across the trays `item.ams_mapping` names (every loaded slot when
+             it names none).
+          3. A target of 0 off the filament map skips the whole stage: the
+             materials this print loads want no chamber, so there is nothing to
+             soak for and the bed phase would only delay the upload (#3041).
+             An explicit 0 typed into the per-item override, or a per-item
+             'on', still runs the bed phase and the soak — both are the user
+             asking for a warm bed in so many words.
+          4. Three hardware tiers branch the wait loop:
              - Chamber heater (H2C/H2D/H2DPro/H2S/X2D/X1E via supports_chamber_heater):
                send M141 to the resolved target, then wait for the chamber sensor
                to reach it (or the max-wait timeout to elapse).
@@ -5126,9 +5304,11 @@ class PrintScheduler:
 
         # Chamber target resolution:
         #   1. Explicit per-item override beats everything (user knows best).
-        #   2. Otherwise derive from loaded AMS filament types via the per-
-        #      filament target map. PLA-only print derives 0 → chamber phase
-        #      auto-skips without the user touching anything.
+        #   2. Otherwise derive from the filament types this print loads, via
+        #      the per-filament target map. A PLA-only print derives 0 and the
+        #      block below skips the stage without the user touching anything,
+        #      even when an ASA spool is sitting in another slot of the same
+        #      AMS (#2886).
         explicit_target = getattr(item, "preheat_chamber_target_override", None)
         if explicit_target is not None and explicit_target > 0:
             chamber_target = int(explicit_target)
@@ -5138,8 +5318,33 @@ class PrintScheduler:
             chamber_source = "item-override-zero"
         else:
             targets = await self._get_preheat_filament_targets(db)
-            chamber_target = self._derive_chamber_target(printer, targets)
+            chamber_target = self._derive_chamber_target(printer, targets, item)
             chamber_source = "filament-map"
+
+        # Nothing to preheat *for*. A zero that came out of the filament map is
+        # the map saying this print's materials want no chamber conditioning --
+        # PLA, PETG, TPU and PVA all sit at 0 by default. Running the stage
+        # anyway heated the bed and then held it for the full soak, which
+        # delayed every PLA dispatch by minutes and bought nothing: the print's
+        # own G-code sets the bed the moment it starts, so preheating it here
+        # only moves that heating ahead of the upload instead of overlapping
+        # with it, and the soak has no chamber to condition (#3041).
+        #
+        # An explicit statement from the user still runs the stage. Forcing the
+        # per-item override to 'on', or typing a chamber target of exactly 0,
+        # both mean "preheat the bed for this print" -- the second is
+        # documented as doing precisely that. Only the automatic path, the
+        # global toggle plus the filament map, short-circuits here.
+        if chamber_target <= 0 and chamber_source == "filament-map" and override != "on":
+            logger.info(
+                "Queue item %s: preheat skipped -- the loaded filaments derive no chamber "
+                "target, so there is nothing to soak for (override=%s model=%s)",
+                item.id,
+                override,
+                printer.model or "",
+            )
+            self._preheat_flap_to_cooling(item.id, printer)
+            return True
 
         bed_target = int(archive.bed_temperature) if archive and archive.bed_temperature else 0
         if bed_target <= 0:

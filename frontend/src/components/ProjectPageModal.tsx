@@ -13,7 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, withMediaToken } from '../api/client';
 import { Button } from './Button';
 // Lazy: RichTextEditor pulls in all @tiptap/* packages — defer that bundle
 // until a project page is actually edited. The wrapper keeps the render
@@ -366,7 +366,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                         className="aspect-square rounded-lg overflow-hidden border border-bambu-dark-tertiary hover:border-bambu-green transition-colors"
                       >
                         <img
-                          src={img.url}
+                          src={withMediaToken(img.url)}
                           alt={img.name}
                           className="w-full h-full object-cover"
                         />
@@ -413,7 +413,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
           </button>
 
           <img
-            src={allImages[selectedImageIndex].url}
+            src={withMediaToken(allImages[selectedImageIndex].url)}
             alt={allImages[selectedImageIndex].name}
             className="max-w-[90vw] max-h-[90vh] object-contain"
             onClick={(e) => e.stopPropagation()}

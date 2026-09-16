@@ -489,7 +489,7 @@ describe('AitoTrackPage language', () => {
     await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
     const select = screen.getByTestId('track-language') as HTMLSelectElement;
     expect(select.value).toBe('fr');
-    expect(select.options.length).toBe(13);
+    expect(select.options.length).toBe(14);
     expect(screen.getByRole('option', { name: 'Deutsch' })).toBeInTheDocument();
     await userEvent.selectOptions(select, 'en');
     expect(await screen.findByRole('heading', { level: 2, name: 'In production' })).toBeInTheDocument();

@@ -7,7 +7,6 @@ import logging
 import math
 import os
 import random
-import re
 import signal
 import struct
 import subprocess
@@ -40,6 +39,7 @@ from backend.app.models.user import User
 from backend.app.services.camera import (
     ChamberConnectionClosed,
     capture_camera_frame,
+    close_tls_proxy,
     create_tls_proxy,
     detect_vaapi_support,
     generate_chamber_image_stream,
@@ -52,6 +52,7 @@ from backend.app.services.camera import (
     rtsp_socket_timeout_flag,
     test_camera_connection,
 )
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -1138,33 +1139,11 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
         _state.spawned_ffmpeg_pids.pop(process.pid, None)
 
 
-def _summarize_ffmpeg_stderr(raw: str | None) -> str:
-    """Strip the FFmpeg build banner and return up to 10 lines of actual output.
-
-    The FFmpeg banner (version, build config, library versions) can be ~10–15 lines
-    long.  Before #925 every retry logged it in full; this helper strips the banner
-    so logs stay focused on the real error.
-
-    Credentials are masked here rather than at each ``logger`` call because
-    this is the one funnel every stderr log in this module passes through.
-    ffmpeg echoes the RTSP input URL back in its ``Input #0`` line, which
-    carries the printer access code.
-    """
-    if not raw:
-        return ""
-    raw = redact_url_credentials(raw) or ""
-
-    _BANNER_PREFIXES = (
-        "ffmpeg version",
-        "  built with",
-        "  configuration:",
-        "  lib",
-    )
-
-    lines = [
-        line for line in raw.splitlines() if line.strip() and not any(line.startswith(p) for p in _BANNER_PREFIXES)
-    ]
-    return "\n".join(lines[-10:])
+# The banner-stripping summariser moved to backend.app.utils.ffmpeg_output so
+# the seven other places that log ffmpeg stderr could stop truncating it from
+# the front (#2968). Imported under the private name this module has always
+# used: _FfmpegStderrTail and the tests both reach for it by that name.
+_summarize_ffmpeg_stderr = summarize_ffmpeg_stderr
 
 
 async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
@@ -1352,8 +1331,7 @@ async def generate_rtsp_mjpeg_stream(
             await inner.aclose()
         if stream_id:
             _disconnect_events.pop(stream_id, None)
-        proxy_server.close()
-        await proxy_server.wait_closed()
+        await close_tls_proxy(proxy_server)
 
 
 async def _rtsp_mjpeg_frames(
@@ -1581,7 +1559,8 @@ async def _rtsp_mjpeg_frames(
     await asyncio.sleep(0.5)
     if process.returncode is not None:
         stderr = await process.stderr.read()
-        logger.error("ffmpeg failed immediately: %s", re.sub(r"bblp:[^@]*@", "bblp:***@", stderr.decode()))
+        # The summariser masks the access code the input URL carries (#2968).
+        logger.error("ffmpeg failed immediately: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
         if stream_id:
             _state.active_streams.pop(stream_id, None)
             _state.spawned_ffmpeg_pids.pop(process.pid, None)

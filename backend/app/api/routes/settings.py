@@ -9,10 +9,15 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, caller_is_api_key, require_energy_cost_update
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    caller_is_api_key,
+    require_auth_if_enabled,
+    require_energy_cost_update,
+)
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -227,6 +232,16 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
         ]:
             settings_dict[setting.key] = float(setting.value)
         elif setting.key in [
+            # Nullable floats. Settings storage stringifies None to the literal
+            # "None", so these cannot go in the list above -- float("None")
+            # raises and would take the whole settings response with it (#2905).
+            "ams_temp_alarm",
+        ]:
+            try:
+                settings_dict[setting.key] = float(setting.value)
+            except (TypeError, ValueError):
+                settings_dict[setting.key] = None
+        elif setting.key in [
             "ams_humidity_good",
             "ams_humidity_fair",
             "ams_history_retention_days",
@@ -243,6 +258,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "stagger_group_size",
             "stagger_interval_minutes",
             "forecast_global_lead_time_days",
+            "location_sensor_poll_interval",
             "finance_budget_reset_day",
             "session_max_hours",
             "pipeline_max_copies",
@@ -523,6 +539,11 @@ _UI_PREFERENCE_FIELDS: tuple[str, ...] = (
     "ams_humidity_fair",
     "ams_temp_good",
     "ams_temp_fair",
+    # ams_temp_alarm is deliberately NOT here. This endpoint is unauthenticated
+    # and exists so the UI can colour readings without SETTINGS_READ; the good /
+    # fair bands are what the printer card colours by. The alarm threshold
+    # changes no rendering anywhere -- only SettingsPage reads it, and that is
+    # behind the settings permissions already (#2905).
     "bed_cooled_threshold",
     # Temperature / fan-speed presets for the printer-card popovers. Numbers
     # only; no PII / credentials.
@@ -549,6 +570,57 @@ async def get_ui_preferences(db: AsyncSession = Depends(get_db)):
     full = await _build_settings_response(db, is_api_key=False)
     dumped = full.model_dump()
     return {key: dumped[key] for key in _UI_PREFERENCE_FIELDS if key in dumped}
+
+
+# Install configuration the app shell reads before it can render correctly.
+#
+# Deliberately a second list rather than more entries in _UI_PREFERENCE_FIELDS.
+# That one is served to anyone at all, on the recorded grounds that its contents
+# are "public defaults that ship with the app" (test_route_auth_coverage.py), and
+# its field set is pinned by a test written to make anyone adding to it stop and
+# think. These fields are not defaults -- they are facts about how this
+# particular deployment is configured -- so they get their own endpoint at their
+# own trust level instead of stretching that charter to fit them.
+_UI_FLAG_FIELDS: tuple[str, ...] = (
+    # The sidebar hides Finance unless billing is on. Layout read this from
+    # GET /settings, which requires SETTINGS_READ, so for a non-admin the query
+    # 403'd, the value arrived undefined, `undefined !== true` held, and the
+    # entry was hidden from exactly the users cost_centers:read_own exists to
+    # serve. The page itself was reachable by URL the whole time (#3023).
+    "billing_enabled",
+    # Same 403, opposite outcome. That gate tests `=== false`, which undefined
+    # never satisfies, so an administrator who turned user notifications off
+    # still left the entry showing -- to precisely the non-admins it governs.
+    "user_notifications_enabled",
+    # Not gates, but read by the shell and equally undefined for a non-admin:
+    # the sponsor prompt fell back to EUR whatever the install uses, and the
+    # update check ran even where it had been switched off.
+    "currency",
+    "check_updates",
+)
+
+
+@router.get("/ui-flags")
+async def get_ui_flags(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_auth_if_enabled),
+):
+    """Install configuration the app shell needs, for any signed-in user.
+
+    Gated on being authenticated rather than on ``SETTINGS_READ``. The sidebar
+    has to know whether billing is enabled before it can decide whether to offer
+    Finance, and ``SETTINGS_READ`` cannot be the price of knowing that -- it also
+    grants sight of the SMTP, LDAP and MQTT credentials.
+
+    ``require_auth_if_enabled`` returns ``None`` when auth is switched off
+    entirely, which is the case /ui-preferences was left ungated for. That is the
+    distinction the two endpoints draw: "works when there is no auth" is not the
+    same statement as "readable by anyone", and conflating them is what put a
+    settings read in front of a permission that was never meant to require one.
+    """
+    full = await _build_settings_response(db, is_api_key=False)
+    dumped = full.model_dump()
+    return {key: dumped[key] for key in _UI_FLAG_FIELDS if key in dumped}
 
 
 @router.get("/check-ffmpeg")
@@ -651,22 +723,24 @@ async def update_spoolman_settings(
         now_enabled = new_val == "true"
         await set_setting(db, "spoolman_enabled", new_val)
 
-        # Switching to Spoolman: clear built-in inventory slot assignments
-        if not was_enabled and now_enabled:
-            from backend.app.models.spool_assignment import SpoolAssignment
-
-            result = await db.execute(delete(SpoolAssignment))
-            logger.info("Cleared %d spool assignments on switch to Spoolman mode", result.rowcount)
-        # Switching back to internal mode: clear Spoolman slot assignments — the
-        # symmetric counterpart of the clear above. Without this, stale
-        # spoolman_slot_assignments rows linger and would wrongly count as
-        # "assigned" in any mode-agnostic check (e.g. the missing-spool-
-        # assignment notification, which unions both tables — #1473).
-        elif was_enabled and not now_enabled:
-            from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-
-            result = await db.execute(delete(SpoolmanSlotAssignment))
-            logger.info("Cleared %d Spoolman slot assignments on switch to internal mode", result.rowcount)
+        # Nothing is deleted on a mode change (#2812). Each mode keeps its slot
+        # assignments in its own table, so both can hold rows at once and the
+        # toggle is reversible: switching to Spoolman to see what it does, then
+        # switching back, returns you to the assignments you had.
+        #
+        # This used to empty the other mode's table on every toggle. The reason
+        # was real -- checks that read both tables would let a row in the mode
+        # you are not using answer for the mode you are -- but the cost was that
+        # inspecting a mode destroyed your configuration, with no confirmation
+        # and no way back, and the deletion was unfiltered across every printer.
+        # The readers that could be confused now ask which mode is active
+        # (``spoolman_owns_assignments``), which is where that decision belongs:
+        # the mode is a property of the install, not of the rows.
+        if was_enabled != now_enabled:
+            logger.info(
+                "Inventory mode switched to %s; slot assignments in both tables kept",
+                "Spoolman" if now_enabled else "built-in",
+            )
     if "spoolman_url" in settings:
         await set_setting(db, "spoolman_url", normalize_str_setting("spoolman_url", settings["spoolman_url"]))
     if "spoolman_sync_mode" in settings:
