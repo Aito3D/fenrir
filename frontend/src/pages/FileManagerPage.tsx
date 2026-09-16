@@ -1368,7 +1368,7 @@ export function FileManagerPage() {
     // union of every external folder (#1621). include_root stays false so the
     // listing still descends into subfolders (regression guard from #1499).
     queryFn: () =>
-      api.getLibraryFiles(
+      api.getAllLibraryFiles(
         selectedFolderId,
         false,
         undefined,
@@ -1612,12 +1612,26 @@ export function FileManagerPage() {
   const moveFilesMutation = useMutation({
     mutationFn: ({ fileIds, folderId }: { fileIds: number[]; folderId: number | null }) =>
       api.moveLibraryFiles(fileIds, folderId),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       setSelectedFiles([]);
       setShowMoveModal(false);
-      showToast(t('fileManager.toast.filesMoved'), 'success');
+      if (response.skipped > 0) {
+        const counts = new Map<string, number>();
+        for (const { code } of response.skipped_reasons) {
+          counts.set(code, (counts.get(code) ?? 0) + 1);
+        }
+        const reasons = [...counts.entries()]
+          .map(([code, count]) => `${count} ${t(`fileManager.toast.moveSkipReason.${code}`)}`)
+          .join(', ');
+        showToast(
+          t('fileManager.toast.moveSkipped', { moved: response.moved, skipped: response.skipped, reasons }),
+          'warning'
+        );
+      } else {
+        showToast(t('fileManager.toast.filesMoved'), 'success');
+      }
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });

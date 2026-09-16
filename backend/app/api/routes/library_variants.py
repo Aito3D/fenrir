@@ -276,7 +276,31 @@ async def get_variant_group(
         )
     ),
 ) -> VariantGroupResponse:
-    return await _group_response(db, await _get_group_or_404(db, group_id))
+    """A group by id, scoped like ``get_group_for_file``: a ``*_OWN`` caller who
+    cannot see any of its members gets the same 404 as a nonexistent group,
+    rather than the filenames of files that GET /library/files/{id} would
+    refuse them.
+
+    This only applies when there is something to hide. A group whose members
+    have all since been trashed already renders as an empty ``members: []``
+    for every caller — including ``*_ALL``/auth-disabled — because
+    ``_group_response`` only lists active files; that behavior predates this
+    fix and is not an ownership question, so a ``*_OWN`` caller is refused
+    only when the group has active members and none of them is visible to
+    them.
+    """
+    user, can_read_all = auth_result
+    group = await _get_group_or_404(db, group_id)
+    if not can_read_all:
+        member_ids = (
+            (await db.execute(select(LibraryFile.id).where(LibraryFile.variant_group_id == group.id))).scalars().all()
+        )
+        if member_ids:
+            active_any = await _load_files(db, member_ids, None, True)
+            visible = await _load_files(db, member_ids, user, can_read_all)
+            if active_any and not visible:
+                raise HTTPException(404, "Variant group not found")
+    return await _group_response(db, group)
 
 
 @router.patch("/{group_id}", response_model=VariantGroupResponse)

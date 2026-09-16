@@ -13,13 +13,14 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import field
-from typing import Literal
+from typing import Annotated, Literal
 
 import psutil
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,11 +29,16 @@ from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    check_printer_access,
     create_camera_stream_token,
+    is_auth_enabled,
+    security,
+    validated_api_key_from_request,
 )
 from backend.app.core.database import async_session, get_db
 from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
+from backend.app.models.api_key import APIKey
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -200,12 +206,11 @@ async def _cleanup_stale_frame_buffers() -> None:
         _state.stream_start_times.pop(pid, None)
         _state.per_printer_cooldown.pop(pid, None)
         _state.watchdog_killed_printers.discard(pid)
-        # Clean stderr tracking keyed by stream_id (format: "{printer_id}-{uuid}")
-        for key in list(_state.stderr_error_counts):
-            if key.startswith(f"{pid}-"):
-                _state.stderr_error_counts.pop(key, None)
-                _state.stderr_error_details.pop(key, None)
-                _state.stderr_recent_errors.pop(key, None)
+        # Backstop: _drain_stderr already evicts a printer's older stream_id
+        # summaries as soon as a new attempt's summary is written (see
+        # _evict_printer_stderr_summary), but a printer that stops respawning
+        # entirely still needs its last stderr summary swept once it goes stale.
+        _evict_printer_stderr_summary(pid)
     if stale_ids:
         logger.info("Cleaned up stale frame buffers for printers: %s", stale_ids)
 
@@ -510,6 +515,35 @@ class _SharedStream:
         self.last_frame_produced: float = 0.0
 
 
+async def _await_displaced_task(task: asyncio.Task, timeout: float) -> None:
+    """Best-effort wait for a producer task that a caller is displacing.
+
+    Used after cancelling (or discovering the natural death of) a producer
+    task that is about to be replaced, so its ``finally`` block (ffmpeg/SSL
+    teardown) completes before the printer's camera slot is handed to a new
+    producer or considered free. Any outcome of *task* itself — result,
+    exception, or its own cancellation — is irrelevant here and ignored.
+
+    Deliberately uses ``asyncio.wait`` rather than ``asyncio.wait_for``:
+    ``wait_for`` always force-cancels and awaits its target before
+    propagating a ``CancelledError``, so by the time it raises, the target
+    is already done — indistinguishable from the target having merely
+    cancelled/failed on its own. That made the *caller's own* cancellation
+    (e.g. an HTTP client disconnecting mid-swap) look identical to routine
+    "old task finished" cleanup and get swallowed too, leaking a producer
+    for a viewer that already left. ``asyncio.wait`` never cancels its
+    members and never raises based on their outcome — it only propagates a
+    ``CancelledError`` when the *caller* of this function is itself
+    cancelled, which is exactly the case we want to let through here.
+    """
+    _done, pending = await asyncio.wait({task}, timeout=timeout)
+    if pending:
+        # Timed out — mirror wait_for's behavior of forcing completion
+        # before the caller proceeds to claim/free the camera slot.
+        task.cancel()
+        await asyncio.wait({task})
+
+
 class SharedStreamHub:
     """One camera source per printer, shared across multiple viewers.
 
@@ -565,29 +599,19 @@ class SharedStreamHub:
                 old_task = entry.task if entry.task and not entry.task.done() else None
                 del self._streams[printer_id]
 
-        # Await old task outside lock so its finally block (ffmpeg kill) completes
-        if old_task is not None:
-            try:
-                await asyncio.wait_for(old_task, timeout=8.0)
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass  # Best effort — task will clean up on its own eventually
-
-        # Re-acquire lock to create new entry (guard against concurrent calls)
-        async with self._lock:
-            existing = self._streams.get(printer_id)
-            if existing is not None and existing.alive:
-                existing.last_accessed = time.monotonic()
-                return existing
-            entry = _SharedStream(params_key=params_key)
-            self._streams[printer_id] = entry
-            entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
-            logger.info(
+        return await self._replace_producer(
+            printer_id,
+            starter_fn,
+            params_key,
+            old_task,
+            reuse_existing=lambda _existing: True,
+            log_new_producer=lambda total: logger.info(
                 "Started new producer for printer %s (params=%s, total_producers=%s)",
                 printer_id,
                 params_key,
-                len(self._streams),
-            )
-            return entry
+                total,
+            ),
+        )
 
     async def restart(self, printer_id: int, starter_fn, params_key: str) -> _SharedStream:
         """Stop the existing producer and start a new one with different params.
@@ -640,22 +664,47 @@ class SharedStreamHub:
                 old_task = old.task if old.task and not old.task.done() else None
                 del self._streams[printer_id]
 
-        # Phase 2 — await old task outside lock (lets ffmpeg terminate fully)
-        if old_task is not None:
-            try:
-                await asyncio.wait_for(old_task, timeout=8.0)
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass  # Best effort — task will clean up on its own eventually
+        # Phase 2 & 3 — await old task outside lock, then re-acquire lock to create new entry
+        return await self._replace_producer(
+            printer_id,
+            starter_fn,
+            params_key,
+            old_task,
+            reuse_existing=lambda existing: existing.params_key == params_key,
+            log_new_producer=lambda _total: logger.info(
+                "Started new producer for printer %s (params=%s)", printer_id, params_key
+            ),
+        )
 
-        # Phase 3 — re-acquire lock to create new entry
+    async def _replace_producer(
+        self,
+        printer_id: int,
+        starter_fn,
+        params_key: str,
+        old_task: asyncio.Task | None,
+        reuse_existing: Callable[[_SharedStream], bool],
+        log_new_producer: Callable[[int], None],
+    ) -> _SharedStream:
+        """Shared phase-2/phase-3 body for get_or_start() and restart().
+
+        Phase 2 (no lock): await the old task so its finally block (ffmpeg kill)
+        completes before a new producer is started for the same printer.
+        Phase 3 (re-acquire lock): guard against a concurrently created entry —
+        if `reuse_existing` accepts it, return it as-is; otherwise cancel it and
+        register a fresh producer for `params_key`.
+        """
+        # Await old task outside lock so its finally block (ffmpeg kill) completes
+        if old_task is not None:
+            await _await_displaced_task(old_task, timeout=8.0)
+
+        # Re-acquire lock to create new entry (guard against concurrent calls)
         async with self._lock:
-            # Guard: another caller may have started a producer during our gap
             existing = self._streams.get(printer_id)
             if existing is not None and existing.alive:
-                if existing.params_key == params_key:
+                if reuse_existing(existing):
                     existing.last_accessed = time.monotonic()
                     return existing
-                # Different params — cancel this entry and create a new one
+                # Not reusable (e.g. different params) — cancel it and create a new one
                 existing.alive = False
                 if existing.task:
                     existing.task.cancel()
@@ -663,7 +712,7 @@ class SharedStreamHub:
             entry = _SharedStream(params_key=params_key)
             self._streams[printer_id] = entry
             entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
-            logger.info("Started new producer for printer %s (params=%s)", printer_id, params_key)
+            log_new_producer(len(self._streams))
             return entry
 
     # NOTE: viewer_count uses plain += which is safe because all access
@@ -807,10 +856,7 @@ class SharedStreamHub:
             count += 1
         for _, entry in entries:
             if entry.task and not entry.task.done():
-                try:
-                    await asyncio.wait_for(entry.task, timeout=5.0)
-                except (asyncio.CancelledError, TimeoutError, Exception):
-                    pass
+                await _await_displaced_task(entry.task, timeout=5.0)
         return count
 
     async def stop(self, printer_id: int) -> bool:
@@ -825,10 +871,7 @@ class SharedStreamHub:
         # Cancel and await the producer so its finally block runs (closes ffmpeg/SSL)
         if entry.task and not entry.task.done():
             entry.task.cancel()
-            try:
-                await asyncio.wait_for(entry.task, timeout=5.0)
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass  # Best effort — task will clean up on its own eventually
+            await _await_displaced_task(entry.task, timeout=5.0)
         return True
 
     def is_active(self, printer_id: int) -> bool:
@@ -1196,6 +1239,34 @@ _STDERR_ERROR_KEYWORDS = (
 )
 
 
+def _evict_printer_stderr_summary(printer_id: int, keep_stream_id: str | None = None) -> None:
+    """Drop the stderr summaries of every stream_id for ``printer_id`` except ``keep_stream_id``.
+
+    stream_ids are minted per attempt (format ``"{printer_id}-{uuid}"`` or
+    ``"{printer_id}-ext-{uuid}"``), and the grid restart loop mints a fresh one
+    on every retry (1.5-20s apart) — so a camera that never produces a frame
+    would otherwise grow ``stderr_error_counts``/``_details``/``_recent_errors``
+    by 3 entries (plus up to ``_STDERR_RECENT_CAP`` strings) per retry, forever,
+    for as long as it stays unreachable, since the periodic sweep in
+    ``_cleanup_stale_frame_buffers`` is keyed off ``last_frame_times`` and a
+    camera that never frames never enters it.
+
+    ``GET /camera/hub-status`` aggregates these dicts by printer_id to answer
+    "why did my camera fail", so only the most recent completed attempt's
+    summary needs to stay user-visible. Called from ``_drain_stderr``'s
+    ``finally`` right after it records its own stream_id's summary — not at
+    stream_id mint time — so the previous attempt's summary remains visible
+    for the whole duration of an in-flight retry, and disappears only once the
+    new attempt has actually produced one to replace it.
+    """
+    prefix = f"{printer_id}-"
+    for key in list(_state.stderr_error_counts):
+        if key.startswith(prefix) and key != keep_stream_id:
+            _state.stderr_error_counts.pop(key, None)
+            _state.stderr_error_details.pop(key, None)
+            _state.stderr_recent_errors.pop(key, None)
+
+
 async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> None:
     """Continuously read stderr to prevent pipe buffer deadlock.
 
@@ -1243,6 +1314,18 @@ async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> 
                 error_count,
                 ", ".join(f"{k}={v}" for k, v in sorted(categories.items())),
             )
+            # This attempt's summary is now recorded — evict any older
+            # stream_id summaries for the same printer so hub-status keeps at
+            # most one (the latest completed attempt) per printer. Done here,
+            # after writing, rather than at stream_id mint time, so a
+            # previous attempt's summary stays visible for the whole duration
+            # of an in-flight retry.
+            try:
+                printer_id = int(stream_id.split("-")[0])
+            except (ValueError, IndexError):
+                pass
+            else:
+                _evict_printer_stderr_summary(printer_id, keep_stream_id=stream_id)
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -1826,6 +1909,28 @@ async def _ensure_producer(
     return entry
 
 
+async def _grid_stream_api_key_if_auth_enabled(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> "APIKey | None":
+    """Resolve the calling API key for the grid stream's ``printer_ids`` filter —
+    but only when auth is enabled.
+
+    Mirrors ``require_permission_if_auth_enabled``'s own gate (auth.py:1870):
+    when auth is disabled, an ``X-API-Key``/``Authorization: Bearer bb_...``
+    header is not even looked at, so a stale or bogus key does not 401 a
+    request that would otherwise sail through unauthenticated — matching how
+    the CAMERA_VIEW permission dependency just above already treats this
+    route when auth is off. Only once auth is enabled does an attached key
+    get validated (and, if invalid, rejected) the normal way via
+    ``validated_api_key_from_request``.
+    """
+    async with database.async_session() as db:
+        if not await is_auth_enabled(db):
+            return None
+    return await validated_api_key_from_request(credentials, x_api_key)
+
+
 @router.get("/camera/grid-stream")
 async def camera_grid_stream(
     request: Request,
@@ -1834,8 +1939,8 @@ async def camera_grid_stream(
     quality: int | None = Query(default=None, ge=2, le=31),
     scale: float | None = Query(default=None, ge=0.1, le=1.0),
     force: bool = Query(False, description="Force restart producers with new quality settings"),
-    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
 ):
     """Multiplexed camera stream for the camera grid.
 
@@ -1859,78 +1964,108 @@ async def camera_grid_stream(
     if not printer_ids:
         raise HTTPException(400, "No printer IDs provided")
 
-    # Resolve quality preset from DB when no explicit params provided
+    # Resolve the quality preset AND run the printer batch query in a short-lived
+    # session so the pooled DB connection is released BEFORE we start streaming.
+    # A grid stream runs for as long as the browser tab stays open (potentially
+    # hours); holding a Depends(get_db) session across it pinned one pooled
+    # connection per open camera-wall tab — the single-printer stream hit the
+    # exact same issue and was fixed the same way (issue #2572).
+    #
+    # Reference async_session via the module (not a top-level import binding) so
+    # the session maker is looked up at call time — that keeps it in sync with
+    # reinitialize_database() and lets the test harness's patch of
+    # backend.app.core.database.async_session take effect here.
     threads = 0
     gpu_accel = False
     skip_frames = False
     preset_label = "custom"
-    if fps is None and quality is None and scale is None:
-        fps, quality, scale, threads, gpu_accel, skip_frames, preset_label = await _resolve_quality_from_settings(
-            db, len(printer_ids), "grid"
-        )
-        force = True  # Ensure producers match preset params
-    else:
-        fps = fps or 5
-        quality = quality or 15
-        scale = scale or 0.5
-
-    # Deduplicate while preserving order
-    printer_ids = list(dict.fromkeys(printer_ids))
-
-    if len(printer_ids) > 30:
-        raise HTTPException(400, "Maximum 30 printers per grid stream")
-
-    # Start producers for all requested printers.
-    # First, collect IDs that already have a live producer (fast path — no DB).
-    entries, need_db = await _hub.get_existing_batch(printer_ids)
-
-    # When force=True, check existing producers for param mismatches.
-    # Without this, quality preset changes are silently ignored for already-running producers.
-    if force and entries:
-        for pid in list(entries):
-            new_entry = await _ensure_producer(
-                pid,
-                db,
-                fps,
-                quality,
-                scale,
-                force_quality=True,
-                threads=threads,
-                gpu_accel=gpu_accel,
-                skip_frames=skip_frames,
+    async with database.async_session() as db:
+        # Resolve quality preset from DB when no explicit params provided
+        if fps is None and quality is None and scale is None:
+            fps, quality, scale, threads, gpu_accel, skip_frames, preset_label = await _resolve_quality_from_settings(
+                db, len(printer_ids), "grid"
             )
-            if new_entry is not None:
-                entries[pid] = new_entry
+            force = True  # Ensure producers match preset params
+        else:
+            fps = fps or 5
+            quality = quality or 15
+            scale = scale or 0.5
 
-    # Single batch DB query for printers that need a new producer.
-    if need_db:
-        result = await db.execute(select(Printer).where(Printer.id.in_(need_db)))
-        printers_by_id = {p.id: p for p in result.scalars().all()}
-        for i, pid in enumerate(need_db):
-            printer = printers_by_id.get(pid)
-            if printer is None:
-                continue
-            if i > 0:
-                # Increase stagger under load to reduce spawn pressure
-                load = _check_system_load()
-                stagger = (
-                    1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
+        # Deduplicate while preserving order
+        printer_ids = list(dict.fromkeys(printer_ids))
+
+        if len(printer_ids) > 30:
+            raise HTTPException(400, "Maximum 30 printers per grid stream")
+
+        # An API key restricted to a printer_ids allowlist only ever sees the
+        # printers it is scoped to — the same boundary check_printer_access
+        # enforces on the single-printer camera routes. Ids outside the
+        # allowlist are dropped rather than rejecting the whole request, so a
+        # camera wall driven by a partially-restricted key keeps working for
+        # the printers it can see. This runs AFTER the 30-printer cap so the
+        # cap error a caller sees always reflects the ids they actually asked
+        # for, not the filtered set.
+        if api_key is not None:
+            allowed_ids = []
+            for pid in printer_ids:
+                try:
+                    check_printer_access(api_key, pid)
+                except HTTPException:
+                    continue
+                allowed_ids.append(pid)
+            printer_ids = allowed_ids
+
+        # Start producers for all requested printers.
+        # First, collect IDs that already have a live producer (fast path — no DB).
+        entries, need_db = await _hub.get_existing_batch(printer_ids)
+
+        # When force=True, check existing producers for param mismatches.
+        # Without this, quality preset changes are silently ignored for already-running producers.
+        if force and entries:
+            for pid in list(entries):
+                new_entry = await _ensure_producer(
+                    pid,
+                    db,
+                    fps,
+                    quality,
+                    scale,
+                    force_quality=True,
+                    threads=threads,
+                    gpu_accel=gpu_accel,
+                    skip_frames=skip_frames,
                 )
-                await asyncio.sleep(stagger)
-            entry = await _ensure_producer(
-                pid,
-                db,
-                fps,
-                quality,
-                scale,
-                printer=printer,
-                force_quality=force,
-                threads=threads,
-                gpu_accel=gpu_accel,
-                skip_frames=skip_frames,
-            )
-            if entry is not None:
-                entries[pid] = entry
+                if new_entry is not None:
+                    entries[pid] = new_entry
+
+        # Single batch DB query for printers that need a new producer.
+        if need_db:
+            result = await db.execute(select(Printer).where(Printer.id.in_(need_db)))
+            printers_by_id = {p.id: p for p in result.scalars().all()}
+            for i, pid in enumerate(need_db):
+                printer = printers_by_id.get(pid)
+                if printer is None:
+                    continue
+                if i > 0:
+                    # Increase stagger under load to reduce spawn pressure
+                    load = _check_system_load()
+                    stagger = (
+                        1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
+                    )
+                    await asyncio.sleep(stagger)
+                entry = await _ensure_producer(
+                    pid,
+                    db,
+                    fps,
+                    quality,
+                    scale,
+                    printer=printer,
+                    force_quality=force,
+                    threads=threads,
+                    gpu_accel=gpu_accel,
+                    skip_frames=skip_frames,
+                )
+                if entry is not None:
+                    entries[pid] = entry
 
     if not entries:
         raise HTTPException(404, "No valid printers found")
@@ -2258,14 +2393,20 @@ async def camera_grid_stream(
 
 @router.post("/camera/stream-token")
 async def create_stream_token(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Create a reusable token for camera stream/snapshot access.
 
     Returns a token valid for 60 minutes that can be appended as ?token=xxx
     to camera stream/snapshot URLs loaded via <img> tags.
+
+    Records the issuing principal on the token (T-154 / audit-security): the
+    library-thumbnail routes resolve the caller behind this same token to
+    apply LIBRARY_READ_ALL/OWN scoping, mirroring how ``/ws-token`` already
+    records its principal for ``verify_websocket_token``.
     """
-    return {"token": await create_camera_stream_token()}
+    username = current_user.username if current_user is not None else None
+    return {"token": await create_camera_stream_token(username)}
 
 
 @router.get("/{printer_id}/camera/stream")

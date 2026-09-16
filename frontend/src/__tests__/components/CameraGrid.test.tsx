@@ -18,6 +18,7 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { CameraGrid } from '../../components/CameraGrid';
 import type { GridPrinter } from '../../components/CameraGrid';
+import { useGridStream } from '../../hooks/useGridStream';
 import { api } from '../../api/client';
 import type { HMSError, PrintQueueItem } from '../../api/client';
 import {
@@ -40,7 +41,7 @@ import type { GridLayout } from '../../components/cameraGridLayout';
 const EMPTY_GRID_STATS = { bw: '', active: 0, total: 0, uptime: '', rawBytesPerSecond: 0, droppedFrames: 0 };
 
 vi.mock('../../hooks/useGridStream', () => ({
-  useGridStream: () => ({
+  useGridStream: vi.fn(() => ({
     canvasRefs: { current: new Map() },
     loadingSet: new Set(),
     errorSet: new Set(),
@@ -51,7 +52,7 @@ vi.mock('../../hooks/useGridStream', () => ({
     reconnectAttempt: 0,
     getStatsSnapshot: () => EMPTY_GRID_STATS,
     handleVisibilityChange: vi.fn(),
-  }),
+  })),
 }));
 
 vi.mock('../../hooks/useCombinedGridStats', () => ({
@@ -392,6 +393,32 @@ describe('CameraGrid rendering', () => {
       });
       const chamberCard = container.querySelector('[data-flip-key="2"]') as HTMLElement;
       expect(chamberCard.querySelector('video')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('grid-stream printer id capping (backend rejects >30 ids)', () => {
+    beforeEach(() => {
+      vi.mocked(useGridStream).mockClear();
+    });
+
+    it('caps the ids passed to useGridStream at 30, keeping the 30 lowest ids', () => {
+      const printers = Array.from({ length: 35 }, (_, i) =>
+        makePrinter({ id: 35 - i, name: `Printer ${35 - i}` }), // descending ids, all connected
+      );
+      render(<CameraGrid printers={printers} layout="default" />);
+
+      const lastCall = vi.mocked(useGridStream).mock.calls.at(-1)?.[0];
+      const ids = lastCall!.printerIdsKey.split(',').map(Number);
+      expect(ids).toHaveLength(30);
+      expect(ids).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
+    });
+
+    it('passes ids through unchanged when 30 or fewer printers are connected', () => {
+      const printers = Array.from({ length: 5 }, (_, i) => makePrinter({ id: i + 1, name: `Printer ${i + 1}` }));
+      render(<CameraGrid printers={printers} layout="default" />);
+
+      const lastCall = vi.mocked(useGridStream).mock.calls.at(-1)?.[0];
+      expect(lastCall!.printerIdsKey).toBe('1,2,3,4,5');
     });
   });
 });

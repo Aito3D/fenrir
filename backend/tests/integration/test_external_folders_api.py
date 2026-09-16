@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 
+from backend.app.api.routes.library import to_absolute_path
+
 
 @pytest.fixture(autouse=True)
 def _enable_external_roots(monkeypatch, tmp_path):
@@ -270,6 +272,39 @@ class TestExternalFolderScan:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_scan_parses_3mf_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, external_folder, monkeypatch
+    ):
+        """T-146: the per-file 3MF parse during an external scan must run via
+        asyncio.to_thread instead of blocking the event loop for the whole
+        walk, following the same pattern as the T-144/T-145 thumbnail tasks."""
+        import threading
+
+        import backend.app.api.routes.library as library_module
+
+        thread_is_not_main: list[bool] = []
+
+        class FakeThreeMFParser:
+            def __init__(self, path):
+                self.path = path
+
+            def parse(self):
+                thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+                return None
+
+        monkeypatch.setattr(library_module, "ThreeMFParser", FakeThreeMFParser)
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "success"
+        assert result["added"] == 4
+
+        # benchy.3mf is the only 3mf in the fixture, so parse() ran exactly once.
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_scan_idempotent(self, async_client: AsyncClient, db_session, external_folder):
         """Verify scanning twice doesn't duplicate files."""
         response1 = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
@@ -292,8 +327,205 @@ class TestExternalFolderScan:
 
         response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
         result = response.json()
+        assert result["status"] == "success"
         assert result["removed"] == 1
         assert result["added"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_creates_image_thumbnail_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir, monkeypatch
+    ):
+        """T-146: the per-file image-thumbnail creation during an external
+        scan must run via asyncio.to_thread instead of blocking the event
+        loop, same as the gcode/3mf thumbnail paths."""
+        import threading
+
+        import backend.app.api.routes.library as library_module
+
+        (external_dir / "photo.png").write_bytes(b"fake png bytes")
+
+        thread_is_not_main: list[bool] = []
+
+        def fake_create_image_thumbnail(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return str(thumbnails_dir / "fake_image_thumb.png")
+
+        monkeypatch.setattr(library_module, "create_image_thumbnail", fake_create_image_thumbnail)
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "success"
+        # benchy.3mf, bracket.stl, print.gcode, nested.stl (existing) + photo.png
+        assert result["added"] == 5
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        files = response.json()
+        photo_file = next(f for f in files if f["filename"] == "photo.png")
+        assert photo_file["thumbnail_path"]
+
+        # create_image_thumbnail must have run off the event-loop thread.
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_removal_pass_unlinks_thumbnail_of_deleted_file(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir
+    ):
+        """A tracked file that already has a generated thumbnail (e.g. a gcode
+        with an embedded preview) must have that thumbnail unlinked from disk
+        when a normal (non-partial) scan's removal pass drops its row — this
+        exercises the thumbnail-cleanup branch, not just the
+        asyncio.to_thread-wrapped os.path.exists() check that gates it."""
+        thumb_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        (external_dir / "with_thumb.gcode").write_text(
+            f"; thumbnail begin 32x32 1234\n; {thumb_b64}\n; thumbnail end\nG28\nG1 X10 Y10\n"
+        )
+
+        first = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        first_result = first.json()
+        assert first_result["status"] == "success"
+        assert first_result["added"] == 5
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        before_files = response.json()
+        thumb_file = next(f for f in before_files if f["filename"] == "with_thumb.gcode")
+        assert thumb_file["thumbnail_path"]
+        thumb_abs_path = to_absolute_path(thumb_file["thumbnail_path"])
+        assert thumb_abs_path.exists()
+
+        # Delete the tracked file from disk, then run a normal scan (no walk
+        # errors, no vanished root) so the removal pass actually runs.
+        (external_dir / "with_thumb.gcode").unlink()
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "success"
+        assert result["removed"] == 1
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        after_files = response.json()
+        assert "with_thumb.gcode" not in {f["filename"] for f in after_files}
+        assert not thumb_abs_path.exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_partial_walk_preserves_rows_on_mount_error(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir, monkeypatch
+    ):
+        """A mid-walk OSError (e.g. an SMB/NFS mount dropping) must not be
+        treated as every remaining tracked file being deleted (#T-143).
+
+        A real gcode-embedded thumbnail is included so the test also proves
+        the thumbnail is left on disk when the removal pass is skipped.
+        """
+        thumb_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        (external_dir / "with_thumb.gcode").write_text(
+            f"; thumbnail begin 32x32 1234\n; {thumb_b64}\n; thumbnail end\nG28\nG1 X10 Y10\n"
+        )
+
+        # Establish a full, successful scan first so there are tracked rows,
+        # including one with a real on-disk thumbnail.
+        first = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        first_result = first.json()
+        assert first_result["status"] == "success"
+        assert first_result["added"] == 5
+        assert first_result["removed"] == 0
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        before_files = response.json()
+        assert len(before_files) == 4
+        thumb_file = next(f for f in before_files if f["filename"] == "with_thumb.gcode")
+        assert thumb_file["thumbnail_path"]
+        thumb_abs_path = to_absolute_path(thumb_file["thumbnail_path"])
+        assert thumb_abs_path.exists()
+
+        import backend.app.api.routes.library as library_module
+
+        real_walk = library_module.os.walk
+
+        def truncated_walk(top, onerror=None, **kwargs):
+            # Yield the root directory only, then report a scandir failure
+            # for the rest of the tree — mirrors an SMB/NFS mount dropping
+            # mid-walk (os.walk's default onerror=None would otherwise
+            # silently swallow this and just truncate with no signal).
+            gen = real_walk(top, **kwargs)
+            yield next(gen)
+            if onerror is not None:
+                onerror(OSError("simulated mount dropout"))
+
+        monkeypatch.setattr(library_module.os, "walk", truncated_walk)
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "partial"
+        assert result["removed"] == 0
+        assert result["walk_errors"] == 1
+
+        # Every previously tracked row (including the one with a thumbnail)
+        # must still be present, and the thumbnail must not be unlinked.
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        after_files = response.json()
+        assert {f["filename"] for f in after_files} == {f["filename"] for f in before_files}
+        assert thumb_abs_path.exists()
+
+        # The subfolder (unreached by the truncated walk) must not be removed either.
+        response = await async_client.get("/api/v1/library/folders")
+        folders = response.json()
+        subfolder = find_folder_in_tree(folders, "subfolder")
+        assert subfolder is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_partial_when_root_disappears_after_walk(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir, monkeypatch
+    ):
+        """If the external root becomes inaccessible right after the walk
+        completes (e.g. the mount drops between the last scandir call and the
+        removal pass), the scan must not delete tracked rows either (#T-143).
+        """
+        first = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert first.json()["status"] == "success"
+        assert first.json()["added"] == 4
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        before_files = response.json()
+        assert len(before_files) == 3
+
+        import backend.app.api.routes.library as library_module
+
+        real_exists = library_module.Path.exists
+        ext_dir_str = str(external_dir.resolve())
+        call_count = {"n": 0}
+
+        def flaky_exists(self):
+            # Only intercept checks against the scanned root itself (matched
+            # by exact path string) so unrelated Path.exists() calls made
+            # elsewhere during the same request (thumbnails, etc.) are
+            # unaffected. Let the initial accessibility check at the top of
+            # the route pass, then report the root as gone once the walk
+            # (which re-checks the same object) is done.
+            if str(self) == ext_dir_str:
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    return real_exists(self)
+                return False
+            return real_exists(self)
+
+        monkeypatch.setattr(library_module.Path, "exists", flaky_exists)
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "partial"
+        assert result["removed"] == 0
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        after_files = response.json()
+        assert {f["filename"] for f in after_files} == {f["filename"] for f in before_files}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1074,6 +1306,131 @@ class TestCrossBoundaryMove:
         assert pre.is_external is True
         assert pre.folder_id == writable_folder["id"]
         assert pre.file_path == str(on_nas.resolve())
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_multi_file_batch_move_relocates_every_source(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """T-141: a batch of several files must all land on the NAS and
+        lose their internal copy — proving the deferred-unlink rework
+        (commit once, then unlink every successfully-copied source)
+        still relocates every file in a multi-file move, not just one."""
+        import io
+
+        from backend.app.api.routes.library import to_absolute_path
+        from backend.app.models.library import LibraryFile
+
+        file_ids = []
+        managed_paths = []
+        for name in ("batch_a.stl", "batch_b.stl", "batch_c.stl"):
+            upload = await async_client.post(
+                "/api/v1/library/files",
+                files={"file": (name, io.BytesIO(f"bytes-{name}".encode()), "application/octet-stream")},
+            )
+            assert upload.status_code == 200
+            file_id = upload.json()["id"]
+            file_ids.append(file_id)
+            row = await db_session.get(LibraryFile, file_id)
+            await db_session.refresh(row)
+            managed_paths.append(to_absolute_path(row.file_path))
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": file_ids, "folder_id": writable_folder["id"]},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["moved"] == 3
+        assert body["skipped"] == 0
+
+        for name, managed_path in zip(("batch_a.stl", "batch_b.stl", "batch_c.stl"), managed_paths, strict=True):
+            on_nas = external_dir / name
+            assert on_nas.exists()
+            assert on_nas.read_bytes() == f"bytes-{name}".encode()
+            assert not managed_path.exists(), f"managed source for {name} must be removed after the move"
+
+        for file_id in file_ids:
+            row = await db_session.get(LibraryFile, file_id)
+            await db_session.refresh(row)
+            assert row.is_external is True
+            assert row.folder_id == writable_folder["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_commit_failure_leaves_sources_and_db_untouched(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir, monkeypatch
+    ):
+        """T-141: ``_move_file_bytes`` used to unlink each source
+        immediately, before the batch's single ``db.commit()`` at the end
+        of the loop. If that commit failed (lock, IntegrityError, worker
+        restart) the transaction rolled back but the source bytes were
+        already gone — rows pointed at deleted files with nothing
+        referencing the freshly copied bytes under their new name.
+
+        This reproduces a commit failure and asserts the fix: nothing is
+        unlinked, no orphan dest is left on the NAS, and the DB row still
+        points at the original (still-present) source after rollback.
+        """
+        import io
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from backend.app.api.routes.library import to_absolute_path
+        from backend.app.models.library import LibraryFile
+
+        upload = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("fragile.stl", io.BytesIO(b"do-not-lose-me"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+
+        pre = await db_session.get(LibraryFile, file_id)
+        await db_session.refresh(pre)
+        original_file_path = pre.file_path
+        managed_disk_path = to_absolute_path(original_file_path)
+        assert managed_disk_path is not None and managed_disk_path.exists()
+
+        real_commit = AsyncSession.commit
+        state = {"armed": False, "triggered": False}
+
+        async def flaky_commit(self):
+            if state["armed"] and not state["triggered"]:
+                state["triggered"] = True
+                raise RuntimeError("database is locked")
+            return await real_commit(self)
+
+        monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+        state["armed"] = True
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": writable_folder["id"]},
+        )
+        assert state["triggered"], "the commit patch never fired — test would be a false positive"
+        # The app's fail-closed auth-probe middleware turns any unhandled
+        # exception from the request pipeline into a 503 (GHSA-6mf4-q26m-47pv)
+        # -- this pre-existing behavior is unrelated to the fix under test,
+        # only the on-disk/DB state below is.
+        assert response.status_code == 503
+
+        # The source bytes must still be exactly where they were.
+        assert managed_disk_path.exists(), "source must survive a failed commit"
+        assert managed_disk_path.read_bytes() == b"do-not-lose-me"
+
+        # No orphan copy left behind on the NAS target.
+        on_nas = external_dir / "fragile.stl"
+        assert not on_nas.exists(), "a failed commit must not leave an orphan dest copy"
+
+        # The DB row is unchanged — rollback undid the in-memory edits, and
+        # since the fix never unlinked anything, the still-standing source
+        # is exactly what the still-original row points at.
+        db_session.expire_all()
+        post = await db_session.get(LibraryFile, file_id)
+        assert post.file_path == original_file_path
+        assert post.is_external is False
+        assert post.folder_id is None
 
     @pytest.mark.asyncio
     @pytest.mark.integration

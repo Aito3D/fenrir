@@ -71,6 +71,13 @@ interface UseGridStreamReturn {
   reconnectingSet: Set<number>;
   reconnectCountdown: number;
   reconnectAttempt: number;
+  /**
+   * Set when the stream fetch fails with a 4xx status that retrying can't
+   * fix (anything but 408/429 — request timeout and rate-limit are still
+   * worth a backoff retry). Non-null means the reconnect loop has stopped;
+   * cleared on the next mount/restart or successful (re)connect (T-138).
+   */
+  terminalError: { status: number } | null;
   subscribeStats: (cb: () => void) => () => void;
   getStatsSnapshot: () => GridStreamStats;
   handleVisibilityChange: (printerId: number, visible: boolean) => void;
@@ -112,6 +119,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
   const [errorSet, setErrorSet] = useState<Set<number>>(new Set());
   const [degradedSet, setDegradedSet] = useState<Set<number>>(new Set());
   const [staleSet, setStaleSet] = useState<Set<number>>(new Set());
+  const [terminalError, setTerminalError] = useState<{ status: number } | null>(null);
   // Stats via ref + subscriber pattern (avoids re-rendering entire tree every 1s)
   const statsRef = useRef<GridStreamStats>(EMPTY_STATS);
   const statsSubscribers = useRef(new Set<() => void>());
@@ -217,6 +225,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
 
     setLoadingSet(new Set(ids));
     setErrorSet(new Set());
+    setTerminalError(null);
     resetReconnect();
 
     bytesRef.current = 0;
@@ -386,6 +395,11 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         next.delete(pid);
         return next;
       });
+      // A decoded frame can only arrive while the loop is actively reading a
+      // response body, which never happens once a terminal error latched it
+      // shut — but clear defensively alongside errorSet in case that ever
+      // changes, matching the other two reset points below (T-138).
+      setTerminalError(prev => (prev === null ? prev : null));
       setReconnectingSet(prev => {
         if (!prev.has(pid)) return prev;
         const next = new Set(prev);
@@ -608,6 +622,24 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         const streamUrl = `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}`;
         const res = await fetch(streamUrl, { signal: controllerRef.current.signal, headers: gridHeaders });
         if (!res.ok || !res.body) {
+          // 4xx other than 408 (request timeout) and 429 (rate limited) won't
+          // be fixed by retrying — a malformed request (too many printers),
+          // an expired token, or a missing permission is exactly as wrong on
+          // the next attempt. Stop the loop instead of retrying forever with
+          // no user-visible cause, and surface the status (T-138). Network
+          // errors, 5xx, 408, 429, and an ok response with no body all fall
+          // through to the existing throw -> backoff-reconnect path below.
+          if (!res.ok && res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+            active = false;
+            clearReconnectGraceTimer();
+            resetReconnect();
+            setTerminalError({ status: res.status });
+            setErrorSet(new Set(ids));
+            setDegradedSet(new Set());
+            setStaleSet(new Set());
+            setLoadingSet(new Set());
+            return;
+          }
           throw new Error(`HTTP ${res.status}`);
         }
 
@@ -636,6 +668,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           armReconnectGraceTimer();
         }
         setErrorSet(new Set());
+        setTerminalError(null);
         setDegradedSet(new Set());
         setStaleSet(new Set());
 
@@ -777,6 +810,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     reconnectingSet,
     reconnectCountdown,
     reconnectAttempt,
+    terminalError,
     subscribeStats,
     getStatsSnapshot,
     handleVisibilityChange,

@@ -98,6 +98,13 @@ export interface CameraGridCardProps extends GridCardBaseProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   loading: boolean;
   error: boolean;
+  /**
+   * Set when the grid stream stopped retrying after a non-retryable 4xx
+   * (bad request, expired auth, missing permission) instead of backing off
+   * forever with no visible cause. Shown in place of the generic
+   * "camera unavailable" text so the operator sees why (T-138).
+   */
+  terminalErrorStatus?: number;
   reconnecting: boolean;
   reconnectCountdown: number;
   reconnectAttempt: number;
@@ -129,6 +136,7 @@ export const CameraGridCard = memo(function CameraGridCard({
   videoRef,
   loading,
   error,
+  terminalErrorStatus,
   reconnecting,
   reconnectCountdown,
   reconnectAttempt,
@@ -267,7 +275,11 @@ export const CameraGridCard = memo(function CameraGridCard({
         {connected && error && !reconnecting && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-grid-fade-in">
             <AlertCircle className="w-8 h-8 text-red-400" />
-            <span className="text-xs text-white/50">{t('printers.cameraGrid.cameraUnavailable')}</span>
+            <span className="text-xs text-white/50">
+              {terminalErrorStatus
+                ? t('printers.cameraGrid.streamRejected', { status: terminalErrorStatus })
+                : t('printers.cameraGrid.cameraUnavailable')}
+            </span>
             {onRestart && (
               <button
                 onClick={onRestart}

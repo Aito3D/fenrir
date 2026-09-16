@@ -1,5 +1,6 @@
 """API routes for File Manager (Library) functionality."""
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -11,12 +12,15 @@ import re
 import shutil
 import uuid
 import zipfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
-from sqlalchemy import distinct, func, or_, select
+from fastapi.routing import APIRoute
+from sqlalchemy import delete, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +29,7 @@ from backend.app.core.auth import (
     require_media_token_ownership,
     require_ownership_permission,
     require_permission_if_auth_enabled,
+    security,
 )
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
@@ -111,6 +116,15 @@ router = APIRouter(prefix="/library", tags=["library"])
 
 # Path of the embedded slicer config inside a BambuStudio/OrcaSlicer 3MF.
 _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
+
+# generate_stl_thumbnail() renders via matplotlib's pyplot global state
+# (plt.figure()/plt.subplots_adjust() operate on the process-wide "current
+# figure"). All four call sites — upload_file, extract_zip_file's per-entry
+# loop, the backfill task, and the batch-generation route below — run it in
+# a worker thread via asyncio.to_thread; this lock keeps them from ever
+# rendering concurrently, preserving the pre-thread-offload guarantee that
+# renders never overlap.
+_stl_render_lock = asyncio.Lock()
 
 
 def _ensure_library_file_visible(
@@ -465,8 +479,23 @@ def _resolve_source_disk_path(file: LibraryFile) -> Path | None:
     return to_absolute_path(file.file_path)
 
 
-def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> str:
-    """Physically relocate `file`'s bytes to match `target_folder`.
+class _MoveResult(NamedTuple):
+    """Outcome of a successful ``_move_file_bytes`` call.
+
+    ``file_path`` is the value to persist on the DB row. ``src`` and
+    ``dest`` are the on-disk paths involved — the caller defers unlinking
+    ``src`` until the batch's ``db.commit()`` has actually succeeded, and
+    uses ``dest`` to clean up the freshly copied bytes if the commit
+    fails instead.
+    """
+
+    file_path: str
+    src: Path
+    dest: Path
+
+
+def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> _MoveResult:
+    """Physically copy `file`'s bytes to match `target_folder`.
 
     Used by the move endpoint when source/target straddle the
     managed↔external boundary (#1112 follow-up — the prior implementation
@@ -474,16 +503,18 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
     file moved to an external SMB folder showed up in Bambuddy's UI but
     not on the NAS).
 
-    Returns the new ``file_path`` value to persist (relative for managed
-    targets, absolute for external targets — matches the upload + scan
-    paths). Raises ``_MoveSkip`` for any condition that would make the
-    move unsafe (target unwritable, filename collision, source missing).
+    Returns a :class:`_MoveResult` with the new ``file_path`` value to
+    persist (relative for managed targets, absolute for external targets
+    — matches the upload + scan paths) plus the source/dest paths so the
+    caller can unlink the source only after the DB row referencing the
+    new dest is durably committed. Raises ``_MoveSkip`` for any condition
+    that would make the move unsafe (target unwritable, filename
+    collision, source missing).
 
-    The copy-then-unlink ordering means a partial copy followed by a
-    failed unlink leaves both the source and the dest on disk — better
-    than the symmetric "rename or move" which would lose the source if
-    the target write didn't complete on a flaky mount. The DB row stays
-    pointed at the source until the caller commits the new ``file_path``.
+    Deliberately does NOT unlink the source itself — see ``move_files``,
+    which commits the whole batch before removing any source bytes so a
+    failed commit can never leave a row pointing at a file that no
+    longer exists.
     """
     src = _resolve_source_disk_path(file)
     if not src or not src.exists():
@@ -529,28 +560,19 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
                 dest.unlink(missing_ok=True)
             raise _MoveSkip("copy_failed", f"copy failed: {e}") from e
 
-    # Copy succeeded — unlink the original. A failure here leaves an
-    # orphan on disk but the DB row is consistent against the new dest.
-    try:
-        src.unlink(missing_ok=True)
-    except OSError as e:
-        logger.warning(
-            "Move: copied %s → %s but couldn't remove source: %s",
-            src,
-            dest,
-            e,
-        )
-
-    return _stored_file_path(dest, is_external=target_is_external)
+    # Copy succeeded. The source is left in place for now — the caller
+    # unlinks it only after the DB row pointing at `dest` is committed.
+    return _MoveResult(_stored_file_path(dest, is_external=target_is_external), src, dest)
 
 
 def _clean_3mf_metadata(obj):
     """Strip bytes and thumbnail-carrier keys so the payload is JSON-storable.
 
-    Shared by ``upload_file`` and :func:`save_3mf_bytes_to_library` — the
-    ``ThreeMFParser`` output embeds the thumbnail bytes under
-    ``_thumbnail_data``/``_thumbnail_ext`` and may also include raw bytes in
-    other fields, none of which can be JSON-encoded.
+    Shared by ``upload_file``, ``extract_zip_file``, ``scan_external_folder``
+    and :func:`save_3mf_bytes_to_library` — the ``ThreeMFParser`` output
+    embeds the thumbnail bytes under ``_thumbnail_data``/``_thumbnail_ext``
+    and may also include raw bytes in other fields, none of which can be
+    JSON-encoded.
     """
     if isinstance(obj, dict):
         return {
@@ -858,7 +880,8 @@ async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
             except OSError:
                 continue
             try:
-                thumb_path = generate_stl_thumbnail(abs_path, thumbnails_dir)
+                async with _stl_render_lock:
+                    thumb_path = await asyncio.to_thread(generate_stl_thumbnail, abs_path, thumbnails_dir)
             except Exception as exc:  # noqa: BLE001 — never let one bad STL kill the rest
                 logger.debug("STL thumbnail backfill skipped %s: %s", abs_path, exc)
                 continue
@@ -1471,10 +1494,12 @@ async def delete_folder(
             # Only delete non-external files from disk
             if not is_ext and not file_is_ext:
                 try:
-                    if file_path and os.path.exists(file_path):
-                        os.remove(file_path)
-                    if thumb_path and os.path.exists(thumb_path):
-                        os.remove(thumb_path)
+                    abs_file_path = to_absolute_path(file_path)
+                    abs_thumb_path = to_absolute_path(thumb_path)
+                    if abs_file_path and abs_file_path.exists():
+                        os.remove(abs_file_path)
+                    if abs_thumb_path and abs_thumb_path.exists():
+                        os.remove(abs_thumb_path)
                 except OSError as e:
                     logger.warning("Failed to delete file: %s", e)
 
@@ -1806,7 +1831,17 @@ async def scan_external_folder(
     # Real on-disk mtime per visited folder id (#2680), applied after the walk.
     folder_mtimes: dict[int, datetime] = {}
 
-    for dirpath, dirnames, filenames in os.walk(ext_path):
+    # os.walk's default onerror=None silently swallows scandir failures (e.g. an
+    # SMB/NFS mount dropping mid-walk), which would otherwise truncate the walk
+    # with no signal — leaving found_paths partial and making every remaining
+    # tracked file on the dead mount look "deleted" to the removal pass below.
+    walk_errors: list[OSError] = []
+
+    def _record_walk_error(err: OSError) -> None:
+        walk_errors.append(err)
+        logger.warning("External folder scan hit a walk error under %s: %s", ext_path, err)
+
+    for dirpath, dirnames, filenames in os.walk(ext_path, onerror=_record_walk_error):
         # Filter hidden directories unless configured
         if not folder.external_show_hidden:
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -1896,7 +1931,8 @@ async def scan_external_folder(
                 # and old rows scanned before this field existed get backfilled.
                 tracked = existing_files[file_path_str]
                 try:
-                    fs_mtime = _mtime_to_datetime(filepath.stat().st_mtime)
+                    fs_stat = await asyncio.to_thread(filepath.stat)
+                    fs_mtime = _mtime_to_datetime(fs_stat.st_mtime)
                 except OSError:
                     fs_mtime = None
                 if fs_mtime is not None and tracked.fs_modified_at != fs_mtime:
@@ -1905,7 +1941,7 @@ async def scan_external_folder(
 
             # Get file info
             try:
-                stat = filepath.stat()
+                stat = await asyncio.to_thread(filepath.stat)
             except OSError:
                 continue
 
@@ -1923,8 +1959,7 @@ async def scan_external_folder(
             file_metadata = None
             if file_type in ("3mf", "gcode.3mf"):
                 try:
-                    parser = ThreeMFParser(str(filepath))
-                    raw_metadata = parser.parse()
+                    raw_metadata = await asyncio.to_thread(lambda fp=filepath: ThreeMFParser(str(fp)).parse())
                     if raw_metadata:
                         # Extract thumbnail before cleaning metadata
                         thumb_data = raw_metadata.get("_thumbnail_data")
@@ -1935,24 +1970,11 @@ async def scan_external_folder(
                             thumb_full = (
                                 thumb_dir / thumb_filename
                             )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
-                            thumb_full.write_bytes(thumb_data)
+                            await asyncio.to_thread(thumb_full.write_bytes, thumb_data)
                             thumbnail_path = to_relative_path(thumb_full)
 
                         # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
-                        def clean_metadata(obj):
-                            if isinstance(obj, dict):
-                                return {
-                                    k: clean_metadata(v)
-                                    for k, v in obj.items()
-                                    if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                                }
-                            elif isinstance(obj, list):
-                                return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                            elif isinstance(obj, bytes):
-                                return None
-                            return obj
-
-                        file_metadata = clean_metadata(raw_metadata)
+                        file_metadata = _clean_3mf_metadata(raw_metadata)
                 except Exception as e:
                     logger.debug("Failed to extract metadata from external 3mf %s: %s", filepath, e)
 
@@ -1963,17 +1985,19 @@ async def scan_external_folder(
 
             # Extract gcode thumbnail
             if file_type == "gcode" and thumbnail_path is None:
-                thumb_data = extract_gcode_thumbnail(filepath)
+                thumb_data = await asyncio.to_thread(extract_gcode_thumbnail, filepath)
                 if thumb_data:
                     thumb_dir = get_library_thumbnails_dir()
                     thumb_filename = f"{uuid.uuid4().hex}.png"
                     thumb_full = thumb_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
-                    thumb_full.write_bytes(thumb_data)
+                    await asyncio.to_thread(thumb_full.write_bytes, thumb_data)
                     thumbnail_path = to_relative_path(thumb_full)
 
             # Create thumbnail for image files
             if ext.lower() in IMAGE_EXTENSIONS and thumbnail_path is None:
-                thumbnail_path_str = create_image_thumbnail(filepath, get_library_thumbnails_dir())
+                thumbnail_path_str = await asyncio.to_thread(
+                    create_image_thumbnail, filepath, get_library_thumbnails_dir()
+                )
                 if thumbnail_path_str:
                     thumbnail_path = to_relative_path(Path(thumbnail_path_str))
 
@@ -1992,6 +2016,13 @@ async def scan_external_folder(
             db.add(db_file)
             added += 1
 
+    # A partial walk (recorded above) or a mount that vanished entirely between
+    # the initial accessibility check and now must never be treated as "every
+    # remaining tracked file was deleted". Skip the whole removal pass in that
+    # case — adds/updates already committed during the walk are correct data
+    # and stay; only the destructive cleanup below is gated.
+    walk_was_partial = bool(walk_errors) or not (ext_path.exists() and ext_path.is_dir())
+
     # Remove DB entries for files that no longer exist on disk.
     #
     # Gate on actual disk presence, NOT merely absence from found_paths:
@@ -2001,44 +2032,49 @@ async def scan_external_folder(
     # every scan even though the file is still there. os.path.exists keeps
     # such records; genuinely-deleted files (absent from disk) are still
     # cleaned up. External file_path is the absolute on-disk path.
-    for path_str, db_file in existing_files.items():
-        if path_str not in found_paths and not os.path.exists(path_str):
-            # Clean up thumbnail if we generated one
-            if db_file.thumbnail_path:
-                try:
-                    abs_thumb = to_absolute_path(db_file.thumbnail_path)
-                    if abs_thumb and abs_thumb.exists():
-                        abs_thumb.unlink()
-                except OSError:
-                    pass
-            await db.delete(db_file)
-            removed += 1
+    if not walk_was_partial:
+        for path_str, db_file in existing_files.items():
+            if path_str not in found_paths and not await asyncio.to_thread(os.path.exists, path_str):
+                # Clean up thumbnail if we generated one
+                if db_file.thumbnail_path:
+                    try:
+                        abs_thumb = to_absolute_path(db_file.thumbnail_path)
+                        if abs_thumb and abs_thumb.exists():
+                            abs_thumb.unlink()
+                    except OSError:
+                        pass
+                await db.delete(db_file)
+                removed += 1
 
-    # Remove empty subfolders whose directories no longer exist on disk
+    # Remove empty subfolders whose directories no longer exist on disk.
+    # Gated on the same walk_was_partial flag as the file removal above: a
+    # truncated walk means seen_rel_dirs is incomplete, so an unreached (but
+    # still-present) subfolder would otherwise look deleted too.
     # Process deepest-first by sorting on path depth (descending)
-    subfolder_entries = [(rel, fid) for rel, fid in folder_cache.items() if rel and fid != folder_id]
-    subfolder_entries.sort(key=lambda x: x[0].count("/"), reverse=True)
-    for rel_path, sub_fid in subfolder_entries:
-        if rel_path in seen_rel_dirs:
-            continue  # Directory still exists on disk
-        # Check if subfolder has any remaining files
-        file_count_result = await db.execute(
-            select(func.count(LibraryFile.id)).where(
-                LibraryFile.folder_id == sub_fid,
-                LibraryFile.deleted_at.is_(None),
+    if not walk_was_partial:
+        subfolder_entries = [(rel, fid) for rel, fid in folder_cache.items() if rel and fid != folder_id]
+        subfolder_entries.sort(key=lambda x: x[0].count("/"), reverse=True)
+        for rel_path, sub_fid in subfolder_entries:
+            if rel_path in seen_rel_dirs:
+                continue  # Directory still exists on disk
+            # Check if subfolder has any remaining files
+            file_count_result = await db.execute(
+                select(func.count(LibraryFile.id)).where(
+                    LibraryFile.folder_id == sub_fid,
+                    LibraryFile.deleted_at.is_(None),
+                )
             )
-        )
-        if (file_count_result.scalar() or 0) == 0:
-            # Check if it has any remaining child folders
-            child_count_result = await db.execute(
-                select(func.count(LibraryFolder.id)).where(LibraryFolder.parent_id == sub_fid)
-            )
-            if (child_count_result.scalar() or 0) == 0:
-                sub_folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == sub_fid))
-                sub_folder_obj = sub_folder_result.scalar_one_or_none()
-                if sub_folder_obj:
-                    await db.delete(sub_folder_obj)
-                    folder_mtimes.pop(sub_fid, None)
+            if (file_count_result.scalar() or 0) == 0:
+                # Check if it has any remaining child folders
+                child_count_result = await db.execute(
+                    select(func.count(LibraryFolder.id)).where(LibraryFolder.parent_id == sub_fid)
+                )
+                if (child_count_result.scalar() or 0) == 0:
+                    sub_folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == sub_fid))
+                    sub_folder_obj = sub_folder_result.scalar_one_or_none()
+                    if sub_folder_obj:
+                        await db.delete(sub_folder_obj)
+                        folder_mtimes.pop(sub_fid, None)
 
     # Persist each visited folder's real directory mtime (#2680). Fetched in one
     # trip; folders deleted by the cleanup above were dropped from folder_mtimes.
@@ -2064,6 +2100,8 @@ async def scan_external_folder(
         name=f"stl-backfill-folder-{folder_id}",
     )
 
+    if walk_was_partial:
+        return {"status": "partial", "added": added, "removed": 0, "walk_errors": len(walk_errors)}
     return {"status": "success", "added": added, "removed": removed}
 
 
@@ -2081,6 +2119,8 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
+    limit: int = Query(default=500, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -2112,6 +2152,10 @@ async def list_files(
                  intentionally bypassed — tags are cross-cutting and the user
                  wants "every file with this tag" regardless of where it lives.
                  ``recursive`` becomes irrelevant in that case.
+        limit: Page size, capped to keep the response bounded on large libraries.
+               Total matching row count is returned in the ``X-Total-Count``
+               response header so callers can page through the full result.
+        offset: Number of matching rows to skip (paired with ``limit``).
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -2163,7 +2207,15 @@ async def list_files(
     elif external_only:
         query = query.where(LibraryFile.is_external.is_(True))
 
-    query = query.order_by(LibraryFile.filename)
+    # Total matching row count (before paging), exposed via X-Total-Count so
+    # the client can page through the full result without the server ever
+    # serialising more than `limit` rows at once (#3xxx). Wrapping the fully
+    # filtered/joined/grouped query in a subquery reuses every filter above
+    # (including the tag_ids GROUP BY/HAVING) without duplicating the logic.
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total_count = int(count_result.scalar() or 0)
+
+    query = query.order_by(LibraryFile.filename).offset(offset).limit(limit)
     result = await db.execute(query)
     files = result.scalars().unique().all() if tag_ids else result.scalars().all()
 
@@ -2195,6 +2247,7 @@ async def list_files(
 
     # Prevent browser caching of file list
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["X-Total-Count"] = str(total_count)
 
     file_list = []
     for f in files:
@@ -2284,8 +2337,145 @@ async def check_file_duplicates(
     return CheckDuplicatesResponse(duplicates=duplicates)
 
 
-@router.post("/files", response_model=FileUploadResponse)
-@router.post("/files/", response_model=FileUploadResponse)
+async def _stream_upload_to_path(
+    file: UploadFile,
+    dest_path: Path,
+    max_bytes: int,
+    on_first_chunk: Callable[[bytes], None] | None = None,
+) -> tuple[int, str]:
+    """Stream ``file`` to ``dest_path`` in bounded chunks, hashing as it goes.
+
+    Shared by the plain file upload and the ZIP-upload step of extract-zip
+    (T-147 / T-155): reading the whole body into memory first would let a
+    single multi-GB upload — or a handful of concurrent ones — sit fully in
+    RSS before a byte reaches disk. Rejects with 413 as soon as the declared
+    (``file.size``) or accumulated streamed size crosses ``max_bytes``;
+    ``file.size`` is None for chunked/unknown-length uploads, so the running
+    total is what actually enforces the cap for those. ``on_first_chunk``
+    runs exactly once, against the first chunk read (or ``b""`` for an empty
+    upload), so callers can sniff magic bytes without buffering the whole
+    body up front. On any abort — a 413, a client disconnect, a cancellation,
+    a disk-full ``OSError``, or anything else raised while streaming —
+    ``dest_path`` is removed before the exception propagates, so a truncated
+    file is never left behind.
+
+    Returns ``(total_bytes, sha256_hexdigest)``.
+    """
+
+    def _too_large() -> HTTPException:
+        return HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {max_bytes} bytes")
+
+    if file.size is not None and file.size > max_bytes:
+        raise _too_large()
+
+    sha256_hash = hashlib.sha256()
+    total_bytes = 0
+    first_chunk_seen = False
+    success = False
+    try:
+        with open(dest_path, "wb") as f:
+            while chunk := await file.read(1 << 20):
+                if not first_chunk_seen:
+                    if on_first_chunk is not None:
+                        on_first_chunk(chunk)
+                    first_chunk_seen = True
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise _too_large()
+                sha256_hash.update(chunk)
+                f.write(chunk)
+        if not first_chunk_seen and on_first_chunk is not None:
+            on_first_chunk(b"")
+        success = True
+    finally:
+        if not success and dest_path.exists():
+            dest_path.unlink()
+    return total_bytes, sha256_hash.hexdigest()
+
+
+# The gate below measures the WHOLE request's declared Content-Length, not
+# just the `file` part's size — it runs before the body is parsed, so it has
+# no way to know where the `file` part ends and cannot single it out the way
+# the in-route check in `_stream_upload_to_path` does. Multipart requests
+# carry more bytes than just the file content itself (boundary delimiters,
+# the per-part `Content-Disposition`/`Content-Type` headers including the
+# filename, and the closing boundary), so this margin is picked generously
+# above any realistic overhead from THAT alone. It does not cover a request
+# that adds extra multipart parts beyond `file`: a body whose `file` part is
+# under the cap but whose total size exceeds cap + this margin would be
+# rejected here even though the in-route check would have accepted it after
+# discarding the unrecognized extra part(s). Both upload routes' OpenAPI
+# contracts declare a single `file` field and no shipped client sends more
+# than that, so this only matters for a caller that adds parts the contract
+# doesn't declare (T-166).
+_UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES = 8 * 1024
+
+# The same permission the upload routes require via their own `Depends`
+# below, built once here so the pre-body gate authorizes a caller the exact
+# same way instead of a hand-rolled copy of the check (T-166).
+_library_upload_permission_checker = require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)
+
+
+class _ContentLengthCappedRoute(APIRoute):
+    """Route class for the two multipart upload endpoints (``POST /files``
+    and ``POST /files/extract-zip``) that rejects an over-cap body from its
+    declared ``Content-Length`` header *before* Starlette spools it to disk.
+
+    FastAPI resolves ``UploadFile = File(...)`` by calling
+    ``await request.form()`` before any of the route's ``Depends()`` run —
+    body parsing happens ahead of dependency solving in
+    ``fastapi.routing.get_request_handler`` — so a plain dependency cannot
+    intercept the request before the multipart body is fully written to a
+    temp file by ``starlette.formparsers.MultiPartParser``. Only wrapping
+    the route's ASGI handler itself, via ``route_class_override`` in the
+    ``router.add_api_route(...)`` calls below, runs ahead of that. This is
+    scoped to these two routes only and never touches the app-wide
+    middleware stack.
+
+    Authentication runs first, using the identical check
+    ``_library_upload_permission_checker`` above already performs for these
+    routes' own dependency — an unauthenticated or unauthorized caller gets
+    the same 401/403 they get today and learns nothing about the configured
+    cap. Only once that succeeds (or auth is disabled) is the
+    Content-Length compared against the cap plus
+    ``_UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES`` (see that constant's comment
+    for exactly what it does and does not cover), reusing the exact status
+    code and detail string ``_stream_upload_to_path`` already produces
+    (T-166).
+
+    A request that is both over-cap and would otherwise fail one of the
+    route's own body-dependent checks (bad file type, a missing target
+    folder, an empty filename, a missing ``file`` field) still gets this
+    413 first: those checks all need the parsed body, which is the very
+    thing this gate exists to avoid touching. See BASELINE-CHANGELOG.md for
+    the exact list of orderings this leaves changed.
+    """
+
+    def get_route_handler(self):
+        original_route_handler = super().get_route_handler()
+
+        async def route_handler(request: Request) -> Response:
+            credentials = await security(request)
+            x_api_key = request.headers.get("x-api-key")
+            await _library_upload_permission_checker(credentials, x_api_key)
+
+            content_length_header = request.headers.get("content-length")
+            if content_length_header is not None:
+                try:
+                    declared_bytes = int(content_length_header)
+                except ValueError:
+                    declared_bytes = None
+                if declared_bytes is not None:
+                    max_bytes = app_settings.library_max_upload_bytes
+                    if declared_bytes > max_bytes + _UPLOAD_CONTENT_LENGTH_OVERHEAD_BYTES:
+                        raise HTTPException(
+                            status_code=413, detail=f"Upload exceeds the maximum size of {max_bytes} bytes"
+                        )
+            return await original_route_handler(request)
+
+        return route_handler
+
+
 async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
@@ -2328,21 +2518,30 @@ async def upload_file(
         # ordering / tests.
         file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
 
-        # Read upload now so the validation can sniff magic bytes; the file
-        # is written to disk only after the checks. #1401.
-        content = await file.read()
-        validate_print_file_upload(filename, content)
+        # Stream the upload to disk in bounded chunks rather than reading it
+        # all into memory first — a single multi-GB STL/3MF would otherwise
+        # sit in RSS before a byte reaches disk, and a handful of concurrent
+        # uploads can OOM the container. Reject by declared size first (fast
+        # path when Content-Length is set), then bail the moment the
+        # accumulated streamed size crosses the cap — file.size is None for
+        # chunked/unknown-length uploads, so the running total is what
+        # actually enforces the cap for those.
+        max_upload_bytes = app_settings.library_max_upload_bytes
 
-        # Save file
-        with open(file_path, "wb") as f:
-            f.write(content)
+        # The 3MF magic-byte sniff (#1401) only needs the first chunk —
+        # validate_print_file_upload() only ever inspects a content prefix —
+        # so it runs inline with the first chunk read rather than requiring
+        # the whole body up front. Zero-byte upload: the pre-streaming code
+        # always ran the validator once, even against an empty ``content``;
+        # ``_stream_upload_to_path`` calls ``on_first_chunk(b"")`` in that case.
+        def _validate_first_chunk(chunk: bytes) -> None:
+            validate_print_file_upload(filename, chunk)
+
+        total_bytes, file_hash = await _stream_upload_to_path(file, file_path, max_upload_bytes, _validate_first_chunk)
 
         # Now that the bytes are on disk the zip can settle what the name only
         # guessed at: a sliced 3MF uploaded as `Foo.3mf` is a sliced 3MF (#2993).
         file_type = classify_file_type(filename, file_path)
-
-        # Calculate hash
-        file_hash = calculate_file_hash(file_path)
 
         # Check for duplicates
         dup_result = await db.execute(
@@ -2375,20 +2574,7 @@ async def upload_file(
                     thumbnail_path = str(thumb_path)
 
                 # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
-                def clean_metadata(obj):
-                    if isinstance(obj, dict):
-                        return {
-                            k: clean_metadata(v)
-                            for k, v in obj.items()
-                            if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                        }
-                    elif isinstance(obj, list):
-                        return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                    elif isinstance(obj, bytes):
-                        return None
-                    return obj
-
-                metadata = clean_metadata(raw_metadata)
+                metadata = _clean_3mf_metadata(raw_metadata)
             except Exception as e:
                 logger.warning("Failed to parse 3MF: %s", e)
 
@@ -2419,7 +2605,8 @@ async def upload_file(
             if generate_stl_thumbnails:
                 try:
                     if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
-                        thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                        async with _stl_render_lock:
+                            thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
                 except OSError:
                     pass
 
@@ -2431,7 +2618,7 @@ async def upload_file(
             filename=filename,
             file_path=_stored_file_path(file_path, is_external_upload),
             file_type=file_type,
-            file_size=len(content),
+            file_size=total_bytes,
             file_hash=file_hash,
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=_without_print_name(metadata) if metadata else None,
@@ -2457,7 +2644,34 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
-@router.post("/files/extract-zip", response_model=ZipExtractResponse)
+# Registered via add_api_route (rather than the @router.post decorator used
+# elsewhere in this module) so the Content-Length gate above can be attached
+# through route_class_override — see _ContentLengthCappedRoute (T-166).
+router.add_api_route(
+    "/files",
+    upload_file,
+    methods=["POST"],
+    response_model=FileUploadResponse,
+    route_class_override=_ContentLengthCappedRoute,
+)
+router.add_api_route(
+    "/files/",
+    upload_file,
+    methods=["POST"],
+    response_model=FileUploadResponse,
+    route_class_override=_ContentLengthCappedRoute,
+)
+
+
+class _ZipExtractCapExceeded(Exception):
+    """Internal signal only: the running decompressed byte count for a ZIP
+    extraction crossed ``library_max_zip_extract_bytes`` mid-stream — i.e. a
+    per-entry ``ZipInfo.file_size`` header understated the real size (T-155).
+    Raised inside the per-entry loop so it can bypass that loop's normal
+    per-file error handling and abort the whole request instead of just
+    skipping one file."""
+
+
 async def extract_zip_file(
     file: UploadFile = File(...),
     folder_id: int | None = Query(default=None),
@@ -2481,6 +2695,15 @@ async def extract_zip_file(
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are supported")
 
+    # Reject FAT32/exFAT-incompatible / control-character archive names up
+    # front, same as upload_file (#1540) — the name is logged below and
+    # stored as a folder name when create_folder_from_zip is set, so an
+    # unvalidated CR/LF here would forge log lines (T-157).
+    try:
+        validate_print_filename(file.filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     # Verify target folder exists if specified
     if folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
@@ -2503,13 +2726,18 @@ async def extract_zip_file(
                 ),
             )
 
-    # Save ZIP to temp file
+    # Save ZIP to temp file, streaming it in bounded chunks (same helper and
+    # cap as the plain upload route, T-147/T-155) rather than reading the
+    # whole body into memory first.
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_fd)
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        await _stream_upload_to_path(file, Path(tmp_path), app_settings.library_max_upload_bytes)
+    except HTTPException:
+        raise
     except Exception as e:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
         raise HTTPException(status_code=500, detail=f"Failed to save ZIP file: {str(e)}")
 
     extracted_files: list[ZipExtractResult] = []
@@ -2520,7 +2748,10 @@ async def extract_zip_file(
     # If create_folder_from_zip is True, create a folder named after the ZIP file
     zip_folder_id = folder_id
     logger.info(
-        f"ZIP extraction: create_folder_from_zip={create_folder_from_zip}, folder_id={folder_id}, filename={file.filename}"
+        "ZIP extraction: create_folder_from_zip=%s, folder_id=%s, filename=%s",
+        create_folder_from_zip,
+        folder_id,
+        file.filename,
     )
     if create_folder_from_zip and file.filename:
         # Remove .zip extension to get folder name
@@ -2546,8 +2777,34 @@ async def extract_zip_file(
             folders_created += 1
             logger.info("Created new folder '%s' with id=%s", zip_folder_name, zip_folder_id)
 
+    max_extract_bytes = app_settings.library_max_zip_extract_bytes
+    # Bytes actually copied to disk so far this request, across every entry
+    # extracted — checked against max_extract_bytes as each entry streams so
+    # a per-entry header that understates the real size still gets caught.
+    zip_extract_total_bytes = 0
+    # (library_file_id, on-disk file path, thumbnail path or None) for every
+    # entry successfully extracted this request, so a mid-stream cap breach
+    # can undo them (T-155).
+    extracted_this_request: list[tuple[int, Path, str | None]] = []
+
     try:
         with zipfile.ZipFile(tmp_path, "r") as zf:
+            # Reject archives whose entries declare they'll expand well past
+            # what local disk / the container can hold before extracting a
+            # single one — a small deflate-bomb ZIP can otherwise expand to
+            # tens of GB and OOM the process (T-155). This reads only the
+            # local-header sizes, so it doesn't decompress anything yet;
+            # each entry is still re-checked as it streams below in case a
+            # header understates the real size.
+            total_declared_bytes = sum(zi.file_size for zi in zf.infolist())
+            if total_declared_bytes > max_extract_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"ZIP expands to {total_declared_bytes} bytes, above the maximum of {max_extract_bytes} bytes"
+                    ),
+                )
+
             # Filter out directories and hidden/system files
             file_list = [
                 name
@@ -2610,6 +2867,22 @@ async def extract_zip_file(
 
                     # Extract file
                     filename = os.path.basename(zip_path)
+                    # Reject FAT32/exFAT-incompatible / control-character entry
+                    # names before they're stored or logged (T-157) — an
+                    # unvalidated CR/LF here would forge log lines the same
+                    # way an unvalidated archive name would. This entry is
+                    # skipped, not fatal to the request, same as the other
+                    # per-entry problems reported through `errors` below.
+                    try:
+                        validate_print_filename(filename)
+                    except InvalidFilenameError as e:
+                        logger.warning("Skipping ZIP entry with invalid filename: %s", e)
+                        errors.append(ZipExtractError(filename=filename, error=str(e)))
+                        # Undo any folder flushed-but-not-committed for this
+                        # entry's preserve_structure path, same as the
+                        # generic per-entry failure handler below.
+                        await db.rollback()
+                        continue
                     ext = os.path.splitext(filename)[1].lower()
 
                     # Generate unique filename for storage
@@ -2618,10 +2891,24 @@ async def extract_zip_file(
                         get_library_files_dir() / unique_filename
                     )  # SEC-PATH-OK: unique_filename = uuid.uuid4().hex + ext
 
-                    # Extract and save file
-                    file_content = zf.read(zip_path)
-                    with open(file_path, "wb") as f:
-                        f.write(file_content)
+                    # Extract and save file, streaming it in bounded chunks
+                    # rather than decompressing the whole entry into memory
+                    # first (T-155). The running zip_extract_total_bytes is
+                    # checked as each chunk lands so a ZipInfo.file_size that
+                    # understates the real size still gets caught.
+                    entry_bytes_written = 0
+                    try:
+                        with zf.open(zip_path) as src, open(file_path, "wb") as dst:
+                            while chunk := src.read(1 << 20):
+                                entry_bytes_written += len(chunk)
+                                if zip_extract_total_bytes + entry_bytes_written > max_extract_bytes:
+                                    raise _ZipExtractCapExceeded()
+                                dst.write(chunk)
+                    except _ZipExtractCapExceeded:
+                        with contextlib.suppress(OSError):
+                            file_path.unlink()
+                        raise
+                    zip_extract_total_bytes += entry_bytes_written
 
                     # Classified once the bytes are on disk so a sliced 3MF
                     # named `Foo.3mf` inside the zip is recognised as sliced
@@ -2653,20 +2940,7 @@ async def extract_zip_file(
                                     f.write(thumbnail_data)
                                 thumbnail_path = str(thumb_path)
 
-                            def clean_metadata(obj):
-                                if isinstance(obj, dict):
-                                    return {
-                                        k: clean_metadata(v)
-                                        for k, v in obj.items()
-                                        if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                                    }
-                                elif isinstance(obj, list):
-                                    return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                                elif isinstance(obj, bytes):
-                                    return None
-                                return obj
-
-                            metadata = clean_metadata(raw_metadata)
+                            metadata = _clean_3mf_metadata(raw_metadata)
                         except Exception as e:
                             logger.warning("Failed to parse 3MF from ZIP: %s", e)
 
@@ -2693,8 +2967,11 @@ async def extract_zip_file(
                         # even a single triangle, and bulk-uploaded ZIPs of
                         # stub STLs would otherwise log one debug line per
                         # file via the empty-mesh branch in trimesh.load.
-                        if generate_stl_thumbnails and len(file_content) >= MIN_USABLE_STL_BYTES:
-                            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                        if generate_stl_thumbnails and entry_bytes_written >= MIN_USABLE_STL_BYTES:
+                            async with _stl_render_lock:
+                                thumbnail_path = await asyncio.to_thread(
+                                    generate_stl_thumbnail, file_path, thumbnails_dir
+                                )
 
                     # Create database entry (store relative paths for portability)
                     library_file = LibraryFile(
@@ -2702,7 +2979,7 @@ async def extract_zip_file(
                         filename=filename,
                         file_path=to_relative_path(file_path),
                         file_type=file_type,
-                        file_size=len(file_content),
+                        file_size=entry_bytes_written,
                         file_hash=file_hash,
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=_without_print_name(metadata) if metadata else None,
@@ -2719,11 +2996,17 @@ async def extract_zip_file(
                             folder_id=target_folder_id,
                         )
                     )
+                    extracted_this_request.append((library_file.id, file_path, thumbnail_path))
 
                     # Commit after each file to release database lock
                     # This prevents long-running transactions from blocking other requests
                     await db.commit()
 
+                except _ZipExtractCapExceeded:
+                    # Abort the whole request rather than skipping just this
+                    # entry — a lying header means we can no longer trust
+                    # the remaining entries' declared sizes either.
+                    raise
                 except Exception as e:
                     logger.error("Failed to extract %s: %s", zip_path, e)
                     errors.append(ZipExtractError(filename=os.path.basename(zip_path), error=str(e)))
@@ -2737,6 +3020,28 @@ async def extract_zip_file(
             errors=errors,
         )
 
+    except HTTPException:
+        raise
+    except _ZipExtractCapExceeded:
+        # A per-entry header lied about its size and the running total
+        # crossed the cap mid-stream: undo every file and DB row this
+        # request extracted before failing, so nothing from an oversized
+        # archive is left behind (T-155).
+        for _extracted_id, extracted_path, extracted_thumbnail in extracted_this_request:
+            with contextlib.suppress(OSError):
+                extracted_path.unlink()
+            if extracted_thumbnail:
+                with contextlib.suppress(OSError):
+                    Path(extracted_thumbnail).unlink()
+        if extracted_this_request:
+            await db.execute(
+                delete(LibraryFile).where(LibraryFile.id.in_([eid for eid, _, _ in extracted_this_request]))
+            )
+            await db.commit()
+        raise HTTPException(
+            status_code=413,
+            detail=(f"ZIP expands to more than {max_extract_bytes} bytes once extracted, above the maximum allowed"),
+        )
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid or corrupted ZIP file")
     except Exception as e:
@@ -2750,7 +3055,23 @@ async def extract_zip_file(
             pass  # Best-effort temp file cleanup; ignore if already removed
 
 
+# See the equivalent add_api_route calls after upload_file above (T-166).
+router.add_api_route(
+    "/files/extract-zip",
+    extract_zip_file,
+    methods=["POST"],
+    response_model=ZipExtractResponse,
+    route_class_override=_ContentLengthCappedRoute,
+)
+
+
 # ============ STL Thumbnail Batch Generation ============
+
+# generate_stl_thumbnail() does a synchronous trimesh load + matplotlib render,
+# roughly 1-5s each. Cap how many a single request renders so one call can't
+# block behind a reverse-proxy timeout (or hold the thread pool) for hours on
+# a large library; callers can repeat the call to work through the remainder.
+STL_THUMBNAIL_BATCH_LIMIT = 100
 
 
 @router.post("/generate-stl-thumbnails", response_model=BatchThumbnailResponse)
@@ -2798,7 +3119,14 @@ async def batch_generate_stl_thumbnails(
             results=[],
         )
 
-    result = await db.execute(query)
+    # Total matching row count (before paging), so `remaining` reflects the real
+    # leftover count instead of saturating at 1 (the old +1 over-fetch trick could
+    # never distinguish "1 left" from "4200 left"). Wrapping the fully filtered
+    # query in a subquery mirrors list_files()'s X-Total-Count computation above.
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total_count = int(count_result.scalar() or 0)
+
+    result = await db.execute(query.limit(STL_THUMBNAIL_BATCH_LIMIT))
     stl_files = result.scalars().all()
 
     succeeded = 0
@@ -2820,7 +3148,8 @@ async def batch_generate_stl_thumbnails(
             continue
 
         try:
-            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+            async with _stl_render_lock:
+                thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
 
             if thumbnail_path:
                 # Update database with relative path
@@ -2858,11 +3187,15 @@ async def batch_generate_stl_thumbnails(
 
     await db.commit()
 
+    processed = len(stl_files)
+    remaining = max(0, total_count - processed)
+
     return BatchThumbnailResponse(
-        processed=len(stl_files),
+        processed=processed,
         succeeded=succeeded,
         failed=failed,
         results=results,
+        remaining=remaining,
     )
 
 
@@ -2899,6 +3232,15 @@ async def add_files_to_queue(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
 
+    # Per-file ownership gate (IDOR fix): QUEUE_CREATE alone let a READ_OWN
+    # caller (e.g. the built-in Operators group) enqueue another user's
+    # library file by raw id and read its filename back in the response,
+    # even though GET on that id returned 404. Enforce the same visibility
+    # the read routes use — see _ensure_library_file_visible — before a file
+    # is queued. API-key / auth-disabled callers (current_user is None) keep
+    # can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+
     # Project attribution (#1897): a file queued from a project-linked folder
     # inherits that project, so the resulting archive counts toward the
     # project's progress. A file's own project link wins over its folder's.
@@ -2917,7 +3259,11 @@ async def add_files_to_queue(
     for file_id in request.file_ids:
         lib_file = files.get(file_id)
 
-        if not lib_file:
+        try:
+            lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
+        except HTTPException:
+            # Same generic error as a genuinely missing id — ownership must not
+            # be distinguishable from non-existence (no real filename leaked).
             errors.append(AddToQueueError(file_id=file_id, filename="(not found)", error="File not found"))
             continue
 
@@ -5516,6 +5862,9 @@ async def move_files(
     moved = 0
     skipped = 0
     skipped_reasons: list[dict] = []
+    # Bytes already copied to their new home, awaiting the batch commit
+    # below before their sources are unlinked (see _move_file_bytes).
+    pending_bytes_moves: list[_MoveResult] = []
 
     for file_id in data.file_ids:
         result = await db.execute(
@@ -5551,7 +5900,7 @@ async def move_files(
 
         # Otherwise relocate the bytes, then update the DB row to match.
         try:
-            new_file_path = _move_file_bytes(file, target_folder)
+            move_result = _move_file_bytes(file, target_folder)
         except _MoveSkip as e:
             skipped += 1
             skipped_reasons.append({"file_id": file_id, "code": e.code, "reason": e.reason})
@@ -5559,21 +5908,46 @@ async def move_files(
 
         file.is_external = target_is_external
         file.folder_id = data.folder_id
-        file.file_path = new_file_path
+        file.file_path = move_result.file_path
         # External rows historically carry `file_hash=None` (scan skips
         # hashing). When pulling an external file into managed storage,
         # compute the hash so dedup detection works for future uploads
         # of the same content.
         if not target_is_external and file.file_hash is None:
             try:
-                abs_path = to_absolute_path(new_file_path)
+                abs_path = to_absolute_path(move_result.file_path)
                 if abs_path:
                     file.file_hash = calculate_file_hash(abs_path)
             except OSError:
                 pass  # leave hash null; dedup just won't match this row
+        pending_bytes_moves.append(move_result)
         moved += 1
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Nothing has been unlinked yet -- the batch never became durable,
+        # so undo the copies (best-effort) rather than leave orphan bytes
+        # sitting under their fresh dest names with no row referencing
+        # them. Re-raise so get_db's rollback and the existing error
+        # response behave exactly as before this change.
+        for move_result in pending_bytes_moves:
+            with contextlib.suppress(OSError):
+                move_result.dest.unlink(missing_ok=True)
+        raise
+
+    # The batch is durable now -- safe to remove the sources whose bytes
+    # were physically relocated above.
+    for move_result in pending_bytes_moves:
+        try:
+            move_result.src.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(
+                "Move: copied %s → %s but couldn't remove source: %s",
+                move_result.src,
+                move_result.dest,
+                e,
+            )
 
     return {
         "status": "success",

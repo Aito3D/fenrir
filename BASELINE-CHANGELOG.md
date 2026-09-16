@@ -11263,810 +11263,1007 @@ calls `login()` or `checkAuthStatus()`) are both unaffected. A successful `/auth
 the common case — is unchanged: `login()` still resolves the same `LoginResponse` it always did.
 User-approved 2026-09-09.
 
-## T-086 — 2026-09-10 — user-approved behavior change
-
-`AitoTrackPage.tsx`'s `useQuery` for the public tracking payload (`api.getAitoTracking(token)`)
-carried no deadline of its own: no `AbortSignal`, and `request()` in `api/client.ts` sets no
-timeout on the underlying `fetch`. A client who opened `/t/<code>` over a flaky mobile connection
-that stalled after the request went out never got a settled promise — `query.isPending` stayed
-`true` forever, so the page showed the pulsing skeleton with no error text and no Réessayer button,
-nothing but a reload to escape. The sibling code-entry page, `AitoTrackEntryPage.tsx`, already
-aborts the identical `getAitoTracking` call after `CHECK_TIMEOUT_MS = 10_000` (T-072).
-
-Fixed by giving the tracking page's `queryFn` the same 10s deadline. It now composes two abort
-paths into one request: TanStack Query's own `signal` (fired on unmount or on a superseded
-refetch) is forwarded to a local `AbortController` via a listener, and a `window.setTimeout` on
-that same controller fires the deadline; whichever comes first aborts the `fetch`, and the timer
-is always cleared in a `finally` block so a request that settles before the deadline can never
-trigger a late, stray abort. The deadline value (10 000 ms) matches `AitoTrackEntryPage.tsx`'s
-`CHECK_TIMEOUT_MS` exactly, defined locally with a comment naming that sibling rather than
-importing it (exporting a non-component constant from a page module would trip the
-`react-refresh/only-export-components` lint rule already flagged as a landmine for this file).
-On abort, `fetch` rejects with a `DOMException` named `AbortError`, which is neither an `ApiError`
-with status `404` nor `429`, so the page's existing `showError = (query.isError || retrying) &&
-!is404 && data === undefined` branch already catches it — no new state, no new text, no new i18n
-key, the same branch `AitoTrackEntryPage`'s abort already lands on.
-
-User-visible effect: a tracking-page load whose request is accepted by the server but never
-answered (a stalled mobile connection) no longer leaves the pulsing skeleton on screen forever;
-after 10s it now shows the same error message and Réessayer button the page already shows for an
-ordinary network failure, and pressing Réessayer issues a fresh request exactly like the existing
-retry path. `AitoTrackEntryPage.tsx` and its own `CHECK_TIMEOUT_MS` timeout are untouched, as are
-the existing 404 (dedicated invalid-link page) and 429 ("too many attempts, wait") branches — a
-request that resolves or rejects inside the 10s window behaves exactly as before. User-approved
-2026-09-10.
-
-## T-088 — 2026-09-10 — user-approved behavior change
-
-`LoginPage.tsx`'s "Resend code" handler on the email-2FA step cleared `emailOTPSent` back to
-`false` *before* firing `sendEmailOTPMutation.mutate()`. `sendEmailOTPMutation.onError` only shows
-a toast — it never restored the flag — while the code input's `disabled` prop and the submit
-button's `disabled` prop both read `twoFAMethod === 'email' && !emailOTPSent`. A user who tapped
-Resend and hit the backend's rate limit (`MAX_EMAIL_OTP_SENDS = 3` per 10 minutes, `mfa.py:448`,
-a 429) got an error toast and a permanently disabled code field: the OTP already sitting in their
-inbox was still valid for minutes, but they could no longer type it, and the only remaining
-control ("Send code" is hidden once `emailOTPSent` is true, so the visible control was "Resend
-code" itself) kept 429ing for the rest of the rate-limit window.
-
-Fixed by no longer clearing `emailOTPSent` in the Resend `onClick` — it now only calls
-`sendEmailOTPMutation.mutate()`. `sendEmailOTPMutation.onSuccess` already sets `emailOTPSent(true)`
-on every successful send (first or resend), so the flag transitioning correctly on success was
-never in question; the only change is that a *failed* resend no longer touches the flag at all,
-leaving it at whatever value it already had (`true`, since Resend only renders once a prior send
-succeeded).
-
-User-visible effect: after a failed resend the 2FA code field stays enabled and the "code sent"
-instructions remain, instead of reverting to the not-sent state. The first-send path is
-unaffected — `emailOTPSent` starts `false` and a failed *first* send still leaves the field
-disabled exactly as before, since nothing sets it to `true` until `onSuccess` fires. TOTP and
-backup-code 2FA methods don't read `emailOTPSent` at all and are untouched. User-approved
-2026-09-10.
-
-## T-087 — 2026-09-10 — user-approved behavior change
-
-`_track_rate_limited` (`routes/aito.py`) keys its per-IP caps on `_get_client_ip`
-(`auth.py`), which the docstring above it called "proxy-aware": behind nginx,
-`request.client.host` is the proxy for every visitor, so the address it returns is
-supposed to be the real caller unwrapped from `X-Forwarded-For`. But `_get_client_ip`
-only does that unwrapping when `TRUSTED_PROXY_IPS` is set (`auth.py:153`), and that env
-var is empty by default. Any install that publishes the tracking page through a reverse
-proxy without setting it had every visitor resolve to the proxy's one address, so the
-per-IP miss cap (`_TRACK_RATE_MAX_MISSES_PER_IP = 30`) silently collapsed into a second,
-much tighter, site-wide budget — 20x tighter than the 600-miss global cap that was meant
-to be the site-wide one. Thirty unknown/expired codes in a minute (a link scanner
-walking an old link, one client mistyping) tripped it, and since a tripped cap answers
-every request with 429 including hits, every real client's tracking page answered 429
-"Trop de tentatives" for the rest of the window.
-
-Fixed by detecting the collapsed bucket in `_track_rate_limited`: when
-`auth_routes._TRUSTED_PROXY_IPS` is empty (read through the `auth` module at call time,
-not imported by value, so tests can monkeypatch it) but the request still carries an
-`X-Forwarded-For` header, the per-IP MISS cap is suspended for that call — no miss is
-reserved against it either — and the request falls through to the global miss cap alone.
-The per-IP CALLS cap (`_TRACK_RATE_MAX_CALLS_PER_IP = 120`), still keyed on the same
-collapsed proxy address, is untouched and keeps bounding one address's total traffic.
-`_track_rate_hit`'s release on a real code already tolerated a missing per-IP
-reservation (`contextlib.suppress(ValueError)`), so no change was needed there.
-
-User-visible change, quoting the approved finding verbatim: "the tracking route's
-effective throttle changes on proxied installs — clients who are 429'd today after 30
-site-wide misses would be served." Trade-off, disclosed and accepted: on a genuinely
-DIRECT install (no proxy at all), a client can send its own `X-Forwarded-For` header to
-trigger the same fallback and escape the 30-miss per-IP cap, which raises that one
-address's own ceiling to the 120-call cap instead. The operator fix for both the
-collapsed bucket and the direct-install spoof is the same: set `TRUSTED_PROXY_IPS`.
-
-Unaffected: installs with `TRUSTED_PROXY_IPS` configured (the existing trusted-proxy
-unwrap path, and its test, are untouched); direct installs that never receive an
-`X-Forwarded-For` header (the 31st miss from one address still 429s exactly as before);
-the per-IP CALLS cap; and the global miss cap — both still apply at their existing
-values regardless of the collapsed-bucket fallback. No cap constant changed. User-approved
-2026-09-10.
-
-## T-089 — 2026-09-10 — user-approved behavior change
-
-`oidc_callback()`'s token-exchange POST (`routes/mfa.py`) and its JWKS GET carried the
-same hazard T-071 fixed for the discovery fetch, but neither had received that fix:
-`httpx.AsyncClient(timeout=15)`/`timeout=10` bounds each phase (connect/read/write/pool)
-independently, not the call as a whole, and both bodies were read via the old
-non-streaming `client.post()`/`client.get()` + `.json()`, buffering the whole response
-before anything validated it. An IdP (or an overloaded/hostile one) that trickled a byte
-every few seconds to either endpoint could hold the unauthenticated `/oidc/callback`
-request open indefinitely — each stuck request pinning a task and its `Depends(get_db)`
-session — and a multi-megabyte token or JWKS body would be buffered whole into memory
-before parsing.
-
-Fixed by extracting a new helper, `_bounded_fetch(method, url, *, timeout_s, max_bytes,
-**kwargs)`, next to `_fetch_oidc_discovery()` — it streams the request via
-`client.stream(method, url, **kwargs)` and caps the bytes read exactly the way
-`_fetch_oidc_discovery` already does (reusing `_OIDC_DISCOVERY_MAX_BYTES` as the default
-cap, looked up at call time so tests can monkeypatch it — not bound as a Python
-default-argument value, which would freeze the original module-load-time value), wrapped
-in `asyncio.wait_for(..., timeout=timeout_s)` for the overall deadline. It returns
-`(status_code, body)` instead of a parsed response so both call sites keep their exact
-existing success/error handling: the token-exchange site still parses `error`/
-`error_description` out of a non-2xx JSON body (or falls back to the first 200 bytes of
-raw text) and still checks for a missing `id_token`; the JWKS site still fetches the key
-set before `PyJWKClient`/`jwt.decode`. Two new named constants, `_OIDC_TOKEN_TIMEOUT_S =
-15.0` and `_OIDC_JWKS_TIMEOUT_S = 10.0`, mirror the per-phase numbers each site already
-used — the only new behavior is enforcing that number as an OVERALL deadline (previously
-only a per-phase one) and capping the body size. `PyJWKClient`/`fetch_data` and the
-`jwt.decode` call that follows the JWKS fetch are unchanged.
-
-User-visible change, quoting the approved finding verbatim: "a very slow or very large
-IdP response now redirects to `/login?oidc_error=token_exchange_network_error` (or
-`token_validation_failed`) instead of hanging." Concretely: a token endpoint that
-trickles past 15s, or whose body exceeds the 256 KiB cap, now redirects to
-`token_exchange_network_error` (previously it would eventually succeed or hang); a JWKS
-endpoint that trickles past 10s, exceeds the cap, or returns a non-2xx status (the
-streamed helper doesn't call `raise_for_status()` itself, so the JWKS call site now
-checks the status code explicitly) now redirects to `token_validation_failed`.
-
-Unaffected: fast/normal IdPs — both endpoints' existing timeout *values* are untouched,
-only how they're enforced; the discovery fetch, which already had this guard (T-071); the
-error-code mapping on every existing path (non-2xx token response, non-JSON token body,
-missing `id_token`, JWT validation failure) — all unchanged, just now fed by streamed
-bytes instead of a buffered response object. `test_mfa_api.py` gained
-`TestOIDCTokenAndJWKSFetchGuards` (deadline/oversized-body/non-2xx-status coverage for
-both endpoints); pre-existing full-callback tests in `test_mfa_api.py` and
-`test_oidc_relogin.py` needed their hand-rolled `httpx.AsyncClient` mocks' `stream()`
-methods updated to route `POST` calls to their existing `post()` fakes (previously
-`stream()` was only ever called for discovery `GET`s) — no assertions were weakened, only
-the mock plumbing was extended to match the new call shape. User-approved 2026-09-10.
-
-## T-090 — 2026-09-10 — user-approved behavior change
-
-`TrackingLinkControl.tsx`'s Copy button mutation (`copy.onSuccess`) had two silent
-fall-through branches: when the link endpoint answered with `tracking_url: null`, the
-handler returned immediately with no toast and no "Copié" badge; when
-`copyTextToClipboard(tracking_url)` resolved `false` (its return value when both
-`navigator.clipboard.writeText` and the `execCommand('copy')` fallback fail, e.g. Firefox
-on a plain-HTTP LAN origin), the handler skipped the badge but still reported nothing to
-the operator. In both cases the button just flashed back to idle, and the operator had no
-way to tell the copy hadn't happened — they'd paste whatever was already on the clipboard
-into the client's message instead of the tracking link.
-
-Fixed by reusing the mutation's existing `onError` toast (`showToast(t('common.errorLoading'),
-'error')`, no new i18n key) on both fall-through paths: a `null` `tracking_url` now shows
-the toast and returns early (matching today's behavior of not calling `invalidate()` on
-that path), and a `false` return from `copyTextToClipboard` now shows the toast in an
-`else` branch while still calling `invalidate()` afterward exactly as it does today on
-that path.
-
-User-visible change, quoting the approved finding verbatim: "a copy that silently does
-nothing today would raise an error toast." Unaffected: a successful copy (clipboard
-write succeeds) still shows the "Copié" badge and toasts nothing, exactly as before; the
-Regenerate hold flow and its own success/error toasts are untouched. Two new tests added
-to `AitoTrackingLinkControl.test.tsx` cover the null-URL and clipboard-failure paths; all
-6 pre-existing tests in that file pass unchanged. User-approved 2026-09-10.
-
-## T-091 — 2026-09-10 — user-approved behavior change
-
-`send_email_otp()` (`POST /2fa/email/send`) and `verify_2fa()`'s `method == "email"`
-branch (`POST /2fa/verify`) never checked `_get_email_2fa_enabled(db, user.id)` before
-acting — they only checked that the user *had* an email address (send) or that an
-outstanding `UserOTPCode` row existed (verify). `login()` and `oidc_exchange()` both
-already gate the *advertised* `email` method on that same setting, so a user who only
-ever enabled TOTP was never offered "email" as a login option in the UI — but nothing
-stopped a client that sent `method="email"` directly from completing login with an
-emailed code anyway, bypassing the second factor the user actually configured.
-
-Fixed by adding the same precondition check both branches already use for their other
-methods: `send_email_otp()` now 400s with `"Email 2FA is not enabled for this user"`
-(mirroring the wording of the TOTP branch's `"TOTP is not enabled for this user"`)
-immediately after its existing "user has no email" check, before touching SMTP settings
-or writing any `UserOTPCode` row. `verify_2fa()`'s email branch now performs the same
-check (and calls `record_failed_attempt`, matching the TOTP/backup branches' shape) at
-the top of the branch, before querying for an outstanding OTP row — so a rejected
-attempt does not consume the `pre_auth_token`, exactly like every other precondition
-failure in that endpoint.
-
-User-visible change, quoting the approved finding verbatim: "an account that has TOTP
-but not email 2FA can currently finish login with an emailed code; after the fix
-`POST /2fa/email/send` and `POST /2fa/verify` with `method=email` would start rejecting
-that account, so any client or script relying on the email path for a TOTP-only user
-stops working."
-
-Unaffected: the TOTP and backup verify branches, the pre-auth token peek/consume
-semantics, and both rate limiters are untouched; accounts that DO have email 2FA
-enabled keep working exactly as before (covered by the existing
-`TestEmailOTPSendVerify.test_email_otp_send_and_verify` happy-path test); the email-2FA
-*enrolment* flow (`/2fa/email/enable` + `/2fa/email/enable/confirm`, which sends/verifies
-a code via a setup token while the setting is still false) is a separate pair of
-endpoints and was not touched. New tests added to `test_mfa_api.py`:
-`TestEmailOTPRequiresEnablement.test_send_email_otp_rejected_when_email_2fa_not_enabled`
-(400, no email sent, no `UserOTPCode` row created) and
-`TestEmailOTPRequiresEnablement.test_verify_email_rejected_when_email_2fa_not_enabled_and_token_not_consumed`
-(400, then proves the `pre_auth_token` was not consumed by successfully verifying with
-`method="totp"` using the same token). User-approved 2026-09-10.
-
-## T-092 — 2026-09-10 — user-approved behavior change
-
-`oidc_authorize()` (`GET /oidc/authorize/{provider_id}`) stored the OIDC state row with
-no binding to the browser that requested it, and `oidc_callback()` consumed that row
-based only on the `state` query parameter matching — it checked nothing about who was
-calling. Contrast the pre-auth (2FA) flow, which already binds its ephemeral token to
-an HttpOnly `2fa_challenge` cookie via `consume_pre_auth_token(..., challenge_id=...)`.
-Combined with `LoginPage.tsx` auto-exchanging `#oidc_token=` on page load with no user
-gesture, an attacker could start their own OIDC authorize round against a real provider,
-lure the victim to the resulting callback URL, and silently sign the victim's browser
-into the attacker's account (login CSRF / session fixation).
-
-Fixed by minting a random `binding = secrets.token_urlsafe(32)` in `oidc_authorize()`,
-storing it in the `AuthEphemeralToken.challenge_id` column already used for this purpose
-by the pre-auth flow (no migration needed), and setting it as an HttpOnly,
-`SameSite=Lax` cookie named `oidc_state`, scoped to `/api/v1/auth/oidc`, with
-`max_age` equal to `OIDC_STATE_TTL` (10 minutes). The cookie's `secure` flag is computed
-by a new `_cookie_secure(raw_request)` helper factored out of `_set_2fa_challenge_cookie`
-(identical `raw_request.url.scheme == "https"` semantics, now shared by both cookies so a
-later fix to proxy-scheme detection only needs to happen in one place). `oidc_callback()`
-now reads the `oidc_state` cookie and, after atomically deleting the OIDC_STATE row
-(unchanged single-use semantics), compares the row's `challenge_id` to the cookie value.
-A `None` `challenge_id` (rows inserted directly by tests, or from before this change)
-still works with no cookie required, matching the pre-auth flow's same backward-compat
-rule. On a mismatch (including a missing cookie), the deletion is still committed — the
-state stays single-use even though it's being rejected, exactly as it already was for
-every other invalid-state case — and the request redirects to the existing
-`/login?oidc_error=invalid_state`. On success the cookie is cleared on the redirect
-response so it isn't left behind.
-
-User-visible change, quoting the approved finding verbatim: "an OIDC login started in
-one browser (or with the app's cookies blocked) and completed in another will stop
-working and land on `/login?oidc_error=invalid_state` instead of signing in."
-
-Unaffected: a normal same-browser OIDC login (the SPA calls `/oidc/authorize` same-origin,
-so the browser stores the `Set-Cookie`, and the IdP's subsequent top-level-GET redirect
-to `/oidc/callback` still carries a `SameSite=Lax` cookie) is unaffected; the `2fa_challenge`
-cookie and its consume/peek helpers are untouched aside from the shared `_cookie_secure`
-extraction; OIDC provider configuration, discovery, PKCE, and token exchange are untouched.
-New tests added to `test_mfa_api.py` (`TestOIDCStateBindingCookie`): the authorize response
-sets an `oidc_state` cookie (HttpOnly, Lax, path `/api/v1/auth/oidc`, `max-age=600`) whose
-value matches the stored row's `challenge_id`; a callback with no cookie is rejected as
-`invalid_state` and the state row is gone; a callback with a wrong cookie value is rejected
-the same way; a callback with the matching cookie clears the state check (and fails later
-for the same unrelated reason the existing `TestOIDCStateReplay` first call does — no
-mocked IdP behind the fake issuer); and a directly-inserted state row with `challenge_id=None`
-still works with no cookie. User-approved 2026-09-10.
-
-## T-093 — 2026-09-10 — user-approved behavior change
-
-`_cookie_secure(raw_request)` (factored out in T-092, shared by both the `2fa_challenge`
-and `oidc_state` binding cookies) computed `secure` from `raw_request.url.scheme` alone —
-the scheme uvicorn saw on its own socket. The Dockerfile's `uvicorn` CMD passes no
-`--forwarded-allow-ips`, and `docker-compose.yml`'s bridge-networking topology puts a
-reverse proxy in front that is not `127.0.0.1`, so on an HTTPS-only deployment fronted by
-a TLS-terminating proxy, `request.url.scheme` stays `"http"` for every request uvicorn
-receives even though the browser is talking HTTPS end to end — the binding cookies were
-issued without `Secure` despite the deployment being HTTPS-only.
-
-Fixed by resolving the effective scheme from the `X-Forwarded-Proto` header when the
-direct TCP peer is in the existing `_TRUSTED_PROXY_IPS` allowlist (`auth.py`, the same
-gate `_get_client_ip` already uses for `X-Forwarded-For`) — read through the `auth`
-module at call time (`auth_routes._TRUSTED_PROXY_IPS`) so it stays live if a deployment
-sets `TRUSTED_PROXY_IPS` after import. When the peer is trusted, the header's first
-comma-separated value (the proxy's own value; standard `X-Forwarded-Proto` chains prepend
-each proxy's contribution the same way `X-Forwarded-For` appends), lowercased and
-stripped, is compared to `"https"`. An untrusted peer's header is ignored outright and
-`raw_request.url.scheme` is used, exactly as before.
-
-User-visible change, quoting the approved finding verbatim: "on a deployment that fronts
-the app with a trusted proxy but still serves some traffic over plain http://, the
-`2fa_challenge` cookie would gain `Secure` and 2FA login over that http path would begin
-failing with 'Invalid or expired pre-auth token'." This covers both binding cookies that
-share the helper (`2fa_challenge` and `oidc_state`) identically, since both call
-`_cookie_secure`.
-
-Unaffected: direct installs with no reverse proxy, and any installation that has not set
-`TRUSTED_PROXY_IPS`, behave exactly as before (`_TRUSTED_PROXY_IPS` is empty, so the
-membership check is always false and the code falls straight through to
-`raw_request.url.scheme == "https"`). The HSTS header logic in `main.py`, which the
-auditor separately noted also keys on the raw request scheme, is untouched — out of this
-task's scope and left as a lead for a future task. `auth.py` and `_get_client_ip` are
-untouched; only `_cookie_secure`'s body and docstring changed.
-
-New tests added to `test_mfa_api.py` (`TestCookieSecureBehindTrustedProxy`): a trusted
-peer sending `X-Forwarded-Proto: https` marks both the `2fa_challenge` and `oidc_state`
-cookies `Secure`; a trusted peer sending `http` (or no header at all) leaves both cookies
-without `Secure`; an untrusted peer's `X-Forwarded-Proto: https` is ignored (falls back to
-the raw `http` scheme, `Secure` absent) — proving the default/unconfigured-install
-behavior is unaffected; and a unit-level test of `_cookie_secure` itself against a minimal
-fake request covering multi-hop headers (only the first value counts), whitespace/case
-normalization, and a request with no `client` at all (falls back to the raw scheme without
-crashing). All pre-existing `2fa_challenge`/`oidc_state` cookie tests keep passing
-unchanged. User-approved 2026-09-10.
-
-## T-111 — 2026-09-10 — user-approved behavior change
-
-`oidc_authorize` (T-092) stored every in-flight OIDC flow's binding value under one fixed
-cookie name, `oidc_state`, scoped to `path=/api/v1/auth/oidc`. A second authorize round
-started before the first one's callback returned — e.g. `/login` open in two tabs, or a
-user backing out of the IdP and clicking the provider button again — overwrote that single
-cookie with the second flow's binding, even though the first flow's `AuthEphemeralToken`
-row was still live. Returning to the first tab and finishing that IdP login then failed
-`oidc_callback`'s binding check (`stored_binding != request.cookies.get("oidc_state")`)
-after the state row had already been deleted (single-use), so the first flow could not be
-retried at all — the entire SSO round trip had to be restarted from `/login`. The success
-path's `delete_cookie("oidc_state")` compounded this by deleting whichever cookie was
-current, killing any other flow still in progress the moment either one finished.
-
-Fixed by keying the binding cookie's *name* — not just its value — to the flow that set
-it: `_oidc_state_cookie_name(state)` returns `f"oidc_state_{state[:16]}"`, using the first
-16 of the 43 URL-safe characters of that flow's own `state` (`secrets.token_urlsafe(32)`,
-already unique and cookie-name-safe) to keep the header compact while remaining unique per
-flow. `oidc_authorize` sets the cookie under that name instead of the fixed `"oidc_state"`
-— every other attribute (`value=binding`, `httponly=True`, `secure=_cookie_secure(request)`,
-`samesite="lax"`, `max_age=int(OIDC_STATE_TTL.total_seconds())`, `path="/api/v1/auth/oidc"`)
-is unchanged. `oidc_callback` already has `state` from the query string, so it reads
-`request.cookies.get(_oidc_state_cookie_name(state))` for the same comparison it always
-did, and the success redirect calls `delete_cookie(_oidc_state_cookie_name(state), ...)` so
-it only ever clears its own flow's cookie. Abandoned flows' cookies still expire on their
-own via the existing `max_age`; no registry or list of live cookies was needed.
-
-User-visible change, in the auditor's words: "a user with /login open in two tabs (or who
-backs out of the IdP and clicks the provider button again) starts authorize twice; the
-second round overwrites the cookie, so returning to the first tab and finishing that IdP
-login lands on `/login?oidc_error=invalid_state` with the state row destroyed — no retry is
-possible, the whole SSO round trip has to be restarted." After this fix, both flows can
-complete independently — finishing either one no longer disturbs the other's cookie, and
-the invalid-state failure only occurs for the reasons it always did (no cookie at all,
-mismatched value, or an already-consumed/expired state row).
-
-Unaffected: the binding *semantics* are untouched — `stored_binding is not None and
-stored_binding != <cookie>` still redirects to `invalid_state` after the state row has
-already been deleted (commit, not rollback, exactly as T-092 designed it), and a
-directly-inserted state row with `challenge_id=None` still needs no cookie at all. The
-cookie's other attributes (`HttpOnly`, `Lax`, `path=/api/v1/auth/oidc`, `max_age`,
-`secure` via `_cookie_secure`) are unchanged. `_cookie_secure`, the `2fa_challenge` cookie
-and its helpers, OIDC provider configuration, discovery, PKCE, and token exchange are all
-untouched.
-
-Existing tests updated in `test_mfa_api.py` (`TestOIDCStateBindingCookie`,
-`TestCookieSecureBehindTrustedProxy`, and T-107's `test_success_redirect_clears_binding_cookie`)
-to derive the expected cookie name from the `state` returned in `auth_url` via
-`mfa_module._oidc_state_cookie_name` instead of asserting the literal name `"oidc_state"` —
-assertion strength (HttpOnly/Lax/path/max-age/Secure) is unchanged. New tests added
-(`TestOIDCStatePerFlowCookies`): two authorize calls from the same client get two different
-cookie names and both remain present in the jar simultaneously; completing the first
-flow's callback while the second flow's cookie also sits in the jar still passes the state
-check; a callback whose own per-flow cookie is missing (only a *different* flow's cookie is
-present) is still rejected as `invalid_state` with its state row consumed; and, with full
-success-path mocking (discovery, JWKS, token exchange), completing one flow's callback
-deletes only that flow's own cookie on the success redirect — the other flow's cookie and
-still-live state row are left untouched. User-approved 2026-09-10.
-
-## T-112 — 2026-09-10 — user-approved behavior change
-
-The OIDC token-exchange success path (`frontend/src/pages/LoginPage.tsx`, the
-`#oidc_token=...` fragment handler) never set `loginInFlightRef.current = true` before
-calling `api.exchangeOIDCToken(...)`, unlike `handleSubmit`'s password-login path, which
-sets it before `loginMutation.mutate()`. `loginWithToken()` sets `user` synchronously, and
-`step` is still `'credentials'` at that point (the OIDC success branch never touches
-`step`), so the #1889 already-authenticated effect (`if (!loading && user && step ===
-'credentials' && !loginInFlightRef.current) navigate('/', { replace: true })`) fired on the
-very next render and raced `exitToDashboard(resolvePostLoginRedirect())`'s own navigate.
-`resolvePostLoginRedirect()` had already consumed and removed the sessionStorage stash by
-then, so the extra `navigate('/', ...)` call landed after (or interleaved with)
-`exitToDashboard`'s call to the real target, and the unmount cleanup for the pending
-700ms exit-animation timer made the outcome timing-sensitive.
-
-Fixed by holding `loginInFlightRef.current = true` across the exchange, mirroring
-`handleSubmit`'s policy exactly: set it immediately before `api.exchangeOIDCToken(...)`,
-and clear it back to `false` in the two branches that leave `step` at `'credentials'`
-without navigating anywhere useful — the malformed-response `else` branch and the
-`.catch` branch — the same way `loginMutation`'s `onError` clears it for the password
-path. The `requires_2fa` branch and the success (`access_token && user`) branch leave it
-`true`, again matching the password path (`step` becomes `'2fa'` in one case, and
-`exitToDashboard` owns the navigation in the other, so the #1889 effect never needs to
-fire in either).
-
-User-visible change, in the auditor's words: "unlike `handleSubmit`, this path never sets
-`loginInFlightRef.current = true`, and `step` is still `'credentials'`, so the #1889
-effect... fires on the very next render. `resolvePostLoginRedirect()` has already
-consumed and removed the sessionStorage stash, and the unmount cleanup clears the 700 ms
-exit timer, so a user who was bounced to /login from a protected page and signed in with
-SSO is dropped on the dashboard instead of the page they asked for, after a truncated exit
-animation." After this fix, the browser lands on the page the user was originally trying
-to reach rather than the dashboard.
-
-Unaffected: the password-login path (`handleSubmit` / `loginMutation`) is untouched — it
-already set and cleared this ref correctly. The 2FA step (`verify2FAMutation`'s own
-`loginWithToken` + `exitToDashboard` call) is untouched — `step` is `'2fa'` by the time
-that mutation resolves, so the #1889 effect's `step === 'credentials'` guard already
-excluded it regardless of this ref. OIDC exchange failures (`oidc_error` query param, a
-thrown/rejected exchange, or a malformed 2xx response) are untouched in outcome — they
-still show the same error toast and `navigate('/login', { replace: true })`; only the
-ref-clearing was added so a later, unrelated already-authenticated bounce in the same
-mount still works afterwards instead of being permanently blocked.
-
-Two tests added in `frontend/src/__tests__/pages/LoginPage.test.tsx` (in the "post-login
-redirect stash (T-102)" describe): one drives the OIDC return trip with a seeded stash and
-asserts `mockNavigate` was called exactly once, with the stashed target, and never with
-`'/'`; a companion seeds a live session (`setAuthToken` + a mocked `/auth/me`) alongside a
-failing `/oidc/exchange` (401) and asserts the failure's own `navigate('/login', ...)`
-fires and, afterwards, the already-authenticated effect still redirects to `'/'` — proving
-the guard is cleared on failure rather than left stuck. All pre-existing OIDC/2FA/stash
-tests in the same file pass unchanged. User-approved 2026-09-10.
-
-## T-113 — 2026-09-10 — user-approved behavior change
-
-The `#1589` autologin effect (`frontend/src/pages/LoginPage.tsx`) gated only on
-`autologinAttemptedRef`, `?fallback=local`, and the OIDC return-trip hash/query, never on
-whether the visitor already had a valid session. It also never tracked whether the
-component was still mounted, and never cleared the 5s `setTimeout` behind its
-`Promise.race` timeout guard. In the auditor's words: "An already-signed-in visitor who
-opens /login on an autologin install triggers both this effect and the #1889 effect: the
-SPA navigates to the dashboard, then a second or two later the pending authorize URL
-arrives and `window.location.href` yanks the whole browser out of the dashboard back to
-the identity provider. The 5 s `setTimeout` behind `timeoutPromise` is also never cleared,
-so it stays armed after the component is gone."
-
-Fixed by adding `if (loading || user) return;` at the top of the effect, before
-`autologinAttemptedRef.current` is ever set, and adding `loading` and `user` to the effect's
-dependency array. While `loading` is true the auth state is unknown, so the effect now
-waits rather than marking itself "attempted", and re-runs once `loading` resolves; once
-`user` is set, the effect returns without ever fetching an authorize URL or arming the
-timeout. This dependency-array change does not cancel a legitimate in-flight redirect: the
-new `loading` gate means the fetch and timer are never started until `loading` is already
-false, so a `loading` transition can never interrupt them, and the cleanup only runs on
-unmount or a genuine dependency change while the effect is armed. Separately, the effect
-now tracks a local `cancelled` flag and the `setTimeout` timer id in its closure, and
-returns a cleanup that sets `cancelled = true` and calls `clearTimeout(timer)`; the `.then`
-and `.catch` handlers both check `cancelled` before touching `window.location.href` or
-calling `setAutologinFailed`, so neither can act after the effect has been torn down.
-
-User-visible change, in the auditor's words: "a visitor who already has a valid session
-will no longer be sent through the identity provider when they open /login on an autologin
-install."
-
-Unaffected: signed-out visitors on an autologin install still redirect to the provider's
-authorize URL exactly as before (all pre-existing T-074 tests pass unchanged); the
-`?fallback=local` bypass and the OIDC return trip (`#oidc_token=`, `?oidc_error=`) are
-untouched; the 5s timeout-then-banner failure path for a signed-out visitor is untouched.
-
-Three tests added in `frontend/src/__tests__/pages/LoginPage.test.tsx` (in the "autologin
-redirect to SSO provider (T-074)" describe): one seeds a live session (`setAuthToken` + a
-mocked `/auth/me`) alongside an autologin-enabled `/advanced-auth/status` and asserts the
-OIDC authorize endpoint is never called while the #1889 effect still navigates to `'/'`; a
-second unmounts the component before a controlled authorize-fetch promise resolves and
-asserts `window.location.href` is never assigned after the promise resolves post-unmount; a
-third unmounts the component while the 5s race is pending and asserts the effect's cleanup
-calls `clearTimeout` on its own timer. All pre-existing autologin tests in the same file
-pass unchanged. User-approved 2026-09-10.
-
-## T-114 — 2026-09-10 — user-approved behavior change
-
-`login()` in `backend/app/api/routes/auth.py` wraps its LDAP bind/provision/sync path in a
-single broad `except Exception as e: ... ldap_user = None`. That block runs
-`_provision_ldap_user` / `_sync_ldap_user` / `ensure_user_finance_defaults`, all of which
-flush and commit against the request's `AsyncSession`. When one of those commits fails
-partway through (this codebase's own comments cite SQLite write-lock contention), the
-except handler logged a warning and reset `ldap_user`, but never rolled the session back
-and never reset `user`. Two distinct bugs followed from that:
-
-1. If the failing statement left the session's transaction needing a rollback, every
-   subsequent statement on that session — the very next `SELECT local_login_enabled` and
-   the local-credentials query — raised `sqlalchemy.exc.PendingRollbackError`, turning a
-   correct LDAP credential (or simply a valid bind hitting a transient DB error) into an
-   HTTP 500, even though the log claimed the request was "falling back to local".
-2. If `_provision_ldap_user` had already resolved/created and committed a `User` row
-   before a *later* step in the same try block raised (e.g. the per-login
-   `ensure_user_finance_defaults` call that runs after `_sync_ldap_user`), `user` stayed
-   bound to that half-resolved row. Verified directly (production code temporarily
-   reverted, target test run in isolation): with local login disabled, nothing downstream
-   ever re-assigns `user`, so `if not user:` was False and the request returned **HTTP 200
-   with a valid access token** for a user whose credentials were never actually checked —
-   a real authentication bypass, not just a robustness bug.
-
-Fixed by adding `await db.rollback()` and `user = None` inside the except branch,
-immediately before the existing `ldap_user = None`. Read the downstream code (~537-577):
-the local-credentials path only re-assigns `user` via `authenticate_user(...)` when `not
-ldap_user and local_login_allowed`, so a leaked non-None `user` from a failed LDAP branch
-would otherwise be treated as authenticated by the `if not user:` check at the bottom of
-`login()` — confirming bug 2 above.
-
-User-visible change, in the auditor's words: "a login that currently 500s after a database
-error in the LDAP sync would instead complete the local-credential check and return the
-normal 401 (or a successful login)." Additionally (found while validating this task): the
-same fix closes the authentication-bypass path in bug 2 above — a login that previously
-returned an authenticated 200 after a finance-defaults failure following a successful LDAP
-provision now correctly returns 401.
-
-Unaffected: successful LDAP logins (bind + provision/sync + finance-defaults all succeed)
-are untouched — the try block's happy path is unchanged. Local-only installs (LDAP
-disabled or unconfigured) never enter this try block at all. The existing username-collision
-guard (T-096) and auto-provision-off fallthrough are untouched.
-
-Two tests added in `backend/tests/integration/test_ldap_provision.py`
-(`TestLdapSyncFailureRollsBackSession`, next to `TestLdapLoginFinanceDefaults`):
-`test_dirty_session_from_sync_failure_falls_back_to_401_not_500` monkeypatches
-`_sync_ldap_user` to perform a DB write that raises `IntegrityError` (duplicate username)
-mid-transaction and asserts the login returns 401 — not 500 — and that the session remains
-usable afterwards (proving the rollback happened; reverting the production fix reproduces
-the pre-fix `PendingRollbackError` traceback, confirmed by running the test against the
-reverted code). `test_finance_defaults_failure_after_provision_does_not_leak_authenticated_user`
-monkeypatches `_provision_ldap_user` to commit a real new `User` row and return it, then
-monkeypatches `ensure_user_finance_defaults` to raise on the per-login sync call, with
-local login disabled — asserting 401 and no `access_token` in the response (reverting the
-production fix and re-running this test in isolation confirmed it returns HTTP 200 with a
-valid `access_token` today, proving bug 2 above is real). All pre-existing LDAP/login tests
-in the same file and in `test_auth_api.py` pass unchanged (69 passed, up from 67 before
-this change). User-approved 2026-09-10.
-
-## T-118 — 2026-09-10 — user-approved behavior change
-
-`setAuthToken(token, persistence)` in `frontend/src/api/client.ts` always writes/removes the
-`sessionStorage` copy of the token, but only touched `localStorage` on a `'persistent'` call
-(write) or a `null` call (remove) — a `'session'` call left any *previously persisted*
-`localStorage` token untouched. Module init reads
-`sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token')`, so on a shared
-browser: user A signs in with Remember Me (token persisted to `localStorage`) and closes the
-tab; user B then signs in *without* Remember Me, which only ever writes `sessionStorage`. A's
-token is still sitting in `localStorage`. Any freshly opened tab on that browser (no
-`sessionStorage` entry of its own) falls through to `localStorage` and silently resumes A's
-session — and B "signing out" by closing the tab hands the browser straight back to A's live
-session and permissions, not a logged-out state.
-
-Caller analysis (`rg -n "setAuthToken\(" frontend/src --glob '!__tests__'`): every call site
-that passes an explicit `persistence` was checked for the one variant that could regress —
-a `'session'` call reusing a token whose persisted copy the caller wants kept:
-- `AuthContext.tsx`'s kiosk `?token=` bootstrap calls `setAuthToken(urlToken, 'session')`
-  only inside `if (!hadStoredToken)` (i.e. only when `getAuthToken()` — the in-memory value
-  seeded from `sessionStorage ?? localStorage` at module init — was already `null`). When a
-  kiosk token is already persisted from a prior confirmed session, `hadStoredToken` is
-  `true` and this branch never runs, so it never collides with an existing persisted token.
-- The kiosk token is later promoted with `setAuthToken(urlToken, 'persistent')` only after
-  `/auth/me` confirms it — a `'persistent'` call, unaffected by this change.
-- `login()` / `loginWithToken()` (`AuthContext.tsx`, called from `LoginPage.tsx`) always pass
-  the caller-chosen `persistence` for a *brand-new* sign-in — exactly the case this fix is
-  meant to affect: a fresh sign-in without Remember Me should supersede whatever was
-  persisted by an earlier sign-in on the same browser.
-- `logout()` and the 401-handler in `client.ts`'s `request()` call `setAuthToken(null)`,
-  already unconditionally clearing both storages — unaffected.
-No caller was found that relies on a `'session'` call preserving an existing `localStorage`
-token (same or different value), so the minimal fix — unconditionally clearing the
-`localStorage` entry in the `'session'` branch, with no same-token special case — fully closes
-the finding without special-casing any call site.
-
-Fixed by adding an `else { localStorage.removeItem('auth_token'); }` branch alongside the
-existing `'persistent'` write in `setAuthToken()`'s `localStorage` block, so a `'session'`
-call now always removes any stale `localStorage` entry (whether from Remember Me or an
-earlier kiosk session) in addition to writing the new token to `sessionStorage`.
-
-User-visible change, in the auditor's words: "a user who previously ticked Remember Me and
-then signs in again without ticking it will no longer be silently signed back in after
-closing the tab — the remembered session is dropped at that second sign-in."
-
-Unaffected: `'persistent'` logins (Remember Me, and the confirmed kiosk `?token=` bootstrap)
-still write to `localStorage` exactly as before; `logout()` and 401-driven token clearing
-(`setAuthToken(null)`) already cleared both storages unconditionally; the kiosk `?token=`
-bootstrap's session-fixation defense (only adopting the URL token when no token is already
-stored, T-052) is untouched since that path never collides with an existing persisted token
-per the caller analysis above.
-
-Tests added in `frontend/src/__tests__/api/client.test.ts`: a persistent login followed by a
-session login with a *different* token asserts `localStorage` is cleared and `sessionStorage`
-holds the new token; a persistent login followed by a session login reusing the *same* token
-value asserts `localStorage` is still cleared (documents the chosen no-same-token-exception
-semantics from the caller analysis); a persistent login followed by another persistent login
-asserts `localStorage` is updated to the new value. The pre-existing
-`setAuthToken(null) removes from both storages...` test and all other tests in the file pass
-unchanged (26 passed, up from 23 before this change).
-`frontend/src/__tests__/contexts/AuthContext.test.tsx` (including the `token validation on
-mount (#1889)` and kiosk-bootstrap/T-052/T-101 describe blocks) and
-`frontend/src/__tests__/pages/LoginPage.test.tsx` pass unchanged (49 and 71 passed
-respectively). User-approved 2026-09-10.
-
-## T-120 — 2026-09-10 — user-approved behavior change
-
-`security_headers_middleware()` (`main.py`) keyed `Strict-Transport-Security` off
-`request.url.scheme` alone — the scheme uvicorn saw on its own socket. Exactly like the
-`_cookie_secure` binding-cookie gap T-093 fixed, that scheme stays `"http"` behind a
-TLS-terminating reverse proxy even on an HTTPS-only deployment, so the deployments that
-most need HSTS (login credentials, the public `/t` tracking pages) never received the
-header at all.
-
-Fixed by moving the proxy-aware scheme decision out of `mfa.py` into a new module-level
-function in `auth.py`, `_request_is_https(request)`, holding the exact same logic
-`_cookie_secure` used: when the direct TCP peer is in `_TRUSTED_PROXY_IPS` (the same
-allowlist `_get_client_ip` and `_cookie_secure` already gate on) and the request carries
-an `X-Forwarded-Proto` header, its first comma-separated value (stripped and lowercased)
-decides the scheme; otherwise the raw `request.url.scheme` is used, exactly as before.
-`mfa._cookie_secure` now delegates to it (`return auth_routes._request_is_https(raw_request)`),
-so both the auth-binding-cookie `Secure` flag and the HSTS header share one proxy-scheme
-helper instead of two independent (and, until now, divergent) implementations.
-`security_headers_middleware` calls `auth._request_is_https(request)` in place of the old
-`request.url.scheme == "https"` check; the emitted header value
-(`max-age=31536000; includeSubDomains`) is unchanged.
-
-User-visible change, quoting the approved finding verbatim: "browsers reaching a proxied
-HTTPS deployment will start pinning it to HTTPS for a year, so an operator who later
-downgrades that hostname to plain http will find it unreachable until the pin expires or
-is cleared." This only takes effect on deployments that both set `TRUSTED_PROXY_IPS` to
-include their proxy's address and have that proxy forward `X-Forwarded-Proto: https`.
-
-Unaffected: direct installs with no reverse proxy, and any installation that has not set
-`TRUSTED_PROXY_IPS`, behave exactly as before (`_TRUSTED_PROXY_IPS` is empty, so the
-membership check is always false and the code falls straight through to
-`request.url.scheme == "https"`, matching today's HSTS behavior exactly). The
-`Strict-Transport-Security` header value itself is unchanged. The cookie `Secure` flag's
-existing behavior (T-092/T-093) is unchanged — `_cookie_secure` now calls through to
-`_request_is_https` but computes the identical result for every input, proven by the
-pre-existing `TestCookieSecureBehindTrustedProxy` tests passing unmodified.
-
-Tests added to `backend/tests/integration/test_security_headers.py`: a trusted peer
-sending `X-Forwarded-Proto: https` gets the HSTS header on a plain-http test request; a
-trusted peer sending `http` (or no header at all) does not; an untrusted peer's
-`X-Forwarded-Proto: https` is ignored (empty `TRUSTED_PROXY_IPS` allowlist, header
-disregarded); a direct plain-http request with no proxy config gets no header (today's
-behavior, unchanged); and a `TestRequestIsHttpsUnit` class unit-tests `_request_is_https`
-directly against a minimal fake request, covering multi-hop `X-Forwarded-Proto` values
-(first value wins), whitespace/case normalization, a request with `client=None`, an
-untrusted peer, and a trusted peer with no forwarded header. All pre-existing
-`TestCookieSecureBehindTrustedProxy` tests in `test_mfa_api.py` and all tests in
-`test_security.py` pass unchanged, proving the delegate preserves `_cookie_secure`'s
-exact behavior. User-approved 2026-09-10.
-
-## T-121 — 2026-09-10 — user-approved behavior change
-
-T-087 taught `_track_rate_limited` (`routes/aito.py`) to suspend the per-IP MISS cap
-whenever `auth_routes._TRUSTED_PROXY_IPS` is empty (the default) but the request still
-carries an `X-Forwarded-For` header — presuming that combination means every visitor is
-colliding onto one unconfigured reverse proxy's address. That presumption was never
-checked against who is actually making the request: on a DIRECT install (no proxy at
-all, the same unset `TRUSTED_PROXY_IPS` default), any client could add its own
-`X-Forwarded-For` header to its own request and get the same suspension, raising its own
-per-address ceiling from the 30-miss cap straight to the 120-call cap — four times the
-guessing budget against the 6-character tracking code, for free, with no proxy involved.
-
-Fixed by adding `_peer_is_private(request)` next to `_track_rate_limited`: it returns
-True only when `request.client` is present and `ipaddress.ip_address(request.client.host)`
-parses and is `.is_loopback` or `.is_private` (RFC-1918 and the other ranges Python
-classifies as private) — an address that fails to parse, or `request.client is None`,
-returns False (fail closed). `collapsed` in `_track_rate_limited` now additionally
-requires `_peer_is_private(request)`, alongside the existing empty-`TRUSTED_PROXY_IPS`
-and X-Forwarded-For-present checks. Nothing else in the function changed — the per-IP
-CALLS cap and the global miss cap, both still keyed on the same address, are unaffected,
-and T-122 (landing right after this change, in the same file) budgets the global miss
-cap per network without touching this `collapsed` computation.
-
-User-visible change, quoting the approved finding verbatim: "a deployment whose reverse
-proxy sits on a public IP with TRUSTED_PROXY_IPS still unset would lose the miss-cap
-suspension and could start seeing 429s on /t after 30 bad codes a minute across all its
-visitors, until TRUSTED_PROXY_IPS is configured." The operator fix is the same as
-T-087's: set `TRUSTED_PROXY_IPS` to the proxy's address.
-
-Unaffected: trusted-proxy installs (`TRUSTED_PROXY_IPS` configured — that unwrap path is
-untouched); direct installs with a genuinely private/loopback path to the app (the
-common case — Docker's bridge network, a proxy on `127.0.0.1` or a LAN address, or no
-proxy and no `X-Forwarded-For` header at all) keep exactly T-087's suspended-cap
-behavior; and installs that never receive an `X-Forwarded-For` header are unaffected
-either way, since `collapsed` already required the header to be present.
-
-Tests added to `backend/tests/unit/test_aito_tracking.py`: a public-peer client (a real
-routable address, not `request.client.host`-shaped `TRUSTED_PROXY_IPS` member) sending
-`X-Forwarded-For` with `TRUSTED_PROXY_IPS` empty now 429s on the 31st miss exactly like a
-direct install (the spoof T-121 closes); a private/RFC-1918 direct peer with the same
-setup still collapses the bucket, preserving T-087's behavior for a real unconfigured
-proxy on a LAN address; and a parametrized unit test of `_peer_is_private` covering IPv4
-loopback, RFC-1918, and public addresses, IPv6 loopback/ULA/public addresses, an
-unparseable host string, and `client=None`. All pre-existing collapsed-bucket tests
-(keyed on the test client's loopback peer) pass unmodified. User-approved 2026-09-10.
-
-## T-122 — 2026-09-10 — user-approved behavior change
-
-`_track_rate_limited` (`routes/aito.py`) budgeted its MISS (404) count for the public
-`/t/<code>` tracking page in two tiers: a per-IP cap (30 misses/60s) and a single global
-cap (`_TRACK_RATE_MAX_MISSES_GLOBAL = 600`) shared by every visitor on the internet. The
-global tier existed to stop a guesser spreading requests across many addresses from
-dodging the per-IP cap for free — but because it was ONE bucket, a single unauthenticated
-client sending ~11 bogus codes per second (no auth, no cookies required) could hold that
-bucket at its cap continuously, and `get_tracking()` turns a tripped cap into a 429 for
-EVERY caller, hits included (that "past a tripped cap everything is a 429" rule is
-intentional and unchanged — see below). The result: one flooding source could take the
-public tracking page offline for every real client, on every network, for as long as the
-flood lasted.
-
-Fixed by replacing the single global bucket with a dict of miss lists keyed by the
-visitor's source NETWORK instead of the whole internet: `_track_rate_net_key(host)`
-resolves an IPv4 host to its `/24` and an IPv6 host to its `/64` via
-`ipaddress.ip_network(..., strict=False)`; a host that fails to parse (the `__no_ip_...`
-placeholder `_get_client_ip` mints when there is no peer, or any other unrecognisable
-string) gets its own key equal to the raw host, so it fails closed into its own bucket
-rather than sharing one with every other unparseable host. `_TRACK_RATE_MAX_MISSES_GLOBAL`
-is renamed `_TRACK_RATE_MAX_MISSES_PER_NET`, value unchanged at 600, and is now the cap
-on each network's own bucket. `_track_rate_hit` releases a hit's reservation from the same
-per-network bucket it was reserved in, exactly as it already did for the per-IP bucket.
-The stale-bucket sweep now runs over three dicts (per-IP calls, per-IP misses, per-net
-misses) instead of two. Nothing else changed: the 60s sliding window, the per-IP CALLS
-cap, the per-IP MISS cap, the T-087/T-121 collapsed-bucket detection and its own miss-cap
-suspension, and the "no hits get through a tripped cap" rule are all exactly as they were.
-
-One documented interaction: on a `collapsed` bucket (T-087/T-121 — an unconfigured
-reverse proxy with `TRUSTED_PROXY_IPS` unset, so every visitor's resolved address IS the
-proxy's own address), the visitor's "network" is just the proxy's own `/24` or `/64`, so
-the per-network budget is once again a single site-wide budget for that install — same as
-before this change, for that specific configuration.
-
-User-visible change, quoting the approved finding verbatim: "clients on networks
-unrelated to a flood keep getting answers where they previously got 429s, and a single
-busy /24 can now exhaust its own budget sooner than the old shared 600."
-
-Unaffected: the per-IP CALLS cap (120/60s) and per-IP MISS cap (30/60s); the 60-second
-sliding window; the "everything is a 429 past a tripped cap" rule (still true, just
-scoped to the tripped network's own visitors instead of the whole internet); the
-T-087/T-121 collapsed-bucket detection logic itself (only the bucket it now feeds from
-changed name and shape); and reservation/release semantics (a miss is still reserved at
-arrival and released on a hit).
-
-Tests added to `backend/tests/unit/test_aito_tracking.py`: a flood of misses from one
-`/24` (`198.51.100.0/24`, monkeypatched cap of 3) 429s a different host on the same `/24`
-but leaves a visitor on an unrelated network (`8.8.8.8`) getting its normal 404; a real
-tracking code fetched repeatedly never trips a small net cap, proving hits still release
-their reservation; two IPv6 addresses sharing one `/64` share a budget while a different
-`/64` does not; a scaled-down repeat of the original flood scenario (monkeypatched cap of
-20) confirms an address outside the flooded `/24` is never touched; and a parametrized
-unit test of `_track_rate_net_key` covering IPv4, IPv6, and unparseable-host inputs. The
-five pre-existing tests that drove the old global cap (all from one effective network, so
-still trip the renamed cap identically) were updated to reference
-`_TRACK_RATE_MAX_MISSES_PER_NET` and pass unmodified otherwise. User-approved 2026-09-10.
-
-## T-116 — 2026-09-11 — user-approved behavior change
-
-`oidc_callback` (`routes/mfa.py`) trusted every field of the IdP's discovery document and
-token-endpoint JSON body to be a string, with no `isinstance` guard anywhere between
-`.get(...)` and first use. Three call sites were affected:
-
-- `token_endpoint`/`jwks_uri` from the discovery document were passed straight into
-  `assert_safe_public_https_url()`, whose `urlparse()` call raises `AttributeError` (not
-  `ValueError`) on a non-string value such as a JSON list — the surrounding
-  `except ValueError:` did not catch it.
-- `token_data = json.loads(token_body)` was assumed to be a JSON object; a token endpoint
-  answering 200 with a JSON array or number body made the very next line,
-  `token_data.get("id_token")`, raise `AttributeError`.
-- `discovery.get("issuer", provider.issuer_url).rstrip("/")` assumed the `issuer` field was
-  a string; `"issuer": null` (or a number/list) made `.rstrip()` raise `AttributeError`.
-
-All three exceptions escaped the local `try/except` blocks (where present) and were caught
-only by the outer generic `except Exception` far downstream, which redirects to
-`?oidc_error=internal_error` and logs an "Unexpected error" stack trace — hiding, from both
-the operator and the user, that the provider had returned a malformed document.
-
-Fixed with three surgical, isinstance-first checks, each routed to the existing redirect
-that already covers "this document is unusable" for that stage rather than a new one:
-
-- `token_endpoint`/`jwks_uri`: the existing `if not token_endpoint or not jwks_uri:` guard
-  now also requires `isinstance(..., str)` for both, before either reaches
-  `assert_safe_public_https_url()`. Still → `invalid_discovery_document`.
-- `token_data`: after `json.loads(token_body)` succeeds, a new
-  `if not isinstance(token_data, dict):` check runs before `.get("id_token")` is called.
-  → `token_exchange_bad_response` (the same redirect already used for a non-JSON body).
-- `id_token`: the existing `if not id_token:` guard now also rejects a non-string value
-  (e.g. `{"id_token": ["x"]}"`, which is truthy) — a present-but-wrong-type `id_token` is
-  treated the same as a missing one. Still → `no_id_token`.
-- `issuer`: the value is read into `raw_issuer` and checked with
-  `if not isinstance(raw_issuer, str) or not raw_issuer:` before `.rstrip("/")` runs.
-  → `invalid_discovery_document`. The check stays exactly where the value is first used
-  (after the token exchange, not hoisted earlier), so the state-row deletion / code-exchange
-  sequencing is unchanged.
-
-User-visible change, quoting the approved finding verbatim: "a provider returning a
-malformed discovery or token document now yields the specific 'invalid discovery document'
-[or 'token exchange bad response' / 'no id token'] toast instead of the generic
-internal-error one."
-
-Unaffected: well-formed providers (every field already a string) complete the flow exactly
-as before — see the existing full-success regression tests
-`TestOIDCFallCAutoLinkE2E.test_fall_c_auto_link_links_existing_user_via_callback` and
-`TestOIDCAutoCreateUsername.test_provider_sub_fallback_when_no_claims`, both unmodified and
-still passing; the SSRF guard `assert_safe_public_https_url()` itself (only reached now with
-guaranteed string input, never touched); and the state-row / code-exchange sequencing.
-
-Tests added to `backend/tests/integration/test_mfa_api.py`
-(`TestOIDCMalformedDocumentTypes`, modelled on
-`TestOIDCTokenAndJWKSFetchGuards._setup_provider_and_state`): a discovery document with
-`"token_endpoint": ["https://..."]` (list) → `invalid_discovery_document`, where pre-fix
-`urlparse()` raised `AttributeError` (confirmed directly against `urllib.parse.urlparse`);
-a discovery document with `"issuer": null` and an otherwise-normal token exchange →
-`invalid_discovery_document`; a token endpoint returning the JSON array body `[]` →
-`token_exchange_bad_response`; a token body `{"id_token": ["not-a-string"]}` →
-`no_id_token`. User-approved 2026-09-10.
+## Campaign 15 · Iteration 3 · T-137 — 2026-09-13 — user-approved behavior change
+
+`CameraGrid.tsx:304`'s `rawPrinterIdsKey` built the grid-stream printer-id list from every
+connected MJPEG printer (`mjpegPrinters.filter(p => p.connected).map(p => p.id).sort((a, b) => a -
+b).join(',')`) with no cap, while the backend's grid-stream route (`camera.py:1913`) hard-rejects
+any request naming more than 30 printers with `HTTPException(400, "Maximum 30 printers per grid
+stream")`. On a farm with 31 or more connected non-RTSP printers, every grid-stream fetch was
+rejected with that 400, `useGridStream` treated it as a failure and entered its exponential-backoff
+reconnect loop, and the entire camera wall stayed black indefinitely — including the printers that
+would otherwise fit within the 30-printer limit.
+
+Fixed by adding a module-private `GRID_STREAM_MAX_PRINTERS = 30` constant (with a comment pointing
+at the backend check) and appending `.slice(0, GRID_STREAM_MAX_PRINTERS)` to `rawPrinterIdsKey`
+immediately after the existing ascending numeric sort, so the id list sent to `useGridStream` is
+now always capped at the same 30 the backend enforces. The constant is not exported.
+
+User-visible effect: a camera grid with more than 30 connected MJPEG printers previously sent every
+id, got HTTP 400 "Maximum 30 printers per grid stream" from the backend, and every tile sat in the
+reconnect loop; now the client sends only the 30 lowest printer ids, those 30 tiles stream, and the
+remaining tiles show the ordinary no-frame state. Grids with 30 or fewer printers are unchanged.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 3 · T-142 — 2026-09-13 — user-approved behavior change
+
+`library.py:1455`'s `delete_folder()` passed the raw `LibraryFile.file_path` / `.thumbnail_path`
+columns straight into `os.path.exists()` / `os.remove()`: `if file_path and
+os.path.exists(file_path): os.remove(file_path)`. For managed files those columns are stored
+relative to `settings.base_dir` (`_stored_file_path`, library.py:425), not relative to the process's
+current working directory. Every other caller — `delete_file()` and
+`LibraryTrashService._unlink_on_disk` — resolves the same columns through `to_absolute_path()` /
+its mirror before touching disk. In the shipped Docker layout WORKDIR is `/app` while `base_dir` is
+`/data`, so the relative path resolved against the wrong root, `os.path.exists()` returned False,
+and the unlink silently no-op'd. Deleting a folder still cascaded away all of its `LibraryFile` rows
+(library.py:1481), so the bytes and thumbnails were orphaned on disk forever, and because the rows
+were already gone the trash sweeper could never reclaim them — the data volume grew monotonically
+with every folder delete.
+
+Fixed by resolving both `file_path` and `thumbnail_path` through the existing `to_absolute_path()`
+helper (library.py:190) inside `delete_folder()`'s inner `get_all_file_ids()`, before the
+`os.path.exists()` / `os.remove()` calls, mirroring exactly what `delete_file()` and
+`LibraryTrashService._unlink_on_disk` already do. Nothing else in `delete_folder()` changed.
+
+User-visible change: Deleting a library folder would start actually freeing disk space; installs
+that have been relying on the orphaned bytes surviving a folder delete would lose them.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 4 · T-143 — 2026-09-13 — user-approved behavior change
+
+`scan_external_folder()`'s (library.py:1723) removal pass at library.py:1993 read `if path_str not
+in found_paths and not os.path.exists(path_str): ... await db.delete(db_file)`, fed by `os.walk(ext_path)`
+at library.py:1800 with the default `onerror=None`. That default silently swallows scandir failures,
+so an SMB/NFS mount dropping mid-walk just truncated the walk with no error — `found_paths` came out
+partial, `os.path.exists()` then returned `False` for every remaining tracked file on the dead mount,
+and the removal pass hard-deleted all of those rows plus unlinked their thumbnails even though the
+files were untouched on the NAS. The tags (M2M via `library_file_tags`), variant-group membership,
+and queue references attached to those rows were gone for good; a later successful scan just re-added
+the files as brand-new rows with new ids.
+
+Fixed by passing an `onerror` callback to `os.walk` (library.py:1800) that records each `OSError`
+into a local `walk_errors` list and logs a warning (the walk itself still continues past the failure —
+that's `os.walk`'s semantics — but the scan now knows it was truncated). Before the removal pass, a
+new `walk_was_partial` flag is computed as `bool(walk_errors) or not (ext_path.exists() and
+ext_path.is_dir())` — covering both a mid-walk scandir failure and the root vanishing entirely between
+the initial accessibility check and the removal pass. Both destructive passes (the tracked-file removal
+loop at library.py:1993 and the empty-subfolder removal loop right after it, which has the same
+seen_rel_dirs-completeness assumption) are now skipped entirely when `walk_was_partial` is true — no
+`db.delete`, no thumbnail `unlink`. Adds/updates already committed during the (partial) walk are correct
+data and are kept as-is. Nothing else in the walk or the rest of the function changed.
+
+Response shape: the endpoint has no `response_model` (returns a plain dict), so this only adds a new
+key/value combination on the previously-unreachable partial path — a clean scan's response is
+byte-identical (`{"status": "success", "added": ..., "removed": ...}`). A partial scan now returns
+`{"status": "partial", "added": <adds still made>, "removed": 0, "walk_errors": <count>}`. Confirmed
+via `snapshot.py verify` (11/11, `app-openapi-index` unchanged) and `SURFACE.md` (no diff) that this is
+not a typed/documented contract change. The frontend's `scanExternalFolder()` type in
+`frontend/src/api/client.ts` already declared `status: string`, so no type change was needed;
+`FileManagerPage.tsx`'s scan-mutation success toast only reads `result.added` / `result.removed`, so a
+partial scan still renders as a normal (if oddly zero-removed) success toast — a nicer "scan was
+partial, mount may be unreachable" message is a follow-up, not built here per the approval note.
+
+User-visible change: A scan interrupted by a mount dropout (mid-walk scandir error, or the mount
+disappearing right after the walk finishes) now reports a partial result and leaves every previously
+tracked row in place — files, tags, variant-group membership, queue references, and thumbnails all
+survive — instead of reporting `"status": "success"` with a large `removed` count and permanently
+losing that metadata.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 4 · T-144 — 2026-09-13 — user-approved behavior change
+
+`batch_generate_stl_thumbnails()` (library.py:2761) rendered every matching STL synchronously on the
+event loop: the query for `all_missing=True` selected every STL file with no thumbnail (unbounded),
+and `generate_stl_thumbnail()` (services/stl_thumbnail.py:182) does a synchronous `trimesh.load` plus a
+matplotlib Agg render — documented at library.py:801 as "~1-5s each" — inline in the `for stl_file in
+stl_files` loop with nothing awaited between renders except `db.flush()`. The File Manager's "generate
+thumbnails" button (FileManagerPage.tsx:1673, `all_missing: true`) on a large library therefore froze
+the entire asyncio loop for as long as the batch took: camera grid streams stalled, the WebSocket
+stopped, MQTT status ingest backed up, and every other HTTP request hung until the request returned.
+
+Fixed by (1) wrapping the render at library.py:2827 in `await asyncio.to_thread(generate_stl_thumbnail,
+file_path, thumbnails_dir)` so each render runs on a worker thread instead of blocking the loop —
+everything else in the loop body (the not-on-disk check, `db.flush()`, result bookkeeping, exception
+handling) is unchanged; and (2) capping the batch with a new module constant
+`STL_THUMBNAIL_BATCH_LIMIT = 100` applied uniformly to all three selection modes (`file_ids`,
+`folder_id`, `all_missing`) via `query.limit(STL_THUMBNAIL_BATCH_LIMIT + 1)`, so one request renders at
+most 100 files and can tell whether more are left over from the one extra row fetched.
+
+Response shape: `BatchThumbnailResponse` gains one new optional field, `remaining: int = 0` — the count
+of matching STL files not processed in this call (0 when the batch was already complete). The default
+means every existing response shape and every existing client is unaffected unless it inspects the new
+field. Confirmed via `snapshot.py verify`/`record` that `app-openapi-index` is the only probe affected,
+and its diff is exactly this new optional `remaining` field; `SURFACE.md` was regenerated and its diff
+is empty (an optional property on an already-exported TS interface is not a new export). The frontend's
+`BatchThumbnailResponse` type in `frontend/src/api/client.ts` gained the matching optional
+`remaining?: number`; the existing toast in `FileManagerPage.tsx` (~L1674, ~L1702), which only reads
+`processed`/`succeeded`/`failed`, keeps working unchanged. Surfacing `remaining > 0` in that toast (so
+users know to click "generate thumbnails" again) is a follow-up, not built here per the approval note.
+
+User-visible change: On a library with more than 100 STL files matching the request, the "generate
+thumbnails" endpoint now renders at most 100 per call (each render off the event loop, so the rest of
+the app stays responsive throughout) and reports how many are left via the new `remaining` field,
+instead of blocking the request — and the whole server — until every matching file had been rendered.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 4 · T-152 — 2026-09-13 — user-approved behavior change
+
+`add_files_to_queue()` (library.py:2899, `POST /library/files/add-to-queue`) required only
+`Permission.QUEUE_CREATE` and resolved each requested id with a plain `LibraryFile.active().where(...)`
+lookup — no per-file ownership gate. The sibling paths onto the print queue all gate on visibility:
+`print_queue.py:193 _assert_can_queue_library_file()` (archives/reprint path) and this same module's own
+`_ensure_library_file_visible()` (library.py:110, used by the slice route at library.py:4776 with a
+comment naming exactly this class of bug) both require `LIBRARY_READ_ALL` or `created_by_id ==
+current_user.id`. The built-in Operators group holds `QUEUE_CREATE` and `LIBRARY_READ_OWN` with no
+`LIBRARY_READ_ALL` (permissions.py:436-441), so an ordinary operator could enqueue another user's sliced
+model for printing — an id they could not `GET` — and read its real filename back off
+`AddToQueueResult.filename` / `AddToQueueError.filename` by enumerating file ids in the response.
+
+Fixed by computing `can_read_all = current_user is None or current_user.has_permission(Permission
+.LIBRARY_READ_ALL.value)` once per request (library.py:2907, mirroring the slice route at library.py:
+4776), then, per requested id, running the resolved row through the module's own
+`_ensure_library_file_visible(lib_file, current_user, can_read_all)` before anything else in the loop
+runs (library.py:2941). A file that is missing or not visible to the caller now raises the same
+`HTTPException(404, "File not found")` the pre-existing missing-id branch already raised, caught and
+turned into the identical `AddToQueueError(file_id=file_id, filename="(not found)", error="File not
+found")` the missing-id branch has always produced — so a non-owned id is indistinguishable from a
+genuinely non-existent one, and the real filename is never included in the response for either case. No
+private cross-module import was added: the fix reuses this module's existing helper rather than reaching
+into `print_queue.py`. With auth disabled (`current_user is None`), `can_read_all` is always true, so
+every file stays visible and behavior is unchanged. Everything else in the route — the sliced-file check,
+the on-disk existence check, project attribution, queue item creation, response shape, and result
+ordering — is untouched.
+
+Confirmed via `snapshot.py verify` (11/11, unchanged) and `SURFACE.md` (no diff) that this is a
+permission-check change, not a contract change — no schema or route shape was touched.
+
+User-visible change: a user with `queue:create` but only `library:read_own` (the default Operators
+group) will get "File not found" instead of a queued item when they POST
+`/library/files/add-to-queue` with a file id belonging to another user — any existing workflow that
+relies on operators queueing shared uploads owned by an admin will start failing until those users are
+granted `library:read_all`.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 6 · T-138 — 2026-09-13 — user-approved behavior change
+
+`startMultiplexedStream()` (frontend/src/hooks/useGridStream.ts:610) treated every non-ok grid-stream
+fetch response identically: `if (!res.ok || !res.body) { throw new Error(\`HTTP ${res.status}\`); }`,
+caught unconditionally at the bottom of the loop and handed to `await scheduleReconnect(ids)` regardless
+of status. A 400 (too many printers), 401 (expired token), or 403 (missing `camera:view`) was therefore
+retried forever at up to `RECONNECT_MAX_DELAY_MS` between authenticated requests, and the status code
+was never surfaced anywhere — the operator saw only "Connection lost" / "Reconnecting in Ns (attempt N)"
+indefinitely, with no way to tell a transient network blip from a permission problem that backoff can
+never fix.
+
+Fixed by branching on `res.status` before throwing (useGridStream.ts:610): a 4xx status other than 408
+(request timeout) and 429 (rate limited) now stops the loop (`active = false`), clears any pending
+reconnect grace timer, resets the reconnect sub-hook, records the status in a new `terminalError: {
+status: number } | null` hook-state field (exposed on the hook's return object), and marks every id in
+the current stream as errored — mirroring the existing "worker restarts exhausted" terminal-error path.
+Network errors, 5xx, 408, 429, and an ok response with no body are unchanged: they still fall through to
+the existing throw → exponential-backoff-reconnect path. `terminalError` is cleared at every point the
+hook already resets `errorSet`/`reconnectingSet` on a fresh start — the mount/restart effect init
+(useGridStream.ts:~219), the per-decoded-frame clear in `handleWorkerMessage` (~L383, defensive; a frame
+can't arrive once the loop has stopped, but kept for consistency), and a successful (re)connect
+(~L638) — so bumping the grid's restart key (the wall's existing "retry" button, which forces the whole
+effect to re-run and re-fetch) tries again and clears the terminal state if it succeeds.
+`CameraGridCard.tsx` gained a `terminalErrorStatus?: number` prop, passed through from
+`CameraGrid.tsx`'s `terminalError?.status`; the card's existing error overlay (the `AlertCircle` +
+"Camera unavailable" block, `~L267`) now shows the new `printers.cameraGrid.streamRejected` i18n key
+interpolated with the status instead of the generic text whenever a terminal error is set, keeping the
+same retry button. Added the `streamRejected` key to `en.ts` and all 12 other locale files (real
+translations, not English placeholders — verified by `npm run check:i18n`).
+
+Confirmed via `snapshot.py verify` that `fe-i18n-parity` is the only mismatching probe, with
+`key_count` moving from 7290 to 7291 for every locale and `missing_vs_en`/`extra_vs_en` staying empty
+for all of them; re-recorded via `snapshot.py record` (`git diff --stat snapshots/` shows only
+`snapshots/fe-i18n-parity.golden` touched). `SURFACE.md` is unchanged (no new exports).
+
+User-visible change: a camera wall hitting a 400 (too many printers), 401 (expired token), or 403
+(missing `camera:view`) on the grid stream no longer shows a perpetual "Connection lost / Reconnecting
+in Ns (attempt N)" overlay. Instead the tile(s) switch to the terminal error overlay (red `AlertCircle`
+icon) showing "Stream rejected by server (HTTP 400)" / "... (HTTP 401)" / "... (HTTP 403)" in place of
+the generic "Camera unavailable" text, with the same "Retry" button as before — clicking it forces a
+fresh attempt and clears the terminal state if the new attempt succeeds. 5xx errors, request timeouts
+(408), and rate-limiting (429) still show the existing "Connection lost" / reconnecting overlay with
+backoff exactly as before.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 8 · T-139 — 2026-09-13 — user-approved behavior change
+
+`_drain_stderr()` (backend/app/api/routes/camera.py:~1257-1341) records one summary per stream_id in
+`_state.stderr_error_counts`/`stderr_error_details`/`stderr_recent_errors`, keyed by the per-spawn
+`f"{printer_id}-{uuid4().hex[:8]}"`. The only eviction was the 300s sweep in
+`_cleanup_stale_frame_buffers`, keyed off `last_frame_times` — a camera that never produces a frame
+never enters that dict, so it never gets swept. The grid restart loop respawns a failing producer with a
+fresh stream_id every 1.5-20s, so one unreachable camera added 3 dict entries (plus up to
+`_STDERR_RECENT_CAP` error strings) per retry attempt, forever, for the process lifetime, and
+`GET /camera/hub-status` (~L2867-2934) serialises all of it — both the raw stream_id-keyed dicts verbatim
+and a `per_printer_status` aggregate that *sums* `error_counts` across every stream_id for that printer
+and derives `last_error_category` from that sum.
+
+Fixed by adding `_evict_printer_stderr_summary(printer_id, keep_stream_id=None)` (camera.py:~1257), which
+pops every `stderr_error_counts`/`_details`/`_recent_errors` key with the `f"{printer_id}-"` prefix other
+than `keep_stream_id`. It is called from `_drain_stderr`'s `finally` block, right after that attempt
+writes its own three entries (only reached when `error_count > 0`, i.e. once the attempt has actually
+completed), passing `keep_stream_id=stream_id` — not at stream_id mint time in `_ensure_producer`, which
+would have made the printer briefly disappear from hub-status while a new attempt was still in flight and
+hadn't written its summary yet. `_cleanup_stale_frame_buffers`'s inline per-stream-id loop was replaced
+with a call to the same helper (`_evict_printer_stderr_summary(pid)`, no `keep_stream_id`) as a backstop
+for printers that stop respawning entirely and so never hit the `_drain_stderr` eviction path.
+
+Confirmed via `snapshot.py verify` (11/11, unchanged) and `SURFACE.md` (no diff) — no schema or response
+shape changed; `hub-status` has no `response_model` and its JSON keys are identical, only the *values* of
+already-existing keys are now bounded to the latest completed attempt per printer.
+
+User-visible change: `GET /api/v1/camera/hub-status` now reports each printer's stderr summary from only
+its most recently *completed* attempt, not accumulated across every retry since the producer first
+started failing. Measured over 12 retries of one failing camera: the raw `stderr_error_counts` /
+`stderr_error_details` / `stderr_recent_errors` dicts go from 12 stream_id keys for that printer down to
+1 (the latest); `per_printer_status[pid].error_counts` goes from summing across all attempts (e.g.
+`{"network_timeout": 78}`) to just the latest attempt's own counts (e.g. `{"network_timeout": 12}`);
+`last_error_category` is now derived from the latest attempt's counts instead of the all-time sum, so it
+can differ from what it would have reported before if an earlier attempt's dominant error category
+differed from the latest one. While a retry is in flight (the new attempt hasn't finished draining
+stderr yet), the *previous* attempt's summary remains visible in both the raw dicts and
+`per_printer_status` — it is evicted only once the new attempt's own summary has actually been written,
+so the printer never disappears from hub-status mid-retry.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 8 · T-147 — 2026-09-13 — user-approved behavior change
+
+`upload_file()` (backend/app/api/routes/library.py:~2311, upload read at ~2357) read the entire
+multipart body into memory with `content = await file.read()`, then wrote it in one shot with
+`f.write(content)` and derived `file_size=len(content)`. There was no `Content-Length` check and no cap
+anywhere in the request path — a single multi-GB STL/3MF upload materialised the whole file in RSS
+before a byte reached disk, and a handful of concurrent uploads could OOM-kill the container, taking
+every printer connection with it.
+
+Fixed by adding `Settings.library_max_upload_bytes` (backend/app/core/config.py, default `2 * 1024 *
+1024 * 1024` = 2 GiB, override via the `LIBRARY_MAX_UPLOAD_BYTES` env var — same auto-mapped
+pydantic-settings convention as every other int field on `Settings`, no separate registration needed)
+and rewriting the read/write in `upload_file()` to follow the declared-size-then-streamed-size pattern
+already used by `inventory.py`'s CSV import (`MAX_CSV_IMPORT_BYTES`): reject immediately with 413 when
+`file.size` is declared and already exceeds the cap, otherwise stream `while chunk := await
+file.read(1 << 20)` straight into the destination file, hashing (`sha256`) and counting bytes
+incrementally, and aborting with 413 — deleting the partial file — the instant the running total
+crosses the cap. The 3MF magic-byte sniff (`validate_print_file_upload`, #1401) only ever inspects a
+content *prefix*, so it now runs against the first chunk read instead of the full buffered body,
+producing an identical result. `file_hash` and `file_size` on the success path now come from the
+incremental hash/counter rather than a full re-read of the written file plus `len(content)` — same
+algorithm, same digest, same on-disk bytes, so the response and DB row are unchanged for any upload
+under the cap. `extract_zip_file`'s identical `content = await file.read()` (library.py:~2529) is
+untouched — that is T-155, a separate task.
+
+Confirmed via `snapshot.py verify`: `app-settings` was the only probe to mismatch, and the diff was
+exactly the new `library_max_upload_bytes` field (default `"2147483648"`, `int`, not required); recorded
+via `snapshot.py record` (only `snapshots/app-settings.golden` changed). `app-openapi-index` is
+unaffected — the new 413 is raised as a plain `HTTPException` with no `responses=` declaration, the same
+undocumented way the route's existing 400/403/404/409 already are, so it never enters the OpenAPI spec.
+`SURFACE.md` was regenerated and its only diff is the new `library_max_upload_bytes = 2147483648` line
+in the settings/environment surface section.
+
+User-visible change: `POST /api/v1/library/files` now rejects an upload whose declared or actual body
+size exceeds 2 GiB (2147483648 bytes) with `413 {"detail": "Upload exceeds the maximum size of
+2147483648 bytes"}` instead of accepting it and buffering the whole file in memory first. The cap is
+configurable via the `LIBRARY_MAX_UPLOAD_BYTES` environment variable. Uploads at or under the cap are
+unaffected: identical response fields, identical `file_hash`/`file_size`, identical on-disk bytes, and
+identical DB row.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 9 · T-150 — 2026-09-13 — user-approved behavior change
+
+`list_files()` (backend/app/api/routes/library.py:~2099, GET `/library/files` and `/library/files/`) took
+`folder_id`/`project_id`/`tag_ids`/`recursive`/`include_root`/`internal_only`/`external_only` but no
+`limit` or `offset`, and built its query with `selectinload(LibraryFile.created_by)` +
+`selectinload(LibraryFile.tags)` and no `.limit(...)` at all — the only `.limit()` calls in the file were
+the dedup probes elsewhere. `include_root=False` with no `folder_id` returned every non-deleted row the
+caller was allowed to see. The File Manager's "All Files" view on a library with tens of thousands of
+files pulled all of them plus their tag rows into memory and shipped a multi-megabyte JSON body, blocking
+the event loop through serialisation and making the page unusable.
+
+Fixed by adding `limit: int = Query(default=500, ge=1, le=2000)` and `offset: int = Query(default=0,
+ge=0)` to `list_files()`, applying `.offset(offset).limit(limit)` to the existing query after its
+existing (and unchanged) `order_by(LibraryFile.filename)`, and computing the total matching row count
+with a separate `select(func.count()).select_from(query.subquery())` over the exact same
+filtered/joined/grouped query object (so the `tag_ids` GROUP BY/HAVING branch is reused rather than
+duplicated) before paging is applied. The total is exposed via a new `X-Total-Count` response header; the
+response body shape is unchanged — still `list[FileListResponse]` — so every existing client keeps
+parsing it exactly as before. Every existing filter (`folder_id`, `project_id`, `tag_ids`, `recursive`,
+`include_root`, `internal_only`/`external_only`, ownership scoping) and the existing `Cache-Control:
+no-cache, no-store, must-revalidate` header are untouched.
+
+On the frontend, `getLibraryFiles()` (frontend/src/api/client.ts) grew two new optional trailing
+parameters, `limit` and `offset`, appended after the existing `tagIds` parameter — every pre-existing call
+site that omits them keeps getting the server's default page (500 rows) exactly as before. A new exported
+helper, `getAllLibraryFiles(...)`, takes the same leading arguments as `getLibraryFiles` (minus
+limit/offset) and pages through it at the server's max page size (2000) until a page comes back shorter
+than the requested limit, concatenating results in request order; it uses the short-page rule rather than
+reading `X-Total-Count` because `request<T>()` in client.ts returns only the parsed JSON body and does not
+expose response headers to callers. The two in-app consumers that render "every file" —
+`FileManagerPage.tsx`'s "All Files" / folder-listing query and `ProjectDetailPage.tsx`'s bulk
+project-files query — were switched from `getLibraryFiles` to `getAllLibraryFiles` (one-line change each,
+same arguments), so the in-app UI keeps showing every file the user is allowed to see; only the wire
+format changed to bounded pages under the hood. No other in-app caller of `getLibraryFiles` exists
+(grepped `getLibraryFiles(` outside `__tests__`).
+
+Confirmed via `snapshot.py verify`: `app-openapi-index` was the only probe to mismatch, and the diff was
+exactly the two new `query:limit` / `query:offset` parameters on both the `/library/files` and
+`/library/files/` operations; recorded via `snapshot.py record` (only
+`snapshots/app-openapi-index.golden` changed, 4 insertions). The new `X-Total-Count` response header is
+not tracked by that probe (it indexes parameters, not response headers), so it does not show up in the
+diff. `SURFACE.md` was regenerated and its only diff is the new `getAllLibraryFiles` export line.
+
+User-visible change: `GET /api/v1/library/files` (and the trailing-slash alias) now defaults to returning
+at most 500 files per call (previously unbounded) and rejects `limit=0` or `limit>2000` with a 422; the
+full matching count is available via the new `X-Total-Count` response header for any client that wants to
+page. Any external client calling this endpoint directly without passing `limit`/`offset` will see fewer
+files per response than before if it has more than 500 in scope. The bundled in-app File Manager and
+project-detail views are unaffected end-to-end — they now call `getAllLibraryFiles`, which transparently
+pages through the capped responses and still renders the complete list.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 10 · T-151 — 2026-09-13 — user-approved behavior change
+
+`moveFilesMutation.onSuccess` (frontend/src/pages/FileManagerPage.tsx:1617) took no argument at all, so
+the `moved`/`skipped`/`skipped_reasons` fields returned by `POST /library/files/move`
+(backend/app/api/routes/library.py:5527 `move_files`, response built at line 5653) were discarded — every
+move, including one where every file was skipped (ownership, read-only source/target, missing source,
+misconfigured/inaccessible/unwritable target, unsafe filename, name collision, or a failed byte copy —
+the ten `_MoveSkip`/inline codes the endpoint can emit: `not_owner`, `source_readonly`, `source_missing`,
+`target_readonly`, `target_misconfigured`, `target_inaccessible`, `target_unwritable`, `invalid_filename`,
+`name_collision`, `copy_failed`), showed the same unconditional green "Files moved" toast, cleared the
+selection, and closed the modal.
+
+Fixed by having `onSuccess` take the mutation's response and branch on `response.skipped`: when it is `0`
+the behavior is byte-for-byte unchanged (same `success` toast, same invalidate/clear-selection/close-modal
+sequence). When `skipped > 0`, the same invalidate/clear-selection/close-modal sequence still runs, but
+the toast is now a `warning` toast built from `response.skipped_reasons`: the codes are tallied with a
+`Map<string, number>`, and the message groups each code's count through a new localised
+`fileManager.toast.moveSkipReason.<code>` key, joined with `, `, and interpolated into a new
+`fileManager.toast.moveSkipped` key as `"{{moved}} moved, {{skipped}} skipped: {{reasons}}"` (e.g. "2
+moved, 3 skipped: 2 filename collision, 1 file no longer on disk"). `moveLibraryFiles` in
+`frontend/src/api/client.ts` was widened to declare `skipped: number` and
+`skipped_reasons: { file_id: number; code: string; reason: string }[]` on its response type (both already
+sent by the backend; only the frontend type was narrower) — no new export, no backend change.
+
+The 11 new i18n keys (`fileManager.toast.moveSkipped` + one `fileManager.toast.moveSkipReason.<code>` per
+backend code) were added to `en.ts` and all 12 other locale files with real, distinct-from-English
+translations (not placeholders), since the repo's i18n parity gate rejects English-identical values in
+non-English locales.
+
+Two tests were added to `frontend/src/__tests__/pages/FileManagerPage.test.tsx` under a new `describe('move
+files', ...)`: one confirms the `skipped: 0` response still shows the plain "Files moved" success toast
+(extending the existing unconditional-success coverage), and one confirms a `moved: 2, skipped: 3` response
+with mixed `name_collision`/`source_missing` codes shows the warning toast with the exact counts and
+translated reasons text, and that the selection is still cleared and the modal still closes in that path.
+
+Confirmed via `snapshot.py verify`: `fe-i18n-parity` was the only probe to mismatch, and the diff was
+exactly `en_key_count`/every locale's `key_count` moving from 7291 to 7302 (the 11 new keys), with
+`missing_vs_en`/`extra_vs_en`/`placeholder_mismatch_vs_en` staying empty for every locale; recorded via
+`snapshot.py record` (only `snapshots/fe-i18n-parity.golden` changed, 13 insertions/13 deletions).
+`SURFACE.md` is unchanged — no new exports.
+
+User-visible change: a file move where every file was moved successfully still shows the plain green
+"Files moved" toast, unchanged. A move where one or more files were skipped now shows a warning toast
+reading "{{moved}} moved, {{skipped}} skipped: {{reasons}}" (e.g. "2 moved, 3 skipped: 2 filename
+collision, 1 file no longer on disk") instead of the previous unconditional "Files moved" success toast;
+the selection still clears and the move modal still closes in both cases.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 10 · T-153 — 2026-09-13 — user-approved behavior change
+
+`get_variant_group` (backend/app/api/routes/library_variants.py:268, `GET /api/v1/library/variant-groups/{group_id}`)
+resolved its ownership pair (`auth_result: tuple[User | None, bool] = Depends(require_ownership_permission(
+Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN))`) into `user, can_read_all` and then never used
+either: the whole body was `return await _group_response(db, await _get_group_or_404(db, group_id))`, and
+`_group_response` (line 132) lists every active (untrashed) member of the group with `filename=f.filename`
+regardless of `created_by_id`. The sibling route directly above, `get_group_for_file` (line 242), already
+scopes its one anchor file through `_load_files(db, [file_id], user, can_read_all)` before returning the
+group, so a library:read_own caller could not reach a group at all through that route without owning the
+file they named — but could walk small sequential group ids straight into `get_variant_group` and read the
+sliced filenames of every active member, including files that `GET /library/files/{id}` answers 404 for.
+
+Fixed by scoping only the ownership question, not the "does anything active remain" question that
+`_group_response` already answers by returning `members: []` for every caller (that behavior — an all-
+trashed group renders empty rather than 404, for `*_ALL`/auth-disabled callers included, because the group
+row itself is never dissolved by trashing a file — predates this fix and is unrelated to ownership, so it
+had to stay exactly as it was). For a `*_OWN` caller only (`not can_read_all`; `*_ALL` and auth-disabled
+never run this check), `get_variant_group` now collects every member's id with a plain `LibraryFile.id`
+query scoped to `variant_group_id == group.id` (no active/ownership filter, matching
+`_dissolve_if_too_small` and `update_variant_group`'s existing member queries); if that set is non-empty it
+checks whether any of those ids is still active via `_load_files(db, member_ids, None, True)`, and whether
+any is visible to the caller via `_load_files(db, member_ids, user, can_read_all)`. Only when active members
+exist and none of them is visible to the caller does the route raise the same `404 "Variant group not
+found"` that `_get_group_or_404` already raises for a nonexistent id; every other case — no members at all,
+all members trashed, or at least one active member visible — falls through unchanged to
+`_group_response(db, group)`, which behaves exactly as it did before this fix (full active-member list,
+including members the caller does not own, once the caller clears the new check). `_group_response`'s
+output shape and the route's `Depends(require_ownership_permission(...))` declaration are both unchanged;
+only the use of the value it already produced changed.
+
+Seven tests were added to `backend/tests/integration/test_library_variants_api.py` in a new
+`TestVariantGroupOwnershipPermissions` class (using the `TestOwnershipPermissionsSetup` operator/operator2/
+admin fixture pattern from `test_ownership_permissions.py`): one confirms a library:read_own caller who owns
+none of a group's *active* members gets a 404 with neither member's filename anywhere in the response body;
+one builds a group from one active file the read_own caller owns and one they do not, and asserts
+`GET .../variant-groups/{group_id}` and `GET .../variant-groups/by-file/{owned_file_id}` return the
+identical status code and JSON body for that caller; one confirms an admin (library:read_all) still sees
+the full group with both members' real filenames; one confirms the auth-disabled path (`user is None`,
+`can_read_all=True`) is byte-for-byte unchanged, returning the full group regardless of ownership; and three
+cover the all-members-trashed case — an admin, an auth-disabled caller, and a library:read_own caller who
+owns none of the (now trashed) members all get `200` with `members: []`, none of them the new 404, because
+trashing every member leaves nothing active to hide from anyone.
+
+Confirmed via `snapshot.py verify`: 11/11 probes matched, including `app-route-perms` (still counts the
+same number of `RequirePermissionIfAuthEnabled(...)`/ownership-dependency occurrences — the route's
+`Depends(...)` declaration was not touched, only how its result is used) and `app-openapi-index` (no schema
+change — same request/response models, same status codes already documented for this path). `SURFACE.md`
+regenerated with no diff — no new exports.
+
+User-visible change: `GET /api/v1/library/variant-groups/{group_id}` now answers 404 for a library:read_own
+caller when the group has at least one active (untrashed) member and the caller owns none of them, where it
+previously returned the group with every active member's filename. A library:read_own caller who owns
+*some* of the group's active members sees the exact same response `GET .../variant-groups/by-file/{file_id}`
+already gives them for one of their own member files in that group — the full active-member list, every
+filename included, unchanged from before this fix. A group whose members have all been trashed (the group
+row survives; nothing dissolves it) still returns `200` with `members: []` for every caller, including
+library:read_own callers who own none of the (trashed) members — that emptiness was already true before
+this fix and is not part of the ownership check. Admin/library:read_all and the auth-disabled path are
+completely unaffected in every case, including the all-trashed one.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 10 · T-154 — 2026-09-13 — user-approved behavior change
+
+`get_thumbnail` and `get_library_file_plate_thumbnail` (backend/app/api/routes/library.py, `GET
+/api/v1/library/files/{file_id}/thumbnail` and `GET /api/v1/library/files/{file_id}/plate-thumbnail/{plate_index}`)
+gated on `_: None = RequireCameraStreamTokenIfAuthEnabled` and then never checked ownership — they loaded
+the row with a bare `result.scalar_one_or_none()` and served the bytes straight off disk. That dependency
+(`require_camera_stream_token_if_auth_enabled`, core/auth.py) validates a `?token=` query param via
+`verify_camera_stream_token`, which returns a plain `bool` for any unexpired `camera_stream`-type ephemeral
+row *or* any long-lived token scoped `camera_stream`/`overlay` (#1108) — it carries no identity at all. The
+token itself is minted by `POST /camera/stream-token` behind `Permission.CAMERA_VIEW` alone. So a caller
+holding only `camera:view` — or the holder of a multi-day kiosk/Home-Assistant camera token pasted into a
+third-party dashboard — could enumerate library file ids and read every user's model/per-plate thumbnails,
+bypassing the `LIBRARY_READ_ALL`/`LIBRARY_READ_OWN` scoping every other library read route enforces via
+`_ensure_library_file_visible`.
+
+Fix, in three parts, all in backend/app/core/auth.py plus the two call sites in library.py:
+
+1. `create_camera_stream_token()` (core/auth.py:770) gained an optional `username: str | None = None`
+   parameter, written into the existing nullable `AuthEphemeralToken.username` column exactly the way
+   `create_websocket_token` already records its issuing principal — `username or ""`, so an API-key-minted
+   or auth-disabled call still writes a row (empty string) rather than erroring. `create_stream_token`
+   (backend/app/api/routes/camera.py, `POST /printers/camera/stream-token`) now captures its
+   `current_user` (previously discarded as `_`) and passes `current_user.username if current_user is not
+   None else None` — the same pattern `mint_websocket_token` already uses. No other caller of
+   `create_camera_stream_token` exists. `verify_camera_stream_token` and every camera stream/snapshot route
+   that depends on `RequireCameraStreamTokenIfAuthEnabled` are byte-for-byte unchanged — they still see a
+   bare boolean and do not care who minted the token.
+2. A new `resolve_camera_stream_token_principal(token) -> str | None` sits beside (and does not alter)
+   `verify_camera_stream_token`: for a valid, unexpired, short-lived `camera_stream` row it returns the
+   recorded `username` (coalesced to `""` for a `NULL` value from a token minted before this change, or for
+   an API-key-minted token with no per-row identity); it returns `None` only when no such row exists at all
+   — including when the token only matches via the long-lived path, which this function deliberately never
+   checks, so long-lived camera/overlay tokens cannot resolve a library identity.
+3. A new dependency `require_library_thumbnail_access_if_auth_enabled()` /
+   `RequireLibraryThumbnailAccessIfAuthEnabled` (core/auth.py, next to
+   `require_camera_stream_token_if_auth_enabled`) accepts the same `?token=` query param, and returns
+   `(user, can_read_all)` — the same shape `require_ownership_permission` already returns — so the two
+   routes can call the module's existing `_ensure_library_file_visible(lib_file, user, can_read_all)`
+   unchanged: auth disabled → `(None, True)`; missing/expired/unknown/long-lived-only token → 401 (the same
+   status the old bare dependency raised); a valid token whose resolved principal is `""` (pre-upgrade or
+   API-key-minted, no identity) or whose username no longer maps to a `User` row → 403; otherwise
+   `(user, user.has_permission(Permission.LIBRARY_READ_ALL.value))`.
+
+Ten integration tests were added in a new `TestLibraryThumbnailTokenAuth(TestLibraryPermissions)` class in
+backend/tests/integration/test_library_api.py, each parametrized over both routes (`thumbnail` and
+`plate_thumbnail`, 20 test runs total): an operator's own stream token still loads their own file (unchanged
+happy path); a second operator's own stream token 404s on the first operator's file, with neither
+`fake-thumbnail-bytes` nor `fake-plate-thumbnail` in the response; an admin's stream token loads any file;
+a long-lived token minted via `POST /auth/tokens` is rejected 401; a hand-inserted `camera_stream` row with
+`username=None` (simulating a token minted before this upgrade) is rejected 403; a missing `?token=`
+with auth enabled is 401; and auth-disabled loads the thumbnail with no token at all. No existing test
+asserted that a bare camera token loads a library thumbnail, so no assertion needed to be changed —
+the module previously had zero token-based tests for these two routes.
+
+Confirmed via `snapshot.py verify`: 11/11 probes matched, including `app-route-perms` (this design adds no
+`RequirePermissionIfAuthEnabled(...)` occurrences — the new dependency is its own distinct callable, not a
+wrapped instance of that helper) and `app-openapi-index` (both routes keep the same `token: str | None`
+query parameter shape; the dependency's return type is not part of the request schema). `SURFACE.md`
+regenerated with no diff — no new exports. Whole-tree backend suite: 13318 passed, 1 skipped, coverage 73%
+(Stmts 72893, Miss 18016 — no drop from the 73% / Miss 18031 baseline after T-153).
+
+User-visible change: `GET /library/files/{id}/thumbnail` and `GET /library/files/{id}/plate-thumbnail/{n}`
+now require the caller's camera-stream token to carry a resolvable identity with `library:read_all` or
+`library:read_own`, and enforce per-file ownership the same way every other library read route does.
+`_ensure_library_file_visible`'s owner branch does not itself check any library-read permission, so a
+caller whose token resolves to a user holding only `camera:view` still gets a 200 for a file they own,
+unchanged from before this fix; the change for that same caller is on a file they do NOT own, which now
+404s instead of loading. A token that is long-lived (`bblt_...`, #1108) is rejected 401 regardless of
+ownership. A short-lived token that resolves to no recorded user (minted before this upgrade, or by an
+API key) is rejected 403. A long-lived camera/Home-Assistant/kiosk token will no longer load library thumbnails at
+all — only the short-lived per-session token from `POST /camera/stream-token` can, and only once it has
+been re-minted under this fix. Frontend consumers (`withStreamToken`/`useStreamTokenSync` in
+frontend/src/api/client.ts and frontend/src/hooks/useCameraStreamToken.ts) already fetch a fresh stream
+token on login and refresh it every 50 minutes (tokens expire at 60) — and separately auto-refresh
+immediately on the first `<img>`/`<video>` load error against a token-protected URL — so any token cached
+in a browser tab before this deploy self-heals to a fully-scoped one within, at most, one failed thumbnail
+load or 50 minutes, without a page reload. A caller who legitimately has `library:read_own`/`library:read_all`
+sees no change at all once their token is re-minted.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 11 · T-155 — 2026-09-13 — user-approved behavior change
+
+`extract_zip_file()` (backend/app/api/routes/library.py:~2569) saved the uploaded ZIP with `content = await
+file.read()` / `tmp.write(content)` — the exact same unbounded read T-147 fixed in `upload_file()` — and
+then, for every entry, decompressed it fully into memory with `file_content = zf.read(zip_path)` before
+writing it to disk. Nothing inspected `ZipInfo.file_size` or tracked a cumulative decompressed total, so a
+small deflate-bomb ZIP (a few MB compressed) could expand to tens of GB and OOM-kill the uvicorn process,
+taking printer monitoring and MQTT down with it. Reachable by any caller with `Permission.LIBRARY_UPLOAD`
+(held by the default Operators group).
+
+Fixed in two parts. First, the ZIP body itself is now streamed to disk through a new shared helper,
+`_stream_upload_to_path()`, extracted from T-147's inline `upload_file()` logic (declared-size fast-reject,
+`while chunk := await file.read(1 << 20)`, incremental sha256, abort-and-delete on 413) with an
+`on_first_chunk` callback so `upload_file()` can still run its magic-byte sniff on just the first chunk;
+`upload_file()` now calls this helper instead of duplicating the loop, and `extract_zip_file()` calls it
+too, against the existing `library_max_upload_bytes` cap — same 413 body (`"Upload exceeds the maximum size
+of {cap} bytes"`), same partial-file cleanup, verified byte-identical against the T-147 tests. Second, a new
+`Settings.library_max_zip_extract_bytes` field (backend/app/core/config.py, default `4 * 1024 * 1024 *
+1024` = 4 GiB, override via the `LIBRARY_MAX_ZIP_EXTRACT_BYTES` env var, declared exactly like
+`library_max_upload_bytes`) bounds the *decompressed* total. Before extracting anything,
+`extract_zip_file()` sums `zi.file_size` over `zf.infolist()` and rejects with `413 {"detail": "ZIP expands
+to {total} bytes, above the maximum of {cap} bytes"}` if the declared total alone exceeds the cap — no
+entry is touched, and the temp ZIP file is removed (existing `finally` block). Because a ZIP's local header
+can lie about an entry's uncompressed size, each entry is *also* streamed via `zf.open(zip_path)` +
+manual chunked copy (replacing `zf.read(zip_path)`), with a request-wide running total
+(`zip_extract_total_bytes`) checked after every 1 MiB chunk; if a lying header lets the real bytes push the
+running total past the cap mid-stream, a new internal `_ZipExtractCapExceeded` signal aborts the entry
+(deleting its partial file) and propagates past the per-entry `except Exception` handler (which would
+otherwise just log the one file as failed and keep going) to abort the whole request. The outer handler
+then undoes every entry this request had already extracted and committed — via a
+`(library_file_id, file_path, thumbnail_path)` list built alongside the existing `extracted_files` response
+list — unlinking each file and any thumbnail from disk and hard-deleting the `LibraryFile` rows in one
+`delete(LibraryFile).where(LibraryFile.id.in_(...))` + commit, before raising the 413. Hashing is unchanged:
+`calculate_file_hash(file_path)` already re-reads the file from disk after it's written, so streaming the
+write produces an identical digest to the old read-then-write-then-rehash path. `file_size` on each
+`LibraryFile` row now comes from the streamed byte count (`entry_bytes_written`) instead of
+`len(file_content)` — same value for any entry under the cap. Folder creation (including
+`create_folder_from_zip`), filename handling, path-traversal rejection, and the response shape are
+unchanged; filename validation is explicitly out of scope (T-157).
+
+Five tests added/extended in `backend/tests/integration/test_library_api.py`:
+`test_extract_zip_basic` now asserts each extracted row's `file_hash`/`file_size` against the source
+content (pins byte-identical streaming); a new `TestLibraryZipExtractSizeCap` class covers an honest
+declared total above a small test cap (413 before any extraction, temp ZIP file confirmed removed via a
+`tempfile.mkstemp` capture), a lying `ZipInfo.file_size` (patched via `zipfile.ZipFile.infolist`, which the
+route's upfront sum reads, while `zf.open()`'s real per-name lookup is left untouched) causing a mid-stream
+413 that rolls back an already-committed earlier entry in the same archive, the same lying-header scenario
+with nothing extracted yet (empty-list branch of the cleanup), the ZIP body itself exceeding
+`library_max_upload_bytes` (413 before the archive is even opened), and the cap being honoured when raised
+above the archive's real size (still succeeds). No existing assertion was weakened.
+
+Confirmed via `snapshot.py verify`: `app-settings` was the only probe to mismatch, and the diff was exactly
+the new `library_max_zip_extract_bytes` field (default `"4294967296"`, `int`, not required); recorded via
+`snapshot.py record` (only `snapshots/app-settings.golden` changed). `SURFACE.md` was regenerated and its
+only diff is the new `library_max_zip_extract_bytes = 4294967296` line in the settings/environment surface
+section.
+
+User-visible change: `POST /api/v1/library/files/extract-zip` now rejects a ZIP whose entries declare (or,
+if a header lies, whose entries actually decompress to) more than 4 GiB (4294967296 bytes) total with 413
+— `{"detail": "ZIP expands to {N} bytes, above the maximum of 4294967296 bytes"}` for an honest oversized
+header, or `{"detail": "ZIP expands to more than 4294967296 bytes once extracted, above the maximum
+allowed"}` for a lying one — instead of decompressing every entry into memory with no limit. The cap is
+configurable via the `LIBRARY_MAX_ZIP_EXTRACT_BYTES` environment variable; the uploaded ZIP body itself
+remains capped at `library_max_upload_bytes` (2 GiB by default, `LIBRARY_MAX_UPLOAD_BYTES`), unchanged from
+T-147. Users with genuinely huge (but honest, non-lying) model archives above 4 GiB uncompressed would need
+`LIBRARY_MAX_ZIP_EXTRACT_BYTES` raised. Archives under the cap extract with identical responses, DB rows,
+and file hashes as before.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 11 · T-157 — 2026-09-13 — user-approved behavior change
+
+`extract_zip_file()` (backend/app/api/routes/library.py) logged the raw upload filename before validating
+it and never validated any per-entry name either. After the existing `.zip` suffix check, the archive
+filename reached `logger.info(f"ZIP extraction: create_folder_from_zip={create_folder_from_zip},
+folder_id={folder_id}, filename={file.filename}")` (an eager f-string, not lazy `%s` args) untouched, and
+was also used verbatim as a folder name when `create_folder_from_zip` was set. Unlike `upload_file()`,
+which calls `validate_print_filename(filename)` (backend/app/utils/filename.py, rejects the FAT32/exFAT-
+illegal set `< > : " / \ | ? *`, ASCII control characters below `0x20`, trailing space/dot, `.`/`..`, and
+names over 255 UTF-8 bytes, from #1540) and maps `InvalidFilenameError` to a 400, `extract_zip_file()`
+validated neither the archive name nor `filename = os.path.basename(zip_path)` for each entry before
+storing/logging it — a control character in either forges/corrupts log lines in bambuddy.log, which users
+routinely attach to public issues.
+
+Fixed by mirroring `upload_file()`'s own validation exactly, in two places. (1) Archive name: right after
+the `.zip` suffix check — and before the "save ZIP to temp file" step, so nothing is written to disk for a
+rejected request — `validate_print_filename(file.filename)` now runs, with `InvalidFilenameError` mapped to
+`HTTPException(status_code=400, detail=str(e)) from e`, the identical mapping `upload_file()` uses. The
+`logger.info(...)` line right after (now unconditionally passed a pre-validated name) was also switched
+from the eager f-string to lazy `%s` args (`logger.info("ZIP extraction: create_folder_from_zip=%s,
+folder_id=%s, filename=%s", create_folder_from_zip, folder_id, file.filename)`) — the message text is
+otherwise identical. (2) Entry names: right after `filename = os.path.basename(zip_path)` inside the
+per-entry loop, the same `validate_print_filename(filename)` call now runs; an invalid entry is *not*
+fatal to the request — it's skipped via `continue` (after an `await db.rollback()` to undo any
+preserve_structure folder flushed-but-not-committed for that entry, matching the generic per-entry
+exception handler a few lines below) and reported through the *existing* `errors: list[ZipExtractError]`
+response field (same `{filename, error}` shape every other per-entry extraction failure already uses — no
+new response field was added). The skip is also logged, but via `logger.warning("Skipping ZIP entry with
+invalid filename: %s", e)` — lazy args, and deliberately omitting the raw `zip_path`/`filename` (unlike the
+generic handler's `logger.error("Failed to extract %s: %s", zip_path, e)`, which still logs the raw
+archive-internal path) so the warning itself can never carry a raw control character into the log. The
+T-155 streaming/cap logic (running `zip_extract_total_bytes`, per-entry chunked copy, mid-stream rollback)
+is untouched; validation runs before any bytes of the entry are read.
+
+Two tests added to `backend/tests/integration/test_library_api.py::TestLibraryZipExtractAPI`. Both use an
+ANSI escape byte (`\x1b`) rather than a raw `\r`/`\n` as the injected control character: httpx (like other
+well-behaved HTTP clients) percent-encodes `\r`/`\n` in a multipart `filename=` parameter before it ever
+reaches the wire — confirmed empirically (`evil\r\nX.zip` arrived server-side as the literal text
+`evil%0D%0AX.zip`, no real control character) — while other C0 controls such as `\x1b` pass through
+untouched, since only `\r`/`\n` are structurally significant to HTTP header framing. `\x1b` is itself a
+real log/terminal-injection vector (ANSI escape sequences), so the test still exercises a genuine attack
+surface end-to-end through the real multipart stack rather than a synthetic one. Test 1 posts an archive
+named `"evil\x1bBAD.zip"` and asserts a 400 with `"control character"` in `detail` and zero `LibraryFile`
+rows created. Test 2 posts a ZIP with one normal entry (`good.txt`) and one entry named
+`"bad\x1bInjected.txt"`; it asserts `extracted == 1`, only `good.txt` is in `files`/the DB, the bad entry is
+reported as the sole item in `errors` with `"control character"` in its `error` field, and — via
+`caplog.at_level(logging.WARNING, logger="backend.app.api.routes.library")` — that `"\x1b"` never appears
+anywhere in `caplog.text`. No existing assertion was weakened.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (no schema change — the fix reuses the existing
+`ZipExtractError`/`errors` field rather than adding one). `SURFACE.md` was regenerated and is unchanged.
+
+User-visible change: `POST /api/v1/library/files/extract-zip` now **rejects** a request with `400
+{"detail": "<validate_print_filename message>"}` (e.g. `"Filename contains a control character"` or
+`"Filename contains invalid character: <"`) when the *archive's own filename* contains a FAT32/exFAT-
+illegal character or control character — nothing is extracted and no temp file is written, exactly like
+`upload_file()` already rejects such a filename today. Separately, any *entry inside* the ZIP whose
+basename contains such a character is now **skipped** rather than extracted: it is omitted from `files`,
+counted out of `extracted`, and instead appears in the response's existing `errors` list as `{"filename":
+"<the entry's basename>", "error": "<validate_print_filename message>"}` — the same mechanism already used
+today for any other per-entry extraction failure. All other entries in the same archive still extract
+normally. Archives and entries with no such characters extract identically to before.
+User-approved 2026-09-13.
+
+## Campaign 15 · Iteration 12 · T-160 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/library.py` has a module-level `_stl_render_lock` (an `asyncio.Lock`, ~L110-116)
+whose comment explained that `generate_stl_thumbnail()` renders via matplotlib's process-global pyplot
+state (`plt.figure()`/`plt.subplots_adjust()` act on the "current figure"), and that the backfill task and
+the batch-generation route both run the render in a worker thread via `asyncio.to_thread` while holding
+this lock, "keeping the two call sites from ever rendering concurrently." In fact there are four call
+sites, not two. `_backfill_external_stl_thumbnails` (~L861) and `batch_generate_stl_thumbnails` (~L3040)
+already honored the lock+`asyncio.to_thread` contract, but `upload_file` (~L2520) and `extract_zip_file`'s
+per-entry loop (~L2875) called `generate_stl_thumbnail()` synchronously inline — no lock, no
+`asyncio.to_thread`. This blocked the event loop for the 1-5s render the code's own comment at L2959-2962
+warns about, and let an upload's or a ZIP extraction's render race the backfill/batch render against
+matplotlib's shared pyplot state, exactly the hazard the lock exists to prevent (mis-cropped thumbnails, or
+an exception swallowed as "thumbnail generation failed").
+
+Fixed by wrapping both direct call sites the same way as the other two: `async with _stl_render_lock:
+thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)`, inside the
+existing `try`/`except OSError` in `upload_file` and inside the existing per-entry `try`/`except Exception`
+in `extract_zip_file` — neither surrounding exception-handling shape changed. Both call sites are already
+inside `async def` routes, so `await` was available with no other restructuring. No metadata/thumbnail
+logic was otherwise touched (the duplicated `clean_metadata` closure at both sites is a separate, already-
+filed issue, T-159, left alone here). The module-level comment at L110-116 was corrected to name all four
+call sites — `upload_file`, `extract_zip_file`'s per-entry loop, the backfill task, and the batch-generation
+route — instead of claiming there are two.
+
+Three tests added to `backend/tests/integration/test_library_api.py::TestLibraryStlThumbnailAPI`, mirroring
+the existing T-144/T-145 off-the-event-loop pattern (monkeypatching `generate_stl_thumbnail` and recording
+`threading.current_thread() is not threading.main_thread()`). `test_upload_stl_thumbnail_runs_off_the_event_loop`
+uploads an STL via `POST /api/v1/library/files` and asserts the render ran off the main thread.
+`test_extract_zip_stl_entry_runs_off_the_event_loop` does the same for an STL entry inside a ZIP via `POST
+/api/v1/library/files/extract-zip`. `test_upload_and_batch_render_never_overlap` extends the existing
+`test_concurrent_backfills_never_render_two_stls_at_once` (T-145) lock-contention pattern to a *different*
+pair of call sites: it calls `upload_file()` and `batch_generate_stl_thumbnails()` directly (each given its
+own DB session, exactly as two independent requests would get), with a fake render that flags
+`overlap_detected` if it is ever entered while another invocation of itself is still active, and asserts no
+overlap after running both concurrently via `asyncio.gather`. That test also monkeypatches a *fresh*
+`asyncio.Lock()` onto `library._stl_render_lock` before running: `asyncio.Lock` only binds to an event loop
+the first time it is genuinely contended, and pytest-asyncio's default `auto` mode runs each test on its
+own loop, so reusing the real module-level lock as-is would inherit a stale loop binding from
+`test_concurrent_backfills_never_render_two_stls_at_once`'s own contention earlier in the same session and
+fail with "bound to a different event loop" — an existing test-suite hazard around this specific lock, not
+a change in the lock's production behavior. No existing assertion was weakened or removed.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (no schema change). `SURFACE.md` was regenerated and
+is unchanged.
+
+User-visible change: uploads and zip-extracts with a large STL no longer block the event loop during the
+render, and wait briefly if a batch/backfill render is already in flight, so those requests can take longer
+under concurrent load while thumbnails stop being corrupted by concurrent pyplot use.
+User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 12 · T-158 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/library.py:3019-3021` computed `POST /library/generate-stl-thumbnails`'s
+`remaining` field by over-fetching `STL_THUMBNAIL_BATCH_LIMIT + 1` rows and subtracting the limit from
+however many rows actually came back: `result = await db.execute(query.limit(STL_THUMBNAIL_BATCH_LIMIT +
+1)); matched_files = result.scalars().all(); remaining = max(0, len(matched_files) -
+STL_THUMBNAIL_BATCH_LIMIT)`. Because the query itself was capped at limit+1 rows, `matched_files` could
+never contain more than 101 rows, so `remaining` could only ever be 0 or 1 — it could never report "50 more
+to go" when 50 or more actually remained. The schema comment at `backend/app/schemas/library.py:447-448`
+(`# Matching STL files not processed in this call (batch is capped); 0 when complete.`) read as a true
+count, but an admin with 4300 STLs missing thumbnails got `{processed: 100, remaining: 1}` after every
+single call until the very last one.
+
+Fixed by replacing the `+1` over-fetch trick with a real count: a separate `select(func.count()).select_from
+(query.subquery())` runs over the exact same filtered `query` (mirroring `list_files()`'s existing
+X-Total-Count computation at ~L2198-2204) before the page is fetched with a plain `query.limit
+(STL_THUMBNAIL_BATCH_LIMIT)` — no more +1. `remaining` is now `max(0, total_count - processed)`, computed
+after the page renders (so it reflects `processed`, the actual per-file count already returned in the
+response). The three selection modes (`file_ids`, `folder_id`, `all_missing`) are unchanged — the count
+query is built from the identical `query` object the page query is filtered from, so it automatically
+respects whichever filter was applied; this query carries no GROUP BY, so no HAVING-count edge case
+applies. The batch cap, filtering, and per-file processing logic are otherwise untouched. The schema
+comment at `backend/app/schemas/library.py:447-448` was corrected to describe a true leftover count instead
+of implying a value that saturates.
+
+Four tests added to `backend/tests/integration/test_library_api.py::TestLibraryStlThumbnailAPI`, alongside
+the existing T-144 `test_batch_generate_thumbnails_batch_limit_and_remaining` (which stays green unchanged,
+since 3 files with limit 2 still correctly reports `remaining: 1`).
+`test_batch_generate_thumbnails_remaining_reports_true_leftover_count` monkeypatches the limit to 2 with 5
+matching files and asserts the first call reports `processed: 2, remaining: 3` (not 1 — this assertion
+fails against the pre-fix code), the second call `remaining: 1`, and the third `remaining: 0`.
+`test_batch_generate_thumbnails_remaining_under_limit_is_zero` confirms `remaining` is 0 and the rest of the
+response is unaffected when fewer files exist than the limit. `test_batch_generate_thumbnails_remaining_
+respects_folder_filter` and `test_batch_generate_thumbnails_remaining_respects_file_ids_filter` each create
+extra STL files outside the requested folder/id set and assert `remaining` counts only the filtered set
+(e.g. 5 in-folder files with 3 more elsewhere, limit 2, reports `remaining: 3`, not `8 - 2 = 6`). No
+existing assertion was weakened or removed.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (the `remaining` field's type and default are
+unchanged, only its computed value differs, so no OpenAPI schema shape moved). `SURFACE.md` was regenerated
+and is unchanged.
+
+User-visible change: `POST /library/generate-stl-thumbnails`'s `remaining` field now reports the true
+number of matching STL files left unprocessed (e.g. 4200) where it previously saturated at 1; a caller that
+displayed or summed it was being told one file was left when thousands were.
+User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 13 · T-164 — 2026-09-14 — user-approved behavior change
+
+`backend/app/core/auth.py:2170-2177`, inside `require_library_thumbnail_access_if_auth_enabled`'s
+`checker`, resolved the camera-stream token's principal to a `User` row with `get_user_by_username` and
+only checked `if user is None: raise HTTPException(403, ...)` before returning `(user,
+user.has_permission(Permission.LIBRARY_READ_ALL.value))`. `get_user_by_username` (auth.py:1055-1060) is a
+plain lookup with no `is_active` filter, so a user deactivated after minting a stream token kept resolving
+to a real, permission-bearing `User` row for the rest of that token's 60-minute life. Every other
+principal-resolution site in this file pairs the lookup with an explicit `is_active` check (e.g. auth.py:583
+`if user is None or not user.is_active: raise credentials_exception`) — this dependency was the one
+exception — and its own docstring at auth.py:2142-2143 already promised "Token resolves to a username that
+no longer maps to an active row in `users` -> 403", which the code did not actually enforce.
+
+Fixed by widening the guard to `if user is None or not user.is_active:`, raising the exact same
+`HTTPException(403, detail="Camera stream token does not carry a library-scoped identity")` the None branch
+already raised — deactivated and unknown accounts get identical treatment so an unauthenticated caller
+cannot distinguish "no such user" from "user exists but is disabled" from the response. No other line in
+the checker changed. The docstring at auth.py:2142-2143 already described this behavior accurately (it was
+aspirational relative to the code, not wrong), so it needed no edit.
+
+The JWT paths in this file additionally call `_is_token_fresh(iat, user)` to invalidate credentials minted
+before a password change. This dependency's token is an opaque `camera_stream` row in
+`auth_ephemeral_tokens`, not a JWT, so it carries no `iat` claim. `AuthEphemeralToken.created_at` and
+`User.password_changed_at` both already exist as columns, so no schema change would be needed to compare
+them — but `require_library_thumbnail_access_if_auth_enabled`'s checker only receives the resolved
+`username` string from `resolve_camera_stream_token_principal`, not the token row itself, so wiring a
+freshness check through would mean changing `resolve_camera_stream_token_principal`'s return shape (and
+its one other caller's expectations), which goes beyond "the same dependency and its docstring" this task
+was scoped to. Freshness was therefore left unimplemented; filed as a follow-up for the orchestrator
+(exposing the token row's `created_at` from `resolve_camera_stream_token_principal` alongside the
+principal, then comparing it to `user.password_changed_at` the way `_is_token_fresh` does for JWTs).
+
+Two tests added to `backend/tests/integration/test_library_api.py::TestLibraryThumbnailTokenAuth`, parametrized
+across both thumbnail routes like every other test in that class:
+`test_deactivated_owner_stream_token_rejected` mints a stream token for the operator user, flips
+`is_active` to `False` and commits, then asserts the token now returns 403 with the exact same detail
+string as the existing no-recorded-identity 403 case, and that neither route leaks the file's bytes. The
+existing `test_owner_stream_token_loads_thumbnail` (owner still active) was left unmodified and stays
+green. No existing assertion was weakened or removed.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match (`app-route-perms` counts
+`RequirePermissionIfAuthEnabled` occurrences, none of which were touched; no schema change). `SURFACE.md`
+was regenerated and is unchanged.
+
+User-visible change: a user whose account is deactivated while a camera-stream token is outstanding
+currently keeps loading their own library thumbnails for the remainder of that token's 60-minute life;
+after the fix those `<img>` requests return 403 immediately. The token-freshness half (invalidating a
+still-active user's stream token after a password change) was not implemented — see follow-up above.
+User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 14 · T-165 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/camera.py:1927-1936`, `camera_grid_stream()` (the multiplexed
+`GET /printers/camera/grid-stream` endpoint) gated on
+`_: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)` alone.
+`require_permission_if_auth_enabled` returns `None` for API-key callers after only checking the key's
+`can_read_status` scope flag (the broadest read scope) — it never consults the key row's own `printer_ids`
+allowlist. That allowlist is a real, enforced boundary everywhere else a route touches a specific printer:
+`check_printer_access` (auth.py:1676) raises a 403 naming the printer, and
+`require_printer_permission_if_auth_enabled` wires it in for 65+ call sites across `routes/printers.py`,
+`ams_history.py`, and `printer_sensor_history.py`. The grid-stream route takes *many* printer ids in one
+request and was the one multi-printer surface that never routed through either. An API key restricted to
+`printer_ids=[1]` could request `ids=1,2,3,...` and receive live JPEG frames for every printer in the
+fleet, not just printer 1.
+
+Fixed by adding `api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled)` to the route and,
+after the existing id-parsing, dedup, and 30-printer cap checks run unchanged, filtering the requested
+`printer_ids` down to the ones `check_printer_access` accepts for that key. Disallowed ids are DROPPED, not
+403'd — the option chosen here, matching how the frontend's camera wall already tolerates ids that produce
+no frames (a printer offline or mid-restart looks identical to one silently filtered out) and how the
+sibling `test_dedup_before_limit_check` case already treats a request as "the ids that survive filtering",
+not "all-or-nothing". If every requested id is filtered out, the route falls through to the exact 404
+(`"No valid printers found"`) it already raised for an all-missing batch — no new status code. The
+30-printer cap is checked BEFORE the allowlist filter runs, against the ids the caller actually sent, so a
+request that would have been capped before this fix is capped identically now; only `check_printer_access`
+here decides which of the (already-capped) ids are resolved into producers. A caller with no API key, a
+JWT/session caller, or a key with `printer_ids=None` (global key) skips the new filter entirely — `if
+api_key is not None:` — so their code path is unchanged. `auth.py` was not edited; `check_printer_access`
+and `validated_api_key_from_request` were reused as-is.
+
+**Auth-disabled carve-out (fixed after the first landing of this task, same commit day):** the first cut of
+this fix resolved the key with `Depends(current_api_key_if_present)`, which calls
+`validated_api_key_from_request` unconditionally and raises 401 for any unvalidatable key candidate — with
+no regard for whether auth is enabled at all. That regressed an auth-disabled instance: a client that still
+sent a stale/bogus `X-API-Key` header used to sail straight through this endpoint (auth off means no
+principal is checked, key or otherwise) but started getting a bare 401 instead. Every other
+`RequirePermissionIfAuthEnabled`-gated dependency in this codebase asks `is_auth_enabled(db)` first
+(auth.py:1870) and returns immediately when it is `False`, without ever inspecting the key. Replaced the
+dependency with a small wrapper local to `camera.py`, `_grid_stream_api_key_if_auth_enabled`, that asks the
+same `is_auth_enabled(db)` question first and only calls `validated_api_key_from_request` when auth is on.
+Net effect: **when auth is disabled, `api_key` is always `None`, exactly as it was before this whole task**
+— no API key, valid or invalid, restricted or global, is ever consulted, so the T-165 filter engages ONLY
+when auth is enabled. This matches the pre-existing behavior of `RequirePermissionIfAuthEnabled(Permission.
+CAMERA_VIEW)` itself on this same route, which likewise no-ops when auth is off.
+
+Seven tests added to `backend/tests/integration/test_camera_api.py::TestCameraGridStreamAPIKeyPrinterScope`:
+with auth enabled, a key scoped to `[1]` requesting `ids=1,2,3` reaches the stream hub with only `[1]`; a
+global key (`printer_ids=None`) and a JWT/session caller both still reach the hub with the full `[1, 2,
+3]`; a key scoped to `[1]` requesting only disallowed ids (`2,3`) hits the existing "no valid printers
+found" 404, not a new error; 31 ids with a restricted key still trip the existing "Maximum 30 printers" 400
+(the cap sees the requested list, not the filtered one); and, for the auth-disabled carve-out, a request
+carrying an unrecognized/bogus `X-API-Key` header is asserted byte-identical (status code AND JSON body) to
+the same request with no key header at all (not 401), and a request carrying a genuinely VALID key scoped
+to `[1]` still reaches the hub with the full unfiltered `[1, 2, 3]` — auth being off means the restriction
+is not enforced, the same as it would not be enforced for that key on any other
+`RequirePermissionIfAuthEnabled`-gated route today. An eighth test,
+`test_camera_grid.py::TestGridStreamAPIKeyPrinterScope::test_restricted_key_only_streams_the_allowed_printer`,
+drives `camera_grid_stream()` directly (the established `TestGridStreamGenerateLoop` idiom) and reads the
+actual `StreamingResponse` body: with a key scoped to one of two requested printers, exactly one binary
+frame is produced and it is the allowed printer's — the disallowed id never even reaches
+`get_existing_batch`. A companion test confirms an unrestricted key still streams both. The two pre-existing
+direct-call tests in `TestGridStreamGenerateLoop` were updated to pass `api_key=None` explicitly (they call
+the route coroutine directly, bypassing FastAPI's dependency injection, so the new parameter's
+`Depends(...)` default would otherwise reach `check_printer_access` as a bare `Depends` object instead of
+`None`) — this only makes their existing "no API key" scenario explicit; no assertion in either test was
+changed or weakened.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match, including `app-route-perms` and `app-openapi-index`
+— the new dependency is `Depends(_grid_stream_api_key_if_auth_enabled)`, a local wrapper in `camera.py`, not
+a second `RequirePermissionIfAuthEnabled(Permission.X)`, so the probe that counts those occurrences was
+unaffected and no golden needed re-recording. (A first pass at this wrapper's docstring spelled out
+`RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)` as a literal cross-reference, which — once compiled
+to bytecode as that docstring's constant — made `app-route-perms`'s plain-text `grep -r` over
+`backend/app/api/routes/` match one extra time; reworded the docstring to describe the same fact without
+spelling out that exact parenthesized form, and confirmed the count returned to the recorded 19 after
+clearing stale `__pycache__`.) `SURFACE.md` was regenerated and is unchanged (no route path or method
+changed).
+
+User-visible change: an integration using an API key restricted to a subset of printers currently receives
+frames for every printer it asks for; after the fix, on an instance with auth ENABLED, those printer ids
+are dropped from the multiplexed stream (the request is not rejected outright — a partially-restricted key
+keeps working for the printers it may see), so a camera wall driven by such a key shows fewer tiles. On an
+instance with auth DISABLED, behavior is completely unchanged from before this task: no API key (valid,
+invalid, restricted, or global) is ever consulted by this endpoint, so neither a stale/bogus key nor a
+genuinely restricted key's allowlist has any effect — matching how every other permission-gated route on
+this codebase already behaves when auth is off. JWT/session callers and unrestricted (global) API keys are
+unaffected in both configurations.
+User-approved 2026-09-14.
+
+## Campaign 15 · Iteration 15 · T-166 — 2026-09-14 — user-approved behavior change
+
+`backend/app/api/routes/library.py`, `_stream_upload_to_path()` (shared by `POST /library/files` and
+`POST /library/files/extract-zip`) only enforced `settings.library_max_upload_bytes` after Starlette's
+`MultiPartParser` had already spooled the entire multipart body to a `SpooledTemporaryFile` on the OS temp
+filesystem (a 1 MB in-memory spool, then disk). FastAPI's `get_request_handler` resolves `UploadFile =
+File(...)` by calling `await request.form()` *before* any of the route's own `Depends()` run — body parsing
+happens ahead of dependency solving in `fastapi.routing.get_request_handler` — so the pre-existing in-route
+size check, and any plain `Depends`, could only run after the whole oversized body was already written to
+disk. Any caller holding `library:upload` could send a single request declaring (or actually sending) many
+gigabytes and force that much disk I/O before the 413 fired, repeatedly and concurrently — an attacker-
+controlled disk-exhaustion vector, not merely a slow rejection.
+
+**First attempt, dropped (commit c4035908e):** wrapped both routes in a custom `APIRoute` subclass
+(`_ContentLengthCappedRoute`) whose `get_route_handler()` compared the request's declared `Content-Length`
+header against the cap (plus a small multipart-overhead margin) and raised the in-route check's own 413
+*before* calling the original handler at all — i.e. before FastAPI resolved any dependency, including the
+route's own `_: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD))`. The
+blind verifier reproduced five request shapes against the running app with the cap toggled between two
+values and found the size gate sat in front of authentication: `X-API-Key: bb_bogus` with auth enabled went
+from 401 `"Authentication required"` to 413 echoing the *configured cap* — i.e. an unauthenticated caller
+learned the server's upload limit before ever being asked to prove who they were. The same ordering problem
+also flipped four other pre-existing error shapes (a non-`.zip` file to extract-zip, a nonexistent
+`folder_id`, an empty filename, and a request with no `file` field at all) to 413. The user approved a retry
+with the auth-before-size ordering fixed.
+
+**This fix** keeps the same `_ContentLengthCappedRoute` mechanism (both routes are re-registered via
+`router.add_api_route(..., route_class_override=_ContentLengthCappedRoute)` instead of the `@router.post`
+decorator, because `route_class_override` is only accepted by `add_api_route`, not by the decorator) but
+reorders the two checks inside `get_route_handler()`: it now resolves the caller *first*, using the exact
+same permission check the routes' own dependency uses — `security(request)` (the same `HTTPBearer(
+auto_error=False)` instance FastAPI would inject) for the `Authorization` header, `request.headers.get(
+"x-api-key")` for the API-key header, and a single module-level `_library_upload_permission_checker =
+require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)` built once and called directly with those two
+values — the identical function object the route's own `Depends()` uses elsewhere in this file, not a
+hand-rolled reimplementation. That call raises the exact 401/403 `auth.py` already raises for a bad
+JWT, a bogus API key, missing credentials, or a caller lacking `library:upload`, and does so before a single
+byte of the multipart body is read. Only once it returns successfully (a real caller, or auth disabled) does
+the unchanged `Content-Length`-vs-cap comparison run, followed by `return await original_route_handler(
+request)`, which re-resolves the same dependency again during normal FastAPI dependency solving (a second,
+harmless auth check — the same cost every other permission-gated route already pays once — not a behavior
+difference visible to the caller). `auth.py` was not edited; only its existing public `security` object and
+`require_permission_if_auth_enabled` factory were imported and reused.
+
+Seven tests were added to a new `TestLibraryUploadContentLengthGate` class in
+`backend/tests/integration/test_library_api.py` (fixtures follow the T-161 per-test isolation pattern):
+an over-cap `Content-Length` from an authorized admin caller is rejected with the pre-existing 413 detail
+string before `_stream_upload_to_path` ever runs (monkeypatched to fail the test if called) and before any
+file reaches the isolated files directory; the same shape from a bogus `X-API-Key` with auth enabled gets
+401 `"Authentication required"`, not 413 — this is the regression test for the dropped patch's finding, and
+it was confirmed to fail (413 instead of 401) when run against that patch's `library.py` before being
+restored to this fix; the same shape from an authenticated caller who lacks `library:upload` (a Viewer) gets
+403 `"Missing required permissions: library:upload"`, not 413; a file just under the cap (whose multipart
+envelope pushes the request's own `Content-Length` slightly over it) still succeeds; a request with no
+`Content-Length` header falls through unchanged to the pre-existing in-route check for both the
+over-cap-rejected and under-cap-succeeds cases; the extract-zip route's ZIP-body upload step gets the
+same pre-spool rejection; and a request whose `file` part is small (well under the cap) but which also
+carries a large additional multipart part beyond `file` is rejected 413 by the whole-body measure described
+above, pinning that real behavior with a test instead of only asserting it in prose. No existing test or
+assertion was weakened or removed.
+
+**What a user sees, in two parts:**
+
+1. Authentication and authorization responses are unchanged. A caller with a bogus, missing, or expired
+   credential still gets exactly the same 401 it gets today; a caller who is authenticated but lacks
+   `library:upload` still gets exactly the same 403 it gets today — in both cases with no indication of the
+   configured upload-size cap. This is true regardless of whether the request also happens to be over-cap.
+2. For an authenticated, authorized caller, an over-cap request now fails faster (before the body is
+   spooled to disk) with the identical 413 status and detail string it already produced, EXCEPT for four
+   narrower cases the route's own body-dependent checks can no longer win, because those checks need the
+   parsed multipart body — the very thing this fix avoids touching when the declared size is already over
+   the cap:
+   - `POST /library/files/extract-zip` with a non-`.zip` filename: was 400 `"Only ZIP files are supported"`,
+     now 413, if the request is also over-cap.
+   - `POST /library/files/extract-zip` with a nonexistent `folder_id`: was 404 `"Target folder not found"`,
+     now 413, if the request is also over-cap.
+   - `POST /library/files` with an empty filename: was a 400/422 filename-required error, now 413, if the
+     request is also over-cap.
+   - `POST /library/files` (or extract-zip) with no `file` field at all: was FastAPI's 422 required-field
+     validation error, now 413, if the request is also over-cap.
+   A request whose `file` part is under the cap, or that has no `Content-Length` header at all (e.g.
+   genuinely chunked), keeps producing exactly the pre-existing error for each of these four shapes — WITH
+   ONE CAVEAT: the pre-body gate has no way to see where the `file` part ends, so it measures the WHOLE
+   request's declared `Content-Length` against `library_max_upload_bytes` plus an 8 KiB allowance, not just
+   the `file` part's size the in-route check measures. A request whose `file` part is itself under the cap
+   but whose total multipart body exceeds cap + 8 KiB — because it carries additional parts beyond `file` —
+   is now rejected with 413 where it previously succeeded (the extra parts are silently discarded once the
+   body is parsed, so the in-route check never saw them). No shipped client can produce this: both routes'
+   OpenAPI contracts declare exactly one body field, `file` (`folder_id` and the other parameters are query
+   parameters, not body parts), and `frontend/src/api/client.ts` sends exactly that one part.
+
+Confirmed via `snapshot.py verify`: 11/11 probes match, including `app-middleware-stack` (no middleware was
+added — the gate is a per-route `APIRoute` subclass wired through `route_class_override`, the same
+app-wide-middleware-free approach the dropped first attempt used) and `app-openapi-index` (the two routes'
+path, method, and `response_model` are unchanged, only re-registered via `add_api_route` instead of the
+decorator). `app-route-perms`'s literal grep for `RequirePermissionIfAuthEnabled(Permission.X)` is also
+unaffected — this fix calls the lowercase `require_permission_if_auth_enabled` factory directly, the same
+call already used by both routes' own dependencies, not the capitalized convenience wrapper the probe
+counts, and no such literal was added to any comment or docstring. `SURFACE.md` is unchanged. Backend suite:
+13374 passed, 1 skipped (plus one pre-existing load-flaky failure in
+`test_scheduler_concurrent_dispatch.py::TestSharedLibraryRow::test_plain_library_file_still_fans_out_in_parallel`,
+confirmed to pass alone and unrelated to this change); coverage 73% / 75.422% lines (Stmts 72968,
+Miss 17934), no drop from the 73% / 75.418% baseline (Stmts 72968, Miss 17937).
+User-approved 2026-09-14.

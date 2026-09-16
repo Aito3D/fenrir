@@ -101,6 +101,23 @@ class Settings(BaseSettings):
     log_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     log_backup_count: int = Field(default=3, ge=0)
 
+    # Library uploads: the route streams incoming files to disk in bounded
+    # chunks and rejects (413) once the declared or accumulated streamed size
+    # crosses this cap, so a single huge upload — or a handful of concurrent
+    # ones — can't materialise gigabytes of RSS and OOM the container.
+    # Override with LIBRARY_MAX_UPLOAD_BYTES env var.
+    library_max_upload_bytes: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
+
+    # ZIP extraction (POST /library/files/extract-zip): before extracting
+    # anything, the route sums the *declared* (uncompressed) size of every
+    # entry and rejects (413) if the total exceeds this cap, then re-checks
+    # the running total while streaming each entry to disk in case an
+    # entry's header understates its real size. Deflate bombs can expand a
+    # few-MB upload to tens of GB and OOM the process; this cap is separate
+    # from library_max_upload_bytes, which only bounds the compressed ZIP
+    # body itself. Override with LIBRARY_MAX_ZIP_EXTRACT_BYTES env var.
+    library_max_zip_extract_bytes: int = Field(default=4 * 1024 * 1024 * 1024, gt=0)
+
     # API
     api_prefix: str = "/api/v1"
 

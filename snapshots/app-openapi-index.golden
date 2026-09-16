@@ -1204,6 +1204,19 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/{project_id}/invoice-preview": {
+   "operationId": "get_invoice_preview_api_v1_aito__project_id__invoice_preview_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoInvoicePreview",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/aito/{project_id}/invoice.pdf": {
    "operationId": "get_invoice_pdf_api_v1_aito__project_id__invoice_pdf_get",
    "params": [
@@ -3000,6 +3013,8 @@
     "query:folder_id",
     "query:include_root",
     "query:internal_only",
+    "query:limit",
+    "query:offset",
     "query:project_id",
     "query:recursive",
     "query:tag_ids"
@@ -3019,6 +3034,8 @@
     "query:folder_id",
     "query:include_root",
     "query:internal_only",
+    "query:limit",
+    "query:offset",
     "query:project_id",
     "query:recursive",
     "query:tag_ids"
@@ -6355,6 +6372,19 @@
    },
    "responses": {
     "201": "AitoEventResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/invoice": {
+   "operationId": "create_invoice_api_v1_aito__project_id__invoice_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoInvoiceCreatedResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11350,6 +11380,34 @@
     "flag"
    ]
   },
+  "AitoInvoiceCreatedResponse": {
+   "properties": {
+    "balance": "number",
+    "currency_code": "string",
+    "date": "string",
+    "due_date": "string",
+    "id": "string",
+    "invoice_count": "integer",
+    "number": "string",
+    "retainers": "[AitoRetainerApplied]",
+    "status": "string",
+    "total": "number",
+    "url": "string"
+   },
+   "required": [
+    "balance",
+    "currency_code",
+    "date",
+    "due_date",
+    "id",
+    "invoice_count",
+    "number",
+    "retainers",
+    "status",
+    "total",
+    "url"
+   ]
+  },
   "AitoInvoiceEmailContent": {
    "properties": {
     "body": "string",
@@ -11375,6 +11433,24 @@
    },
    "required": [
     "to"
+   ]
+  },
+  "AitoInvoicePreview": {
+   "properties": {
+    "currency_code": "string",
+    "line_count": "integer",
+    "projected_balance": "number",
+    "quote_number": "string",
+    "retainers": "[AitoRetainerPreview]",
+    "total": "number"
+   },
+   "required": [
+    "currency_code",
+    "line_count",
+    "projected_balance",
+    "quote_number",
+    "retainers",
+    "total"
    ]
   },
   "AitoInvoiceResponse": {
@@ -11712,6 +11788,34 @@
    },
    "required": [
     "status"
+   ]
+  },
+  "AitoRetainerApplied": {
+   "properties": {
+    "applied": "number",
+    "number": "string",
+    "total": "number"
+   },
+   "required": [
+    "applied",
+    "number",
+    "total"
+   ]
+  },
+  "AitoRetainerPreview": {
+   "properties": {
+    "applicable": "number",
+    "id": "string",
+    "number": "string",
+    "status": "string",
+    "total": "number"
+   },
+   "required": [
+    "applicable",
+    "id",
+    "number",
+    "status",
+    "total"
    ]
   },
   "AitoShippingIsland": {
@@ -12826,6 +12930,7 @@
    "properties": {
     "failed": "integer",
     "processed": "integer",
+    "remaining": "integer",
     "results": "[BatchThumbnailResult]",
     "succeeded": "integer"
    },

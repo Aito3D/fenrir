@@ -7,7 +7,7 @@
   "type": "<class 'str'>"
  },
  "app_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -17,7 +17,7 @@
   "type": "<class 'str'>"
  },
  "archive_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/archive')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -42,12 +42,12 @@
   "type": "<class 'str'>"
  },
  "base_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
  "database_url": {
-  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'",
+  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-c15/bambuddy.db'",
   "required": false,
   "type": "<class 'str'>"
  },
@@ -81,13 +81,23 @@
   "required": false,
   "type": "<class 'bool'>"
  },
+ "library_max_upload_bytes": {
+  "default": "2147483648",
+  "required": false,
+  "type": "<class 'int'>"
+ },
+ "library_max_zip_extract_bytes": {
+  "default": "4294967296",
+  "required": false,
+  "type": "<class 'int'>"
+ },
  "log_backup_count": {
   "default": "3",
   "required": false,
   "type": "<class 'int'>"
  },
  "log_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/logs')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -107,7 +117,7 @@
   "type": "<class 'bool'>"
  },
  "plate_calibration_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/data/plate_calibration')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -117,7 +127,7 @@
   "type": "<class 'str'>"
  },
  "static_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/static')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  }

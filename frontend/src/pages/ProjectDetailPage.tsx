@@ -246,7 +246,7 @@ export function ProjectDetailPage() {
   // Single bulk query — replaces the previous N+1 useQueries pattern
   const { data: allProjectFiles, isLoading: projectFilesLoading } = useQuery({
     queryKey: ['project-files', projectId],
-    queryFn: () => api.getLibraryFiles(null, false, projectId),
+    queryFn: () => api.getAllLibraryFiles(null, false, projectId),
     enabled: projectId > 0,
   });
 

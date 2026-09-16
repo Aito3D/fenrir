@@ -1,7 +1,10 @@
 """Integration tests for Library API endpoints."""
 
+import asyncio
+import contextlib
 import io
 import tempfile
+import threading
 import zipfile
 from pathlib import Path
 
@@ -160,6 +163,65 @@ class TestLibraryFoldersAPI:
         assert response.status_code == 200
         result = response.json()
         assert result.get("message") or result.get("success", True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_folder_removes_managed_files_from_disk(
+        self, async_client: AsyncClient, folder_factory, db_session
+    ):
+        """#T-142: delete_folder() must resolve the DB-stored, base_dir-relative
+        file_path/thumbnail_path to an absolute path before unlinking, exactly
+        like delete_file()/the trash sweeper do. Managed files are stored
+        relative to settings.base_dir (see _stored_file_path), which is NOT
+        the same as the process CWD the test suite runs from (backend/) --
+        os.path.exists()/os.remove() on the raw relative path silently no-op
+        against the wrong directory, leaking the bytes forever.
+        """
+        import os
+
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings as app_settings
+        from backend.app.models.library import LibraryFile
+
+        # Precondition: the bug can only be reproduced if CWD != base_dir.
+        assert os.getcwd() != str(app_settings.base_dir), (
+            "test relies on CWD differing from base_dir to catch relative-path bugs"
+        )
+
+        folder = await folder_factory()
+
+        rel_file_path = "archive/library/files/t142_managed.3mf"
+        rel_thumb_path = "archive/library/thumbnails/t142_managed.png"
+        abs_file_path = Path(app_settings.base_dir) / rel_file_path
+        abs_thumb_path = Path(app_settings.base_dir) / rel_thumb_path
+        abs_file_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_file_path.write_bytes(b"fake3mf")
+        abs_thumb_path.write_bytes(b"fakepng")
+
+        lib_file = LibraryFile(
+            filename="t142_managed.3mf",
+            file_path=rel_file_path,
+            thumbnail_path=rel_thumb_path,
+            file_type="3mf",
+            file_size=7,
+            folder_id=folder.id,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.delete(f"/api/v1/library/folders/{folder.id}")
+        assert response.status_code == 200
+
+        # The bug: without resolving to an absolute path, both files (and the
+        # DB row, via cascade) were "deleted" but the bytes stayed on disk.
+        assert not abs_file_path.exists()
+        assert not abs_thumb_path.exists()
+
+        result = await db_session.execute(select(LibraryFile).where(LibraryFile.id == lib_file.id))
+        assert result.scalar_one_or_none() is None
 
 
 class TestLibraryFilesAPI:
@@ -538,6 +600,52 @@ class TestLibraryFilesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_list_files_pagination_limit_offset_and_total_count(self, async_client: AsyncClient, file_factory):
+        """T-150: limit/offset page through the listing; X-Total-Count reports
+        the full matching count regardless of the page size."""
+        files = [await file_factory(filename=f"page_{i:02d}.3mf") for i in range(7)]
+        expected_order = sorted((f.id for f in files), key=lambda fid: next(f.filename for f in files if f.id == fid))
+
+        first_page = await async_client.get("/api/v1/library/files?limit=3&offset=0")
+        assert first_page.status_code == 200
+        assert first_page.headers["X-Total-Count"] == "7"
+        first_ids = [f["id"] for f in first_page.json()]
+        assert first_ids == expected_order[:3]
+
+        last_page = await async_client.get("/api/v1/library/files?limit=3&offset=6")
+        assert last_page.status_code == 200
+        assert last_page.headers["X-Total-Count"] == "7"
+        last_ids = [f["id"] for f in last_page.json()]
+        assert last_ids == expected_order[6:7]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_pagination_filters_still_apply_to_total_count(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """X-Total-Count reflects the same folder scoping as the paged body,
+        not the whole unfiltered table."""
+        folder = await folder_factory()
+        in_folder = [await file_factory(folder_id=folder.id, filename=f"f_{i}.3mf") for i in range(4)]
+        await file_factory(filename="root.3mf")  # outside the folder — must not count
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={folder.id}&limit=2&offset=0")
+        assert response.status_code == 200
+        assert response.headers["X-Total-Count"] == str(len(in_folder))
+        assert len(response.json()) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_limit_out_of_range_rejected(self, async_client: AsyncClient):
+        """limit=0 and limit over the 2000 cap are both invalid (422)."""
+        too_low = await async_client.get("/api/v1/library/files?limit=0")
+        assert too_low.status_code == 422
+
+        too_high = await async_client.get("/api/v1/library/files?limit=5000")
+        assert too_high.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_folder_readme_returns_first_markdown(
         self, async_client: AsyncClient, folder_factory, file_factory
     ):
@@ -731,14 +839,28 @@ class TestLibraryZipExtractAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_extract_zip_basic(self, async_client: AsyncClient, db_session):
-        """Verify basic ZIP extraction works."""
+        """Verify basic ZIP extraction works.
+
+        Also pins the per-file hash/size (T-155): extraction now streams
+        each entry to disk in bounded chunks instead of decompressing it
+        fully into memory first, and this must produce byte-identical
+        hashes/sizes to the pre-streaming behaviour.
+        """
+        import hashlib
         import io
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        content1 = b"Content of file 1"
+        content2 = b"Content of file 2"
 
         # Create a simple ZIP file in memory
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("test1.txt", "Content of file 1")
-            zf.writestr("test2.txt", "Content of file 2")
+            zf.writestr("test1.txt", content1)
+            zf.writestr("test2.txt", content2)
         zip_buffer.seek(0)
 
         files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
@@ -748,6 +870,13 @@ class TestLibraryZipExtractAPI:
         assert result["extracted"] == 2
         assert len(result["files"]) == 2
         assert len(result["errors"]) == 0
+
+        expected = {"test1.txt": content1, "test2.txt": content2}
+        for entry in result["files"]:
+            row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == entry["file_id"]))).scalar_one()
+            content = expected[entry["filename"]]
+            assert row.file_size == len(content)
+            assert row.file_hash == hashlib.sha256(content).hexdigest()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -846,6 +975,74 @@ class TestLibraryZipExtractAPI:
         folder = folder_response.json()
         assert folder["name"] == "MyProject"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_rejects_archive_name_with_control_character(self, async_client: AsyncClient, db_session):
+        """T-157: an archive name carrying a raw control character (here an
+        ANSI escape byte, a real log/terminal-injection vector — \\r and
+        \\n themselves get percent-encoded by well-behaved HTTP clients
+        before they'd ever reach the server, unlike other C0 controls)
+        must be rejected the same way ``upload_file`` rejects a bad
+        filename (#1540) — with a 400 and that helper's own detail message
+        — before anything is extracted. Nothing is even streamed to a temp
+        file for this request: the check runs before the ZIP body is
+        saved."""
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("file1.txt", "Content 1")
+        zip_buffer.seek(0)
+
+        files = {"file": ("evil\x1bBAD.zip", zip_buffer.read(), "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        assert response.status_code == 400
+        assert "control character" in response.json()["detail"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == [], "nothing should be extracted when the archive name itself is rejected"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_skips_entry_with_control_character_in_name(
+        self, async_client: AsyncClient, db_session, caplog
+    ):
+        """T-157: an entry whose basename carries a control character is
+        skipped (not fatal) and reported through the existing per-entry
+        ``errors`` list — the rest of the archive still extracts — and the
+        warning logged for the skip never carries the raw control
+        character, which would otherwise forge/corrupt a log line the same
+        way an unvalidated archive name would."""
+        import logging
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("good.txt", "Good content")
+            zf.writestr("bad\x1bInjected.txt", "Bad content")
+        zip_buffer.seek(0)
+
+        files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
+        with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.library"):
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        assert result["files"][0]["filename"] == "good.txt"
+        assert len(result["errors"]) == 1
+        assert "control character" in result["errors"][0]["error"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].filename == "good.txt"
+
+        assert "\x1b" not in caplog.text, "the raw entry name must never reach the log"
+
 
 class TestLibraryStlThumbnailAPI:
     """Integration tests for STL thumbnail generation endpoints."""
@@ -889,6 +1086,7 @@ class TestLibraryStlThumbnailAPI:
         assert result["succeeded"] == 0
         assert result["failed"] == 0
         assert result["results"] == []
+        assert result["remaining"] == 0
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1076,6 +1274,543 @@ endsolid cube"""
         file_ids = {r["file_id"] for r in result["results"]}
         assert stl_without_thumb1.id in file_ids
         assert stl_without_thumb2.id in file_ids
+        # Batch was well under the cap, so nothing is left over
+        assert result["remaining"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_runs_off_the_event_loop(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """Verify the render is dispatched via asyncio.to_thread instead of blocking the event loop."""
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write("solid test\nendsolid test")
+            stl_path = f.name
+
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+
+        try:
+            stl_file = await file_factory(
+                filename="thread_check.stl",
+                file_path=stl_path,
+                thumbnail_path=None,
+            )
+
+            data = {"file_ids": [stl_file.id]}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 1
+            assert result["succeeded"] == 1
+            # generate_stl_thumbnail must have run off the event-loop thread
+            assert thread_is_not_main == [True]
+        finally:
+            if os.path.exists(stl_path):
+                os.unlink(stl_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_batch_limit_and_remaining(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """Verify the batch is capped and `remaining` reports the leftover; a follow-up call finishes the rest."""
+        import os
+
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        stl_paths = []
+        try:
+            for i in range(3):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\nendsolid test")
+                    stl_path = f.name
+                stl_paths.append(stl_path)
+                await file_factory(
+                    filename=f"batch_limit_{i}.stl",
+                    file_path=stl_path,
+                    thumbnail_path=None,
+                )
+
+            data = {"all_missing": True}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 2
+            assert result["succeeded"] == 2
+            assert result["remaining"] == 1
+
+            # A follow-up call with the same criteria picks up the rest.
+            response2 = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response2.status_code == 200
+            result2 = response2.json()
+            assert result2["processed"] == 1
+            assert result2["succeeded"] == 1
+            assert result2["remaining"] == 0
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_reports_true_leftover_count(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """T-158: `remaining` must report the real leftover count, not saturate at 1.
+
+        With 5 matching files and a batch limit of 2, the old `+1` over-fetch trick
+        could never distinguish "1 left" from "3 left" because the query itself was
+        capped at limit+1 rows. `remaining` must be computed from a real total count.
+        """
+        import os
+
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        stl_paths = []
+        try:
+            for i in range(5):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\nendsolid test")
+                    stl_path = f.name
+                stl_paths.append(stl_path)
+                await file_factory(
+                    filename=f"remaining_count_{i}.stl",
+                    file_path=stl_path,
+                    thumbnail_path=None,
+                )
+
+            data = {"all_missing": True}
+
+            # First call: 5 matching, 2 processed -> 3 must remain (not saturate at 1).
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 2
+            assert result["remaining"] == 3
+
+            # Second call: 3 matching, 2 processed -> 1 remains.
+            response2 = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response2.status_code == 200
+            result2 = response2.json()
+            assert result2["processed"] == 2
+            assert result2["remaining"] == 1
+
+            # Third call: 1 matching, 1 processed -> 0 remain, batch complete.
+            response3 = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response3.status_code == 200
+            result3 = response3.json()
+            assert result3["processed"] == 1
+            assert result3["remaining"] == 0
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_under_limit_is_zero(
+        self, async_client: AsyncClient, file_factory, db_session
+    ):
+        """When fewer matching files exist than the batch limit, remaining is 0
+        and the rest of the response shape is unaffected."""
+        stl_without_thumb1 = await file_factory(filename="under_limit_1.stl", thumbnail_path=None)
+        stl_without_thumb2 = await file_factory(filename="under_limit_2.stl", thumbnail_path=None)
+
+        data = {"all_missing": True}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["processed"] == 2
+        assert result["remaining"] == 0
+        file_ids = {r["file_id"] for r in result["results"]}
+        assert stl_without_thumb1.id in file_ids
+        assert stl_without_thumb2.id in file_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_respects_folder_filter(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """`remaining` must be computed over the same filtered query as the page,
+        not over every matching STL in the library."""
+        import os
+
+        from backend.app.models.library import LibraryFolder
+
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        folder = LibraryFolder(name="Filtered Remaining Folder")
+        db_session.add(folder)
+        await db_session.commit()
+        await db_session.refresh(folder)
+
+        stl_paths = []
+        try:
+            # 5 files in the target folder, 3 files elsewhere (at root).
+            for i in range(5):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\nendsolid test")
+                    stl_path = f.name
+                stl_paths.append(stl_path)
+                await file_factory(
+                    filename=f"in_folder_{i}.stl",
+                    file_path=stl_path,
+                    folder_id=folder.id,
+                    thumbnail_path=None,
+                )
+            for i in range(3):
+                await file_factory(
+                    filename=f"at_root_{i}.stl",
+                    folder_id=None,
+                    thumbnail_path=None,
+                )
+
+            data = {"folder_id": folder.id, "all_missing": True}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            # Only the 5 in-folder files match; 2 processed leaves 3, not the
+            # 8-2=6 it would be if the count ignored the folder_id filter.
+            assert result["processed"] == 2
+            assert result["remaining"] == 3
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_remaining_respects_file_ids_filter(
+        self, async_client: AsyncClient, file_factory, db_session, monkeypatch
+    ):
+        """`remaining` for a file_ids request must only count the requested files,
+        not every matching STL in the library."""
+        monkeypatch.setattr("backend.app.api.routes.library.STL_THUMBNAIL_BATCH_LIMIT", 2)
+        monkeypatch.setattr(
+            "backend.app.api.routes.library.generate_stl_thumbnail",
+            lambda file_path, thumbnails_dir: thumbnails_dir / "generated.png",
+        )
+
+        selected_ids = []
+        for i in range(4):
+            f = await file_factory(filename=f"selected_{i}.stl", thumbnail_path=None)
+            selected_ids.append(f.id)
+        # Extra files not in the request must not count towards `remaining`.
+        for i in range(3):
+            await file_factory(filename=f"not_selected_{i}.stl", thumbnail_path=None)
+
+        data = {"file_ids": selected_ids}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        # 4 requested files, 2 processed -> 2 remain (not 7-2=5).
+        assert result["processed"] == 2
+        assert result["remaining"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backfill_external_stl_thumbnails_runs_off_the_event_loop(
+        self, test_engine, db_session, file_factory, monkeypatch
+    ):
+        """T-145: the external-folder backfill task must render off the event
+        loop, exactly like the batch route (T-144), instead of blocking it for
+        the whole scan."""
+        import os
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.api.routes.library import _backfill_external_stl_thumbnails
+        from backend.app.models.library import LibraryFolder
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write("solid test\n" + ("x" * 200) + "\nendsolid test")
+            stl_path = f.name
+
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "backfill_thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+        # The task opens its own session via the module-level `async_session`
+        # (the request session is long gone by the time it runs); point that
+        # at the test engine so the query/commit land where the fixture can see them.
+        test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr("backend.app.api.routes.library.async_session", test_session_maker)
+
+        try:
+            # folder_id must be a real value, not NULL: `IN (NULL)` never
+            # matches NULL rows in SQL, so the backfill query would find
+            # nothing if the file were left folder-less.
+            folder = LibraryFolder(name="backfill-thread-check")
+            db_session.add(folder)
+            await db_session.commit()
+            await db_session.refresh(folder)
+
+            stl_file = await file_factory(
+                filename="backfill_thread_check.stl",
+                file_path=stl_path,
+                thumbnail_path=None,
+                folder_id=folder.id,
+            )
+
+            await _backfill_external_stl_thumbnails([stl_file.folder_id])
+
+            await db_session.refresh(stl_file)
+            assert stl_file.thumbnail_path is not None
+            # generate_stl_thumbnail must have run off the event-loop thread
+            assert thread_is_not_main == [True]
+        finally:
+            if os.path.exists(stl_path):
+                os.unlink(stl_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_concurrent_backfills_never_render_two_stls_at_once(
+        self, test_engine, db_session, file_factory, monkeypatch
+    ):
+        """T-145: generate_stl_thumbnail() drives matplotlib's process-global
+        pyplot state, so two renders dispatched to worker threads at the same
+        time could corrupt each other's output. The shared `_stl_render_lock`
+        must keep two concurrent backfill calls from ever rendering at once,
+        even though each render now runs in a thread instead of blocking the
+        loop."""
+        import asyncio
+        import os
+        import time
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.api.routes.library import _backfill_external_stl_thumbnails
+        from backend.app.models.library import LibraryFolder
+
+        active = 0
+        max_active = 0
+        entries = 0
+        state_lock = threading.Lock()
+
+        def fake_generate(file_path, thumbnails_dir):
+            nonlocal active, max_active, entries
+            with state_lock:
+                active += 1
+                entries += 1
+                max_active = max(max_active, active)
+            time.sleep(0.15)
+            with state_lock:
+                active -= 1
+            return thumbnails_dir / "concurrent_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+        test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr("backend.app.api.routes.library.async_session", test_session_maker)
+
+        stl_paths = []
+        try:
+            for _ in range(2):
+                with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+                    f.write("solid test\n" + ("x" * 200) + "\nendsolid test")
+                    stl_paths.append(f.name)
+
+            folder_a = LibraryFolder(name="concurrent-backfill-a")
+            folder_b = LibraryFolder(name="concurrent-backfill-b")
+            db_session.add_all([folder_a, folder_b])
+            await db_session.commit()
+            await db_session.refresh(folder_a)
+            await db_session.refresh(folder_b)
+
+            file_a = await file_factory(
+                filename="concurrent_a.stl",
+                file_path=stl_paths[0],
+                thumbnail_path=None,
+                folder_id=folder_a.id,
+            )
+            file_b = await file_factory(
+                filename="concurrent_b.stl",
+                file_path=stl_paths[1],
+                thumbnail_path=None,
+                folder_id=folder_b.id,
+            )
+
+            await asyncio.gather(
+                _backfill_external_stl_thumbnails([file_a.folder_id]),
+                _backfill_external_stl_thumbnails([file_b.folder_id]),
+            )
+
+            assert entries == 2
+            assert max_active == 1, "renders overlapped despite the shared _stl_render_lock"
+        finally:
+            for p in stl_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_stl_thumbnail_runs_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """T-160: upload_file must render off the event-loop thread, exactly
+        like the batch route (T-144) and the backfill task (T-145), instead
+        of calling generate_stl_thumbnail() synchronously inline."""
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "upload_thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+
+        # Padded well past MIN_USABLE_STL_BYTES (200) so the STL branch runs.
+        stl_content = ("solid test\n" + ("x" * 200) + "\nendsolid test").encode()
+        files = {"file": ("thread_check.stl", stl_content, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["thumbnail_path"] is not None
+        # generate_stl_thumbnail must have run off the event-loop thread
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_stl_entry_runs_off_the_event_loop(
+        self, async_client: AsyncClient, db_session, monkeypatch
+    ):
+        """T-160: extract_zip_file's per-entry STL render must also run off
+        the event-loop thread instead of calling generate_stl_thumbnail()
+        synchronously inline."""
+        thread_is_not_main: list[bool] = []
+
+        def fake_generate(file_path, thumbnails_dir):
+            thread_is_not_main.append(threading.current_thread() is not threading.main_thread())
+            return thumbnails_dir / "zip_thread_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+
+        # Padded well past MIN_USABLE_STL_BYTES (200) so the STL branch runs.
+        stl_content = ("solid test\n" + ("x" * 200) + "\nendsolid test").encode()
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("model.stl", stl_content)
+        zip_buffer.seek(0)
+
+        files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        # generate_stl_thumbnail must have run off the event-loop thread
+        assert thread_is_not_main == [True]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_and_batch_render_never_overlap(self, test_engine, file_factory, db_session, monkeypatch):
+        """T-160: an upload's render and a batch-generation render must be
+        serialised by the same `_stl_render_lock`, not just the
+        backfill-vs-backfill case covered by T-145. Calls upload_file() and
+        batch_generate_stl_thumbnails() directly (mirroring how T-145 calls
+        _backfill_external_stl_thumbnails() directly) so each gets its own
+        session, same as two independent requests would. The fake render
+        records whether it was ever entered while another invocation was
+        still active, so any overlap fails the test immediately instead of
+        relying on timing to be observed."""
+        import asyncio
+        import io
+        import os
+        import time
+
+        from fastapi import UploadFile
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.api.routes.library import (
+            batch_generate_stl_thumbnails,
+            upload_file,
+        )
+        from backend.app.schemas.library import BatchThumbnailRequest
+
+        active = False
+        overlap_detected = False
+        state_lock = threading.Lock()
+
+        def fake_generate(file_path, thumbnails_dir):
+            nonlocal active, overlap_detected
+            with state_lock:
+                if active:
+                    overlap_detected = True
+                active = True
+            time.sleep(0.15)
+            with state_lock:
+                active = False
+            return thumbnails_dir / "overlap_check.png"
+
+        monkeypatch.setattr("backend.app.api.routes.library.generate_stl_thumbnail", fake_generate)
+        # A fresh Lock avoids inheriting an asyncio-loop binding from another
+        # test's contention on the shared module-level lock earlier in this
+        # session (asyncio.Lock binds to whichever loop first contends on
+        # it, and each test function runs on its own loop here) — this test
+        # still exercises the real `_stl_render_lock` object the routes use,
+        # just reset so contention within this test binds it fresh.
+        monkeypatch.setattr("backend.app.api.routes.library._stl_render_lock", asyncio.Lock())
+
+        test_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write("solid test\n" + ("x" * 200) + "\nendsolid test")
+            batch_stl_path = f.name
+
+        try:
+            stl_file = await file_factory(
+                filename="overlap_batch.stl",
+                file_path=batch_stl_path,
+                thumbnail_path=None,
+            )
+
+            stl_content = ("solid test\n" + ("x" * 200) + "\nendsolid test").encode()
+            upload = UploadFile(file=io.BytesIO(stl_content), filename="overlap_upload.stl")
+
+            async def _drive_upload():
+                async with test_session_maker() as session:
+                    await upload_file(
+                        file=upload,
+                        folder_id=None,
+                        generate_stl_thumbnails=True,
+                        db=session,
+                        current_user=None,
+                    )
+
+            async def _drive_batch():
+                async with test_session_maker() as session:
+                    await batch_generate_stl_thumbnails(
+                        request=BatchThumbnailRequest(file_ids=[stl_file.id]),
+                        db=session,
+                        _=None,
+                    )
+
+            await asyncio.gather(_drive_upload(), _drive_batch())
+
+            assert not overlap_detected, "upload render and batch render overlapped despite _stl_render_lock"
+        finally:
+            if os.path.exists(batch_stl_path):
+                os.unlink(batch_stl_path)
 
 
 class TestLibraryPathHelpers:
@@ -1484,6 +2219,296 @@ class TestLibraryPermissions:
         assert response.status_code == 403
 
 
+class TestLibraryThumbnailTokenAuth(TestLibraryPermissions):
+    """T-154 / audit-security: the two library-thumbnail routes must resolve
+    the caller from the camera-stream token and enforce LIBRARY_READ_ALL /
+    LIBRARY_READ_OWN scoping — not just a bare CAMERA_VIEW-gated token.
+
+    User-approved behavior change (2026-09-13): previously ANY valid camera-
+    stream token (short-lived or long-lived) loaded any library thumbnail by
+    id. Now the token must carry an identity (minted by ``POST
+    /camera/stream-token`` after this change) that maps to a real ``User``
+    with ``library:read_own``/``library:read_all``, and ownership is enforced
+    per file exactly like every other library read route.
+    """
+
+    @pytest.fixture
+    async def operator2_user(self, db_session):
+        """A second Operators-group user, distinct from ``auth_setup``'s
+        ``operator_lib``, for the cross-user 404 case."""
+        from sqlalchemy import select
+
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.user import User
+
+        operator_group = (await db_session.execute(select(Group).where(Group.name == "Operators"))).scalar_one()
+        user = User(username="operator_lib2", password_hash=get_password_hash("password"), is_active=True)
+        user.groups.append(operator_group)
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+        token = create_access_token(data={"sub": user.username})
+        return {"user": user, "token": token}
+
+    async def _make_library_file(self, db_session, tmp_path, kind: str, *, created_by_id: int | None):
+        """Build a LibraryFile backed by a REAL file on disk so the route's
+        existence check passes, for either thumbnail route ``kind``."""
+        from backend.app.models.library import LibraryFile
+
+        if kind == "thumbnail":
+            thumb_path = tmp_path / "thumb.png"
+            thumb_path.write_bytes(b"\x89PNG\r\n\x1a\nfake-thumbnail-bytes")
+            lib_file = LibraryFile(
+                filename="thumb_test.gcode.3mf",
+                file_path=str(tmp_path / "thumb_test.gcode.3mf"),
+                file_type="gcode.3mf",
+                file_size=100,
+                thumbnail_path=str(thumb_path),
+                created_by_id=created_by_id,
+            )
+        else:
+            zip_path = tmp_path / "plate_test.gcode.3mf"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("Metadata/plate_1.png", b"\x89PNG\r\n\x1a\nfake-plate-thumbnail")
+            lib_file = LibraryFile(
+                filename="plate_test.gcode.3mf",
+                file_path=str(zip_path),
+                file_type="gcode.3mf",
+                file_size=zip_path.stat().st_size,
+                created_by_id=created_by_id,
+            )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+        return lib_file
+
+    @staticmethod
+    def _url_for(kind: str, file_id: int) -> str:
+        if kind == "thumbnail":
+            return f"/api/v1/library/files/{file_id}/thumbnail"
+        return f"/api/v1/library/files/{file_id}/plate-thumbnail/1"
+
+    @staticmethod
+    async def _mint_stream_token(async_client: AsyncClient, jwt: str) -> str:
+        resp = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["token"]
+
+    @staticmethod
+    async def _mint_long_lived_token(async_client: AsyncClient, jwt: str) -> str:
+        resp = await async_client.post(
+            "/api/v1/auth/tokens",
+            headers={"Authorization": f"Bearer {jwt}"},
+            json={"name": "kiosk", "expires_in_days": 30},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_owner_stream_token_loads_thumbnail(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """Unchanged happy path: a library:read_own user's own stream token
+        (minted after this fix) still loads their own file's thumbnail."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["operator_token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 200
+        assert len(response.content) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_other_read_own_user_gets_404(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, operator2_user, kind
+    ):
+        """A different library:read_own user's own (valid, identity-carrying)
+        stream token must NOT load someone else's thumbnail."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, operator2_user["token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 404
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_admin_stream_token_loads_any_thumbnail(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """library:read_all (admin) can load any file's thumbnail via their
+        own stream token."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["admin_token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 200
+        assert len(response.content) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_long_lived_camera_token_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """A long-lived camera/overlay-scoped token (#1108) — previously
+        accepted by the bare camera-stream check — must now be rejected: it
+        carries no per-row identity to scope a library read to."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        long_lived = await self._mint_long_lived_token(async_client, auth_setup["operator_token"])
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": long_lived})
+        assert response.status_code == 401
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_pre_upgrade_token_with_no_recorded_identity_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """A ``camera_stream`` row minted before this change carries no
+        ``username`` (NULL). It is a genuinely valid, unexpired token, but it
+        no longer resolves to a library-scoped identity, so it is now
+        rejected with 403 rather than silently granted the old blanket
+        access."""
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        legacy_token = secrets.token_urlsafe(24)
+        db_session.add(
+            AuthEphemeralToken(
+                token=legacy_token,
+                token_type="camera_stream",
+                username=None,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": legacy_token})
+        assert response.status_code == 403
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_deactivated_owner_stream_token_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """T-164 / audit-security, user-approved 2026-09-14: a stream token
+        minted while the owning account was active must stop working the
+        moment that account is deactivated, instead of staying valid for the
+        remainder of the token's 60-minute life. Same 403 + detail as the
+        no-recorded-identity case above — deactivated must not be
+        distinguishable from unknown to an unauthenticated caller."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["operator_token"])
+
+        auth_setup["operator_user"].is_active = False
+        db_session.add(auth_setup["operator_user"])
+        await db_session.commit()
+
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Camera stream token does not carry a library-scoped identity"
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_deleted_owner_stream_token_rejected(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """T-172 / audit-tests: a stream token minted while the owning account
+        still existed must stop working once that ``users`` row is deleted
+        outright — not merely deactivated. ``AuthEphemeralToken.username`` is
+        a bare string column (no FK to ``users``), and this app's SQLite
+        connections never turn ``PRAGMA foreign_keys`` on (verified — see
+        ``library_trash.py`` / ``print_scheduler.py``), so deleting the user
+        does NOT cascade-delete the token row: the token stays put, resolves
+        to a username that ``get_user_by_username`` can no longer find, and
+        must be rejected with the SAME 403 + detail as the no-recorded-
+        identity case — a deleted account must be indistinguishable from an
+        unknown one to an unauthenticated caller."""
+        from sqlalchemy import delete, select
+
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+        from backend.app.models.user import User
+
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        token = await self._mint_stream_token(async_client, auth_setup["operator_token"])
+        operator_id = auth_setup["operator_user"].id
+
+        await db_session.execute(delete(User).where(User.id == operator_id))
+        await db_session.commit()
+
+        # Confirm the premise: the token row survives the user's deletion
+        # unharmed (no FK cascade), so the request below actually exercises
+        # the "row is gone" branch rather than the sibling 401 no-token path.
+        row = (
+            await db_session.execute(select(AuthEphemeralToken).where(AuthEphemeralToken.token == token))
+        ).scalar_one_or_none()
+        assert row is not None
+        assert row.username == "operator_lib"
+
+        response = await async_client.get(self._url_for(kind, lib_file.id), params={"token": token})
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Camera stream token does not carry a library-scoped identity"
+        assert b"fake-thumbnail-bytes" not in response.content
+        assert b"fake-plate-thumbnail" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_auth_disabled_loads_thumbnail(self, async_client: AsyncClient, db_session, tmp_path, kind):
+        """Auth disabled (the default in these tests) — no token required,
+        every thumbnail loads, exactly like before this change."""
+        lib_file = await self._make_library_file(db_session, tmp_path, kind, created_by_id=None)
+        response = await async_client.get(self._url_for(kind, lib_file.id))
+        assert response.status_code == 200
+        assert len(response.content) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("kind", ["thumbnail", "plate_thumbnail"])
+    async def test_missing_token_rejected_when_auth_enabled(
+        self, async_client: AsyncClient, db_session, tmp_path, auth_setup, kind
+    ):
+        """No ``?token=`` at all, with auth enabled, is the same 401 the old
+        bare camera-stream dependency raised."""
+        lib_file = await self._make_library_file(
+            db_session, tmp_path, kind, created_by_id=auth_setup["operator_user"].id
+        )
+        response = await async_client.get(self._url_for(kind, lib_file.id))
+        assert response.status_code == 401
+
+
 class TestPrintFileUploadValidation:
     """#1401: pre-flight rejection of unprintable uploads at the library +
     archive routes. Smoke tests the shared ``validate_print_file_upload``
@@ -1534,11 +2559,25 @@ class TestPrintFileUploadValidation:
     @pytest.mark.integration
     async def test_library_accepts_valid_gcode_3mf_upload(self, async_client: AsyncClient, db_session):
         """A real ``.gcode.3mf`` zip uploads successfully — the existing
-        happy path is not regressed by the new validation."""
+        happy path is not regressed by the new validation.
+
+        T-147 follow-up: also pins the response/DB ``file_size`` and
+        ``file_hash`` to the pre-streaming values (``len(content)`` and a
+        whole-content ``sha256``) now that the route streams the upload to
+        disk and hashes it incrementally instead of reading it fully into
+        memory first.
+        """
+        import hashlib
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        content = self._valid_3mf_bytes()
         files = {
             "file": (
                 "plate_1.gcode.3mf",
-                self._valid_3mf_bytes(),
+                content,
                 "application/zip",
             )
         }
@@ -1546,6 +2585,11 @@ class TestPrintFileUploadValidation:
         assert response.status_code == 200
         result = response.json()
         assert result["filename"] == "plate_1.gcode.3mf"
+        assert result["file_size"] == len(content)
+
+        row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == result["id"]))).scalar_one()
+        assert row.file_hash == hashlib.sha256(content).hexdigest()
+        assert row.file_size == len(content)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1742,3 +2786,868 @@ class TestPrintFileUploadValidation:
         bad_errors = [e for e in body["errors"] if e["filename"] == "bad.3mf"]
         assert bad_errors, body
         assert "ZIP container" in bad_errors[0]["error"]
+
+
+def _isolate_library_files_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Patch the route's file-storage directory to a per-test ``tmp_path``.
+
+    ``get_library_files_dir()`` resolves through ``app_settings.archive_dir``,
+    which is fixed at process-import time from ``DATA_DIR`` and never
+    re-read — so every test in a pytest process (and every xdist worker
+    sharing the repo) otherwise shares one real, on-disk directory. Any
+    other test that legitimately writes a file there between a snapshot and
+    its assertion makes the size-cap tests below flaky (T-161). Patching the
+    route's module-level reference instead gives each test its own
+    directory that only *that* test's request can touch.
+    """
+    isolated_dir = tmp_path / "library_files"
+    isolated_dir.mkdir()
+    monkeypatch.setattr("backend.app.api.routes.library.get_library_files_dir", lambda: isolated_dir)
+    return isolated_dir
+
+
+@contextlib.contextmanager
+def _assert_directory_unchanged(directory: Path, message: str):
+    """Snapshot ``directory`` on entry and assert it is unchanged on exit.
+
+    Factors out the repeated ``before = set(files_dir.iterdir())`` /
+    ``assert set(files_dir.iterdir()) == before`` pattern shared by the
+    size-cap rejection tests below.
+    """
+    before = set(directory.iterdir())
+    yield
+    assert set(directory.iterdir()) == before, message
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestLibraryUploadSizeCap:
+    """T-147: ``POST /library/files`` streams the upload to disk in bounded
+    chunks and rejects it with 413 once it crosses
+    ``settings.library_max_upload_bytes``, instead of reading the whole body
+    into memory with no cap at all."""
+
+    async def test_upload_over_declared_size_cap_is_rejected(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """A body whose real (and therefore reported ``file.size``) length
+        exceeds a small test cap is rejected before any file or DB row is
+        created."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "no file should reach disk when the declared size exceeds the cap"):
+            files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+            response = await async_client.post("/api/v1/library/files", files=files)
+
+            assert response.status_code == 413
+            assert "100" in response.json()["detail"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_upload_exceeding_cap_mid_stream_is_rejected_and_cleaned_up(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """When the declared size can't be trusted (a misdeclared or
+        unknown-length body), the running byte count accumulated while
+        streaming to disk must still catch an oversized upload and delete
+        the partial file — the whole point of streaming instead of trusting
+        ``file.size`` alone."""
+        from sqlalchemy import select
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        # Simulate a misdeclared/unknown-length upload: starlette normally
+        # accumulates the real size into `UploadFile.size` as it parses the
+        # multipart body, so patch `write` to forget it happened, leaving
+        # `size` at its initial (too-small) value.
+        original_write = StarletteUploadFile.write
+
+        async def _write_then_forget_size(self, data: bytes) -> None:
+            await original_write(self, data)
+            self.size = 0
+
+        monkeypatch.setattr(StarletteUploadFile, "write", _write_then_forget_size)
+
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(
+            files_dir, "the partial file must be removed once the streamed cap is crossed"
+        ):
+            files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+            response = await async_client.post("/api/v1/library/files", files=files)
+
+            assert response.status_code == 413
+            assert "100" in response.json()["detail"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_upload_setting_honoured_when_raised(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """Raising the cap above the payload size lets the upload succeed —
+        confirms the cap is actually read from settings at request time, not
+        hardcoded.
+
+        Also proves the isolation helper used by the rejection tests above
+        actually redirects this route's writes: if patching
+        ``get_library_files_dir`` did nothing, the file below would land in
+        the real library directory instead of ``files_dir``, and this
+        assertion would fail — so a regression that broke the patch would be
+        caught here rather than silently making the rejection tests vacuous.
+        """
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 10_000)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        payload = b"solid test\nendsolid test"
+        files = {"file": ("test.stl", payload, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == len(payload)
+
+        row = (
+            await db_session.execute(select(LibraryFile).where(LibraryFile.id == response.json()["id"]))
+        ).scalar_one()
+        assert Path(row.file_path).parent == files_dir, "the upload should have been written into the patched dir"
+
+    async def test_upload_empty_file_still_runs_content_validator_once(self, async_client: AsyncClient, db_session):
+        """A zero-byte upload never enters the ``while chunk := ...`` loop —
+        the content-sniffing validator (#1401) must still run once against
+        an empty payload afterwards, matching the pre-streaming behaviour
+        where ``content`` was simply ``b""``."""
+        files = {"file": ("empty.stl", b"", "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == 0
+
+    async def test_upload_larger_than_one_chunk_hashes_across_chunk_boundary(
+        self, async_client: AsyncClient, db_session
+    ):
+        """A body bigger than the 1 MiB read chunk exercises the loop's
+        second iteration — the magic-byte validator must not re-run (it
+        already validated the first chunk), and hashing/byte-counting must
+        stay correct across the chunk boundary."""
+        import hashlib
+
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        payload = b"a" * (1 << 20) + b"b" * 1024  # bigger than one 1 MiB chunk
+        files = {"file": ("big.stl", payload, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["file_size"] == len(payload)
+
+        row = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == result["id"]))).scalar_one()
+        assert row.file_hash == hashlib.sha256(payload).hexdigest()
+        assert row.file_size == len(payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestLibraryUploadContentLengthGate:
+    """T-166: ``POST /library/files`` and ``POST /library/files/extract-zip``
+    reject a body whose declared ``Content-Length`` already exceeds
+    ``library_max_upload_bytes`` (plus a small multipart-overhead margin)
+    before Starlette spools it to disk — but only *after* the caller has
+    been authenticated and authorized exactly as the route's own dependency
+    would, so an unauthenticated or unauthorized caller learns nothing about
+    the cap (user-approved 2026-09-14).
+
+    A first attempt at this (dropped, commit c4035908e) put the size check
+    ahead of authentication and was rejected by the verifier for exactly
+    that reason — ``test_over_cap_content_length_with_bogus_api_key_is_still_401_not_413``
+    below is that regression test; it fails against the dropped patch.
+    """
+
+    @pytest.fixture
+    async def upload_auth_setup(self, db_session):
+        """A caller with LIBRARY_UPLOAD (admin) and one without it (viewer),
+        with the ``auth_enabled`` setting turned on in the DB — the same
+        shape ``TestLibraryPermissions.auth_setup`` uses elsewhere in this
+        file."""
+        from sqlalchemy import select
+
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
+
+        admin_group = (await db_session.execute(select(Group).where(Group.name == "Administrators"))).scalar_one()
+        viewer_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one()
+
+        password_hash = get_password_hash("password")
+        admin_user = User(username="admin_cl_gate", password_hash=password_hash, role="admin", is_active=True)
+        admin_user.groups.append(admin_group)
+        viewer_user = User(username="viewer_cl_gate", password_hash=password_hash, is_active=True)
+        viewer_user.groups.append(viewer_group)
+
+        db_session.add_all([admin_user, viewer_user])
+        await db_session.commit()
+
+        return {
+            "admin_token": create_access_token(data={"sub": admin_user.username}),
+            "viewer_token": create_access_token(data={"sub": viewer_user.username}),
+        }
+
+    async def test_over_cap_content_length_rejected_before_body_is_spooled_for_authorized_caller(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path, upload_auth_setup
+    ):
+        """A Content-Length far above the cap must be rejected without ever
+        calling ``_stream_upload_to_path`` — i.e. before a single byte of
+        the upload reaches disk — once the caller has already been
+        authenticated and authorized to upload."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        def _fail_if_called(*_args, **_kwargs):
+            raise AssertionError("_stream_upload_to_path must not run when the Content-Length gate rejects the body")
+
+        monkeypatch.setattr("backend.app.api.routes.library._stream_upload_to_path", _fail_if_called)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "the body must never be spooled once the gate rejects it"):
+            files = {"file": ("big.stl", b"x" * 20_000, "application/octet-stream")}
+            response = await async_client.post(
+                "/api/v1/library/files",
+                files=files,
+                headers={"Authorization": f"Bearer {upload_auth_setup['admin_token']}"},
+            )
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_over_cap_content_length_with_bogus_api_key_is_still_401_not_413(
+        self, async_client: AsyncClient, monkeypatch, tmp_path, upload_auth_setup
+    ):
+        """Regression test for the dropped first attempt (commit
+        c4035908e): with auth enabled, a bogus API key must still get the
+        same 401 it gets today — the same response
+        ``require_permission_if_auth_enabled`` produces for any other
+        route — never the 413 that would leak the configured cap to a
+        caller who has not even authenticated yet. This is the exact
+        request shape the verifier used to fail the dropped patch (it
+        turned into a 413 echoing the cap there); it must fail if run
+        against that patch."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("big.stl", b"x" * 20_000, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files, headers={"X-API-Key": "bb_bogus"})
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Authentication required"
+
+    async def test_over_cap_content_length_with_caller_lacking_permission_is_still_403_not_413(
+        self, async_client: AsyncClient, monkeypatch, tmp_path, upload_auth_setup
+    ):
+        """A caller who is authenticated but lacks ``library:upload`` (a
+        Viewer) must still get the same 403 the in-route dependency
+        produces today, not the 413 from the Content-Length gate."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("big.stl", b"x" * 20_000, "application/octet-stream")}
+        response = await async_client.post(
+            "/api/v1/library/files",
+            files=files,
+            headers={"Authorization": f"Bearer {upload_auth_setup['viewer_token']}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Missing required permissions: library:upload"
+
+    async def test_over_cap_content_length_rejected_before_zip_body_is_spooled(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """Same gate, same proof, for the ``extract-zip`` route's ZIP-body
+        upload step (auth disabled — the default in this test suite — so
+        this exercises the size gate itself, not the auth ordering, which
+        is covered above)."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+
+        def _fail_if_called(*_args, **_kwargs):
+            raise AssertionError("_stream_upload_to_path must not run when the Content-Length gate rejects the body")
+
+        monkeypatch.setattr("backend.app.api.routes.library._stream_upload_to_path", _fail_if_called)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "the body must never be spooled once the gate rejects it"):
+            files = {"file": ("test.zip", b"x" * 20_000, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_content_length_just_under_cap_still_succeeds(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """A file just under the cap has a whole-request Content-Length
+        slightly *above* the raw cap once multipart boundary/header overhead
+        is counted — the gate's overhead margin must not treat that as an
+        over-cap body, or every upload near the cap would start failing."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 5000)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        payload = b"x" * 4950  # under the 5000-byte cap, but the multipart
+        # envelope around it (boundary + headers) pushes the request's own
+        # Content-Length a little past 5000.
+        files = {"file": ("test.stl", payload, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == len(payload)
+
+        row = (
+            await db_session.execute(select(LibraryFile).where(LibraryFile.id == response.json()["id"]))
+        ).scalar_one()
+        assert Path(row.file_path).parent == files_dir
+
+    async def test_over_cap_total_body_rejects_even_when_file_part_itself_is_under_cap(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """The gate has no way to see where the ``file`` part ends before the
+        body is parsed, so it measures the WHOLE request's declared
+        ``Content-Length`` against the cap plus the overhead allowance, not
+        just the ``file`` part's size the in-route check measures. A request
+        whose ``file`` part is itself comfortably under the cap, but which
+        also carries an additional multipart part large enough to push the
+        total body past cap + the allowance, is rejected here even though
+        the in-route check would have accepted it (it silently discards any
+        part beyond ``file``, which is the only body field either upload
+        route declares). No shipped client ever sends more than that one
+        ``file`` part, so this is a real but unreachable-by-contract
+        difference — see BASELINE-CHANGELOG.md."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "the body must never be spooled once the gate rejects it"):
+            files = {
+                "file": ("small.stl", b"solid test\nendsolid test", "application/octet-stream"),
+                "extra_part_no_route_declares": ("junk.bin", b"y" * 20_000, "application/octet-stream"),
+            }
+            response = await async_client.post("/api/v1/library/files", files=files)
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_missing_content_length_still_rejected_by_in_route_check_when_oversized(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """No ``Content-Length`` header (e.g. a chunked/unknown-length
+        request) skips the new gate entirely and falls through to today's
+        behaviour: the in-route check in ``_stream_upload_to_path`` still
+        catches an oversized upload, with the same status and detail as
+        before this change."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "no file should reach disk when the streamed size exceeds the cap"):
+            files = {"file": ("big.stl", b"x" * 500, "application/octet-stream")}
+            response = await _post_multipart_without_content_length(async_client, "/api/v1/library/files", files)
+
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_missing_content_length_still_succeeds_when_under_cap(
+        self, async_client: AsyncClient, db_session, tmp_path, monkeypatch
+    ):
+        """No ``Content-Length`` header and a body under the cap must behave
+        exactly as a normal upload."""
+        from sqlalchemy import select
+
+        from backend.app.models.library import LibraryFile
+
+        payload = b"solid test\nendsolid test"
+        files = {"file": ("test.stl", payload, "application/octet-stream")}
+        response = await _post_multipart_without_content_length(async_client, "/api/v1/library/files", files)
+
+        assert response.status_code == 200
+        assert response.json()["file_size"] == len(payload)
+
+        row = (
+            await db_session.execute(select(LibraryFile).where(LibraryFile.id == response.json()["id"]))
+        ).scalar_one()
+        assert row.file_size == len(payload)
+
+    # --- The four remaining shapes the verifier used against the dropped
+    # first attempt. These document what this fix can and cannot preserve:
+    # body-dependent validation (file type, folder existence, filename,
+    # missing field) all need the parsed body, which this gate exists to
+    # avoid touching, so when a request is BOTH over-cap AND malformed, the
+    # 413 still wins — this is the "remaining ordering change" called out
+    # in BASELINE-CHANGELOG.md, not a bug in this fix.
+
+    async def test_over_cap_non_zip_file_to_extract_zip_gets_413_not_400(
+        self, async_client: AsyncClient, monkeypatch, tmp_path
+    ):
+        """Before T-166 this was 400 "Only ZIP files are supported" (the
+        in-route check runs on the parsed body); it is now 413 because the
+        Content-Length gate runs first and never reaches that check."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("not-a-zip.txt", b"x" * 20_000, "text/plain")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+    async def test_over_cap_missing_folder_gets_413_not_404(self, async_client: AsyncClient, monkeypatch, tmp_path):
+        """Before T-166 this was 404 "Target folder not found" (the
+        in-route check needs the parsed ``folder_id`` query param, which
+        FastAPI still resolves from the parsed body/query before this
+        error — but the Content-Length gate now runs first and short-
+        circuits before any of that)."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("test.zip", b"x" * 20_000, "application/zip")}
+        response = await async_client.post(
+            "/api/v1/library/files/extract-zip", files=files, params={"folder_id": 999999}
+        )
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+    async def test_over_cap_empty_filename_gets_413_not_400(self, async_client: AsyncClient, monkeypatch, tmp_path):
+        """Before T-166 an empty filename was rejected in-route (400/422);
+        it is now 413 for the same reason as the other shapes above."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        files = {"file": ("", b"x" * 20_000, "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+    async def test_over_cap_missing_file_field_gets_413_not_422(self, async_client: AsyncClient, monkeypatch, tmp_path):
+        """Before T-166 a request with no ``file`` field at all was a 422
+        (FastAPI's own required-field validation); with a Content-Length
+        over the cap it is now 413, for the same reason as the other shapes
+        above — the gate runs before the body (and therefore the missing
+        field) is ever parsed."""
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        # No "file" field at all — just enough other multipart data to make
+        # the request's own Content-Length exceed the cap.
+        files = {"not_file": ("notes.txt", b"x" * 20_000, "text/plain")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 100 bytes"
+
+
+async def _post_multipart_without_content_length(async_client: AsyncClient, url: str, files: dict):
+    """Send ``files`` to ``url`` the same way ``async_client.post(url,
+    files=files)`` would, except with the ``Content-Length`` header
+    stripped: build the request normally (so the multipart body/boundary are
+    byte-identical to a real upload), then replay its already-materialised
+    body through an async generator, which httpx never assigns a
+    Content-Length to (T-166: proves the new gate falls through unchanged
+    when the header is absent, e.g. a chunked/unknown-length request)."""
+    built = async_client.build_request("POST", url, files=files)
+    body_bytes = await built.aread()
+    headers = dict(built.headers)
+    headers.pop("content-length", None)
+
+    async def _body():
+        yield body_bytes
+
+    return await async_client.post(url, content=_body(), headers=headers)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestLibraryZipExtractSizeCap:
+    """T-155: ``POST /library/files/extract-zip`` streams the ZIP body and
+    every entry it extracts instead of decompressing everything fully into
+    memory, and rejects archives whose (declared or actual) uncompressed
+    size crosses ``settings.library_max_zip_extract_bytes`` with 413."""
+
+    def _make_zip_bytes(self, entries: dict[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name, content in entries.items():
+                zf.writestr(name, content)
+        return buf.getvalue()
+
+    def _patch_mkstemp_capture(self, monkeypatch) -> list[str]:
+        """Record every path handed out by ``tempfile.mkstemp`` during the
+        request so a test can assert the temp ZIP file was cleaned up."""
+        captured: list[str] = []
+        original_mkstemp = tempfile.mkstemp
+
+        def _capturing_mkstemp(*args, **kwargs):
+            fd, path = original_mkstemp(*args, **kwargs)
+            captured.append(path)
+            return fd, path
+
+        monkeypatch.setattr(tempfile, "mkstemp", _capturing_mkstemp)
+        return captured
+
+    async def test_declared_total_above_cap_is_rejected_before_extraction(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """A ZIP whose entries honestly declare a total bigger than a small
+        test cap is rejected up front — nothing is extracted and the
+        uploaded ZIP's temp file is removed."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10)
+        captured_tmp_paths = self._patch_mkstemp_capture(monkeypatch)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "nothing should be extracted above the declared-size cap"):
+            zip_bytes = self._make_zip_bytes({"big.txt": b"x" * 500})
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+            assert "10" in response.json()["detail"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+        assert captured_tmp_paths, "the route should have created a temp file for the uploaded ZIP"
+        for captured_path in captured_tmp_paths:
+            assert not Path(captured_path).exists(), "the temp ZIP file must be cleaned up"
+
+    async def test_lying_header_is_caught_mid_stream_and_rolled_back(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """A ZIP entry whose ``ZipInfo.file_size`` understates its real size
+        must still be caught once the actual streamed bytes cross the cap —
+        including undoing an earlier entry in the same archive that had
+        already been extracted and committed."""
+        import zipfile as zipfile_module
+
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 1000)
+
+        # The route trusts ZipInfo.file_size (from infolist()) only for the
+        # upfront declared-size check; extraction itself streams via
+        # zf.open(name), which looks the entry up by name and is unaffected
+        # by tampering with the *list* infolist() returns. So patching
+        # infolist() to report a tiny size while leaving the real per-name
+        # lookup untouched reproduces a lying/understated header without
+        # corrupting the actual decompression the route relies on.
+        class _TinyInfo:
+            def __init__(self, filename: str) -> None:
+                self.filename = filename
+                self.file_size = 1
+
+        original_infolist = zipfile_module.ZipFile.infolist
+
+        def _lying_infolist(self):
+            # Fresh, disconnected stand-ins — the real ZipInfo objects that
+            # zf.open()/zf.getinfo() look up by name are never mutated, so
+            # actual decompression still sees the true size.
+            return [_TinyInfo(info.filename) for info in original_infolist(self)]
+
+        monkeypatch.setattr(zipfile_module.ZipFile, "infolist", _lying_infolist)
+
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(
+            files_dir,
+            "the mid-stream cap breach must roll back every file extracted this request, "
+            "including the earlier one already committed",
+        ):
+            zip_bytes = self._make_zip_bytes(
+                {
+                    "first.txt": b"a" * 200,  # extracted+committed before the lie is caught
+                    "second.txt": b"b" * 5000,  # real size blows past the cap once streamed
+                }
+            )
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_lying_header_caught_on_the_very_first_entry(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """Same lying-header scenario as above, but the cap is blown on the
+        first entry with nothing extracted yet — the cleanup path must be a
+        no-op rather than erroring on an empty ``extracted_this_request``."""
+        import zipfile as zipfile_module
+
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 100)
+
+        class _TinyInfo:
+            def __init__(self, filename: str) -> None:
+                self.filename = filename
+                self.file_size = 1
+
+        original_infolist = zipfile_module.ZipFile.infolist
+
+        def _lying_infolist(self):
+            return [_TinyInfo(info.filename) for info in original_infolist(self)]
+
+        monkeypatch.setattr(zipfile_module.ZipFile, "infolist", _lying_infolist)
+
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(files_dir, "nothing should be left behind by a first-entry cap breach"):
+            zip_bytes = self._make_zip_bytes({"only.txt": b"z" * 5000})
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_zip_upload_body_above_upload_cap_is_rejected_before_extraction(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """The ZIP body itself is streamed to disk with the same
+        ``library_max_upload_bytes`` cap as the plain upload route (T-147) —
+        a body above that cap is rejected before the archive is even
+        opened."""
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_upload_bytes", 100)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        with _assert_directory_unchanged(
+            files_dir, "nothing should be extracted when the ZIP body itself is oversized"
+        ):
+            zip_bytes = self._make_zip_bytes({"small.txt": b"hello"}) + b"\x00" * 500
+            files = {"file": ("test.zip", zip_bytes, "application/zip")}
+            response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+            assert response.status_code == 413
+            assert "100" in response.json()["detail"]
+
+        rows = (await db_session.execute(select(LibraryFile))).scalars().all()
+        assert rows == []
+
+    async def test_zip_extract_cap_setting_honoured_when_raised(
+        self, async_client: AsyncClient, db_session, monkeypatch, tmp_path
+    ):
+        """Raising ``library_max_zip_extract_bytes`` above the archive's real
+        uncompressed size lets extraction succeed — confirms the cap is read
+        from settings at request time, not hardcoded.
+
+        Also proves the isolation helper used by the rejection tests above
+        actually redirects this route's writes into ``files_dir``, so a
+        regression that broke the patch wouldn't leave those tests silently
+        vacuous.
+        """
+        from sqlalchemy import select
+
+        from backend.app.core.config import settings
+        from backend.app.models.library import LibraryFile
+
+        monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10_000)
+        files_dir = _isolate_library_files_dir(monkeypatch, tmp_path)
+
+        zip_bytes = self._make_zip_bytes({"ok.txt": b"y" * 2000})
+        files = {"file": ("test.zip", zip_bytes, "application/zip")}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        assert len(result["errors"]) == 0
+
+        row = (await db_session.execute(select(LibraryFile))).scalar_one()
+        assert Path(row.file_path).parent == files_dir, "the extracted entry should have landed in the patched dir"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestStreamUploadToPathAbortCleanup:
+    """T-179: ``_stream_upload_to_path`` (shared by ``upload_file`` and
+    ``extract_zip_file``, T-147/T-155) must remove ``dest_path`` on *any*
+    abort while streaming — not only the 413 raised by ``_too_large()`` —
+    so a client disconnect, a task cancellation, or a full-disk ``OSError``
+    can never leave a truncated file behind. These call the helper directly
+    (rather than through the HTTP endpoints used by the size-cap tests
+    above) so each test can assert on its own ``tmp_path``-scoped
+    ``dest_path`` instead of diffing the whole shared library-files
+    directory."""
+
+    @staticmethod
+    def _make_upload(chunks: list[bytes], failure: BaseException | None = None):
+        """A minimal stand-in for ``fastapi.UploadFile``: yields ``chunks``
+        in order, then raises ``failure`` (if given) instead of returning
+        ``b""`` to signal end-of-stream."""
+
+        class _FakeUpload:
+            size = None
+
+            def __init__(self) -> None:
+                self._chunks = list(chunks)
+
+            async def read(self, _n: int) -> bytes:
+                if self._chunks:
+                    return self._chunks.pop(0)
+                if failure is not None:
+                    raise failure
+                return b""
+
+        return _FakeUpload()
+
+    async def test_client_disconnect_mid_stream_leaves_no_file(self, tmp_path):
+        from starlette.requests import ClientDisconnect
+
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "partial.3mf"
+        upload = self._make_upload([b"first-chunk"], failure=ClientDisconnect())
+
+        with pytest.raises(ClientDisconnect):
+            await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert not dest_path.exists(), "a client disconnect mid-stream must not leave a partial file"
+
+    async def test_cancelled_error_mid_stream_leaves_no_file_and_is_not_swallowed(self, tmp_path):
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "partial.3mf"
+        upload = self._make_upload([b"first-chunk"], failure=asyncio.CancelledError())
+
+        # CancelledError is a BaseException (not Exception) since Python 3.8;
+        # it must propagate unchanged, never converted or swallowed.
+        with pytest.raises(asyncio.CancelledError):
+            await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert not dest_path.exists(), "a cancellation mid-stream must not leave a partial file"
+
+    async def test_oserror_from_write_leaves_no_file(self, tmp_path, monkeypatch):
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "partial.3mf"
+        upload = self._make_upload([b"first-chunk", b"second-chunk"])
+
+        real_open = open
+
+        def _open_with_failing_write(path, mode="r", *args, **kwargs):
+            handle = real_open(path, mode, *args, **kwargs)
+            if Path(path) == dest_path and mode == "wb":
+                original_write = handle.write
+
+                def _failing_write(data):
+                    original_write(data)
+                    raise OSError("No space left on device")
+
+                handle.write = _failing_write
+            return handle
+
+        monkeypatch.setattr("backend.app.api.routes.library.open", _open_with_failing_write, raising=False)
+
+        with pytest.raises(OSError):
+            await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert not dest_path.exists(), "a write failure (e.g. a full disk) must not leave a partial file"
+
+    async def test_successful_stream_leaves_exactly_its_own_file(self, tmp_path):
+        import hashlib
+
+        from backend.app.api.routes.library import _stream_upload_to_path
+
+        dest_path = tmp_path / "ok.3mf"
+        payload = b"hello world" * 10
+        upload = self._make_upload([payload])
+        upload.size = len(payload)
+
+        total_bytes, digest = await _stream_upload_to_path(upload, dest_path, max_bytes=10_000)
+
+        assert total_bytes == len(payload)
+        assert digest == hashlib.sha256(payload).hexdigest()
+        assert dest_path.read_bytes() == payload
+        assert list(tmp_path.iterdir()) == [dest_path]

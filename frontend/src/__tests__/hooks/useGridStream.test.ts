@@ -154,6 +154,11 @@ function fakeResponse(body: ReadableStream<Uint8Array>): Response {
   return { ok: true, status: 200, body } as unknown as Response;
 }
 
+/** A non-ok fetch Response with no body, for exercising the `!res.ok` branch (T-138). */
+function fakeErrorResponse(status: number): Response {
+  return { ok: false, status, body: null } as unknown as Response;
+}
+
 /**
  * A ReadableStream the test can push chunks into on demand (unlike
  * openStreamFromChunks, which drains a fixed list). Used where a test needs
@@ -351,6 +356,107 @@ describe('useGridStream', () => {
     });
     expect(result.current.errorSet.has(1)).toBe(true);
     expect(result.current.loadingSet.size).toBe(0);
+
+    unmount();
+  });
+
+  it('stops retrying on a non-retryable 4xx (403) and surfaces it as a terminal error instead of reconnecting forever (T-138)', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(fakeErrorResponse(403));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.terminalError).toEqual({ status: 403 });
+    expect(result.current.errorSet).toEqual(new Set([1, 2]));
+    expect(result.current.reconnectingSet.size).toBe(0);
+    expect(result.current.loadingSet.size).toBe(0);
+
+    // No backoff retry: advancing well past even the max reconnect delay
+    // must not produce a second fetch call.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.terminalError).toEqual({ status: 403 });
+
+    unmount();
+  });
+
+  it('still retries on a 500 (server error), scheduling a reconnect exactly as before the 4xx fix (T-138)', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(fakeErrorResponse(500));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.terminalError).toBeNull();
+    expect(result.current.reconnectingSet.has(1)).toBe(true);
+    expect(result.current.reconnectAttempt).toBeGreaterThanOrEqual(1);
+
+    unmount();
+  });
+
+  it('still retries on a 429 (rate limited), never latching a terminal error (T-138)', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(fakeErrorResponse(429));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.terminalError).toBeNull();
+    expect(result.current.reconnectingSet.has(1)).toBe(true);
+
+    unmount();
+  });
+
+  it('clears a latched terminal error once the stream is restarted and reconnects successfully (T-138)', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const stream = openStreamFromChunks([encodeGridFrame(1, jpeg)]);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeErrorResponse(401))
+      .mockResolvedValueOnce(fakeResponse(stream));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, rerender, unmount } = renderHook(
+      ({ restartKey }) => useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey }),
+      { initialProps: { restartKey: 0 } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.terminalError).toEqual({ status: 401 });
+
+    // Manual restart (mirrors CameraGrid's restart button bumping restartKey)
+    // tears down and re-initializes the whole effect, which now succeeds.
+    rerender({ restartKey: 1 });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.terminalError).toBeNull();
 
     unmount();
   });

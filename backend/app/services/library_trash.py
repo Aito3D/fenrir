@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
-from backend.app.models.library import LibraryFile, prune_empty_library_tags
+from backend.app.models.library import LibraryFile, LibraryFileTag, prune_empty_library_tags
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.settings import Settings
 from backend.app.utils.local_time import utcnow_naive
@@ -346,30 +347,25 @@ class LibraryTrashService:
             )
         )
         rows = result.scalars().all()
-        if not rows:
-            return 0
-
-        deleted = 0
-        for row in rows:
-            self._unlink_on_disk(row)
-            deleted += 1
-        await delete_dependent_variants(db, [r.id for r in rows])
-        await release_queue_references(db, [r.id for r in rows])
-        # Single DELETE is faster than N await db.delete() round-trips; we
-        # still need the Python loop above to unlink bytes on disk.
-        await db.execute(delete(LibraryFile).where(LibraryFile.id.in_([r.id for r in rows])))
-        await prune_empty_library_tags(db)
-        await db.commit()
-        logger.info("Library trash sweeper: hard-deleted %d row(s) past %d-day retention", deleted, retention)
+        deleted = await self.hard_delete_many(db, rows)
+        if deleted:
+            logger.info("Library trash sweeper: hard-deleted %d row(s) past %d-day retention", deleted, retention)
         return deleted
 
     @staticmethod
-    def _unlink_on_disk(row: LibraryFile) -> None:
-        """Best-effort cleanup of the file + thumbnail on disk."""
+    def _disk_paths_for(row: LibraryFile) -> list[Path]:
+        """Resolve the file + thumbnail on-disk paths for a row, if any."""
+        paths = []
         for rel in (row.file_path, row.thumbnail_path):
             abs_path = _to_absolute_path(rel)
-            if abs_path is None:
-                continue
+            if abs_path is not None:
+                paths.append(abs_path)
+        return paths
+
+    @staticmethod
+    def _unlink_paths(paths: list[Path]) -> None:
+        """Best-effort cleanup of already-resolved on-disk paths."""
+        for abs_path in paths:
             try:
                 if abs_path.exists():
                     abs_path.unlink()
@@ -387,12 +383,52 @@ class LibraryTrashService:
 
     async def hard_delete_now(self, db: AsyncSession, file: LibraryFile) -> None:
         """Bypass retention and delete this trashed file + its bytes immediately."""
-        self._unlink_on_disk(file)
-        await delete_dependent_variants(db, [file.id])
-        await release_queue_references(db, [file.id])
-        await db.delete(file)
+        await self.hard_delete_many(db, [file])
+
+    async def hard_delete_many(self, db: AsyncSession, rows: Sequence[LibraryFile]) -> int:
+        """Hard-delete a batch of trashed rows + their bytes in one commit.
+
+        Used by the sweeper and by ``empty_trash`` — the previous per-row
+        implementation issued one commit (and one SQLite write-lock
+        acquisition) per file, which stalled the whole app while a large
+        trash was being emptied (#T-149). Batching keeps the same end
+        state — same dependent-variant cleanup, same queue-reference
+        release, same rows removed, same file-tag associations dropped
+        (and the tags they emptied out pruned), same bytes gone — with a
+        single commit for the whole batch.
+
+        The file-tag association rows (``library_file_tags``) need an
+        explicit bulk DELETE here: ``await db.delete(file)`` (the old
+        per-row path) let the ORM manage that many-to-many secondary table
+        itself, but the Core bulk ``delete(LibraryFile)`` below bypasses
+        the ORM's unit-of-work entirely and SQLite runs with foreign keys
+        off, so nothing would remove them otherwise — leaving orphaned
+        association rows that (a) inflate ``PATCH /library/tags/{id}``'s
+        ``file_count`` and (b) get silently inherited by the next uploaded
+        file once SQLite reuses the deleted row's id.
+
+        Resolves the on-disk paths up front — the ORM rows may be expired
+        or detached once the DELETE below is committed, so the paths must
+        be captured while the rows are still live. Nothing is unlinked
+        until that commit actually succeeds (#T-148): a failed commit
+        (e.g. "database is locked") must leave both the rows and their
+        bytes in place, not just the rows.
+        """
+        if not rows:
+            return 0
+        pending_paths = [path for row in rows for path in self._disk_paths_for(row)]
+        ids = [r.id for r in rows]
+        await delete_dependent_variants(db, ids)
+        await release_queue_references(db, ids)
+        # The ORM's `db.delete(file)` used to drop these secondary-table rows
+        # itself; the bulk DELETE below doesn't touch them, so do it explicitly.
+        await db.execute(delete(LibraryFileTag).where(LibraryFileTag.file_id.in_(ids)))
+        # Single DELETE is faster than N await db.delete() round-trips.
+        await db.execute(delete(LibraryFile).where(LibraryFile.id.in_(ids)))
         await prune_empty_library_tags(db)
         await db.commit()
+        self._unlink_paths(pending_paths)
+        return len(rows)
 
 
 async def release_queue_references(db: AsyncSession, file_ids: list[int]) -> int:
