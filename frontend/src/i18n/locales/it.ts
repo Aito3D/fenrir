@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'Ancora nessun progetto',
     emptyHint: 'Fai clic su «+ Progetto» per aggiungere la prima scheda alla bacheca.',
     loadFailed: 'Impossibile caricare la bacheca.',
+    boardLoading: 'Caricamento della bacheca',
     deleteTitle: 'Elimina progetto',
     holdToDelete: 'Tieni premuto 1 s per eliminare',
     markSent: 'Segna come inviato',

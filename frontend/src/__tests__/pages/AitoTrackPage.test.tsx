@@ -147,7 +147,9 @@ describe('AitoTrackPage', () => {
         // out of the accessibility tree and the tab order, not absent.
         const terms = within(box).getByTestId('track-payment-methods');
         expect(within(terms).getByText('FR76 1746 9000 3120 6624 2000 041')).toBeInTheDocument();
-        expect(within(terms).getByText(/Indiquez le numéro de devis EST-000142/)).toBeInTheDocument();
+        // The quote number is the transfer reference, a row of its own.
+        expect(within(terms).getByText('Motif du virement')).toBeInTheDocument();
+        expect(within(terms).getByText('EST-000142')).toBeInTheDocument();
         expect(collapse).toHaveAttribute('aria-hidden', 'true');
         expect(collapse).toHaveAttribute('inert');
         expect(terms).not.toHaveClass('animate-rise');
@@ -554,8 +556,12 @@ describe('AitoTrackPage — online payment', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Voir les modalités' }));
     expect(collapse).toHaveAttribute('aria-hidden', 'false');
     expect(panel).toHaveClass('animate-rise');
-    expect(within(panel).getByText(/Indiquez le numéro de devis EST-000142/)).toBeInTheDocument();
+    expect(within(panel).getByText('Motif du virement')).toBeInTheDocument();
+    expect(within(panel).getByText('EST-000142')).toBeInTheDocument();
+    // One method at a time: each app's tag sits behind its own tab.
+    await userEvent.click(within(panel).getByRole('tab', { name: 'Deblock' }));
     expect(within(panel).getByText('@paul3482')).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole('tab', { name: 'Revolut' }));
     expect(within(panel).getByText('@paulteloe')).toBeInTheDocument();
   });
 

@@ -27,6 +27,7 @@ import { localDateKey } from '../utils/date';
 import { useCardFlight } from '../hooks/useCardFlight';
 import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
+import { useBoardLoadingStatus } from '../hooks/useBoardLoadingStatus';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
@@ -266,6 +267,14 @@ export function AitoPage() {
   // reflow) have no reason to wait for a reload to agree with it.
   const reducedMotion = useReducedMotion();
 
+  // First fetch, no rows yet. The board renders its six columns regardless —
+  // in their final places, dimmed, with dashes for the counts — so nothing
+  // moves when the data lands; the spinner this replaced shared the page's
+  // height with the columns and shoved them to the bottom until it left.
+  // The status pill only appears after a grace period (see the hook).
+  const pending = aitoQuery.isPending;
+  const loadingStatus = useBoardLoadingStatus(pending && view === 'board');
+
   // Whether the columns' reflow slide (see BoardColumn's `dragActive`) must
   // stay out of the way. It covers the drag itself AND the beat after it: a
   // within-column reorder is committed on drop, in the same render that clears
@@ -384,7 +393,7 @@ export function AitoPage() {
             title={t('aito.inProduction', { count: inProduction })}
             className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
           >
-            <span aria-hidden="true">{inProduction}</span>
+            <span aria-hidden="true">{pending ? '–' : inProduction}</span>
             <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
           </span>
           <PrintBacklogBadge
@@ -405,7 +414,7 @@ export function AitoPage() {
             active={view === 'done'}
             onToggle={() => changeView(view === 'done' ? 'board' : 'done')}
             icon={Archive}
-            label={`${t('aito.showDone')} (${doneCount})`}
+            label={`${t('aito.showDone')} (${pending ? '–' : doneCount})`}
             data-flight-target=""
           />
           <ViewToggleButton
@@ -437,15 +446,6 @@ export function AitoPage() {
           <Button variant="secondary" onClick={() => aitoQuery.refetch()} className="mt-4 mx-auto">
             {t('common.retry')}
           </Button>
-        </div>
-      )}
-
-      {/* First fetch — no rows yet, either way. Ahead of the empty state below
-          so the still-loading board is never mistaken for a shop with no work
-          (the same reason TrashGrid renders a spinner for its `isLoading`). */}
-      {aitoQuery.isPending && view === 'board' && (
-        <div className="flex-1 text-center py-8">
-          <Loader2 className="w-8 h-8 text-bambu-gray mx-auto animate-spin" />
         </div>
       )}
 
@@ -505,7 +505,8 @@ export function AitoPage() {
               scrolling inside itself. */}
           <div
             ref={boardRef}
-            className="flex gap-4 items-stretch overflow-x-auto pb-2 stagger-parents flex-1 min-h-0 board-scroll"
+            aria-busy={pending || undefined}
+            className="relative flex gap-4 items-stretch overflow-x-auto pb-2 stagger-parents flex-1 min-h-0 board-scroll"
           >
             {visibleColumns.map(({ column, projects }) => (
               // lg:min-w-0, not a px floor: the six columns must always fit
@@ -527,9 +528,24 @@ export function AitoPage() {
                   // server would refuse the /move PATCH.
                   dragDisabled={filtering || !canUpdate}
                   dragActive={dragging || dragSettling}
+                  pending={pending}
                 />
               </div>
             ))}
+            {/* Last child on purpose: `.stagger-parents` hands each child an
+                entrance slot by position, and this one must not take a
+                column's. Mounted only from `shown`, so a fast first fetch
+                never flashes it; kept through `leaving` for its fade. */}
+            {loadingStatus !== 'hidden' && (
+              <div role="status" data-testid="aito-board-loading" className="pointer-events-none absolute inset-x-0 top-[34%] flex justify-center">
+                <span
+                  className={`${loadingStatus === 'leaving' ? 'animate-aito-board-status-out' : 'animate-rise'} inline-flex items-center gap-2.5 rounded-full border border-bambu-dark-tertiary bg-bambu-dark-secondary/85 px-3.5 py-2 text-[12.5px] text-bambu-gray-light backdrop-blur-sm`}
+                >
+                  <Loader2 className="w-3.5 h-3.5 text-bambu-green animate-spin" aria-hidden="true" />
+                  {t('aito.boardLoading')}
+                </span>
+              </div>
+            )}
           </div>
 
           <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>

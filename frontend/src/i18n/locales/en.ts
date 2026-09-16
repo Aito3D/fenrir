@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'No projects yet',
     emptyHint: 'Click “+ Project” to add your first card to the board.',
     loadFailed: 'Could not load the board.',
+    boardLoading: 'Loading the board',
     deleteTitle: 'Delete Project',
     holdToDelete: 'Hold 1s to delete',
     markSent: 'Mark as sent',

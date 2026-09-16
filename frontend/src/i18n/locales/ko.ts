@@ -12,6 +12,7 @@ export default {
     emptyTitle: '아직 프로젝트가 없습니다',
     emptyHint: '“+ 프로젝트”를 클릭해 첫 카드를 보드에 추가하세요.',
     loadFailed: '보드를 불러올 수 없습니다.',
+    boardLoading: '보드 불러오는 중',
     deleteTitle: '프로젝트 삭제',
     holdToDelete: '1초 길게 눌러 삭제',
     markSent: '발송됨으로 표시',

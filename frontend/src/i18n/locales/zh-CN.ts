@@ -12,6 +12,7 @@ export default {
     emptyTitle: '暂无项目',
     emptyHint: '点击“+ 项目”将第一张卡片添加到看板。',
     loadFailed: '无法加载看板。',
+    boardLoading: '正在加载看板',
     deleteTitle: '删除项目',
     holdToDelete: '长按 1 秒删除',
     markSent: '标记为已发送',

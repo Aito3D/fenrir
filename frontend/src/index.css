@@ -2031,6 +2031,17 @@ tbody .calc-table-row:hover {
   --color-bambu-gray-light: color-mix(in srgb, var(--text-secondary) 55%, var(--text-primary));
 }
 
+/* Aito board, first fetch: the columns sit dimmed in their final places and
+   a status pill fades in after a grace period (useBoardLoadingStatus). This
+   is its exit — `forwards` so it stays faded until it unmounts. Opacity
+   only, so it needs no reduced-motion override. */
+@keyframes aito-board-status-out {
+  to { opacity: 0; }
+}
+.animate-aito-board-status-out {
+  animation: aito-board-status-out 0.2s var(--ease-exit) forwards;
+}
+
 /* ==========================================================================
    Aito tracking page — the client's one choreographed moment.
 

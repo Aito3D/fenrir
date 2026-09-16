@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'Aún no hay proyectos',
     emptyHint: 'Haz clic en «+ Proyecto» para añadir tu primera tarjeta al tablero.',
     loadFailed: 'No se pudo cargar el tablero.',
+    boardLoading: 'Cargando el tablero',
     deleteTitle: 'Eliminar proyecto',
     holdToDelete: 'Mantén pulsado 1 s para eliminar',
     markSent: 'Marcar como enviado',

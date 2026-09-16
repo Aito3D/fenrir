@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'Henüz proje yok',
     emptyHint: 'İlk kartı panoya eklemek için “+ Proje” düğmesine tıklayın.',
     loadFailed: 'Pano yüklenemedi.',
+    boardLoading: 'Pano yükleniyor',
     deleteTitle: 'Projeyi sil',
     holdToDelete: 'Silmek için 1 sn basılı tutun',
     markSent: 'Gönderildi olarak işaretle',

@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'Noch keine Projekte',
     emptyHint: 'Klicke auf „+ Projekt“, um die erste Karte zum Board hinzuzufügen.',
     loadFailed: 'Das Board konnte nicht geladen werden.',
+    boardLoading: 'Board wird geladen',
     deleteTitle: 'Projekt löschen',
     holdToDelete: 'Zum Löschen 1 s gedrückt halten',
     markSent: 'Als versendet markieren',

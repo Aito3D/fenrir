@@ -1684,7 +1684,7 @@ describe('AitoPage (backend board)', () => {
   // The board's empty region is three-way, and each arm says something the
   // other two would get wrong.
   describe('empty board', () => {
-    it('shows a spinner rather than "no projects yet" while the first fetch is still pending', async () => {
+    it('shows the dimmed board and a status pill rather than "no projects yet" while the first fetch is still pending', async () => {
       // Controlled by hand, not answered until after the pending assertion
       // below — a mocked response resolved immediately would make "still
       // pending" indistinguishable from "already settled".
@@ -1694,15 +1694,28 @@ describe('AitoPage (backend board)', () => {
       );
       render(<AitoPage />);
 
-      await waitFor(() => expect(document.querySelector('.animate-spin')).toBeInTheDocument());
+      // The columns are already in place, dimmed, each count a dash — the
+      // layout is the loading state, so nothing moves when the rows land.
+      const dimmed = document.querySelectorAll('[data-pending]');
+      expect(dimmed).toHaveLength(6);
+      expect(dimmed[0]).toHaveClass('opacity-40');
+      expect(screen.getAllByText('–').length).toBeGreaterThanOrEqual(6);
       expect(screen.queryByText(/no projects yet|aucun projet pour/i)).not.toBeInTheDocument();
+      // The pill waits out a grace period before admitting the wait. By test
+      // id: dnd-kit's own live region is a role="status" too.
+      expect(screen.queryByTestId('aito-board-loading')).not.toBeInTheDocument();
+      await screen.findByTestId('aito-board-loading');
+      expect(screen.getByTestId('aito-board-loading')).toHaveTextContent(/loading the board|chargement du tableau/i);
 
       await act(async () => {
         release(HttpResponse.json([]));
       });
 
-      // Settles into the genuinely-empty state once the fetch resolves.
+      // Settles into the genuinely-empty state once the fetch resolves; the
+      // pill fades out rather than vanishing, so it leaves a beat later.
       await screen.findByText(/no projects yet|aucun projet pour/i);
+      expect(document.querySelectorAll('[data-pending]')).toHaveLength(0);
+      await waitFor(() => expect(screen.queryByTestId('aito-board-loading')).not.toBeInTheDocument());
       expect(document.querySelector('.animate-spin')).not.toBeInTheDocument();
     });
 

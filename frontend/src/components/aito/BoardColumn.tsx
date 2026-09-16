@@ -261,6 +261,11 @@ interface ColumnProps {
   // animating one element fight visibly. Optional so a caller that renders a
   // column outside a drag context need not think about it.
   dragActive?: boolean;
+  // The board's first fetch has not answered yet. The column renders in its
+  // final place regardless — the layout IS the loading state — but dimmed,
+  // with a dash for a count it does not know and no dashed "empty" box,
+  // which would claim the column is empty rather than unknown.
+  pending?: boolean;
 }
 
 export function BoardColumn({
@@ -273,6 +278,7 @@ export function BoardColumn({
   dropDisabled,
   dragDisabled,
   dragActive = false,
+  pending = false,
 }: ColumnProps) {
   const { t } = useTranslation();
   // Both reasons a column may refuse a drop: `dropDisabled` is the per-card
@@ -308,18 +314,21 @@ export function BoardColumn({
       // this card may land in: its own, and only its own, for every card.
       // Dragging is reordering now; the one manual cross-column transition
       // (Finish -> Done and back) is the hold buttons above, not a drop.
-      className={`w-72 sm:w-80 lg:w-full lg:min-w-0 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow,opacity] duration-150 ${
+      // Opacity gets a longer duration than the drag feedback: the brighten
+      // when the first data lands is a settle, not a flicker of state.
+      className={`w-72 sm:w-80 lg:w-full lg:min-w-0 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow,opacity] [transition-duration:150ms,150ms,300ms] ${
         isDropTarget ? `border-transparent ring-2 ${column.ring}` : 'border-bambu-dark-tertiary'
-      } ${dropDisabled ? 'opacity-40' : ''}`}
+      } ${dropDisabled || pending ? 'opacity-40' : ''}`}
+      data-pending={pending || undefined}
     >
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary/60">
         <span className={`w-2 h-2 rounded-full ${column.dot}`} />
         <h2 className="text-sm font-semibold text-white flex-1 truncate">{t(column.labelKey)}</h2>
         <span
-          key={projects.length}
-          className="min-w-[1.5rem] px-1.5 py-0.5 text-center text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
+          key={pending ? 'pending' : projects.length}
+          className={`min-w-[1.5rem] px-1.5 py-0.5 text-center text-xs font-medium bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick ${pending ? 'text-bambu-gray' : 'text-bambu-gray-light'}`}
         >
-          {projects.length}
+          {pending ? '–' : projects.length}
         </span>
       </div>
 
@@ -335,7 +344,7 @@ export function BoardColumn({
               dragDisabled={dragDisabled}
             />
           ))}
-          {projects.length === 0 && (
+          {projects.length === 0 && !pending && (
             // animate-fade-in: the placeholder pops in the instant the last
             // card leaves, while the flight/reflow is carrying the eye —
             // entrance only, no exit, because an arriving card should cover

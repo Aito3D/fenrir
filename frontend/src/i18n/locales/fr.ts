@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'Aucun projet pour le moment',
     emptyHint: 'Cliquez sur « + Projet » pour ajouter votre première carte au tableau.',
     loadFailed: 'Impossible de charger le tableau.',
+    boardLoading: 'Chargement du tableau',
     deleteTitle: 'Supprimer le projet',
     holdToDelete: 'Maintenir 1 s pour supprimer',
     markSent: 'Marquer comme envoyé',

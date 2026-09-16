@@ -12,6 +12,7 @@ export default {
     emptyTitle: 'Nenhum projeto ainda',
     emptyHint: 'Clique em “+ Projeto” para adicionar seu primeiro cartão ao quadro.',
     loadFailed: 'Não foi possível carregar o quadro.',
+    boardLoading: 'Carregando o quadro',
     deleteTitle: 'Excluir projeto',
     holdToDelete: 'Mantenha pressionado por 1 s para excluir',
     markSent: 'Marcar como enviado',
