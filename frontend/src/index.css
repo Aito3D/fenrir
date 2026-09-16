@@ -2169,6 +2169,26 @@ tbody .calc-table-row:hover {
   overflow: hidden;
 }
 
+/* Payment-methods pane: the selected tab's pill slides between labels, the
+   pane's height tweens between methods (TrackingPaymentMethods sets an
+   explicit from/to height and clears it on transitionend), and a copied row
+   flashes green once. */
+.track-seg-pill {
+  transition:
+    left 220ms var(--ease-signature),
+    width 220ms var(--ease-signature);
+}
+.track-pane-wrap {
+  transition: height 200ms var(--ease-signature);
+}
+@keyframes track-copied {
+  from { background-color: rgb(52 211 153 / 0.12); }
+  to { background-color: transparent; }
+}
+.animate-track-copied {
+  animation: track-copied 0.9s var(--ease-exit);
+}
+
 /* Less motion, same story: the rail renders finished and the content
    crossfades in over 200ms. The check is simply there. The disclosures
    still fade, the bar just sits at its width. */
@@ -2179,6 +2199,13 @@ tbody .calc-table-row:hover {
   .track-collapse,
   .track-collapse[data-open] {
     transition: opacity 150ms linear;
+  }
+  .track-seg-pill,
+  .track-pane-wrap {
+    transition: none;
+  }
+  .animate-track-copied {
+    animation: none;
   }
   .animate-track-drop,
   .animate-track-draw,

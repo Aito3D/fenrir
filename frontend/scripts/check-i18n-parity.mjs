@@ -194,6 +194,7 @@ const DE_COGNATES = [
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
+  'Message',  // aito.track.paymentMethods.appMessage — same word in French
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
   'Urgent',  // aito.urgent — same word in French (adjectif : « urgent »)
