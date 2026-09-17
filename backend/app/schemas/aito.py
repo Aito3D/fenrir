@@ -552,6 +552,11 @@ class AitoPaymentLinkView(BaseModel):
     expires_on: str
     paid_at: datetime | None
     sync_error: str | None
+    # False = a reservation whose Heimdall create has not (yet) succeeded;
+    # there is nothing to pay. True once the row carries a real Heimdall id —
+    # `state`/`url`/etc. above are populated from Heimdall's own record at
+    # that point, not just reserved locally.
+    minted: bool
 
 
 class AitoProjectResponse(BaseModel):

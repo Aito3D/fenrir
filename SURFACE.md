@@ -3100,6 +3100,7 @@ backend/app/services/heimdall.py: class HeimdallRateLimited(HeimdallUpstreamErro
 backend/app/services/heimdall.py: class LinkView:
 backend/app/services/heimdall.py: def parse_credential(token: str) -> tuple[str, str]:
 backend/app/services/heimdall.py: def sign(
+backend/app/services/heimdall.py: def _validate_link_url(url: object) -> str | None:
 backend/app/services/heimdall.py: def _to_view(data: dict) -> LinkView:
 backend/app/services/heimdall.py: def _parse_retry_after(value: str | None) -> float | None:
 backend/app/services/heimdall.py: class HeimdallService:
@@ -3194,6 +3195,7 @@ AitoPaymentLinkView
    expires_on <class 'str'> PydanticUndefined
    paid_at datetime.datetime | None PydanticUndefined
    sync_error str | None PydanticUndefined
+   minted <class 'bool'> PydanticUndefined
 ```
 
 ## SCOPE: OpenAPI fragment for the payment-link endpoints

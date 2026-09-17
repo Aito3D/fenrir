@@ -12267,3 +12267,251 @@ counts, and no such literal was added to any comment or docstring. `SURFACE.md` 
 confirmed to pass alone and unrelated to this change); coverage 73% / 75.422% lines (Stmts 72968,
 Miss 17934), no drop from the 73% / 75.418% baseline (Stmts 72968, Miss 17937).
 User-approved 2026-09-14.
+
+## T-009 — 2026-09-16 — user-approved behavior change
+
+`reconcile_project`'s reservation branch (`backend/app/services/aito_payment_links.py`,
+`heimdall_id is None`) always completed the reservation under its original terms without
+re-checking whether the project still wanted a link at all. A reservation is created, committed,
+then POSTed to Heimdall; if the process crashes or the commit that would have recorded
+`heimdall_id` never lands, the row is retried on the next pass. In the window between the
+reservation's creation and that retry, the quote it was for could be declined, invoiced, or the
+project trashed — `wanted_link()` would then return `None` for it — but the reservation branch
+ran unconditionally and completed it anyway, minting (or revealing an already-POSTed) live,
+payable link for a dead quote. The panel would render it as Open/Copy for up to one reconcile
+tick (`_TICK_SECONDS`, 300s, or longer if the process was down or the pass aborted on a 429)
+before the next pass's dead-quote check cancelled it. For an invoiced quote this meant a payable
+link could sit live against a document already invoiced separately in Books.
+
+Fixed by re-evaluating `wanted` inside the reservation branch before completing it. If `wanted`
+is unchanged (same reference and amount as the reservation), it completes exactly as before. If
+the quote has moved on — declined, invoiced, trashed, renumbered, or repriced — the reservation
+is still completed under its OWN idempotency key (a POST from before the crash may have already
+reached Heimdall; completing again the same way makes Heimdall replay that response instead of
+minting a second link), but QUIETLY: no `payment_link.created` story event is recorded, since the
+client was never actually offered this link. It is then cancelled in the same pass (recording
+`payment_link.cancelled` with the matching reason for a dead quote, or `payment_link.replaced`
+with `reason: "renumbered"`/`"repriced"` followed by a fresh reservation if the quote still wants
+a link under new terms). If the cancel instead discovers the link was already paid, money wins,
+exactly like the existing pending-row cancel/patch-conflict paths.
+
+**User-visible change:** a reservation left over a quote that has since been declined, invoiced,
+or trashed no longer produces a live link or a `payment_link.created` timeline entry — the card
+shows no link at all (or a `payment_link.cancelled` entry) instead of one that appears for up to
+one tick and is then cancelled. A reservation over a quote that was renumbered or repriced while
+it was in flight is replaced under the new terms in the same pass instead of completing under the
+stale ones and drifting for a tick.
+
+Tests: added `test_a_reservation_for_a_dead_quote_completes_quietly_then_cancels` (parametrized
+over declined/invoiced/trashed), `test_a_reservation_whose_quote_was_renumbered_completes_quietly_then_replaces`,
+`test_a_reservation_whose_amount_moved_completes_quietly_then_replaces`, and
+`test_a_stale_reservation_that_turns_out_paid_is_credited_not_replaced` to
+`backend/tests/unit/test_aito_payment_links.py`. No existing test asserted the old behavior (the
+existing reservation tests all reconcile against a quote whose terms have not moved), so none
+needed to change.
+
+Confirmed via `snapshot.py verify`: 16/16 probes match — `payment-link-reconcile`'s scenario 3
+(`03-complete-reservation`) reconciles a reservation against a quote whose terms are unchanged,
+which is exactly the branch left untouched by this fix, so the golden did not move. `SURFACE.md`
+is unchanged (`_complete`'s new `record_event` parameter is a private, module-internal default-`True`
+kwarg, not part of any route, schema, or other probed surface).
+
+## T-004 — 2026-09-16 — user-approved behavior change
+
+`HeimdallService._to_view` (`backend/app/services/heimdall.py`) adopted `link.get("url")`
+verbatim into the stored `LinkView.url` with no scheme, host, or type check, unlike every
+sibling field, which is at least `str()`-cast. Heimdall's HMAC (`sign()`) authenticates only
+the outbound request; nothing authenticates its response, and the LAN guard used elsewhere in
+the app deliberately permits plain HTTP for LAN services, so the hop to Heimdall may be
+unencrypted. That value is stored by the reconciler (`_adopt`, `aito_payment_links.py`),
+published unauthenticated to the customer's tracking page (`aito_tracking.py` ->
+`TrackingPayment.tsx`'s `<a href={payment.url}>`), and handed to the operator's panel
+(`PaymentLinkRow.tsx`'s `<OpenLinkButton href={link.url}>`). An attacker on the plain-HTTP LAN
+hop (ARP/DNS spoof, or a compromised POS host) answering a payment call with
+`"link":{"url":"https://attacker.example/pay"}` would have that URL stored and shown to both
+the paying customer and the operator; a `javascript:` value would become stored script in the
+operator's authenticated session, since React does not sanitize `href`.
+
+Fixed by adding `_validate_link_url()` and calling it in `_to_view` before building the
+`LinkView`, extending the function's existing malformed-shape guard rather than adding a
+second error path. `None`/absent stays valid (a payment legitimately has no link yet, and
+`_adopt` only assigns when the value is truthy), matching the pre-existing `LinkView.url:
+str | None` contract. A *present* value must be a `str`, no longer than 500 characters (the
+backing column is `String(500)`, `models/aito_payment_link.py`), and `urlparse`-able with an
+`http`/`https` scheme and a non-empty hostname; anything else raises `HeimdallUpstreamError`,
+which is not caught by the enclosing `except (KeyError, TypeError, ValueError)` clause and so
+propagates unchanged — landing in the row's `sync_error` exactly like every other upstream
+problem, per the task's guidance.
+
+Considered reusing `backend/app/api/routes/_url_safety.py`'s `assert_safe_lan_service_url`
+instead of a local check, but its semantics are for an OUTBOUND url Bambuddy will dial
+(SSRF: it deliberately permits loopback/RFC-1918, and additionally blocks cloud-metadata,
+multicast and unspecified addresses, and numeric-encoded IPs — all of which are only
+meaningful for a URL Bambuddy itself will request). This is the opposite direction: a URL
+Bambuddy will only ever render as a link for someone else's browser to follow, where a private
+address is not a threat to Bambuddy and rejecting it would wrongly break a legitimate `http://
+192.168.1.20:8081/pay/...`-shaped link (the Settings placeholder for `heimdall_base_url` is
+exactly that shape). Bending the SSRF guard to also serve as an output sanitizer would have
+required a second parameter or a near-duplicate function for one narrower check, so a small
+local check was written instead.
+
+**User-visible change:** a payment whose Heimdall-supplied `link.url` is present but is not a
+plain http(s) URL with a hostname (or exceeds 500 characters) no longer renders Open/Copy on
+the operator's panel or appears as a link on the customer's tracking page; the row instead
+shows a sync error, matching how every other malformed-shape response from Heimdall is already
+surfaced. A missing or null link is unaffected.
+
+Tests: added `test_to_view_accepts_a_normal_https_link_url`,
+`test_to_view_accepts_a_missing_or_null_link_url`,
+`test_to_view_rejects_a_link_url_that_is_not_a_safe_http_url` (parametrized over
+`javascript:`, `data:`, `file:`, scheme-relative, `ftp:`, not-a-url, empty string, a
+hostname-less `https:///...`, and an over-500-character value), and
+`test_to_view_rejects_a_non_string_link_url` to `backend/tests/unit/test_heimdall_client.py`.
+No existing test asserted the old (verbatim-adoption) behavior, so none needed to change.
+
+Confirmed via `snapshot.py verify`: 16/16 probes match, including `heimdall-wire` — none of
+that probe's ~35 upstream payloads (including `200-link-null`, `200-link-not-an-object`, and
+`200-minimal-valid`) set a `link.url` that is present-but-unsafe; the one payload with a link
+(`PAYMENT` in `tools/probe_heimdall_wire.py`) uses a normal `https://secure.osb.pf/pay/abc`
+url, so the new validation branch is not exercised by that probe and its golden is unchanged.
+`heimdall-signing` and `payment-link-math` are unaffected, as expected. `SURFACE.md` moved by
+exactly one line — the new private `_validate_link_url` def appearing in section 9's
+"payment-link module signatures" listing — and was regenerated with
+`bash tools/gen_surface_c17.sh > SURFACE.md`.
+
+## T-010 — 2026-09-16 — user-approved behavior change
+
+`link_view` (`backend/app/services/aito_payment_links.py`) returned `None` for a reservation
+row (`heimdall_id` still NULL) exactly the same as it did for no row at all. A reservation
+that can never complete — Heimdall permanently refusing the create (e.g. `HTTP 422
+invalid_request: reference matches no document`) — sits retried, backed off, and accumulating
+`sync_error`/`sync_failures` on its row forever, but the API reported `payment_link: null`,
+identical to a quote with no link. `PaymentLinkRow.tsx` renders nothing at all for `null`
+(`if (!link) return null`), so the one row that most needs the operator's attention — and
+whose Retry button exists only inside `{link.sync_error && ...}` — was invisible and
+unreachable. Nothing but a `logger.warning` recorded the failure anywhere a human looks.
+
+Fixed by having `link_view` return a view for ANY row, not just one with a `heimdall_id`.
+No schema change: `AitoPaymentLinkView.url` was already `str | None`, and a reservation's
+`url` column is naturally still `None` (only `_adopt`, reached after a successful create,
+ever sets it), so the view for a reservation is exactly `state="pending"` (a reservation's
+`status` column never leaves its `"pending"` default while `heimdall_id` is null — only
+`_adopt` changes it), a real `amount`/`currency`/`expires_on` (stamped by `_create` before
+the POST is even attempted, so they are the reservation's own honest terms, not placeholders),
+`paid_at=None`, `url=None`, and the row's real `sync_error`. The frontend's existing
+payability test in `PaymentLinkRow.tsx` — `live = (link.state === 'pending' || link.state
+=== 'paid') && !!link.url` — already excludes this shape by construction: `url` is `None`, so
+`live` is `false` and neither the Open nor Copy button ever renders for it, with no frontend
+change required to enforce that. The existing `{link.sync_error && ...}` block (error text +
+Retry, gated on `canUpdate`) already renders unconditionally of `state`/`live`, so a
+reservation's error and Retry now surface the same way a live link's does — no frontend code
+changed, only a new test (`AitoPaymentLinkRow.test.tsx`) asserting the reservation shape
+renders its amount without Open/Copy, plus the error and a working Retry.
+
+`aito_tracking.py`'s `payment_state` (the public, unauthenticated tracking page) does not use
+`link_view` at all — it builds `AitoTrackingPayment` directly from the row and already guards
+`row.heimdall_id is None` with an explicit early `return None`, independent of this change.
+`AitoTrackingPayment` also has no `sync_error` field. Verified this guard still stands
+unmodified; a reservation continues to appear as no payment link on the customer-facing page,
+and `sync_error` (a raw, possibly upstream-identifying Heimdall error string) cannot reach it
+either before or after this change.
+
+**User-visible change:** `GET /aito/` and `GET /aito/{id}` now return a non-null
+`payment_link` for a project whose current row is a reservation (`heimdall_id` null),
+carrying the reservation's real `amount`/`currency`/`expires_on`, `state: "pending"`,
+`url: null`, and `sync_error` when the row has one. The operator's panel now shows the
+amount (with no Open/Copy — there is nothing to open or copy) and, once the reservation has
+failed at least once, the error text and a working Retry button, where previously the row
+rendered nothing at all. A reservation still in its very first attempt (no `sync_error` yet)
+now shows its amount instead of nothing, one reconcile tick earlier than a live link would
+have appeared. The public tracking page is unaffected.
+
+Tests: added `'a reservation that never minted (no url) shows its error and Retry, never a
+payable link'` to `frontend/src/__tests__/components/AitoPaymentLinkRow.test.tsx`. No existing backend or
+frontend test asserted the old (hidden-reservation) behavior — the full targeted backend suite
+(`test_aito_payment_links.py`, `test_aito_payment_link_api.py`, `test_aito_tracking_payment.py`,
+75 tests) and the full `AitoPaymentLinkRow.test.tsx` file passed unmodified against the new
+`link_view`.
+
+Confirmed via `snapshot.py verify`: only `payment-link-api` moved (15/16 -> re-recorded ->
+16/16 after `snapshot.py record` and a `git diff --stat snapshots/` confirming exactly that
+one file changed). Its steps `27-refresh-upstream-500`, `28-refresh-unreachable`,
+`29-refresh-upstream-429` (the auditor's own evidence) now carry the reservation's
+`payment_link` instead of `null`, and its `40-board-payment-links` step — which the auditor's
+evidence did not call out — moved the same way for the two other rows in that fixture that
+are also reservations (project 2's deliberately-`heimdall_id`-null row, and project 7's row
+after its three forced failures), consistent with the same fix applying everywhere `link_view`
+is called. `payment-link-reconcile`, `heimdall-signing`, `payment-link-math`, and
+`heimdall-wire` are unaffected, as expected — none of those probes read `payment_link` off the
+API surface. `SURFACE.md` is unchanged (`bash tools/gen_surface_c17.sh` produced no diff):
+`AitoPaymentLinkView`'s field types are untouched and `link_view`'s signature did not change.
+
+## T-010 follow-up — 2026-09-17 — user-approved behavior change
+
+T-010 above (2026-09-16) made `link_view` return a real view for a reservation row
+(`heimdall_id` still NULL) instead of `null`, so the operator's `PaymentLinkRow.tsx` panel
+could finally show its amount, sync_error, and Retry. That entry did not mention — and its
+author had not noticed — that `payment_link` has a SECOND reader: `linkExpiring`, one of the
+five rules in `frontend/src/utils/aitoFollowups.ts`'s follow-ups strip, which had always
+excluded a reservation from the "link expiring" bucket purely because BASE's `link_view`
+returned `null` for one (`if (!link || ...) return null`). Once T-010 started returning a
+real, non-null view for a reservation, `linkExpiring` started reading it too — and a
+reservation now qualifies as "expiring" (real `state: "pending"`, a real `expires_on`,
+`quote_status` `sent`/`viewed`) even though there is nothing at that URL for the client to
+pay: a reservation's `url` is always `None` until a create actually reaches Heimdall. Two
+same-day fix attempts on this file were rejected by the blind verifier: the first patch added
+`!link.url` to the guard, which is narrower than BASE — a row that HAS a `heimdall_id` (truly
+minted) but happens to carry a null `url` (`_adopt` only overwrites `row.url` when
+`view.url` is truthy, so a Heimdall reply that omits `url` leaves it `None` on an otherwise
+live link) was reachable at BASE, entered the bucket there, and stopped entering it under the
+`!link.url` patch — a real regression the `heimdall-wire` probe's `200-link-null` payload
+exists to cover.
+
+Root cause: `AitoPaymentLinkView` had no field distinguishing "reservation, nothing to pay"
+from "minted link that happens to have no url" — `heimdall_id` itself never left the backend.
+Fixed by adding `AitoPaymentLinkView.minted: bool` (`backend/app/schemas/aito.py`), set by
+`link_view` from `row.heimdall_id is not None` (`backend/app/services/aito_payment_links.py`),
+mirrored onto the frontend `AitoPaymentLink` type (`frontend/src/api/client.ts`), and used to
+restore `linkExpiring`'s exact BASE semantics: `if (!link || !link.minted || link.state !==
+'pending') return null` — dropping the over-narrow `!link.url` test entirely. A reservation
+(`minted: false`) is excluded regardless of its `url`/`state`, matching BASE (where it was
+`null` and therefore always excluded); a minted link with a null `url` is included again,
+also matching BASE (it was never `null` there, so `linkExpiring` always saw it).
+
+`AitoTrackingPayment` (`backend/app/schemas/aito.py`) — the SEPARATE schema the public,
+unauthenticated tracking page reads (`backend/app/services/aito_tracking.py:payment_state`) —
+does not gain `minted` and is unaffected: it is built directly off the row behind its own
+`row.heimdall_id is None` early return (`return None`), never through `link_view`, and was not
+touched by this change or by T-010.
+
+**User-visible change:** none beyond what T-010 already shipped and this closes the gap on.
+`GET /aito/` and `GET /aito/{id}`'s `payment_link` object gains one new boolean field,
+`minted`. The follow-ups strip's "link expiring" bucket is restored to its exact BASE
+membership (a reservation never appears in it; a minted-but-url-less link does, as it always
+did) — the two intermediate frontend states this repo's own tip briefly held (over-inclusive
+right after T-010 landed, then over-exclusive after the first, rejected fix) are both gone.
+
+Tests: `frontend/src/__tests__/utils/aitoFollowups.test.ts` gained `'still flags a minted
+link with a null url, exactly as it would with one'` (the regression this task exists to
+guard) alongside the existing (renamed) `'ignores a reservation (unminted, no url) ...'` case.
+`backend/tests/unit/test_aito_payment_links.py` gained
+`test_link_view_minted_reflects_heimdall_id`, asserting `minted` flips from `False` to `True`
+across a single row's `heimdall_id` assignment. `backend/tests/unit/test_aito_payment_link_api.py`'s
+existing exact-dict assertion in `test_board_and_detail_carry_the_current_link` was updated to
+include `"minted": True` (its fixture row already carries a `heimdall_id`). Every other
+`payment_link`-shaped test fixture across the frontend suite (`AitoPaymentLinkRow.test.tsx`'s
+`link`, `AitoCardView.test.tsx`'s `paid`) was swept and given an explicit `minted` value; every
+fixture that only ever writes `payment_link: null` (the large majority — `aitoOptimistic.ts`,
+`AitoFxDemoPage.tsx`, and the bulk of the component/page test fixtures) needed no change.
+
+Confirmed via `snapshot.py verify`: `payment-link-api` moved (16/16 after re-recording) —
+every `payment_link` object in it gained `"minted": true` or `"minted": false`, consistently
+with whether that row's fixture carries a `heimdall_id`. `app-openapi-index` also moved (a
+mechanical, unavoidable consequence of any new field on a schema exposed via `/openapi.json`:
+its `AitoPaymentLinkView` property/required lists both gained `minted`), which the task brief
+for this fix did not name explicitly but which cannot be avoided while adding this field —
+`git diff --stat snapshots/` was used to confirm those were the ONLY two files touched.
+`heimdall-signing`, `payment-link-math`, `heimdall-wire`, `payment-link-reconcile`, and every
+other `app-*`/`fe-*` probe are unchanged. `SURFACE.md` moved by exactly one line in section 11
+(`bash tools/gen_surface_c17.sh`): `minted <class 'bool'> PydanticUndefined` added under
+`AitoPaymentLinkView`.

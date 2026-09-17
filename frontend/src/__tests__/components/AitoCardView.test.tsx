@@ -1115,7 +1115,7 @@ describe('CardView — the client still has to be told', () => {
 
 describe('paid-online badge', () => {
   it('shows the paid-online badge only for a paid link', () => {
-    const paid = { state: 'paid' as const, amount: 12500, currency: 'XPF', url: 'u', expires_on: '2026-09-27', paid_at: '2026-09-13T10:00:00', sync_error: null };
+    const paid = { state: 'paid' as const, amount: 12500, currency: 'XPF', url: 'u', expires_on: '2026-09-27', paid_at: '2026-09-13T10:00:00', sync_error: null, minted: true };
     const { rerender } = render(<CardView project={{ ...project, payment_link: paid }} />);
     expect(screen.getByTestId('aito-card-paid-online')).toHaveAttribute('title', 'Paid online');
     rerender(<CardView project={{ ...project, payment_link: { ...paid, state: 'pending' } }} />);

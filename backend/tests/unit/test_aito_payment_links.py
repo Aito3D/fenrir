@@ -251,6 +251,24 @@ def test_expires_in_days_is_at_least_one():
     assert expires_in_days("2026-09-01", TODAY) == 1
 
 
+def test_link_view_minted_reflects_heimdall_id():
+    """T-010 continuation: `minted` is the one field that tells a reservation
+    (heimdall_id still NULL) apart from an adopted link — see the follow-ups
+    strip's `linkExpiring` rule, which reads it instead of `url`."""
+    reservation = AitoPaymentLink(
+        project_id=1,
+        idempotency_key="aito:1:1",
+        reference="DEV-1",
+        amount=12500,
+        expires_on="2026-09-27",
+        status="pending",
+    )
+    assert svc.link_view(reservation).minted is False
+
+    reservation.heimdall_id = "L1"
+    assert svc.link_view(reservation).minted is True
+
+
 # --- transition table ---------------------------------------------------------
 
 
@@ -280,6 +298,126 @@ async def test_a_reservation_is_retried_with_the_same_key(db_session, fake):
     (r,) = await _rows(db_session, p.id)
     assert r.heimdall_id == "L1" and r.sync_error is None and r.sync_failures == 0
     assert [c[1] for c in fake.calls if c[0] == "create"] == [f"aito:{p.id}:1", f"aito:{p.id}:1"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value,reason",
+    [
+        ("quote_status", "declined", "declined"),
+        ("quote_invoiced", True, "invoiced"),
+        ("status", "deleted", "trashed"),
+    ],
+)
+async def test_a_reservation_for_a_dead_quote_completes_quietly_then_cancels(db_session, fake, field, value, reason):
+    """The reservation's POST may already have reached Heimdall before the
+    crash that left `heimdall_id` uncommitted. If the quote died in the
+    meantime (declined, invoiced, trashed) while the reservation sat there,
+    completing it under its ORIGINAL terms must not hand out a live,
+    payable link for it — so it is completed quietly (no
+    `payment_link.created`) and cancelled in the very same pass instead."""
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.heimdall_id is None  # still a reservation
+    fake.fail_with = None
+    setattr(p, field, value)
+    await db_session.commit()
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    (r,) = await _rows(db_session, p.id)
+    assert r.status == "cancelled" and r.heimdall_id == "L1"
+    assert [c[0] for c in fake.calls if c[0] in ("create", "cancel")][-2:] == ["create", "cancel"]
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" not in kinds
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.cancelled")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == reason
+
+
+@pytest.mark.asyncio
+async def test_a_reservation_whose_quote_was_renumbered_completes_quietly_then_replaces(db_session, fake):
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    p.quote_number = "DEV-2026-9999"
+    await db_session.commit()
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    rows = await _rows(db_session, p.id)
+    assert [r.reference for r in rows] == ["DEV-2026-1234", "DEV-2026-9999"]
+    assert rows[0].status == "cancelled" and rows[0].superseded_at is not None
+    assert rows[1].heimdall_id == "L2" and rows[1].status == "pending"
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" not in kinds
+    assert kinds[-1:] == ["payment_link.replaced"]
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.replaced")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == "renumbered"
+
+
+@pytest.mark.asyncio
+async def test_a_reservation_whose_amount_moved_completes_quietly_then_replaces(db_session, fake):
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    p.quote_total = 20000.0
+    await db_session.commit()
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    rows = await _rows(db_session, p.id)
+    assert rows[0].status == "cancelled" and rows[0].amount == 12500
+    assert rows[1].amount == 20000 and rows[1].status == "pending"
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" not in kinds
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.replaced")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == "repriced"
+
+
+@pytest.mark.asyncio
+async def test_a_stale_reservation_that_turns_out_paid_is_credited_not_replaced(db_session, fake, monkeypatch):
+    """The quiet complete can itself discover the client already paid
+    between the original POST and this pass's cancel attempt — money must
+    win over the replacement, exactly like the already-completed-row case
+    (`test_cancel_conflict_with_a_paid_link_credits_instead_of_cancelling`)."""
+    p = await _project(db_session)
+    pid = p.id
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    p.quote_number = "DEV-2026-9999"
+    await db_session.commit()
+
+    real_create = fake.create_link
+
+    async def create_then_pay(db, **kw):
+        view = await real_create(db, **kw)
+        fake.set_status(view.id, "paid")  # paid at OSB right as we complete it
+        return view
+
+    monkeypatch.setattr(heimdall_service, "create_link", create_then_pay)
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    (r,) = await _rows(db_session, pid)
+    assert r.status == "paid" and r.paid_at == later
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" in kinds
+    assert "payment_link.created" not in kinds and "payment_link.replaced" not in kinds
+    accepted = await db_session.get(AitoProject, pid)
+    assert accepted.quote_status == "accepted"
 
 
 @pytest.mark.asyncio

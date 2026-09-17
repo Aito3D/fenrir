@@ -80,7 +80,7 @@ const RULES: Record<FollowupKey, Rule> = {
   // among live links fall back to id order, same as every other rule.
   linkExpiring: (p, t, _now, today) => {
     const link = p.payment_link;
-    if (!link || link.state !== 'pending') return null;
+    if (!link || !link.minted || link.state !== 'pending') return null;
     if (p.quote_status !== 'sent' && p.quote_status !== 'viewed') return null;
     if (!isIsoDateKey(link.expires_on)) return null;
     const left = Math.round((parseLocalDateKey(link.expires_on).getTime() - parseLocalDateKey(today).getTime()) / DAY_MS);

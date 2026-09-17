@@ -271,12 +271,19 @@ async def _complete(
     now: datetime,
     kind: str,
     extra_detail: dict | None = None,
+    record_event: bool = True,
 ) -> None:
     """POST the reservation. `expires_in_days` is computed from the
     reservation's OWN day (`row.created_at`), never `today`: a retry of an
     unfinished reservation on a later day must send the exact same body
     under the same idempotency key, or Heimdall sees a changed body and
-    answers 409 forever instead of replaying the first response."""
+    answers 409 forever instead of replaying the first response.
+
+    `record_event=False` lets a caller that is about to cancel this same
+    reservation right back (the quote it was for has moved on since the POST
+    was reserved) complete it WITHOUT telling the story it was ever offered
+    to the client — only the `payment_link.cancelled`/`.replaced` that
+    follows gets recorded."""
     view = await heimdall_service.create_link(
         db,
         idempotency_key=row.idempotency_key,
@@ -285,21 +292,22 @@ async def _complete(
         expires_in_days=expires_in_days(row.expires_on, row.created_at.date()),
     )
     _adopt(row, view, now)
-    await record(
-        db,
-        project.id,
-        kind,
-        actor_class="system",
-        subject_type="project",
-        subject_id=project.id,
-        detail={
-            "reference": row.reference,
-            "amount": row.amount,
-            "expires_on": row.expires_on,
-            "heimdall_id": row.heimdall_id,
-            **(extra_detail or {}),
-        },
-    )
+    if record_event:
+        await record(
+            db,
+            project.id,
+            kind,
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={
+                "reference": row.reference,
+                "amount": row.amount,
+                "expires_on": row.expires_on,
+                "heimdall_id": row.heimdall_id,
+                **(extra_detail or {}),
+            },
+        )
     await db.commit()
 
 
@@ -461,8 +469,48 @@ async def reconcile_project(
                 await _create(db, project, wanted, now=now, kind="payment_link.created")
             return
         if row.heimdall_id is None:
-            # A reservation: always complete it under its own key first.
-            await _complete(db, project, row, now=now, kind="payment_link.created")
+            # A reservation: the POST it stands for may already have reached
+            # Heimdall and only the commit that would have recorded
+            # `heimdall_id` failed — that is the whole reason reservations
+            # exist. So it is never abandoned outright. But it must not be
+            # completed BLINDLY under its original terms either: if the
+            # quote it was for has since been declined, invoiced or
+            # trashed, `_complete` would mint (or reveal) a live, payable
+            # link for a dead quote, if only for the instant before the
+            # next tick cancels it. Re-check `wanted` against what this
+            # reservation promised first.
+            if wanted is not None and row.reference == wanted.reference and row.amount == wanted.amount:
+                # Unchanged since the reservation was made: proceed exactly
+                # as before.
+                await _complete(db, project, row, now=now, kind="payment_link.created")
+                return
+            # Something moved on. Complete it anyway, under the SAME
+            # idempotency key, so a POST that already succeeded is replayed
+            # rather than a second link minted — but QUIETLY: the client was
+            # never actually offered this link, so no `payment_link.created`
+            # enters the story. Then cancel it immediately, in the same
+            # pass, so there is no tick where a live link for a dead or
+            # stale reservation is exposed to the panel.
+            await _complete(db, project, row, now=now, kind="payment_link.created", record_event=False)
+            if wanted is None:
+                await _cancel(
+                    db,
+                    project,
+                    row,
+                    now=now,
+                    reason=_cancel_reason(project, required_amount(project.quote_total, pct)),
+                )
+                return
+            # Still owed, just not what this reservation promised (a
+            # renumber or a repricing raced the crash that orphaned it):
+            # cancel it and mint a fresh one under the current terms, same
+            # as a renumber on an already-completed row.
+            reason = "renumbered" if row.reference != wanted.reference else "repriced"
+            if await _cancel(db, project, row, now=now, reason=reason, record_event=False):
+                return  # the client paid the stale reservation; nothing to replace
+            row.superseded_at = now
+            await db.commit()
+            await _create(db, project, wanted, now=now, kind="payment_link.replaced", extra_detail={"reason": reason})
             return
         if row.status == "paid":
             return
@@ -716,11 +764,19 @@ async def _run_pass(
 
 
 def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
-    """The API shape of a ledger row; None for no row and for a reservation
-    that never completed (nothing to copy, nothing to pay)."""
+    """The API shape of a ledger row; None only for no row at all.
+
+    A reservation (`heimdall_id` still NULL — the create either never
+    reached Heimdall or its reply never got recorded) is NOT hidden: its
+    `url` is naturally None (never set while `heimdall_id` is None), so the
+    panel's own "is this payable" test (state pending/paid AND a url) already
+    keeps it from ever rendering Open/Copy buttons or being mistaken for a
+    live link. What DOES cross is `sync_error` — the one thing a reservation
+    stuck retrying a permanent Heimdall refusal needs to surface, since that
+    is otherwise invisible anywhere a human looks (see T-010)."""
     from backend.app.schemas.aito import AitoPaymentLinkView
 
-    if row is None or row.heimdall_id is None:
+    if row is None:
         return None
     return AitoPaymentLinkView(
         state=row.status if row.status in ("pending", "paid", "failed", "cancelled", "expired") else "pending",
@@ -730,4 +786,5 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
         expires_on=row.expires_on,
         paid_at=row.paid_at,
         sync_error=row.sync_error,
+        minted=row.heimdall_id is not None,
     )

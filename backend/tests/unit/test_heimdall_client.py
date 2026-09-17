@@ -15,6 +15,7 @@ from backend.app.services.heimdall import (
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
+    _to_view,
     heimdall_service,
     parse_credential,
     sign,
@@ -216,6 +217,50 @@ async def test_patch_cancel_get_hit_the_right_paths(db_session):
     assert calls[2][:2] == ("POST", "/api/v1/payments/6f1e/cancel") and calls[2][2] == b""
     assert calls[3][:2] == ("GET", "/api/v1/payments/6f1e")
     assert cancelled.status == "cancelled"
+
+
+def test_to_view_accepts_a_normal_https_link_url():
+    view = _to_view(_link_json())
+    assert view.url == "https://secure.osb.pf/pay/abc"
+
+
+def test_to_view_accepts_a_missing_or_null_link_url():
+    # Not every payment has a link yet — this must stay a valid, linkless
+    # view rather than an error.
+    without_link = _link_json()
+    del without_link["link"]
+    assert _to_view(without_link).url is None
+
+    assert _to_view(_link_json(link={"url": None, "expires_at": None})).url is None
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "javascript:alert(document.cookie)",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///etc/passwd",
+        "//attacker.example/pay",
+        "ftp://attacker.example/pay",
+        "not-a-url-at-all",
+        "",
+        "https:///no-hostname",
+        "x" * 501,
+    ],
+)
+def test_to_view_rejects_a_link_url_that_is_not_a_safe_http_url(bad_url):
+    # An unauthenticated Heimdall response is where an attacker on the LAN
+    # hop (or a compromised POS host) could hand back a url that gets
+    # rendered verbatim to the customer's tracking page and the operator's
+    # panel; this must surface as a sync error, not as a stored/rendered
+    # value.
+    with pytest.raises(HeimdallUpstreamError):
+        _to_view(_link_json(link={"url": bad_url, "expires_at": None}))
+
+
+def test_to_view_rejects_a_non_string_link_url():
+    with pytest.raises(HeimdallUpstreamError):
+        _to_view(_link_json(link={"url": 12345, "expires_at": None}))
 
 
 @pytest.mark.asyncio

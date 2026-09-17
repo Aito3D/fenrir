@@ -159,7 +159,16 @@ describe('unpaid', () => {
 describe('linkExpiring', () => {
   // TODAY here is 2026-09-10 (not the brief's 2026-09-12): 9/12 is 2 days
   // out, 9/08 is 2 days past, 9/18 is beyond the 3-day threshold.
-  const link = { state: 'pending' as const, amount: 1, currency: 'XPF', url: 'u', expires_on: '2026-09-12', paid_at: null, sync_error: null };
+  const link = {
+    state: 'pending' as const,
+    amount: 1,
+    currency: 'XPF',
+    url: 'u',
+    expires_on: '2026-09-12',
+    paid_at: null,
+    sync_error: null,
+    minted: true,
+  };
 
   it('flags a pending link on a sent quote within the threshold, longest-expired first', () => {
     const soon = project({ quote_status: 'sent', payment_link: link });
@@ -178,6 +187,29 @@ describe('linkExpiring', () => {
       project({ quote_status: 'sent', payment_link: null }),
     ];
     expect(followups(rows, T, NOW, TODAY).linkExpiring.ids).toEqual([]);
+  });
+
+  it('ignores a reservation (unminted, no url), even one already past its expiry date', () => {
+    const reservation = project({
+      quote_status: 'sent',
+      payment_link: { ...link, minted: false, url: null, expires_on: '2026-09-04' },
+    });
+    const r = followups([reservation], T, NOW, TODAY);
+    expect(r.linkExpiring.ids).toEqual([]);
+    expect(r.linkExpiring.maxDays).toBe(0);
+  });
+
+  it('still flags a minted link with a null url, exactly as it would with one', () => {
+    // Regression guard: a minted link can legitimately have no `url` (Heimdall
+    // adopted it but never sent one back — see `_adopt`), and that must not be
+    // mistaken for a reservation. Only `minted` distinguishes the two.
+    const mintedNoUrl = project({
+      quote_status: 'sent',
+      payment_link: { ...link, url: null, expires_on: '2026-09-04' },
+    });
+    const r = followups([mintedNoUrl], T, NOW, TODAY);
+    expect(r.linkExpiring.ids).toEqual([mintedNoUrl.id]);
+    expect(r.linkExpiring.maxDays).toBe(6);
   });
 });
 

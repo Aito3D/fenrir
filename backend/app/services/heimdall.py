@@ -22,6 +22,7 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,16 +117,49 @@ def sign(
     return "sha256=" + hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+# The url column is String(500) (models/aito_payment_link.py); an
+# obviously-oversized value is rejected here rather than left to a DB error
+# or a silent truncation later.
+_MAX_LINK_URL_LENGTH = 500
+
+
+def _validate_link_url(url: object) -> str | None:
+    """Reject a Heimdall-supplied link url unless it is a plain http(s) URL.
+
+    Heimdall's response is unauthenticated — the HMAC in ``sign()`` covers
+    only the request we sent (see module docstring) — so this value is
+    stored verbatim, then rendered as an unescaped ``<a href>`` on the
+    public tracking page and as a link/copy target on the operator's panel.
+    A missing link is a legitimate, common state (not every payment has one
+    yet), so ``None``/absent must stay valid; only a *present* value that
+    is not a safe http(s) URL is rejected.
+    """
+    if url is None:
+        return None
+    if not isinstance(url, str) or not url or len(url) > _MAX_LINK_URL_LENGTH:
+        raise HeimdallUpstreamError("Heimdall returned a payment link url that is not a usable string")
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+        raise HeimdallUpstreamError(f"Heimdall returned a payment link url with an unsafe scheme or host: {url!r}")
+    return url
+
+
 def _to_view(data: dict) -> LinkView:
     try:
+        link_id = str(data["id"])
+        status = str(data["status"])
+        amount = int(data["amount"])
+        currency = str(data.get("currency") or "XPF")
+        reference = str(data.get("reference") or "")
         link = data.get("link") or {}
+        url = _validate_link_url(link.get("url"))
         return LinkView(
-            id=str(data["id"]),
-            status=str(data["status"]),
-            amount=int(data["amount"]),
-            currency=str(data.get("currency") or "XPF"),
-            reference=str(data.get("reference") or ""),
-            url=link.get("url"),
+            id=link_id,
+            status=status,
+            amount=amount,
+            currency=currency,
+            reference=reference,
+            url=url,
             expires_at=link.get("expires_at"),
         )
     except (KeyError, TypeError, ValueError) as e:
