@@ -8340,6 +8340,7 @@ export default {
       trackingRegenerated: 'heeft de volglink opnieuw gegenereerd',
       paymentLinkCreated: 'Betaallink aangemaakt',
       paymentLinkReplaced: 'Betaallink vervangen',
+      paymentLinkUpdated: 'Betaallink bijgewerkt',
       paymentLinkPaid: 'Online betaald',
       paymentLinkCancelled: 'Betaallink geannuleerd',
       noteAdded: 'heeft een notitie toegevoegd',

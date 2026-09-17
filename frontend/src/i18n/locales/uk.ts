@@ -518,6 +518,7 @@ export default {
       trackingRegenerated: 'перегенерував посилання відстеження',
       paymentLinkCreated: 'Посилання на оплату створено',
       paymentLinkReplaced: 'Посилання на оплату замінено',
+      paymentLinkUpdated: 'Посилання на оплату оновлено',
       paymentLinkPaid: 'Сплачено онлайн',
       paymentLinkCancelled: 'Посилання на оплату скасовано',
       noteAdded: "додав нотатку",

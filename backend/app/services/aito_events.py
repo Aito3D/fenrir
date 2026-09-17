@@ -83,6 +83,7 @@ KINDS: dict[str, str] = {
     # a retainer covered it explains why the panel shows no link.
     "payment_link.created": "story",
     "payment_link.replaced": "story",
+    "payment_link.updated": "story",
     "payment_link.paid": "story",
     "payment_link.cancelled": "story",
     # detail: everything a person did by hand.

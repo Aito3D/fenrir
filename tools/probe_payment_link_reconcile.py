@@ -31,7 +31,7 @@ import json
 import secrets as _secrets
 import sys
 import time as _time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 sys.path.insert(0, ".")
@@ -76,6 +76,13 @@ class Heimdall:
         self.plan: dict[str, tuple] = {}
         self.fail_all: tuple | None = None
 
+    @staticmethod
+    def closes_at(days: int) -> str:
+        """The `expires_at` real Heimdall reports for an `expires_in_days` of
+        `days`: the end of that calendar day, UTC (models/aito_payment_link.py
+        — "Heimdall closes it at 23:59:59.999 UTC")."""
+        return (TODAY + timedelta(days=int(days))).isoformat() + "T23:59:59.999Z"
+
     def seed(self, heimdall_id: str, **kw) -> None:
         """Register a payment that already exists at Heimdall — the
         counterpart of a ledger row the scenario starts with."""
@@ -85,7 +92,7 @@ class Heimdall:
             "amount": kw.get("amount", 12500),
             "currency": "XPF",
             "reference": kw.get("reference", "DEV-000123"),
-            "link": {"url": kw.get("url", LINK_URL), "expires_at": "2026-10-01T23:59:59.999Z"},
+            "link": {"url": kw.get("url", LINK_URL), "expires_at": kw.get("expires_at", self.closes_at(15))},
         }
 
     def transport(self) -> httpx.MockTransport:
@@ -116,6 +123,7 @@ class Heimdall:
                     amount=sent.get("amount", 0),
                     reference=sent.get("reference", ""),
                     url=f"{LINK_URL}-{self.created}",
+                    expires_at=self.closes_at(sent.get("expires_in_days", 15)),
                 )
                 return httpx.Response(200, json=self.store[hid])
             if path.endswith("/cancel"):
@@ -131,6 +139,17 @@ class Heimdall:
                 sent = json.loads(body) if body else {}
                 if "amount" in sent:
                     self.store[hid]["amount"] = sent["amount"]
+                # `expires_in_days` must be applied too, not just echoed. The
+                # first version of this fake ignored it, which was harmless
+                # while `expires_on` came from `wanted` — but once the ledger
+                # started storing the expiry Heimdall CONFIRMS (T-012) and the
+                # drift branch started checking that the PATCH actually landed
+                # (T-011), ignoring it made every expiry drift look like a
+                # link Heimdall refuses to converge. That failure cannot
+                # happen against real Heimdall, so the golden was recording a
+                # false alarm on a money path.
+                if "expires_in_days" in sent:
+                    self.store[hid]["link"]["expires_at"] = self.closes_at(sent["expires_in_days"])
             return httpx.Response(200, json=self.store[hid])
 
         return httpx.MockTransport(handler)

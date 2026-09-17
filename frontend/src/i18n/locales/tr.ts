@@ -517,6 +517,7 @@ export default {
       trackingRegenerated: 'takip bağlantısını yeniden oluşturdu',
       paymentLinkCreated: 'Ödeme bağlantısı oluşturuldu',
       paymentLinkReplaced: 'Ödeme bağlantısı değiştirildi',
+      paymentLinkUpdated: 'Ödeme bağlantısı güncellendi',
       paymentLinkPaid: 'Çevrimiçi ödendi',
       paymentLinkCancelled: 'Ödeme bağlantısı iptal edildi',
       noteAdded: 'bir not ekledi',

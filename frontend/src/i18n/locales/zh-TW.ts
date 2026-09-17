@@ -517,6 +517,7 @@ export default {
       trackingRegenerated: '重新產生了追蹤連結',
       paymentLinkCreated: '已建立付款連結',
       paymentLinkReplaced: '已更換付款連結',
+      paymentLinkUpdated: '已更新付款連結',
       paymentLinkPaid: '已線上付款',
       paymentLinkCancelled: '已取消付款連結',
       noteAdded: '新增了備註',

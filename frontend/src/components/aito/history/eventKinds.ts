@@ -46,6 +46,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'tracking.regenerated': 'aito.history.trackingRegenerated',
   'payment_link.created': 'aito.history.paymentLinkCreated',
   'payment_link.replaced': 'aito.history.paymentLinkReplaced',
+  'payment_link.updated': 'aito.history.paymentLinkUpdated',
   'payment_link.paid': 'aito.history.paymentLinkPaid',
   'payment_link.cancelled': 'aito.history.paymentLinkCancelled',
 };
@@ -83,6 +84,11 @@ export function formatValue(value: unknown): string {
  *    covering retainer, a renumbered quote. The renumber records its reason
  *    on the `replaced` event (it deliberately emits no `cancelled` pair), so
  *    both kinds must read it or that story loses its only explanation.
+ *  - `payment_link.updated` carries the amount and/or expiry a live link was
+ *    just patched to, in `detail.amount`/`detail.expires_on`, alongside what
+ *    it was before in `detail.previous_amount`/`detail.previous_expires_on`.
+ *    Without this the label alone says a link changed but not into what —
+ *    the one figure a client might already have seen and paid against.
  *  - `quote.accepted` carries `detail.source`, but only the two automatic
  *    sources (`payment_link`, `retainer`) are shown: for a person's click
  *    the actor line already names who, and "user" would only repeat it.
@@ -112,6 +118,25 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
 
   if (kind === 'payment_link.cancelled' || kind === 'payment_link.replaced') {
     return typeof detail.reason === 'string' && detail.reason ? detail.reason : null;
+  }
+
+  if (kind === 'payment_link.updated') {
+    const parts: string[] = [];
+    if (
+      typeof detail.previous_amount !== 'undefined' &&
+      typeof detail.amount !== 'undefined' &&
+      detail.previous_amount !== detail.amount
+    ) {
+      parts.push(`${formatValue(detail.previous_amount)} → ${formatValue(detail.amount)}`);
+    }
+    if (
+      typeof detail.previous_expires_on === 'string' &&
+      typeof detail.expires_on === 'string' &&
+      detail.previous_expires_on !== detail.expires_on
+    ) {
+      parts.push(`${formatValue(detail.previous_expires_on)} → ${formatValue(detail.expires_on)}`);
+    }
+    return parts.length ? parts.join(' · ') : null;
   }
 
   if (kind === 'quote.accepted') {

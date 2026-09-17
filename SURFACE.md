@@ -1314,6 +1314,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 class ParsedLine:
 1 class ParsedName:
 1 class ParsedShipping:
+1 class PatchDidNotConverge(Exception):
 1 class PerPrinterReport:
 1 class PlateDetectionResult:
 1 class PlateDetector:
@@ -1528,7 +1529,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static
 1 def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict[str, dict]:
 1 def mint_token() -> str:
 1 def missing_start_gcode_message(printer_preset_name: str) -> str:
-1 def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
+1 def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None, today: date) -> bool:
 1 def net_cost(task: Any, service: str) -> float | None:
 1 def normalise_flow(raw: str | None) -> str | None:
 1 def normalise_process_overrides(overrides: dict[str, object]) -> dict[str, str | list[str]]:
@@ -3112,9 +3113,11 @@ backend/app/services/aito_payment_links.py: def _now() -> datetime:
 backend/app/services/aito_payment_links.py: class Wanted:
 backend/app/services/aito_payment_links.py: def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: date) -> Wanted | None:
 backend/app/services/aito_payment_links.py: def expires_in_days(expires_on: str, today: date) -> int:
-backend/app/services/aito_payment_links.py: def _fields_match(row: AitoPaymentLink, wanted: Wanted) -> bool:
-backend/app/services/aito_payment_links.py: def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
-backend/app/services/aito_payment_links.py: def _adopt(row: AitoPaymentLink, view: LinkView, now: datetime) -> None:
+backend/app/services/aito_payment_links.py: def _confirmed_expiry(view: LinkView, fallback: str) -> str:
+backend/app/services/aito_payment_links.py: def _fields_match(row: AitoPaymentLink, wanted: Wanted, today: date) -> bool:
+backend/app/services/aito_payment_links.py: def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None, today: date) -> bool:
+backend/app/services/aito_payment_links.py: def _adopt(row: AitoPaymentLink, view: LinkView, now: datetime, *, expires_fallback: str | None = None) -> None:
+backend/app/services/aito_payment_links.py: class PatchDidNotConverge(Exception):
 backend/app/services/aito_payment_links.py: def _fail(row: AitoPaymentLink, exc: Exception, now: datetime) -> None:
 backend/app/services/aito_payment_links.py: def _in_backoff(row: AitoPaymentLink, now: datetime) -> bool:
 backend/app/services/aito_payment_links.py: async def current_link(db: AsyncSession, project_id: int) -> AitoPaymentLink | None:
@@ -3250,26 +3253,26 @@ _AI_RATE_LIMIT_WINDOW_S = 60.0
 1 "aito_quote_validity_days"
 3 "heimdall_api_token"
 2 "heimdall_base_url"
-4 "heimdall_id"
+5 "heimdall_id"
 ```
 
 ## SCOPE: i18n key counts per locale
 ```regen: for f in frontend/src/i18n/locales/*.ts; do printf "%s " "$(basename "$f")"; grep -coE "^\s+(heimdall|paymentLink)[A-Za-z0-9_]*:" "$f"; done```
 ```
-de.ts 6
-en.ts 6
-es.ts 6
-fr.ts 6
-it.ts 6
-ja.ts 6
-ko.ts 6
-nl.ts 6
-pt-BR.ts 6
-ru.ts 6
-tr.ts 6
-uk.ts 6
-zh-CN.ts 6
-zh-TW.ts 6
+de.ts 7
+en.ts 7
+es.ts 7
+fr.ts 7
+it.ts 7
+ja.ts 7
+ko.ts 7
+nl.ts 7
+pt-BR.ts 7
+ru.ts 7
+tr.ts 7
+uk.ts 7
+zh-CN.ts 7
+zh-TW.ts 7
 ```
 
 ## SCOPE: frontend components and API-client calls

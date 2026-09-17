@@ -517,6 +517,7 @@ export default {
       trackingRegenerated: '추적 링크를 재생성했습니다',
       paymentLinkCreated: '결제 링크 생성됨',
       paymentLinkReplaced: '결제 링크 교체됨',
+      paymentLinkUpdated: '결제 링크 업데이트됨',
       paymentLinkPaid: '온라인으로 결제됨',
       paymentLinkCancelled: '결제 링크 취소됨',
       noteAdded: '메모를 추가했습니다',

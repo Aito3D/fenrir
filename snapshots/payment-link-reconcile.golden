@@ -106,7 +106,7 @@
     "actor_class": "system",
     "detail": {
      "amount": 12500,
-     "expires_on": "2026-10-01",
+     "expires_on": "2026-09-30",
      "heimdall_id": "hd-new-1",
      "reference": "DEV-000123"
     },
@@ -132,7 +132,7 @@
    {
     "amount": 12500,
     "checked_at": "2026-09-16 12:00:00",
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-09-30",
     "heimdall_id": "hd-new-1",
     "key": "aito:1:1",
     "paid_at": null,
@@ -159,7 +159,21 @@
  },
  {
   "books_pushes": [],
-  "events": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 9000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
   "heimdall_requests": [
    {
     "body": "{\"amount\":9000}",
@@ -205,7 +219,21 @@
  },
  {
   "books_pushes": [],
-  "events": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-11-30",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
   "heimdall_requests": [
    {
     "body": "{\"expires_in_days\":75}",
@@ -1278,7 +1306,21 @@
  },
  {
   "books_pushes": [],
-  "events": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 9000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
   "heimdall_requests": [
    {
     "body": "{\"amount\":9000}",
@@ -1417,7 +1459,21 @@
  },
  {
   "books_pushes": [],
-  "events": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 9000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
   "heimdall_requests": [
    {
     "body": "{\"amount\":9000}",

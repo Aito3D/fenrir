@@ -64,6 +64,39 @@ describe('detailText', () => {
   it('returns null for any other kind', () => {
     expect(detailText('task.added', { text: 'ignored' })).toBeNull();
   });
+
+  it('renders the amount change for payment_link.updated', () => {
+    expect(
+      detailText('payment_link.updated', { previous_amount: 12500, amount: 20000, expires_on: '2026-10-01' }),
+    ).toBe('12500 → 20000');
+  });
+
+  it('renders the expiry change for payment_link.updated', () => {
+    expect(
+      detailText('payment_link.updated', {
+        amount: 12500,
+        previous_expires_on: '2026-10-01',
+        expires_on: '2026-11-01',
+      }),
+    ).toBe('2026-10-01 → 2026-11-01');
+  });
+
+  it('renders both when amount and expiry both changed', () => {
+    expect(
+      detailText('payment_link.updated', {
+        previous_amount: 12500,
+        amount: 20000,
+        previous_expires_on: '2026-10-01',
+        expires_on: '2026-11-01',
+      }),
+    ).toBe('12500 → 20000 · 2026-10-01 → 2026-11-01');
+  });
+
+  it('returns null for payment_link.updated when nothing actually changed', () => {
+    expect(
+      detailText('payment_link.updated', { previous_amount: 12500, amount: 12500, expires_on: '2026-10-01' }),
+    ).toBeNull();
+  });
 });
 
 describe('elapsedBucket', () => {
@@ -93,5 +126,9 @@ describe('elapsedBucket', () => {
 describe('EVENT_LABEL_KEY', () => {
   it('labels task.reordered', () => {
     expect(EVENT_LABEL_KEY['task.reordered']).toBe('aito.history.taskReordered');
+  });
+
+  it('labels payment_link.updated', () => {
+    expect(EVENT_LABEL_KEY['payment_link.updated']).toBe('aito.history.paymentLinkUpdated');
   });
 });

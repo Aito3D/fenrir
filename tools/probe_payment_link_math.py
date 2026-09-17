@@ -187,8 +187,8 @@ out["05-needs-action"] = [
     {
         "row": rname,
         "wanted": wname,
-        "needs_action": needs_action(row, w),
-        "fields_match": None if (row is None or w is None) else _fields_match(row, w),
+        "needs_action": needs_action(row, w, TODAY),
+        "fields_match": None if (row is None or w is None) else _fields_match(row, w, TODAY),
     }
     for rname, row in ROW_CASES
     for wname, w in WANTED_VARIANTS
