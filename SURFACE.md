@@ -1,6 +1,9 @@
-# SURFACE.md — campaign-9 public contract: THE WHOLE APP (frozen at setup)
+# SURFACE.md — campaign-17 public contract (frozen at setup)
 
-Regenerate every section with `bash tools/gen_surface_all.sh > SURFACE.md`.
+Scope: the Heimdall payment-link feature. Sections 1-8 are the whole-app
+contract; sections 9-16 are the payment-link surface at full resolution.
+
+Regenerate every section with `bash tools/gen_surface_c17.sh > SURFACE.md`.
 Each section names the exact command that produces it. ANY diff against this
 file is a change to the app's public contract and fails the iteration.
 
@@ -34,6 +37,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/aito/{project_id}/invoice-preview ['GET']
 /api/v1/aito/{project_id}/invoice.pdf ['GET']
 /api/v1/aito/{project_id}/move ['PATCH']
+/api/v1/aito/{project_id}/payment-link/refresh ['POST']
 /api/v1/aito/{project_id}/pickup-message ['POST']
 /api/v1/aito/{project_id}/pickup-sms ['POST']
 /api/v1/aito/{project_id}/quote-email ['GET']
@@ -151,6 +155,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/auth/login ['POST']
 /api/v1/auth/logout ['POST']
 /api/v1/auth/me ['GET']
+/api/v1/auth/media-token ['POST']
 /api/v1/auth/oidc/authorize/{provider_id} ['GET']
 /api/v1/auth/oidc/callback ['GET']
 /api/v1/auth/oidc/exchange ['POST']
@@ -303,6 +308,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/ha-sensors/{sensor_id} ['GET']
 /api/v1/ha-sensors/{sensor_id} ['PATCH']
 /api/v1/ha-sensors/{sensor_id} ['DELETE']
+/api/v1/heimdall/test ['POST']
 /api/v1/inventory/assignments ['GET']
 /api/v1/inventory/assignments ['POST']
 /api/v1/inventory/assignments/{printer_id}/{ams_id}/{tray_id} ['DELETE']
@@ -351,6 +357,8 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/inventory/spools/{spool_id} ['PATCH']
 /api/v1/inventory/spools/{spool_id} ['DELETE']
 /api/v1/inventory/spools/{spool_id}/archive ['POST']
+/api/v1/inventory/spools/{spool_id}/filament-presets ['GET']
+/api/v1/inventory/spools/{spool_id}/filament-presets ['PUT']
 /api/v1/inventory/spools/{spool_id}/k-profiles ['GET']
 /api/v1/inventory/spools/{spool_id}/k-profiles ['PUT']
 /api/v1/inventory/spools/{spool_id}/link-tag ['PATCH']
@@ -436,6 +444,13 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/local-presets/{preset_id} ['GET']
 /api/v1/local-presets/{preset_id} ['PUT']
 /api/v1/local-presets/{preset_id} ['DELETE']
+/api/v1/location-ha-sensors/ ['GET']
+/api/v1/location-ha-sensors/ ['POST']
+/api/v1/location-ha-sensors/by-location/{location_id}/readings ['GET']
+/api/v1/location-ha-sensors/entities ['GET']
+/api/v1/location-ha-sensors/{sensor_id} ['GET']
+/api/v1/location-ha-sensors/{sensor_id} ['PATCH']
+/api/v1/location-ha-sensors/{sensor_id} ['DELETE']
 /api/v1/maintenance/items/{item_id} ['PATCH']
 /api/v1/maintenance/items/{item_id} ['DELETE']
 /api/v1/maintenance/items/{item_id}/history ['GET']
@@ -597,6 +612,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/printers/{printer_id}/slot-presets/{ams_id}/{tray_id} ['PUT']
 /api/v1/printers/{printer_id}/slot-presets/{ams_id}/{tray_id} ['DELETE']
 /api/v1/printers/{printer_id}/slots/{ams_id}/{tray_id}/configure ['POST']
+/api/v1/printers/{printer_id}/slots/{ams_id}/{tray_id}/spool-defaults ['GET']
 /api/v1/printers/{printer_id}/status ['GET']
 /api/v1/printers/{printer_id}/storage ['GET']
 /api/v1/printers/{printer_id}/temperature/bed ['POST']
@@ -669,6 +685,7 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/settings/restore ['POST']
 /api/v1/settings/spoolman ['GET']
 /api/v1/settings/spoolman ['PUT']
+/api/v1/settings/ui-flags ['GET']
 /api/v1/settings/ui-preferences ['GET']
 /api/v1/settings/virtual-printer ['GET']
 /api/v1/settings/virtual-printer ['PUT']
@@ -755,6 +772,8 @@ file is a change to the app's public contract and fails the iteration.
 /api/v1/spoolman/inventory/spools/{spool_id} ['PATCH']
 /api/v1/spoolman/inventory/spools/{spool_id} ['DELETE']
 /api/v1/spoolman/inventory/spools/{spool_id}/archive ['POST']
+/api/v1/spoolman/inventory/spools/{spool_id}/filament-presets ['GET']
+/api/v1/spoolman/inventory/spools/{spool_id}/filament-presets ['PUT']
 /api/v1/spoolman/inventory/spools/{spool_id}/k-profiles ['GET']
 /api/v1/spoolman/inventory/spools/{spool_id}/k-profiles ['PUT']
 /api/v1/spoolman/inventory/spools/{spool_id}/reset-consumed-counter ['POST']
@@ -962,15 +981,15 @@ websocket:connect
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "from backend.app.core.config import settings; [print(n, \"=\", repr(f.default)) for n, f in sorted(type(settings).model_fields.items())]" 2>/dev/null```
 ```
 api_prefix = '/api/v1'
-app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')
+app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
 app_name = 'Bambuddy'
-archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/archive')
+archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')
 bambu_studio_api_url = 'http://localhost:3001'
 bambu_studio_bundle_dir = None
 bambu_studio_user_dirs = None
 bambu_user_id = '1961034787'
-base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')
-database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-c15/bambuddy.db'
+base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
+database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'
 db_max_overflow = None
 db_pool_recycle = None
 db_pool_size = None
@@ -980,20 +999,22 @@ debug = False
 library_max_upload_bytes = 2147483648
 library_max_zip_extract_bytes = 4294967296
 log_backup_count = 3
-log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/logs')
+log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')
 log_level = 'INFO'
 log_max_bytes = 5242880
 log_to_file = True
-plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/data/plate_calibration')
+plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')
 slicer_api_url = 'http://localhost:3003'
-static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/static')
+static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')
 ```
 
 ## Backend service top-level defs (count per signature)
 ```regen: grep -hE "^(def|class|async def) [a-zA-Z]" backend/app/services/*.py | sort | uniq -c | sed "s/^ *//"```
 ```
+1 async def accept_quote(
 1 async def apply_camera_rotation_to_file(path: Path, rotation: int, logger: logging.Logger) -> None:
 1 async def apply_print_charge_for_archive(
+1 async def apply_quote_decision(
 1 async def apply_retainers(
 1 async def auto_assign_spool(
 1 async def backfill_batch_statuses(db: AsyncSession) -> int:
@@ -1014,6 +1035,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 async def cleanup_tracking(
 1 async def clear_persisted_session(db: AsyncSession, printer_id: int) -> None:
 1 async def close_spoolman_client():
+1 async def close_tls_proxy(server: "asyncio.Server") -> None:
 1 async def collect_diagnostic_snapshot(db: AsyncSession) -> dict[str, Any]:
 1 async def collect_sensitive_strings(db: AsyncSession) -> dict[str, str]:
 1 async def compute_aito_stats(
@@ -1029,9 +1051,13 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "asyncio.Server"]:
 1 async def create_token(
 1 async def create_welcome_email_from_template(
+1 async def current_link(db: AsyncSession, project_id: int) -> AitoPaymentLink | None:
+1 async def current_links(db: AsyncSession, project_ids: list[int]) -> dict[int, AitoPaymentLink]:
+1 async def customer_credits(db: AsyncSession, estimate: dict) -> list[RetainerCredit]:
 1 async def delete_archived_timelapse(
 1 async def delete_dependent_variants(db: AsyncSession, file_ids: list[int]) -> None:
 1 async def delete_file_async(
+1 async def deposit_pct(db: AsyncSession) -> int:
 1 async def derive_today_yesterday(
 1 async def detect_gpu_hwaccels() -> list[str]:
 1 async def detect_vaapi_support() -> dict:
@@ -1101,24 +1127,32 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 async def mint_unique_token(db: AsyncSession) -> str:
 1 async def mirror_comments(db: AsyncSession, project: AitoProject, comments: list[dict]) -> int:
 1 async def notes_with_tracking(db: AsyncSession, project: AitoProject, existing: str | None) -> str | None:
+1 async def notify_missing_spool_assignments_on_print_complete(
 1 async def notify_missing_spool_assignments_on_print_start(
 1 async def on_layer_change(printer_id: int, layer_num: int):
 1 async def on_print_complete(
 1 async def on_print_complete(printer_id: int) -> Path | None:
 1 async def on_print_start(
 1 async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPreview:
+1 async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingPayment | None:
 1 async def perform_ssh_update(device_id: str, ip_address: str, install_path: str | None = None) -> None:
 1 async def persist_session(
 1 async def pickup_message(
 1 async def plan_invoice(db: AsyncSession, project: AitoProject) -> InvoicePlan:
+1 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
 1 async def pop_frame(nonce: str) -> bytes | None:
 1 async def prepare_internal_spool_payload(db: AsyncSession, data: dict, fields_set: set[str]) -> dict:
 1 async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
 1 async def prune_stale_printer_file_bundles() -> None:
 1 async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedelta(days=400)) -> int:
+1 async def push_quote_status(db: AsyncSession, project: AitoProject, status: str) -> bool:
+1 async def quote_validity_days(db: AsyncSession) -> int:
 1 async def read_chamber_image_frame(
+1 async def read_customer_credit(
 1 async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float = 10.0) -> bytes | None:
 1 async def reclassify_presets(db: AsyncSession) -> dict:
+1 async def reconcile_payment_links(
+1 async def reconcile_project(
 1 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
 1 async def record_tray_change(db: AsyncSession, printer_id: int, tray_global: int, layer_num: int) -> None:
 1 async def record(
@@ -1136,7 +1170,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 async def resolve_preset(preset_data: dict, profile_type: str, db: AsyncSession, depth: int = 0) -> dict:
 1 async def resolve_slicer_filament(
 1 async def resolve_spool_location_fields(
+1 async def resolve_spool_preset(
 1 async def resolve_spoolman_location_string(
+1 async def resolve_spoolman_preset(
 1 async def restore_session(db: AsyncSession, printer_id: int, register_active: bool = True) -> list[list[int]] | None:
 1 async def revoke_token(db: AsyncSession, token_id: int) -> bool:
 1 async def run_connection_diagnostic(
@@ -1148,6 +1184,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 async def send_user_print_notification(
 1 async def shutdown_all_broadcasters() -> None:
 1 async def shutdown_broadcaster(key: str) -> bool:
+1 async def spoolman_owns_assignments(db: AsyncSession) -> bool:
 1 async def start_printer_files_job(
 1 async def stash_frame(data: bytes) -> str:
 1 async def stop_printer_download_cleanup() -> None:
@@ -1159,7 +1196,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 async def sync_interval_seconds(db: AsyncSession) -> int:
 1 async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
 1 async def sync_personal_wallet_balance(db: AsyncSession, wallet: UserWallet) -> float:
-1 async def sync_project(db: AsyncSession, project: AitoProject) -> bool | None:
+1 async def sync_project(
 1 async def test_camera_connection(
 1 async def test_connection(url: str, camera_type: str) -> dict:
 1 async def tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
@@ -1196,6 +1233,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 class DevicePoll:
 1 class DiscoveredPrinter:
 1 class DownloadCancelled(Exception):
+1 class DownloadDeadlineExceeded(Exception):
 1 class DownloadInsufficientSpace(Exception):
 1 class DownloadLimitExceeded(Exception):
 1 class EligibilityIssue:
@@ -1203,6 +1241,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 class ExportService:
 1 class ExportShipping:
 1 class ExportTask:
+1 class ExtruderSlot:
 1 class FailureAnalysisService:
 1 class FilamentDeficit:
 1 class FilamentProduct:
@@ -1222,6 +1261,13 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 class GitHubRestoreService:
 1 class Go2RTCService:
 1 class HASensorManager:
+1 class HeimdallAuthError(HeimdallUpstreamError):
+1 class HeimdallConflict(HeimdallUpstreamError):
+1 class HeimdallNotConfigured(Exception):
+1 class HeimdallNotFound(HeimdallUpstreamError):
+1 class HeimdallRateLimited(HeimdallUpstreamError):
+1 class HeimdallService:
+1 class HeimdallUpstreamError(Exception):
 1 class HMSAction(StrEnum):
 1 class HMSError:
 1 class HomeAssistantService:
@@ -1236,7 +1282,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 class LDAPSearchResult:
 1 class LDAPUserInfo:
 1 class LibraryTrashService:
+1 class LinkView:
 1 class LocalBackupService:
+1 class LocationHASensorManager:
 1 class LogEntry(BaseModel):
 1 class LogFinding(BaseModel):
 1 class LogSignature:
@@ -1305,6 +1353,8 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 class SlicerTimeoutError(SlicerApiError):
 1 class SlotKProfile:
 1 class SlotMaterial:
+1 class SlotNozzle:
+1 class SlotSpoolIdentity:
 1 class SmartPlugManager:
 1 class SmartPlugMQTTData:
 1 class SpoolLocationFields:
@@ -1325,6 +1375,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 class TimelapseSession:
 1 class Trigger:
 1 class UploadCancelled(Exception):
+1 class Wanted:
 1 class ZohoAmbiguousReferenceError(ZohoUpstreamError):
 1 class ZohoFilamentMappingError(RuntimeError):
 1 class ZohoFilamentRefreshBusyError(RuntimeError):
@@ -1381,7 +1432,8 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def create_password_reset_link_email(username: str, reset_url: str) -> tuple[str, str, str]:
 1 def create_welcome_email(username: str, password: str, login_url: str) -> tuple[str, str, str]:
 1 def delete_calibration(printer_id: int, plate_type: str | None = None) -> bool:
-1 def describe_state(sensor: PrinterHASensor, reading: SensorReading) -> str:
+1 def describe_fault(full_code: str | None) -> str | None:
+1 def describe_state(sensor: _AlertableSensor, reading: SensorReading) -> str:
 1 def describe_upload_failure(failure: FtpFailure | None) -> str:
 1 def description_of(task: ExportTask, service: str) -> str | None:
 1 def detect_current_branch() -> str:
@@ -1395,7 +1447,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def encode_opentag3d(spool: Spool) -> bytes:
 1 def end_gcode_injected(printer_id: int) -> bool:
 1 def evaluate(quote_status: str | None, stored_column: str, pending: Collection[str]) -> tuple[str, str | None]:
-1 def evaluate(sensor: PrinterHASensor, payload: dict | None) -> SensorReading:
+1 def evaluate(sensor: _AlertableSensor, payload: dict | None) -> SensorReading:
+1 def expires_in_days(expires_on: str, today: date) -> int:
+1 def expiry_for(quote_date: str | None, validity_days: int) -> str:
 1 def external_storage_present(state: object | None) -> bool:
 1 def extract_core_fields(data: dict) -> dict:
 1 def extract_design_process_overrides(zip_bytes: bytes) -> list[DesignOverride]:
@@ -1431,6 +1485,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def get_other_interfaces(exclude_ip: str) -> list[dict]:
 1 def get_rtsp_semaphore() -> asyncio.Semaphore:
 1 def get_session(printer_id: int) -> TimelapseSession | None:
+1 def get_sheet_capacity(template: TemplateName) -> int | None:
 1 def get_stage_name(stage: int) -> str:
 1 def get_subscriber_count(key: str) -> int:
 1 def get_upload_state(printer_id: int) -> FirmwareUploadState:
@@ -1459,6 +1514,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def island_label(island: str | None) -> str | None:
 1 def kinds_for_depth(depth: str) -> list[str]:
 1 def last_print_storage_verdict(state: object | None) -> StorageVerdict:
+1 def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
 1 def list_usb_cameras() -> list[dict]:
 1 def load_export_shipping(project: AitoProject, catalogue: Catalogue) -> ExportShipping | None:
 1 def location_name_key(name: str) -> str:
@@ -1472,7 +1528,9 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict[str, dict]:
 1 def mint_token() -> str:
 1 def missing_start_gcode_message(printer_preset_name: str) -> str:
+1 def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
 1 def net_cost(task: Any, service: str) -> float | None:
+1 def normalise_flow(raw: str | None) -> str | None:
 1 def normalise_process_overrides(overrides: dict[str, object]) -> dict[str, str | list[str]]:
 1 def normalize_3mf_name(name: str) -> str:
 1 def normalize_am_unit_id(ams_id: int) -> int:
@@ -1480,10 +1538,14 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def normalize_location_name(name: str) -> str:
 1 def normalize_token(raw: str) -> str | None:
 1 def note_captcha_challenge(base_url: str) -> None:
+1 def nozzle_diameter_for_extruder(state, extruder: int | None, model: str | None = None) -> str:
+1 def nozzle_flow_for_extruder(state, extruder: int | None, model: str | None = None) -> str | None:
+1 def outstanding_amount(required: int, retainer_paid_total: float | None) -> int:
 1 def overrides_for_plate(
 1 def overrides_from_config(config: Any) -> list[DesignOverride]:
 1 def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
 1 def parse_base_preset_file(path: Path) -> dict[str, str]:
+1 def parse_credential(token: str) -> tuple[str, str]:
 1 def parse_description(
 1 def parse_filament_name(name: str) -> ParsedName:
 1 def parse_ldap_config(settings: dict[str, str]) -> LDAPConfig | None:
@@ -1495,12 +1557,15 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def parse_weight_g(value: str | None) -> float | None:
 1 def peek_plate_index_in_3mf(file_path: Path) -> int | None:
 1 def peek_plate_prediction_in_3mf(file_path: Path, plate_index: int | None = None) -> int | None:
+1 def persistable_state(state: str | None, max_length: int) -> str | None:
 1 def personal_balance_condition(user_id: int):
+1 def plate_indexes_in_3mf(file_path: Path) -> list[int | None]:
 1 def plate_scoped_run_estimate(
 1 def primary_reason_code(codes: list[int]) -> int | None:
 1 def print_file_reachable_over_ftp(state: object | None) -> StorageVerdict:
 1 def printer_file_path(printer_id: int, token: str) -> Path | None:
 1 def printer_files_zip_path(printer_id: int, token: str) -> Path | None:
+1 def printer_safe_filament_id(*candidates: str | None) -> str:
 1 def printer_state_to_dict(
 1 def probe_backup_dir(backup_dir: Path) -> dict:
 1 def probe_filename_from_url(project_url: str | None) -> str | None:
@@ -1511,10 +1576,11 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def read_disk_state() -> dict[str, dict[str, str]]:
 1 def read_log_entries(
 1 def remove_printer_files_zip(zip_path: Path) -> None:
-1 def render_labels(template: TemplateName, data_list: list[LabelData], *, monochrome: bool = False) -> bytes:
+1 def render_labels(
 1 def render_template(template_str: str, variables: dict[str, Any]) -> str:
 1 def request_debounced_sync() -> None:
 1 def request_immediate_sync() -> None:
+1 def required_amount(quote_total: float | None, pct: int) -> int | None:
 1 def reset_cache() -> None:
 1 def reset_upload_state(printer_id: int):
 1 def resolve_display_stem(filename: str) -> str:
@@ -1524,6 +1590,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def resolve_plate_id(state) -> int | None:
 1 def resolve_rack_nozzle_mapping(
 1 def resolve_rack_plan_mapping(
+1 def resolve_slot_nozzle(state, ams_id: int, tray_id: int, model: str | None = None) -> SlotNozzle:
 1 def rewrite_rtsp_request_url(data: bytes, proxy_url: bytes, real_url: bytes) -> bytes:
 1 def rtsp_socket_timeout_flag() -> str:
 1 def sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None = None) -> str:
@@ -1540,6 +1607,7 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 4 def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
 1 def share_out(retainers: list[RetainerCredit], balance: float) -> list[tuple[RetainerCredit, list[dict]]]:
 1 def should_pull_comments(project: AitoProject, estimate: dict, now: datetime) -> bool:
+1 def sign(
 1 def start_aito_quote_sync() -> None:
 1 def start_gcode_is_missing(content: bytes, *, export_3mf: bool) -> bool:
 1 def start_loop_watchdog() -> None:
@@ -1564,10 +1632,15 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 1 def tracking_url_for(base: str, token: str | None) -> str | None:
 1 def transaction_affects_personal_balance(
 1 def uniform_tray_filament_hint(loaded_types: list[str]) -> str | None:
+1 def unresolved_filament_message(slots: list[int], preset_names: list[str]) -> str:
+1 def unresolved_filament_slots(content: bytes, *, export_3mf: bool) -> list[int]:
+1 def unused_credit_total(payments: list[dict]) -> float:
 1 def uploaded_base_presets_dir() -> Path:
 1 def url_is_external_storage(project_url: str | None) -> bool | None:
 1 def verify_3mf_candidate(
 1 def waiting_reason_for_codes(codes: list[int]) -> str:
+1 def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: date) -> Wanted | None:
+1 def wire_tray_color(tray_color: str | None) -> str:
 1 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
 1 def with_tracking_sms(message: str, url: str) -> str:
 ```
@@ -1577,13 +1650,17 @@ static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/st
 ```
 export class GrowingBuffer
 export const AITO_CARD_VT_NAME
+export const AITO3D_BANK
 export const AITO3D_SENDER
+export const AITO3D_TRANSFER_APPS
 export const API_KEY_QR_VERSION
 export const API_SLICEABLE_FILE_TYPES
 export const AWAY_STATUSES
 export const BAMBU_COLOR_CODE_FALLBACK
 export const BAMBU_FILAMENT_COLORS
 export const BED_TEMP_DEFAULTS
+export const BOARD_STATUS_EXIT_MS
+export const BOARD_STATUS_GRACE_MS
 export const BRAND
 export const BUSINESS_FLEET_THRESHOLD
 export const CALIBRATION_MODE_ACTIVE
@@ -1604,6 +1681,7 @@ export const DEFAULT_COUNTRY_CODE
 export const DEFAULT_PREHEAT_FILAMENT_TARGETS
 export const DEFAULT_STATE
 export const delayAt
+export const DESKTOP_SLICEABLE_FILE_TYPES
 export const DISCOUNT_COLUMNS
 export const EMPTY_COMPATIBILITY_INDEX
 export const emptyBoard
@@ -1615,8 +1693,12 @@ export const filamentLineCost
 export const FOCUS
 export const FOLLOWUP_KEYS
 export const FTS_INLET_SIDE
+export const HA_SENSOR_BINARY_LABELS
+export const HA_SENSOR_ICONS
 export const inventoryLocationsQueryKey
 export const libraryTagsQueryKey
+export const LOCATION_SENSOR_ALERT_COLOR_CLASSES
+export const LOCATION_SENSOR_ALERT_COLORS
 export const MAX_CHAMBER_TEMP_C
 export const MEDIAN_MAX_SAMPLES
 export const MEDIAN_MIN_SAMPLES
@@ -1624,6 +1706,7 @@ export const MIN_SAMPLE
 export const NOZZLE_TEMP_DEFAULTS
 export const num
 export const PAGE_TABS
+export const PANEL_TAB_STORAGE_KEY
 export const PREHEAT_FILAMENT_ORDER
 export const PRESET_CATEGORIES
 export const PRESS
@@ -1641,7 +1724,6 @@ export const SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY
 export const SIDEBAR_LAYOUT_CHANGED_EVENT
 export const SIDEBAR_ORDER_KEY
 export const SLICE_MODAL_TIER_ORDER
-export const SLICEABLE_FILE_TYPES
 export const SOCIAL_NETWORKS
 export const STAGES
 export const STEP_LABEL_KEY
@@ -1654,6 +1736,7 @@ export const TRACKING_FALLBACK_LANGUAGE
 export const trackNodeDelay
 export const trackStageIndex
 export const trackStateDelay
+export default function remarkGfmNoAutolink
 export function __resetAitoPresence
 export function __resetBoardSync
 export function __resetColorCatalogForTests
@@ -1664,6 +1747,7 @@ export function aggregateGroupSpool
 export function agingColorCls
 export function agingLevel
 export function agingTextCls
+export function aiDetectionClass
 export function allowedColumns
 export function applyClientSocial
 export function applyColumnMove
@@ -1705,6 +1789,8 @@ export function colorFamily
 export function colorsAreSimilar
 export function colorSortKey
 export function compareFwVersions
+export function compareQueueOrder
+export function compareQueueOrderAcrossLanes
 export function compareSortKeys
 export function computeAmsMapping
 export function computeBackupGroups
@@ -1719,9 +1805,12 @@ export function correctedTimeH
 export function dailyCapacityHours
 export function daysSince
 export function defaultClientDraft
+export function defaultLocationSensorDefaults
 export function deriveChamberTargetForTrays
+export function describeHASensorReading
 export function detectPlatform
 export function diffTaskDraft
+export function disambiguateColorNames
 export function discountMatrix
 export function downloadTextFile
 export function draftFromContact
@@ -1738,6 +1827,7 @@ export function estimateArchiveSalePrice
 export function estimateFilamentCost
 export function etaCopy
 export function evaluate
+export function extractPresetModel
 export function filamentTypesCompatible
 export function filterCompatibleQueueItems
 export function filterFilamentsByNozzle
@@ -1750,6 +1840,8 @@ export function flagRank
 export function flashRevert
 export function fleetAudience
 export function flightDuration
+export function flowApplies
+export function flowLabel
 export function foldSessionOverrides
 export function followups
 export function formatBacklogHours
@@ -1802,7 +1894,9 @@ export function groupSpoolsBySku
 export function hash_fnv1a32
 export function hasPricedService
 export function hasRealityCheckData
+export function hasVerdict
 export function hexToColorName
+export function iconForHASensor
 export function installedNozzleDiameters
 export function invalidateArchiveAndProjectViews
 export function invalidateInventoryLocations
@@ -1813,6 +1907,7 @@ export function isApiSliceableFileType
 export function isBambuLabSpool
 export function isBlankPersistedDraft
 export function isBlankTaskDraft
+export function isCameraUrl
 export function isExternalSidebarItemId
 export function isExternalSpoolHidden
 export function isFinished
@@ -1827,11 +1922,20 @@ export function isRackSlotEligible
 export function isShippingComplete
 export function isSliceableFilename
 export function isSliceableFileType
+export function isSliceableLibraryFile
+export function isSlicedLibraryFile
 export function isSocialNetwork
 export function joinMinutes
 export function latestProjectVersion
 export function loadCalculatorState
+export function loadLocationSensorAlertAboveColor
+export function loadLocationSensorAlertBelowColor
+export function loadLocationSensorAlertOptimalColor
+export function loadLocationSensorColorizeValues
+export function loadLocationSensorDefaults
 export function localDateKey
+export function locationSensorReadingAlertStatus
+export function locationSensorValueColorClass
 export function longDate
 export function maskVisibleErrors
 export function matchCalculatorFilament
@@ -1844,6 +1948,7 @@ export function needsClientContact
 export function netCost
 export function nextPlaceholderId
 export function normaliseClientDraft
+export function normaliseFlow
 export function normaliseTaskDraft
 export function normalizeCode
 export function normalizeColor
@@ -1882,6 +1987,7 @@ export function projectHasPricedService
 export function projectTotal
 export function qtyFactor
 export function queueItemDisplayName
+export function queueLaneKey
 export function rackByPosition
 export function rackOptionsForGroup
 export function rackPositionToNozzleId
@@ -1894,6 +2000,7 @@ export function readNewProjectDraft
 export function realityCheckImpact
 export function registerPresenceSender
 export function replaceProject
+export function requiredAmount
 export function resolveDesktopSlicer
 export function resolveDryingPresetKey
 export function resolveInteropDefault
@@ -1904,10 +2011,16 @@ export function rewriteMediaSrcWithToken
 export function roundUpTo50
 export function rowKey
 export function saveHiddenSidebarSystemItemIds
+export function saveLocationSensorAlertAboveColor
+export function saveLocationSensorAlertBelowColor
+export function saveLocationSensorAlertOptimalColor
+export function saveLocationSensorColorizeValues
+export function saveLocationSensorShowOnCardDefaults
 export function saveSidebarOrder
 export function seedFromProject
 export function selectRealityChecks
 export function sendAitoPresence
+export function serializeLocationSensorAlertDefaults
 export function serializePreheatFilamentTargets
 export function setAitoPresenceState
 export function setColorCatalog
@@ -1917,6 +2030,7 @@ export function shippingLabelFor
 export function shippingPayload
 export function sizeMargin
 export function skuKey
+export function slotPresetDescribesTray
 export function sortByRecencyDesc
 export function splitDecimalHours
 export function splitMinutes
@@ -1925,6 +2039,7 @@ export function sponsorHref
 export function spoolColorString
 export function spoolMatchesQuery
 export function startCountdown
+export function statesDifferentMaterial
 export function statusCopy
 export function subscribeColorCatalog
 export function summariseTasks
@@ -1948,6 +2063,7 @@ export function updatedAt
 export function useAitoPageMutations
 export function useAitoViewers
 export function useBoardDrag
+export function useBoardLoadingStatus
 export function useBoardSync
 export function useCalculatorState
 export function useCameraControls
@@ -1978,13 +2094,16 @@ export function useIsSidebarCompact
 export function useIsWideLayout
 export function useLatestProjectEvent
 export function useLoadedFilaments
+export function useLocationSensorColorPrefs
 export function useLongPress
 export function useMediaQuery
+export function useMediaToken
 export function useMjpegStream
 export function useMultiPrinterFilamentMapping
 export function useNewProjectDraft
 export function useOptimisticBoardMutation
 export function usePageFileDrop
+export function usePanelTab
 export function usePrintProgressTitle
 export function useProjectEvents
 export function useProjectTasks
@@ -2013,6 +2132,7 @@ export function writeBrandFilter
 export function writeGridSize
 export function writeMaterialFilter
 export function writeNewProjectDraft
+export interface AiDetection
 export interface AmsTrayLike
 export interface AmsUnitLike
 export interface ArchivePriceEstimate
@@ -2039,6 +2159,8 @@ export interface FollowupThresholds
 export interface GridStreamStats
 export interface ImpressionDraft
 export interface LoadedFilament
+export interface LocationSensorCategoryDefaults
+export interface LocationSensorColorPrefs
 export interface MatchedSpool
 export interface Mulberry32Sequence
 export interface NamedCalculatorFilament
@@ -2081,7 +2203,9 @@ export interface WaterfallStep
 export interface WebRTCPrinterStats
 export type AgeAnchor
 export type AgingLevel
+export type AiDetectionClass
 export type Board
+export type BoardLoadingStatus
 export type CodeState
 export type ColorFamily
 export type ColumnId
@@ -2093,8 +2217,13 @@ export type FilamentStatus
 export type FlightDeparture
 export type FlightSuspension
 export type FollowupKey
+export type LocationSensorAlertColor
+export type LocationSensorAlertStatus
+export type LocationSensorCategory
+export type LocationSensorDefaults
 export type MoveLock
 export type MoveTarget
+export type NozzleFlow
 export type PageTab
 export type PasswordRequirementKey
 export type PresetTriple
@@ -2105,6 +2234,7 @@ export type RealityCheckSeverity
 export type ServiceId
 export type SlicerType
 export type Slot
+export type SlotSpoolIdentities
 export type SocialNetwork
 export type SponsorAudience
 export type TimeFormat
@@ -2210,6 +2340,7 @@ createLibrarySlicerToken
 createLibraryTag
 createLocalPreset
 createLocation
+createLocationHASensor
 createLongLivedCameraToken
 createMaintenanceType
 createManualPrint
@@ -2259,6 +2390,7 @@ deleteLibraryTag
 deleteLocalBackup
 deleteLocalPreset
 deleteLocation
+deleteLocationHASensor
 deleteMaintenanceType
 deleteNotificationProvider
 deleteOIDCLink
@@ -2380,6 +2512,7 @@ getBaseFilamentPresets
 getBatch
 getBatches
 getBindableHAEntities
+getBindableLocationHAEntities
 getBuiltinFilaments
 getCalculatorDefaults
 getCalculatorFilaments
@@ -2454,6 +2587,8 @@ getLocalBackups
 getLocalBackupStatus
 getLocalPresetDetail
 getLocalPresets
+getLocationHASensorReadings
+getLocationHASensors
 getLocations
 getMaintenanceHistory
 getMaintenanceOverview
@@ -2461,6 +2596,7 @@ getMaintenanceSummary
 getMaintenanceTypes
 getMakerworldRecentImports
 getMakerworldStatus
+getMediaToken
 getMQTTLogs
 getMQTTStatus
 getMyBalance
@@ -2522,6 +2658,7 @@ getSlicerPresetValues
 getSlicerPrinterModels
 getSlotPreset
 getSlotPresets
+getSlotSpoolDefaults
 getSmartPlug
 getSmartPlugByPrinter
 getSmartPlugs
@@ -2532,7 +2669,9 @@ getSource3mfForSlicer
 getSourceSlicerDownloadUrl
 getSpool
 getSpoolCatalog
+getSpoolFilamentPresets
 getSpoolKProfiles
+getSpoolmanFilamentPresets
 getSpoolmanFilaments
 getSpoolmanInventoryFilaments
 getSpoolmanInventorySpool
@@ -2554,6 +2693,7 @@ getTemplates
 getTemplateVariables
 getTimelapseInfo
 getTimelapseThumbnails
+getUiFlags
 getUiPreferences
 getUnlinkedSpools
 getUpdateStatus
@@ -2595,6 +2735,9 @@ loadAmsTray
 login
 logout
 lookupColor
+MediaToken
+MediaToken
+MediaToken
 moveAitoProject
 moveLibraryFiles
 oidcProviderIconUrl
@@ -2620,6 +2763,7 @@ provisionLDAPUser
 rebuildBalanceLedger
 rebuildSearchIndex
 recalculateCosts
+refreshAitoPaymentLink
 refreshAmsSlot
 refreshBaseProfileCache
 refreshOIDCProviderIcon
@@ -2663,7 +2807,9 @@ saveAmsLabel
 saveGitHubBackupConfig
 saveSlotPreset
 saveSMTPSettings
+saveSpoolFilamentPresets
 saveSpoolKProfiles
+saveSpoolmanFilamentPresets
 saveSpoolmanKProfiles
 scanArchiveTimelapse
 scanBambuStudioPresets
@@ -2729,6 +2875,7 @@ testExternalCamera
 testGitHubConnection
 testGitHubStoredConnection
 testHAConnection
+testHeimdall
 testLDAP
 testNotificationConfig
 testNotificationProvider
@@ -2771,6 +2918,7 @@ updateLibraryTag
 updateLibraryTrashSettings
 updateLocalPreset
 updateLocation
+updateLocationHASensor
 updateMaintenanceItem
 updateMaintenanceType
 updateNotificationProvider
@@ -2855,7 +3003,8 @@ UsersPage.tsx
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "import backend.app.main; from backend.app.core.database import Base; [print(n, len(t.columns)) for n, t in sorted(Base.metadata.tables.items())]" 2>/dev/null```
 ```
 aito_events 15
-aito_projects 51
+aito_payment_links 17
+aito_projects 54
 aito_tasks 31
 aito_tracking_views 3
 ams_labels 6
@@ -2885,13 +3034,14 @@ library_files 24
 library_folders 12
 library_tags 5
 local_presets 18
+location_ha_sensors 18
 locations 6
 long_lived_tokens 10
 maintenance_history 5
 maintenance_types 10
 notification_digest_queue 8
 notification_logs 10
-notification_providers 47
+notification_providers 49
 notification_templates 8
 oidc_providers 20
 orca_base_profiles 5
@@ -2920,9 +3070,11 @@ sponsor_toast_state 7
 spool 36
 spool_assignment 8
 spool_catalog 5
+spool_filament_preset 7
 spool_k_profile 11
 spool_usage_history 10
 spoolbuddy_devices 29
+spoolman_filament_preset 7
 spoolman_k_profile 11
 spoolman_slot_assignments 6
 user_email_preferences 8
@@ -2934,5 +3086,201 @@ user_wallets 5
 users 22
 virtual_printers 18
 wallet_transactions 13
+```
+
+## SCOPE: payment-link module signatures
+```regen: grep -nE "^(async def|def|class) " backend/app/services/heimdall.py backend/app/services/aito_payment_links.py | sed "s/:[0-9]*:/: /"```
+```
+backend/app/services/heimdall.py: class HeimdallNotConfigured(Exception):
+backend/app/services/heimdall.py: class HeimdallUpstreamError(Exception):
+backend/app/services/heimdall.py: class HeimdallAuthError(HeimdallUpstreamError):
+backend/app/services/heimdall.py: class HeimdallNotFound(HeimdallUpstreamError):
+backend/app/services/heimdall.py: class HeimdallConflict(HeimdallUpstreamError):
+backend/app/services/heimdall.py: class HeimdallRateLimited(HeimdallUpstreamError):
+backend/app/services/heimdall.py: class LinkView:
+backend/app/services/heimdall.py: def parse_credential(token: str) -> tuple[str, str]:
+backend/app/services/heimdall.py: def sign(
+backend/app/services/heimdall.py: def _to_view(data: dict) -> LinkView:
+backend/app/services/heimdall.py: def _parse_retry_after(value: str | None) -> float | None:
+backend/app/services/heimdall.py: class HeimdallService:
+backend/app/services/aito_payment_links.py: async def deposit_pct(db: AsyncSession) -> int:
+backend/app/services/aito_payment_links.py: def required_amount(quote_total: float | None, pct: int) -> int | None:
+backend/app/services/aito_payment_links.py: def outstanding_amount(required: int, retainer_paid_total: float | None) -> int:
+backend/app/services/aito_payment_links.py: def _arm_throttle(retry_after: float | None) -> None:
+backend/app/services/aito_payment_links.py: def _now() -> datetime:
+backend/app/services/aito_payment_links.py: class Wanted:
+backend/app/services/aito_payment_links.py: def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: date) -> Wanted | None:
+backend/app/services/aito_payment_links.py: def expires_in_days(expires_on: str, today: date) -> int:
+backend/app/services/aito_payment_links.py: def _fields_match(row: AitoPaymentLink, wanted: Wanted) -> bool:
+backend/app/services/aito_payment_links.py: def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
+backend/app/services/aito_payment_links.py: def _adopt(row: AitoPaymentLink, view: LinkView, now: datetime) -> None:
+backend/app/services/aito_payment_links.py: def _fail(row: AitoPaymentLink, exc: Exception, now: datetime) -> None:
+backend/app/services/aito_payment_links.py: def _in_backoff(row: AitoPaymentLink, now: datetime) -> bool:
+backend/app/services/aito_payment_links.py: async def current_link(db: AsyncSession, project_id: int) -> AitoPaymentLink | None:
+backend/app/services/aito_payment_links.py: async def current_links(db: AsyncSession, project_ids: list[int]) -> dict[int, AitoPaymentLink]:
+backend/app/services/aito_payment_links.py: async def _next_key(db: AsyncSession, project_id: int) -> str:
+backend/app/services/aito_payment_links.py: async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
+backend/app/services/aito_payment_links.py: async def _create(
+backend/app/services/aito_payment_links.py: async def _complete(
+backend/app/services/aito_payment_links.py: async def _cancel(
+backend/app/services/aito_payment_links.py: async def _record_failure(db: AsyncSession, project_id: int, exc: Exception, now: datetime) -> None:
+backend/app/services/aito_payment_links.py: async def _replace_lost(
+backend/app/services/aito_payment_links.py: def _cancel_reason(project: AitoProject, amount: int | None) -> str:
+backend/app/services/aito_payment_links.py: async def reconcile_project(
+backend/app/services/aito_payment_links.py: async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
+backend/app/services/aito_payment_links.py: async def reconcile_payment_links(
+backend/app/services/aito_payment_links.py: async def _run_pass(
+backend/app/services/aito_payment_links.py: def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
+```
+
+## SCOPE: aito_payment_links table, column by column
+```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "
+import backend.app.main
+from backend.app.core.database import Base
+t = Base.metadata.tables[\"aito_payment_links\"]
+for c in t.columns:
+    d = getattr(c.server_default, \"arg\", None)
+    # A SQL function default (func.now()) reprs with its memory address, so
+    # name the callable instead of repring the object.
+    d = None if d is None else (getattr(d, \"name\", None) or repr(d))
+    print(c.name, c.type, \"nullable\" if c.nullable else \"NOT NULL\", \"unique\" if c.unique else \"-\", d)
+for i in sorted(t.indexes, key=lambda i: i.name):
+    print(\"index\", i.name, sorted(col.name for col in i.columns))
+" 2>/dev/null```
+```
+id INTEGER NOT NULL - None
+project_id INTEGER NOT NULL - None
+idempotency_key VARCHAR(64) NOT NULL unique None
+heimdall_id VARCHAR(36) nullable unique None
+reference VARCHAR(64) NOT NULL - None
+amount INTEGER NOT NULL - None
+currency VARCHAR(3) NOT NULL - 'XPF'
+expires_on VARCHAR(10) NOT NULL - None
+url VARCHAR(500) nullable - None
+status VARCHAR(20) NOT NULL - 'pending'
+paid_at DATETIME nullable - None
+checked_at DATETIME nullable - None
+sync_error TEXT nullable - None
+sync_failures INTEGER NOT NULL - '0'
+superseded_at DATETIME nullable - None
+created_at DATETIME NOT NULL - now
+updated_at DATETIME NOT NULL - now
+index ix_aito_payment_links_project_id ['project_id']
+index ix_aito_payment_links_status ['status']
+```
+
+## SCOPE: wire schemas (HeimdallTestRequest, HeimdallStatus, AitoPaymentLinkView)
+```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "
+from backend.app.schemas.heimdall import HeimdallStatus, HeimdallTestRequest
+from backend.app.schemas.aito import AitoPaymentLinkView
+for m in (HeimdallTestRequest, HeimdallStatus, AitoPaymentLinkView):
+    print(m.__name__)
+    for n, f in m.model_fields.items():
+        print(\"  \", n, f.annotation, repr(f.default))
+" 2>/dev/null```
+```
+HeimdallTestRequest
+   base_url str | None None
+   token str | None None
+HeimdallStatus
+   configured <class 'bool'> PydanticUndefined
+   reachable bool | None PydanticUndefined
+   error typing.Optional[typing.Literal['unauthorized', 'forbidden', 'unreachable']] PydanticUndefined
+AitoPaymentLinkView
+   state typing.Literal['pending', 'paid', 'failed', 'cancelled', 'expired'] PydanticUndefined
+   amount <class 'int'> PydanticUndefined
+   currency <class 'str'> PydanticUndefined
+   url str | None PydanticUndefined
+   expires_on <class 'str'> PydanticUndefined
+   paid_at datetime.datetime | None PydanticUndefined
+   sync_error str | None PydanticUndefined
+```
+
+## SCOPE: OpenAPI fragment for the payment-link endpoints
+```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "
+import json
+from backend.app.main import app
+spec = app.openapi()
+for path in sorted(spec[\"paths\"]):
+    if \"heimdall\" in path or \"payment-link\" in path:
+        for method in sorted(spec[\"paths\"][path]):
+            op = spec[\"paths\"][path][method]
+            print(method.upper(), path, \"->\", sorted(op.get(\"responses\", {})))
+            print(\"   body:\", json.dumps(op.get(\"requestBody\"), sort_keys=True))
+" 2>/dev/null```
+```
+POST /api/v1/aito/{project_id}/payment-link/refresh -> ['200', '422']
+   body: null
+POST /api/v1/heimdall/test -> ['200', '422']
+   body: {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/HeimdallTestRequest"}}}, "required": true}
+```
+
+## SCOPE: reconciler tunables
+```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "
+from backend.app.services import aito_payment_links as PL
+for n in sorted(dir(PL)):
+    if n == \"TYPE_CHECKING\":
+        continue
+    if n.isupper() or n in (\"_TICK_SECONDS\", \"_MAX_BACKOFF_TICKS\", \"_DEAD_STATUSES\", \"_CLOSED_QUOTE_STATUSES\"):
+        v = getattr(PL, n)
+        print(n, \"=\", sorted(v) if isinstance(v, frozenset) else v)
+from backend.app.services import heimdall as HD
+print(\"_TIMEOUT_SECONDS =\", HD._TIMEOUT_SECONDS)
+from backend.app.api.routes import aito as A
+print(\"_PAYMENT_LINK_REFRESH_MAX_CALLS =\", A._PAYMENT_LINK_REFRESH_MAX_CALLS)
+print(\"_AI_RATE_LIMIT_WINDOW_S =\", A._AI_RATE_LIMIT_WINDOW_S)
+" 2>/dev/null```
+```
+MAX_POLLS_PER_TICK = 40
+_CLOSED_QUOTE_STATUSES = ['declined', 'expired']
+_DEAD_STATUSES = ['cancelled', 'expired', 'failed']
+_MAX_BACKOFF_TICKS = 6
+_TICK_SECONDS = 300
+_TIMEOUT_SECONDS = 10.0
+_PAYMENT_LINK_REFRESH_MAX_CALLS = 10
+_AI_RATE_LIMIT_WINDOW_S = 60.0
+```
+
+## SCOPE: settings keys the feature reads
+```regen: grep -hoE "\"(heimdall_[a-z_]+|aito_deposit_pct|aito_quote_validity_days)\"" backend/app/api/routes/settings.py backend/app/schemas/settings.py backend/app/services/aito_payment_links.py backend/app/services/heimdall.py | sort | uniq -c | sed "s/^ *//"```
+```
+2 "aito_deposit_pct"
+1 "aito_quote_validity_days"
+3 "heimdall_api_token"
+2 "heimdall_base_url"
+4 "heimdall_id"
+```
+
+## SCOPE: i18n key counts per locale
+```regen: for f in frontend/src/i18n/locales/*.ts; do printf "%s " "$(basename "$f")"; grep -coE "^\s+(heimdall|paymentLink)[A-Za-z0-9_]*:" "$f"; done```
+```
+de.ts 6
+en.ts 6
+es.ts 6
+fr.ts 6
+it.ts 6
+ja.ts 6
+ko.ts 6
+nl.ts 6
+pt-BR.ts 6
+ru.ts 6
+tr.ts 6
+uk.ts 6
+zh-CN.ts 6
+zh-TW.ts 6
+```
+
+## SCOPE: frontend components and API-client calls
+```regen: { grep -hoE "^export (default function|function|const) [A-Za-z0-9_]+" frontend/src/components/HeimdallSettings.tsx frontend/src/components/aito/PaymentLinkRow.tsx; grep -hoE "(PaymentLink[A-Za-z]*|payment-link/[a-z]+|heimdall/[a-z]+|heimdall_[a-z_]+)" frontend/src/api/client.ts | sort -u; grep -hoE "^  (refreshPaymentLink|testHeimdall)[A-Za-z0-9_]*" frontend/src/api/client.ts; } | sort```
+```
+  testHeimdall
+export function HeimdallSettings
+export function PaymentLinkRow
+heimdall_api_token
+heimdall_base_url
+heimdall/test
+payment-link/refresh
+PaymentLink
+PaymentLinkState
 ```
 
