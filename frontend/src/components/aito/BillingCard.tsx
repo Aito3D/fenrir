@@ -32,6 +32,8 @@ export function BillingCard({
   canUpdate,
   onRetrySync,
   retryPending,
+  onForceSync,
+  forcePending,
   depositPct = 0,
   currency,
 }: {
@@ -43,12 +45,16 @@ export function BillingCard({
    *  unchanged description — see the panel's `updateMutation`). */
   onRetrySync: () => void;
   retryPending: boolean;
+  /** Queues a locked-but-not-invoiced card for one more push attempt
+   *  (POST /aito/{id}/sync — see the panel's `forceSyncMutation`). */
+  onForceSync: () => void;
+  forcePending: boolean;
   /** `AppSettings.aito_deposit_pct`, passed through to `PaymentLinkRow` so it
    *  can tell whether a paid link still covers the current quote total. */
   depositPct?: number;
 }) {
   const { t } = useTranslation();
-  const { syncLabelKey, blockKey, hasQuoteMessage } = deriveQuoteSync(project);
+  const { syncLabelKey, blockKey, hasQuoteMessage, canForceSync } = deriveQuoteSync(project);
 
   if (!project.quote_number && !hasQuoteMessage) return null;
 
@@ -154,6 +160,31 @@ export function BillingCard({
                     className="block ml-auto mt-1 text-xs text-bambu-green hover:text-bambu-green/80 disabled:opacity-50"
                   >
                     {t('aito.retrySync')}
+                  </button>
+                )}
+                {/* The escape hatch out of a refusal-to-push lock — today
+                    that means a tax-exclusive estimate, whose message sits
+                    right above this button (see quoteSync.ts's
+                    `canForceSync`). A lock leaves the sync sweep for good, so
+                    without this the card stays stuck at the refusal even
+                    after the estimate has been fixed in Books, and nothing
+                    the operator can do here would ever make the app look
+                    again.
+                    It forces the ATTEMPT, not the write: the worker re-reads
+                    the estimate and its own guard still decides, so a quote
+                    that is still tax-exclusive simply re-locks with the same
+                    message and no line items are pushed. Gated on
+                    `canUpdate` because POST /aito/{id}/sync enforces
+                    AITO_UPDATE — same rule SendQuoteButton above follows. */}
+                {canForceSync && canUpdate && (
+                  <button
+                    type="button"
+                    onClick={onForceSync}
+                    disabled={forcePending}
+                    title={t('aito.forceSyncHint')}
+                    className="block ml-auto mt-1 text-xs text-bambu-green hover:text-bambu-green/80 disabled:opacity-50"
+                  >
+                    {t('aito.forceSync')}
                   </button>
                 )}
               </dd>

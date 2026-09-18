@@ -3633,7 +3633,8 @@ async def sync_project_now(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Queue this card for a Zoho push right now. The detail panel calls this
-    once, on close, after every write it made has settled.
+    once, on close, after every write it made has settled — and again, by
+    hand, from the Billing card's "Force sync" control.
 
     It exists because every other write path wakes the worker through
     ``request_debounced_sync``, whose window is FIXED — the first edit opens
@@ -3658,6 +3659,18 @@ async def sync_project_now(
     instead of its lines rewritten. That also keeps a panel opened and closed
     with no edits from costing a Books call at all — the frontend only calls
     this when it actually wrote something.
+
+    Which is exactly what makes it the right route for the panel's manual
+    "Force sync" control too. A card the worker REFUSED to push — today only
+    a tax-exclusive estimate, whose total our tax-inclusive costs would
+    inflate by the tax rate — is left 'locked', and 'locked' leaves the sweep
+    permanently (``_still_selected``), so once that estimate has been fixed
+    in Books nothing is left running that would ever read it again. Marking
+    it pending here is what makes the worker look: it re-reads the estimate
+    and re-applies the same guard, pushing if the quote now reads
+    tax-inclusive and re-locking with the same recorded reason if it does
+    not. The button forces the ATTEMPT; it can never force the write, and
+    there is deliberately no parameter here that could.
 
     Reuses ``Permission.AITO_UPDATE`` for the same reason ``set_project_flag``
     does: this is reachable only by someone who could already edit the card,

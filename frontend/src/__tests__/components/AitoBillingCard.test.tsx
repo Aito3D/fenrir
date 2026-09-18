@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { BillingCard } from '../../components/aito/BillingCard';
 import type { AitoProject } from '../../api/client';
@@ -20,9 +21,19 @@ function project(overrides: Partial<AitoProject> = {}): AitoProject {
     created_at: '2026-09-12T00:00:00', updated_at: '2026-09-12T00:00:00', ...overrides };
 }
 
-function renderCard(p: AitoProject) {
+function renderCard(p: AitoProject, overrides: Partial<Parameters<typeof BillingCard>[0]> = {}) {
   return render(
-    <BillingCard project={p} canUpdate onRetrySync={() => {}} retryPending={false} depositPct={0} currency="XPF" />,
+    <BillingCard
+      project={p}
+      canUpdate
+      onRetrySync={() => {}}
+      retryPending={false}
+      onForceSync={() => {}}
+      forcePending={false}
+      depositPct={0}
+      currency="XPF"
+      {...overrides}
+    />,
   );
 }
 
@@ -48,5 +59,59 @@ describe('BillingCard deposit row', () => {
   it('has no deposit row once every deposit has been spent', () => {
     renderCard(project({ customer_credit_total: 0, retainer_paid_total: 10000 }));
     expect(screen.queryByText('Deposit available')).not.toBeInTheDocument();
+  });
+});
+
+/** The Force sync control, and the label it sits under.
+ *
+ *  A card can be 'locked' for two unrelated reasons (see quoteSync.ts's
+ *  `canForceSync`): it has been invoiced, which is final, or the worker
+ *  REFUSED to push — today that means a tax-exclusive estimate, which Aito's
+ *  tax-inclusive costs cannot be written onto without inflating the total by
+ *  the tax rate. A lock leaves the 300s sweep for good, so the refusal kind
+ *  needs a way to ask the app to look at the estimate again once it has been
+ *  fixed in Books; the invoiced kind must not offer one. */
+const TAX_EXCLUSIVE =
+  'This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total';
+
+describe('BillingCard force sync', () => {
+  it('offers a force control, and names the lock a block, on a refused push', () => {
+    renderCard(project({ quote_sync_state: 'locked', quote_invoiced: false, quote_sync_error: TAX_EXCLUSIVE }));
+    expect(screen.getByText('Sync blocked')).toBeInTheDocument();
+    expect(screen.getByText(TAX_EXCLUSIVE)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Force sync' })).toBeInTheDocument();
+    // "Quote invoiced" is simply untrue of a quote that was never billed.
+    expect(screen.queryByText('Quote invoiced')).not.toBeInTheDocument();
+  });
+
+  it('calls back once when it is pressed', async () => {
+    const onForceSync = vi.fn();
+    renderCard(
+      project({ quote_sync_state: 'locked', quote_invoiced: false, quote_sync_error: TAX_EXCLUSIVE }),
+      { onForceSync },
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Force sync' }));
+    expect(onForceSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables it while the queue request is in flight', () => {
+    renderCard(project({ quote_sync_state: 'locked', quote_invoiced: false, quote_sync_error: TAX_EXCLUSIVE }), {
+      forcePending: true,
+    });
+    expect(screen.getByRole('button', { name: 'Force sync' })).toBeDisabled();
+  });
+
+  it('offers nothing on an invoiced lock, which no re-attempt can clear', () => {
+    renderCard(project({ quote_sync_state: 'locked', quote_invoiced: true }));
+    expect(screen.getByText('Quote invoiced')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Force sync' })).not.toBeInTheDocument();
+  });
+
+  it('hides it from a reader, since the route it calls enforces AITO_UPDATE', () => {
+    renderCard(project({ quote_sync_state: 'locked', quote_invoiced: false, quote_sync_error: TAX_EXCLUSIVE }), {
+      canUpdate: false,
+    });
+    expect(screen.getByText(TAX_EXCLUSIVE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Force sync' })).not.toBeInTheDocument();
   });
 });

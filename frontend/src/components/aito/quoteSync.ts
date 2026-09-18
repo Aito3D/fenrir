@@ -3,7 +3,11 @@ import type { AitoProject } from '../../api/client';
 /** Sync-row label per stored sync state. `locked` gets a label and nothing
  *  else: the "changes stay local" sentence that used to sit under it was the
  *  tallest row on every invoiced card, for one fact the label already
- *  states. */
+ *  states.
+ *
+ *  'locked' resolves to the INVOICED label; the other kind of lock (see
+ *  `canForceSync` below) overrides it, because "Quote invoiced" is simply
+ *  untrue of a quote that was never billed. */
 const SYNC_LABEL_KEY: Record<string, string> = {
   pending: 'aito.syncPendingLabel',
   error: 'aito.syncError',
@@ -31,10 +35,33 @@ export interface QuoteSyncView {
    *  missing would vanish into a card that no longer renders, and a conflict
    *  that reaches nobody is exactly how a previous design lost them. */
   hasQuoteMessage: boolean;
-  /** Whether the operator has to DO something about the sync: a failed push
-   *  or a status block. Pending and locked are states, not problems, and an
-   *  invoiced card would otherwise carry the dot for the rest of its life. */
+  /** Whether the operator has to DO something about the sync: a failed push,
+   *  a status block, or a push the worker REFUSED (see `canForceSync`).
+   *  Pending is a state, not a problem, and an INVOICED card would otherwise
+   *  carry the dot for the rest of its life — the refusal kind is the
+   *  opposite, an unfinished job with a control sitting behind a tab, which
+   *  is exactly what this flag exists to stop hiding. */
   needsAttention: boolean;
+  /** Whether this card's lock is one a re-attempt could still clear, i.e.
+   *  whether to offer the Force sync control.
+   *
+   *  There are exactly two kinds of lock (backend/app/services/
+   *  aito_quote_sync.py's `_lock_project`). The invoiced kind stamps
+   *  `quote_invoiced` and is genuinely final — Books does not un-invoice a
+   *  quote. The other kind is a REFUSAL to push: today the only one is a
+   *  tax-exclusive estimate, which Aito's tax-inclusive costs cannot be
+   *  written onto without inflating the total by the tax rate. That is a
+   *  fact about the estimate as Books last returned it, not about the card —
+   *  and 'locked' leaves the sync sweep for good, so once the estimate is
+   *  fixed in Books nothing would ever look again.
+   *
+   *  Decided on `quote_invoiced`, never on the text of `quote_sync_error`:
+   *  the flag is a column written by exactly one branch, while the message
+   *  is prose. A legacy locked row from before that flag existed reads as
+   *  forceable here; forcing it costs one Books read and re-locks it as
+   *  invoiced, which is self-correcting rather than harmful — the worker,
+   *  not this button, decides what a re-attempt means. */
+  canForceSync: boolean;
 }
 
 /** Everything the panel derives from a project's sync fields, in one place,
@@ -52,13 +79,17 @@ export function deriveQuoteSync(project: AitoProject): QuoteSyncView {
       ? BLOCK_MESSAGE_KEY[project.quote_status_block]
       : null
     : null;
-  const syncLabelKey = Object.hasOwn(SYNC_LABEL_KEY, project.quote_sync_state)
-    ? SYNC_LABEL_KEY[project.quote_sync_state]
-    : undefined;
+  const canForceSync = project.quote_sync_state === 'locked' && !project.quote_invoiced;
+  const syncLabelKey = canForceSync
+    ? 'aito.syncBlockedLabel'
+    : Object.hasOwn(SYNC_LABEL_KEY, project.quote_sync_state)
+      ? SYNC_LABEL_KEY[project.quote_sync_state]
+      : undefined;
   return {
     syncLabelKey,
     blockKey,
     hasQuoteMessage: Boolean(syncLabelKey) || Boolean(blockKey) || project.quote_status === 'declined',
-    needsAttention: project.quote_sync_state === 'error' || Boolean(blockKey),
+    needsAttention: project.quote_sync_state === 'error' || Boolean(blockKey) || canForceSync,
+    canForceSync,
   };
 }

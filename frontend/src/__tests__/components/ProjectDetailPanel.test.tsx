@@ -1829,13 +1829,41 @@ describe('ProjectDetailPanel sync row', () => {
   });
 
   it('shows the locked label and no retry control once the quote is invoiced, with no help sentence under it', async () => {
-    show({ quote_sync_state: 'locked' });
+    // `quote_invoiced` is what makes a lock the FINAL kind — see quoteSync.ts's
+    // `canForceSync` and the refusal case just below, which shares the state
+    // and nothing else.
+    show({ quote_sync_state: 'locked', quote_invoiced: true });
     expect(await screen.findByText('Quote invoiced')).toBeInTheDocument();
     // The "changes stay local" sentence used to sit under the label. It was
     // the tallest row on every invoiced card for one fact the label already
     // states, so it is gone.
     expect(screen.queryByText(/changes stay local/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Force sync' })).not.toBeInTheDocument();
+    // Nothing to do about it ever again, so no attention dot either.
+    expect(screen.queryByTestId('panel-tab-attention')).not.toBeInTheDocument();
+  });
+
+  it('names a refused push a block, not an invoice, and offers a way to force another attempt', async () => {
+    // The other kind of lock: the worker read the estimate and declined to
+    // write to it — today only a tax-exclusive quote, whose total our
+    // tax-inclusive costs would inflate by the tax rate. Nothing was billed,
+    // so "Quote invoiced" would be a lie; and a lock leaves the 300s sweep
+    // for good, so once the estimate is fixed in Books this control is the
+    // only thing left that can make the app look at it again.
+    show({
+      quote_sync_state: 'locked',
+      quote_invoiced: false,
+      quote_sync_error:
+        'This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total',
+    });
+    expect(await screen.findByText('Sync blocked')).toBeInTheDocument();
+    expect(screen.getByText(/tax-exclusive/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Force sync' })).toBeInTheDocument();
+    expect(screen.queryByText('Quote invoiced')).not.toBeInTheDocument();
+    // And the Details tab says so from the outside: the control is useless to
+    // an operator whose panel reopened on the Activity tab.
+    expect(screen.getByTestId('panel-tab-attention')).toBeInTheDocument();
   });
 
   it('shows a note that Zoho refuses to revert a declined quote to draft', async () => {
@@ -3253,12 +3281,30 @@ describe('ProjectDetailPanel right column tabs', () => {
     expect(within(screen.getByRole('tab', { name: /Details/ })).getByTestId('panel-tab-attention')).toBeInTheDocument();
   });
 
-  it('does not flag Details for an idle, pending or locked sync', () => {
-    for (const state of ['idle', 'pending', 'locked'] as const) {
+  it('flags Details when the worker refused the push, since the control that clears it lives there', () => {
+    // A lock the operator can still act on — fix the quote in Books, then
+    // Force sync. The dot is what keeps that from hiding behind a tab the
+    // panel happens to have reopened on. Its INVOICED sibling below gets no
+    // dot: there is nothing left to do about that one, ever.
+    show({
+      quote_number: 'DEV26-2462',
+      quote_sync_state: 'locked',
+      quote_invoiced: false,
+      quote_sync_error:
+        'This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total',
+    });
+    expect(within(screen.getByRole('tab', { name: /Details/ })).getByTestId('panel-tab-attention')).toBeInTheDocument();
+  });
+
+  it('does not flag Details for an idle, pending or invoiced-locked sync', () => {
+    for (const state of ['idle', 'pending'] as const) {
       const { unmount } = show({ quote_number: 'DEV26-2462', quote_sync_state: state });
       expect(screen.queryByTestId('panel-tab-attention')).not.toBeInTheDocument();
       unmount();
     }
+    const { unmount } = show({ quote_number: 'DEV26-2462', quote_sync_state: 'locked', quote_invoiced: true });
+    expect(screen.queryByTestId('panel-tab-attention')).not.toBeInTheDocument();
+    unmount();
   });
 });
 

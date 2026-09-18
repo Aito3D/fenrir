@@ -296,11 +296,33 @@ describe('CardView', () => {
   it('shows a lock indicator once the quote is invoiced', () => {
     render(
       <CardView
-        project={{ ...project, quote_number: 'DEV26-2471', quote_sync_state: 'locked' }}
+        project={{ ...project, quote_number: 'DEV26-2471', quote_sync_state: 'locked', quote_invoiced: true }}
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.getByLabelText(/facturé|invoiced|locked/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Quote invoiced')).toBeInTheDocument();
+  });
+
+  it('calls the same lock a block when nothing was ever billed', () => {
+    // The padlock covers both kinds of lock; only one of them is an invoice.
+    // A quote the worker refused to push to — a tax-exclusive estimate — has
+    // no invoice behind it, and labelling it "Quote invoiced" sends the
+    // operator looking for one that does not exist.
+    render(
+      <CardView
+        project={{
+          ...project,
+          quote_number: 'DEV26-2471',
+          quote_sync_state: 'locked',
+          quote_invoiced: false,
+          quote_sync_error:
+            'This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total',
+        }}
+        onExpand={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Sync blocked')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Quote invoiced')).not.toBeInTheDocument();
   });
 
   it('shows neither error nor lock indicator when the sync state is idle', () => {

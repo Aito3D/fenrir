@@ -502,9 +502,23 @@ export function CardView({
                 {!project.quote_number && project.quote_sync_state === 'pending' && (
                   <span className="text-xs text-bambu-gray/70 truncate italic">{t('aito.quotePending')}</span>
                 )}
+                {/* The padlock covers both kinds of lock, but they are not the
+                    same fact: only a BILLED quote is "invoiced" (see
+                    quoteSync.ts, which the panel derives the same distinction
+                    from). A quote locked because the worker refused to push to
+                    it — a tax-exclusive estimate — was never billed, and
+                    saying it was sends the operator looking for an invoice
+                    that does not exist. The recorded reason is on `title`
+                    either way. */}
                 {(project.quote_sync_state === 'error' || project.quote_sync_state === 'locked') && (
                   <span
-                    aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
+                    aria-label={
+                      project.quote_sync_state === 'error'
+                        ? t('aito.syncError')
+                        : project.quote_invoiced
+                          ? t('aito.quoteLocked')
+                          : t('aito.syncBlockedLabel')
+                    }
                     title={project.quote_sync_error || undefined}
                     // inline-flex so the glyph centres on the quote number's
                     // line instead of sitting on its baseline a notch too high.

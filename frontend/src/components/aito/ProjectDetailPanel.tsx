@@ -26,6 +26,7 @@ import {
 import { deriveQuoteSync } from './quoteSync';
 import { ShippingCard } from './ShippingCard';
 import { useBoardSync } from '../../hooks/useBoardSync';
+import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
@@ -57,6 +58,7 @@ import { focusRingCls, inputCls } from '../formStyles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useProjectPatchMutation } from './useProjectPatchMutation';
+import { settleProject } from './settleProject';
 
 /** The right column's tabs, in strip order. Details first: it holds the
  *  reference cards most panels are opened for. */
@@ -800,6 +802,37 @@ export function ProjectDetailPanel({
     return applySyncState(previous, project.id, 'pending');
   });
 
+  // The Force sync control on a locked-but-not-invoiced card (see
+  // quoteSync.ts's `canForceSync`). NOT a `useProjectPatchMutation` like the
+  // retry button beside it: a PATCH is an EDIT, and the only edit available
+  // here would be re-saving the unchanged description — which records a
+  // `project.updated` for a write the operator did not make, and carries a
+  // version guard that can 409 against a peer for no reason. POST
+  // /aito/{id}/sync is the route that exists for exactly this ("queue this
+  // card for a push now"), so this is a bare board mutation over it.
+  //
+  // It forces the ATTEMPT, never the write. The route marks the card pending
+  // and wakes the worker; every guard the worker owns still applies, so an
+  // estimate that is still tax-exclusive re-locks with the same message and
+  // no line items go out. That is the whole point — the operator fixes the
+  // quote in Books, and this is how the app is told to look again, since a
+  // locked card has left the 300s sweep permanently.
+  //
+  // Optimistic to 'pending' only. `quote_sync_error` is deliberately left
+  // standing: the server does not clear it either (`_mark_pending` resets
+  // the state and the failure count, nothing else), so the message stays
+  // visible under a "Pending" label until the worker has actually decided.
+  const forceSyncMutation = useOptimisticBoardMutation<AitoProject, void>({
+    mutationFn: () => api.syncAitoProject(project.id),
+    transform: (previous) => applySyncState(previous, project.id, 'pending'),
+    flashId: () => project.id,
+    onSuccess: (updatedProject) => settleProject(queryClient, project.id, updatedProject),
+    // Unlike the panel's close-sync, which is fire-and-forget by design (the
+    // card is already gone and the next edit or sweep recovers it), this is a
+    // button someone pressed: a failure that changed nothing must say so.
+    onError: () => showToast(t('aito.syncError'), 'error'),
+  });
+
   // Its own mutation rather than a third branch of `updateMutation.transform`:
   // that transform switches on "is this a description edit or a sync retry",
   // and a social edit is neither. Same shape as ShippingCard's — optimistic
@@ -1321,6 +1354,8 @@ export function ProjectDetailPanel({
                       canUpdate={canUpdate}
                       onRetrySync={() => updateMutation.mutate({ description: project.description })}
                       retryPending={updateMutation.isPending}
+                      onForceSync={() => forceSyncMutation.mutate(undefined)}
+                      forcePending={forceSyncMutation.isPending}
                       depositPct={depositPct}
                       currency={currency}
                     />

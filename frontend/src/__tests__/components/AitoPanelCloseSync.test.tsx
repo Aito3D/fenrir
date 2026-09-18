@@ -156,3 +156,73 @@ describe('ProjectDetailPanel close sync', () => {
     expect(rejections).toEqual([]);
   });
 });
+
+/** The same route, reached the other way: the Force sync control the Billing
+ *  card offers on a card the worker REFUSED to push.
+ *
+ *  A refusal locks the card (today: a tax-exclusive estimate, which Aito's
+ *  tax-inclusive costs cannot be written onto without inflating the total by
+ *  the tax rate), and a locked card leaves the 300s sweep permanently — so
+ *  once the estimate has been fixed in Books there is nothing left running
+ *  that would ever look at it again. This control is how the app is told to
+ *  look. It forces the ATTEMPT, not the write: the route only marks the card
+ *  pending, and every guard the worker owns still decides what that means. */
+const TAX_EXCLUSIVE =
+  'This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total';
+
+const blocked: AitoProject = {
+  ...project,
+  quote_sync_state: 'locked',
+  quote_invoiced: false,
+  quote_sync_error: TAX_EXCLUSIVE,
+};
+
+describe('ProjectDetailPanel force sync', () => {
+  it('queues the card for a push, through the sync route and nothing else', async () => {
+    // Not a PATCH: re-saving the unchanged description would be the only
+    // "edit" available here, and it records a project.updated for a write the
+    // operator never made — plus it carries a version guard that can 409
+    // against a peer for no reason at all.
+    const updateAitoProject = vi.spyOn(api, 'updateAitoProject');
+    const user = userEvent.setup();
+    render(
+      <ProjectDetailPanel canCreate canUpdate canDelete project={blocked} onClose={vi.fn()} onDelete={vi.fn()} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Force sync' }));
+
+    await waitFor(() => expect(syncAitoProject).toHaveBeenCalledWith(12));
+    expect(syncAitoProject).toHaveBeenCalledTimes(1);
+    expect(updateAitoProject).not.toHaveBeenCalled();
+  });
+
+  it('offers nothing to press on an invoiced card, which no re-attempt can clear', async () => {
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate
+        canDelete
+        project={{ ...project, quote_sync_state: 'locked', quote_invoiced: true, quote_sync_error: null }}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('Quote invoiced')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Force sync' })).not.toBeInTheDocument();
+  });
+
+  it('says so when the queue request fails, rather than looking like it worked', async () => {
+    // The close-sync above is fire-and-forget on purpose — the card is already
+    // gone and the next edit or sweep recovers it. This one is a button
+    // someone pressed, so a failure that changed nothing has to reach them.
+    syncAitoProject.mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    render(
+      <ProjectDetailPanel canCreate canUpdate canDelete project={blocked} onClose={vi.fn()} onDelete={vi.fn()} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Force sync' }));
+
+    expect(await screen.findByText('Sync failed')).toBeInTheDocument();
+  });
+});

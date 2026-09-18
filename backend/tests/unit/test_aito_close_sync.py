@@ -311,3 +311,127 @@ async def test_a_task_added_in_the_panel_reaches_the_quote_after_the_card_closes
             "item_order": 2,
         },
     ]
+
+
+# ---------------------------------------------------------------------------
+# The same route as the panel's "Force sync" control: a refused push, retried
+# ---------------------------------------------------------------------------
+#
+# A quote the worker REFUSED to push is left 'locked' with the reason recorded
+# (`_lock_project`). Today the only such reason is a tax-exclusive estimate:
+# board costs are stored TTC, so writing them onto one would have Books add
+# tax on top of a figure that already includes it and inflate the total by the
+# tax rate on every push. The refusal is right — but 'locked' leaves the sweep
+# permanently (`_still_selected`), so once the estimate has been fixed in Books
+# nothing is left running that would ever read it again, and the card stays
+# stuck on a refusal that no longer applies. This route is what the Billing
+# card's Force sync control calls to make the worker look once more. It forces
+# the ATTEMPT, never the write.
+
+
+@pytest.mark.asyncio
+async def test_forcing_a_refused_card_queues_it_and_wakes_the_worker(async_client, db_session):
+    """'locked' is not 'unmanaged': the ownership guard excludes exactly one
+    state, so a card locked for a recorded reason is re-queued like any other
+    — which is the whole mechanism behind Force sync."""
+    from backend.app.services import aito_quote_sync
+
+    project_id = (await _create(async_client, quote_id="E1", quote_number="DEV26-9100")).json()["id"]
+    project = await db_session.get(AitoProject, project_id)
+    project.quote_sync_state = "locked"
+    project.quote_sync_error = (
+        "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
+    )
+    await db_session.commit()
+
+    aito_quote_sync._wake.clear()
+    response = await async_client.post(f"/api/v1/aito/{project_id}/sync")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["quote_sync_state"] == "pending"
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    # The recorded reason is deliberately NOT cleared here: nothing has been
+    # re-read yet, so the last thing Books said is still the truth, and the
+    # panel keeps showing it under a "Pending" label until the worker decides.
+    assert "tax-exclusive" in project.quote_sync_error
+    assert aito_quote_sync._wake.is_set()
+
+
+async def _create_a_tax_exclusive_quote(async_client, db_session) -> tuple[int, AitoProject]:
+    """Drive a project through the create path against an org that answers
+    with a tax-EXCLUSIVE estimate, i.e. leave it in the exact state the Force
+    sync control is offered on.
+
+    The create request ASKS for `is_inclusive_tax: True`; the org can force
+    the estimate the other way anyway, and by the time the response is back
+    the estimate already exists in Books — so the create path locks it rather
+    than writing anything further to it.
+    """
+    await _configure_zoho(db_session)
+    project_id = (await _create(async_client, tasks=[{"title": "Moyeu", "scan_cost": 3500}])).json()["id"]
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): _estimate(is_inclusive_tax=False),
+                # The tracking-notes write the create path makes right after;
+                # routed only so it does not 404 into the warning branch.
+                ("PUT", "/estimates/E1"): _estimate(is_inclusive_tax=False),
+            }
+        )
+    )
+    assert await run_sync_once(db_session) == 1
+    project = await db_session.get(AitoProject, project_id)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert "tax-exclusive" in project.quote_sync_error
+    return project_id, project
+
+
+@pytest.mark.asyncio
+async def test_a_forced_attempt_pushes_once_the_quote_reads_tax_inclusive(async_client, db_session):
+    """The point of the control, end to end: the operator fixes the quote in
+    Books, presses Force sync, and the costs finally land."""
+    project_id, project = await _create_a_tax_exclusive_quote(async_client, db_session)
+
+    assert (await async_client.post(f"/api/v1/aito/{project_id}/sync")).status_code == 200
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): _estimate(), ("PUT", "/estimates/E1"): _estimate()}, seen)
+    )
+    await db_session.rollback()
+    assert await run_sync_once(db_session, pending_only=True) == 1
+
+    put = next(entry for entry in seen if entry[0] == "PUT")
+    assert [line.get("header_name") for line in put[2]["line_items"]] == ["Moyeu"]
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_a_forced_attempt_still_writes_nothing_to_a_tax_exclusive_quote(async_client, db_session):
+    """The guard is the worker's, not the button's. Forcing an attempt against
+    a quote that is STILL tax-exclusive must re-lock it with the same recorded
+    reason and send no line items at all — there is deliberately no parameter
+    on the route that could make it push."""
+    project_id, project = await _create_a_tax_exclusive_quote(async_client, db_session)
+
+    assert (await async_client.post(f"/api/v1/aito/{project_id}/sync")).status_code == 200
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {("GET", "/estimates/E1"): _estimate(is_inclusive_tax=False), ("PUT", "/estimates/E1"): _estimate()},
+            seen,
+        )
+    )
+    await db_session.rollback()
+    assert await run_sync_once(db_session, pending_only=True) == 1
+
+    assert [entry[0] for entry in seen] == ["GET"]
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert "tax-exclusive" in project.quote_sync_error
