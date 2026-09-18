@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: 'Introducir un código de seguimiento',
       language: 'Idioma',
       paymentTermsToggle: 'Ver las condiciones',
+      panel: {
+        close: 'Cerrar',
+        paymentTitle: 'Condiciones de pago',
+      },
+      shop: {
+        find: 'Dónde estamos',
+        title: 'Encuéntranos',
+        sub: 'Taller y tienda Aito 3D',
+        mapTitle: 'Mapa de la tienda',
+        mapLoading: 'Cargando el mapa…',
+        phone: 'Teléfono',
+        email: 'Correo',
+        website: 'Sitio web',
+        social: 'Redes',
+        directions: 'Cómo llegar',
+        call: 'Llamar',
+      },
       paymentMethods: {
         methods: 'Forma de pago',
         transfer: 'Transferencia',
@@ -263,6 +280,7 @@ export default {
         copyReference: 'Copiar el concepto',
         copyRib: 'Copiar el RIB',
         copyTag: 'Copiar el tag de {{app}}',
+        findShop: 'Ver dónde estamos',
       },
       stages: {
         devis: 'Presupuesto',

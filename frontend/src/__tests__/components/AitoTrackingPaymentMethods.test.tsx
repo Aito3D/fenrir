@@ -146,3 +146,21 @@ describe('TrackingPaymentMethods', () => {
     await waitFor(() => expect(screen.queryByText('Copié')).not.toBeInTheDocument(), { timeout: 3000 });
   });
 });
+
+describe('TrackingPaymentMethods — shop hand-off', () => {
+  it('the shop pane offers a way to the shop panel when the page provides one, passing the pressed button', async () => {
+    const onFindShop = vi.fn();
+    render(<TrackingPaymentMethods open reference="EST-000142" onFindShop={onFindShop} />);
+    expect(screen.queryByRole('button', { name: 'Voir où nous trouver' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Magasin' }));
+    const link = screen.getByRole('button', { name: 'Voir où nous trouver' });
+    await userEvent.click(link);
+    expect(onFindShop).toHaveBeenCalledWith(link);
+  });
+
+  it('without a hand-off the shop pane stays as it was', async () => {
+    render(<TrackingPaymentMethods open reference="EST-000142" />);
+    await userEvent.click(screen.getByRole('tab', { name: 'Magasin' }));
+    expect(screen.queryByRole('button', { name: 'Voir où nous trouver' })).not.toBeInTheDocument();
+  });
+});

@@ -1,19 +1,24 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingPayment } from '../../api/client';
-import { TrackCollapse } from './TrackCollapse';
-import { TrackingPaymentMethods } from './TrackingPaymentMethods';
+
+/** What a card needs to drive one of the page's side panels: whether it is
+ *  open, the panel's id for `aria-controls`, and a toggle that takes the
+ *  pressed button so focus can come back to it. */
+export interface PanelTrigger {
+  open: boolean;
+  controls: string;
+  toggle: (from: HTMLElement) => void;
+}
 
 /** The online payment as a STATE plus, while unpaid, the one action the
  *  client can take from here: pay. Mirrors TrackingInvoice — paid is the
  *  quiet dot-and-line, unpaid is the bordered secondary card — so the two
- *  read as the same kind of thing — and both disclose the same
- *  TrackingPaymentMethods panel behind the terms toggle. The page never shows both: an invoice,
+ *  read as the same kind of thing — and both open the page's payment panel
+ *  (`terms`) from their terms button. The page never shows both: an invoice,
  *  when there is one, is the truer story and wins. The pay link opens in a
  *  new tab so the tracking page stays open behind OSB's checkout. */
-export function TrackingPayment({ payment, reference }: { payment: AitoTrackingPayment; reference: string | null }) {
+export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayment; terms: PanelTrigger }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
 
   if (payment.state === 'paid') {
     return (
@@ -31,7 +36,7 @@ export function TrackingPayment({ payment, reference }: { payment: AitoTrackingP
   // this card is actionable without one (§7.3 branch 4: otherwise, nothing).
   if (!payment.url) return null;
 
-  const button = 'inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,transform] duration-150 active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan min-[400px]:w-auto';
+  const button = 'inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan min-[400px]:w-auto';
   return (
     <div data-testid="track-payment" data-state="unpaid">
       <div className="flex flex-wrap items-center gap-[16px] rounded-[12px] border border-aito-line px-[16px] py-[16px] text-[15px]">
@@ -45,13 +50,16 @@ export function TrackingPayment({ payment, reference }: { payment: AitoTrackingP
         <a href={payment.url} target="_blank" rel="noopener noreferrer" className={`${button} bg-aito-cyan text-aito-midnight hover:brightness-110`}>
           {t('aito.track.payment.pay')}
         </a>
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className={`${button} border border-aito-cyan/35 text-aito-cyan hover:bg-aito-cyan/10 active:bg-aito-cyan/15`}>
+        <button
+          type="button"
+          aria-expanded={terms.open}
+          aria-controls={terms.controls}
+          onClick={(e) => terms.toggle(e.currentTarget)}
+          className={`${button} border text-aito-cyan hover:bg-aito-cyan/10 active:bg-aito-cyan/15 ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
+        >
           {t('aito.track.paymentTermsToggle')}
         </button>
       </div>
-      <TrackCollapse open={open}>
-        <TrackingPaymentMethods open={open} reference={reference} />
-      </TrackCollapse>
     </div>
   );
 }

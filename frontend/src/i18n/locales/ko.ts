@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: '추적 코드 입력',
       language: '언어',
       paymentTermsToggle: '결제 안내 보기',
+      panel: {
+        close: '닫기',
+        paymentTitle: '결제 안내',
+      },
+      shop: {
+        find: '매장 위치',
+        title: '오시는 길',
+        sub: 'Aito 3D 공방 및 매장',
+        mapTitle: '매장 지도',
+        mapLoading: '지도를 불러오는 중…',
+        phone: '전화',
+        email: '이메일',
+        website: '웹사이트',
+        social: '소셜 미디어',
+        directions: '길찾기',
+        call: '전화하기',
+      },
       paymentMethods: {
         methods: '결제 방법',
         transfer: '계좌 이체',
@@ -263,6 +280,7 @@ export default {
         copyReference: '메모 복사',
         copyRib: 'RIB 복사',
         copyTag: '{{app}} 태그 복사',
+        findShop: '매장 위치 보기',
       },
       stages: {
         devis: '견적',

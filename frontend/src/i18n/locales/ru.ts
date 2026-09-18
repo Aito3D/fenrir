@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: 'Ввести код отслеживания',
       language: 'Язык',
       paymentTermsToggle: 'Условия оплаты',
+      panel: {
+        close: 'Закрыть',
+        paymentTitle: 'Условия оплаты',
+      },
+      shop: {
+        find: 'Где нас найти',
+        title: 'Как нас найти',
+        sub: 'Мастерская и магазин Aito 3D',
+        mapTitle: 'Карта магазина',
+        mapLoading: 'Загрузка карты…',
+        phone: 'Телефон',
+        email: 'Эл. почта',
+        website: 'Сайт',
+        social: 'Соцсети',
+        directions: 'Маршрут',
+        call: 'Позвонить',
+      },
       paymentMethods: {
         methods: 'Способ оплаты',
         transfer: 'Перевод',
@@ -263,6 +280,7 @@ export default {
         copyReference: 'Копировать назначение платежа',
         copyRib: 'Копировать RIB',
         copyTag: 'Копировать тег {{app}}',
+        findShop: 'Показать, где мы',
       },
       stages: {
         devis: 'Смета',

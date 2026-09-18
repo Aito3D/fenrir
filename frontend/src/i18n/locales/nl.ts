@@ -8060,6 +8060,23 @@ export default {
       invalidEnterCode: 'Voer een trackingcode in',
       language: 'Taal',
       paymentTermsToggle: 'Bekijk de betalingsvoorwaarden',
+      panel: {
+        close: 'Sluiten',
+        paymentTitle: 'Betalingsvoorwaarden',
+      },
+      shop: {
+        find: 'Waar wij zijn',
+        title: 'Vind ons',
+        sub: 'Werkplaats en winkel van Aito 3D',
+        mapTitle: 'Kaart van de winkel',
+        mapLoading: 'Kaart wordt geladen…',
+        phone: 'Telefoon',
+        email: 'E-mail',
+        website: 'Site',
+        social: 'Sociale media',
+        directions: 'Routebeschrijving',
+        call: 'Bellen',
+      },
       paymentMethods: {
         methods: 'Betaalwijze',
         transfer: 'Overschrijving',
@@ -8082,6 +8099,7 @@ export default {
         copyReference: 'Omschrijving kopiëren',
         copyRib: 'RIB kopiëren',
         copyTag: '{{app}}-tag kopiëren',
+        findShop: 'Bekijk waar wij zijn',
       },
       stages: {
         devis: 'Offerte',

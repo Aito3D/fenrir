@@ -244,6 +244,23 @@ export default {
       invalidEnterCode: 'Enter a tracking code',
       language: 'Language',
       paymentTermsToggle: 'See payment terms',
+      panel: {
+        close: 'Close',
+        paymentTitle: 'Payment terms',
+      },
+      shop: {
+        find: 'Find the shop',
+        title: 'Find us',
+        sub: 'Aito 3D workshop and shop',
+        mapTitle: 'Map of the shop',
+        mapLoading: 'Loading the map…',
+        phone: 'Phone',
+        email: 'Email',
+        website: 'Website',
+        social: 'Social',
+        directions: 'Directions',
+        call: 'Call',
+      },
       paymentMethods: {
         methods: 'Payment method',
         transfer: 'Transfer',
@@ -266,6 +283,7 @@ export default {
         copyReference: 'Copy the reference',
         copyRib: 'Copy the RIB',
         copyTag: 'Copy the {{app}} tag',
+        findShop: 'See where to find us',
       },
       stages: {
         devis: 'Quote',

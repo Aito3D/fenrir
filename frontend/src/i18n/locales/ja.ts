@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: '追跡コードを入力',
       language: '言語',
       paymentTermsToggle: 'お支払い方法を見る',
+      panel: {
+        close: '閉じる',
+        paymentTitle: 'お支払い方法',
+      },
+      shop: {
+        find: '店舗の場所',
+        title: 'アクセス',
+        sub: 'Aito 3D の工房とショップ',
+        mapTitle: '店舗の地図',
+        mapLoading: '地図を読み込み中…',
+        phone: '電話',
+        email: 'メール',
+        website: 'ウェブサイト',
+        social: 'SNS',
+        directions: '経路案内',
+        call: '電話をかける',
+      },
       paymentMethods: {
         methods: 'お支払い方法',
         transfer: '銀行振込',
@@ -263,6 +280,7 @@ export default {
         copyReference: '備考をコピー',
         copyRib: 'RIB をコピー',
         copyTag: '{{app}} のタグをコピー',
+        findShop: '店舗の場所を見る',
       },
       stages: {
         devis: '見積',

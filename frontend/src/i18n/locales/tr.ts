@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: 'Takip kodu gir',
       language: 'Dil',
       paymentTermsToggle: 'Ödeme koşullarını gör',
+      panel: {
+        close: 'Kapat',
+        paymentTitle: 'Ödeme koşulları',
+      },
+      shop: {
+        find: 'Mağazamız nerede',
+        title: 'Bizi bulun',
+        sub: 'Aito 3D atölyesi ve mağazası',
+        mapTitle: 'Mağaza haritası',
+        mapLoading: 'Harita yükleniyor…',
+        phone: 'Telefon',
+        email: 'E-posta',
+        website: 'Web sitesi',
+        social: 'Sosyal medya',
+        directions: 'Yol tarifi',
+        call: 'Ara',
+      },
       paymentMethods: {
         methods: 'Ödeme yöntemi',
         transfer: 'Havale',
@@ -263,6 +280,7 @@ export default {
         copyReference: 'Açıklamayı kopyala',
         copyRib: "RIB'i kopyala",
         copyTag: '{{app}} etiketini kopyala',
+        findShop: 'Nerede olduğumuzu gör',
       },
       stages: {
         devis: 'Teklif',

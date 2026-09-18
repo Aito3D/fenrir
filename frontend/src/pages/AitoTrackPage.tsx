@@ -6,9 +6,13 @@ import { api, ApiError } from '../api/client';
 import { TrackingInvoice } from '../components/aito/TrackingInvoice';
 import { TrackingPayment } from '../components/aito/TrackingPayment';
 import { TrackingLanguageSelect } from '../components/aito/TrackingLanguageSelect';
+import { PanelReveal, TrackingPanel } from '../components/aito/TrackingPanel';
+import { TrackingPaymentMethods } from '../components/aito/TrackingPaymentMethods';
 import { TrackingRail } from '../components/aito/TrackingRail';
+import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
 import { Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
+import { useTrackingPanel } from '../hooks/useTrackingPanel';
 import { CARD, FOCUS, PRESS, delayAt } from '../utils/trackingShell';
 import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStages, trackStateDelay, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
@@ -113,6 +117,13 @@ export function AitoTrackPage() {
   const is429 = query.error instanceof ApiError && query.error.status === 429;
   const showContent = data !== undefined && copy !== null && settled;
   const showError = (query.isError || retrying) && !is404 && data === undefined;
+  // The two side panels: payment terms to the right (only while there is
+  // something to pay), the shop to the left. One at a time; the card glides
+  // the other way so card and panel stay centred (index.css .track-stage).
+  const panel = useTrackingPanel();
+  const hasTerms = showContent && ((data.invoice !== null && data.invoice !== 'paid') || (data.invoice === null && data.payment?.state === 'unpaid' && !!data.payment.url));
+  const payTrigger = { open: panel.open === 'pay', controls: 'track-panel-pay', toggle: (from: HTMLElement) => panel.toggle('pay', from) };
+  const shopTrigger = { open: panel.open === 'shop', controls: 'track-panel-shop', toggle: (from: HTMLElement) => panel.toggle('shop', from) };
   const retry = () => {
     setRetrying(true);
     void query.refetch().finally(() => setRetrying(false));
@@ -151,131 +162,157 @@ export function AitoTrackPage() {
 
   return (
     <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
-      <div className={CARD}>
-        <TrackingLanguageSelect />
-        <header className="text-center">
-          <Logo className="mb-[20px]" />
-          <h1 className="text-[23px] font-semibold tracking-tight">{t('aito.track.title')}</h1>
-          {data?.reference && settled && (
-            <p className="mt-[8px] text-[13.5px] text-aito-muted">{t('aito.track.reference', { ref: data.reference })}</p>
-          )}
-        </header>
-        <main>
-          {(query.isPending || !settled) && !query.isError && !retrying && (
-            <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
-              <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
-              <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
-            </div>
-          )}
-          {showError && (
-            <div className="mt-[32px] text-center">
-              {/* Keyed on the failure, so a retry that fails again re-delivers
-                  the same words with a fade instead of leaving them frozen —
-                  the client must see that their tap was heard. */}
-              <p key={query.errorUpdatedAt} className="animate-track-fade text-[15px] text-aito-muted" data-testid="track-error">
-                {t(is429 ? 'aito.track.codeTooMany' : 'aito.track.error')}
-              </p>
-              <button
-                type="button"
-                disabled={retrying}
-                onClick={retry}
-                className={`mt-[16px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan transition-[color,background-color,transform,opacity] duration-150 hover:bg-aito-cyan/10 active:scale-[0.97] disabled:opacity-60 ${FOCUS}`}
-              >
-                {t(retrying ? 'aito.track.retrying' : 'aito.track.retry')}
-              </button>
-            </div>
-          )}
-          {showContent && (
-            <div className={entrance ? 'animate-track-fade' : undefined} data-testid="track-content" data-entrance={entrance || undefined}>
-              <div className="mt-[32px]">
-                <TrackingRail column={data.column} shipped={data.shipping !== null} animateFrom={origin} />
+      <div className="track-stage" data-open={panel.open ?? undefined} data-testid="track-stage">
+        {/* Phones: the panel is a sheet and this dims the card behind it.
+            Wide screens never show it. A tap on it closes the sheet. */}
+        <div className="track-scrim" data-testid="track-scrim" onClick={panel.close} aria-hidden="true" />
+        <div className={`${CARD} track-card`}>
+          <TrackingLanguageSelect />
+          <header className="text-center">
+            <Logo className="mb-[20px]" />
+            <h1 className="text-[23px] font-semibold tracking-tight">{t('aito.track.title')}</h1>
+            {data?.reference && settled && (
+              <p className="mt-[8px] text-[13.5px] text-aito-muted">{t('aito.track.reference', { ref: data.reference })}</p>
+            )}
+          </header>
+          <main>
+            {(query.isPending || !settled) && !query.isError && !retrying && (
+              <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
+                <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
+                <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
               </div>
-              {/* Keyed on the advance, so the card remounts and rises again
-                  for each new stage — the classes alone would not replay. */}
-              <section
-                key={advance?.seq ?? 0}
-                data-testid="track-state"
-                className={`relative mt-[32px] rounded-[12px] border px-[16px] py-[16px] transition-colors duration-150 sm:min-h-[132px] sm:px-[24px] sm:py-[16px] ${
-                  preOrder ? 'border-aito-line bg-white/[.025]' : 'border-aito-cyan/35 bg-aito-cyan/10'
-                } ${moving ? 'animate-rise' : ''} ${moving && finished ? 'animate-track-halo' : ''}`}
-                style={moving ? ({ ...delayAt(stateAt), '--track-halo-delay': `${stateAt + TRACK_MOTION.halo}ms` } as CSSProperties) : undefined}
-              >
-                <h2 className="text-[19px] font-semibold tracking-tight">{copy.title}</h2>
-                <p className="mt-[8px] text-[15px] text-aito-muted">{copy.sub}</p>
-                {eta && eta.kind !== 'none' && (
-                  <div className="mt-[12px] border-t border-aito-line/60 pt-[12px]">
-                    <p className="text-[12px] uppercase tracking-[.08em] text-aito-muted">{t('aito.track.eta')}</p>
-                    <p className={eta.kind === 'date' ? 'mt-[4px] text-[17px] font-semibold text-aito-cyan' : 'mt-[4px] text-[15px] text-aito-ink'}>
-                      {eta.text}
-                    </p>
+            )}
+            {showError && (
+              <div className="mt-[32px] text-center">
+                {/* Keyed on the failure, so a retry that fails again re-delivers
+                    the same words with a fade instead of leaving them frozen —
+                    the client must see that their tap was heard. */}
+                <p key={query.errorUpdatedAt} className="animate-track-fade text-[15px] text-aito-muted" data-testid="track-error">
+                  {t(is429 ? 'aito.track.codeTooMany' : 'aito.track.error')}
+                </p>
+                <button
+                  type="button"
+                  disabled={retrying}
+                  onClick={retry}
+                  className={`mt-[16px] inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan transition-[color,background-color,transform,opacity] duration-150 hover:bg-aito-cyan/10 active:scale-[0.97] disabled:opacity-60 ${FOCUS}`}
+                >
+                  {t(retrying ? 'aito.track.retrying' : 'aito.track.retry')}
+                </button>
+              </div>
+            )}
+            {showContent && (
+              <div className={entrance ? 'animate-track-fade' : undefined} data-testid="track-content" data-entrance={entrance || undefined}>
+                <div className="mt-[32px]">
+                  <TrackingRail column={data.column} shipped={data.shipping !== null} animateFrom={origin} />
+                </div>
+                {/* Keyed on the advance, so the card remounts and rises again
+                    for each new stage — the classes alone would not replay. */}
+                <section
+                  key={advance?.seq ?? 0}
+                  data-testid="track-state"
+                  className={`relative mt-[32px] rounded-[12px] border px-[16px] py-[16px] transition-colors duration-150 sm:min-h-[132px] sm:px-[24px] sm:py-[16px] ${
+                    preOrder ? 'border-aito-line bg-white/[.025]' : 'border-aito-cyan/35 bg-aito-cyan/10'
+                  } ${moving ? 'animate-rise' : ''} ${moving && finished ? 'animate-track-halo' : ''}`}
+                  style={moving ? ({ ...delayAt(stateAt), '--track-halo-delay': `${stateAt + TRACK_MOTION.halo}ms` } as CSSProperties) : undefined}
+                >
+                  <h2 className="text-[19px] font-semibold tracking-tight">{copy.title}</h2>
+                  <p className="mt-[8px] text-[15px] text-aito-muted">{copy.sub}</p>
+                  {eta && eta.kind !== 'none' && (
+                    <div className="mt-[12px] border-t border-aito-line/60 pt-[12px]">
+                      <p className="text-[12px] uppercase tracking-[.08em] text-aito-muted">{t('aito.track.eta')}</p>
+                      <p className={eta.kind === 'date' ? 'mt-[4px] text-[17px] font-semibold text-aito-cyan' : 'mt-[4px] text-[15px] text-aito-ink'}>
+                        {eta.text}
+                      </p>
+                    </div>
+                  )}
+                  <p className="mt-[8px] text-[13px] text-aito-muted/80">{t('aito.track.updated', { when: updatedAt(data.updated_at, t, lng) })}</p>
+                </section>
+                <section className="mt-[24px]">
+                  <h3
+                    className={`mb-[16px] text-[12px] font-semibold uppercase tracking-[.08em] text-aito-muted ${entrance ? 'animate-rise' : ''}`}
+                    style={entrance ? delayAt(stateAt + TRACK_MOTION.parts - TRACK_MOTION.partStep) : undefined}
+                  >
+                    {t('aito.track.tasksHeading')}
+                  </h3>
+                  {(() => {
+                    const foldable = data.tasks.length > PARTS_FOLD;
+                    const folded = foldable && !showAllParts;
+                    const shown = folded ? data.tasks.slice(0, PARTS_SHOWN) : data.tasks;
+                    // Two cascades share one list: the first-load one (after the
+                    // state card, 50 ms steps, capped at 7) and, for a list that
+                    // was folded, the parts revealed by the button (40 ms steps).
+                    // A revealed part rises even after a refetch — that is an
+                    // interaction, not the entrance.
+                    const revealed = (i: number) => foldable && i >= PARTS_SHOWN;
+                    const partStyle = (i: number) =>
+                      revealed(i)
+                        ? delayAt(Math.min(i - PARTS_SHOWN, 7) * TRACK_MOTION.reveal)
+                        : entrance
+                          ? delayAt(stateAt + TRACK_MOTION.parts + Math.min(i, 7) * TRACK_MOTION.partStep)
+                          : undefined;
+                    return (
+                      <>
+                        <ul className="divide-y divide-aito-line/60 text-[15px]">
+                          {shown.map((task, i) => (
+                            <li
+                              key={i}
+                              className={`flex items-start justify-between gap-[12px] py-[12px] ${revealed(i) || entrance ? 'animate-rise' : ''}`}
+                              style={partStyle(i)}
+                            >
+                              <span className="min-w-0">{task.title}</span>
+                              {task.quantity !== null && (
+                                <span className="min-w-[28px] shrink-0 text-right tabular-nums text-aito-muted">×{task.quantity}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                        {folded && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllParts(true)}
+                            className={`mt-[12px] inline-flex min-h-[44px] items-center rounded-[8px] text-[13.5px] font-semibold text-aito-cyan hover:text-aito-cyan/80 ${PRESS} ${FOCUS}`}
+                          >
+                            {t('aito.track.showAllParts', { n: data.tasks.length })}
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
+                </section>
+                {(data.invoice || data.payment) && (
+                  <div className={`mt-[32px] ${entrance ? 'animate-rise' : ''}`} style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}>
+                    {/* The invoice, when there is one, is the truer story; the
+                        online payment link speaks only before it exists. */}
+                    {data.invoice ? <TrackingInvoice state={data.invoice} terms={payTrigger} /> : <TrackingPayment payment={data.payment!} terms={payTrigger} />}
                   </div>
                 )}
-                <p className="mt-[8px] text-[13px] text-aito-muted/80">{t('aito.track.updated', { when: updatedAt(data.updated_at, t, lng) })}</p>
-              </section>
-              <section className="mt-[24px]">
-                <h3
-                  className={`mb-[16px] text-[12px] font-semibold uppercase tracking-[.08em] text-aito-muted ${entrance ? 'animate-rise' : ''}`}
-                  style={entrance ? delayAt(stateAt + TRACK_MOTION.parts - TRACK_MOTION.partStep) : undefined}
-                >
-                  {t('aito.track.tasksHeading')}
-                </h3>
-                {(() => {
-                  const foldable = data.tasks.length > PARTS_FOLD;
-                  const folded = foldable && !showAllParts;
-                  const shown = folded ? data.tasks.slice(0, PARTS_SHOWN) : data.tasks;
-                  // Two cascades share one list: the first-load one (after the
-                  // state card, 50 ms steps, capped at 7) and, for a list that
-                  // was folded, the parts revealed by the button (40 ms steps).
-                  // A revealed part rises even after a refetch — that is an
-                  // interaction, not the entrance.
-                  const revealed = (i: number) => foldable && i >= PARTS_SHOWN;
-                  const partStyle = (i: number) =>
-                    revealed(i)
-                      ? delayAt(Math.min(i - PARTS_SHOWN, 7) * TRACK_MOTION.reveal)
-                      : entrance
-                        ? delayAt(stateAt + TRACK_MOTION.parts + Math.min(i, 7) * TRACK_MOTION.partStep)
-                        : undefined;
-                  return (
-                    <>
-                      <ul className="divide-y divide-aito-line/60 text-[15px]">
-                        {shown.map((task, i) => (
-                          <li
-                            key={i}
-                            className={`flex items-start justify-between gap-[12px] py-[12px] ${revealed(i) || entrance ? 'animate-rise' : ''}`}
-                            style={partStyle(i)}
-                          >
-                            <span className="min-w-0">{task.title}</span>
-                            {task.quantity !== null && (
-                              <span className="min-w-[28px] shrink-0 text-right tabular-nums text-aito-muted">×{task.quantity}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                      {folded && (
-                        <button
-                          type="button"
-                          onClick={() => setShowAllParts(true)}
-                          className={`mt-[12px] inline-flex min-h-[44px] items-center rounded-[8px] text-[13.5px] font-semibold text-aito-cyan hover:text-aito-cyan/80 ${PRESS} ${FOCUS}`}
-                        >
-                          {t('aito.track.showAllParts', { n: data.tasks.length })}
-                        </button>
-                      )}
-                    </>
-                  );
-                })()}
-              </section>
-              {(data.invoice || data.payment) && (
-                <div className={`mt-[32px] ${entrance ? 'animate-rise' : ''}`} style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}>
-                  {/* The invoice, when there is one, is the truer story; the
-                      online payment link speaks only before it exists. */}
-                  {data.invoice ? <TrackingInvoice state={data.invoice} reference={data.reference} /> : <TrackingPayment payment={data.payment!} reference={data.reference} />}
-                </div>
-              )}
-            </div>
-          )}
-        </main>
-        {showContent && <Footer at={entrance ? stateAt + TRACK_MOTION.footer : 0} />}
-        {showError && <Footer at={TRACK_MOTION.footerAlone} />}
+              </div>
+            )}
+          </main>
+          {showContent && <Footer at={entrance ? stateAt + TRACK_MOTION.footer : 0} shop={shopTrigger} />}
+          {showError && <Footer at={TRACK_MOTION.footerAlone} />}
+        </div>
+        {showContent && (
+          <>
+            {hasTerms && (
+              <TrackingPanel
+                id="track-panel-pay"
+                testId="track-panel-pay"
+                side="right"
+                open={panel.open === 'pay'}
+                title={t('aito.track.panel.paymentTitle')}
+                subtitle={data.reference ? t('aito.track.reference', { ref: data.reference }) : undefined}
+                titleRef={panel.titleRef('pay')}
+                onClose={panel.close}
+              >
+                <PanelReveal i={0} className="-mx-[16px]">
+                  <TrackingPaymentMethods open={panel.open === 'pay'} reference={data.reference} onFindShop={(from) => panel.show('shop', from)} />
+                </PanelReveal>
+              </TrackingPanel>
+            )}
+            <TrackingShopPanel open={panel.open === 'shop'} onClose={panel.close} titleRef={panel.titleRef('shop')} />
+          </>
+        )}
       </div>
     </div>
   );

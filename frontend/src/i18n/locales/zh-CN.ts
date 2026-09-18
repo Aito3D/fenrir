@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: '输入跟踪代码',
       language: '语言',
       paymentTermsToggle: '查看付款方式',
+      panel: {
+        close: '关闭',
+        paymentTitle: '付款方式',
+      },
+      shop: {
+        find: '门店位置',
+        title: '找到我们',
+        sub: 'Aito 3D 工作室与门店',
+        mapTitle: '门店地图',
+        mapLoading: '地图加载中…',
+        phone: '电话',
+        email: '邮箱',
+        website: '网站',
+        social: '社交媒体',
+        directions: '路线',
+        call: '拨打电话',
+      },
       paymentMethods: {
         methods: '付款方式',
         transfer: '转账',
@@ -263,6 +280,7 @@ export default {
         copyReference: '复制备注',
         copyRib: '复制 RIB',
         copyTag: '复制 {{app}} 标签',
+        findShop: '查看门店位置',
       },
       stages: {
         devis: '报价',

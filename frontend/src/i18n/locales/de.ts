@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: 'Tracking-Code eingeben',
       language: 'Sprache',
       paymentTermsToggle: 'Zahlungsmodalitäten anzeigen',
+      panel: {
+        close: 'Schließen',
+        paymentTitle: 'Zahlungsmodalitäten',
+      },
+      shop: {
+        find: 'Zum Geschäft',
+        title: 'So finden Sie uns',
+        sub: 'Werkstatt und Geschäft von Aito 3D',
+        mapTitle: 'Karte zum Geschäft',
+        mapLoading: 'Karte wird geladen…',
+        phone: 'Telefon',
+        email: 'E-Mail',
+        website: 'Webseite',
+        social: 'Soziale Medien',
+        directions: 'Route',
+        call: 'Anrufen',
+      },
       paymentMethods: {
         methods: 'Zahlungsart',
         transfer: 'Überweisung',
@@ -263,6 +280,7 @@ export default {
         copyReference: 'Verwendungszweck kopieren',
         copyRib: 'RIB kopieren',
         copyTag: '{{app}}-Tag kopieren',
+        findShop: 'Zeigen, wo wir sind',
       },
       stages: {
         devis: 'Angebot',

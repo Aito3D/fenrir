@@ -104,6 +104,7 @@
   --color-aito-line: #212c37;
   --color-aito-ink: #e9eff6;
   --color-aito-muted: #a3b1c0;
+  --color-aito-panel: #10161d; /* tracking side panels: one step behind the card */
 }
 
 /* ============================================
@@ -2449,4 +2450,191 @@ tbody .calc-table-row:hover {
 .slice-colour-swatch::-moz-color-swatch {
   border: none;
   border-radius: 999px;
+}
+
+/* ============================================
+   AITO TRACKING — SIDE PANELS
+   The card and its two panels (payment terms on the right, the shop on the
+   left) share one stage. Card 620, gap 16, panel 360: when a panel opens the
+   card glides half the panel-plus-gap (188 px) the other way so the pair
+   stays centred, and the panel travels from behind the card's centre to its
+   own resting centre (310 + 16 + 180 − 188 = 318 px from the stage centre).
+   Closed, a panel sits under the card, a touch lower and smaller, so the
+   opening reads as "from behind". Content inside rises once the panel has
+   cleared the card (.track-panel-reveal). TrackingPanel.tsx owns the DOM. */
+.track-stage {
+  position: relative;
+  --track-card-w: 620px;
+  --track-panel-w: 360px;
+  --track-gap: 16px;
+  --track-card-shift: calc((var(--track-panel-w) + var(--track-gap)) / 2);
+  --track-panel-travel: calc(var(--track-card-w) / 2 + var(--track-gap) + var(--track-panel-w) / 2 - var(--track-card-shift));
+  --track-open: 460ms;
+  --track-close: 300ms;
+  --track-card-x: 0px;
+}
+.track-stage[data-open='pay'] { --track-card-x: calc(-1 * var(--track-card-shift)); }
+.track-stage[data-open='shop'] { --track-card-x: var(--track-card-shift); }
+.track-card {
+  z-index: 2;
+  transform: translateX(var(--track-card-x));
+  transition: transform var(--track-open) var(--ease-signature);
+  will-change: transform;
+}
+.track-panel {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  width: var(--track-panel-w);
+  margin-left: calc(-1 * var(--track-panel-w) / 2);
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(0) translateY(10px) scale(0.965);
+  transition:
+    transform var(--track-close) var(--ease-exit),
+    opacity 200ms var(--ease-exit) 60ms,
+    visibility 0s linear var(--track-close);
+  will-change: transform;
+}
+.track-panel[data-state='open'] {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    transform var(--track-open) var(--ease-signature),
+    opacity 220ms var(--ease-signature),
+    visibility 0s;
+}
+.track-panel[data-side='right'][data-state='open'] { transform: translateX(var(--track-panel-travel)) translateY(0) scale(1); }
+.track-panel[data-side='left'][data-state='open'] { transform: translateX(calc(-1 * var(--track-panel-travel))) translateY(0) scale(1); }
+.track-panel-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 120ms var(--ease-exit),
+    transform 120ms var(--ease-exit);
+}
+.track-panel[data-state='open'] .track-panel-reveal {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 260ms var(--ease-signature),
+    transform 300ms var(--ease-signature);
+  transition-delay: calc(170ms + var(--i, 0) * 45ms);
+}
+.track-panel-grabber { display: none; }
+/* Google's light tiles, turned to night: invert + hue-rotate keeps the roads
+   readable and lands the red pin near cyan. The frame fades in once loaded;
+   the inset shadow melts its edges into the panel. */
+.track-map iframe {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  border: 0;
+  filter: invert(0.92) hue-rotate(185deg) saturate(0.45) brightness(0.9) contrast(1.05);
+  opacity: 0;
+  transition: opacity 400ms var(--ease-signature);
+}
+.track-map iframe[data-ready] { opacity: 1; }
+.track-map::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.03),
+    inset 0 -40px 40px -30px var(--color-aito-panel),
+    inset 0 40px 40px -30px var(--color-aito-panel);
+}
+/* The scrim only matters for the sheet; on wide screens it never shows. */
+.track-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: rgb(4 7 11 / 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms var(--ease-exit);
+}
+
+/* Phones and narrow windows: the card cannot make room, so the panel rises
+   as a bottom sheet over the dimmed card. --track-sheet-progress is set by
+   the drag-to-dismiss (TrackingPanel.tsx) so the scrim thins with the drag. */
+@media (max-width: 1059px) {
+  .track-stage[data-open='pay'],
+  .track-stage[data-open='shop'] { --track-card-x: 0px; }
+  .track-stage[data-open] .track-scrim {
+    opacity: var(--track-sheet-progress, 1);
+    pointer-events: auto;
+    transition: opacity 260ms var(--ease-signature);
+  }
+  .track-panel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    width: auto;
+    margin: 0;
+    max-height: min(86vh, 86dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    padding: 12px 20px calc(24px + env(safe-area-inset-bottom));
+    opacity: 1;
+    transform: translateY(100%);
+    transition:
+      transform 280ms var(--ease-exit),
+      visibility 0s linear 280ms;
+    box-shadow: 0 -12px 40px rgb(0 0 0 / 0.45);
+  }
+  .track-panel[data-side='right'][data-state='open'],
+  .track-panel[data-side='left'][data-state='open'] {
+    transform: translateY(0);
+    transition:
+      transform 420ms var(--ease-signature),
+      visibility 0s;
+  }
+  .track-panel[data-state='open'] .track-panel-reveal { transition-delay: calc(120ms + var(--i, 0) * 40ms); }
+  .track-panel-grabber {
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 14px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-aito-muted) 35%, transparent);
+  }
+}
+
+/* Less motion: the panel and the card crossfade into place; nothing slides. */
+@media (prefers-reduced-motion: reduce) {
+  .track-card { transition: none; }
+  .track-panel,
+  .track-panel[data-state='open'] {
+    transform: none;
+    transition:
+      opacity 150ms linear,
+      visibility 0s linear 150ms;
+  }
+  .track-panel[data-state='open'] { transition: opacity 150ms linear, visibility 0s; }
+  .track-panel[data-side='right'][data-state='open'] { transform: translateX(var(--track-panel-travel)); }
+  .track-panel[data-side='left'][data-state='open'] { transform: translateX(calc(-1 * var(--track-panel-travel))); }
+  .track-panel-reveal,
+  .track-panel[data-state='open'] .track-panel-reveal {
+    transform: none;
+    transition: opacity 150ms linear;
+    transition-delay: 0s;
+  }
+  .track-map iframe { transition: none; }
+  .track-scrim { transition: none; }
+  @media (max-width: 1059px) {
+    .track-panel,
+    .track-panel[data-side='right'][data-state='open'],
+    .track-panel[data-side='left'][data-state='open'] { transform: none; }
+    .track-panel:not([data-state='open']) { transform: translateY(100%); }
+  }
 }

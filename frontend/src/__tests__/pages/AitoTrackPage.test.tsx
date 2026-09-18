@@ -82,8 +82,10 @@ describe('AitoTrackPage', () => {
     expect(document.title).toBe('Suivi de commande · Aito 3D');
     expect(document.documentElement.lang).toBe('fr');
     expect(document.title).toBe('Suivi de commande · Aito 3D');
-    // Contact lives in the footer only — once on the page, not under the logo.
-    expect(screen.getAllByText(/contact@aito3d\.fr/)).toHaveLength(1);
+    // Contact lives in the footer only — once on the card, not under the
+    // logo. (The shop panel beside the card repeats it as a contact row.)
+    const card = screen.getByTestId('track-footer').closest('.track-card')!;
+    expect(within(card as HTMLElement).getAllByText(/contact@aito3d\.fr/)).toHaveLength(1);
     expect(screen.queryByTestId('track-invoice')).not.toBeInTheDocument();
   });
 
@@ -135,31 +137,34 @@ describe('AitoTrackPage', () => {
       const box = await screen.findByTestId('track-invoice');
       expect(box).toHaveAttribute('data-state', invoice);
       expect(box).toHaveTextContent(text);
-      // Never an amount: the card itself carries no digit. The collapsed
-      // payment-methods panel underneath legitimately does (IBAN, RIB).
-      const collapse = box.querySelector('[data-testid="track-collapse"]');
-      expect(box.textContent!.replace(collapse?.textContent ?? '', '')).not.toMatch(/\d/);
+      // Never an amount: the card itself carries no digit (the payment
+      // panel with the IBAN and RIB lives outside the card).
+      expect(box.textContent).not.toMatch(/\d/);
       const toggle = within(box).queryByRole('button', { name: 'Voir les modalités' });
       expect(!!toggle).toBe(hasTerms);
-      expect(!!collapse).toBe(hasTerms);
-      if (toggle && collapse) {
-        // The terms stay mounted for the symmetric collapse; closed means
-        // out of the accessibility tree and the tab order, not absent.
-        const terms = within(box).getByTestId('track-payment-methods');
+      // The panel is mounted next to the card whenever there is something
+      // to pay; closed means out of the accessibility tree and the tab
+      // order, not absent.
+      const panel = screen.queryByTestId('track-panel-pay');
+      expect(!!panel).toBe(hasTerms);
+      if (toggle && panel) {
+        const terms = within(panel).getByTestId('track-payment-methods');
         expect(within(terms).getByText('FR76 1746 9000 3120 6624 2000 041')).toBeInTheDocument();
         // The quote number is the transfer reference, a row of its own.
         expect(within(terms).getByText('Motif du virement')).toBeInTheDocument();
         expect(within(terms).getByText('EST-000142')).toBeInTheDocument();
-        expect(collapse).toHaveAttribute('aria-hidden', 'true');
-        expect(collapse).toHaveAttribute('inert');
+        expect(panel).toHaveAttribute('aria-hidden', 'true');
+        expect(panel).toHaveAttribute('inert');
         expect(terms).not.toHaveClass('animate-rise');
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(toggle).toHaveAttribute('aria-controls', panel.id);
         await userEvent.click(toggle);
-        expect(collapse).toHaveAttribute('aria-hidden', 'false');
-        expect(collapse).not.toHaveAttribute('inert');
+        expect(panel).toHaveAttribute('aria-hidden', 'false');
+        expect(panel).not.toHaveAttribute('inert');
         expect(terms).toHaveClass('animate-rise');
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await userEvent.click(toggle);
-        expect(collapse).toHaveAttribute('aria-hidden', 'true');
+        expect(panel).toHaveAttribute('aria-hidden', 'true');
         expect(terms).not.toHaveClass('animate-rise');
       }
       unmount();
@@ -550,11 +555,11 @@ describe('AitoTrackPage — online payment', () => {
     mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
     renderAt('tok');
     const card = await screen.findByTestId('track-payment');
-    const panel = within(card).getByTestId('track-payment-methods');
-    const collapse = panel.closest('[data-testid="track-collapse"]')!;
-    expect(collapse).toHaveAttribute('aria-hidden', 'true');
+    const side = screen.getByTestId('track-panel-pay');
+    const panel = within(side).getByTestId('track-payment-methods');
+    expect(side).toHaveAttribute('aria-hidden', 'true');
     await userEvent.click(within(card).getByRole('button', { name: 'Voir les modalités' }));
-    expect(collapse).toHaveAttribute('aria-hidden', 'false');
+    expect(side).toHaveAttribute('aria-hidden', 'false');
     expect(panel).toHaveClass('animate-rise');
     expect(within(panel).getByText('Motif du virement')).toBeInTheDocument();
     expect(within(panel).getByText('EST-000142')).toBeInTheDocument();
@@ -586,5 +591,117 @@ describe('AitoTrackPage — online payment', () => {
     renderAt('tok');
     await screen.findByRole('heading', { level: 2, name: 'Devis en préparation' });
     expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
+  });
+});
+
+describe('AitoTrackPage — side panels', () => {
+  beforeEach(() => i18n.changeLanguage('fr'));
+
+  const UNPAID: AitoTracking = { ...FIXTURE, column: 'finish', invoice: 'unpaid' };
+  const stage = () => screen.getByTestId('track-stage');
+  const payPanel = () => screen.getByTestId('track-panel-pay');
+  const shopPanel = () => screen.getByTestId('track-panel-shop');
+  const termsButton = () => screen.getByRole('button', { name: 'Voir les modalités' });
+  const shopButton = () => screen.getByRole('button', { name: 'Où nous trouver' });
+
+  it('the terms button opens the payment panel, moves focus to its title, and the stage records which side is open', async () => {
+    mockTrack(UNPAID);
+    renderAt('tok');
+    await screen.findByTestId('track-invoice');
+    expect(stage()).not.toHaveAttribute('data-open');
+    await userEvent.click(termsButton());
+    expect(stage()).toHaveAttribute('data-open', 'pay');
+    expect(payPanel()).toHaveAttribute('data-state', 'open');
+    expect(payPanel()).toHaveAttribute('data-side', 'right');
+    expect(within(payPanel()).getByRole('heading', { level: 2, name: 'Modalités de paiement' })).toHaveFocus();
+    expect(within(payPanel()).getByText('Devis n° EST-000142')).toBeInTheDocument();
+  });
+
+  it('closes from its close button, and from Escape, handing focus back to the button that opened it', async () => {
+    mockTrack(UNPAID);
+    renderAt('tok');
+    await screen.findByTestId('track-invoice');
+    await userEvent.click(termsButton());
+    await userEvent.click(within(payPanel()).getByRole('button', { name: 'Fermer' }));
+    expect(stage()).not.toHaveAttribute('data-open');
+    expect(payPanel()).toHaveAttribute('aria-hidden', 'true');
+    expect(termsButton()).toHaveFocus();
+
+    await userEvent.click(termsButton());
+    expect(stage()).toHaveAttribute('data-open', 'pay');
+    await userEvent.keyboard('{Escape}');
+    expect(stage()).not.toHaveAttribute('data-open');
+    expect(termsButton()).toHaveFocus();
+  });
+
+  it('the footer button opens the shop panel on the left: map, address, contact rows and directions', async () => {
+    mockTrack(UNPAID);
+    renderAt('tok');
+    await screen.findByTestId('track-invoice');
+    // The map is a third-party frame: not fetched until someone asks for it.
+    const map = within(shopPanel()).getByTitle("Plan d'accès au magasin");
+    expect(map).not.toHaveAttribute('src');
+    expect(shopButton()).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(shopButton());
+    expect(stage()).toHaveAttribute('data-open', 'shop');
+    expect(shopPanel()).toHaveAttribute('data-side', 'left');
+    expect(shopPanel()).toHaveAttribute('aria-hidden', 'false');
+    expect(shopButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(within(shopPanel()).getByRole('heading', { level: 2, name: 'Nous trouver' })).toHaveFocus();
+    expect(map).toHaveAttribute('src', expect.stringMatching(/^https:\/\/www\.google\.com\/maps\?q=.*output=embed/));
+    expect(map.getAttribute('src')).toContain('hl=fr');
+    expect(within(shopPanel()).getByText("20 Route de l'eau Royale")).toBeInTheDocument();
+    expect(within(shopPanel()).getByText('Arue – Tahiti, Polynésie française')).toBeInTheDocument();
+    expect(within(shopPanel()).getByRole('link', { name: /Téléphone/ })).toHaveAttribute('href', 'tel:+68989253210');
+    expect(within(shopPanel()).getByRole('link', { name: /E-mail/ })).toHaveAttribute('href', 'mailto:contact@aito3d.fr');
+    expect(within(shopPanel()).getByRole('link', { name: /Site/ })).toHaveAttribute('href', 'https://aito3d.fr');
+    expect(within(shopPanel()).getByRole('link', { name: /Réseaux/ })).toHaveTextContent('@aito3d');
+    const directions = within(shopPanel()).getByRole('link', { name: 'Itinéraire' });
+    expect(directions).toHaveAttribute('href', expect.stringMatching(/^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=/));
+    expect(directions).toHaveAttribute('target', '_blank');
+    expect(within(shopPanel()).getByRole('link', { name: 'Appeler' })).toHaveAttribute('href', 'tel:+68989253210');
+  });
+
+  it('only one panel at a time: opening the other swaps sides in one move', async () => {
+    mockTrack(UNPAID);
+    renderAt('tok');
+    await screen.findByTestId('track-invoice');
+    await userEvent.click(termsButton());
+    await userEvent.click(shopButton());
+    expect(stage()).toHaveAttribute('data-open', 'shop');
+    expect(payPanel()).toHaveAttribute('aria-hidden', 'true');
+    expect(termsButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(shopPanel()).toHaveAttribute('aria-hidden', 'false');
+    // The shop tab of the payment panel hands off to the shop panel too.
+    await userEvent.click(termsButton());
+    expect(stage()).toHaveAttribute('data-open', 'pay');
+    expect(shopPanel()).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.click(within(payPanel()).getByRole('tab', { name: 'Magasin' }));
+    await userEvent.click(within(payPanel()).getByRole('button', { name: 'Voir où nous trouver' }));
+    expect(stage()).toHaveAttribute('data-open', 'shop');
+    expect(payPanel()).toHaveAttribute('aria-hidden', 'true');
+    expect(within(shopPanel()).getByRole('heading', { level: 2, name: 'Nous trouver' })).toHaveFocus();
+    // Closing from there returns to the footer button, the shop panel's own trigger.
+    await userEvent.keyboard('{Escape}');
+    expect(shopButton()).toHaveFocus();
+  });
+
+  it('the scrim (phones: the sheet backdrop) closes whichever panel is open', async () => {
+    mockTrack(UNPAID);
+    renderAt('tok');
+    await screen.findByTestId('track-invoice');
+    await userEvent.click(shopButton());
+    await userEvent.click(screen.getByTestId('track-scrim'));
+    expect(stage()).not.toHaveAttribute('data-open');
+    expect(shopPanel()).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('a paid order still offers the shop panel, but no payment panel', async () => {
+    mockTrack({ ...FIXTURE, invoice: 'paid' });
+    renderAt('tok');
+    await screen.findByTestId('track-invoice');
+    expect(screen.queryByTestId('track-panel-pay')).not.toBeInTheDocument();
+    expect(shopPanel()).toBeInTheDocument();
+    expect(shopButton()).toBeInTheDocument();
   });
 });

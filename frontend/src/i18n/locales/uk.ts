@@ -242,6 +242,23 @@ export default {
       invalidEnterCode: 'Ввести код відстеження',
       language: 'Мова',
       paymentTermsToggle: 'Умови оплати',
+      panel: {
+        close: 'Закрити',
+        paymentTitle: 'Умови оплати',
+      },
+      shop: {
+        find: 'Де нас знайти',
+        title: 'Як нас знайти',
+        sub: 'Майстерня та магазин Aito 3D',
+        mapTitle: 'Мапа магазину',
+        mapLoading: 'Завантаження мапи…',
+        phone: 'Телефон',
+        email: 'Ел. пошта',
+        website: 'Сайт',
+        social: 'Соцмережі',
+        directions: 'Маршрут',
+        call: 'Зателефонувати',
+      },
       paymentMethods: {
         methods: 'Спосіб оплати',
         transfer: 'Переказ',
@@ -264,6 +281,7 @@ export default {
         copyReference: 'Копіювати призначення платежу',
         copyRib: 'Копіювати RIB',
         copyTag: 'Копіювати тег {{app}}',
+        findShop: 'Показати, де ми',
       },
       stages: {
         devis: 'Кошторис',

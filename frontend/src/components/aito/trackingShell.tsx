@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { MapPin } from 'lucide-react';
 import aito3dLogo from '../../assets/aito3d_logo.png';
 import { BRAND, FOCUS, delayAt } from '../../utils/trackingShell';
 import { AITO3D_SENDER } from '../../utils/shippingLabel';
@@ -29,7 +30,7 @@ export function Logo({ className = '' }: { className?: string }) {
 /** Drops in from above once the content has landed (`at` ms after the
  *  page's clock starts); mounted only when there is something above it,
  *  so it never plays over the skeleton and then again over the content. */
-export function Footer({ at }: { at: number }) {
+export function Footer({ at, shop }: { at: number; shop?: { open: boolean; controls: string; toggle: (from: HTMLElement) => void } }) {
   const { t } = useTranslation();
   const linkCls = `inline-flex min-h-[44px] items-center text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
   return (
@@ -48,6 +49,23 @@ export function Footer({ at }: { at: number }) {
           {AITO3D_SENDER.email}
         </a>
       </p>
+      {/* The way to the shop itself — the tracking page's "Nous trouver"
+          panel — only where the page has one (the code-entry page has no
+          order, so no panel). */}
+      {shop && (
+        <button
+          type="button"
+          aria-expanded={shop.open}
+          aria-controls={shop.controls}
+          onClick={(e) => shop.toggle(e.currentTarget)}
+          className={`mt-[6px] inline-flex min-h-[40px] items-center gap-[7px] rounded-full border py-0 pr-[14px] pl-[12px] text-[13px] font-semibold transition-[color,border-color,background-color,transform] duration-150 active:scale-[0.97] ${FOCUS} ${
+            shop.open ? 'border-aito-cyan/45 bg-aito-cyan/8 text-aito-cyan' : 'border-aito-line text-aito-muted hover:border-aito-muted/55 hover:text-aito-ink'
+          }`}
+        >
+          <MapPin className="h-[14px] w-[14px]" aria-hidden="true" />
+          {t('aito.track.shop.find')}
+        </button>
+      )}
     </footer>
   );
 }

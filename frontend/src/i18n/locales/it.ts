@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: 'Inserisci un codice di tracciamento',
       language: 'Lingua',
       paymentTermsToggle: 'Vedi le modalità',
+      panel: {
+        close: 'Chiudi',
+        paymentTitle: 'Modalità di pagamento',
+      },
+      shop: {
+        find: 'Dove siamo',
+        title: 'Trovaci',
+        sub: 'Laboratorio e negozio Aito 3D',
+        mapTitle: 'Mappa del negozio',
+        mapLoading: 'Caricamento della mappa…',
+        phone: 'Telefono',
+        email: 'E-mail',
+        website: 'Sito web',
+        social: 'Profili social',
+        directions: 'Indicazioni',
+        call: 'Chiama',
+      },
       paymentMethods: {
         methods: 'Metodo di pagamento',
         transfer: 'Bonifico',
@@ -263,6 +280,7 @@ export default {
         copyReference: 'Copia la causale',
         copyRib: 'Copia il RIB',
         copyTag: 'Copia il tag {{app}}',
+        findShop: 'Vedi dove siamo',
       },
       stages: {
         devis: 'Preventivo',

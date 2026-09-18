@@ -241,6 +241,23 @@ export default {
       invalidEnterCode: 'Saisir un code de suivi',
       language: 'Langue',
       paymentTermsToggle: 'Voir les modalités',
+      panel: {
+        close: 'Fermer',
+        paymentTitle: 'Modalités de paiement',
+      },
+      shop: {
+        find: 'Où nous trouver',
+        title: 'Nous trouver',
+        sub: 'Atelier et magasin Aito 3D',
+        mapTitle: "Plan d'accès au magasin",
+        mapLoading: 'Chargement du plan…',
+        phone: 'Téléphone',
+        email: 'E-mail',
+        website: 'Site',
+        social: 'Réseaux',
+        directions: 'Itinéraire',
+        call: 'Appeler',
+      },
       paymentMethods: {
         methods: 'Moyen de paiement',
         transfer: 'Virement',
@@ -263,6 +280,7 @@ export default {
         copyReference: 'Copier le motif',
         copyRib: 'Copier le RIB',
         copyTag: 'Copier le tag {{app}}',
+        findShop: 'Voir où nous trouver',
       },
       stages: {
         devis: 'Devis',
