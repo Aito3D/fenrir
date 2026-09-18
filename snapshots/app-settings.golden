@@ -7,7 +7,7 @@
   "type": "<class 'str'>"
  },
  "app_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -17,7 +17,7 @@
   "type": "<class 'str'>"
  },
  "archive_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/archive')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -42,12 +42,12 @@
   "type": "<class 'str'>"
  },
  "base_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
  "database_url": {
-  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-c15/bambuddy.db'",
+  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'",
   "required": false,
   "type": "<class 'str'>"
  },
@@ -97,7 +97,7 @@
   "type": "<class 'int'>"
  },
  "log_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/logs')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -117,7 +117,7 @@
   "type": "<class 'bool'>"
  },
  "plate_calibration_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/data/plate_calibration')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -127,7 +127,7 @@
   "type": "<class 'str'>"
  },
  "static_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-c15/static')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  }

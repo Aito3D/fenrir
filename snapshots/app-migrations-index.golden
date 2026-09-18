@@ -235,17 +235,21 @@
    233	# Migration: public tracking link token (2026-09-06). Nullable, minted on
    234	# Migration: tracking page view log (2026-09-06). A row is a card and a
    235	# Migration: payment-link ledger + the two project facts it reads
-   236	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   237	# Migration: per-file print progress inside a project (#1897).
-   238	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   239	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   240	# Migration: variant grouping for library files (#671 / #2570). The
-   241	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   242	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   243	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   244	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   245	# Migration: drop the AMS slot markers an older Bambuddy wrote into
-   246	# Migration: whether Books has been directly observed to agree with an
+   236	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
+   237	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   238	# Migration: per-file print progress inside a project (#1897).
+   239	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   240	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   241	# Migration: variant grouping for library files (#671 / #2570). The
+   242	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   243	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   244	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   245	# Migration: storage location sensor alerts (#2824), own column rather than
+   246	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+   247	# Migration: back the one-binding-per-(location, entity) rule with a unique
+   248	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   249	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+   250	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 

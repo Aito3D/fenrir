@@ -20,6 +20,7 @@ function inDays(n: number): string {
 
 const link: AitoPaymentLink = {
   state: 'pending', amount: 12500, currency: 'XPF', url: 'https://osb/pay/L1', expires_on: inDays(13), paid_at: null, sync_error: null,
+  minted: true,
 };
 
 function project(overrides: Partial<AitoProject> = {}): AitoProject {
@@ -96,6 +97,38 @@ describe('PaymentLinkRow', () => {
     render(<PaymentLinkRow project={project({ payment_link: { ...link, sync_error: 'Heimdall HTTP 502 unavailable: OSB down' } })} canUpdate={false} />);
     expect(screen.getByText('Heimdall HTTP 502 unavailable: OSB down')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('a reservation that never minted (no url) shows its error and Retry, never a payable link', async () => {
+    // T-010: a row stuck with heimdall_id null (a permanent Heimdall refusal)
+    // still has a real amount/expiry — only `url` is null — so the panel
+    // must show the error and offer Retry without ever rendering it as live.
+    let hits = 0;
+    server.use(http.post('/api/v1/aito/12/payment-link/refresh', () => { hits += 1; return HttpResponse.json(project()); }));
+    render(
+      <PaymentLinkRow
+        project={project({
+          payment_link: {
+            ...link,
+            minted: false,
+            url: null,
+            sync_error: 'Heimdall HTTP 422 invalid_request: reference matches no document',
+          },
+        })}
+        canUpdate
+      />,
+    );
+    expect(screen.getByTestId('payment-link-row')).toHaveAttribute('data-state', 'pending');
+    // The amount still shows (it is real — the reservation's own terms) but
+    // there is nothing to open or copy: no url means no payable link.
+    expect(screen.getByTestId('payment-link-amount')).toHaveTextContent(/12.500/);
+    expect(screen.queryByRole('link', { name: 'Open payment link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy payment link' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Heimdall HTTP 422 invalid_request: reference matches no document'),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(hits).toBe(1));
   });
 
   it('counts down to the expiry date: singular day, today, and a pending link past its date', () => {

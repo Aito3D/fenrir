@@ -542,6 +542,7 @@ export default {
       trackingRegenerated: 'regenerated the tracking link',
       paymentLinkCreated: 'Payment link created',
       paymentLinkReplaced: 'Payment link replaced',
+      paymentLinkUpdated: 'Payment link updated',
       paymentLinkPaid: 'Paid online',
       paymentLinkCancelled: 'Payment link cancelled',
       noteAdded: 'added a note',

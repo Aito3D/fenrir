@@ -15,6 +15,7 @@ from backend.app.services.heimdall import (
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
+    _to_view,
     heimdall_service,
     parse_credential,
     sign,
@@ -216,6 +217,166 @@ async def test_patch_cancel_get_hit_the_right_paths(db_session):
     assert calls[2][:2] == ("POST", "/api/v1/payments/6f1e/cancel") and calls[2][2] == b""
     assert calls[3][:2] == ("GET", "/api/v1/payments/6f1e")
     assert cancelled.status == "cancelled"
+
+
+# heimdall/docs/API.md, "Signing": normalise BEFORE signing, not after --
+# "so a space or a `..` cannot be signed in one form and sent in another by
+# fetch". patch_link/cancel_link/get_payment build `path` as a raw f-string
+# (heimdall.py) and hand `sign(method, path, ...)` that exact, unescaped
+# string; `_request` then hands `f"{base_url}{path}"` to httpx, which
+# percent-encodes/resolves it independently once it parses that string into
+# a URL. For a plain id the two forms are byte-identical and nothing is
+# observable; for an id containing a space, or a `/..` segment, the SIGNED
+# path and the SENT path diverge. Heimdall verifies the signature against
+# the bytes it actually received, so that divergence would surface only as
+# an opaque `401 Invalid request signature` -- never as a clue pointing at
+# escaping. Each row is (heimdall_id, expected wire path for PATCH/GET,
+# expected wire path for the cancel POST, which appends "/cancel").
+_ID_ENCODING_CASES = [
+    pytest.param("6f1e", "/api/v1/payments/6f1e", "/api/v1/payments/6f1e/cancel", id="plain-id-is-unaffected"),
+    pytest.param(
+        "hd 1",
+        "/api/v1/payments/hd%201",
+        "/api/v1/payments/hd%201/cancel",
+        id="space-is-percent-encoded-on-the-wire",
+    ),
+    pytest.param(
+        "hd-1/../ping",
+        "/api/v1/payments/ping",
+        "/api/v1/payments/ping/cancel",
+        id="slash-and-dot-segments-resolve-to-a-different-endpoint",
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("heimdall_id", "wire_path", "wire_cancel_path"), _ID_ENCODING_CASES)
+async def test_signature_is_over_the_raw_path_not_the_encoded_wire_path(
+    db_session, heimdall_id, wire_path, wire_cancel_path
+):
+    """Pins TODAY's behavior: the signature covers the raw, unescaped
+    f-string path, not the (possibly different) bytes httpx actually sends.
+    `snapshots/heimdall-wire.golden`'s `get_payment-id-with-slash` /
+    `-id-with-space` entries record the same wire paths asserted here.
+
+    When T-005 (normalise-before-sign: sign `httpx.URL(...).raw_path`
+    instead of the raw f-string) lands, this test's two assertions per case
+    -- `signature == signed_over_raw_path` and, where the paths differ,
+    `signature != signed_over_wire_path` -- must be swapped, not deleted;
+    that is the whole point of pinning the current, divergent behavior here.
+    """
+    await _configure(db_session)
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["raw_path"] = request.url.raw_path
+        seen["signature"] = request.headers["x-heimdall-signature"]
+        seen["timestamp"] = request.headers["x-heimdall-timestamp"]
+        seen["nonce"] = request.headers["x-heimdall-nonce"]
+        seen["body"] = request.content
+        return httpx.Response(200, json=_link_json())
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+
+    # (HTTP method, the exact f-string `path` heimdall.py builds and signs,
+    # the coroutine to run, the wire path we expect httpx to actually send).
+    calls = [
+        (
+            "PATCH",
+            f"/api/v1/payments/{heimdall_id}",
+            heimdall_service.patch_link(db_session, heimdall_id, amount=9000),
+            wire_path,
+        ),
+        (
+            "POST",
+            f"/api/v1/payments/{heimdall_id}/cancel",
+            heimdall_service.cancel_link(db_session, heimdall_id),
+            wire_cancel_path,
+        ),
+        (
+            "GET",
+            f"/api/v1/payments/{heimdall_id}",
+            heimdall_service.get_payment(db_session, heimdall_id),
+            wire_path,
+        ),
+    ]
+    for method, signed_fstring_path, coro, expected_wire_path in calls:
+        seen.clear()
+        await coro
+
+        # The bytes actually on the wire, captured from inside the mock
+        # transport -- this is httpx's own encoding, not anything heimdall.py
+        # computes, and it matches the golden's recorded wire paths.
+        assert seen["raw_path"] == expected_wire_path.encode()
+
+        body_hash = hashlib.sha256(seen["body"]).hexdigest()
+        # Two independent recomputations of the six-line canonical HMAC
+        # (built with hmac.new directly, exactly like
+        # test_sign_reproduces_the_contracts_worked_example -- never via
+        # sign() itself, so this cannot pass just because sign() and the
+        # client agree on what "the path" means).
+        signed_over_raw_path = _canonical_hmac(
+            b"s3cret", method, signed_fstring_path, seen["timestamp"], seen["nonce"], body_hash, ""
+        )
+        signed_over_wire_path = _canonical_hmac(
+            b"s3cret", method, seen["raw_path"].decode(), seen["timestamp"], seen["nonce"], body_hash, ""
+        )
+
+        # TODAY: the client signs the raw, unescaped path it interpolated --
+        # not the bytes httpx actually puts on the wire.
+        assert seen["signature"] == signed_over_raw_path
+        if signed_fstring_path == expected_wire_path:
+            assert seen["signature"] == signed_over_wire_path
+        else:
+            assert seen["signature"] != signed_over_wire_path, (
+                "the raw and wire paths differ for this id, so a signature that matches "
+                "both would mean the divergence this test exists to pin has disappeared "
+                "-- i.e. T-005 landed and this test's expectations need to be flipped"
+            )
+
+
+def test_to_view_accepts_a_normal_https_link_url():
+    view = _to_view(_link_json())
+    assert view.url == "https://secure.osb.pf/pay/abc"
+
+
+def test_to_view_accepts_a_missing_or_null_link_url():
+    # Not every payment has a link yet — this must stay a valid, linkless
+    # view rather than an error.
+    without_link = _link_json()
+    del without_link["link"]
+    assert _to_view(without_link).url is None
+
+    assert _to_view(_link_json(link={"url": None, "expires_at": None})).url is None
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "javascript:alert(document.cookie)",
+        "data:text/html,<script>alert(1)</script>",
+        "file:///etc/passwd",
+        "//attacker.example/pay",
+        "ftp://attacker.example/pay",
+        "not-a-url-at-all",
+        "",
+        "https:///no-hostname",
+        "x" * 501,
+    ],
+)
+def test_to_view_rejects_a_link_url_that_is_not_a_safe_http_url(bad_url):
+    # An unauthenticated Heimdall response is where an attacker on the LAN
+    # hop (or a compromised POS host) could hand back a url that gets
+    # rendered verbatim to the customer's tracking page and the operator's
+    # panel; this must surface as a sync error, not as a stored/rendered
+    # value.
+    with pytest.raises(HeimdallUpstreamError):
+        _to_view(_link_json(link={"url": bad_url, "expires_at": None}))
+
+
+def test_to_view_rejects_a_non_string_link_url():
+    with pytest.raises(HeimdallUpstreamError):
+        _to_view(_link_json(link={"url": 12345, "expires_at": None}))
 
 
 @pytest.mark.asyncio

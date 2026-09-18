@@ -1,0 +1,792 @@
+### exit: 0
+### stdout:
+[
+ {
+  "body": {
+   "configured": false,
+   "error": null,
+   "reachable": null
+  },
+  "status": 200,
+  "step": "01-test-unconfigured"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "02-test-configured-ok"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": "unauthorized",
+   "reachable": false
+  },
+  "status": 200,
+  "step": "03-test-401"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": "forbidden",
+   "reachable": false
+  },
+  "status": 200,
+  "step": "04-test-403"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": "unreachable",
+   "reachable": false
+  },
+  "status": 200,
+  "step": "05-test-500-is-unreachable"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": "unreachable",
+   "reachable": false
+  },
+  "status": 200,
+  "step": "06-test-connect-refused"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "07-test-with-both-overrides"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "08-test-url-override-only"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "09-test-token-override-only"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "10-test-empty-strings"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "http://169.254.169.254/latest/meta-data",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Value error, Heimdall URL must not point to a cloud metadata endpoint",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-00-http://169.254.169.254/latest/meta-data"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "http://metadata.google.internal/",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Value error, Heimdall URL must not point to a cloud metadata endpoint",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-01-http://metadata.google.internal/"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "file:///etc/passwd",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Value error, Heimdall URL must use http or https",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-02-file:///etc/passwd"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "gopher://pos.local:8081",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Value error, Heimdall URL must use http or https",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-03-gopher://pos.local:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-04-http://localhost:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-05-http://127.0.0.1:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-06-http://[::1]:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-07-http://pos.local:8081/../../etc"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "not-a-url",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Value error, Heimdall URL must use http or https",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-08-not-a-url"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "http://",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Value error, Heimdall URL must include a hostname",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-09-http://"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-10-https://pos.example.com:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-11-http://192.168.1.50:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-12-http://10.0.0.5:8081"
+ },
+ {
+  "body": {
+   "configured": true,
+   "error": null,
+   "reachable": true
+  },
+  "status": 200,
+  "step": "11-test-url-guard-13-http://8.8.8.8:8081"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "max_length": 300
+     },
+     "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "String should have at most 300 characters",
+     "type": "string_too_long"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-test-url-guard-14-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "max_length": 300
+     },
+     "input": "[redacted]",
+     "loc": [
+      "body",
+      "token"
+     ],
+     "msg": "String should have at most 300 characters",
+     "type": "string_too_long"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "12-test-token-too-long"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "input": 5,
+     "loc": [
+      "body",
+      "base_url"
+     ],
+     "msg": "Input should be a valid string",
+     "type": "string_type"
+    },
+    {
+     "input": "[redacted]",
+     "loc": [
+      "body",
+      "token"
+     ],
+     "msg": "Input should be a valid string",
+     "type": "string_type"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "13-test-wrong-types"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "input": null,
+     "loc": [
+      "body"
+     ],
+     "msg": "Field required",
+     "type": "missing"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "14-test-no-body"
+ },
+ {
+  "body": {
+   "description": "live-link",
+   "id": 1,
+   "payment_link": {
+    "amount": 12500,
+    "currency": "XPF",
+    "expires_on": "2026-10-01",
+    "minted": true,
+    "paid_at": null,
+    "state": "pending",
+    "sync_error": null,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000121",
+   "quote_status": "sent",
+   "quote_total": 12500.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "20-refresh-mints"
+ },
+ {
+  "calls": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000121\",\"expires_in_days\":15}",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "method": "GET",
+    "path": "/api/v1/payments/6f1e2c3a-0000-4000-8000-000000000001"
+   }
+  ],
+  "step": "20b-heimdall-calls"
+ },
+ {
+  "body": {
+   "description": "live-link",
+   "id": 1,
+   "payment_link": {
+    "amount": 12500,
+    "currency": "XPF",
+    "expires_on": "2026-10-01",
+    "minted": true,
+    "paid_at": null,
+    "state": "pending",
+    "sync_error": null,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000121",
+   "quote_status": "sent",
+   "quote_total": 12500.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "21-refresh-again-is-a-noop"
+ },
+ {
+  "calls": [
+   {
+    "body": "",
+    "method": "GET",
+    "path": "/api/v1/payments/6f1e2c3a-0000-4000-8000-000000000001"
+   }
+  ],
+  "step": "21b-heimdall-calls"
+ },
+ {
+  "body": {
+   "description": "no-quote",
+   "id": 2,
+   "payment_link": null,
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": null,
+   "quote_status": "sent",
+   "quote_total": 12500.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "22-refresh-no-quote"
+ },
+ {
+  "calls": [],
+  "step": "22b-no-quote-calls"
+ },
+ {
+  "body": {
+   "description": "declined",
+   "id": 3,
+   "payment_link": null,
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000123",
+   "quote_status": "declined",
+   "quote_total": 12500.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "22-refresh-declined"
+ },
+ {
+  "calls": [],
+  "step": "22b-declined-calls"
+ },
+ {
+  "body": {
+   "description": "zero-total",
+   "id": 5,
+   "payment_link": null,
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000125",
+   "quote_status": "sent",
+   "quote_total": 0.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "22-refresh-zero-total"
+ },
+ {
+  "calls": [],
+  "step": "22b-zero-total-calls"
+ },
+ {
+  "body": {
+   "description": "retainer-covered",
+   "id": 6,
+   "payment_link": null,
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000126",
+   "quote_status": "sent",
+   "quote_total": 12500.0,
+   "retainer_paid_total": 99999.0,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "22-refresh-retainer-covered"
+ },
+ {
+  "calls": [],
+  "step": "22b-retainer-covered-calls"
+ },
+ {
+  "body": {},
+  "status": 404,
+  "step": "23-refresh-trashed-project"
+ },
+ {
+  "body": {},
+  "status": 404,
+  "step": "24-refresh-unknown-project"
+ },
+ {
+  "body": {},
+  "status": 404,
+  "step": "25-refresh-negative-id"
+ },
+ {
+  "body": {},
+  "status": 422,
+  "step": "26-refresh-non-numeric-id"
+ },
+ {
+  "body": {
+   "description": "failing",
+   "id": 7,
+   "payment_link": {
+    "amount": 5000,
+    "currency": "XPF",
+    "expires_on": "2026-10-01",
+    "minted": false,
+    "paid_at": null,
+    "state": "pending",
+    "sync_error": "Heimdall HTTP 500 internal: POS down",
+    "url": null
+   },
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000127",
+   "quote_status": "sent",
+   "quote_total": 5000.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "27-refresh-upstream-500"
+ },
+ {
+  "body": {
+   "description": "failing",
+   "id": 7,
+   "payment_link": {
+    "amount": 5000,
+    "currency": "XPF",
+    "expires_on": "2026-10-01",
+    "minted": false,
+    "paid_at": null,
+    "state": "pending",
+    "sync_error": "Heimdall unreachable: refused",
+    "url": null
+   },
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000127",
+   "quote_status": "sent",
+   "quote_total": 5000.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "28-refresh-unreachable"
+ },
+ {
+  "body": {
+   "description": "failing",
+   "id": 7,
+   "payment_link": {
+    "amount": 5000,
+    "currency": "XPF",
+    "expires_on": "2026-10-01",
+    "minted": false,
+    "paid_at": null,
+    "state": "pending",
+    "sync_error": "Heimdall unreachable: refused",
+    "url": null
+   },
+   "quote_expiry_date": "2026-10-01",
+   "quote_invoiced": false,
+   "quote_number": "DEV-000127",
+   "quote_status": "sent",
+   "quote_total": 5000.0,
+   "retainer_paid_total": null,
+   "status": "active"
+  },
+  "status": 200,
+  "step": "29-refresh-upstream-429"
+ },
+ {
+  "last_body": {
+   "detail": "Too many payment link refreshes. Please wait a moment and try again."
+  },
+  "status_codes": [
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   200,
+   429,
+   429,
+   429
+  ],
+  "step": "30-retry-budget"
+ },
+ {
+  "projects": [
+   {
+    "description": "live-link",
+    "id": 1,
+    "payment_link": {
+     "amount": 12500,
+     "currency": "XPF",
+     "expires_on": "2026-10-01",
+     "minted": true,
+     "paid_at": null,
+     "state": "pending",
+     "sync_error": null,
+     "url": "https://secure.osb.pf/pay/abc"
+    },
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": "DEV-000121",
+    "quote_status": "sent",
+    "quote_total": 12500.0,
+    "retainer_paid_total": null,
+    "status": "active"
+   },
+   {
+    "description": "no-quote",
+    "id": 2,
+    "payment_link": {
+     "amount": 12500,
+     "currency": "XPF",
+     "expires_on": "2026-10-01",
+     "minted": false,
+     "paid_at": null,
+     "state": "pending",
+     "sync_error": null,
+     "url": null
+    },
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": null,
+    "quote_status": "sent",
+    "quote_total": 12500.0,
+    "retainer_paid_total": null,
+    "status": "active"
+   },
+   {
+    "description": "declined",
+    "id": 3,
+    "payment_link": {
+     "amount": 12500,
+     "currency": "XPF",
+     "expires_on": "2026-10-01",
+     "minted": true,
+     "paid_at": "2026-09-16T12:00:00",
+     "state": "paid",
+     "sync_error": null,
+     "url": "https://secure.osb.pf/pay/paid"
+    },
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": "DEV-000123",
+    "quote_status": "declined",
+    "quote_total": 12500.0,
+    "retainer_paid_total": null,
+    "status": "active"
+   },
+   {
+    "description": "zero-total",
+    "id": 5,
+    "payment_link": {
+     "amount": 12500,
+     "currency": "XPF",
+     "expires_on": "2026-10-01",
+     "minted": true,
+     "paid_at": null,
+     "state": "failed",
+     "sync_error": "Heimdall HTTP 500 internal: boom",
+     "url": null
+    },
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": "DEV-000125",
+    "quote_status": "sent",
+    "quote_total": 0.0,
+    "retainer_paid_total": null,
+    "status": "active"
+   },
+   {
+    "description": "retainer-covered",
+    "id": 6,
+    "payment_link": {
+     "amount": 1,
+     "currency": "XPF",
+     "expires_on": "2026-10-01",
+     "minted": true,
+     "paid_at": null,
+     "state": "pending",
+     "sync_error": null,
+     "url": "https://secure.osb.pf/pay/weird"
+    },
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": "DEV-000126",
+    "quote_status": "sent",
+    "quote_total": 12500.0,
+    "retainer_paid_total": 99999.0,
+    "status": "active"
+   },
+   {
+    "description": "failing",
+    "id": 7,
+    "payment_link": {
+     "amount": 5000,
+     "currency": "XPF",
+     "expires_on": "2026-10-01",
+     "minted": false,
+     "paid_at": null,
+     "state": "pending",
+     "sync_error": "Heimdall unreachable: refused",
+     "url": null
+    },
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": "DEV-000127",
+    "quote_status": "sent",
+    "quote_total": 5000.0,
+    "retainer_paid_total": null,
+    "status": "active"
+   }
+  ],
+  "status": 200,
+  "step": "40-board-payment-links"
+ },
+ {
+  "projects": [
+   {
+    "description": "trashed",
+    "id": 4,
+    "payment_link": null,
+    "quote_expiry_date": "2026-10-01",
+    "quote_invoiced": false,
+    "quote_number": "DEV-000124",
+    "quote_status": "sent",
+    "quote_total": 12500.0,
+    "retainer_paid_total": null,
+    "status": "deleted"
+   }
+  ],
+  "status": 200,
+  "step": "41-trash-payment-links"
+ }
+]
+
+### stderr:
+

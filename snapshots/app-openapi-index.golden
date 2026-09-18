@@ -619,6 +619,19 @@
    },
    "security": true
   },
+  "DELETE /api/v1/location-ha-sensors/{sensor_id}": {
+   "operationId": "delete_location_ha_sensor_api_v1_location_ha_sensors__sensor_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:sensor_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/maintenance/items/{item_id}": {
    "operationId": "remove_maintenance_item_api_v1_maintenance_items__item_id__delete",
    "params": [
@@ -1669,6 +1682,7 @@
   "GET /api/v1/archives/{archive_id}/photos/{filename}": {
    "operationId": "get_photo_api_v1_archives__archive_id__photos__filename__get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "path:filename!",
     "query:token"
@@ -1678,11 +1692,12 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/plate-preview": {
    "operationId": "get_plate_preview_api_v1_archives__archive_id__plate_preview_get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "query:token"
    ],
@@ -1691,11 +1706,12 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/plate-thumbnail/{plate_index}": {
    "operationId": "get_plate_thumbnail_api_v1_archives__archive_id__plate_thumbnail__plate_index__get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "path:plate_index!",
     "query:token"
@@ -1705,7 +1721,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/plates": {
    "operationId": "get_archive_plates_api_v1_archives__archive_id__plates_get",
@@ -1736,6 +1752,7 @@
   "GET /api/v1/archives/{archive_id}/project-image/{image_path}": {
    "operationId": "get_project_image_api_v1_archives__archive_id__project_image__image_path__get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "path:image_path!",
     "query:token"
@@ -1745,7 +1762,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/project-page": {
    "operationId": "get_project_page_api_v1_archives__archive_id__project_page_get",
@@ -1763,6 +1780,7 @@
   "GET /api/v1/archives/{archive_id}/qrcode": {
    "operationId": "get_qrcode_api_v1_archives__archive_id__qrcode_get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "query:size",
     "query:token"
@@ -1772,7 +1790,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/runs": {
    "operationId": "list_archive_runs_api_v1_archives__archive_id__runs_get",
@@ -1845,6 +1863,7 @@
   "GET /api/v1/archives/{archive_id}/thumbnail": {
    "operationId": "get_thumbnail_api_v1_archives__archive_id__thumbnail_get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "query:token"
    ],
@@ -1853,11 +1872,12 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/timelapse": {
    "operationId": "get_timelapse_api_v1_archives__archive_id__timelapse_get",
    "params": [
+    "header:X-API-Key",
     "path:archive_id!",
     "query:token"
    ],
@@ -1866,7 +1886,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/archives/{archive_id}/timelapse/info": {
    "operationId": "get_timelapse_info_api_v1_archives__archive_id__timelapse_info_get",
@@ -2338,6 +2358,7 @@
   "GET /api/v1/external-links/{link_id}/icon": {
    "operationId": "get_icon_api_v1_external_links__link_id__icon_get",
    "params": [
+    "header:X-API-Key",
     "path:link_id!",
     "query:token"
    ],
@@ -2346,7 +2367,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/filament-catalog/": {
    "operationId": "list_filaments_api_v1_filament_catalog__get",
@@ -2964,6 +2985,19 @@
    },
    "security": true
   },
+  "GET /api/v1/inventory/spools/{spool_id}/filament-presets": {
+   "operationId": "list_filament_presets_api_v1_inventory_spools__spool_id__filament_presets_get",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[SpoolFilamentPresetResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/inventory/spools/{spool_id}/k-profiles": {
    "operationId": "list_k_profiles_api_v1_inventory_spools__spool_id__k_profiles_get",
    "params": [
@@ -3133,6 +3167,7 @@
   "GET /api/v1/library/files/{file_id}/plate-thumbnail/{plate_index}": {
    "operationId": "get_library_file_plate_thumbnail_api_v1_library_files__file_id__plate_thumbnail__plate_index__get",
    "params": [
+    "header:X-API-Key",
     "path:file_id!",
     "path:plate_index!",
     "query:token"
@@ -3142,7 +3177,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/library/files/{file_id}/plates": {
    "operationId": "get_library_file_plates_api_v1_library_files__file_id__plates_get",
@@ -3160,6 +3195,7 @@
   "GET /api/v1/library/files/{file_id}/thumbnail": {
    "operationId": "get_thumbnail_api_v1_library_files__file_id__thumbnail_get",
    "params": [
+    "header:X-API-Key",
     "path:file_id!",
     "query:token"
    ],
@@ -3168,7 +3204,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/library/folders": {
    "operationId": "list_folders_api_v1_library_folders_get",
@@ -3430,6 +3466,59 @@
    "requestBody": {},
    "responses": {
     "200": "LocalPresetDetail",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/location-ha-sensors/": {
+   "operationId": "list_location_ha_sensors_api_v1_location_ha_sensors__get",
+   "params": [
+    "header:X-API-Key",
+    "query:location_id"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[LocationHASensorResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/location-ha-sensors/by-location/{location_id}/readings": {
+   "operationId": "get_location_sensor_readings_api_v1_location_ha_sensors_by_location__location_id__readings_get",
+   "params": [
+    "header:X-API-Key",
+    "path:location_id!",
+    "query:show_on_card"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[LocationHASensorReading]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/location-ha-sensors/entities": {
+   "operationId": "list_bindable_entities_api_v1_location_ha_sensors_entities_get",
+   "params": [
+    "header:X-API-Key",
+    "query:search"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[HADisplayEntity]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/location-ha-sensors/{sensor_id}": {
+   "operationId": "get_location_ha_sensor_api_v1_location_ha_sensors__sensor_id__get",
+   "params": [
+    "header:X-API-Key",
+    "path:sensor_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "LocationHASensorResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -3816,6 +3905,7 @@
   "GET /api/v1/print-log/{entry_id}/thumbnail": {
    "operationId": "get_print_log_thumbnail_api_v1_print_log__entry_id__thumbnail_get",
    "params": [
+    "header:X-API-Key",
     "path:entry_id!",
     "query:token"
    ],
@@ -3824,7 +3914,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/printer-sensor-history/{printer_id}": {
    "operationId": "get_printer_sensor_history_api_v1_printer_sensor_history__printer_id__get",
@@ -4061,6 +4151,7 @@
   "GET /api/v1/printers/{printer_id}/cover": {
    "operationId": "get_printer_cover_api_v1_printers__printer_id__cover_get",
    "params": [
+    "header:X-API-Key",
     "path:printer_id!",
     "query:token",
     "query:view"
@@ -4070,7 +4161,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/printers/{printer_id}/current-print-user": {
    "operationId": "get_current_print_user_api_v1_printers__printer_id__current_print_user_get",
@@ -4174,7 +4265,8 @@
     "header:X-API-Key",
     "path:plate_index!",
     "path:printer_id!",
-    "query:path!"
+    "query:path!",
+    "query:token"
    ],
    "requestBody": {},
    "responses": {
@@ -4318,6 +4410,21 @@
    },
    "security": true
   },
+  "GET /api/v1/printers/{printer_id}/slots/{ams_id}/{tray_id}/spool-defaults": {
+   "operationId": "get_slot_spool_defaults_api_v1_printers__printer_id__slots__ams_id___tray_id__spool_defaults_get",
+   "params": [
+    "header:X-API-Key",
+    "path:ams_id!",
+    "path:printer_id!",
+    "path:tray_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/printers/{printer_id}/status": {
    "operationId": "get_printer_status_api_v1_printers__printer_id__status_get",
    "params": [
@@ -4440,6 +4547,7 @@
   "GET /api/v1/projects/{project_id}/cover-image": {
    "operationId": "get_project_cover_image_api_v1_projects__project_id__cover_image_get",
    "params": [
+    "header:X-API-Key",
     "path:project_id!",
     "query:token"
    ],
@@ -4448,7 +4556,7 @@
     "200": null,
     "422": "HTTPValidationError"
    },
-   "security": false
+   "security": true
   },
   "GET /api/v1/projects/{project_id}/export": {
    "operationId": "export_project_api_v1_projects__project_id__export_get",
@@ -4666,6 +4774,18 @@
   },
   "GET /api/v1/settings/spoolman": {
    "operationId": "get_spoolman_settings_api_v1_settings_spoolman_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/settings/ui-flags": {
+   "operationId": "get_ui_flags_api_v1_settings_ui_flags_get",
    "params": [
     "header:X-API-Key"
    ],
@@ -5103,6 +5223,19 @@
    "requestBody": {},
    "responses": {
     "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/spoolman/inventory/spools/{spool_id}/filament-presets": {
+   "operationId": "get_spoolman_filament_presets_api_v1_spoolman_inventory_spools__spool_id__filament_presets_get",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[object]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -6004,6 +6137,21 @@
    },
    "responses": {
     "200": "VariantGroupResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PATCH /api/v1/location-ha-sensors/{sensor_id}": {
+   "operationId": "update_location_ha_sensor_api_v1_location_ha_sensors__sensor_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:sensor_id!"
+   ],
+   "requestBody": {
+    "application/json": "LocationHASensorUpdate"
+   },
+   "responses": {
+    "200": "LocationHASensorResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -7048,6 +7196,18 @@
    "requestBody": {},
    "responses": {
     "200": null
+   },
+   "security": true
+  },
+  "POST /api/v1/auth/media-token": {
+   "operationId": "mint_media_token_api_v1_auth_media_token_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
    },
    "security": true
   },
@@ -8512,6 +8672,20 @@
    },
    "security": true
   },
+  "POST /api/v1/location-ha-sensors/": {
+   "operationId": "create_location_ha_sensor_api_v1_location_ha_sensors__post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "LocationHASensorCreate"
+   },
+   "responses": {
+    "200": "LocationHASensorResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/maintenance/items/{item_id}/perform": {
    "operationId": "perform_maintenance_api_v1_maintenance_items__item_id__perform_post",
    "params": [
@@ -8878,6 +9052,7 @@
    "params": [
     "header:X-API-Key",
     "path:printer_id!",
+    "query:extruder_id",
     "query:tray_id!"
    ],
    "requestBody": {},
@@ -8891,7 +9066,8 @@
    "operationId": "ams_unload_api_v1_printers__printer_id__ams_unload_post",
    "params": [
     "header:X-API-Key",
-    "path:printer_id!"
+    "path:printer_id!",
+    "query:tray_id"
    ],
    "requestBody": {},
    "responses": {
@@ -10769,6 +10945,21 @@
    },
    "security": true
   },
+  "PUT /api/v1/inventory/spools/{spool_id}/filament-presets": {
+   "operationId": "replace_filament_presets_api_v1_inventory_spools__spool_id__filament_presets_put",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {
+    "application/json": "[SpoolFilamentPresetBase]"
+   },
+   "responses": {
+    "200": "[SpoolFilamentPresetResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/inventory/spools/{spool_id}/k-profiles": {
    "operationId": "replace_k_profiles_api_v1_inventory_spools__spool_id__k_profiles_put",
    "params": [
@@ -10997,6 +11188,21 @@
    },
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/spoolman/inventory/spools/{spool_id}/filament-presets": {
+   "operationId": "save_spoolman_filament_presets_api_v1_spoolman_inventory_spools__spool_id__filament_presets_put",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {
+    "application/json": "[SpoolFilamentPresetBase]"
+   },
+   "responses": {
+    "200": "[object]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11519,6 +11725,7 @@
     "amount": "integer",
     "currency": "string",
     "expires_on": "string",
+    "minted": "boolean",
     "paid_at": "anyOf(string,null)",
     "state": "string",
     "sync_error": "anyOf(string,null)",
@@ -11528,6 +11735,7 @@
     "amount",
     "currency",
     "expires_on",
+    "minted",
     "paid_at",
     "state",
     "sync_error",
@@ -11633,6 +11841,7 @@
     "column": "string",
     "created_at": "string",
     "created_by": "anyOf(string,null)",
+    "customer_credit_total": "anyOf(number,null)",
     "description": "string",
     "due_date": "anyOf(string,null)",
     "flag": "anyOf(string,null)",
@@ -11693,6 +11902,7 @@
     "column",
     "created_at",
     "created_by",
+    "customer_credit_total",
     "description",
     "due_date",
     "flag",
@@ -12228,6 +12438,7 @@
     "ams_humidity_fair": "integer",
     "ams_humidity_good": "integer",
     "ams_humidity_thresholds": "string",
+    "ams_temp_alarm": "anyOf(number,null)",
     "ams_temp_fair": "number",
     "ams_temp_good": "number",
     "auto_add_unknown_rfid": "boolean",
@@ -12306,6 +12517,8 @@
     "local_backup_schedule": "string",
     "local_backup_time": "string",
     "local_login_enabled": "boolean",
+    "location_sensor_alert_defaults": "string",
+    "location_sensor_poll_interval": "integer",
     "low_stock_threshold": "number",
     "mqtt_broker": "string",
     "mqtt_enabled": "boolean",
@@ -12390,6 +12603,7 @@
     "ams_humidity_fair": "anyOf(integer,null)",
     "ams_humidity_good": "anyOf(integer,null)",
     "ams_humidity_thresholds": "anyOf(string,null)",
+    "ams_temp_alarm": "anyOf(number,null)",
     "ams_temp_fair": "anyOf(number,null)",
     "ams_temp_good": "anyOf(number,null)",
     "auto_add_unknown_rfid": "anyOf(boolean,null)",
@@ -12465,6 +12679,8 @@
     "local_backup_schedule": "anyOf(string,null)",
     "local_backup_time": "anyOf(string,null)",
     "local_login_enabled": "anyOf(boolean,null)",
+    "location_sensor_alert_defaults": "anyOf(string,null)",
+    "location_sensor_poll_interval": "anyOf(integer,null)",
     "low_stock_threshold": "anyOf(number,null)",
     "mqtt_broker": "anyOf(string,null)",
     "mqtt_enabled": "anyOf(boolean,null)",
@@ -14246,6 +14462,14 @@
    },
    "required": []
   },
+  "ExtruderSlotResponse": {
+   "properties": {
+    "ams_id": "anyOf(integer,null)",
+    "has_filament": "boolean",
+    "slot_id": "anyOf(integer,null)"
+   },
+   "required": []
+  },
   "FailureInsights": {
    "properties": {
     "by_material": "[FailureRateEntry]",
@@ -14278,6 +14502,7 @@
     "info": "integer",
     "installed": "boolean",
     "out_extruders": "[integer]",
+    "ready": "boolean",
     "stat": "integer"
    },
    "required": []
@@ -15202,6 +15427,7 @@
     "actions": "[string]",
     "attr": "integer",
     "code": "string",
+    "description": "anyOf(string,null)",
     "full_code": "string",
     "job_id": "anyOf(string,null)",
     "module": "integer",
@@ -15489,6 +15715,7 @@
    "properties": {
     "monochrome": "boolean",
     "spool_ids": "[integer]",
+    "starting_position": "integer",
     "template": "string"
    },
    "required": [
@@ -15632,6 +15859,98 @@
    "required": [
     "name"
    ]
+  },
+  "LocationHASensorCreate": {
+   "properties": {
+    "alert_above": "anyOf(number,null)",
+    "alert_below": "anyOf(number,null)",
+    "alert_state": "anyOf(string,null)",
+    "device_class": "anyOf(string,null)",
+    "entity_id": "string",
+    "kind": "string",
+    "location_id": "integer",
+    "name": "string",
+    "notify_on_alert": "boolean",
+    "show_on_card": "boolean",
+    "sort_order": "integer",
+    "unit": "anyOf(string,null)"
+   },
+   "required": [
+    "entity_id",
+    "location_id",
+    "name"
+   ]
+  },
+  "LocationHASensorReading": {
+   "properties": {
+    "alert_above": "anyOf(number,null)",
+    "alert_below": "anyOf(number,null)",
+    "alert_state": "anyOf(string,null)",
+    "alerting": "boolean",
+    "device_class": "anyOf(string,null)",
+    "entity_id": "string",
+    "id": "integer",
+    "kind": "string",
+    "last_changed": "anyOf(string,null)",
+    "name": "string",
+    "reachable": "boolean",
+    "show_on_card": "boolean",
+    "state": "anyOf(string,null)",
+    "unit": "anyOf(string,null)",
+    "value": "anyOf(number,null)"
+   },
+   "required": [
+    "entity_id",
+    "id",
+    "kind",
+    "name"
+   ]
+  },
+  "LocationHASensorResponse": {
+   "properties": {
+    "alert_above": "anyOf(number,null)",
+    "alert_below": "anyOf(number,null)",
+    "alert_state": "anyOf(string,null)",
+    "created_at": "string",
+    "device_class": "anyOf(string,null)",
+    "entity_id": "string",
+    "id": "integer",
+    "kind": "string",
+    "last_changed": "anyOf(string,null)",
+    "last_checked": "anyOf(string,null)",
+    "last_state": "anyOf(string,null)",
+    "location_id": "integer",
+    "name": "string",
+    "notify_on_alert": "boolean",
+    "show_on_card": "boolean",
+    "sort_order": "integer",
+    "unit": "anyOf(string,null)",
+    "updated_at": "string"
+   },
+   "required": [
+    "created_at",
+    "entity_id",
+    "id",
+    "location_id",
+    "name",
+    "updated_at"
+   ]
+  },
+  "LocationHASensorUpdate": {
+   "properties": {
+    "alert_above": "anyOf(number,null)",
+    "alert_below": "anyOf(number,null)",
+    "alert_state": "anyOf(string,null)",
+    "device_class": "anyOf(string,null)",
+    "entity_id": "anyOf(string,null)",
+    "kind": "anyOf(string,null)",
+    "name": "anyOf(string,null)",
+    "notify_on_alert": "anyOf(boolean,null)",
+    "show_on_card": "anyOf(boolean,null)",
+    "sort_order": "anyOf(integer,null)",
+    "unit": "anyOf(string,null)"
+   },
+   "required": []
   },
   "LocationResponse": {
    "properties": {
@@ -16007,6 +16326,7 @@
     "on_filament_low": "boolean",
     "on_first_layer_complete": "boolean",
     "on_ha_sensor_alert": "boolean",
+    "on_location_ha_sensor_alert": "boolean",
     "on_maintenance_due": "boolean",
     "on_plate_clear_required": "boolean",
     "on_plate_not_empty": "boolean",
@@ -16025,6 +16345,8 @@
     "on_queue_job_skipped": "boolean",
     "on_queue_job_started": "boolean",
     "on_queue_job_waiting": "boolean",
+    "on_stock_break_alert": "boolean",
+    "on_stock_reorder_alert": "boolean",
     "printer_id": "anyOf(integer,null)",
     "provider_type": "backend__app__schemas__notification__ProviderType",
     "quiet_hours_enabled": "boolean",
@@ -16061,6 +16383,7 @@
     "on_filament_low": "boolean",
     "on_first_layer_complete": "boolean",
     "on_ha_sensor_alert": "boolean",
+    "on_location_ha_sensor_alert": "boolean",
     "on_maintenance_due": "boolean",
     "on_plate_clear_required": "boolean",
     "on_plate_not_empty": "boolean",
@@ -16079,6 +16402,8 @@
     "on_queue_job_skipped": "boolean",
     "on_queue_job_started": "boolean",
     "on_queue_job_waiting": "boolean",
+    "on_stock_break_alert": "boolean",
+    "on_stock_reorder_alert": "boolean",
     "printer_id": "anyOf(integer,null)",
     "provider_type": "ProviderType-Output",
     "quiet_hours_enabled": "boolean",
@@ -16114,6 +16439,7 @@
     "on_filament_low": "anyOf(boolean,null)",
     "on_first_layer_complete": "anyOf(boolean,null)",
     "on_ha_sensor_alert": "anyOf(boolean,null)",
+    "on_location_ha_sensor_alert": "anyOf(boolean,null)",
     "on_maintenance_due": "anyOf(boolean,null)",
     "on_plate_clear_required": "anyOf(boolean,null)",
     "on_plate_not_empty": "anyOf(boolean,null)",
@@ -16132,6 +16458,8 @@
     "on_queue_job_skipped": "anyOf(boolean,null)",
     "on_queue_job_started": "anyOf(boolean,null)",
     "on_queue_job_waiting": "anyOf(boolean,null)",
+    "on_stock_break_alert": "anyOf(boolean,null)",
+    "on_stock_reorder_alert": "anyOf(boolean,null)",
     "printer_id": "anyOf(integer,null)",
     "provider_type": "anyOf(backend__app__schemas__notification__ProviderType,null)",
     "quiet_hours_enabled": "anyOf(boolean,null)",
@@ -16622,6 +16950,7 @@
   "PrintBatchPlateProgress": {
    "properties": {
     "actual_cost": "anyOf(number,null)",
+    "can_dispatch": "boolean",
     "cancelled_count": "integer",
     "completed_count": "integer",
     "dispatched": "integer",
@@ -16658,6 +16987,7 @@
     "created_at": "anyOf(string,null)",
     "created_by_id": "anyOf(integer,null)",
     "created_by_username": "anyOf(string,null)",
+    "dispatchable_count": "integer",
     "due_date": "anyOf(string,null)",
     "estimated_remaining_cost": "anyOf(number,null)",
     "failed_count": "integer",
@@ -17249,6 +17579,7 @@
     "drying_screen_only": "boolean",
     "exhaust_fan_present": "boolean",
     "expected_tray": "anyOf(integer,null)",
+    "extruder_slots": "object",
     "fila_switch": "anyOf(FilaSwitchResponse,null)",
     "firmware_version": "anyOf(string,null)",
     "gcode_file": "anyOf(string,null)",
@@ -17878,6 +18209,7 @@
     "bed_type": "anyOf(string,null)",
     "design_overrides": "anyOf([string],null)",
     "export_3mf": "boolean",
+    "filament_colours": "[string]",
     "filament_preset": "anyOf(PresetRef,null)",
     "filament_preset_id": "anyOf(integer,null)",
     "filament_presets": "[PresetRef]",
@@ -18377,6 +18709,34 @@
    },
    "required": [
     "material"
+   ]
+  },
+  "SpoolFilamentPresetBase": {
+   "properties": {
+    "nozzle_diameter": "string",
+    "printer_model": "string",
+    "slicer_filament": "anyOf(string,null)",
+    "slicer_filament_name": "anyOf(string,null)"
+   },
+   "required": [
+    "printer_model"
+   ]
+  },
+  "SpoolFilamentPresetResponse": {
+   "properties": {
+    "created_at": "string",
+    "id": "integer",
+    "nozzle_diameter": "string",
+    "printer_model": "string",
+    "slicer_filament": "anyOf(string,null)",
+    "slicer_filament_name": "anyOf(string,null)",
+    "spool_id": "integer"
+   },
+   "required": [
+    "created_at",
+    "id",
+    "printer_model",
+    "spool_id"
    ]
   },
   "SpoolKProfileBase": {

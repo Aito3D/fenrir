@@ -36,6 +36,9 @@ TODAY = date(2026, 9, 12)
 NOW = datetime(2026, 9, 12, 10, 0, 0)
 
 
+_UNSET = object()
+
+
 class FakeHeimdall:
     """In-memory Heimdall: replays idempotency keys, mutable statuses."""
 
@@ -45,6 +48,15 @@ class FakeHeimdall:
         self.calls: list[tuple] = []
         self.fail_with: Exception | None = None
         self._n = 0
+        # T-012: set to `None`/a garbage string to make `_confirm` (below)
+        # hand back an absent/malformed `expires_at` on the NEXT create or
+        # patch, instead of the auto-computed realistic one.
+        self.expires_at_override: object = _UNSET
+        # T-011: a Heimdall that answers 2xx to a PATCH but does not actually
+        # apply the requested amount/expiry — a clamp, a stale read, or the
+        # write simply not sticking. `patch_link` still returns the (now
+        # stale) view, exactly like a real 200 would.
+        self.stubborn: bool = False
 
     def _view(self, d):
         return LinkView(
@@ -54,8 +66,22 @@ class FakeHeimdall:
             currency="XPF",
             reference=d["reference"],
             url=f"https://osb/pay/{d['id']}",
-            expires_at=None,
+            expires_at=d.get("expires_at"),
         )
+
+    def _confirm(self, expires_in_days_value):
+        """The absolute day Heimdall would confirm for a request carrying
+        `expires_in_days_value` — TODAY is this fixture's request-time
+        reference throughout the file (every reservation is created with
+        `now=NOW`, whose `.date()` is TODAY, and every patch below uses
+        `today=TODAY`), so this mirrors a real Heimdall reply without each
+        test needing to compute it by hand. `expires_at_override` lets a
+        T-012 test force the NEXT create/patch to confirm an absent
+        (`None`) or malformed (any unparseable string) expiry instead."""
+        if self.expires_at_override is not _UNSET:
+            override, self.expires_at_override = self.expires_at_override, _UNSET
+            return override
+        return f"{(TODAY + timedelta(days=expires_in_days_value)).isoformat()}T23:59:59.999Z"
 
     async def create_link(self, db, *, idempotency_key, reference, amount, expires_in_days):
         self.calls.append(("create", idempotency_key, reference, amount, expires_in_days))
@@ -64,7 +90,13 @@ class FakeHeimdall:
         if idempotency_key in self.by_key:
             return self._view(self.links[self.by_key[idempotency_key]])
         self._n += 1
-        d = {"id": f"L{self._n}", "status": "pending", "amount": amount, "reference": reference}
+        d = {
+            "id": f"L{self._n}",
+            "status": "pending",
+            "amount": amount,
+            "reference": reference,
+            "expires_at": self._confirm(expires_in_days),
+        }
         self.links[d["id"]] = d
         self.by_key[idempotency_key] = d["id"]
         return self._view(d)
@@ -87,8 +119,12 @@ class FakeHeimdall:
         d = self._get(heimdall_id)
         if d["status"] != "pending":
             raise HeimdallConflict("not pending", "conflict")
+        if self.stubborn:
+            return self._view(d)  # 2xx, but nothing about `d` actually changed
         if amount is not None:
             d["amount"] = amount
+        if expires_in_days is not None:
+            d["expires_at"] = self._confirm(expires_in_days)
         return self._view(d)
 
     async def cancel_link(self, db, heimdall_id):
@@ -251,6 +287,112 @@ def test_expires_in_days_is_at_least_one():
     assert expires_in_days("2026-09-01", TODAY) == 1
 
 
+def _view(expires_at):
+    return LinkView(id="L1", status="pending", amount=1, currency="XPF", reference="R", url=None, expires_at=expires_at)
+
+
+@pytest.mark.parametrize(
+    "expires_at, expected",
+    [
+        # A plain UTC timestamp: take the calendar day verbatim.
+        ("2026-10-01T23:59:59.999Z", "2026-10-01"),
+        # A non-UTC offset must be converted to UTC before truncating to a
+        # day — this is the exact bug the model comment warns against: a
+        # link that closes at 23:59:59.999 UTC on the 1st must never read
+        # as the 2nd (or the 30th) because the offset was ignored.
+        ("2026-10-01T23:59:59.999-10:00", "2026-10-02"),
+        ("2026-10-01T00:00:00.000+02:00", "2026-09-30"),
+        # A naive (no offset) timestamp is assumed already UTC, not
+        # reinterpreted in a local zone.
+        ("2026-10-01T23:59:59.999", "2026-10-01"),
+    ],
+)
+def test_confirmed_expiry_takes_the_utc_calendar_day(expires_at, expected):
+    assert svc._confirmed_expiry(_view(expires_at), fallback="1999-01-01") == expected
+
+
+@pytest.mark.parametrize("expires_at", [None, "", "not-a-timestamp", "2026-13-99T00:00:00Z"])
+def test_confirmed_expiry_falls_back_when_absent_or_malformed(expires_at):
+    """Heimdall's `expires_at` is optional and unvalidated on our side; a
+    missing or garbled value must never raise (the column is NOT NULL) —
+    the conservative choice is the date we actually asked for."""
+    assert svc._confirmed_expiry(_view(expires_at), fallback="2026-09-27") == "2026-09-27"
+
+
+def test_fields_match_tolerates_a_clamped_expiry():
+    """A quote wanting more than 365 days out can never produce a row whose
+    `expires_on` equals its raw date (Heimdall's `expires_in_days` caps at
+    365) — comparing raw dates would mismatch on every single pass and the
+    drift branch would re-PATCH forever. Comparing against what Heimdall
+    would confirm TODAY for that request recognises a link already sitting
+    at the ceiling as matching."""
+    wanted = Wanted("DEV-1", 12500, "2033-01-01")
+    at_ceiling = AitoPaymentLink(
+        project_id=1,
+        idempotency_key="k",
+        reference="DEV-1",
+        amount=12500,
+        expires_on=(TODAY + timedelta(days=365)).isoformat(),
+        status="pending",
+    )
+    assert svc._fields_match(at_ceiling, wanted, TODAY) is True
+    one_day_short = AitoPaymentLink(
+        project_id=1,
+        idempotency_key="k",
+        reference="DEV-1",
+        amount=12500,
+        expires_on=(TODAY + timedelta(days=364)).isoformat(),
+        status="pending",
+    )
+    assert svc._fields_match(one_day_short, wanted, TODAY) is False
+    # The ordinary, unclamped case behaves exactly as a raw comparison would.
+    matching = Wanted("DEV-1", 12500, "2026-09-27")
+    row = AitoPaymentLink(
+        project_id=1, idempotency_key="k", reference="DEV-1", amount=12500, expires_on="2026-09-27", status="pending"
+    )
+    assert svc._fields_match(row, matching, TODAY) is True
+
+
+def test_fields_match_freezes_the_clamp_ceiling_at_the_last_checked_day():
+    """T-011's follow-on: once a row has actually been synced, the ceiling a
+    clamped expiry is compared against is frozen at `row.checked_at`'s day,
+    not the live `today` — so a link that settled at the ceiling ten days
+    ago still reads as matching today, instead of falling ten days behind a
+    ceiling that has kept advancing under it."""
+    wanted = Wanted("DEV-1", 12500, "2033-01-01")
+    checked_on = TODAY - timedelta(days=10)
+    row = AitoPaymentLink(
+        project_id=1,
+        idempotency_key="k",
+        reference="DEV-1",
+        amount=12500,
+        expires_on=(checked_on + timedelta(days=365)).isoformat(),
+        status="pending",
+        checked_at=datetime.combine(checked_on, datetime.min.time()),
+    )
+    # Comparing against TODAY's live ceiling would demand TODAY + 365 — ten
+    # days later than what the row actually holds — and read as a mismatch.
+    assert svc._fields_match(row, wanted, TODAY) is True
+
+
+def test_link_view_minted_reflects_heimdall_id():
+    """T-010 continuation: `minted` is the one field that tells a reservation
+    (heimdall_id still NULL) apart from an adopted link — see the follow-ups
+    strip's `linkExpiring` rule, which reads it instead of `url`."""
+    reservation = AitoPaymentLink(
+        project_id=1,
+        idempotency_key="aito:1:1",
+        reference="DEV-1",
+        amount=12500,
+        expires_on="2026-09-27",
+        status="pending",
+    )
+    assert svc.link_view(reservation).minted is False
+
+    reservation.heimdall_id = "L1"
+    assert svc.link_view(reservation).minted is True
+
+
 # --- transition table ---------------------------------------------------------
 
 
@@ -283,6 +425,126 @@ async def test_a_reservation_is_retried_with_the_same_key(db_session, fake):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value,reason",
+    [
+        ("quote_status", "declined", "declined"),
+        ("quote_invoiced", True, "invoiced"),
+        ("status", "deleted", "trashed"),
+    ],
+)
+async def test_a_reservation_for_a_dead_quote_completes_quietly_then_cancels(db_session, fake, field, value, reason):
+    """The reservation's POST may already have reached Heimdall before the
+    crash that left `heimdall_id` uncommitted. If the quote died in the
+    meantime (declined, invoiced, trashed) while the reservation sat there,
+    completing it under its ORIGINAL terms must not hand out a live,
+    payable link for it — so it is completed quietly (no
+    `payment_link.created`) and cancelled in the very same pass instead."""
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.heimdall_id is None  # still a reservation
+    fake.fail_with = None
+    setattr(p, field, value)
+    await db_session.commit()
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    (r,) = await _rows(db_session, p.id)
+    assert r.status == "cancelled" and r.heimdall_id == "L1"
+    assert [c[0] for c in fake.calls if c[0] in ("create", "cancel")][-2:] == ["create", "cancel"]
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" not in kinds
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.cancelled")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == reason
+
+
+@pytest.mark.asyncio
+async def test_a_reservation_whose_quote_was_renumbered_completes_quietly_then_replaces(db_session, fake):
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    p.quote_number = "DEV-2026-9999"
+    await db_session.commit()
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    rows = await _rows(db_session, p.id)
+    assert [r.reference for r in rows] == ["DEV-2026-1234", "DEV-2026-9999"]
+    assert rows[0].status == "cancelled" and rows[0].superseded_at is not None
+    assert rows[1].heimdall_id == "L2" and rows[1].status == "pending"
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" not in kinds
+    assert kinds[-1:] == ["payment_link.replaced"]
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.replaced")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == "renumbered"
+
+
+@pytest.mark.asyncio
+async def test_a_reservation_whose_amount_moved_completes_quietly_then_replaces(db_session, fake):
+    p = await _project(db_session)
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    p.quote_total = 20000.0
+    await db_session.commit()
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    rows = await _rows(db_session, p.id)
+    assert rows[0].status == "cancelled" and rows[0].amount == 12500
+    assert rows[1].amount == 20000 and rows[1].status == "pending"
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" not in kinds
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.replaced")
+        )
+    ).scalar_one()
+    assert ev.detail["reason"] == "repriced"
+
+
+@pytest.mark.asyncio
+async def test_a_stale_reservation_that_turns_out_paid_is_credited_not_replaced(db_session, fake, monkeypatch):
+    """The quiet complete can itself discover the client already paid
+    between the original POST and this pass's cancel attempt — money must
+    win over the replacement, exactly like the already-completed-row case
+    (`test_cancel_conflict_with_a_paid_link_credits_instead_of_cancelling`)."""
+    p = await _project(db_session)
+    pid = p.id
+    fake.fail_with = HeimdallUpstreamError("down")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = None
+    p.quote_number = "DEV-2026-9999"
+    await db_session.commit()
+
+    real_create = fake.create_link
+
+    async def create_then_pay(db, **kw):
+        view = await real_create(db, **kw)
+        fake.set_status(view.id, "paid")  # paid at OSB right as we complete it
+        return view
+
+    monkeypatch.setattr(heimdall_service, "create_link", create_then_pay)
+    later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    (r,) = await _rows(db_session, pid)
+    assert r.status == "paid" and r.paid_at == later
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" in kinds
+    assert "payment_link.created" not in kinds and "payment_link.replaced" not in kinds
+    accepted = await db_session.get(AitoProject, pid)
+    assert accepted.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
 async def test_pending_and_equal_does_nothing(db_session, fake):
     p = await _project(db_session)
     await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
@@ -302,6 +564,177 @@ async def test_amount_or_expiry_change_patches(db_session, fake):
     assert fake.calls[-1] == ("patch", "L1", 13000, 18)
     (r,) = await _rows(db_session, p.id)
     assert r.amount == 13000 and r.expires_on == "2026-09-30"
+
+
+@pytest.mark.asyncio
+async def test_create_stores_the_confirmed_expiry_not_the_raw_quote_date(db_session, fake):
+    """T-012, auditor's own example: a quote expiring far enough out that
+    Heimdall's 1-365 day cap bites (12500 XPF, expiring 2030-01-01 — over
+    three years out) must never leave `expires_on` reading a date the link
+    will never actually reach."""
+    p = await _project(db_session, quote_expiry_date="2030-01-01")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    assert fake.calls == [("create", f"aito:{p.id}:1", "DEV-2026-1234", 12500, 365)]
+    (r,) = await _rows(db_session, p.id)
+    assert r.expires_on == (TODAY + timedelta(days=365)).isoformat()
+    assert r.expires_on != "2030-01-01"
+
+
+@pytest.mark.asyncio
+async def test_patch_stores_the_confirmed_expiry_not_the_wanted_date(db_session, fake):
+    """Same bug, reached through the drift/patch branch (where T-012's
+    evidence traced the literal overwrite): once the quote's expiry moves
+    beyond Heimdall's ceiling, the row must record what Heimdall actually
+    confirmed, not the date we asked for — and a second pass on the same
+    day must be stable (no immediate re-PATCH loop)."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_expiry_date = "2033-01-01"
+    await db_session.commit()
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    assert fake.calls[-1] == ("patch", "L1", None, 365)
+    (r,) = await _rows(db_session, p.id)
+    assert r.expires_on == (TODAY + timedelta(days=365)).isoformat()
+    assert r.expires_on != "2033-01-01"
+
+    calls_before = len(fake.calls)
+    p = await db_session.get(AitoProject, p.id)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    assert len(fake.calls) == calls_before, "already at the confirmed ceiling: no same-day re-patch"
+
+
+@pytest.mark.asyncio
+async def test_permanently_clamped_expiry_settles_instead_of_repatching_daily(db_session, fake):
+    """T-011's follow-on to T-012's own comment: the previous fix stopped the
+    every-tick re-PATCH for a clamped quote, but the ceiling it compared
+    against (`today + 365`) still advances one calendar day per day, so a
+    permanently-clamped link kept re-mismatching (and re-PATCHing) about
+    once every 24h forever. Freezing the comparison's reference day at
+    `row.checked_at` — the day the row was last actually synced — instead of
+    the live `today` stops that residual drift without weakening detection
+    of a real expiry change."""
+    p = await _project(db_session, quote_expiry_date="2033-01-01")
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.expires_on == (TODAY + timedelta(days=365)).isoformat()
+
+    calls_before = len(fake.calls)
+    # A day later: the naive `today`-based ceiling would have advanced by a
+    # day and mismatched again. It must not, now.
+    p = await db_session.get(AitoProject, p.id)
+    await reconcile_project(
+        db_session, p, pct=0, validity_days=15, today=TODAY + timedelta(days=1), now=NOW + timedelta(days=1)
+    )
+    assert len(fake.calls) == calls_before, "a permanently-clamped link must not re-patch a day later"
+
+    # A genuine expiry change — now well inside Heimdall's cap — is still
+    # caught immediately.
+    p = await db_session.get(AitoProject, p.id)
+    p.quote_expiry_date = "2026-10-15"
+    await db_session.commit()
+    await reconcile_project(
+        db_session, p, pct=0, validity_days=15, today=TODAY + timedelta(days=1), now=NOW + timedelta(days=1)
+    )
+    assert len(fake.calls) > calls_before, "a real expiry change must still be detected"
+    (r,) = await _rows(db_session, p.id)
+    # `fake._confirm` (this fixture) always answers off the module-level
+    # TODAY, not the `today` this test advanced by a day — mirror that math
+    # rather than assert a date the fixture would never actually produce.
+    expected = (TODAY + timedelta(days=expires_in_days("2026-10-15", TODAY + timedelta(days=1)))).isoformat()
+    assert r.expires_on == expected
+    assert r.expires_on != (TODAY + timedelta(days=365)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_patch_that_never_converges_backs_off_instead_of_looping_forever(db_session, fake):
+    """T-011, the auditor's exact scenario: Heimdall answers 200 to the PATCH
+    but the confirmed link still doesn't reflect the requested amount
+    (clamped server-side, a stale read, or the write simply not sticking).
+    Blindly trusting the 2xx — the old behavior, where `_adopt` unconditionally
+    reset `sync_failures`/`sync_error` — re-sent the identical PATCH forever
+    with no visible error and no backoff. Four passes, an hour apart, must
+    fail four times, each sending the SAME PATCH, with the row showing the
+    failure and Heimdall's TRUE (unconverged) amount — never what was asked
+    for. A fifth pass shortly after the fourth must be skipped: the backoff
+    this failure count now carries actually engages."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_total = 20000.0
+    await db_session.commit()
+    fake.stubborn = True
+    for i in range(4):
+        p = await db_session.get(AitoProject, p.id)
+        await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=i))
+    patch_calls = [c for c in fake.calls if c[0] == "patch"]
+    assert patch_calls == [("patch", "L1", 20000, None)] * 4
+    (r,) = await _rows(db_session, p.id)
+    assert r.amount == 12500, "Heimdall's confirmed truth, never the amount we merely asked for"
+    assert r.sync_failures == 4
+    assert r.sync_error and "20000" in r.sync_error
+    assert "payment_link.updated" not in await _kinds(db_session, p.id)
+
+    # Backoff for 4 failures is min(4, 6) ticks == 20 minutes: a pass 5
+    # minutes after the 4th must be skipped, not send a 5th identical PATCH.
+    p = await db_session.get(AitoProject, p.id)
+    await reconcile_project(
+        db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=3, minutes=5)
+    )
+    assert len([c for c in fake.calls if c[0] == "patch"]) == 4, "still inside its backoff window"
+
+
+@pytest.mark.asyncio
+async def test_patch_that_converges_records_the_change_with_no_error(db_session, fake):
+    """The success-path counterpart: a PATCH that Heimdall actually applies
+    must both clear any prior sync state AND tell the project's story — the
+    matching blind spot the auditor's `04-amount-drift` golden scenario
+    exposed (`events: []` even though the amount changed and a client who
+    already saw the old figure was never told anything moved)."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_total = 13000.0
+    await db_session.commit()
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.amount == 13000 and r.sync_error is None and r.sync_failures == 0
+    kinds = await _kinds(db_session, p.id)
+    assert kinds[-1] == "payment_link.updated"
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.updated")
+        )
+    ).scalar_one()
+    assert ev.detail == {
+        "reference": "DEV-2026-1234",
+        "amount": 13000,
+        "expires_on": "2026-09-27",
+        "previous_amount": 12500,
+        "previous_expires_on": "2026-09-27",
+        "heimdall_id": "L1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_absent_confirmed_expiry_falls_back_to_the_wanted_date_on_patch(db_session, fake):
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_expiry_date = "2026-09-30"
+    await db_session.commit()
+    fake.expires_at_override = None  # Heimdall's reply omits `expires_at`
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.expires_on == "2026-09-30"
+
+
+@pytest.mark.asyncio
+async def test_malformed_confirmed_expiry_falls_back_to_the_wanted_date_on_patch(db_session, fake):
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_expiry_date = "2026-09-30"
+    await db_session.commit()
+    fake.expires_at_override = "not-a-real-timestamp"
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.expires_on == "2026-09-30" and r.sync_error is None
 
 
 @pytest.mark.asyncio
@@ -746,7 +1179,7 @@ def _row(**fields) -> AitoPaymentLink:
     ],
 )
 def test_needs_action_mirrors_the_transition_table(row, wanted, expected):
-    assert svc.needs_action(row, wanted) is expected
+    assert svc.needs_action(row, wanted, TODAY) is expected
 
 
 @pytest.mark.asyncio

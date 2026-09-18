@@ -538,6 +538,7 @@ export default {
       trackingRegenerated: '追跡リンクを再生成しました',
       paymentLinkCreated: '決済リンクを作成しました',
       paymentLinkReplaced: '決済リンクを差し替えました',
+      paymentLinkUpdated: '決済リンクを更新しました',
       paymentLinkPaid: 'オンラインで支払われました',
       paymentLinkCancelled: '決済リンクをキャンセルしました',
       noteAdded: 'メモを追加しました',

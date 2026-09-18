@@ -73,6 +73,7 @@ CREATE TABLE aito_projects (
 	invoice_checked_at DATETIME, 
 	quote_expiry_date VARCHAR(10), 
 	retainer_paid_total FLOAT, 
+	customer_credit_total FLOAT, 
 	flag VARCHAR(16), 
 	due_date VARCHAR(10), 
 	client_contacted_at DATETIME, 
@@ -529,6 +530,28 @@ CREATE TABLE local_presets (
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
 );
+CREATE TABLE location_ha_sensors (
+	id INTEGER NOT NULL, 
+	location_id INTEGER NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	entity_id VARCHAR(255) NOT NULL, 
+	kind VARCHAR(16) NOT NULL, 
+	device_class VARCHAR(32), 
+	unit VARCHAR(16), 
+	alert_state VARCHAR(8), 
+	alert_above FLOAT, 
+	alert_below FLOAT, 
+	notify_on_alert BOOLEAN DEFAULT '0' NOT NULL, 
+	show_on_card BOOLEAN DEFAULT '1' NOT NULL, 
+	sort_order INTEGER DEFAULT '0' NOT NULL, 
+	last_state VARCHAR(64), 
+	last_changed DATETIME, 
+	last_checked DATETIME, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(location_id) REFERENCES locations (id) ON DELETE CASCADE
+);
 CREATE TABLE locations (
 	id INTEGER NOT NULL, 
 	name VARCHAR(255) NOT NULL, 
@@ -628,6 +651,7 @@ CREATE TABLE notification_providers (
 	on_ams_ht_humidity_high BOOLEAN, 
 	on_ams_ht_temperature_high BOOLEAN, 
 	on_ha_sensor_alert BOOLEAN, 
+	on_location_ha_sensor_alert BOOLEAN, 
 	on_plate_not_empty BOOLEAN, 
 	on_plate_clear_required BOOLEAN, 
 	on_bed_cooled BOOLEAN, 
@@ -1290,6 +1314,18 @@ CREATE TABLE spool_catalog (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
 );
+CREATE TABLE spool_filament_preset (
+	id INTEGER NOT NULL, 
+	spool_id INTEGER NOT NULL, 
+	printer_model VARCHAR(50) NOT NULL, 
+	nozzle_diameter VARCHAR(10) NOT NULL, 
+	slicer_filament VARCHAR(128), 
+	slicer_filament_name VARCHAR(255), 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (spool_id, printer_model, nozzle_diameter), 
+	FOREIGN KEY(spool_id) REFERENCES spool (id) ON DELETE CASCADE
+);
 CREATE TABLE spool_k_profile (
 	id INTEGER NOT NULL, 
 	spool_id INTEGER NOT NULL, 
@@ -1353,6 +1389,17 @@ CREATE TABLE spoolbuddy_devices (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
+);
+CREATE TABLE spoolman_filament_preset (
+	id INTEGER NOT NULL, 
+	spoolman_spool_id INTEGER NOT NULL, 
+	printer_model VARCHAR(50) NOT NULL, 
+	nozzle_diameter VARCHAR(10) NOT NULL, 
+	slicer_filament VARCHAR(128), 
+	slicer_filament_name VARCHAR(255), 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (spoolman_spool_id, printer_model, nozzle_diameter)
 );
 CREATE TABLE spoolman_k_profile (
 	id INTEGER NOT NULL, 

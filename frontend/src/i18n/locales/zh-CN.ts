@@ -538,6 +538,7 @@ export default {
       trackingRegenerated: '重新生成了跟踪链接',
       paymentLinkCreated: '已创建支付链接',
       paymentLinkReplaced: '已更换支付链接',
+      paymentLinkUpdated: '已更新支付链接',
       paymentLinkPaid: '已在线支付',
       paymentLinkCancelled: '已取消支付链接',
       noteAdded: '添加了备注',

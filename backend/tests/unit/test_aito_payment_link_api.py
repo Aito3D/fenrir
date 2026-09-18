@@ -69,6 +69,7 @@ async def test_board_and_detail_carry_the_current_link(async_client, db_session)
         "expires_on": "2026-09-27",
         "paid_at": None,
         "sync_error": None,
+        "minted": True,
     }
     assert card["quote_expiry_date"] is None and card["retainer_paid_total"] is None
     # No GET /api/v1/aito/{project_id} exists in this codebase — the detail

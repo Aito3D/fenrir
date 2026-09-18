@@ -4325,6 +4325,9 @@ export interface AitoPaymentLink {
   paid_at: string | null;
   /** Last Heimdall failure for this link, or null. */
   sync_error: string | null;
+  /** False = a reservation whose Heimdall create has not (yet) succeeded;
+   *  there is nothing to pay. */
+  minted: boolean;
 }
 
 export interface AitoTrackingPayment {

@@ -538,6 +538,7 @@ export default {
       trackingRegenerated: 'regenerou o link de acompanhamento',
       paymentLinkCreated: 'Link de pagamento criado',
       paymentLinkReplaced: 'Link de pagamento substituído',
+      paymentLinkUpdated: 'Link de pagamento atualizado',
       paymentLinkPaid: 'Pago online',
       paymentLinkCancelled: 'Link de pagamento cancelado',
       noteAdded: 'adicionou uma nota',

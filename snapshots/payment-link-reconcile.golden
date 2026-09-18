@@ -1,0 +1,1799 @@
+### exit: 0
+### stdout:
+[
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.created",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:1",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "01-first-mint",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "02-steady-state",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-09-30",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.created",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":14}",
+    "idempotency_key": "aito:1:1",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-09-30",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "03-complete-reservation",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 9000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"amount\":9000}",
+    "idempotency_key": null,
+    "method": "PATCH",
+    "path": "/api/v1/payments/hd-old"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 9000,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "04-amount-drift",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-11-30",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"expires_in_days\":75}",
+    "idempotency_key": null,
+    "method": "PATCH",
+    "path": "/api/v1/payments/hd-old"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-11-30",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "05-expiry-drift",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reason": "renumbered",
+     "reference": "DEV-000999"
+    },
+    "kind": "payment_link.replaced",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   },
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000999\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:2",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": true,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:2",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000999",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "06-reference-drift",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 3750,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.created",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":3750,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:1",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 3750,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "07-deposit-30pct",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 10000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.created",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":10000,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:1",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 10000,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "08-retainer-partial",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [
+   {
+    "project_id": 1,
+    "status": "accepted"
+   }
+  ],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "heimdall_id": "hd-old",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.paid",
+    "project_id": 1
+   },
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "reference": "DEV-000123",
+     "source": "payment_link"
+    },
+    "kind": "quote.accepted",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": "2026-09-16 12:00:00",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "paid",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [
+   {
+    "amount": 12500,
+    "client_name": null,
+    "currency": "XPF",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "source": "payment_link"
+   }
+  ],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": true,
+    "quote_status": "accepted"
+   }
+  ],
+  "scenario": "09-poll-finds-paid",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": "2026-09-16 12:00:00",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "paid",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "10-already-paid",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.replaced",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:2",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "expired",
+    "superseded": true,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:2",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "11-dead-expired-still-wanted",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.replaced",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:2",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": true,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:2",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "11-dead-cancelled-still-wanted",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.replaced",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:2",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "failed",
+    "superseded": true,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:2",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "11-dead-failed-still-wanted",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reason": "lost",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.replaced",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   },
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:2",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "failed",
+    "superseded": true,
+    "sync_error": "Heimdall HTTP 404 not_found: gone",
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:2",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "12-lost-link-replaced",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "declined",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "declined"
+   }
+  ],
+  "scenario": "13-lost-link-unwanted",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "declined",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "declined"
+   }
+  ],
+  "scenario": "14-cancel-declined",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "expired",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "expired"
+   }
+  ],
+  "scenario": "14-cancel-expired-quote",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "invoiced",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "14-cancel-invoiced",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "retainer",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "14-cancel-retainer-covers",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "trashed",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "14-cancel-trashed",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "heimdall_id": "hd-old",
+     "reason": "nothing_to_pay",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.cancelled",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "cancelled",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "14-cancel-total-zeroed",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": "Heimdall HTTP 500 internal: POS down",
+    "sync_failures": 1,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "15-upstream-500",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": "earlier failure",
+    "sync_failures": 2,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "16-backoff-skips",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 9000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"amount\":9000}",
+    "idempotency_key": null,
+    "method": "PATCH",
+    "path": "/api/v1/payments/hd-old"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 9000,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "16b-force-bypasses-backoff",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:2:1",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   },
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": null,
+    "key": "aito:2:1",
+    "paid_at": null,
+    "project_id": 2,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": null
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   },
+   {
+    "id": 2,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "17-rate-limited",
+  "throttled": true,
+  "visited": 2
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": null,
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "18-changes-only-skips-steady",
+  "throttled": false,
+  "visited": 0
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 9000,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-old",
+     "previous_amount": 12500,
+     "previous_expires_on": "2026-10-01",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.updated",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"amount\":9000}",
+    "idempotency_key": null,
+    "method": "PATCH",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 9000,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "18b-changes-only-visits-drift",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "expires_on": "2026-10-01",
+     "heimdall_id": "hd-new-1",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.created",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
+    "idempotency_key": "aito:1:1",
+    "method": "POST",
+    "path": "/api/v1/payments"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-new-1"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-new-1",
+    "key": "aito:1:1",
+    "paid_at": null,
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "pending",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc-1"
+   }
+  ],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   },
+   {
+    "id": 2,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "19-only-project-id",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [],
+  "links": [],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "20-unmanaged-skipped",
+  "throttled": false,
+  "visited": 0
+ },
+ {
+  "books_pushes": [],
+  "events": [],
+  "heimdall_requests": [],
+  "links": [],
+  "notifications": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "21-no-quote-number",
+  "throttled": false,
+  "visited": 0
+ },
+ {
+  "books_pushes": [
+   {
+    "project_id": 1,
+    "status": "accepted"
+   }
+  ],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "heimdall_id": "hd-old",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.paid",
+    "project_id": 1
+   },
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "reference": "DEV-000123",
+     "source": "payment_link"
+    },
+    "kind": "quote.accepted",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "POST",
+    "path": "/api/v1/payments/hd-old/cancel"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": "2026-09-16 12:00:00",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "paid",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [
+   {
+    "amount": 12500,
+    "client_name": null,
+    "currency": "XPF",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "source": "payment_link"
+   }
+  ],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": true,
+    "quote_status": "accepted"
+   }
+  ],
+  "scenario": "22-cancel-races-payment",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "books_pushes": [
+   {
+    "project_id": 1,
+    "status": "accepted"
+   }
+  ],
+  "events": [
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "heimdall_id": "hd-old",
+     "reference": "DEV-000123"
+    },
+    "kind": "payment_link.paid",
+    "project_id": 1
+   },
+   {
+    "actor_class": "system",
+    "detail": {
+     "amount": 12500,
+     "reference": "DEV-000123",
+     "source": "payment_link"
+    },
+    "kind": "quote.accepted",
+    "project_id": 1
+   }
+  ],
+  "heimdall_requests": [
+   {
+    "body": "{\"amount\":9000}",
+    "idempotency_key": null,
+    "method": "PATCH",
+    "path": "/api/v1/payments/hd-old"
+   },
+   {
+    "body": "",
+    "idempotency_key": null,
+    "method": "GET",
+    "path": "/api/v1/payments/hd-old"
+   }
+  ],
+  "links": [
+   {
+    "amount": 12500,
+    "checked_at": "2026-09-16 12:00:00",
+    "expires_on": "2026-10-01",
+    "heimdall_id": "hd-old",
+    "key": "aito:1:1",
+    "paid_at": "2026-09-16 12:00:00",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "status": "paid",
+    "superseded": false,
+    "sync_error": null,
+    "sync_failures": 0,
+    "url": "https://secure.osb.pf/pay/abc"
+   }
+  ],
+  "notifications": [
+   {
+    "amount": 12500,
+    "client_name": null,
+    "currency": "XPF",
+    "project_id": 1,
+    "reference": "DEV-000123",
+    "source": "payment_link"
+   }
+  ],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": true,
+    "quote_status": "accepted"
+   }
+  ],
+  "scenario": "23-patch-races-payment",
+  "throttled": false,
+  "visited": 1
+ },
+ {
+  "get_count": 40,
+  "heimdall_request_count": 40,
+  "max_polls_per_tick": 40,
+  "post_count": 0,
+  "project_count": 45,
+  "scenario": "24-poll-budget",
+  "visited": 45
+ },
+ {
+  "events": [],
+  "heimdall_requests": [],
+  "links": [],
+  "projects": [
+   {
+    "id": 1,
+    "quote_accepted": false,
+    "quote_status": "sent"
+   }
+  ],
+  "scenario": "25-not-configured",
+  "visited": 0
+ }
+]
+
+### stderr:
+

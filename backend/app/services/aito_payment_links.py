@@ -128,11 +128,73 @@ def expires_in_days(expires_on: str, today: date) -> int:
     return max(1, min(365, days))
 
 
-def _fields_match(row: AitoPaymentLink, wanted: Wanted) -> bool:
-    return row.amount == wanted.amount and row.expires_on == wanted.expires_on
+def _confirmed_expiry(view: LinkView, fallback: str) -> str:
+    """The calendar day (UTC) `view.expires_at` confirms the link actually
+    closes on, or `fallback` when Heimdall omitted the field or returned
+    something this cannot parse.
+
+    Heimdall closes a link at 23:59:59.999 UTC on `expires_at`'s day (see
+    the `expires_on` comment in models/aito_payment_link.py), so the UTC
+    calendar date is taken verbatim — never shifted to a local zone, which
+    would move the boundary by hours depending on where this process
+    happens to run. `expires_on` is `String(10) NOT NULL`, and this feeds
+    the reconciler's own drift comparison (`_fields_match`), so a missing
+    or malformed value must never raise or produce something unparseable:
+    falling back to `fallback` (in practice, the day we asked Heimdall for)
+    is the conservative choice — it reproduces exactly what `expires_on`
+    held before this function existed, for the one case (an upstream that
+    omitted an optional field) that isn't actually new information."""
+    if not view.expires_at:
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(view.expires_at.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc)
+        return parsed.date().isoformat()
+    except (ValueError, TypeError):
+        return fallback
 
 
-def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
+def _fields_match(row: AitoPaymentLink, wanted: Wanted, today: date) -> bool:
+    """Does the row already satisfy `wanted`? `expires_on` is compared
+    against what Heimdall would confirm for `wanted.expires_on` as of a
+    REFERENCE day, not the raw quote date. `row.expires_on` stores
+    Heimdall's CONFIRMED expiry (see `_adopt`/`_confirmed_expiry`), which
+    `expires_in_days` clamps to 365 days out — a quote wanting more than
+    that can never produce a row whose `expires_on` equals its raw date, so
+    comparing raw dates would mismatch FOREVER and the drift branch below
+    would re-PATCH such a link on every single pass. Comparing against the
+    clamped target tolerates that: a link already sitting at Heimdall's
+    ceiling reads as matching.
+
+    The reference day is `row.checked_at`'s calendar day when the row has
+    one (T-011's follow-on to T-012's own comment here), never the live
+    `today` — that is what makes a clamped link stop being drift instead of
+    merely slowing its rate. `today` alone would still move the ceiling
+    forward by one day every day the quote stays clamped (`today + 365`),
+    so a permanently-clamped link would keep re-mismatching, and re-PATCHing,
+    about once per calendar day forever. `checked_at` is the day Heimdall
+    last actually confirmed something for this row, so once a clamped link
+    converges it is NOT touched again — `checked_at` stays put, the ceiling
+    computed from it stays put, and the comparison keeps agreeing with
+    itself indefinitely. A genuine change to `wanted.expires_on` is still
+    caught immediately: it changes the raw date being clamped, not the
+    reference day, so the recomputed target moves too UNLESS the change
+    still resolves to the same ceiling (extending an already-maxed-out quote
+    even further out) — and in that case there is truly nothing for
+    Heimdall to do, so that is correctly not drift either. `checked_at` is
+    only absent for a row nothing has adopted yet, which never reaches this
+    comparison with a NULL value in practice (see `reconcile_project`); the
+    fallback to `today` exists for the pure-function tests that build a
+    detached row by hand."""
+    if row.amount != wanted.amount:
+        return False
+    reference = row.checked_at.date() if row.checked_at is not None else today
+    target = reference + timedelta(days=expires_in_days(wanted.expires_on, reference))
+    return row.expires_on == target.isoformat()
+
+
+def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None, today: date) -> bool:
     """Would `reconcile_project` do anything for this pair? The §5.4 table
     read as a predicate, with no Heimdall call: the wake path uses it to
     visit only the projects whose link drifted from the quote (a total or
@@ -147,18 +209,33 @@ def needs_action(row: AitoPaymentLink | None, wanted: Wanted | None) -> bool:
     if row.status in _DEAD_STATUSES:
         return wanted is not None
     # pending
-    return wanted is None or row.reference != wanted.reference or not _fields_match(row, wanted)
+    return wanted is None or row.reference != wanted.reference or not _fields_match(row, wanted, today)
 
 
-def _adopt(row: AitoPaymentLink, view: LinkView, now: datetime) -> None:
+def _adopt(row: AitoPaymentLink, view: LinkView, now: datetime, *, expires_fallback: str | None = None) -> None:
+    """`expires_on` becomes the calendar day Heimdall's `expires_at`
+    confirms (`_confirmed_expiry`) — never the day we merely asked for
+    (see T-012). Falls back to `expires_fallback` when given, else the
+    row's own current value, when Heimdall omitted or garbled the field."""
     row.heimdall_id = view.id
     row.status = view.status
     row.amount = view.amount
     if view.url:
         row.url = view.url
+    row.expires_on = _confirmed_expiry(view, expires_fallback if expires_fallback is not None else row.expires_on)
     row.checked_at = now
     row.sync_error = None
     row.sync_failures = 0
+
+
+class PatchDidNotConverge(Exception):
+    """T-011: Heimdall answered the PATCH with 2xx, but the view it returned
+    still does not satisfy `wanted` once `_adopt` has recorded it (clamped
+    server-side, a stale read, or the write simply not sticking). Never
+    raised past `reconcile_project` — only ever fed to `_fail`, so the row
+    gets the same backoff and visible `sync_error` as any other Heimdall
+    failure, rather than looking healthy while re-sending an identical PATCH
+    every single tick forever."""
 
 
 def _fail(row: AitoPaymentLink, exc: Exception, now: datetime) -> None:
@@ -271,12 +348,19 @@ async def _complete(
     now: datetime,
     kind: str,
     extra_detail: dict | None = None,
+    record_event: bool = True,
 ) -> None:
     """POST the reservation. `expires_in_days` is computed from the
     reservation's OWN day (`row.created_at`), never `today`: a retry of an
     unfinished reservation on a later day must send the exact same body
     under the same idempotency key, or Heimdall sees a changed body and
-    answers 409 forever instead of replaying the first response."""
+    answers 409 forever instead of replaying the first response.
+
+    `record_event=False` lets a caller that is about to cancel this same
+    reservation right back (the quote it was for has moved on since the POST
+    was reserved) complete it WITHOUT telling the story it was ever offered
+    to the client — only the `payment_link.cancelled`/`.replaced` that
+    follows gets recorded."""
     view = await heimdall_service.create_link(
         db,
         idempotency_key=row.idempotency_key,
@@ -285,21 +369,22 @@ async def _complete(
         expires_in_days=expires_in_days(row.expires_on, row.created_at.date()),
     )
     _adopt(row, view, now)
-    await record(
-        db,
-        project.id,
-        kind,
-        actor_class="system",
-        subject_type="project",
-        subject_id=project.id,
-        detail={
-            "reference": row.reference,
-            "amount": row.amount,
-            "expires_on": row.expires_on,
-            "heimdall_id": row.heimdall_id,
-            **(extra_detail or {}),
-        },
-    )
+    if record_event:
+        await record(
+            db,
+            project.id,
+            kind,
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={
+                "reference": row.reference,
+                "amount": row.amount,
+                "expires_on": row.expires_on,
+                "heimdall_id": row.heimdall_id,
+                **(extra_detail or {}),
+            },
+        )
     await db.commit()
 
 
@@ -461,8 +546,48 @@ async def reconcile_project(
                 await _create(db, project, wanted, now=now, kind="payment_link.created")
             return
         if row.heimdall_id is None:
-            # A reservation: always complete it under its own key first.
-            await _complete(db, project, row, now=now, kind="payment_link.created")
+            # A reservation: the POST it stands for may already have reached
+            # Heimdall and only the commit that would have recorded
+            # `heimdall_id` failed — that is the whole reason reservations
+            # exist. So it is never abandoned outright. But it must not be
+            # completed BLINDLY under its original terms either: if the
+            # quote it was for has since been declined, invoiced or
+            # trashed, `_complete` would mint (or reveal) a live, payable
+            # link for a dead quote, if only for the instant before the
+            # next tick cancels it. Re-check `wanted` against what this
+            # reservation promised first.
+            if wanted is not None and row.reference == wanted.reference and row.amount == wanted.amount:
+                # Unchanged since the reservation was made: proceed exactly
+                # as before.
+                await _complete(db, project, row, now=now, kind="payment_link.created")
+                return
+            # Something moved on. Complete it anyway, under the SAME
+            # idempotency key, so a POST that already succeeded is replayed
+            # rather than a second link minted — but QUIETLY: the client was
+            # never actually offered this link, so no `payment_link.created`
+            # enters the story. Then cancel it immediately, in the same
+            # pass, so there is no tick where a live link for a dead or
+            # stale reservation is exposed to the panel.
+            await _complete(db, project, row, now=now, kind="payment_link.created", record_event=False)
+            if wanted is None:
+                await _cancel(
+                    db,
+                    project,
+                    row,
+                    now=now,
+                    reason=_cancel_reason(project, required_amount(project.quote_total, pct)),
+                )
+                return
+            # Still owed, just not what this reservation promised (a
+            # renumber or a repricing raced the crash that orphaned it):
+            # cancel it and mint a fresh one under the current terms, same
+            # as a renumber on an already-completed row.
+            reason = "renumbered" if row.reference != wanted.reference else "repriced"
+            if await _cancel(db, project, row, now=now, reason=reason, record_event=False):
+                return  # the client paid the stale reservation; nothing to replace
+            row.superseded_at = now
+            await db.commit()
+            await _create(db, project, wanted, now=now, kind="payment_link.replaced", extra_detail={"reason": reason})
             return
         if row.status == "paid":
             return
@@ -497,7 +622,7 @@ async def reconcile_project(
                 db, project, wanted, now=now, kind="payment_link.replaced", extra_detail={"reason": "renumbered"}
             )
             return
-        if not _fields_match(row, wanted):
+        if not _fields_match(row, wanted, today):
             try:
                 view = await heimdall_service.patch_link(
                     db,
@@ -507,9 +632,58 @@ async def reconcile_project(
                     if row.expires_on != wanted.expires_on
                     else None,
                 )
-                _adopt(row, view, now)
-                row.expires_on = wanted.expires_on
-                await db.commit()
+                # `_adopt` below unconditionally resets sync_failures/
+                # sync_error to a clean bill of health — save what they were
+                # BEFORE that, in case the patch turns out not to have
+                # converged and they need restoring (T-011).
+                prior_failures = row.sync_failures or 0
+                prior_amount, prior_expires_on = row.amount, row.expires_on
+                _adopt(row, view, now, expires_fallback=wanted.expires_on)
+                if _fields_match(row, wanted, today):
+                    # Converged: tell the story an amount or expiry change
+                    # actually reached the client-facing link (T-011 — this
+                    # used to be silent, e.g. `04-amount-drift`'s golden
+                    # scenario, `events: []`, on the success path too).
+                    await record(
+                        db,
+                        project.id,
+                        "payment_link.updated",
+                        actor_class="system",
+                        subject_type="project",
+                        subject_id=project.id,
+                        detail={
+                            "reference": row.reference,
+                            "amount": row.amount,
+                            "expires_on": row.expires_on,
+                            "previous_amount": prior_amount,
+                            "previous_expires_on": prior_expires_on,
+                            "heimdall_id": row.heimdall_id,
+                        },
+                    )
+                    await db.commit()
+                else:
+                    # Heimdall answered 2xx, but the view it confirmed still
+                    # doesn't satisfy `wanted` (clamped server-side, a stale
+                    # read, or the write simply didn't stick). Treating that
+                    # 2xx as success — the old behavior — left the row
+                    # looking perfectly healthy while re-sending the exact
+                    # same PATCH every single tick forever, spending
+                    # Heimdall's rate-limit budget for nothing. Restore the
+                    # failure count `_adopt` just zeroed and fail properly:
+                    # same backoff cap and visible `sync_error` as any other
+                    # persistent Heimdall failure, offering the operator the
+                    # panel's Retry instead of a silent, endless loop.
+                    row.sync_failures = prior_failures
+                    _fail(
+                        row,
+                        PatchDidNotConverge(
+                            f"Heimdall did not apply the requested change: wanted amount={wanted.amount} "
+                            f"expires_on={wanted.expires_on}, confirmed amount={row.amount} "
+                            f"expires_on={row.expires_on}"
+                        ),
+                        now,
+                    )
+                    await db.commit()
             except HeimdallConflict:
                 # The link left `pending` under us: adopt the truth. A
                 # patch racing a payment is credited right now instead of
@@ -647,7 +821,7 @@ async def _run_pass(
         drifted = {
             p.id
             for p in projects
-            if needs_action(have.get(p.id), wanted_link(p, pct=pct, validity_days=validity, today=today))
+            if needs_action(have.get(p.id), wanted_link(p, pct=pct, validity_days=validity, today=today), today)
         }
         project_ids = [pid for pid in project_ids if pid in drifted]
     visited = 0
@@ -716,11 +890,19 @@ async def _run_pass(
 
 
 def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
-    """The API shape of a ledger row; None for no row and for a reservation
-    that never completed (nothing to copy, nothing to pay)."""
+    """The API shape of a ledger row; None only for no row at all.
+
+    A reservation (`heimdall_id` still NULL — the create either never
+    reached Heimdall or its reply never got recorded) is NOT hidden: its
+    `url` is naturally None (never set while `heimdall_id` is None), so the
+    panel's own "is this payable" test (state pending/paid AND a url) already
+    keeps it from ever rendering Open/Copy buttons or being mistaken for a
+    live link. What DOES cross is `sync_error` — the one thing a reservation
+    stuck retrying a permanent Heimdall refusal needs to surface, since that
+    is otherwise invisible anywhere a human looks (see T-010)."""
     from backend.app.schemas.aito import AitoPaymentLinkView
 
-    if row is None or row.heimdall_id is None:
+    if row is None:
         return None
     return AitoPaymentLinkView(
         state=row.status if row.status in ("pending", "paid", "failed", "cancelled", "expired") else "pending",
@@ -730,4 +912,5 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
         expires_on=row.expires_on,
         paid_at=row.paid_at,
         sync_error=row.sync_error,
+        minted=row.heimdall_id is not None,
     )
