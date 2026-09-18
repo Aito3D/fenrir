@@ -5,6 +5,7 @@ import ipaddress
 import logging
 import re
 import time
+from collections.abc import Iterable
 from datetime import date, datetime, timezone
 from typing import Literal
 
@@ -1150,7 +1151,10 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
         and bool(request.headers.get("X-Forwarded-For"))
         and _peer_is_private(request)
     )
-    live = lambda calls: [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]  # noqa: E731
+
+    def live(calls: Iterable[float]) -> list[float]:
+        return [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]
+
     for bucket in (_track_rate_ip_calls, _track_rate_ip_misses, _track_rate_net_misses):
         if len(bucket) > _TRACK_RATE_SWEEP_ABOVE:
             for stale in [h for h, calls in bucket.items() if not live(calls)]:
@@ -1174,21 +1178,23 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     return host, now
 
 
+def _release_miss(buckets: dict[str, list[float]], key: str, stamp: float) -> None:
+    """Drop one reserved stamp from `buckets[key]`, and the key itself once its
+    bucket is empty — a released reservation leaves nothing behind for the
+    sweep to collect."""
+    bucket = buckets.get(key)
+    if bucket is None:
+        return
+    with contextlib.suppress(ValueError):
+        bucket.remove(stamp)
+    if not bucket:
+        del buckets[key]
+
+
 def _track_rate_hit(host: str, stamp: float) -> None:
     """Release the miss reserved at arrival: the code was real."""
-    bucket = _track_rate_ip_misses.get(host)
-    if bucket is not None:
-        with contextlib.suppress(ValueError):
-            bucket.remove(stamp)
-        if not bucket:
-            del _track_rate_ip_misses[host]
-    net = _track_rate_net_key(host)
-    net_bucket = _track_rate_net_misses.get(net)
-    if net_bucket is not None:
-        with contextlib.suppress(ValueError):
-            net_bucket.remove(stamp)
-        if not net_bucket:
-            del _track_rate_net_misses[net]
+    _release_miss(_track_rate_ip_misses, host, stamp)
+    _release_miss(_track_rate_net_misses, _track_rate_net_key(host), stamp)
 
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)

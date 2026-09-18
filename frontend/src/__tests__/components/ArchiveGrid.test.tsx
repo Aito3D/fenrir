@@ -108,3 +108,51 @@ describe('ArchiveGrid', () => {
     expect(grid?.children).toHaveLength(0);
   });
 });
+
+describe('ArchiveGrid reflow', () => {
+  // A restore takes a card out on the optimistic write and every card after
+  // it used to jump a slot on one frame. The grid now runs the camera wall's
+  // 2-D FLIP hook, which keys children by `data-flip-key`, and confines the
+  // stagger entrance to first paint so a later arrival gets the hook's rise
+  // and not both.
+  it('keys every cell for the FLIP hook', () => {
+    const { container } = render(
+      <ArchiveGrid projects={[card({ id: 1 }), card({ id: 2 })]} renderCard={(p) => <div>{p.id}</div>} />,
+    );
+    const grid = container.firstElementChild!.firstElementChild!;
+    expect(Array.from(grid.children).map((cell) => cell.getAttribute('data-flip-key'))).toEqual(['1', '2']);
+  });
+
+  it('gives the stagger entrance to first-paint cards only; a later arrival is the hook\'s', () => {
+    const { container, rerender } = render(
+      <ArchiveGrid projects={[card({ id: 1 }), card({ id: 2 })]} renderCard={(p) => <div>{p.id}</div>} />,
+    );
+    const grid = container.firstElementChild!.firstElementChild!;
+    expect(grid.children[0]).toHaveClass('animate-rise-lg');
+    expect(grid.children[1]).toHaveClass('animate-rise-lg');
+
+    rerender(
+      <ArchiveGrid
+        projects={[card({ id: 3 }), card({ id: 1 }), card({ id: 2 })]}
+        renderCard={(p) => <div>{p.id}</div>}
+      />,
+    );
+    expect(grid.children[0].getAttribute('data-flip-key')).toBe('3');
+    expect(grid.children[0]).not.toHaveClass('animate-rise-lg');
+    // The survivors keep theirs — the class is inert once played, and
+    // removing it mid-cascade would cut the entrance short.
+    expect(grid.children[1]).toHaveClass('animate-rise-lg');
+  });
+
+  it('treats a first-paint card that left and came back as an arrival', () => {
+    const { container, rerender } = render(
+      <ArchiveGrid projects={[card({ id: 1 }), card({ id: 2 })]} renderCard={(p) => <div>{p.id}</div>} />,
+    );
+    const grid = container.firstElementChild!.firstElementChild!;
+    rerender(<ArchiveGrid projects={[card({ id: 2 })]} renderCard={(p) => <div>{p.id}</div>} />);
+    rerender(<ArchiveGrid projects={[card({ id: 1 }), card({ id: 2 })]} renderCard={(p) => <div>{p.id}</div>} />);
+    expect(grid.children[0].getAttribute('data-flip-key')).toBe('1');
+    expect(grid.children[0]).not.toHaveClass('animate-rise-lg');
+    expect(grid.children[1]).toHaveClass('animate-rise-lg');
+  });
+});

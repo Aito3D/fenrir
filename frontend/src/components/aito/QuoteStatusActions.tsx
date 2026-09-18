@@ -1,8 +1,35 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
+import { useHoldSettle } from '../../hooks/useHoldSettle';
 import { type AitoProject } from '../../api/client';
+
+type QuoteStatus = AitoProject['quote_status'];
+
+/** Which of the three actions a given status offers — the rules in the
+ *  component doc below, as one lookup so the settle can compare the held-on
+ *  status against the real one to know which buttons are leaving. */
+function offers(status: QuoteStatus) {
+  if (status === 'accepted') return { markSent: false, settle: false, decline: false };
+  // Mark-as-sent only while the client does not have the quote yet. On sent,
+  // viewed, expired and declined they already do, so offering to mark it sent
+  // says nothing true.
+  const markSent = status === null || status === 'draft';
+  // The exact complement of markSent, and deliberately expressed as its
+  // negation rather than re-derived: a quote the client has never received
+  // cannot be accepted or declined. Because aito_board_rules.evaluate derives
+  // the column FROM the status, this is identical to "the card is not in the
+  // Quote column" — the two can never disagree, which is why the rule is
+  // written against the status the server already sends rather than against
+  // project.column.
+  const settle = !markSent;
+  // Declining an already-declined quote is a no-op the board would still
+  // hold-to-confirm and toast about. Accept is what a declined card needs.
+  const decline = settle && status !== 'declined';
+  return { markSent, settle, decline };
+}
 
 /** Move this project's quote to sent, accepted or declined.
  *
@@ -56,69 +83,77 @@ export function QuoteStatusActions({
 }) {
   const { t } = useTranslation();
   const mutation = useQuoteStatusMutation(project);
+  // The mutation is optimistic, so `quote_status` flips on the tick the hold
+  // fires. See useHoldSettle for why the block keeps drawing from the status
+  // it was held ON for a beat: rendering straight from the new one unmounted
+  // the button on that frame, before its own completion bounce had started.
+  const [stage, startSettle] = useHoldSettle();
+  const [heldFrom, setHeldFrom] = useState<QuoteStatus>(null);
+  const held = stage ? { from: heldFrom, stage } : null;
+  const hold = (status: 'sent' | 'accepted' | 'declined') => {
+    setHeldFrom(project.quote_status);
+    startSettle();
+    mutation.mutate(status);
+  };
+
+  // What the block DRAWS: the held-on status through the settle, the real
+  // one otherwise. Every button is inert while a hold settles — the
+  // mutation's own `isPending` covers the request, this covers the beat
+  // after it lands.
+  const shown = offers(held ? held.from : project.quote_status);
+  const real = offers(project.quote_status);
+  const disabled = mutation.isPending || held !== null;
+  // A button that the held-on status offers and the real one does not is on
+  // its way out; it takes the exit fade for the leaving stage.
+  const leaving = (key: keyof ReturnType<typeof offers>) =>
+    held?.stage === 'leaving' && shown[key] && !real[key] ? ' animate-fade-out-sm' : '';
 
   // After every hook, so the hook order is identical on the render where the
   // quote settles and the block goes away.
-  if (project.quote_status === 'accepted') return null;
-
-  // Mark-as-sent only while the client does not have the quote yet. On sent,
-  // viewed, expired and declined they already do, so offering to mark it sent
-  // says nothing true.
-  const canMarkSent = project.quote_status === null || project.quote_status === 'draft';
-  // The exact complement of canMarkSent, and deliberately expressed as its
-  // negation rather than re-derived: a quote the client has never received
-  // cannot be accepted or declined. Because aito_board_rules.evaluate derives
-  // the column FROM the status, this is identical to "the card is not in the
-  // Quote column" — the two can never disagree, which is why the rule is
-  // written against the status the server already sends rather than against
-  // project.column.
-  const canSettle = !canMarkSent;
-  // Declining an already-declined quote is a no-op the board would still
-  // hold-to-confirm and toast about. Accept is what a declined card needs.
-  const canDecline = project.quote_status !== 'declined';
+  if (!shown.markSent && !shown.settle) return null;
 
   return (
     <div className={layout === 'row' ? 'flex items-center gap-2' : 'flex flex-col gap-2 border-t border-bambu-dark-tertiary pt-4'}>
-      {canMarkSent && (
+      {shown.markSent && (
         <HoldButton
-          onHold={() => mutation.mutate('sent')}
+          onHold={() => hold('sent')}
           durationMs={500}
-          disabled={mutation.isPending}
+          disabled={disabled}
           label={t('aito.markSent')}
           hint={t('aito.holdToConfirm')}
           progress="bar"
           barClassName="bg-amber-400/25"
-          className="justify-center border px-2.5 py-1 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
+          className={`justify-center border px-2.5 py-1 border-amber-400/40 text-amber-400 hover:bg-amber-400/10${leaving('markSent')}`}
         >
           <Send className="w-3.5 h-3.5" />
           <span className="text-sm">{t('aito.markSent')}</span>
         </HoldButton>
       )}
-      {canSettle && (
+      {shown.settle && (
         <div className={layout === 'row' ? 'contents' : 'flex items-center gap-2'}>
           <HoldButton
-            onHold={() => mutation.mutate('accepted')}
+            onHold={() => hold('accepted')}
             durationMs={500}
-            disabled={mutation.isPending}
+            disabled={disabled}
             label={t('aito.acceptQuote')}
             hint={t('aito.holdToConfirm')}
             progress="bar"
             barClassName="bg-bambu-green/25"
-            className="justify-center border px-2.5 py-1 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
+            className={`justify-center border px-2.5 py-1 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10${leaving('settle')}`}
           >
             <ThumbsUp className="w-3.5 h-3.5" />
             <span className="text-sm">{t('aito.acceptQuote')}</span>
           </HoldButton>
-          {canDecline && (
+          {shown.decline && (
             <HoldButton
-              onHold={() => mutation.mutate('declined')}
+              onHold={() => hold('declined')}
               durationMs={500}
-              disabled={mutation.isPending}
+              disabled={disabled}
               label={t('aito.declineQuote')}
               hint={t('aito.holdToConfirm')}
               progress="bar"
               barClassName="bg-status-error/25"
-              className="justify-center border px-2.5 py-1 border-status-error/40 text-status-error hover:bg-status-error/10"
+              className={`justify-center border px-2.5 py-1 border-status-error/40 text-status-error hover:bg-status-error/10${leaving('decline')}`}
             >
               <ThumbsDown className="w-3.5 h-3.5" />
               <span className="text-sm">{t('aito.declineQuote')}</span>

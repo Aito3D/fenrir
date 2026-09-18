@@ -46,7 +46,19 @@ export function ClientHistory({ clientId, isDefault, onReuse }: ClientHistoryPro
     card.tasks.map((task, index) => task.title?.trim() || t('aito.taskFallbackName', { n: index + 1 })).join(' · ');
 
   return (
-    <div data-testid="client-history">
+    // The block arrives asynchronously — the query resolves after the user
+    // has picked the client and moved on — and it pushes the due-date field
+    // and the checklist down when it does. So it unfolds rather than lands:
+    // the same grid 0fr→1fr idiom as TaskRow's body fold, from
+    // @starting-style (Tailwind's `starting:` variant) so a plain mount
+    // transitions from the closed track. 250ms on the signature curve.
+    // Reduced motion keeps the fade and drops the height tween, which is the
+    // half that moves the fields underneath.
+    <div
+      data-testid="client-history"
+      className="grid grid-rows-[1fr] opacity-100 starting:grid-rows-[0fr] starting:opacity-0 transition-[grid-template-rows,opacity] duration-[250ms] ease-[var(--ease-signature)] motion-reduce:transition-opacity"
+    >
+    <div className="min-h-0 overflow-hidden">
       <p className={`${labelCls} flex items-center gap-1.5`}>
         <History className="w-3.5 h-3.5" aria-hidden="true" />
         {t('aito.pastCards', { count: cards.length })}
@@ -85,6 +97,7 @@ export function ClientHistory({ clientId, isDefault, onReuse }: ClientHistoryPro
           );
         })}
       </ul>
+    </div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { TrackingLanguageSelect } from '../components/aito/TrackingLanguageSelect';
 import { TrackingCodeInput } from '../components/aito/TrackingCodeInput';
-import { Footer, Logo } from '../components/aito/trackingShell';
+import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { ENTRY_MOTION, TRACK_MOTION } from '../utils/aitoTracking';
 import { prefersReducedMotion } from '../utils/motion';
@@ -18,6 +18,45 @@ type Failure = 'notFound' | 'tooMany' | 'error';
  *  this long, abort and fall into the same retryable error state a network
  *  failure already shows. */
 const CHECK_TIMEOUT_MS = 10_000;
+
+/** Why a check failed, in the one word the status line needs. Only the two
+ *  answers the route itself gives are named: an unknown code (404) and the
+ *  rate limit (429). Everything else — a dead network, a timeout aborted by
+ *  CHECK_TIMEOUT_MS, a 500 — is the same retryable failure, because the code
+ *  the client typed was never judged. */
+function classifyFailure(err: unknown): Failure {
+  if (err instanceof ApiError && err.status === 404) return 'notFound';
+  if (err instanceof ApiError && err.status === 429) return 'tooMany';
+  return 'error';
+}
+
+/** The colour the status line speaks in: red for a refusal, cyan for the
+ *  code that worked, muted while the check is still out or nothing has
+ *  happened yet. */
+const STATUS_TONE: Record<CodeState, string> = {
+  idle: 'text-aito-muted',
+  checking: 'text-aito-muted',
+  found: 'text-aito-cyan',
+  error: 'text-red-300',
+};
+
+/** The line under the squares: what the check is doing, or why it stopped.
+ *  Null while the client is still typing — the line stays empty but keeps
+ *  its height. */
+function statusKey(state: CodeState, failure: Failure | null): string | null {
+  if (state === 'checking') return 'aito.track.codeChecking';
+  if (state === 'found') return 'aito.track.codeFound';
+  switch (failure) {
+    case 'notFound':
+      return 'aito.track.codeNotFound';
+    case 'tooMany':
+      return 'aito.track.codeTooMany';
+    case 'error':
+      return 'aito.track.codeError';
+    default:
+      return null;
+  }
+}
 
 /** The front door of client tracking: `/t` with no code. A client holding
  *  the six characters from a quote or a message types them into six
@@ -69,15 +108,7 @@ export function AitoTrackEntryPage() {
     } catch (err) {
       if (seq !== sequence.current) return;
       setState('error');
-      setFailure(
-        err instanceof DOMException && err.name === 'AbortError'
-          ? 'error'
-          : err instanceof ApiError && err.status === 404
-            ? 'notFound'
-            : err instanceof ApiError && err.status === 429
-              ? 'tooMany'
-              : 'error',
-      );
+      setFailure(classifyFailure(err));
     } finally {
       window.clearTimeout(timeout);
     }
@@ -103,27 +134,13 @@ export function AitoTrackEntryPage() {
           <header className="text-center">
             <Logo className="mb-[20px]" />
           </header>
-          <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
-            <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
-            <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
-          </div>
+          <CardSkeleton />
         </div>
       </div>
     );
   }
 
-  const status =
-    state === 'checking'
-      ? t('aito.track.codeChecking')
-      : state === 'found'
-        ? t('aito.track.codeFound')
-        : failure === 'notFound'
-          ? t('aito.track.codeNotFound')
-          : failure === 'tooMany'
-            ? t('aito.track.codeTooMany')
-            : failure === 'error'
-              ? t('aito.track.codeError')
-              : '';
+  const status = statusKey(state, failure);
   return (
     <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
       <div className={CARD}>
@@ -152,11 +169,9 @@ export function AitoTrackEntryPage() {
             role="status"
             aria-live="polite"
             data-testid="track-code-status"
-            className={`mt-[20px] min-h-[24px] text-center text-[14px] transition-colors duration-150 ${
-              state === 'error' ? 'text-red-300' : state === 'found' ? 'text-aito-cyan' : 'text-aito-muted'
-            }`}
+            className={`mt-[20px] min-h-[24px] text-center text-[14px] transition-colors duration-150 ${STATUS_TONE[state]}`}
           >
-            {status}
+            {status ? t(status) : ''}
           </p>
         </main>
         <Footer at={TRACK_MOTION.footerAlone} />

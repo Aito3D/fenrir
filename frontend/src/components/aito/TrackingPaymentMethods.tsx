@@ -11,6 +11,24 @@ const COPIED_HOLD_MS = 1600;
 type Method = 'transfer' | (typeof AITO3D_TRANSFER_APPS)[number]['name'] | 'shop';
 const METHODS: readonly Method[] = ['transfer', ...AITO3D_TRANSFER_APPS.map((app) => app.name), 'shop'];
 
+/** Which tab an arrow key moves to (the WAI-ARIA tabs pattern): left and
+ *  right wrap around, Home and End jump to the ends, any other key does not
+ *  move — -1, so the handler leaves it to the browser. */
+function tabTarget(key: string, index: number, last: number): number {
+  switch (key) {
+    case 'ArrowRight':
+      return index === last ? 0 : index + 1;
+    case 'ArrowLeft':
+      return index === 0 ? last : index - 1;
+    case 'Home':
+      return 0;
+    case 'End':
+      return last;
+    default:
+      return -1;
+  }
+}
+
 /** Every way to settle a quote other than the online link, one method at a
  *  time behind a segmented control: the bank transfer, each peer-to-peer app,
  *  and the shop counter. Rendered inside the page's payment side panel,
@@ -45,7 +63,13 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
   };
 
   const tabId = useId();
-  const labelOf = (m: Method) => (m === 'transfer' ? t('aito.track.paymentMethods.transfer') : m === 'shop' ? t('aito.track.paymentMethods.shop') : m);
+  // An app's tab is its own name — "Revolut" is "Revolut" in every language;
+  // only the two methods we named ourselves are translated.
+  const labelOf = (m: Method) => {
+    if (m === 'transfer') return t('aito.track.paymentMethods.transfer');
+    if (m === 'shop') return t('aito.track.paymentMethods.shop');
+    return m;
+  };
   const idOf = (m: Method) => `${tabId}-${m}`;
 
   // The selected tab's pill: measured, because tab widths follow their labels
@@ -99,8 +123,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
   }, [method]);
 
   const onTabKey = (e: React.KeyboardEvent, index: number) => {
-    const last = METHODS.length - 1;
-    const next = e.key === 'ArrowRight' ? (index === last ? 0 : index + 1) : e.key === 'ArrowLeft' ? (index === 0 ? last : index - 1) : e.key === 'Home' ? 0 : e.key === 'End' ? last : -1;
+    const next = tabTarget(e.key, index, METHODS.length - 1);
     if (next < 0) return;
     e.preventDefault();
     select(METHODS[next]);
@@ -116,6 +139,11 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
       : <Fact key="reference" label={label} value={t('aito.track.paymentMethods.referenceUnknown')} />;
 
   const app = AITO3D_TRANSFER_APPS.find((a) => a.name === method);
+  // The line under the pane: how long the money takes, or what to do with
+  // the facts above it.
+  let hint = t('aito.track.paymentMethods.shopHint');
+  if (method === 'transfer') hint = t('aito.track.paymentMethods.transferDelay');
+  else if (app) hint = t('aito.track.paymentMethods.appHint', { app: app.name });
 
   return (
     <div data-testid="track-payment-methods" className={`${open ? 'animate-rise' : ''} mt-[12px] px-[16px] text-[13px] text-aito-muted`}>
@@ -184,7 +212,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
           <button
             type="button"
             onClick={(e) => onFindShop(e.currentTarget)}
-            className={`mx-[4px] mt-[14px] inline-flex min-h-[44px] items-center gap-[6px] rounded-[8px] text-[13px] font-semibold text-aito-cyan transition-colors duration-150 hover:text-aito-cyan/80 ${FOCUS}`}
+            className={`mx-[4px] mt-[14px] inline-flex min-h-[44px] items-center gap-[6px] rounded-[8px] text-[13px] font-semibold text-aito-cyan transition-colors duration-150 hover:text-aito-cyan/80 min-[1060px]:mt-[8px] min-[1060px]:min-h-[36px] ${FOCUS}`}
           >
             <MapPin className="h-[14px] w-[14px]" aria-hidden="true" />
             {t('aito.track.paymentMethods.findShop')}
@@ -192,13 +220,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
         )}
       </div>
 
-      <p className="mx-[4px] mt-[10px] text-[12.5px]">
-        {method === 'transfer'
-          ? t('aito.track.paymentMethods.transferDelay')
-          : app
-            ? t('aito.track.paymentMethods.appHint', { app: app.name })
-            : t('aito.track.paymentMethods.shopHint')}
-      </p>
+      <p className="mx-[4px] mt-[10px] text-[12.5px]">{hint}</p>
       <span className="sr-only" aria-live="polite">
         {copied ? t('aito.track.paymentMethods.copied') : ''}
       </span>
@@ -229,7 +251,7 @@ const CHECK_ICON = (
  *  full-width sheet does not). */
 function Fact({ label, value, lead = false, copyLabel, copied = false, onCopy }: { label: string; value: string; lead?: boolean; copyLabel?: string; copied?: boolean; onCopy?: () => void }) {
   const { t } = useTranslation();
-  const layout = `flex w-full items-center gap-[10px] border-t border-aito-line py-[7px] pr-[10px] pl-[14px] first:border-t-0 ${lead ? 'py-[12px]' : 'min-h-[44px]'}`;
+  const layout = `flex w-full items-center gap-[10px] border-t border-aito-line py-[7px] pr-[10px] pl-[14px] first:border-t-0 ${lead ? 'py-[12px] min-[1060px]:py-[9px]' : 'min-h-[44px] min-[1060px]:min-h-[40px]'}`;
   const body = (
     <span className={`min-w-0 flex-1 ${lead ? '' : '@min-[440px]:grid @min-[440px]:grid-cols-[128px_1fr] @min-[440px]:items-center @min-[440px]:gap-x-[14px]'}`}>
       <span className={`block text-aito-muted ${lead ? 'text-[12px]' : 'text-[12px] @min-[440px]:text-[13px]'}`}>{label}</span>

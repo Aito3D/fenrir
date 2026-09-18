@@ -527,3 +527,23 @@ describe('ShippingCard LTA number', () => {
     expect(spy).toHaveBeenCalledWith(7, expect.objectContaining({ shipping_lta: null }));
   });
 });
+
+describe('ShippingCard read <-> edit swap', () => {
+  it('re-enters the body with the small rise on a toggle, but not on first paint', async () => {
+    // A form against three rows: the swap is keyed on the mode so the new
+    // body rises in (TaskRow's own read<->edit recipe) instead of
+    // teleporting. Never on the card's first paint, which the panel morph
+    // already carries.
+    vi.spyOn(api, 'getAitoShippingServices').mockResolvedValue({ services: [], catalogue_resolved: true });
+    render(<ShippingCard project={shipped} currency="XPF" />);
+    const readList = screen.getByText('Jean-Pierre DUPONT').closest('dl')!;
+    expect(readList).not.toHaveClass('animate-rise-sm');
+
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    const form = screen.getByLabelText(/recipient first name/i).closest('.scroll-mb-4')!;
+    expect(form).toHaveClass('animate-rise-sm');
+
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(screen.getByText('Jean-Pierre DUPONT').closest('dl')).toHaveClass('animate-rise-sm');
+  });
+});

@@ -1,16 +1,16 @@
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import aito3dLogo from '../../assets/aito3d_logo.png';
+import { SHOP_MAIL_HREF, SHOP_TEL_HREF } from '../../utils/aitoShop';
 import { BRAND, FOCUS, delayAt } from '../../utils/trackingShell';
 import { AITO3D_SENDER } from '../../utils/shippingLabel';
+import type { PanelTrigger } from './TrackingPayment';
 
-/** The rendered pieces the public tracking pages share: the logo and the
- *  contact footer. Split out of AitoTrackPage when the code-entry page
- *  arrived, so the two pages are one surface and not two copies of it.
- *  The style tokens live in utils/trackingShell.ts, the language hook in
- *  hooks/useTrackingLanguage.ts. */
-
-const TEL = `tel:${AITO3D_SENDER.phone.replace(/[^\d+]/g, '')}`;
+/** The rendered pieces the public tracking pages share: the logo, the
+ *  loading skeleton and the contact footer. Split out of AitoTrackPage when
+ *  the code-entry page arrived, so the two pages are one surface and not two
+ *  copies of it. The style tokens live in utils/trackingShell.ts, the
+ *  language hook in hooks/useTrackingLanguage.ts. */
 
 /** The asset is black + cyan; invert + hue-rotate turns the black white and
  *  brings the cyan back to cyan on the dark card. 26 px tall (§7b final
@@ -27,17 +27,30 @@ export function Logo({ className = '' }: { className?: string }) {
   );
 }
 
+/** What stands in the card's body while the page waits — for its data, for
+ *  its language bundle, or for both. Two pulsing blocks in the shape of what
+ *  lands there, and nothing to read: no text is translated yet. Hidden from
+ *  screen readers, which get the content itself once it arrives. */
+export function CardSkeleton() {
+  return (
+    <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
+      <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
+      <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
+    </div>
+  );
+}
+
 /** Drops in from above once the content has landed (`at` ms after the
  *  page's clock starts); mounted only when there is something above it,
  *  so it never plays over the skeleton and then again over the content. */
-export function Footer({ at, shop }: { at: number; shop?: { open: boolean; controls: string; toggle: (from: HTMLElement) => void } }) {
+export function Footer({ at, shop }: { at: number; shop?: PanelTrigger }) {
   const { t } = useTranslation();
   const linkCls = `inline-flex min-h-[44px] items-center text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
   return (
     <footer className="animate-track-drop mt-[32px] border-t border-aito-line/60 pt-[24px] text-center text-[13.5px]" style={delayAt(at)} data-testid="track-footer">
       <p className="text-aito-ink">{t('aito.track.footerQuestion')}</p>
       <p className="mt-[8px]">
-        <a className={linkCls} href={TEL}>
+        <a className={linkCls} href={SHOP_TEL_HREF}>
           {AITO3D_SENDER.phone}
         </a>
         {/* The dot only makes sense while both links share a line; below
@@ -45,7 +58,7 @@ export function Footer({ at, shop }: { at: number; shop?: { open: boolean; contr
         <span className="mx-[4px] max-[359px]:hidden" aria-hidden="true">
           ·
         </span>
-        <a className={linkCls} href={`mailto:${AITO3D_SENDER.email}`}>
+        <a className={linkCls} href={SHOP_MAIL_HREF}>
           {AITO3D_SENDER.email}
         </a>
       </p>

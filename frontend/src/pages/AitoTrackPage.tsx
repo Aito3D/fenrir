@@ -10,11 +10,11 @@ import { PanelReveal, TrackingPanel } from '../components/aito/TrackingPanel';
 import { TrackingPaymentMethods } from '../components/aito/TrackingPaymentMethods';
 import { TrackingRail } from '../components/aito/TrackingRail';
 import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
-import { Footer, Logo } from '../components/aito/trackingShell';
+import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
 import { CARD, FOCUS, PRESS, delayAt } from '../utils/trackingShell';
-import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStages, trackStateDelay, updatedAt } from '../utils/aitoTracking';
+import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
 
 // Above this many parts, fold to the first six behind a "Voir les n pièces"
@@ -105,12 +105,28 @@ export function AitoTrackPage() {
   const eta = data ? etaCopy(data, t, lng) : null;
   const preOrder = data?.column === 'devis' || data?.column === 'waiting';
   const finished = data?.column === 'done';
-  const current = data ? trackStages(data.shipping !== null, t).findIndex((s) => s.id === data.column) : 0;
+  // The current node's index on the rail — the same board order TrackingRail
+  // lays out, without building its labelled stage list just to count it.
+  const current = data ? trackStageIndex(data.column) : 0;
   // Where the rail's choreography starts: node 0 on the first data, the old
   // current node on an advance, nowhere otherwise.
   const origin = entrance ? 0 : advance?.from;
   const moving = origin !== undefined;
   const stateAt = trackStateDelay(current, origin ?? 0);
+  // The parts list, and the two cascades that share it: the first-load one
+  // (after the state card, 50 ms steps, capped at 7) and, for a list that was
+  // folded, the parts the button reveals (40 ms steps). A revealed part rises
+  // even after a refetch — that is an interaction, not the entrance.
+  const tasks = data?.tasks ?? [];
+  const foldable = tasks.length > PARTS_FOLD;
+  const folded = foldable && !showAllParts;
+  const shownParts = folded ? tasks.slice(0, PARTS_SHOWN) : tasks;
+  const revealed = (i: number) => foldable && i >= PARTS_SHOWN;
+  const partStyle = (i: number): CSSProperties | undefined => {
+    if (revealed(i)) return delayAt(Math.min(i - PARTS_SHOWN, 7) * TRACK_MOTION.reveal);
+    if (entrance) return delayAt(stateAt + TRACK_MOTION.parts + Math.min(i, 7) * TRACK_MOTION.partStep);
+    return undefined;
+  };
   const is404 = query.error instanceof ApiError && query.error.status === 404;
   // Past the route's rate limit: say "wait", as the code-entry page does —
   // "cannot load, try again" would only send the client straight back into it.
@@ -121,7 +137,10 @@ export function AitoTrackPage() {
   // something to pay), the shop to the left. One at a time; the card glides
   // the other way so card and panel stay centred (index.css .track-stage).
   const panel = useTrackingPanel();
-  const hasTerms = showContent && ((data.invoice !== null && data.invoice !== 'paid') || (data.invoice === null && data.payment?.state === 'unpaid' && !!data.payment.url));
+  // Something left to pay — the only case the panel has anything to say.
+  // Same ranking as the card below: an invoice, when there is one, decides;
+  // with no invoice the online link speaks.
+  const hasTerms = showContent && (data.invoice !== null ? data.invoice !== 'paid' : data.payment?.state === 'unpaid' && !!data.payment.url);
   const payTrigger = { open: panel.open === 'pay', controls: 'track-panel-pay', toggle: (from: HTMLElement) => panel.toggle('pay', from) };
   const shopTrigger = { open: panel.open === 'shop', controls: 'track-panel-shop', toggle: (from: HTMLElement) => panel.toggle('shop', from) };
   const retry = () => {
@@ -176,12 +195,7 @@ export function AitoTrackPage() {
             )}
           </header>
           <main>
-            {(query.isPending || !settled) && !query.isError && !retrying && (
-              <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
-                <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
-                <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
-              </div>
-            )}
+            {(query.isPending || !settled) && !query.isError && !retrying && <CardSkeleton />}
             {showError && (
               <div className="mt-[32px] text-center">
                 {/* Keyed on the failure, so a retry that fails again re-delivers
@@ -234,50 +248,29 @@ export function AitoTrackPage() {
                   >
                     {t('aito.track.tasksHeading')}
                   </h3>
-                  {(() => {
-                    const foldable = data.tasks.length > PARTS_FOLD;
-                    const folded = foldable && !showAllParts;
-                    const shown = folded ? data.tasks.slice(0, PARTS_SHOWN) : data.tasks;
-                    // Two cascades share one list: the first-load one (after the
-                    // state card, 50 ms steps, capped at 7) and, for a list that
-                    // was folded, the parts revealed by the button (40 ms steps).
-                    // A revealed part rises even after a refetch — that is an
-                    // interaction, not the entrance.
-                    const revealed = (i: number) => foldable && i >= PARTS_SHOWN;
-                    const partStyle = (i: number) =>
-                      revealed(i)
-                        ? delayAt(Math.min(i - PARTS_SHOWN, 7) * TRACK_MOTION.reveal)
-                        : entrance
-                          ? delayAt(stateAt + TRACK_MOTION.parts + Math.min(i, 7) * TRACK_MOTION.partStep)
-                          : undefined;
-                    return (
-                      <>
-                        <ul className="divide-y divide-aito-line/60 text-[15px]">
-                          {shown.map((task, i) => (
-                            <li
-                              key={i}
-                              className={`flex items-start justify-between gap-[12px] py-[12px] ${revealed(i) || entrance ? 'animate-rise' : ''}`}
-                              style={partStyle(i)}
-                            >
-                              <span className="min-w-0">{task.title}</span>
-                              {task.quantity !== null && (
-                                <span className="min-w-[28px] shrink-0 text-right tabular-nums text-aito-muted">×{task.quantity}</span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                        {folded && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllParts(true)}
-                            className={`mt-[12px] inline-flex min-h-[44px] items-center rounded-[8px] text-[13.5px] font-semibold text-aito-cyan hover:text-aito-cyan/80 ${PRESS} ${FOCUS}`}
-                          >
-                            {t('aito.track.showAllParts', { n: data.tasks.length })}
-                          </button>
+                  <ul className="divide-y divide-aito-line/60 text-[15px]">
+                    {shownParts.map((task, i) => (
+                      <li
+                        key={i}
+                        className={`flex items-start justify-between gap-[12px] py-[12px] ${revealed(i) || entrance ? 'animate-rise' : ''}`}
+                        style={partStyle(i)}
+                      >
+                        <span className="min-w-0">{task.title}</span>
+                        {task.quantity !== null && (
+                          <span className="min-w-[28px] shrink-0 text-right tabular-nums text-aito-muted">×{task.quantity}</span>
                         )}
-                      </>
-                    );
-                  })()}
+                      </li>
+                    ))}
+                  </ul>
+                  {folded && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllParts(true)}
+                      className={`mt-[12px] inline-flex min-h-[44px] items-center rounded-[8px] text-[13.5px] font-semibold text-aito-cyan hover:text-aito-cyan/80 ${PRESS} ${FOCUS}`}
+                    >
+                      {t('aito.track.showAllParts', { n: tasks.length })}
+                    </button>
+                  )}
                 </section>
                 {(data.invoice || data.payment) && (
                   <div className={`mt-[32px] ${entrance ? 'animate-rise' : ''}`} style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}>

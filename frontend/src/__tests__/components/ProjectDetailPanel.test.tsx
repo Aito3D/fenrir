@@ -2716,6 +2716,12 @@ describe('ProjectDetailPanel description regeneration', () => {
     expect(summarizeBody!.tasks[0].title).toBe(mockTask.title);
     // The transient acknowledgement the manual-edit path shows.
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+    // It leaves the way it arrived: after its 1500ms it swaps to the exit
+    // fade for 150ms, then unmounts — never a one-frame vanish.
+    await waitFor(() => expect(screen.getByText(/saved/i).closest('span')).toHaveClass('animate-fade-out-sm'), {
+      timeout: 2500,
+    });
+    await waitFor(() => expect(screen.queryByText(/saved/i)).not.toBeInTheDocument());
   });
 
   it('leaves the description untouched and toasts when generation fails', async () => {
@@ -3245,6 +3251,20 @@ describe('ProjectDetailPanel right column tabs', () => {
     expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'panel-tab-activity');
     expect(screen.queryByText('Billing')).not.toBeInTheDocument();
     expect(screen.queryByText('Record')).not.toBeInTheDocument();
+  });
+
+  it('plays the tab entrance on a switch, never on the panel\'s first paint', async () => {
+    // The underline slides between tabs; the content used to swap on a
+    // frame. Now the panel is keyed on the tab and rises in — but not on
+    // the panel's own first paint, where it would stack on the card morph.
+    // The gate opens on the first switch and stays open, so a return to the
+    // opening tab animates too.
+    show({ quote_number: 'DEV26-2462' });
+    expect(screen.getByRole('tabpanel').className).not.toContain('animate-calc-tab-in');
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    expect(screen.getByRole('tabpanel').className).toContain('animate-calc-tab-in');
+    await userEvent.click(screen.getByRole('tab', { name: 'Details' }));
+    expect(screen.getByRole('tabpanel').className).toContain('animate-calc-tab-in');
   });
 
   it('does not repeat the Activity heading inside its own tab', async () => {

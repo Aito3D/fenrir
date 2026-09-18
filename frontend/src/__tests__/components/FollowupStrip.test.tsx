@@ -99,3 +99,77 @@ describe('FollowupStrip', () => {
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 });
+
+describe('FollowupStrip motion', () => {
+  // The header row's other counts tick on change; the pills' did not. And a
+  // pill whose bucket fills in after the strip's first paint rises on its
+  // own, while the first-paint pills arrive with the header and get nothing.
+  it('ticks a pill\'s count when it changes, without remounting the pill', () => {
+    const { rerender } = render(
+      <FollowupStrip
+        buckets={buckets({ quoteOut: { key: 'quoteOut', ids: [1, 2], maxDays: 3 } })}
+        active={null}
+        onChange={vi.fn()}
+      />,
+    );
+    const pill = screen.getByTestId('aito-followup-quoteOut');
+    const count = pill.querySelector('.animate-value-tick')!;
+    expect(count).toHaveTextContent('2');
+    rerender(
+      <FollowupStrip
+        buckets={buckets({ quoteOut: { key: 'quoteOut', ids: [1], maxDays: 3 } })}
+        active={null}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('aito-followup-quoteOut')).toBe(pill);
+    const next = pill.querySelector('.animate-value-tick')!;
+    expect(next).toHaveTextContent('1');
+    expect(next).not.toBe(count);
+  });
+
+  it('rises a pill that arrives after first paint, and not the ones that were there', () => {
+    const { rerender } = render(
+      <FollowupStrip
+        buckets={buckets({ quoteOut: { key: 'quoteOut', ids: [1], maxDays: 3 } })}
+        active={null}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('aito-followup-quoteOut')).not.toHaveClass('animate-rise-sm');
+    rerender(
+      <FollowupStrip
+        buckets={buckets({
+          quoteOut: { key: 'quoteOut', ids: [1], maxDays: 3 },
+          unpaid: { key: 'unpaid', ids: [4], maxDays: 9 },
+        })}
+        active={null}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('aito-followup-quoteOut')).not.toHaveClass('animate-rise-sm');
+    expect(screen.getByTestId('aito-followup-unpaid')).toHaveClass('animate-rise-sm');
+  });
+
+  it('treats a bucket that emptied and refilled as an arrival', () => {
+    const { rerender } = render(
+      <FollowupStrip
+        buckets={buckets({ quoteOut: { key: 'quoteOut', ids: [1], maxDays: 3 }, unpaid: { key: 'unpaid', ids: [4], maxDays: 9 } })}
+        active={null}
+        onChange={vi.fn()}
+      />,
+    );
+    rerender(
+      <FollowupStrip buckets={buckets({ quoteOut: { key: 'quoteOut', ids: [1], maxDays: 3 } })} active={null} onChange={vi.fn()} />,
+    );
+    rerender(
+      <FollowupStrip
+        buckets={buckets({ quoteOut: { key: 'quoteOut', ids: [1], maxDays: 3 }, unpaid: { key: 'unpaid', ids: [4], maxDays: 9 } })}
+        active={null}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('aito-followup-unpaid')).toHaveClass('animate-rise-sm');
+    expect(screen.getByTestId('aito-followup-quoteOut')).not.toHaveClass('animate-rise-sm');
+  });
+});

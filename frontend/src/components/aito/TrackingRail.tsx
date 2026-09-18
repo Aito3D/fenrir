@@ -6,6 +6,22 @@ import { TrackCollapse } from './TrackCollapse';
 
 type StageState = 'done' | 'current' | 'todo';
 
+/** Where stage `i` stands for an order whose current stage is `current` —
+ *  the one reading both markups (the wide row and the phone list) share. */
+function stageState(i: number, current: number): StageState {
+  if (i < current) return 'done';
+  return i === current ? 'current' : 'todo';
+}
+
+/** Done stages are secondary and stages still to come are quieter still;
+ *  only the current one is loud. Shared by both markups — the wide row adds
+ *  its own larger type on top for the current stage. */
+const STAGE_TEXT: Record<StageState, string> = {
+  current: 'font-semibold text-aito-ink',
+  done: 'text-aito-muted/80',
+  todo: 'text-aito-muted/70',
+};
+
 /** lucide's Check path, inlined so the stroke can carry pathLength="1" and
  *  draw itself (index.css `.animate-track-check`); lucide forwards extra
  *  props to the <svg>, never to the <path>. */
@@ -103,7 +119,7 @@ export function TrackingRail({ column, shipped, animateFrom }: { column: AitoCol
       <p className="sr-only">{`${t('aito.track.stepOf', { n: current + 1, total: stages.length })} : ${currentLabel}`}</p>
       <ol className="hidden grid-cols-7 sm:grid" aria-label={t('aito.track.stepsAria')}>
         {stages.map((stage, i) => {
-          const state: StageState = i < current ? 'done' : i === current ? 'current' : 'todo';
+          const state = stageState(i, current);
           const segment = (on: boolean) => `absolute top-[15px] h-[2px] ${on ? 'bg-aito-cyan/55' : 'bg-aito-line'}`;
           // The two halves between node i-1 and node i fill node i's beat:
           // the right half of i-1 first, the left half of i second, so the
@@ -121,12 +137,8 @@ export function TrackingRail({ column, shipped, animateFrom }: { column: AitoCol
               data-state={state}
               aria-current={state === 'current' ? 'step' : undefined}
               className={`relative flex flex-col items-center px-[2px] text-center leading-tight text-[11px] hyphens-auto [overflow-wrap:anywhere] ${
-                state === 'current'
-                  ? 'text-[12px] font-semibold text-aito-ink'
-                  : state === 'done'
-                    ? 'text-aito-muted/80'
-                    : 'text-aito-muted/70'
-              }`}
+                state === 'current' ? 'text-[12px]' : ''
+              } ${STAGE_TEXT[state]}`}
             >
               {i > 0 && leftDraws && <span aria-hidden="true" className={`${segment(false)} left-0 right-[calc(50%+18px)]`} />}
               {i > 0 && (
@@ -179,18 +191,12 @@ export function TrackingRail({ column, shipped, animateFrom }: { column: AitoCol
               node, and the collapse clips at its box. */}
           <ol aria-label={t('aito.track.stepsList')} className="stagger-children -mx-[6px] mt-[8px] space-y-[12px] px-[6px] pb-[6px]">
             {stages.map((stage, i) => {
-              const state: StageState = i < current ? 'done' : i === current ? 'current' : 'todo';
+              const state = stageState(i, current);
               return (
                 <li
                   key={stage.id}
                   aria-current={state === 'current' ? 'step' : undefined}
-                  className={`${open ? 'animate-rise' : ''} flex items-center gap-[12px] text-[13px] ${
-                    state === 'current'
-                      ? 'font-semibold text-aito-ink'
-                      : state === 'done'
-                        ? 'text-aito-muted/80'
-                        : 'text-aito-muted/70'
-                  }`}
+                  className={`${open ? 'animate-rise' : ''} flex items-center gap-[12px] text-[13px] ${STAGE_TEXT[state]}`}
                 >
                   <StageMark state={state} finished={state === 'current' && finished} />
                   {stage.label}

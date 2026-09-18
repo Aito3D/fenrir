@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { AiTextField } from './AiTextField';
@@ -77,12 +77,43 @@ function StepDescriptionInput({
  *  on — a rendered block is always "present", so there is nothing left to
  *  dim here (compare the pre-chip version, which rendered all four blocks
  *  always and dimmed the absent ones). */
-function StepBlock({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
+/** The grid 0fr→1fr fold a block arrives by when a chip switches it on:
+ *  TaskRow's body-fold idiom, entered from @starting-style (Tailwind's
+ *  `starting:` variant) so a plain mount transitions from the closed track.
+ *  A whole fieldset landing on one frame pushed the task total and every row
+ *  under it down; this bridges that height. Reduced motion keeps the fade and
+ *  drops the height tween, which is the half that moves things. Entrance
+ *  only — switching a service OFF is the user clearing a form, and that
+ *  should snap. */
+const UNFOLD_CLS =
+  'grid grid-rows-[1fr] opacity-100 starting:grid-rows-[0fr] starting:opacity-0 transition-[grid-template-rows,opacity] duration-[250ms] ease-[var(--ease-signature)] motion-reduce:transition-opacity';
+
+function StepBlock({
+  title,
+  children,
+  /** Wrap the block in UNFOLD_CLS. Passed only for a block that arrives by a
+   *  chip click after the form's first paint: on the pencil swap the row's
+   *  own rise already carries every block that is on, and a fold stacked on
+   *  top of it would be two entrances for one arrival. Never changes while
+   *  the block is mounted, so the differing element trees below cannot
+   *  remount it. */
+  unfold = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  unfold?: boolean;
+}) {
+  const block = (
     <fieldset className="rounded-lg border border-bambu-dark-tertiary p-3">
       <legend className="px-1 text-sm text-bambu-gray">{title}</legend>
       {children}
     </fieldset>
+  );
+  if (!unfold) return block;
+  return (
+    <div data-testid="step-block-unfold" className={UNFOLD_CLS}>
+      <div className="min-h-0 overflow-hidden">{block}</div>
+    </div>
   );
 }
 
@@ -190,10 +221,26 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
   const autoFocusService = justEnabledRef.current;
   justEnabledRef.current = null;
 
+  // The services that were on at the form's first paint, pruned as chips go
+  // off, so a block arriving by a chip click — and only such a block — gets
+  // StepBlock's unfold. A service switched off and on again has left the set
+  // by then and counts as an arrival like any other. The initial `enabled`
+  // Set is never mutated by `toggleService` (it builds a new one), so holding
+  // it here is safe.
+  const initialEnabledRef = useRef<Set<ServiceId>>(enabled);
+  useEffect(() => {
+    for (const id of initialEnabledRef.current) if (!enabled.has(id)) initialEnabledRef.current.delete(id);
+  }, [enabled]);
+  const arrives = (id: ServiceId) => !initialEnabledRef.current.has(id);
+
   // Impression only: this block is the dense one, and its note is empty on
   // most tasks. Scan, Modélisation and Usinage keep their always-visible
   // textarea. Seeded open — never hide a description the task already has.
   const [noteOpen, setNoteOpen] = useState(task.impressionDescription !== '');
+  // Same rule for the note: seeded open, it is part of the block and needs no
+  // entrance of its own; opened by the "+ Note" button, it unfolds under the
+  // price rows the way a block unfolds under the chips.
+  const noteSeededOpenRef = useRef(noteOpen);
 
   const toggleService = (svc: (typeof SERVICE_DEFS)[number]) => {
     // Computed from the `enabled` state variable (not an updater callback):
@@ -241,7 +288,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
     const lineTotal = net === null ? null : round2(net);
     const unitRate = lineTotal === null ? null : round2(lineTotal / quantity);
     return (
-      <StepBlock title={label}>
+      <StepBlock title={label} unfold={arrives(svc.id)}>
         <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
           <label htmlFor={`${reactId}-${svc.id}`} className={rowLabelCls}>
             {t('aito.serviceUnitCost')}
@@ -368,7 +415,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
           including the unconfigured-install early returns where an imported
           cost still has to be readable and editable. */}
       {enabled.has('impression') && (
-        <StepBlock title={t('aito.serviceImpression3D')}>
+        <StepBlock title={t('aito.serviceImpression3D')} unfold={arrives('impression')}>
           <div className="space-y-3">
           <ImpressionFields
             value={task.impression}
@@ -459,11 +506,18 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
             }
           />
           {noteOpen && (
-            <StepDescriptionInput
-              label={t('aito.serviceImpression3D')}
-              value={task.impressionDescription}
-              onChange={(next) => onChange({ ...task, impressionDescription: next })}
-            />
+            <div
+              data-testid="step-note-unfold"
+              className={noteSeededOpenRef.current ? undefined : UNFOLD_CLS}
+            >
+              <div className={noteSeededOpenRef.current ? undefined : 'min-h-0 overflow-hidden'}>
+                <StepDescriptionInput
+                  label={t('aito.serviceImpression3D')}
+                  value={task.impressionDescription}
+                  onChange={(next) => onChange({ ...task, impressionDescription: next })}
+                />
+              </div>
+            </div>
           )}
           </div>
         </StepBlock>

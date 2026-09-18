@@ -20,6 +20,9 @@ export const UNACCEPT_SETTLE_MS = 600;
 // intentional-but-abandoned hold and cancels silently.
 const HINT_THRESHOLD_MS = 400;
 const HINT_VISIBLE_MS = 1600;
+// Same symmetric exit as HoldButton's hint: 150ms on .animate-fade-out-sm.
+const HINT_EXIT_MS = 150;
+type HintPhase = 'in' | 'out' | null;
 
 type Phase = 'idle' | 'holding' | 'settling';
 
@@ -63,7 +66,7 @@ export function UnacceptHoldMark({
 }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('idle');
-  const [showHint, setShowHint] = useState(false);
+  const [hintPhase, setHintPhase] = useState<HintPhase>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,9 +97,12 @@ export function UnacceptHoldMark({
     holdTimerRef.current = null;
     setPhase('idle');
     if (Date.now() - pressStartRef.current < HINT_THRESHOLD_MS) {
-      setShowHint(true);
+      setHintPhase('in');
       if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = setTimeout(() => setShowHint(false), HINT_VISIBLE_MS);
+      hintTimerRef.current = setTimeout(() => {
+        setHintPhase('out');
+        hintTimerRef.current = setTimeout(() => setHintPhase(null), HINT_EXIT_MS);
+      }, HINT_VISIBLE_MS);
     }
   };
 
@@ -211,8 +217,12 @@ export function UnacceptHoldMark({
           {t('aito.quoteStatus.accepted')}
         </span>
       </button>
-      {showHint && (
-        <span className="absolute z-20 top-full left-0 mt-1 whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs font-normal normal-case tracking-normal text-white shadow-lg animate-fade-in">
+      {hintPhase && (
+        <span
+          className={`absolute z-20 top-full left-0 mt-1 whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs font-normal normal-case tracking-normal text-white shadow-lg ${
+            hintPhase === 'out' ? 'animate-fade-out-sm' : 'animate-fade-in'
+          }`}
+        >
           {t('aito.unacceptHint')}
         </span>
       )}

@@ -79,6 +79,16 @@ export function ShippingCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ShippingDraft | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  // Edit and read differ wildly in height (a form against three rows), so
+  // the body is keyed on the mode and re-enters with the small rise —
+  // TaskRow's own read<->edit swap. Never on the card's first paint, which
+  // the panel morph already carries: a render-time ref gate that opens on
+  // the first toggle and stays open.
+  const prevEditingRef = useRef(editing);
+  const toggledRef = useRef(false);
+  if (prevEditingRef.current !== editing) toggledRef.current = true;
+  prevEditingRef.current = editing;
+  const swapCls = toggledRef.current ? ' animate-rise-sm' : '';
 
   // This card is the LAST thing in the panel's left column, so a form that
   // opens here — or grows a row, once an island resolves to a service and its
@@ -288,7 +298,7 @@ export function ShippingCard({
       {editing && draft ? (
         // `scroll-mb-4` so the reveal above leaves the Save row a little air
         // above the panel footer instead of flush against it.
-        <div ref={editorRef} className="scroll-mb-4">
+        <div key="edit" ref={editorRef} className={`scroll-mb-4${swapCls}`}>
           <ShippingFields
             value={draft}
             onChange={setDraft}
@@ -315,7 +325,7 @@ export function ShippingCard({
           </div>
         </div>
       ) : (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-baseline">
+        <dl key="read" className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-baseline${swapCls}`}>
           <dt className="text-bambu-gray">{t('aito.shippingIsland')}</dt>
           <dd className="text-right min-w-0 truncate text-white">{shippingIslandLabel}</dd>
           <dt className="text-bambu-gray">{t('aito.shippingRecipient')}</dt>

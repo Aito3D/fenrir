@@ -32,14 +32,25 @@ export function PrintBacklogBadge({
     daysLabel = t('aito.backlogDays', { days, count: printers });
   }
   return (
+    // animate-rise-sm on the pill: it mounts and unmounts with the backlog
+    // (see the `minutes <= 0` return above), so it arrives with the small
+    // rise rather than popping into the title row. The figures inside ride
+    // their own keyed span so the tick below replays on every change without
+    // remounting — and re-rising — the whole pill.
     <span
       data-testid="aito-print-backlog"
       title={title}
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums"
+      className="animate-rise-sm inline-flex items-center gap-1.5 px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums"
     >
       <Clock className="w-3.5 h-3.5 text-orange-400" aria-hidden="true" />
-      <span>{t('aito.backlogHours', { hours })}</span>
-      {daysLabel !== null && <span className="text-bambu-gray">{daysLabel}</span>}
+      {/* Keyed on the hours so the value-tick replays when the figure
+          changes — the same treatment its two neighbours in the h1 (the
+          in-production count and the column badges) already get. Opacity
+          only, so nothing in the row shifts. */}
+      <span key={hours} className="inline-flex items-center gap-1.5 animate-value-tick">
+        <span>{t('aito.backlogHours', { hours })}</span>
+        {daysLabel !== null && <span className="text-bambu-gray">{daysLabel}</span>}
+      </span>
     </span>
   );
 }

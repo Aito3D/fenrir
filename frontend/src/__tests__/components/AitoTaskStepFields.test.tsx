@@ -323,3 +323,40 @@ describe('TaskStepFields', () => {
     expect(screen.queryByLabelText(/Printing.*[Dd]escription/)).toBeNull();
   });
 });
+
+describe('TaskStepFields — a block switched on unfolds', () => {
+  // A chip click used to land a whole fieldset on one frame under the chip
+  // row. Now the block arrives by the grid fold — but only a block switched
+  // on AFTER the form's first paint: on the pencil swap the row's own rise
+  // already carries every block that is on.
+  it('folds in a block added by its chip, and leaves a block that was on at first paint alone', async () => {
+    const user = userEvent.setup();
+    render(<ControlledTaskStepFields initial={{ ...emptyTaskDraft(), scanCost: 1200 }} onChangeSpy={vi.fn()} />);
+    const scan = screen.getByRole('group', { name: 'Scan' });
+    expect(scan.closest('[data-testid="step-block-unfold"]')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Add Machining' }));
+    const machining = screen.getByRole('group', { name: 'Machining' });
+    const fold = machining.closest('[data-testid="step-block-unfold"]');
+    expect(fold).not.toBeNull();
+    expect(fold).toHaveClass('starting:grid-rows-[0fr]', 'grid-rows-[1fr]', 'motion-reduce:transition-opacity');
+  });
+
+  it('folds in the printing note when opened by its button, not when seeded open', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <ControlledTaskStepFields initial={{ ...emptyTaskDraft(), impressionCost: 500 }} onChangeSpy={vi.fn()} />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Note for the quote' }));
+    expect(screen.getByTestId('step-note-unfold')).toHaveClass('starting:grid-rows-[0fr]');
+    unmount();
+
+    render(
+      <ControlledTaskStepFields
+        initial={{ ...emptyTaskDraft(), impressionCost: 500, impressionDescription: 'Two colours' }}
+        onChangeSpy={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('step-note-unfold')).not.toHaveClass('starting:grid-rows-[0fr]');
+  });
+});

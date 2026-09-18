@@ -18,7 +18,10 @@ export function useTrackingPanel() {
     // that button will be inert once its panel closes, so focus returns to
     // this panel's own trigger on the card instead — the button that
     // declares it controls the panel.
-    if (from) trigger.current = from.closest('[role="dialog"]') ? document.querySelector<HTMLElement>(`[aria-controls="track-panel-${id}"]:not([role="dialog"] *)`) : from;
+    if (from) {
+      const fromInsidePanel = from.closest('[role="dialog"]') !== null;
+      trigger.current = fromInsidePanel ? document.querySelector<HTMLElement>(`[aria-controls="track-panel-${id}"]:not([role="dialog"] *)`) : from;
+    }
     pending.current = 'panel';
     setOpen((current) => {
       // Already open: nothing re-renders, so settle the focus here.

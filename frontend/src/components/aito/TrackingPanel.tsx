@@ -13,7 +13,9 @@ const REDUCE_QUERY = '(prefers-reduced-motion: reduce)';
  *  card so its content keeps its state; closed means tucked behind the card
  *  and out of the accessibility tree and the tab order (`inert` +
  *  `aria-hidden`), not absent. Open, it slides out to its side while the
- *  card glides the other way (index.css `.track-stage` / `.track-panel`).
+ *  card glides the other way, keeping its inner edge under the card and
+ *  sitting vertically centred, shorter than the card (index.css
+ *  `.track-stage` / `.track-panel`).
  *  On phones the same element rises as a bottom sheet; its header can be
  *  dragged down to dismiss it. Focus is the page's business
  *  (useTrackingPanel): the title only takes it. */

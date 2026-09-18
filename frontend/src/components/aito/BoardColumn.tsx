@@ -14,6 +14,7 @@ import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
 import { useContactedMutation } from '../../hooks/useContactedMutation';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 import { useColumnReflow } from '../../hooks/useColumnReflow';
+import { useHoldSettle } from '../../hooks/useHoldSettle';
 import { useIsReverting } from '../../hooks/useRevertFlash';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
 import { needsClientContact } from '../../utils/aitoBoard';
@@ -101,6 +102,27 @@ function SortableCard({
   // disagree about whether this client still needs telling.
   const awaitingContact = needsClientContact(project) && !placeholder;
 
+  // The slot advances Phone -> FileText -> Check on the optimistic contact
+  // write, and unlike mark-sent on the Quote card nothing flies here — the
+  // card stays put — so the Phone button used to unmount on the frame its
+  // hold completed, before its own bounce had drawn anything. See
+  // useHoldSettle: the slot keeps drawing the Phone button through that
+  // choreography, then fades it out, and only then hands over.
+  const [contactStage, startContactSettle] = useHoldSettle();
+  const contactSettling = contactStage !== null;
+  // The control that takes the slot over rises in — but only when it arrives
+  // by that hand-off. On the card's own first paint the card's `animate-rise`
+  // already carries it. A render-time ref, opened when a settle ends and left
+  // open: a later hand-off in the same slot (invoice raised -> Done) is the
+  // same kind of arrival.
+  const prevContactStageRef = useRef(contactStage);
+  const slotArrivedRef = useRef(false);
+  if (prevContactStageRef.current !== null && contactStage === null) slotArrivedRef.current = true;
+  prevContactStageRef.current = contactStage;
+  // `contents` until then, so the wrapper is no box at all in the footer's
+  // flex row; it only becomes one to carry the rise.
+  const arrivalCls = slotArrivedRef.current ? 'inline-flex animate-rise-sm' : 'contents';
+
   return (
     <div
       ref={setCardRef}
@@ -162,7 +184,7 @@ function SortableCard({
                 <ThumbsUp className="relative w-3.5 h-3.5" />
               </HoldButton>
             )}
-            {awaitingContact && project.move_lock === null && (
+            {(awaitingContact || contactSettling) && project.move_lock === null && (
               // Step one of two, in the slot Done will take once it is done.
               // ONE button, not two: the project cannot be archived until the
               // client has been told (the server 409s the move), so a Done
@@ -174,9 +196,12 @@ function SortableCard({
               // deliberately: a declined quote sits in Done with a lock and
               // must offer neither step.
               <HoldButton
-                onHold={() => markContacted.mutate(true)}
+                onHold={() => {
+                  startContactSettle();
+                  markContacted.mutate(true);
+                }}
                 durationMs={500}
-                disabled={markContacted.isPending}
+                disabled={markContacted.isPending || contactSettling}
                 label={t('aito.markContacted')}
                 hint={t('aito.holdToConfirm')}
                 progress="perimeter"
@@ -184,25 +209,30 @@ function SortableCard({
                 // halo are one signal, and a green button here would read as
                 // "finish it", which is precisely the thing that is not
                 // allowed yet.
-                className="p-1 -m-1 text-cyan-400 hover:bg-cyan-400/10 focus-visible:ring-cyan-400/40 data-[holding=true]:text-cyan-300"
+                className={`p-1 -m-1 text-cyan-400 hover:bg-cyan-400/10 focus-visible:ring-cyan-400/40 data-[holding=true]:text-cyan-300${
+                  contactStage === 'leaving' ? ' animate-fade-out-sm' : ''
+                }`}
               >
                 <Phone className="relative w-3.5 h-3.5" />
               </HoldButton>
             )}
-            {project.column === 'finish' && !awaitingContact && project.move_lock === null && (
+            {project.column === 'finish' && !awaitingContact && !contactSettling && project.move_lock === null && (
               // Step two of three, in the same slot: the job is billed when
               // the client arrives, and only then archived. Renders itself
               // away once the quote is invoiced (canCreateInvoice), which is
               // exactly when canMarkDone below opens — so the slot advances
               // Phone -> FileText -> Check and never shows two steps at once.
               // A card with no quote skips this step: nothing to bill.
-              <CreateInvoiceButton project={project} variant="icon" />
+              <span className={arrivalCls}>
+                <CreateInvoiceButton project={project} variant="icon" />
+              </span>
             )}
-            {canMarkDone(project) && (
+            {canMarkDone(project) && !contactSettling && (
               // The one shared gate (canMarkDone): column, rules lock, client
               // told, and — for a quoted project — invoiced. The panel footer
               // reads the same helper, so the two surfaces offering this one
               // transition can never disagree about when it is available.
+              <span className={arrivalCls}>
               <HoldButton
                 onHold={() => markDone.mutate()}
                 durationMs={500}
@@ -230,6 +260,7 @@ function SortableCard({
                   <Check className="relative w-3.5 h-3.5" />
                 )}
               </HoldButton>
+              </span>
             )}
           </>
         }

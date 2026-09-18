@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { DuplicateProjectButton } from './DuplicateProjectButton';
@@ -16,6 +16,7 @@ import { CreateInvoiceButton } from './CreateInvoiceButton';
 import { PanelCard } from './PanelCard';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { PanelTabs } from './PanelTabs';
+import { PresenceBanner } from './PresenceBanner';
 import { panelTabId, panelTabPanelId } from './panelTabIds';
 import { SOCIAL_ICONS, SOCIAL_LABEL_KEYS, SocialInput } from './SocialInput';
 import {
@@ -91,7 +92,10 @@ interface ProjectDetailPanelProps {
   onDuplicate?: () => void;
 }
 
-type SaveState = 'idle' | 'saving' | 'saved';
+// 'leaving' is the last 150ms of 'saved': the acknowledgement faded in, so
+// it fades out on the same beat (.animate-fade-out-sm) rather than vanishing
+// between two frames when its timer fires.
+type SaveState = 'idle' | 'saving' | 'saved' | 'leaving';
 
 /** A contact detail that copies itself.
  *
@@ -744,9 +748,13 @@ function RecordCard({
 function SaveIndicator({ state }: { state: SaveState }) {
   const { t } = useTranslation();
   if (state === 'saving') return <Loader2 className="w-3.5 h-3.5 text-bambu-gray animate-spin" />;
-  if (state === 'saved') {
+  if (state === 'saved' || state === 'leaving') {
     return (
-      <span className="flex items-center gap-1 text-xs text-bambu-green animate-fade-in">
+      <span
+        className={`flex items-center gap-1 text-xs text-bambu-green ${
+          state === 'leaving' ? 'animate-fade-out-sm' : 'animate-fade-in'
+        }`}
+      >
         <Check className="w-3.5 h-3.5" />
         {t('aito.saved')}
       </span>
@@ -790,6 +798,15 @@ export function ProjectDetailPanel({
   // since a tab is otherwise the one place a failed sync could hide.
   const { needsAttention: billingNeedsAttention } = deriveQuoteSync(project);
   const [rightTab, setRightTab] = usePanelTab(RIGHT_TABS);
+  // The tab panel is keyed on `rightTab` below so a switch remounts its
+  // content with .animate-calc-tab-in, the entrance the underline's 300ms
+  // slide was missing a partner for. Never on the panel's own first paint,
+  // where it would stack on the card morph: a render-time ref gate, same as
+  // DueDateControl's, that opens on the first switch and stays open — so a
+  // return to the tab the panel opened on animates too.
+  const openedOnTabRef = useRef(rightTab);
+  const tabSwitchedRef = useRef(false);
+  if (rightTab !== openedOnTabRef.current) tabSwitchedRef.current = true;
 
   // A description edit shows immediately; the retry-sync button sends the
   // description UNCHANGED (its only job is to re-mark the project pending
@@ -979,10 +996,15 @@ export function ProjectDetailPanel({
     if (!editingDesc) setDraft(project.description);
   }, [project.description, editingDesc]);
 
-  // 'saved' is a transient acknowledgement, not a state to sit in.
+  // 'saved' is a transient acknowledgement, not a state to sit in: 1500ms,
+  // then the 150ms exit fade ('leaving', matching .animate-fade-out-sm), then
+  // gone.
   useEffect(() => {
-    if (descState !== 'saved') return;
-    const id = setTimeout(() => setDescState('idle'), 1500);
+    if (descState !== 'saved' && descState !== 'leaving') return;
+    const id = setTimeout(
+      () => setDescState(descState === 'saved' ? 'leaving' : 'idle'),
+      descState === 'saved' ? 1500 : 150,
+    );
     return () => clearTimeout(id);
   }, [descState]);
 
@@ -1138,15 +1160,7 @@ export function ProjectDetailPanel({
             (Auth-disabled installs list every viewer as "Operator", including
             the one reading this — spec-accepted; there is no per-connection
             identity to filter against there.) */}
-        {otherViewers.length > 0 && (
-          <div
-            data-testid="aito-presence-banner"
-            className="flex-shrink-0 flex items-center gap-2 border-b border-amber-400/20 bg-amber-500/10 px-5 py-2 text-sm text-amber-300"
-          >
-            <Eye className="w-4 h-4 flex-none" aria-hidden="true" />
-            {t('aito.viewingNow', { name: otherViewers.join(', ') })}
-          </div>
-        )}
+        <PresenceBanner names={otherViewers} />
 
         <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the
@@ -1339,10 +1353,11 @@ export function ProjectDetailPanel({
                 attentionLabel={t('aito.panelTabAttention')}
               />
               <div
+                key={rightTab}
                 role="tabpanel"
                 id={panelTabPanelId(rightTab)}
                 aria-labelledby={panelTabId(rightTab)}
-                className={rightTab === 'details' ? 'space-y-4' : undefined}
+                className={`${tabSwitchedRef.current ? 'animate-calc-tab-in ' : ''}${rightTab === 'details' ? 'space-y-4' : ''}`}
               >
                 {rightTab === 'details' ? (
                   <>

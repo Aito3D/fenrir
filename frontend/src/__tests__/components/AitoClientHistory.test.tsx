@@ -129,3 +129,18 @@ describe('ClientHistory', () => {
     expect(calls[0]).toBe('z A/1?limit=5');
   });
 });
+
+describe('ClientHistory arrival', () => {
+  it('unfolds from @starting-style, since it lands after the user has moved on', async () => {
+    // The block resolves asynchronously under a form the user is already
+    // filling, pushing the fields below it down. The grid fold bridges that
+    // height; reduced motion keeps only the fade.
+    mockHistory(HISTORY);
+    render(<ClientHistory clientId="zA" isDefault={false} onReuse={vi.fn()} />);
+    await screen.findAllByTestId('client-history-row');
+    const block = screen.getByTestId('client-history');
+    expect(block.className).toContain('starting:grid-rows-[0fr]');
+    expect(block.className).toContain('grid-rows-[1fr]');
+    expect(block.className).toContain('motion-reduce:transition-opacity');
+  });
+});

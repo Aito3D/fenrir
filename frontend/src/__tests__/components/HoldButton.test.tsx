@@ -139,3 +139,23 @@ describe('HoldButton pointer/keyboard cancellation', () => {
     vi.useRealTimers();
   });
 });
+
+describe('HoldButton hint exit', () => {
+  it('fades the hint out for 150ms before unmounting it, the way it faded in', () => {
+    // A slipped tap surfaces the hint with .animate-fade-in. Its timer used
+    // to unmount it on a frame; now it swaps to the matching exit fade first,
+    // so the popover leaves along the path it arrived by.
+    vi.useFakeTimers();
+    renderPerimeter();
+    const button = screen.getByRole('button', { name: 'reset' });
+    fireEvent.pointerDown(button);
+    act(() => vi.advanceTimersByTime(100));
+    fireEvent.pointerUp(button);
+    expect(screen.getByText('hold').className).toContain('animate-fade-in');
+    act(() => vi.advanceTimersByTime(1600));
+    expect(screen.getByText('hold').className).toContain('animate-fade-out-sm');
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByText('hold')).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+});

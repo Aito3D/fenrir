@@ -80,6 +80,12 @@ export type HoldProgress = 'ring' | 'bar' | 'perimeter';
 // an intentional-but-abandoned hold and cancels silently.
 const HOLD_HINT_THRESHOLD_MS = 400;
 const HOLD_HINT_VISIBLE_MS = 1600;
+// The hint leaves the way it came: it faded in over 150ms, so it fades out
+// over the same beat (.animate-fade-out-sm) before unmounting, rather than
+// vanishing between two frames when its timer fires. Must match that
+// keyframe's duration.
+const HOLD_HINT_EXIT_MS = 150;
+type HintPhase = 'in' | 'out' | null;
 
 /** A button that requires a pointer/keyboard hold of `durationMs` before it
  *  fires `onHold`, tracing a small progress ring around its content and
@@ -165,7 +171,7 @@ export function HoldButton({
   const [holding, setHolding] = useState(false);
   const [completed, setCompleted] = useState(false);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showHint, setShowHint] = useState(false);
+  const [hintPhase, setHintPhase] = useState<HintPhase>(null);
   // Measured, not assumed: these buttons size to their icon and their padding,
   // and the perimeter path needs real pixels (see `perimeterPath`). Observed
   // rather than read once, so a font or zoom change re-fits the trace.
@@ -202,9 +208,12 @@ export function HoldButton({
     clearHoldTimer();
     setHolding(false);
     if (Date.now() - pressStartRef.current < HOLD_HINT_THRESHOLD_MS) {
-      setShowHint(true);
+      setHintPhase('in');
       if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = setTimeout(() => setShowHint(false), HOLD_HINT_VISIBLE_MS);
+      hintTimerRef.current = setTimeout(() => {
+        setHintPhase('out');
+        hintTimerRef.current = setTimeout(() => setHintPhase(null), HOLD_HINT_EXIT_MS);
+      }, HOLD_HINT_VISIBLE_MS);
     }
   };
 
@@ -387,10 +396,12 @@ export function HoldButton({
         )}
         {children}
       </button>
-      {showHint && (
+      {hintPhase && (
         <div className={`absolute z-20 ${
           hintPlacement === 'bottom' ? 'top-full left-0 mt-1' : 'bottom-full right-0 mb-1'
-        } whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs text-white shadow-lg animate-fade-in`}>
+        } whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs text-white shadow-lg ${
+          hintPhase === 'out' ? 'animate-fade-out-sm' : 'animate-fade-in'
+        }`}>
           {hint}
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ListFilter, X } from 'lucide-react';
 import { FOLLOWUP_KEYS, type FollowupBucket, type FollowupKey } from '../../utils/aitoFollowups';
@@ -60,6 +60,21 @@ export function FollowupStrip({
   const { t } = useTranslation();
   const byId = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const shown = FOLLOWUP_KEYS.filter((key) => buckets[key].ids.length > 0);
+
+  // The pills on screen at the strip's first non-empty paint arrive with the
+  // header row and need no entrance of their own; a pill whose bucket fills
+  // in later rises on its own. Initialised at render, once, and pruned
+  // post-commit so a bucket that empties and refills counts as an arrival.
+  const firstPaintKeysRef = useRef<Set<FollowupKey> | null>(null);
+  if (firstPaintKeysRef.current === null && shown.length > 0) firstPaintKeysRef.current = new Set(shown);
+  const shownKey = shown.join(',');
+  useEffect(() => {
+    const keys = firstPaintKeysRef.current;
+    if (!keys) return;
+    const present = new Set(shownKey.split(','));
+    for (const key of keys) if (!present.has(key)) keys.delete(key);
+  }, [shownKey]);
+
   if (shown.length === 0) return null;
 
   return (
@@ -94,9 +109,17 @@ export function FollowupStrip({
             onClick={() => onChange(pressed ? null : key)}
             className={`group/pill inline-flex items-center gap-2 rounded-full border px-3 py-1 whitespace-nowrap transition-[filter,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${
               PILL_CLS[key]
-            } ${pressed ? 'ring-2 ring-current' : 'hover:brightness-110'}`}
+            } ${pressed ? 'ring-2 ring-current' : 'hover:brightness-110'}${
+              firstPaintKeysRef.current?.has(key) ? '' : ' animate-rise-sm'
+            }`}
           >
-            <span className="text-sm font-bold leading-none tabular-nums">{bucket.ids.length}</span>
+            {/* Keyed on the count so the value-tick replays when it changes —
+                the same treatment the in-production count and the column
+                badges in this header row already get. Opacity only, so the
+                pill never shifts. */}
+            <span key={bucket.ids.length} className="text-sm font-bold leading-none tabular-nums animate-value-tick">
+              {bucket.ids.length}
+            </span>
             <span className="text-[11px] font-semibold uppercase tracking-wider">{t(LABEL_KEY[key])}</span>
             {bucket.maxDays > 0 && (
               <span className="text-[11px] opacity-80 tabular-nums">{t('aito.followups.longest', { days: bucket.maxDays })}</span>

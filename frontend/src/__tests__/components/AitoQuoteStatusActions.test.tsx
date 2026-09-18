@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, render as rtlRender } from '@testing-library/react';
+import { screen, waitFor, act, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { render } from '../utils';
 import { QuoteStatusActions } from '../../components/aito/QuoteStatusActions';
 import { ProjectDoneAction } from '../../components/aito/ProjectDoneAction';
@@ -275,6 +275,143 @@ describe('QuoteStatusActions', () => {
       expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].column).toBe('waiting');
     });
     expect(flash).toHaveBeenCalledWith(1);
+  });
+});
+
+/** Renders QuoteStatusActions from the LIVE cache row, the way the panel
+ *  does (its `project` is derived from the board query), so the optimistic
+ *  write re-renders the block with the new status. A static prop would never
+ *  flip, and the settle window under test would have nothing to hold back. */
+function LiveActions({ id }: { id: number }) {
+  const { data } = useQuery<AitoProject[]>({
+    queryKey: ['aito-projects'],
+    queryFn: () => Promise.reject(new Error('seeded, never fetched')),
+    enabled: false,
+  });
+  const project = data?.find((p) => p.id === id);
+  return project ? <QuoteStatusActions project={project} /> : null;
+}
+
+function renderLive(project: AitoProject) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  client.setQueryData(['aito-projects'], [project]);
+  rtlRender(
+    <QueryClientProvider client={client}>
+      <ToastProvider>
+        <LiveActions id={project.id} />
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
+  return client;
+}
+
+/** Points the reduced-motion query at `matches` for one test. The setup's
+ *  matchMedia is a plain function rather than a vi.fn, so it is swapped
+ *  wholesale and put back. */
+function withReducedMotion(matches: boolean) {
+  const original = window.matchMedia;
+  window.matchMedia = (query: string) => ({
+    ...original(query),
+    matches: query.includes('prefers-reduced-motion') ? matches : false,
+  });
+  return () => {
+    window.matchMedia = original;
+  };
+}
+
+describe('QuoteStatusActions settle window', () => {
+  // The mutation is optimistic, so `quote_status` flips on the tick the hold
+  // fires. Rendering straight from it unmounted the held button on that
+  // frame — before HoldButton's completion bounce and bar fade, started on
+  // the same tick, had drawn anything. The block now keeps drawing from the
+  // status it was held ON for HoldButton's 700ms `completed` window, inert,
+  // then fades the leaving buttons out over 150ms. The mutation itself is
+  // never delayed — the cache assertions below run before any timer moves.
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    __resetBoardSync();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps the held buttons on screen, inert, through the completion choreography, then fades them out', async () => {
+    const row = makeProject({ id: 1, column: 'waiting', quote_status: 'sent' });
+    vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({
+      project: { ...row, quote_status: 'accepted', column: 'print' },
+      zoho_synced: true,
+      no_op: false,
+    });
+    const client = renderLive(row);
+
+    await holdButton(screen.getByRole('button', { name: /accept quote/i }));
+    await waitFor(() =>
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].quote_status).toBe('accepted'),
+    );
+
+    // The status has flipped and both buttons are still here, inert and not
+    // yet leaving: this is the window the bounce plays in.
+    const accept = screen.getByRole('button', { name: /accept quote/i });
+    expect(accept).toBeDisabled();
+    expect(screen.getByRole('button', { name: /decline quote/i })).toBeDisabled();
+    expect(accept.className).not.toContain('animate-fade-out-sm');
+
+    act(() => vi.advanceTimersByTime(700));
+    expect(screen.getByRole('button', { name: /accept quote/i }).className).toContain('animate-fade-out-sm');
+    expect(screen.getByRole('button', { name: /decline quote/i }).className).toContain('animate-fade-out-sm');
+
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /decline quote/i })).not.toBeInTheDocument();
+  });
+
+  it('fades out only the button that is going: Mark sent leaves, Accept and Decline arrive after it', async () => {
+    const row = makeProject({ id: 1, column: 'devis', quote_status: 'draft' });
+    vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({
+      project: { ...row, quote_status: 'sent', column: 'waiting' },
+      zoho_synced: true,
+      no_op: false,
+    });
+    const client = renderLive(row);
+
+    await holdButton(screen.getByRole('button', { name: /mark as sent/i }));
+    await waitFor(() =>
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].quote_status).toBe('sent'),
+    );
+
+    // Still drawing the draft's one action; the new pair waits its turn.
+    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(700));
+    expect(screen.getByRole('button', { name: /mark as sent/i }).className).toContain('animate-fade-out-sm');
+
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /decline quote/i })).toBeEnabled();
+  });
+
+  it('skips the settle under reduced motion, where there is no bounce to wait for', async () => {
+    const restore = withReducedMotion(true);
+    try {
+      const row = makeProject({ id: 1, column: 'waiting', quote_status: 'sent' });
+      vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({
+        project: { ...row, quote_status: 'accepted', column: 'print' },
+        zoho_synced: true,
+        no_op: false,
+      });
+      const client = renderLive(row);
+
+      await holdButton(screen.getByRole('button', { name: /accept quote/i }));
+      await waitFor(() =>
+        expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].quote_status).toBe('accepted'),
+      );
+      expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /decline quote/i })).not.toBeInTheDocument();
+    } finally {
+      restore();
+    }
   });
 });
 

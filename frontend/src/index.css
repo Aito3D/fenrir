@@ -2455,18 +2455,25 @@ tbody .calc-table-row:hover {
 /* ============================================
    AITO TRACKING — SIDE PANELS
    The card and its two panels (payment terms on the right, the shop on the
-   left) share one stage. Card 620, gap 16, panel 360: when a panel opens the
-   card glides half the panel-plus-gap (188 px) the other way so the pair
-   stays centred, and the panel travels from behind the card's centre to its
-   own resting centre (310 + 16 + 180 − 188 = 318 px from the stage centre).
+   left) share one stage. Card 620, panel 360 visible: a panel never fully
+   leaves the card — its inner 24 px stay tucked under the card's edge (the
+   gap is negative, and the panel is 24 px wider to keep its content clear
+   of the card), and it sits vertically centred on the card, at least 40 px
+   inside its top and bottom, so the card is always the tallest thing (a
+   panel that would be taller scrolls inside). When a panel opens the card
+   glides half the visible panel (180 px) the other way so the pair stays
+   centred, and the panel travels from behind the card's centre to its own
+   resting centre (310 − 24 + 192 − 180 = 298 px from the stage centre).
    Closed, a panel sits under the card, a touch lower and smaller, so the
    opening reads as "from behind". Content inside rises once the panel has
    cleared the card (.track-panel-reveal). TrackingPanel.tsx owns the DOM. */
 .track-stage {
   position: relative;
   --track-card-w: 620px;
-  --track-panel-w: 360px;
-  --track-gap: 16px;
+  --track-overlap: 24px;
+  --track-inset: 40px;
+  --track-panel-w: calc(360px + var(--track-overlap));
+  --track-gap: calc(-1 * var(--track-overlap));
   --track-card-shift: calc((var(--track-panel-w) + var(--track-gap)) / 2);
   --track-panel-travel: calc(var(--track-card-w) / 2 + var(--track-gap) + var(--track-panel-w) / 2 - var(--track-card-shift));
   --track-open: 460ms;
@@ -2483,15 +2490,18 @@ tbody .calc-table-row:hover {
 }
 .track-panel {
   position: absolute;
-  top: 0;
+  top: 50%;
   left: 50%;
   z-index: 1;
   width: var(--track-panel-w);
+  max-height: calc(100% - 2 * var(--track-inset));
   margin-left: calc(-1 * var(--track-panel-w) / 2);
-  padding: 24px;
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   opacity: 0;
   visibility: hidden;
-  transform: translateX(0) translateY(10px) scale(0.965);
+  transform: translate(0, calc(-50% + 10px)) scale(0.965);
   transition:
     transform var(--track-close) var(--ease-exit),
     opacity 200ms var(--ease-exit) 60ms,
@@ -2506,8 +2516,10 @@ tbody .calc-table-row:hover {
     opacity 220ms var(--ease-signature),
     visibility 0s;
 }
-.track-panel[data-side='right'][data-state='open'] { transform: translateX(var(--track-panel-travel)) translateY(0) scale(1); }
-.track-panel[data-side='left'][data-state='open'] { transform: translateX(calc(-1 * var(--track-panel-travel))) translateY(0) scale(1); }
+.track-panel[data-side='right'] { padding-left: calc(20px + var(--track-overlap)); }
+.track-panel[data-side='left'] { padding-right: calc(20px + var(--track-overlap)); }
+.track-panel[data-side='right'][data-state='open'] { transform: translate(var(--track-panel-travel), -50%) scale(1); }
+.track-panel[data-side='left'][data-state='open'] { transform: translate(calc(-1 * var(--track-panel-travel)), -50%) scale(1); }
 .track-panel-reveal {
   opacity: 0;
   transform: translateY(6px);
@@ -2570,7 +2582,9 @@ tbody .calc-table-row:hover {
     pointer-events: auto;
     transition: opacity 260ms var(--ease-signature);
   }
-  .track-panel {
+  .track-panel,
+  .track-panel[data-side='right'],
+  .track-panel[data-side='left'] {
     position: fixed;
     top: auto;
     left: 0;
@@ -2615,14 +2629,14 @@ tbody .calc-table-row:hover {
   .track-card { transition: none; }
   .track-panel,
   .track-panel[data-state='open'] {
-    transform: none;
+    transform: translateY(-50%);
     transition:
       opacity 150ms linear,
       visibility 0s linear 150ms;
   }
   .track-panel[data-state='open'] { transition: opacity 150ms linear, visibility 0s; }
-  .track-panel[data-side='right'][data-state='open'] { transform: translateX(var(--track-panel-travel)); }
-  .track-panel[data-side='left'][data-state='open'] { transform: translateX(calc(-1 * var(--track-panel-travel))); }
+  .track-panel[data-side='right'][data-state='open'] { transform: translate(var(--track-panel-travel), -50%); }
+  .track-panel[data-side='left'][data-state='open'] { transform: translate(calc(-1 * var(--track-panel-travel)), -50%); }
   .track-panel-reveal,
   .track-panel[data-state='open'] .track-panel-reveal {
     transform: none;

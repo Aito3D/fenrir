@@ -36,3 +36,20 @@ describe('PrintBacklogBadge', () => {
     expect(screen.getByTestId('aito-print-backlog')).toHaveTextContent('≈ < 0.1 d on 3 printers');
   });
 });
+
+describe('PrintBacklogBadge motion', () => {
+  it('rises in as a whole and ticks only its figures when they change', () => {
+    // The pill mounts with the backlog, so it gets the small rise once; the
+    // figures inside ride a span keyed on the hours, so a change remounts
+    // that span (replaying the value-tick) without re-rising the pill — the
+    // same treatment the in-production count beside it already gets.
+    const { rerender } = render(<PrintBacklogBadge minutes={2280} printerCount={3} dailyHours={[8]} />);
+    const badge = screen.getByTestId('aito-print-backlog');
+    expect(badge.className).toContain('animate-rise-sm');
+    const before = badge.querySelector('.animate-value-tick');
+    expect(before).not.toBeNull();
+    rerender(<PrintBacklogBadge minutes={2400} printerCount={3} dailyHours={[8]} />);
+    expect(screen.getByTestId('aito-print-backlog')).toBe(badge);
+    expect(badge.querySelector('.animate-value-tick')).not.toBe(before);
+  });
+});

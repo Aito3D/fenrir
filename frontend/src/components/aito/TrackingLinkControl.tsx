@@ -85,8 +85,8 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
   // own label back as its hint. Only the disabled case needs a bespoke
   // string, since that hint is the one place a reader would otherwise have
   // no idea why the button won't respond.
-  const hint = configured ? t('aito.holdToConfirm') : t('aito.trackingNeedsExternalUrl');
-  const disabledTitle = !configured ? t('aito.trackingNeedsExternalUrl') : undefined;
+  const disabledTitle = configured ? undefined : t('aito.trackingNeedsExternalUrl');
+  const hint = disabledTitle ?? t('aito.holdToConfirm');
 
   return (
     <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
