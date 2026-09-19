@@ -7,13 +7,10 @@ import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { DeltaBadge } from '../../stats/DeltaBadge';
 import { computeDelta } from '../../stats/deltas';
 import { localDateKey, parseLocalDateKey } from '../../../utils/date';
-import { AXIS, GRID, SERIES } from './palette';
+import { AXIS, DECLINED, GRID, SERIES } from './palette';
 import { Card, Empty, Heading, InnerTile, Legend } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
-/** Declined is a "no": it wears the muted text tone, not a series hue, the
- *  same as in the win-rate bars, so the two blocks read as one system. */
-const DECLINED = '#808080';
 const WEEKLY_ABOVE_DAYS = 45;
 const WEEKLY_ABOVE_DAYS_NARROW = 31;
 

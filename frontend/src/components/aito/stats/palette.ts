@@ -15,6 +15,9 @@ export const SERVICE_COLORS: Record<string, string> = {
   usinage: '#1f9e8a',
 };
 
+/** Declined is a "no": the muted text tone, never a series hue, wherever it
+ *  appears (decisions chart, win-rate bars). */
+export const DECLINED = '#808080';
 export const GRID = '#2d2d2d';
 export const AXIS = '#808080';
 export const TOOLTIP_ORDER = ['created', 'accepted', 'done', 'done7'];

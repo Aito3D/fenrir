@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
-import { SERIES } from './palette';
+import { DECLINED, SERIES } from './palette';
 import { DecisionsCard } from './DecisionsCard';
 import { AsOfToday, Card, Empty, Heading, InnerTile, Step } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
@@ -97,8 +97,8 @@ export function SalesSection({ data }: { data: AitoStats }) {
                       {band.declined > 0 && (
                         <span
                           data-segment="declined"
-                          className="block h-full min-w-[3px] rounded-full bg-bambu-dark-tertiary"
-                          style={{ flexGrow: band.declined }}
+                          className="block h-full min-w-[3px] rounded-full"
+                          style={{ flexGrow: band.declined, backgroundColor: DECLINED }}
                         />
                       )}
                     </span>
