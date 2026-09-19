@@ -566,7 +566,22 @@ export function AitoPage() {
           canUpdate={canUpdate}
         />
       ) : view === 'stats' ? (
-        <StatsView range={statsTimeframe.range} />
+        <StatsView
+          range={statsTimeframe.range}
+          brief={{
+            projects: aitoQuery.data ?? [],
+            buckets,
+            now: followupClock.now,
+            today: followupClock.today,
+            // Back to the board, then the card: the board is not rendered yet
+            // when the click lands, so the morph finds no card node and the
+            // panel simply opens over the arriving board.
+            onOpenCard: (id) => {
+              changeView('board');
+              openCard(id);
+            },
+          }}
+        />
       ) : (
         <DndContext
           sensors={sensors}

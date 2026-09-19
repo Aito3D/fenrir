@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -63,7 +63,8 @@ describe('AitoPage statistics view', () => {
     expect(screen.queryByRole('button', { name: 'Import' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
     expect(screen.queryByPlaceholderText(/Search projects/)).toBeNull();
-    expect(screen.queryByText(/in production$/)).toBeNull();
+    // The header's own count badge is gone (the brief's date line carries the phrase instead).
+    expect(document.querySelector('.vt-aito-count')).toBeNull();
     expect(screen.getByRole('button', { name: /Last 30 Days/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Back to board' }));
@@ -129,5 +130,19 @@ describe('AitoPage statistics view', () => {
       delete doc.startViewTransition;
       delete document.documentElement.dataset.vt;
     }
+  });
+
+  it('a brief row returns to the board and opens that card', async () => {
+    const user = userEvent.setup();
+    const sent = { ...project, id: 77, description: 'Engrenage machine à laver', client_name: 'Tehei Neuffer', column: 'waiting', quote_status: 'sent', quote_sent_at: '2026-01-01T10:00:00', quote_total: 4200 };
+    server.use(http.get('/api/v1/aito/', () => HttpResponse.json([project, sent])));
+    render(<AitoPage />);
+    await screen.findByRole('button', { name: /Tehei Neuffer/ });
+    await user.click(screen.getByRole('button', { name: 'Statistics' }));
+    const chase = await screen.findByTestId('aito-brief-chase');
+    await user.click(within(chase).getByRole('button', { name: /Tehei Neuffer/ }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Engrenage machine à laver');
+    expect(screen.queryByTestId('aito-stats-view')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Statistics' })).toBeInTheDocument();
   });
 });

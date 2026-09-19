@@ -72,22 +72,18 @@ describe('StatsView', () => {
     serve(fixture());
     render(<StatsView range={{}} />);
     expect(await screen.findByTestId('aito-stats-view')).toBeInTheDocument();
-    expect(await screen.findByText('12 in production · 6 completed overall')).toBeInTheDocument();
 
-    const kpis = screen.getByTestId('aito-stats-kpis');
-    const tile = (label: string) => within(kpis).getByText(label).closest('div')!.parentElement!;
-    expect(tile('Added')).toHaveTextContent('3');
-    expect(tile('Added')).toHaveTextContent('▲ 50%');
-    expect(tile('Accepted')).toHaveTextContent('2');
-    expect(tile('Accepted')).toHaveTextContent('—'); // flat against 2
-    expect(tile('Completed')).toHaveTextContent('1'); // previous 0 → no badge
-    expect(within(tile('Completed')).queryByText(/%/)).toBeNull();
-    expect(tile('Added per day')).toHaveTextContent('0.10');
-    expect(tile('Added per day')).toHaveTextContent('≈ 0.7 per week');
-    expect(tile('Quote to delivery')).toHaveTextContent('4.8 d');
-    expect(tile('Quote to delivery')).toHaveTextContent('median 4.5 d');
-    expect(tile('Quote to delivery')).toHaveTextContent('▼ 21%');
-    expect(tile('Acceptance to delivery')).toHaveTextContent('2.0 d');
+    const band = await screen.findByTestId('aito-stats-band');
+    const figure = (label: RegExp) => within(band).getByText(label).parentElement!;
+    expect(figure(/^Added$/)).toHaveTextContent('3');
+    expect(figure(/^Added$/)).toHaveTextContent('▲ 50%');
+    expect(figure(/^Accepted · 67% accepted$/)).toHaveTextContent('2');
+    expect(figure(/^Accepted · 67% accepted$/)).toHaveTextContent('—'); // flat against 2
+    expect(figure(/^Completed$/)).toHaveTextContent('1'); // previous 0 → no badge
+    expect(within(figure(/^Completed$/)).queryByText(/%/)).toBeNull();
+    expect(figure(/^Quote to delivery$/)).toHaveTextContent('4.8 d');
+    expect(figure(/^Quote to delivery$/)).toHaveTextContent('▼ 21%');
+    expect(figure(/^Accepted quotes$/)).toHaveTextContent('2 500');
   });
 
   it('renders the flow, the funnel and the money strip', async () => {
@@ -175,19 +171,19 @@ describe('StatsView', () => {
       }),
     );
     const { rerender } = render(<StatsView range={{ dateFrom: '2026-09-01', dateTo: '2026-09-10' }} />);
-    const kpis = await screen.findByTestId('aito-stats-kpis');
-    expect(within(kpis).getByText('Added').closest('div')!.parentElement).toHaveTextContent('3');
+    const band = await screen.findByTestId('aito-stats-band');
+    expect(within(band).getByText(/^Added$/).parentElement).toHaveTextContent('3');
 
     rerender(<StatsView range={{ dateFrom: '2026-08-01', dateTo: '2026-09-10' }} />);
     // Still the old numbers, dimmed and marked busy — no spinner, no unmount.
     const body = screen.getByTestId('aito-stats-body');
     expect(body).toHaveAttribute('aria-busy', 'true');
     expect(body).toHaveClass('opacity-60');
-    expect(within(kpis).getByText('Added').closest('div')!.parentElement).toHaveTextContent('3');
+    expect(within(band).getByText(/^Added$/).parentElement).toHaveTextContent('3');
     expect(document.querySelector('.animate-spin')).toBeNull();
 
     await waitFor(() => expect(screen.getByTestId('aito-stats-body')).not.toHaveAttribute('aria-busy'));
     expect(screen.getByTestId('aito-stats-body')).toHaveClass('opacity-100');
-    expect(within(screen.getByTestId('aito-stats-kpis')).getByText('Added').closest('div')!.parentElement).toHaveTextContent('9');
+    expect(within(screen.getByTestId('aito-stats-band')).getByText(/^Added$/).parentElement).toHaveTextContent('9');
   });
 });

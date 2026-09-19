@@ -1254,6 +1254,19 @@ html[data-vt='aito-view']::view-transition-new(page-title) {
   }
 }
 
+/* Aito statistics accordions: the native marker is replaced by the chevron
+   in the summary, and the body rises when the section opens — display:none
+   → block restarts the animation, so nothing is scripted. */
+.aito-acc > summary {
+  list-style: none;
+}
+.aito-acc > summary::-webkit-details-marker {
+  display: none;
+}
+.aito-acc[open] > .aito-acc-body {
+  animation: rise 0.25s var(--ease-signature) backwards;
+}
+
 /* Aito card → detail panel morph. The card and the panel share one
    view-transition-name; the page-level root/page-title animations are
    suppressed for the duration via html[data-vt='aito-card'] so only the card
@@ -2023,6 +2036,7 @@ tbody .calc-table-row:hover {
   .animate-rise,
   .animate-rise-lg,
   .animate-rise-sm,
+  .aito-acc[open] > .aito-acc-body,
   .stagger-nested > *,
   .animate-page-in,
   .animate-modal-in,

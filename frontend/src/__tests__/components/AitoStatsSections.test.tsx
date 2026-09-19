@@ -89,23 +89,23 @@ function serve(body: AitoStats) {
 describe('StatsView sections', () => {
   beforeEach(() => {
     localStorage.clear();
-    Element.prototype.scrollIntoView = vi.fn();
   });
 
-  it('renders the four sections under a jump strip that scrolls to them', async () => {
+  it('folds the four sections into closed accordions with a teaser each, and opening one reveals it', async () => {
     serve(fixture());
     render(<StatsView range={{}} />);
-    const nav = await screen.findByRole('navigation', { name: 'Sections' });
-    const pills = within(nav).getAllByRole('button');
-    expect(pills.map((b) => b.textContent)).toEqual(['Sales', 'Time', 'Money', 'Clients']);
-    expect(pills[0]).toHaveAttribute('aria-current', 'true');
+    const sales = await screen.findByTestId('aito-stats-section-sales');
     for (const id of ['sales', 'time', 'money', 'clients']) {
-      expect(screen.getByTestId(`aito-stats-section-${id}`)).toHaveAttribute('id', `aito-stats-${id}`);
+      const details = screen.getByTestId(`aito-stats-section-${id}`) as HTMLDetailsElement;
+      expect(details.tagName).toBe('DETAILS');
+      expect(details.open).toBe(false);
     }
-    await userEvent.setup().click(pills[2]);
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
-    expect(pills[2]).toHaveAttribute('aria-current', 'true');
-    expect(pills[0]).not.toHaveAttribute('aria-current');
+    expect(sales).toHaveTextContent('67% accepted · 1 lost for');
+    expect(screen.getByTestId('aito-stats-section-time')).toHaveTextContent('4.8 d quote to delivery · 2 backward moves');
+    expect(screen.getByTestId('aito-stats-section-clients')).toHaveTextContent('1 new · 1 returning');
+    await userEvent.setup().click(within(sales).getByText('Sales'));
+    expect((sales as HTMLDetailsElement).open).toBe(true);
+    expect(within(sales).getByTestId('aito-stats-funnel')).toBeInTheDocument();
   });
 
   it('Sales: lost line, quote age tiles with the 15+ alert, win rate bars', async () => {
