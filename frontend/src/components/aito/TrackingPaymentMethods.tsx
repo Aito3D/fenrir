@@ -212,7 +212,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
           <button
             type="button"
             onClick={(e) => onFindShop(e.currentTarget)}
-            className={`mx-[4px] mt-[14px] inline-flex min-h-[44px] items-center gap-[6px] rounded-[8px] text-[13px] font-semibold text-aito-cyan transition-colors duration-150 hover:text-aito-cyan/80 min-[1060px]:mt-[8px] min-[1060px]:min-h-[36px] ${FOCUS}`}
+            className={`mx-[4px] mt-[14px] inline-flex min-h-[44px] items-center gap-[6px] rounded-[8px] text-[13px] font-semibold text-aito-cyan transition-colors duration-150 hover:text-aito-cyan/80 min-[1120px]:mt-[8px] min-[1120px]:min-h-[36px] ${FOCUS}`}
           >
             <MapPin className="h-[14px] w-[14px]" aria-hidden="true" />
             {t('aito.track.paymentMethods.findShop')}
@@ -251,7 +251,7 @@ const CHECK_ICON = (
  *  full-width sheet does not). */
 function Fact({ label, value, lead = false, copyLabel, copied = false, onCopy }: { label: string; value: string; lead?: boolean; copyLabel?: string; copied?: boolean; onCopy?: () => void }) {
   const { t } = useTranslation();
-  const layout = `flex w-full items-center gap-[10px] border-t border-aito-line py-[7px] pr-[10px] pl-[14px] first:border-t-0 ${lead ? 'py-[12px] min-[1060px]:py-[9px]' : 'min-h-[44px] min-[1060px]:min-h-[40px]'}`;
+  const layout = `flex w-full items-center gap-[10px] border-t border-aito-line py-[7px] pr-[10px] pl-[14px] first:border-t-0 ${lead ? 'py-[12px] min-[1120px]:py-[9px]' : 'min-h-[44px] min-[1120px]:min-h-[40px]'}`;
   const body = (
     <span className={`min-w-0 flex-1 ${lead ? '' : '@min-[440px]:grid @min-[440px]:grid-cols-[128px_1fr] @min-[440px]:items-center @min-[440px]:gap-x-[14px]'}`}>
       <span className={`block text-aito-muted ${lead ? 'text-[12px]' : 'text-[12px] @min-[440px]:text-[13px]'}`}>{label}</span>

@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { FOCUS } from '../../utils/trackingShell';
 
-// Below this width the card and a 360 px panel no longer fit side by side;
+// Below this width the card and a 420 px panel no longer fit side by side;
 // the panel becomes a bottom sheet (index.css `.track-panel`, same number).
-const SHEET_QUERY = '(max-width: 1059px)';
+const SHEET_QUERY = '(max-width: 1119px)';
 const REDUCE_QUERY = '(prefers-reduced-motion: reduce)';
 
 /** One of the tracking page's two side panels. Always mounted beside the

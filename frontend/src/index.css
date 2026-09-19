@@ -2455,15 +2455,15 @@ tbody .calc-table-row:hover {
 /* ============================================
    AITO TRACKING — SIDE PANELS
    The card and its two panels (payment terms on the right, the shop on the
-   left) share one stage. Card 620, panel 360 visible: a panel never fully
+   left) share one stage. Card 620, panel 420 visible: a panel never fully
    leaves the card — its inner 24 px stay tucked under the card's edge (the
    gap is negative, and the panel is 24 px wider to keep its content clear
    of the card), and it sits vertically centred on the card, at least 40 px
    inside its top and bottom, so the card is always the tallest thing (a
    panel that would be taller scrolls inside). When a panel opens the card
-   glides half the visible panel (180 px) the other way so the pair stays
+   glides half the visible panel (210 px) the other way so the pair stays
    centred, and the panel travels from behind the card's centre to its own
-   resting centre (310 − 24 + 192 − 180 = 298 px from the stage centre).
+   resting centre (310 − 24 + 222 − 210 = 298 px from the stage centre).
    Closed, a panel sits under the card, a touch lower and smaller, so the
    opening reads as "from behind". Content inside rises once the panel has
    cleared the card (.track-panel-reveal). TrackingPanel.tsx owns the DOM. */
@@ -2472,7 +2472,7 @@ tbody .calc-table-row:hover {
   --track-card-w: 620px;
   --track-overlap: 24px;
   --track-inset: 40px;
-  --track-panel-w: calc(360px + var(--track-overlap));
+  --track-panel-w: calc(420px + var(--track-overlap));
   --track-gap: calc(-1 * var(--track-overlap));
   --track-card-shift: calc((var(--track-panel-w) + var(--track-gap)) / 2);
   --track-panel-travel: calc(var(--track-card-w) / 2 + var(--track-gap) + var(--track-panel-w) / 2 - var(--track-card-shift));
@@ -2574,7 +2574,7 @@ tbody .calc-table-row:hover {
 /* Phones and narrow windows: the card cannot make room, so the panel rises
    as a bottom sheet over the dimmed card. --track-sheet-progress is set by
    the drag-to-dismiss (TrackingPanel.tsx) so the scrim thins with the drag. */
-@media (max-width: 1059px) {
+@media (max-width: 1119px) {
   .track-stage[data-open='pay'],
   .track-stage[data-open='shop'] { --track-card-x: 0px; }
   .track-stage[data-open] .track-scrim {
@@ -2645,7 +2645,7 @@ tbody .calc-table-row:hover {
   }
   .track-map iframe { transition: none; }
   .track-scrim { transition: none; }
-  @media (max-width: 1059px) {
+  @media (max-width: 1119px) {
     .track-panel,
     .track-panel[data-side='right'][data-state='open'],
     .track-panel[data-side='left'][data-state='open'] { transform: none; }
