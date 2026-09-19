@@ -4264,6 +4264,23 @@ export interface AitoStatsThroughput {
   active: number;
 }
 export interface AitoStatsDay { day: string; created: number; accepted: number; done: number }
+export interface AitoStatsQuoteAge { bucket: '0-3' | '4-7' | '8-14' | '15+'; count: number; total: number }
+export interface AitoStatsSizeBand { min: number; max: number; accepted: number; declined: number; rate: number | null }
+export interface AitoStatsOverdue {
+  buckets: { bucket: '1-7' | '8-30' | '31+'; count: number; balance: number }[];
+  oldest_days: number | null;
+}
+export interface AitoStatsStageTime {
+  project_id: number;
+  client_name: string | null;
+  description: string;
+  done_at: string;
+  stages: Record<string, number>;
+}
+export interface AitoStatsRework { moves: number; cards: number; share: number | null }
+export interface AitoStatsService { service: string; tasks: number; revenue: number }
+export interface AitoStatsClients { new: number; returning: number; new_total: number; returning_total: number }
+export interface AitoStatsIsland { island: string | null; count: number; shipping_total: number }
 export interface AitoStats {
   board: { column: AitoColumnId; count: number; total: number }[];
   conversion: { sent: AitoStatsBucket; accepted: AitoStatsBucket; declined: AitoStatsBucket; acceptance_rate: number | null };
@@ -4274,6 +4291,16 @@ export interface AitoStats {
   throughput?: AitoStatsThroughput;
   previous?: { created: number; accepted: number; done: number; lead_days: number | null } | null;
   daily?: AitoStatsDay[];
+  // The four sections' blocks (2026-09-19); every one optional for the same reason.
+  quote_age?: AitoStatsQuoteAge[];
+  size_bands?: AitoStatsSizeBand[];
+  overdue?: AitoStatsOverdue;
+  stage_time?: AitoStatsStageTime[];
+  rework?: AitoStatsRework;
+  services?: AitoStatsService[];
+  clients?: AitoStatsClients;
+  arrivals?: number[][];
+  islands?: AitoStatsIsland[];
   date_from: string | null;
   date_to: string | null;
 }

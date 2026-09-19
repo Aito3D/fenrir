@@ -145,7 +145,8 @@ describe('StatsView', () => {
       }),
     );
     render(<StatsView />);
-    expect(await screen.findByText('Nothing happened in this period')).toBeInTheDocument();
+    const activity = await screen.findByTestId('aito-stats-activity');
+    expect(within(activity).getByText('Nothing happened in this period')).toBeInTheDocument();
     expect(screen.queryByTestId('aito-stats-money')).toBeNull();
   });
 
