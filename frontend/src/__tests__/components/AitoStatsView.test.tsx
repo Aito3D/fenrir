@@ -115,7 +115,7 @@ describe('StatsView', () => {
     expect(activity.querySelectorAll('.recharts-line').length).toBe(1);
   });
 
-  it('folds days into weeks past 62 days: no rolling line, one bar group per week', async () => {
+  it('folds days into weeks past 45 days: no rolling line, one bar group per week', async () => {
     const daily = Array.from({ length: 70 }, (_, i) => {
       const d = new Date(2026, 6, 1 + i); // 2026-07-01 is a Wednesday
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

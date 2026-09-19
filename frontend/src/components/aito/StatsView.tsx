@@ -13,6 +13,7 @@ import { computeDelta, type StatDelta } from '../stats/deltas';
 import { COLUMNS } from './columns';
 import { formatMoney } from '../../utils/pricing';
 import { useCurrency } from '../../hooks/useCurrency';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { localDateKey, parseLocalDateKey } from '../../utils/date';
 
 /** The three series, in the order they happen to a project. Validated as a
@@ -25,8 +26,9 @@ const GRID = '#2d2d2d';
 const AXIS = '#808080';
 const TOOLTIP_ORDER = ['created', 'accepted', 'done', 'done7'];
 /** Past this many days the bars turn to hairlines, so the chart folds the
- *  days into Monday-start weeks instead. */
-const WEEKLY_ABOVE_DAYS = 62;
+ *  days into Monday-start weeks instead. A phone runs out of pixels sooner. */
+const WEEKLY_ABOVE_DAYS = 45;
+const WEEKLY_ABOVE_DAYS_NARROW = 31;
 
 type ChartRow = AitoStatsDay & { label: string; done7?: number };
 
@@ -43,11 +45,12 @@ export function StatsView() {
     queryFn: () => api.getAitoStats(range),
   });
   const data = query.data;
+  const narrow = useMediaQuery('(max-width: 639px)', () => typeof window !== 'undefined' && window.innerWidth < 640);
 
   const { rows, weekly } = useMemo(() => {
     const daily = data?.daily ?? [];
     const fmt = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short' });
-    if (daily.length > WEEKLY_ABOVE_DAYS) {
+    if (daily.length > (narrow ? WEEKLY_ABOVE_DAYS_NARROW : WEEKLY_ABOVE_DAYS)) {
       const buckets = new Map<string, ChartRow>();
       for (const d of daily) {
         const date = parseLocalDateKey(d.day);
@@ -68,7 +71,7 @@ export function StatsView() {
       return { ...d, label: fmt.format(parseLocalDateKey(d.day)), done7: Math.round(done7 * 100) / 100 };
     });
     return { rows, weekly: false };
-  }, [data, i18n.language]);
+  }, [data, i18n.language, narrow]);
 
   return (
     <section data-testid="aito-stats-view" className="animate-rise space-y-6">
@@ -353,7 +356,7 @@ function Step({ label, value, rate, accent }: { label: string; value: number; ra
         {label}
       </div>
       <div className="text-lg font-semibold text-white">{value}</div>
-      <div className="text-[11px] text-bambu-gray-light truncate">{rate ?? ' '}</div>
+      <div className="text-[11px] text-bambu-gray-light">{rate ?? ' '}</div>
     </li>
   );
 }
