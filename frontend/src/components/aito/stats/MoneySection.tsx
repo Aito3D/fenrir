@@ -77,7 +77,7 @@ export function MoneySection({ data }: { data: AitoStats }) {
                   />
                 ))}
               </div>
-              <ul className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-bambu-gray-light">
+              <ul className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs text-bambu-gray-light sm:grid-cols-2">
                 {services.map((s) => (
                   <li key={s.service} className="flex items-center gap-1.5 min-w-0">
                     <span

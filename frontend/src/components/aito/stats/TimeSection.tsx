@@ -81,8 +81,9 @@ export function TimeSection({ data }: { data: AitoStats }) {
                   {row.client_name ? ' · ' : ''}
                   {row.description}
                 </span>
-                <span className="flex h-3 flex-1 gap-[2px]" style={{ width: longest > 0 ? `${(row.total / longest) * 100}%` : 0 }}>
-                  {COLUMNS.map((c) =>
+                <span className="flex-1 min-w-0">
+                  <span className="flex h-3 gap-[2px]" style={{ width: longest > 0 ? `${(row.total / longest) * 100}%` : 0 }}>
+                    {COLUMNS.map((c) =>
                     row.stages[c.id] > 0 ? (
                       <span
                         key={c.id}
@@ -92,6 +93,7 @@ export function TimeSection({ data }: { data: AitoStats }) {
                       />
                     ) : null,
                   )}
+                  </span>
                 </span>
                 <span className="w-14 shrink-0 text-right font-medium text-white">{days(row.total)}</span>
               </li>
