@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { DeltaBadge } from '../../stats/DeltaBadge';
 import { computeDelta } from '../../stats/deltas';
+import { PanelCard } from '../PanelCard';
 import { SERIES } from './palette';
 import { useStatsFormat } from './useStatsFormat';
 
@@ -20,12 +21,9 @@ export function FiguresBand({ data }: { data: AitoStats }) {
     value === null || value === undefined ? undefined : t('aito.stats.vsPrevious', { value });
 
   return (
-    <div
-      data-testid="aito-stats-band"
-      className="grid gap-x-8 gap-y-3 border-y border-bambu-dark-tertiary py-3.5 sm:grid-cols-[auto_1fr] sm:items-center"
-    >
-      <span className="text-[11px] uppercase tracking-[0.06em] text-bambu-gray">{t('aito.stats.thisPeriod')}</span>
-      <div className="flex flex-wrap items-baseline gap-x-7 gap-y-3 stagger-children">
+    <div data-testid="aito-stats-band">
+      <PanelCard title={t('aito.stats.thisPeriod')}>
+      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3 stagger-children">
         <Figure
           swatch={SERIES.created}
           value={String(tp.created)}
@@ -55,6 +53,7 @@ export function FiguresBand({ data }: { data: AitoStats }) {
         />
         <Figure value={money(data.conversion.accepted.total)} label={t('aito.stats.quoted')} />
       </div>
+      </PanelCard>
     </div>
   );
 }

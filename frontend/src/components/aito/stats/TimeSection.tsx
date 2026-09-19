@@ -30,7 +30,7 @@ export function TimeSection({ data }: { data: AitoStats }) {
             <div
               key={s.column}
               title={t('stats.pipelineSample', { count: s.sample })}
-              className="rounded-lg bg-bambu-dark px-2 py-2 text-center"
+              className="rounded-lg bg-bambu-dark-secondary px-2 py-2 text-center"
             >
               <div className="flex items-center justify-center gap-1.5 text-[11px] text-bambu-gray min-w-0">
                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot(s.column)}`} aria-hidden="true" />

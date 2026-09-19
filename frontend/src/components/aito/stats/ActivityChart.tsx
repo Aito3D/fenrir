@@ -6,7 +6,8 @@ import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { localDateKey, parseLocalDateKey } from '../../../utils/date';
 import { AXIS, GRID, SERIES, TOOLTIP_ORDER } from './palette';
-import { Card, Empty, Heading, Legend } from './primitives';
+import { PanelCard } from '../PanelCard';
+import { Empty, Legend } from './primitives';
 
 /** Past this many days the bars turn to hairlines, so the chart folds the
  *  days into Monday-start weeks instead. A phone runs out of pixels sooner. */
@@ -57,10 +58,11 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
           : t('aito.stats.rolling7');
 
   return (
-    <Card testId="aito-stats-activity">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <Heading>{t('aito.stats.activity')}</Heading>
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-bambu-gray-light">
+    <div data-testid="aito-stats-activity">
+    <PanelCard
+      title={t('aito.stats.activity')}
+      action={
+        <ul className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-xs text-bambu-gray-light">
           <Legend color={SERIES.created}>{t('aito.stats.added')}</Legend>
           <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
           <Legend color={SERIES.done}>{t('aito.stats.completed')}</Legend>
@@ -70,7 +72,8 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
             </Legend>
           )}
         </ul>
-      </div>
+      }
+    >
       {active ? (
         <ResponsiveContainer width="100%" height={240}>
           <ComposedChart data={rows} barGap={2} barCategoryGap="25%" margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
@@ -109,6 +112,7 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
       ) : (
         <Empty>{t('aito.stats.empty')}</Empty>
       )}
-    </Card>
+    </PanelCard>
+    </div>
   );
 }

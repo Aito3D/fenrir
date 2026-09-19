@@ -24,7 +24,7 @@ export function ClientsSection({ data }: { data: AitoStats }) {
   const grid = data.arrivals;
   const peak = grid ? Math.max(0, ...grid.flat()) : 0;
   const shade = (n: number) => {
-    if (n === 0 || peak === 0) return 'bg-bambu-dark';
+    if (n === 0 || peak === 0) return 'bg-bambu-dark-secondary';
     const r = n / peak;
     return r > 0.75 ? 'bg-bambu-green' : r > 0.5 ? 'bg-bambu-green/75' : r > 0.25 ? 'bg-bambu-green/50' : 'bg-bambu-green/30';
   };
@@ -60,7 +60,7 @@ export function ClientsSection({ data }: { data: AitoStats }) {
         {islands.length > 0 ? (
           <ul className="space-y-1 text-xs">
             {islands.map((row) => (
-              <li key={row.island ?? '__pickup'} className="flex items-center justify-between gap-3 rounded-lg bg-bambu-dark px-3 py-1.5">
+              <li key={row.island ?? '__pickup'} className="flex items-center justify-between gap-3 rounded-lg bg-bambu-dark-secondary px-3 py-1.5">
                 <span className={row.island ? 'text-white capitalize' : 'text-bambu-gray-light'}>
                   {row.island ?? t('aito.stats.pickup')}
                 </span>

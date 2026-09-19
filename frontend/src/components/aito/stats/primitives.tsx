@@ -4,9 +4,10 @@ import { BarChart3 } from 'lucide-react';
 import { DeltaBadge } from '../../stats/DeltaBadge';
 import type { StatDelta } from '../../stats/deltas';
 
-/** A block's title inside a card. */
+/** A block's title inside a card — the detail panel's eyebrow, so the
+ *  statistics read as more of the same panel. */
 export function Heading({ children }: { children: ReactNode }) {
-  return <h3 className="text-sm font-semibold text-white">{children}</h3>;
+  return <h3 className="text-xs uppercase tracking-wide text-bambu-gray">{children}</h3>;
 }
 
 /** A section's title: Sales, Time, Money, Clients. */
@@ -14,10 +15,15 @@ export function SectionHeading({ children }: { children: ReactNode }) {
   return <h2 className="text-base font-semibold text-white">{children}</h2>;
 }
 
-/** The card every block sits in. */
+/** The card every block sits in: the panel's own card shell (`PanelCard`),
+ *  on the darker surface because these live inside a folded section that is
+ *  itself a panel card. */
 export function Card({ testId, children, className = '' }: { testId?: string; children: ReactNode; className?: string }) {
   return (
-    <section data-testid={testId} className={`rounded-xl bg-bambu-dark-secondary p-4 space-y-3 min-w-0 ${className}`}>
+    <section
+      data-testid={testId}
+      className={`rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark p-3 space-y-3 min-w-0 ${className}`}
+    >
       {children}
     </section>
   );
@@ -86,7 +92,7 @@ export function Tile({
   enter?: boolean;
 }) {
   return (
-    <div className={`rounded-xl bg-bambu-dark-secondary px-3 py-2.5 min-w-0 ${enter ? 'animate-rise' : ''}`}>
+    <div className={`rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2.5 min-w-0 ${enter ? 'animate-rise' : ''}`}>
       <div className="flex items-center gap-2 text-xs text-bambu-gray">
         {accent && <span aria-hidden="true" className="inline-block h-0.5 w-3 rounded-full" style={{ backgroundColor: accent }} />}
         <span className="truncate">{label}</span>
@@ -111,7 +117,7 @@ export function Tile({
  *  carries the secondary surface, so these sit on the darker one). */
 export function InnerTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'alert' }) {
   return (
-    <div className="rounded-lg bg-bambu-dark px-3 py-2 min-w-0">
+    <div className="rounded-lg bg-bambu-dark-secondary px-3 py-2 min-w-0">
       <div className="text-[11px] text-bambu-gray truncate">{label}</div>
       <div className={`text-lg font-semibold ${tone === 'alert' ? 'text-status-error' : 'text-white'}`}>{value}</div>
       <div className="text-[11px] text-bambu-gray-light">{sub ?? ' '}</div>
@@ -134,7 +140,7 @@ export function Step({
   accent?: string;
 }) {
   return (
-    <li className="flex-1 min-w-0 rounded-lg bg-bambu-dark px-3 py-2">
+    <li className="flex-1 min-w-0 rounded-lg bg-bambu-dark-secondary px-3 py-2">
       <div className="flex items-center gap-1.5 text-[11px] text-bambu-gray truncate">
         {accent && <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />}
         {label}
