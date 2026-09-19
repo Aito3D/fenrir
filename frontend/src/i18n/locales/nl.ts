@@ -8272,6 +8272,7 @@ export default {
     syncError: 'Synchronisatie mislukt',
     pdfSyncPending: 'Synchronisatie bezig — het document is nog niet up-to-date',
     quoteLocked: 'Offerte gefactureerd',
+    tasksLockedInvoiced: 'Gefactureerd — taken kunnen niet meer worden gewijzigd',
     quoteDeclinedNoDraft: 'Zoho staat niet toe een offerte terug te zetten naar concept.',
     quoteConflict: 'Het bord toont {{ours}}, maar Books toont {{theirs}} — los dit op in Books',
     quoteRejected: 'Books weigerde deze offerte te wijzigen naar {{ours}} zolang deze {{theirs}} toont',

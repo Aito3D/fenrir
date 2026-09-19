@@ -449,6 +449,7 @@ export default {
     syncError: '同步失敗',
     pdfSyncPending: '正在同步 — 文件尚未更新',
     quoteLocked: '報價單已開立發票',
+    tasksLockedInvoiced: '已開立發票 — 任務無法再變更',
     quoteDeclinedNoDraft: 'Zoho 不允許將報價單重新轉為草稿。',
     quoteConflict: '看板顯示{{ours}}，Books 顯示{{theirs}} — 請在 Books 中處理',
     quoteRejected: 'Books 在狀態為{{theirs}}時拒絕改為{{ours}}',

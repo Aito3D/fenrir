@@ -449,6 +449,7 @@ export default {
     syncError: '동기화 실패',
     pdfSyncPending: '동기화 진행 중 — 문서가 아직 최신이 아닙니다',
     quoteLocked: '견적서가 청구됨',
+    tasksLockedInvoiced: '청구됨 — 작업을 더 이상 변경할 수 없습니다',
     quoteDeclinedNoDraft: 'Zoho에서는 견적서를 다시 임시 저장 상태로 되돌릴 수 없습니다.',
     quoteConflict: '보드는 {{ours}}, Books는 {{theirs}}입니다 — Books에서 해결하세요',
     quoteRejected: 'Books가 {{theirs}} 상태에서 {{ours}}(으)로 변경을 거부했습니다',

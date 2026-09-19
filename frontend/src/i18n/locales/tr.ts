@@ -449,6 +449,7 @@ export default {
     syncError: 'Senkronizasyon başarısız',
     pdfSyncPending: 'Eşitleme sürüyor — belge henüz güncel değil',
     quoteLocked: 'Teklif faturalandı',
+    tasksLockedInvoiced: 'Faturalandı — görevler artık değiştirilemez',
     quoteDeclinedNoDraft: 'Zoho, bir teklifin yeniden taslağa döndürülmesine izin vermiyor.',
     quoteConflict: 'Pano {{ours}} diyor ama Books {{theirs}} diyor — Books üzerinden çözün',
     quoteRejected: 'Books, {{theirs}} durumundayken {{ours}} değişikliğini reddetti',

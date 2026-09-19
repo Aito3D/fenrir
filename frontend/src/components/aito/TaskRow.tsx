@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, Pencil } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
+import { Tooltip } from '../Tooltip';
 import { ProjectProgress } from './ProjectProgress';
 import { TaskStepFields } from './TaskStepFields';
 import { TaskStepList } from './TaskStepList';
@@ -68,6 +69,13 @@ export interface TaskRowProps {
    *  its sliding siblings. Distinct from the list-wide fold (that arrives
    *  through `collapsed`). */
   dragging?: boolean;
+  /** The parent project has been invoiced: the pencil and the remove control
+   *  render DISABLED, each under a tooltip naming the reason, rather than
+   *  vanishing the way a missing permission makes them vanish — a state the
+   *  operator can see is different from a right they never had. Ticks are
+   *  untouched (see TaskEditor's `locked`). The caller also forces `editing`
+   *  off, so no form is ever on screen behind the greyed pencil. */
+  locked?: boolean;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -101,6 +109,7 @@ export function TaskRow({
   collapsed = false,
   dragHandle,
   dragging = false,
+  locked = false,
 }: TaskRowProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -126,6 +135,20 @@ export function TaskRow({
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
   const finished = isTaskFinished(task);
   const steps = taskSteps(task);
+  // A control that greys out under the lock gets the reason as a tooltip —
+  // one wrapper per control, since a disabled button cannot take focus and
+  // the wrapper is what keyboard users land on. Unlocked, the control is
+  // rendered bare, so nothing changes for the common case.
+  // `align="end"`: these two sit at the task column's right edge, where a
+  // centred bubble would be clipped by the column's own overflow.
+  const lockable = (control: ReactNode) =>
+    locked ? (
+      <Tooltip content={t('aito.tasksLockedInvoiced')} align="end">
+        {control}
+      </Tooltip>
+    ) : (
+      control
+    );
 
   return (
     // The removal fold wrapper — the same grid 1fr↔0fr idiom as the body
@@ -238,29 +261,36 @@ export function TaskRow({
             loses the slot to the newest one — and that row needs the pencil
             or it is a dead header line with no way back into its own form. */}
         {dragHandle}
-        {(steps.length > 0 || !editing) && (
-          <button
-            type="button"
-            aria-label={t('aito.editTask')}
-            aria-pressed={editing}
-            title={t('aito.editTask')}
-            onClick={onToggleEdit}
-            className={`flex-shrink-0 p-1 -m-1 rounded-md transition-colors ${focusRingCls} ${
-              editing ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
-            }`}
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-        )}
-        {onRemove && (
+        {(steps.length > 0 || !editing) &&
+          lockable(
+            <button
+              type="button"
+              aria-label={t('aito.editTask')}
+              aria-pressed={editing}
+              title={locked ? undefined : t('aito.editTask')}
+              onClick={onToggleEdit}
+              disabled={locked}
+              // `disabled:pointer-events-none` lets the hover reach the
+              // tooltip wrapper: a disabled button swallows pointer events
+              // in some browsers, and the wrapper is where the hint lives.
+              className={`flex-shrink-0 p-1 -m-1 rounded-md transition-colors disabled:opacity-40 disabled:pointer-events-none ${focusRingCls} ${
+                editing ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
+              }`}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>,
+          )}
+        {onRemove &&
           // The confirmed hold starts the fold; the fold's timeout is what
           // finally calls `onRemove` — see the `removing` doc above.
-          <DeleteHoldButton
-            onDelete={() => setRemoving(true)}
-            label={t('aito.removeTask')}
-            hint={t('aito.holdToDelete')}
-          />
-        )}
+          lockable(
+            <DeleteHoldButton
+              onDelete={() => setRemoving(true)}
+              label={t('aito.removeTask')}
+              hint={t('aito.holdToDelete')}
+              disabled={locked}
+            />,
+          )}
       </div>
 
       {/* The task's own progress, under its header. `ProjectProgress` renders

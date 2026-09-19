@@ -1711,3 +1711,44 @@ describe('task reordering', () => {
     });
   });
 });
+
+describe('TaskEditor locked (invoiced project)', () => {
+  const LOCK_REASON = 'Invoiced — tasks can no longer be changed';
+  const priced = (): TaskDraft => ({ ...emptyTaskDraft(), title: 'Boîtier', scanCost: 4000 });
+
+  it('disables "Add task" and explains why in a tooltip', async () => {
+    render(<TaskEditor value={[priced()]} onChange={vi.fn()} onRemove={vi.fn()} canTick locked />);
+    expect(await screen.findByRole('button', { name: 'Add task' })).toBeDisabled();
+    expect(screen.getAllByRole('tooltip').some((tip) => tip.textContent === LOCK_REASON)).toBe(true);
+  });
+
+  it('disables the pencil and the remove control on a row, each with the reason', async () => {
+    render(<TaskEditor value={[priced()]} onChange={vi.fn()} onRemove={vi.fn()} canTick locked />);
+    expect(await screen.findByRole('button', { name: 'Edit task' })).toBeDisabled();
+    expect(screen.getByLabelText('Remove task')).toBeDisabled();
+    // One tooltip per disabled control: pencil, remove, and the add slot.
+    expect(screen.getAllByRole('tooltip').filter((tip) => tip.textContent === LOCK_REASON)).toHaveLength(3);
+  });
+
+  it('never shows a form: a stepless row stays a bare header instead of auto-editing', async () => {
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={vi.fn()} canTick locked />);
+    expect(await screen.findByRole('heading', { name: /Task 1/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add Scan' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
+  });
+
+  it('keeps step ticks live — the invoice is raised before the last steps are done', async () => {
+    const onChange = vi.fn();
+    render(<TaskEditor value={[priced()]} onChange={onChange} onRemove={vi.fn()} canTick locked />);
+    await userEvent.click(await screen.findByRole('button', { name: /Scan/, pressed: false }));
+    expect(lastChangedTask(onChange).done.scan).toBe(true);
+  });
+
+  it('is fully editable when not locked — the prop defaults off', async () => {
+    render(<TaskEditor value={[priced()]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
+    expect(await screen.findByRole('button', { name: 'Edit task' })).toBeEnabled();
+    expect(screen.getByLabelText('Remove task')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeEnabled();
+    expect(screen.queryByText(LOCK_REASON)).not.toBeInTheDocument();
+  });
+});

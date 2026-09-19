@@ -453,6 +453,7 @@ export default {
     syncError: 'Sync failed',
     pdfSyncPending: "Sync in progress — the document isn’t up to date yet",
     quoteLocked: 'Quote invoiced',
+    tasksLockedInvoiced: 'Invoiced — tasks can no longer be changed',
     quoteDeclinedNoDraft: 'Zoho does not allow reverting a quote back to draft.',
     quoteConflict: 'The board says {{ours}} but Books says {{theirs}} — resolve it in Books',
     quoteRejected: 'Books refused to change this quote to {{ours}} while it reads {{theirs}}',

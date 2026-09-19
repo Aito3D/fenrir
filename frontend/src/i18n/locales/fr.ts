@@ -449,6 +449,7 @@ export default {
     syncError: 'Échec de la synchronisation',
     pdfSyncPending: "Synchronisation en cours — le document n’est pas encore à jour",
     quoteLocked: 'Devis facturé',
+    tasksLockedInvoiced: 'Facturé — les tâches ne peuvent plus être modifiées',
     quoteDeclinedNoDraft: 'Zoho ne permet pas de repasser un devis en brouillon.',
     quoteConflict: 'Le tableau indique {{ours}} mais Books indique {{theirs}} — à corriger dans Books',
     quoteRejected: "Books a refusé le passage à {{ours}} tant qu'il affiche {{theirs}}",

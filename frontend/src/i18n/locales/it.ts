@@ -449,6 +449,7 @@ export default {
     syncError: 'Sincronizzazione non riuscita',
     pdfSyncPending: 'Sincronizzazione in corso — il documento non è ancora aggiornato',
     quoteLocked: 'Preventivo fatturato',
+    tasksLockedInvoiced: 'Fatturato — le attività non possono più essere modificate',
     quoteDeclinedNoDraft: 'Zoho non consente di riportare un preventivo in bozza.',
     quoteConflict: 'La bacheca dice {{ours}} ma Books dice {{theirs}} — risolvilo in Books',
     quoteRejected: 'Books ha rifiutato il passaggio a {{ours}} mentre risulta {{theirs}}',

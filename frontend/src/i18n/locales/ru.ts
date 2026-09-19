@@ -449,6 +449,7 @@ export default {
     syncError: 'Ошибка синхронизации',
     pdfSyncPending: 'Идёт синхронизация — документ ещё не обновлён',
     quoteLocked: 'Смета выставлена',
+    tasksLockedInvoiced: 'Выставлен счёт — задачи больше нельзя изменить',
     quoteDeclinedNoDraft: 'Zoho не позволяет вернуть смету в статус черновика.',
     quoteConflict: 'На доске {{ours}}, а в Books {{theirs}} — исправьте в Books',
     quoteRejected: 'Books отклонил переход в {{ours}}, пока там {{theirs}}',

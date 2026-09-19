@@ -449,6 +449,7 @@ export default {
     syncError: '同期に失敗しました',
     pdfSyncPending: '同期中 — ドキュメントはまだ最新ではありません',
     quoteLocked: '見積書は請求済みです',
+    tasksLockedInvoiced: '請求済み — タスクは変更できません',
     quoteDeclinedNoDraft: 'Zohoでは見積書を下書きに戻すことはできません。',
     quoteConflict: 'ボードは{{ours}}、Booksは{{theirs}}です — Books で解決してください',
     quoteRejected: 'Books は {{theirs}} の状態では {{ours}} への変更を拒否しました',

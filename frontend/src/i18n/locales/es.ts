@@ -449,6 +449,7 @@ export default {
     syncError: 'Error de sincronización',
     pdfSyncPending: 'Sincronización en curso — el documento aún no está actualizado',
     quoteLocked: 'Presupuesto facturado',
+    tasksLockedInvoiced: 'Facturado — las tareas ya no se pueden modificar',
     quoteDeclinedNoDraft: 'Zoho no permite volver a convertir un presupuesto en borrador.',
     quoteConflict: 'El tablero dice {{ours}} pero Books dice {{theirs}} — resuélvelo en Books',
     quoteRejected: 'Books rechazó el cambio a {{ours}} mientras figura como {{theirs}}',

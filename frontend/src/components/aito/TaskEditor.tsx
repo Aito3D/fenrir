@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
@@ -9,6 +10,7 @@ import { SortableTaskRow } from './SortableTaskRow';
 import { taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
+import { Tooltip } from '../Tooltip';
 import { useCurrency } from '../../hooks/useCurrency';
 import { emptyTaskDraft, projectTotal, rowKey } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -99,6 +101,17 @@ export interface TaskEditorProps {
    *  aito:update — absent means no handles at all, mirroring how
    *  `canCreate`/`canDelete` remove rather than disable their controls. */
   onReorder?: (next: TaskDraft[]) => void;
+  /** The project has been invoiced in Books, so its quote is accounting: no
+   *  task may be added, edited, removed or reordered (the routes refuse with
+   *  409 — see `_reject_task_change_if_invoiced` in routes/aito.py). The
+   *  controls stay ON SCREEN, disabled, each under a tooltip saying why —
+   *  unlike the permission gates beside it, which remove controls the user
+   *  never had. Every form is forced closed, including the stepless-row
+   *  auto-open. Ticks are deliberately untouched: the invoice is raised
+   *  BEFORE the last steps are done on the way to Done, so ticking after it
+   *  is the normal flow. The detail panel passes `project.quote_invoiced`;
+   *  the create drawer has no invoice and passes nothing. */
+  locked?: boolean;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -120,6 +133,7 @@ export function TaskEditor({
   canCreate = true,
   canDelete = true,
   onReorder,
+  locked = false,
 }: TaskEditorProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -180,8 +194,13 @@ export function TaskEditor({
   // wins, because "+ Add task" below names it as the explicit key. A stepless
   // row that loses this way still has its pencil (see TaskRow's own gate), so
   // it stays reachable rather than becoming a dead header line.
+  //
+  // Under the lock nothing edits, the stepless fallback included: a locked
+  // row with no steps shows its bare header ("No steps yet" is the read
+  // body), never a form whose every field would have to be disabled.
   const isEditing = (task: TaskDraft) =>
-    effectiveEditingKey === rowKey(task) || (effectiveEditingKey === null && taskSteps(task).length === 0);
+    !locked &&
+    (effectiveEditingKey === rowKey(task) || (effectiveEditingKey === null && taskSteps(task).length === 0));
 
   // A stepless row is auto-edited by `isEditing` above, not by holding
   // `editingKey` itself — so the instant its FIRST keystroke prices a
@@ -198,6 +217,19 @@ export function TaskEditor({
       setEditingKey(rowKey(after));
     }
   };
+
+  // The add slot's lock wrapper. Tooltip's root span is `inline-flex` and
+  // sizes to its content, which would shrink the full-width slot to its
+  // label; the `[&>span]` selector stretches that root so the button's own
+  // `w-full` has a width to fill.
+  const lockable = (control: ReactNode) =>
+    locked ? (
+      <div className="[&>span]:flex [&>span]:w-full">
+        <Tooltip content={t('aito.tasksLockedInvoiced')}>{control}</Tooltip>
+      </div>
+    ) : (
+      control
+    );
 
   const [draggingTasks, setDraggingTasks] = useState(false);
   const sensors = useSensors(
@@ -271,6 +303,7 @@ export function TaskEditor({
                 onRowBlur,
                 canTick,
                 pending,
+                locked,
                 // The list-wide fold: while a drag is in flight EVERY row shows
                 // only its header line, so the user shuffles compact cards
                 // instead of scroll-fighting full-height ones. Rides the same
@@ -306,9 +339,10 @@ export function TaskEditor({
         );
       })()}
 
-      {canCreate && (
+      {canCreate && lockable(
       <button
         type="button"
+        disabled={locked}
         onClick={() => {
           const draft = emptyTaskDraft();
           onChange([...value, draft]);
@@ -329,11 +363,15 @@ export function TaskEditor({
         // will occupy, so it reads as an empty one. Muted at rest and
         // accent-lit on hover, so it invites without competing with the cards
         // that carry real work.
-        className={`w-full inline-flex items-center justify-center gap-1.5 rounded-[.6rem] border border-bambu-dark-tertiary py-2 text-sm text-bambu-gray hover:text-bambu-green hover:border-bambu-green/40 hover:bg-bambu-green/[0.04] transition-colors motion-reduce:transition-none ${focusRingCls}`}
+        //
+        // Locked: the slot stays, greyed, under the reason — see `locked`.
+        // `disabled:pointer-events-none` lets the hover reach the tooltip
+        // wrapper, which is also what keyboard focus lands on.
+        className={`w-full inline-flex items-center justify-center gap-1.5 rounded-[.6rem] border border-bambu-dark-tertiary py-2 text-sm text-bambu-gray hover:text-bambu-green hover:border-bambu-green/40 hover:bg-bambu-green/[0.04] transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:pointer-events-none ${focusRingCls}`}
       >
         <Plus className="w-4 h-4" />
         {t('aito.addTask')}
-      </button>
+      </button>,
       )}
     </div>
   );

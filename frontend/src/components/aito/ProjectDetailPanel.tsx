@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Loader2, Lock, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { DuplicateProjectButton } from './DuplicateProjectButton';
@@ -180,15 +180,32 @@ export function CopyableValue({
  *  Deliberately not the step count the card's bar uses. Seven steps on a
  *  typical project are worth between 3 500 and 10 000 FCFP each, so "3/7" and
  *  "how much of this job is done" are different numbers; the line beneath the
- *  ring gives both so neither reading is lost. */
-function ValueRing({ done, total, currency }: { done: number; total: number; currency: string }) {
+ *  ring gives both so neither reading is lost.
+ *
+ *  Invoiced, the ring carries a small lock in its empty centre: the quote
+ *  is accounting now, so the task list beneath is frozen (see TaskEditor's
+ *  `locked`), and the masthead says so without growing a row. The arc keeps
+ *  moving — steps still get ticked after the invoice on the way to Done. */
+function ValueRing({
+  done,
+  total,
+  currency,
+  locked = false,
+}: {
+  done: number;
+  total: number;
+  currency: string;
+  locked?: boolean;
+}) {
   const { t } = useTranslation();
   const size = 42;
   const radius = (size - 4) / 2;
   const circumference = 2 * Math.PI * radius;
   const fraction = total > 0 ? done / total : 0;
+  const amountLabel = t('aito.amountDone', { amount: formatMoney(done, currency) });
 
   return (
+    <span className="relative inline-flex flex-shrink-0" title={locked ? t('aito.quoteLocked') : undefined}>
     <svg
       data-testid="panel-value-ring"
       role="progressbar"
@@ -198,7 +215,8 @@ function ValueRing({ done, total, currency }: { done: number; total: number; cur
       // formatMoney, not the raw number: the visible caption right beside the
       // ring uses formatMoney too, and a screen reader announcing "3500 done"
       // next to a sighted "$3,500.00 done" would disagree about the figure.
-      aria-label={t('aito.amountDone', { amount: formatMoney(done, currency) })}
+      // The lock rides the same label rather than a second announcement.
+      aria-label={locked ? `${amountLabel} · ${t('aito.quoteLocked')}` : amountLabel}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
@@ -217,6 +235,16 @@ function ValueRing({ done, total, currency }: { done: number; total: number; cur
         className="stroke-bambu-green transition-[stroke-dashoffset] duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none"
       />
     </svg>
+    {locked && (
+      // Outside the SVG so it is not carried round by the arc's -90° turn.
+      // Muted, not green: it is a state, not progress.
+      <Lock
+        data-testid="panel-value-ring-lock"
+        aria-hidden="true"
+        className="absolute inset-0 m-auto w-3.5 h-3.5 text-bambu-gray animate-fade-in"
+      />
+    )}
+    </span>
   );
 }
 
@@ -588,7 +616,7 @@ function PanelHeader({
       <div className="w-px self-stretch bg-bambu-dark-tertiary" />
 
       <div className="flex items-center gap-3 flex-shrink-0">
-        <ValueRing done={valueDone} total={valueTotal} currency={currency} />
+        <ValueRing done={valueDone} total={valueTotal} currency={currency} locked={project.quote_invoiced} />
         <div className="text-right">
           {/* -.02em: the total is the largest run of digits in the panel, and
               tabular figures at 1.5rem sit noticeably loose without it. */}
@@ -1326,7 +1354,14 @@ export function ProjectDetailPanel({
                 // Reordering rewrites every task's position and re-syncs the
                 // quote, so it rides aito:update — absent (no handles), not
                 // disabled, same treatment as canCreate/canDelete beside it.
-                onReorder={canUpdate ? reorderTasks : undefined}
+                // Absent under the invoice lock too: a greyed grab handle
+                // has no click to explain itself on, unlike the buttons.
+                onReorder={canUpdate && !project.quote_invoiced ? reorderTasks : undefined}
+                // Invoiced = frozen; the controls grey out with the reason
+                // (see TaskEditor's own doc). `quote_invoiced`, never the
+                // 'locked' sync state: a refused push is the operator's to
+                // fix, and its tasks stay open — see quoteSync.ts.
+                locked={project.quote_invoiced}
               />
             </div>
 

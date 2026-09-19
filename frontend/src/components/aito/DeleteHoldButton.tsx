@@ -22,15 +22,22 @@ export function DeleteHoldButton({
    *  design shows it as a bordered button matching "Print quote" and "Open
    *  in Zoho" beside it. */
   alwaysVisible = false,
+  disabled = false,
 }: {
   onDelete: () => void;
   label: string;
   hint: string;
   alwaysVisible?: boolean;
+  /** Straight through to HoldButton: the control stays on screen, greyed,
+   *  so the caller can wrap it in a tooltip saying why (an invoiced
+   *  project's task rows do). Absent-not-disabled remains the treatment for
+   *  a missing permission — see TaskEditor's `canDelete`. */
+  disabled?: boolean;
 }) {
   return (
     <HoldButton
       onHold={onDelete}
+      disabled={disabled}
       durationMs={1000}
       label={label}
       hint={hint}

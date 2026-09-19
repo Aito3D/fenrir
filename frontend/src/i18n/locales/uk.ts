@@ -450,6 +450,7 @@ export default {
     syncError: "Помилка синхронізації",
     pdfSyncPending: 'Триває синхронізація — документ ще не оновлено',
     quoteLocked: "За пропозицією виставлено рахунок",
+    tasksLockedInvoiced: 'Рахунок виставлено — завдання більше не можна змінювати',
     quoteDeclinedNoDraft: "Zoho не дозволяє повернути пропозицію до стану чернетки.",
     quoteConflict: "На дошці — {{ours}}, а в Books — {{theirs}}; розв’яжіть це в Books",
     quoteRejected: "Books відмовився змінити цю пропозицію на {{ours}}, поки вона має стан {{theirs}}",

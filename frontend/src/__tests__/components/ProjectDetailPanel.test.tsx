@@ -1844,6 +1844,24 @@ describe('ProjectDetailPanel sync row', () => {
     expect(screen.queryByTestId('panel-tab-attention')).not.toBeInTheDocument();
   });
 
+  it('freezes the task list and puts a lock in the ring once the quote is invoiced', async () => {
+    show({ quote_sync_state: 'locked', quote_invoiced: true });
+    expect(await screen.findByTestId('panel-value-ring-lock')).toBeInTheDocument();
+    expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-label', expect.stringContaining('Quote invoiced'));
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeDisabled();
+    expect((await screen.findAllByRole('button', { name: 'Edit task' }))[0]).toBeDisabled();
+    expect(screen.getByLabelText('Remove task')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Reorder task' })).not.toBeInTheDocument();
+  });
+
+  it('leaves the task list open on a refused-push lock that was never invoiced', async () => {
+    show({ quote_sync_state: 'locked', quote_invoiced: false, quote_sync_error: 'This quote is tax-exclusive' });
+    expect((await screen.findAllByRole('button', { name: 'Edit task' }))[0]).toBeEnabled();
+    expect(screen.queryByTestId('panel-value-ring-lock')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeEnabled();
+    expect(screen.getByLabelText('Remove task')).toBeEnabled();
+  });
+
   it('names a refused push a block, not an invoice, and offers a way to force another attempt', async () => {
     // The other kind of lock: the worker read the estimate and declined to
     // write to it — today only a tax-exclusive quote, whose total our

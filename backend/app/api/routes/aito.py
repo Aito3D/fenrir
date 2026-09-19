@@ -877,6 +877,28 @@ async def _broadcast_changed(action: str, project_id: int | None, actor: str | N
         logger.warning("aito_changed broadcast failed for %s on project %s", action, project_id, exc_info=True)
 
 
+def _reject_task_change_if_invoiced(project: AitoProject | None, fields: dict | None = None) -> None:
+    """409 when the parent's estimate has been invoiced in Books.
+
+    An invoiced estimate is accounting: Books refuses to change it, so any
+    edit that alters the quote's content — a task added, removed, reordered,
+    renamed or repriced — could only ever leave the card on a sync error.
+    The panel disables those controls; this is the rule the buttons follow.
+
+    `fields` is the PATCH body for update_task. Done flags are progress, not
+    content (the invoice is raised BEFORE the last steps are ticked on the
+    way to Done — see test_aito_done_gate.py), so a body carrying nothing but
+    `*_done` keys passes. Decided on `quote_invoiced`, never on
+    `quote_sync_state == "locked"`: the other lock (a push Books refused) is
+    the operator's to fix and force-sync, and its tasks stay open.
+    """
+    if project is None or not project.quote_invoiced:
+        return
+    if fields is not None and all(key.endswith("_done") for key in fields):
+        return
+    raise HTTPException(status_code=409, detail="This project has been invoiced — its tasks can no longer be changed")
+
+
 async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> tuple[AitoProject | None, bool]:
     """Task endpoints address a task, not a project, so the parent has to be
     loaded to be marked. A missing parent is not an error here: the task's own
@@ -2661,6 +2683,7 @@ async def add_task(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     project = await _get_active_project_or_404(db, project_id)
+    _reject_task_change_if_invoiced(project)
     task_fields = payload.model_dump()
     _reject_ticks_without_acceptance(project.quote_status, task_fields)
     if (
@@ -2753,6 +2776,9 @@ async def update_task(
     # ANY exception (core/database.py:220), so a rejected PATCH persists
     # nothing, including this mark.
     project, was_pending = await _mark_project_pending_for_task(db, task.project_id)
+    # Safe ahead of the mark for the same reason as the 422 below: get_db
+    # rolls back on any exception, so a refused PATCH persists no pending.
+    _reject_task_change_if_invoiced(project, fields)
     _reject_ticks_without_acceptance(project.quote_status if project else None, fields)
 
     for service in SERVICES:
@@ -2826,6 +2852,7 @@ async def delete_task(
     task = await _get_task_or_404(db, task_id)
     task_project_id = task.project_id  # captured before delete: unreadable on the row after
     project, _was_pending = await _mark_project_pending_for_task(db, task.project_id)
+    _reject_task_change_if_invoiced(project)
     await record(
         db,
         task.project_id,
@@ -2866,6 +2893,7 @@ async def reorder_tasks(
     neither costs nor ticks, so the board column cannot move.
     """
     project = await _get_active_project_or_404(db, project_id)
+    _reject_task_change_if_invoiced(project)
     stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
     tasks = list((await db.execute(stmt)).scalars())
     by_id = {t.id: t for t in tasks}
