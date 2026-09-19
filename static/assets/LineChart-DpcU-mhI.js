@@ -1,0 +1,1 @@
+import{i as e}from"./chunk-aKtaBQYM.js";import{a as t}from"./jsx-runtime-BYLC1t_i.js";import{V as n,t as r}from"./CartesianChart-CH8GSZjX.js";var i=e(t()),a=[`axis`],o=(0,i.forwardRef)((e,t)=>i.createElement(r,{chartName:`LineChart`,defaultTooltipEventType:`axis`,validateTooltipEventTypes:a,tooltipPayloadSearcher:n,categoricalChartProps:e,ref:t}));export{o as t};
