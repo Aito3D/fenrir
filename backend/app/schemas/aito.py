@@ -1089,6 +1089,74 @@ class AitoStatsDay(BaseModel):
     done: int
 
 
+class AitoStatsQuoteAge(BaseModel):
+    """SNAPSHOT: active cards with a sent, undecided quote, by days since sending."""
+
+    bucket: Literal["0-3", "4-7", "8-14", "15+"]
+    count: int
+    total: float
+
+
+class AitoStatsSizeBand(BaseModel):
+    """Decisions in the period cut into equal-count bands of quote_total."""
+
+    min: float
+    max: float
+    accepted: int
+    declined: int
+    rate: float | None
+
+
+class AitoStatsOverdueBucket(BaseModel):
+    bucket: Literal["1-7", "8-30", "31+"]
+    count: int
+    balance: float
+
+
+class AitoStatsOverdue(BaseModel):
+    """SNAPSHOT: invoiced cards with a balance whose due date has passed."""
+
+    buckets: list[AitoStatsOverdueBucket]
+    oldest_days: int | None
+
+
+class AitoStatsStageTime(BaseModel):
+    """One completed card's days per stage, for the stacked bars."""
+
+    project_id: int
+    client_name: str | None
+    description: str
+    done_at: datetime
+    stages: dict[str, float]
+
+
+class AitoStatsRework(BaseModel):
+    moves: int
+    cards: int
+    # cards / cards that moved at all in the period; None when nothing moved.
+    share: float | None
+
+
+class AitoStatsService(BaseModel):
+    service: str
+    tasks: int
+    revenue: float
+
+
+class AitoStatsClients(BaseModel):
+    new: int
+    returning: int
+    new_total: float
+    returning_total: float
+
+
+class AitoStatsIsland(BaseModel):
+    # None = no shipping (pickup), always listed last.
+    island: str | None
+    count: int
+    shipping_total: float
+
+
 class AitoStatsResponse(BaseModel):
     """The pipeline widget's five blocks — see docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md."""
 
@@ -1100,6 +1168,15 @@ class AitoStatsResponse(BaseModel):
     throughput: AitoStatsThroughput
     previous: AitoStatsPrevious | None
     daily: list[AitoStatsDay]
+    quote_age: list[AitoStatsQuoteAge]
+    size_bands: list[AitoStatsSizeBand]
+    overdue: AitoStatsOverdue
+    stage_time: list[AitoStatsStageTime]
+    rework: AitoStatsRework
+    services: list[AitoStatsService]
+    clients: AitoStatsClients
+    arrivals: list[list[int]]
+    islands: list[AitoStatsIsland]
     date_from: date | None
     date_to: date | None
 

@@ -431,3 +431,197 @@ async def test_all_time_has_no_previous_and_spans_from_first_project(async_clien
     assert body["daily"][0]["day"] == "2026-03-02"
     assert body["daily"][0]["created"] == 1
     assert body["throughput"]["per_day"] is not None and body["throughput"]["per_day"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Sections: sales / time / money / clients
+# ---------------------------------------------------------------------------
+
+
+async def _task(db_session, pid: int, **cols):
+    keys = ", ".join(["project_id", *cols])
+    vals = ", ".join([":pid", *[f":{k}" for k in cols]])
+    await db_session.execute(text(f"INSERT INTO aito_tasks ({keys}) VALUES ({vals})"), {"pid": pid, **cols})
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_quote_age_buckets_active_sent_quotes_as_of_today(async_client, db_session):
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    a = await _create(async_client)
+    b = await _create(async_client)
+    c = await _create(async_client)
+    d = await _create(async_client)
+    await _set(
+        db_session, a, quote_status="sent", quote_sent_at=(now - timedelta(days=1)).isoformat(" "), quote_total=100
+    )
+    await _set(
+        db_session, b, quote_status="sent", quote_sent_at=(now - timedelta(days=9)).isoformat(" "), quote_total=200
+    )
+    await _set(
+        db_session, c, quote_status="sent", quote_sent_at=(now - timedelta(days=40)).isoformat(" "), quote_total=300
+    )
+    await _set(
+        db_session, d, quote_status="accepted", quote_sent_at=(now - timedelta(days=40)).isoformat(" "), quote_total=999
+    )
+
+    r = await async_client.get(STATS)
+    rows = {row["bucket"]: row for row in r.json()["quote_age"]}
+    assert list(rows) == ["0-3", "4-7", "8-14", "15+"]
+    assert (rows["0-3"]["count"], rows["0-3"]["total"]) == (1, 100)
+    assert (rows["4-7"]["count"], rows["4-7"]["total"]) == (0, 0)
+    assert (rows["8-14"]["count"], rows["8-14"]["total"]) == (1, 200)
+    assert (rows["15+"]["count"], rows["15+"]["total"]) == (1, 300)
+
+
+@pytest.mark.asyncio
+async def test_size_bands_cut_decisions_into_equal_count_bands(async_client, db_session):
+    for i in range(8):
+        p = await _create(async_client)
+        await _move_event(db_session, p, "project.created", "2026-03-01 10:00:00")
+        await _set(db_session, p, quote_total=(i + 1) * 1000)
+        kind = "quote.accepted" if i % 2 == 0 else "quote.declined"
+        await _event(db_session, p, kind, f"2026-03-0{2 + i % 3} 10:00:00")
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    bands = r.json()["size_bands"]
+    assert [(b["min"], b["max"]) for b in bands] == [(1000, 2000), (3000, 4000), (5000, 6000), (7000, 8000)]
+    assert all(b["accepted"] == 1 and b["declined"] == 1 and b["rate"] == 0.5 for b in bands)
+
+
+@pytest.mark.asyncio
+async def test_size_bands_with_three_decisions_is_one_band(async_client, db_session):
+    for i in range(3):
+        p = await _create(async_client)
+        await _move_event(db_session, p, "project.created", "2026-03-01 10:00:00")
+        await _set(db_session, p, quote_total=(i + 1) * 10)
+        await _event(db_session, p, "quote.accepted", "2026-03-03 10:00:00")
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    bands = r.json()["size_bands"]
+    assert len(bands) == 1 and (bands[0]["min"], bands[0]["max"], bands[0]["accepted"]) == (10, 30, 3)
+
+
+@pytest.mark.asyncio
+async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
+    from datetime import date, timedelta
+
+    today = date.today()
+    a = await _create(async_client)
+    b = await _create(async_client)
+    c = await _create(async_client)
+    await _set(
+        db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date=(today - timedelta(days=3)).isoformat()
+    )
+    await _set(
+        db_session, b, quote_invoiced=1, invoice_balance=250, invoice_due_date=(today - timedelta(days=45)).isoformat()
+    )
+    await _set(
+        db_session, c, quote_invoiced=1, invoice_balance=0, invoice_due_date=(today - timedelta(days=45)).isoformat()
+    )
+
+    r = await async_client.get(STATS)
+    od = r.json()["overdue"]
+    assert [(x["bucket"], x["count"], x["balance"]) for x in od["buckets"]] == [
+        ("1-7", 1, 100),
+        ("8-30", 0, 0),
+        ("31+", 1, 250),
+    ]
+    assert od["oldest_days"] == 45
+
+
+@pytest.mark.asyncio
+async def test_stage_time_per_completed_project_newest_first(async_client, db_session):
+    a = await _create(async_client, description="Long one")
+    b = await _create(async_client, description="Quick")
+    for pid, day in ((a, 1), (b, 5)):
+        await _move_event(db_session, pid, "project.created", f"2026-03-0{day} 10:00:00")
+        await _set(db_session, pid, created_at=f"2026-03-0{day} 10:00:00")
+    await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
+    await _event(db_session, a, "stage.changed", "2026-03-06 10:00:00", changes=_stage("print", "done"))
+    await _event(db_session, b, "stage.changed", "2026-03-07 10:00:00", changes=_stage("devis", "done"))
+    await _event(db_session, b, "stage.changed", "2026-03-08 10:00:00", changes=_stage("done", "finish"))  # re-open
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    rows = r.json()["stage_time"]
+    assert [x["project_id"] for x in rows] == [b, a]
+    long = next(x for x in rows if x["project_id"] == a)
+    assert long["stages"]["devis"] == 2.0 and long["stages"]["print"] == 3.0 and long["stages"]["finish"] == 0.0
+    assert long["description"] == "Long one"
+
+
+@pytest.mark.asyncio
+async def test_rework_counts_backward_moves_and_share_of_moved_cards(async_client, db_session):
+    a = await _create(async_client)
+    b = await _create(async_client)
+    for pid in (a, b):
+        await _move_event(db_session, pid, "project.created", "2026-03-01 10:00:00")
+    await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
+    await _event(db_session, a, "stage.changed", "2026-03-04 10:00:00", changes=_stage("print", "model"))  # backward
+    await _event(db_session, a, "stage.changed", "2026-03-05 10:00:00", changes=_stage("model", "print"))
+    await _event(db_session, b, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "waiting"))
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["rework"] == {"moves": 1, "cards": 1, "share": 0.5}
+
+
+@pytest.mark.asyncio
+async def test_services_revenue_from_net_cost_over_cards_accepted_in_range(async_client, db_session):
+    p = await _create(async_client)
+    await _move_event(db_session, p, "project.created", "2026-03-01 10:00:00")
+    await _event(db_session, p, "quote.accepted", "2026-03-03 10:00:00")
+    await _task(db_session, p, position=0, scan_cost=1000, scan_discount_pct=10, impression_cost=500)
+    await _task(db_session, p, position=1, impression_cost=300)
+    q = await _create(async_client)  # not accepted -> ignored
+    await _task(db_session, q, position=0, usinage_cost=9999)
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    rows = {x["service"]: x for x in r.json()["services"]}
+    assert list(rows) == ["scan", "modelisation", "impression", "usinage"]
+    assert (rows["scan"]["tasks"], rows["scan"]["revenue"]) == (1, 900)
+    assert (rows["impression"]["tasks"], rows["impression"]["revenue"]) == (2, 800)
+    assert (rows["usinage"]["tasks"], rows["usinage"]["revenue"]) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_clients_new_vs_returning_by_earlier_card(async_client, db_session):
+    old = await _create(async_client, client_id="z1")
+    await _move_event(db_session, old, "project.created", "2026-01-01 10:00:00")
+    await _set(db_session, old, created_at="2026-01-01 10:00:00")
+    again = await _create(async_client, client_id="z1")
+    fresh = await _create(async_client, client_id="z2")
+    for pid, total in ((again, 100), (fresh, 50)):
+        await _move_event(db_session, pid, "project.created", "2026-03-02 10:00:00")
+        await _set(db_session, pid, created_at="2026-03-02 10:00:00", quote_total=total)
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["clients"] == {"new": 1, "returning": 1, "new_total": 50, "returning_total": 100}
+
+
+@pytest.mark.asyncio
+async def test_arrivals_grid_is_local_weekday_by_hour(async_client, db_session):
+    p = await _create(async_client)
+    # 2026-03-02 is a Monday; 23:30 UTC is Tuesday 00:30 in UTC+1
+    await _move_event(db_session, p, "project.created", "2026-03-02 23:30:00")
+    r = await async_client.get(
+        STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10", "tz_offset_minutes": 60}
+    )
+    grid = r.json()["arrivals"]
+    assert len(grid) == 7 and all(len(row) == 24 for row in grid)
+    assert grid[1][0] == 1 and sum(map(sum, grid)) == 1
+
+
+@pytest.mark.asyncio
+async def test_islands_sorted_by_count_with_pickup_last(async_client, db_session):
+    rows = [("moorea", 1500), ("moorea", 1500), ("huahine", 2000), (None, None)]
+    for island, price in rows:
+        p = await _create(async_client)
+        await _move_event(db_session, p, "project.created", "2026-03-02 10:00:00")
+        await _set(db_session, p, shipping_island=island, shipping_price=price)
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["islands"] == [
+        {"island": "moorea", "count": 2, "shipping_total": 3000},
+        {"island": "huahine", "count": 1, "shipping_total": 2000},
+        {"island": None, "count": 1, "shipping_total": 0},
+    ]

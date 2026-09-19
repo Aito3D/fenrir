@@ -8,6 +8,7 @@ docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md
 
 import json
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from statistics import fmean, median
 
@@ -16,20 +17,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.schemas.aito import (
     AitoStatsBucket,
+    AitoStatsClients,
     AitoStatsConversion,
     AitoStatsDay,
     AitoStatsInvoicing,
+    AitoStatsIsland,
+    AitoStatsOverdue,
+    AitoStatsOverdueBucket,
     AitoStatsPrevious,
+    AitoStatsQuoteAge,
     AitoStatsResponse,
+    AitoStatsRework,
+    AitoStatsService,
+    AitoStatsSizeBand,
     AitoStatsStage,
     AitoStatsStageDays,
+    AitoStatsStageTime,
     AitoStatsThroughput,
     AitoStatsTracking,
 )
-from backend.app.services.aito_board_rules import COLUMN_ORDER
+from backend.app.services.aito_board_rules import COLUMN_ORDER, SERVICES, net_cost
 from backend.app.utils.dates import local_day_bounds
 
 _SENT_KINDS = ("quote.sent", "quote.emailed")
@@ -123,47 +134,295 @@ def _bucket(
     return AitoStatsBucket(count=len(hits), total=sum(projects[pid].quote_total or 0.0 for pid in hits))
 
 
-async def _stage_days(
-    db: AsyncSession,
-    projects: dict[int, AitoProject],
-    born: dict[int, datetime],
-    start: datetime | None,
-    end: datetime | None,
-) -> list[AitoStatsStageDays]:
+@dataclass
+class _Stay:
+    column: str
+    began: datetime
+    ended: datetime
+
+
+@dataclass
+class _StageScan:
+    """One ordered pass over every `stage.changed` row: the closed stays per
+    project and the moments a card moved BACKWARDS on the board. Three blocks
+    read it (days per stage, stage time per card, rework) so the scan runs once."""
+
+    stays: dict[int, list[_Stay]] = field(default_factory=lambda: defaultdict(list))
+    backward: dict[int, list[datetime]] = field(default_factory=lambda: defaultdict(list))
+
+
+async def _scan_stages(
+    db: AsyncSession, projects: dict[int, AitoProject], born: dict[int, datetime], end: datetime | None
+) -> _StageScan:
+    scan = _StageScan()
     ids = list(projects)
+    if not ids:
+        return scan
+    stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(
+        AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(ids)
+    )
+    # A row past `end` can only ever fail `_in_range` downstream, and the
+    # `opened_at` it would record is read only by later rows for the same
+    # project (rows are ordered by occurred_at), which are also past `end` —
+    # so dropping it here changes nothing but what SQLite reads.
+    if end is not None:
+        stmt = stmt.where(AitoEvent.occurred_at <= end)
+    stmt = stmt.order_by(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.id)
+    opened_at: dict[int, datetime] = {}
+    for pid, at, changes in (await db.execute(stmt)).all():
+        if isinstance(changes, str):
+            changes = json.loads(changes)
+        left = changes[0].get("from") if changes else None
+        to = changes[0].get("to") if changes else None
+        began = opened_at.get(pid) or projects[pid].created_at
+        opened_at[pid] = at
+        # The board rules move a freshly created card into its computed
+        # column in the same request that created it. `created_at` can be
+        # backdated (an import carries the Books quote's date), so measure
+        # against the `project.created` EVENT and drop that opening move.
+        if _is_creation_time(at, born.get(pid)):
+            continue
+        if left in _STAGE_COLUMNS and began is not None:
+            scan.stays[pid].append(_Stay(column=left, began=began, ended=at))
+        if left in COLUMN_ORDER and to in COLUMN_ORDER and COLUMN_ORDER.index(to) < COLUMN_ORDER.index(left):
+            scan.backward[pid].append(at)
+    return scan
+
+
+def _stage_days(scan: _StageScan, start: datetime | None, end: datetime | None) -> list[AitoStatsStageDays]:
     stays: dict[str, list[float]] = defaultdict(list)
-    if ids:
-        stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(
-            AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(ids)
-        )
-        # A row past `end` can only ever fail `_in_range` below, and the
-        # `opened_at` it would record is read only by later rows for the same
-        # project (rows are ordered by occurred_at), which are also past
-        # `end` — so dropping it here changes nothing but what SQLite reads.
-        if end is not None:
-            stmt = stmt.where(AitoEvent.occurred_at <= end)
-        stmt = stmt.order_by(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.id)
-        opened_at: dict[int, datetime] = {}
-        for pid, at, changes in (await db.execute(stmt)).all():
-            if isinstance(changes, str):
-                changes = json.loads(changes)
-            left = changes[0].get("from") if changes else None
-            began = opened_at.get(pid) or projects[pid].created_at
-            opened_at[pid] = at
-            # The board rules move a freshly created card into its computed
-            # column in the same request that created it. `created_at` can be
-            # backdated (an import carries the Books quote's date), so measure
-            # against the `project.created` EVENT and drop that opening move.
-            if _is_creation_time(at, born.get(pid)):
-                continue
-            if left in _STAGE_COLUMNS and began is not None and _in_range(at, start, end):
-                stays[left].append(max(0.0, (at - began).total_seconds() / _DAY_SECONDS))
+    for per_project in scan.stays.values():
+        for stay in per_project:
+            if _in_range(stay.ended, start, end):
+                stays[stay.column].append(_days_between(stay.began, stay.ended))
     return [
         AitoStatsStageDays(
             column=c, median_days=(round(median(stays[c]), 2) if stays[c] else None), sample=len(stays[c])
         )
         for c in _STAGE_COLUMNS
     ]
+
+
+_STAGE_TIME_CAP = 30
+
+
+def _stage_time(
+    scan: _StageScan,
+    projects: dict[int, AitoProject],
+    done: dict[int, datetime],
+    start: datetime | None,
+    end: datetime | None,
+) -> list[AitoStatsStageTime]:
+    """Days per stage for every card completed in the period, newest first.
+    Only stays closed by the completion count: a re-open afterwards is a
+    different story and would double the bar."""
+    rows: list[AitoStatsStageTime] = []
+    for pid, done_at in done.items():
+        if not _in_range(done_at, start, end):
+            continue
+        per = dict.fromkeys(_STAGE_COLUMNS, 0.0)
+        for stay in scan.stays.get(pid, []):
+            if stay.ended <= done_at:
+                per[stay.column] += _days_between(stay.began, stay.ended)
+        p = projects[pid]
+        rows.append(
+            AitoStatsStageTime(
+                project_id=pid,
+                client_name=p.client_name,
+                description=(p.description or "")[:60],
+                done_at=done_at,
+                stages={c: round(v, 2) for c, v in per.items()},
+            )
+        )
+    rows.sort(key=lambda r: (r.done_at, r.project_id), reverse=True)
+    return rows[:_STAGE_TIME_CAP]
+
+
+def _rework(scan: _StageScan, start: datetime | None, end: datetime | None) -> AitoStatsRework:
+    moved: set[int] = set()
+    cards: set[int] = set()
+    moves = 0
+    for pid, per_project in scan.stays.items():
+        if any(_in_range(stay.ended, start, end) for stay in per_project):
+            moved.add(pid)
+    for pid, moments in scan.backward.items():
+        hits = sum(1 for at in moments if _in_range(at, start, end))
+        if hits:
+            moves += hits
+            cards.add(pid)
+            moved.add(pid)
+    return AitoStatsRework(moves=moves, cards=len(cards), share=(round(len(cards) / len(moved), 3) if moved else None))
+
+
+_AGE_BUCKETS: tuple[tuple[str, int, int | None], ...] = (
+    ("0-3", 0, 3),
+    ("4-7", 4, 7),
+    ("8-14", 8, 14),
+    ("15+", 15, None),
+)
+_OVERDUE_BUCKETS: tuple[tuple[str, int, int | None], ...] = (("1-7", 1, 7), ("8-30", 8, 30), ("31+", 31, None))
+
+
+def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) -> str | None:
+    for name, lo, hi in buckets:
+        if days >= lo and (hi is None or days <= hi):
+            return name
+    return None
+
+
+def _quote_age(projects: dict[int, AitoProject], now: datetime) -> list[AitoStatsQuoteAge]:
+    """Snapshot: sent, undecided quotes by whole days since sending."""
+    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _AGE_BUCKETS}
+    for p in projects.values():
+        if p.quote_status != "sent" or p.quote_sent_at is None:
+            continue
+        name = _bucket_name(max(0, (now - p.quote_sent_at).days), _AGE_BUCKETS)
+        if name is None:
+            continue
+        rows[name][0] += 1
+        rows[name][1] += p.quote_total or 0.0
+    return [AitoStatsQuoteAge(bucket=name, count=int(c), total=t) for name, (c, t) in rows.items()]  # type: ignore[arg-type]
+
+
+def _size_bands(
+    projects: dict[int, AitoProject],
+    accepted: dict[int, datetime],
+    declined: dict[int, datetime],
+    start: datetime | None,
+    end: datetime | None,
+) -> list[AitoStatsSizeBand]:
+    """Decisions in the period, sorted by quote_total and cut into up to four
+    equal-count bands (one band per two decisions below eight)."""
+    decided: list[tuple[float, bool]] = []
+    for pid, p in projects.items():
+        if p.quote_total is None:
+            continue
+        moments = [(at, True) for at in (accepted.get(pid),) if at is not None]
+        moments += [(at, False) for at in (declined.get(pid),) if at is not None]
+        if not moments:
+            continue
+        first_at, won = min(moments, key=lambda m: m[0])
+        if _in_range(first_at, start, end):
+            decided.append((p.quote_total, won))
+    decided.sort(key=lambda d: d[0])
+    n = len(decided)
+    if not n:
+        return []
+    count = max(1, min(4, n // 2))
+    bands: list[AitoStatsSizeBand] = []
+    for i in range(count):
+        chunk = decided[i * n // count : (i + 1) * n // count]
+        if not chunk:
+            continue
+        acc = sum(1 for _, won in chunk if won)
+        bands.append(
+            AitoStatsSizeBand(
+                min=chunk[0][0],
+                max=chunk[-1][0],
+                accepted=acc,
+                declined=len(chunk) - acc,
+                rate=round(acc / len(chunk), 3),
+            )
+        )
+    return bands
+
+
+def _overdue(projects: dict[int, AitoProject], today: date) -> AitoStatsOverdue:
+    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _OVERDUE_BUCKETS}
+    oldest: int | None = None
+    for p in projects.values():
+        if not p.quote_invoiced or (p.invoice_balance or 0.0) <= 0 or not p.invoice_due_date:
+            continue
+        try:
+            due = date.fromisoformat(p.invoice_due_date)
+        except ValueError:
+            continue
+        days = (today - due).days
+        name = _bucket_name(days, _OVERDUE_BUCKETS)
+        if name is None:
+            continue
+        oldest = days if oldest is None else max(oldest, days)
+        rows[name][0] += 1
+        rows[name][1] += p.invoice_balance or 0.0
+    return AitoStatsOverdue(
+        buckets=[AitoStatsOverdueBucket(bucket=name, count=int(c), balance=b) for name, (c, b) in rows.items()],  # type: ignore[arg-type]
+        oldest_days=oldest,
+    )
+
+
+async def _services(
+    db: AsyncSession, accepted: dict[int, datetime], start: datetime | None, end: datetime | None
+) -> list[AitoStatsService]:
+    """Tasks of the cards accepted in the period, one count per priced
+    service; revenue is `net_cost`, the same figure the board total sums."""
+    ids = [pid for pid, at in accepted.items() if _in_range(at, start, end)]
+    tasks = dict.fromkeys(SERVICES, 0)
+    revenue = dict.fromkeys(SERVICES, 0.0)
+    if ids:
+        for task in (await db.execute(select(AitoTask).where(AitoTask.project_id.in_(ids)))).scalars().all():
+            for service in SERVICES:
+                cost = net_cost(task, service)
+                if cost is None:
+                    continue
+                tasks[service] += 1
+                revenue[service] += cost
+    return [AitoStatsService(service=s, tasks=tasks[s], revenue=round(revenue[s], 2)) for s in SERVICES]
+
+
+def _clients(
+    projects: dict[int, AitoProject], born: dict[int, datetime], start: datetime | None, end: datetime | None
+) -> AitoStatsClients:
+    """A card is a returning client's when the same client_id has an active
+    card created earlier. No client_id (a walk-in) always reads as new."""
+    earliest: dict[str, datetime] = {}
+    for p in projects.values():
+        if (
+            p.client_id
+            and p.created_at is not None
+            and (p.client_id not in earliest or p.created_at < earliest[p.client_id])
+        ):
+            earliest[p.client_id] = p.created_at
+    new = returning = 0
+    new_total = returning_total = 0.0
+    for pid, at in born.items():
+        if not _in_range(at, start, end):
+            continue
+        p = projects[pid]
+        first = earliest.get(p.client_id) if p.client_id else None
+        if first is not None and p.created_at is not None and first < p.created_at:
+            returning += 1
+            returning_total += p.quote_total or 0.0
+        else:
+            new += 1
+            new_total += p.quote_total or 0.0
+    return AitoStatsClients(new=new, returning=returning, new_total=new_total, returning_total=returning_total)
+
+
+def _arrivals(
+    born: dict[int, datetime], start: datetime | None, end: datetime | None, tz_offset_minutes: int
+) -> list[list[int]]:
+    grid = [[0] * 24 for _ in range(7)]
+    for at in born.values():
+        if _in_range(at, start, end):
+            local = at + timedelta(minutes=tz_offset_minutes)
+            grid[local.weekday()][local.hour] += 1
+    return grid
+
+
+def _islands(
+    projects: dict[int, AitoProject], born: dict[int, datetime], start: datetime | None, end: datetime | None
+) -> list[AitoStatsIsland]:
+    agg: dict[str | None, list[float]] = {}
+    for pid, at in born.items():
+        if not _in_range(at, start, end):
+            continue
+        p = projects[pid]
+        row = agg.setdefault(p.shipping_island or None, [0, 0.0])
+        row[0] += 1
+        row[1] += p.shipping_price or 0.0
+    rows = [AitoStatsIsland(island=k, count=int(c), shipping_total=t) for k, (c, t) in agg.items()]
+    rows.sort(key=lambda r: (r.island is None, -r.count, r.island or ""))
+    return rows
 
 
 async def _tracking(
@@ -310,10 +569,12 @@ async def compute_aito_stats(
         known = accepted.get(pid)
         accepted[pid] = stamped if known is None or stamped < known else known
     done = await _done_moments(db, ids, born, end)
+    scan = await _scan_stages(db, projects, born, end)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # The statistics view's calendar. A bounded request is its own calendar;
     # all-time runs from the first card's arrival to the caller's today.
-    today = _local_day(datetime.now(timezone.utc).replace(tzinfo=None), tz_offset_minutes)
+    today = _local_day(now, tz_offset_minutes)
     earliest = min(born.values(), default=None)
     first_day = date_from if date_from is not None else (_local_day(earliest, tz_offset_minutes) if earliest else None)
     last_day = date_to if date_to is not None else (today if first_day is not None else None)
@@ -355,12 +616,21 @@ async def compute_aito_stats(
     return AitoStatsResponse(
         board=_board(projects),
         conversion=conversion,
-        stage_days=await _stage_days(db, projects, born, start, end),
+        stage_days=_stage_days(scan, start, end),
         invoicing=invoicing,
         tracking=await _tracking(db, projects, start, end),
         throughput=throughput,
         previous=previous,
         daily=_daily(born, accepted, done, first_day, last_day, tz_offset_minutes),
+        quote_age=_quote_age(projects, now),
+        size_bands=_size_bands(projects, accepted, declined, start, end),
+        overdue=_overdue(projects, today),
+        stage_time=_stage_time(scan, projects, done, start, end),
+        rework=_rework(scan, start, end),
+        services=await _services(db, accepted, start, end),
+        clients=_clients(projects, born, start, end),
+        arrivals=_arrivals(born, start, end, tz_offset_minutes),
+        islands=_islands(projects, born, start, end),
         date_from=date_from,
         date_to=date_to,
     )
