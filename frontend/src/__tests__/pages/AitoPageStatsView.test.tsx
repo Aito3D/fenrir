@@ -73,4 +73,31 @@ describe('AitoPage statistics view', () => {
     expect(screen.getByRole('button', { name: /Show done/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Last 30 Days/ })).toBeNull();
   });
+
+  it('an archive keeps only its own toggle and a wider search box', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByRole('button', { name: /Support GoPro/ });
+    await user.click(screen.getByRole('button', { name: 'Trash' }));
+
+    expect(screen.getByRole('button', { name: 'Back to board' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show done/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Statistics' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Import' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
+    const search = screen.getByPlaceholderText(/Search projects/);
+    expect(search.closest('.lg\\:w-96')).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Back to board' }));
+    await user.click(await screen.findByRole('button', { name: /Show done/ }));
+    expect(screen.queryByRole('button', { name: 'Trash' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Statistics' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Back to board' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Back to board' }));
+    expect(await screen.findByRole('button', { name: 'Trash' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Statistics' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Project' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Search projects/).closest('.lg\\:w-52')).not.toBeNull();
+  });
 });

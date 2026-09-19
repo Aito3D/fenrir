@@ -134,6 +134,7 @@ export function AitoPage() {
   // sits in the page toolbar, in the slot Import / New project use for the
   // board, so the header reads as one row of controls whichever view is up.
   const statsTimeframe = useTimeframe('bambuddy-aito-stats-timeframe', 'last-30');
+  const archive = view === 'done' || view === 'trash';
   const [search, setSearch] = useState('');
   const [followup, setFollowup] = useState<FollowupKey | null>(null);
   // Thresholds ride the same settings query the rest of the app shares; the
@@ -419,17 +420,23 @@ export function AitoPage() {
         {view === 'board' && (
           <FollowupStrip buckets={buckets} active={followup} onChange={setFollowup} projects={aitoQuery.data ?? []} />
         )}
+        {/* An archive is searched more than it is browsed, so its search box
+            takes the room the hidden buttons give back. */}
         {view !== 'stats' && (
-          <BoardSearch value={search} onChange={setSearch} className="w-full lg:ml-auto lg:w-52 lg:flex-none" />
+          <BoardSearch
+            value={search}
+            onChange={setSearch}
+            className={`w-full lg:ml-auto lg:flex-none ${archive ? 'lg:w-96' : 'lg:w-52'}`}
+          />
         )}
         <div className={`flex flex-wrap items-center gap-2 flex-none ${view === 'stats' ? 'lg:ml-auto' : ''}`}>
           {/* Each toggle returns to the board, so switching straight from one
               archive to the other is not possible — and does not need to be.
-              They are both detours; the board is where the work is. The
-              statistics view keeps only its own toggle (the way back) and
-              its timeframe selector: search, archives and creation are all
-              about the live board. */}
-          {view !== 'stats' && (
+              They are both detours; the board is where the work is. A detour
+              keeps only its own toggle (the way back) plus what it needs: the
+              archives their search, the statistics view its timeframe.
+              Creation and the other detours are all about the live board. */}
+          {view !== 'stats' && view !== 'trash' && (
             <ViewToggleButton
               active={view === 'done'}
               onToggle={() => changeView(view === 'done' ? 'board' : 'done')}
@@ -438,7 +445,7 @@ export function AitoPage() {
               data-flight-target=""
             />
           )}
-          {view !== 'stats' && (
+          {view !== 'stats' && view !== 'done' && (
             <ViewToggleButton
               iconOnly
               active={view === 'trash'}
@@ -447,20 +454,22 @@ export function AitoPage() {
               label={t('aito.trash')}
             />
           )}
-          <ViewToggleButton
-            iconOnly
-            active={view === 'stats'}
-            onToggle={() => changeView(view === 'stats' ? 'board' : 'stats')}
-            icon={BarChart3}
-            label={t('aito.statistics')}
-          />
-          {canCreate && view !== 'stats' && (
+          {!archive && (
+            <ViewToggleButton
+              iconOnly
+              active={view === 'stats'}
+              onToggle={() => changeView(view === 'stats' ? 'board' : 'stats')}
+              icon={BarChart3}
+              label={t('aito.statistics')}
+            />
+          )}
+          {canCreate && view === 'board' && (
             <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
               <FileInput className="w-4 h-4 mr-2" />
               {t('aito.importQuote')}
             </Button>
           )}
-          {canCreate && view !== 'stats' && (
+          {canCreate && view === 'board' && (
             <Button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none">
               <Plus className="w-4 h-4 mr-2" />
               {t('aito.newProject')}
