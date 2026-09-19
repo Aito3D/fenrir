@@ -7822,6 +7822,7 @@ export default {
       scaleWeight: 'Balança',
       netWeight: 'Líquido',
       lastUsed: 'Último uso',
+      unknownColor: 'Cor desconhecida',
     },
     ams: {
       noData: 'Nenhum AMS detectado',

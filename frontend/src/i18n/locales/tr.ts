@@ -7777,6 +7777,7 @@ export default {
       scaleWeight: 'Tartı',
       netWeight: 'Net',
       lastUsed: 'Son kullanım',
+      unknownColor: 'Bilinmeyen renk',
     },
     ams: {
       noData: 'AMS algılanmadı',

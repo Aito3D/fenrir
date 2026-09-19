@@ -7479,6 +7479,7 @@ export default {
       scaleWeight: "Показання ваг",
       netWeight: "Нетто",
       lastUsed: "Останнє використання",
+      unknownColor: "Невідомий колір",
     },
     ams: {
       noData: "AMS не виявлено",

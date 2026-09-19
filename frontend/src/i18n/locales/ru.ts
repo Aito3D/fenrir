@@ -7468,6 +7468,7 @@ export default {
       scaleWeight: "По весам",
       netWeight: "Нетто",
       lastUsed: "Последнее использование",
+      unknownColor: "Неизвестный цвет",
     },
     ams: {
       noData: "AMS не обнаружена",

@@ -7888,6 +7888,7 @@ export default {
       scaleWeight: 'Scale',
       netWeight: 'Net',
       lastUsed: 'Last used',
+      unknownColor: 'Unknown color',
     },
     ams: {
       noData: 'No AMS detected',
