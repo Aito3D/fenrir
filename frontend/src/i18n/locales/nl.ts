@@ -8312,6 +8312,7 @@ export default {
       outstanding: 'Openstaand',
       empty: 'Er is niets gebeurd in deze periode',
       vsPrevious: 'Vorige periode: {{value}}',
+      weekOf: 'Week van {{date}}',
     },
     doneEmpty: 'Nog geen voltooide projecten',
     markProjectDone: 'Project markeren als voltooid',

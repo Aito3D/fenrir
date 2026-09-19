@@ -483,6 +483,7 @@ export default {
       outstanding: '未払い',
       empty: 'この期間には何もありませんでした',
       vsPrevious: '前の期間: {{value}}',
+      weekOf: '{{date}} の週',
     },
     doneEmpty: '完了した案件はまだありません',
     markProjectDone: '案件を完了にする',

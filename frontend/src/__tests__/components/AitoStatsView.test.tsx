@@ -115,6 +115,22 @@ describe('StatsView', () => {
     expect(activity.querySelectorAll('.recharts-line').length).toBe(1);
   });
 
+  it('folds days into weeks past 62 days: no rolling line, one bar group per week', async () => {
+    const daily = Array.from({ length: 70 }, (_, i) => {
+      const d = new Date(2026, 6, 1 + i); // 2026-07-01 is a Wednesday
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return { day: key, created: i % 7 === 0 ? 1 : 0, accepted: 0, done: i % 10 === 0 ? 1 : 0 };
+    });
+    serve(fixture({ daily }));
+    render(<StatsView />);
+    const activity = await screen.findByTestId('aito-stats-activity');
+    expect(within(activity).queryByText('7-day average of completed')).toBeNull();
+    expect(activity.querySelectorAll('.recharts-line').length).toBe(0);
+    expect(activity.querySelectorAll('.recharts-bar').length).toBe(3);
+    // 70 days from a Wednesday span 11 Monday-start weeks: the x axis has at most that many categories.
+    expect(activity.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick').length).toBeLessThanOrEqual(11);
+  });
+
   it('shows the empty line instead of a blank chart when nothing happened, and hides the money strip at zero', async () => {
     serve(
       fixture({

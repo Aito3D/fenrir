@@ -483,6 +483,7 @@ export default {
       outstanding: 'Bekleyen',
       empty: 'Bu dönemde hiçbir şey olmadı',
       vsPrevious: 'Önceki dönem: {{value}}',
+      weekOf: '{{date}} haftası',
     },
     doneEmpty: 'Henüz tamamlanmış proje yok',
     markProjectDone: 'Projeyi tamamlandı olarak işaretle',

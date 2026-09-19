@@ -13,7 +13,7 @@ import { computeDelta, type StatDelta } from '../stats/deltas';
 import { COLUMNS } from './columns';
 import { formatMoney } from '../../utils/pricing';
 import { useCurrency } from '../../hooks/useCurrency';
-import { parseLocalDateKey } from '../../utils/date';
+import { localDateKey, parseLocalDateKey } from '../../utils/date';
 
 /** The three series, in the order they happen to a project. Validated as a
  *  categorical trio on the dark surface (OKLCH band, chroma, CVD pairs,
@@ -23,8 +23,12 @@ import { parseLocalDateKey } from '../../utils/date';
 const SERIES = { created: '#3d86e8', accepted: '#c95aa0', done: '#219653' } as const;
 const GRID = '#2d2d2d';
 const AXIS = '#808080';
+const TOOLTIP_ORDER = ['created', 'accepted', 'done', 'done7'];
+/** Past this many days the bars turn to hairlines, so the chart folds the
+ *  days into Monday-start weeks instead. */
+const WEEKLY_ABOVE_DAYS = 62;
 
-type ChartRow = AitoStatsDay & { label: string; done7: number };
+type ChartRow = AitoStatsDay & { label: string; done7?: number };
 
 /** The board's statistics view: how much work comes in, how much goes out,
  *  and how long it takes — the questions the board itself cannot answer
@@ -40,14 +44,30 @@ export function StatsView() {
   });
   const data = query.data;
 
-  const rows = useMemo<ChartRow[]>(() => {
+  const { rows, weekly } = useMemo(() => {
     const daily = data?.daily ?? [];
     const fmt = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short' });
-    return daily.map((d, i) => {
+    if (daily.length > WEEKLY_ABOVE_DAYS) {
+      const buckets = new Map<string, ChartRow>();
+      for (const d of daily) {
+        const date = parseLocalDateKey(d.day);
+        const start = new Date(date);
+        start.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+        const key = localDateKey(start);
+        const b = buckets.get(key) ?? { day: key, created: 0, accepted: 0, done: 0, label: fmt.format(start) };
+        b.created += d.created;
+        b.accepted += d.accepted;
+        b.done += d.done;
+        buckets.set(key, b);
+      }
+      return { rows: [...buckets.values()], weekly: true };
+    }
+    const rows: ChartRow[] = daily.map((d, i) => {
       const window = daily.slice(Math.max(0, i - 6), i + 1);
       const done7 = window.reduce((s, r) => s + r.done, 0) / window.length;
       return { ...d, label: fmt.format(parseLocalDateKey(d.day)), done7: Math.round(done7 * 100) / 100 };
     });
+    return { rows, weekly: false };
   }, [data, i18n.language]);
 
   return (
@@ -79,13 +99,13 @@ export function StatsView() {
       ) : !data.throughput ? (
         <Empty>{t('aito.stats.empty')}</Empty>
       ) : (
-        <Body data={data} rows={rows} currency={currency} />
+        <Body data={data} rows={rows} weekly={weekly} currency={currency} />
       )}
     </section>
   );
 }
 
-function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; currency: string }) {
+function Body({ data, rows, weekly, currency }: { data: AitoStats; rows: ChartRow[]; weekly: boolean; currency: string }) {
   const { t } = useTranslation();
   const tp = data.throughput!;
   const prev = data.previous ?? null;
@@ -151,9 +171,11 @@ function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; cur
             <Legend color={SERIES.created}>{t('aito.stats.added')}</Legend>
             <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
             <Legend color={SERIES.done}>{t('aito.stats.completed')}</Legend>
-            <Legend color={SERIES.done} line>
-              {t('aito.stats.rolling7')}
-            </Legend>
+            {!weekly && (
+              <Legend color={SERIES.done} line>
+                {t('aito.stats.rolling7')}
+              </Legend>
+            )}
           </ul>
         </div>
         {active ? (
@@ -163,10 +185,13 @@ function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; cur
               <XAxis dataKey="label" stroke={AXIS} tickLine={false} axisLine={{ stroke: GRID }} tick={{ fontSize: 11 }} minTickGap={28} />
               <YAxis stroke={AXIS} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} allowDecimals={false} />
               <Tooltip
-                cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                cursor={{ stroke: GRID, fill: 'rgba(255,255,255,0.04)' }}
                 contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: '#fff' }}
                 itemStyle={{ color: '#a0a0a0' }}
+                separator=": "
+                itemSorter={(item) => TOOLTIP_ORDER.indexOf(String(item.dataKey))}
+                labelFormatter={(label) => (weekly ? t('aito.stats.weekOf', { date: label }) : String(label))}
                 formatter={(value: number | undefined, name: string | undefined) => [
                   String(value ?? 0),
                   name === 'created'
@@ -181,6 +206,7 @@ function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; cur
               <Bar dataKey="created" fill={SERIES.created} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
               <Bar dataKey="accepted" fill={SERIES.accepted} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
               <Bar dataKey="done" fill={SERIES.done} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+              {!weekly && (
               <Line
                 type="monotone"
                 dataKey="done7"
@@ -191,6 +217,7 @@ function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; cur
                 activeDot={{ r: 4 }}
                 isAnimationActive={false}
               />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         ) : (
@@ -210,9 +237,9 @@ function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; cur
                   title={t('stats.pipelineSample', { count: s.sample })}
                   className="rounded-lg bg-bambu-dark px-2 py-2 text-center"
                 >
-                  <div className="flex items-center justify-center gap-1.5 text-[11px] text-bambu-gray truncate">
-                    <span className={`inline-block h-2 w-2 rounded-full ${meta?.dot ?? 'bg-bambu-gray'}`} aria-hidden="true" />
-                    {meta ? t(meta.labelKey) : s.column}
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] text-bambu-gray min-w-0">
+                    <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${meta?.dot ?? 'bg-bambu-gray'}`} aria-hidden="true" />
+                    <span className="truncate">{meta ? t(meta.labelKey) : s.column}</span>
                   </div>
                   <div className="text-sm font-medium text-white">{days(s.median_days)}</div>
                 </div>
@@ -242,7 +269,7 @@ function Body({ data, rows, currency }: { data: AitoStats; rows: ChartRow[]; cur
       </div>
 
       {showMoney && (
-        <section data-testid="aito-stats-money" className="grid grid-cols-3 gap-3">
+        <section data-testid="aito-stats-money" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Tile label={t('aito.stats.quoted')} value={money(quoted)} small />
           <Tile label={t('aito.stats.invoiced')} value={money(invoiced)} small />
           <Tile label={t('aito.stats.outstanding')} value={money(outstanding)} small />

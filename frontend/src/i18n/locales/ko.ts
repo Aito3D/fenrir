@@ -483,6 +483,7 @@ export default {
       outstanding: '미수금',
       empty: '이 기간에는 아무 일도 없었습니다',
       vsPrevious: '이전 기간: {{value}}',
+      weekOf: '{{date}} 주',
     },
     doneEmpty: '아직 완료된 프로젝트가 없습니다',
     markProjectDone: '프로젝트를 완료로 표시',

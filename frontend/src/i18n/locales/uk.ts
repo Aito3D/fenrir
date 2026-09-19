@@ -484,6 +484,7 @@ export default {
       outstanding: 'Не сплачено',
       empty: 'За цей період нічого не сталося',
       vsPrevious: 'Попередній період: {{value}}',
+      weekOf: 'Тиждень з {{date}}',
     },
     doneEmpty: 'Завершених проєктів поки немає',
     markProjectDone: 'Позначити проєкт як завершений',

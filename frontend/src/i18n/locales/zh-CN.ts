@@ -483,6 +483,7 @@ export default {
       outstanding: '待收款',
       empty: '此期间没有任何动态',
       vsPrevious: '上一周期：{{value}}',
+      weekOf: '{{date}} 当周',
     },
     doneEmpty: '暂无已完成的项目',
     markProjectDone: '将项目标记为已完成',

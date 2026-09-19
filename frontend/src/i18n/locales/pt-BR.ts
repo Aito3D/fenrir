@@ -483,6 +483,7 @@ export default {
       outstanding: 'Em aberto',
       empty: 'Nada aconteceu neste período',
       vsPrevious: 'Período anterior: {{value}}',
+      weekOf: 'Semana de {{date}}',
     },
     doneEmpty: 'Ainda não há projetos concluídos',
     markProjectDone: 'Marcar o projeto como concluído',

@@ -487,6 +487,7 @@ export default {
       outstanding: 'Outstanding',
       empty: 'Nothing happened in this period',
       vsPrevious: 'Previous period: {{value}}',
+      weekOf: 'Week of {{date}}',
     },
     doneEmpty: 'No finished projects yet',
     markProjectDone: 'Mark project as done',
