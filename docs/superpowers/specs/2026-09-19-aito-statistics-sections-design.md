@@ -110,3 +110,7 @@ New keys under `aito.stats.*`: sections (sales, time, money, clients), asOfToday
 - The view is split into `components/aito/stats/` (palette, primitives, activity chart, jump strip, four sections); `StatsView.tsx` is the shell.
 - Section ids are `aito-stats-{sales,time,money,clients}`; the strip observes them with a `-56px / -55%` root margin so the highlighted pill is the section under the strip, not the one leaving.
 - Stage-time bars are sorted longest first and scaled to the longest card; zero-day stages draw no segment.
+- **Win rate by ticket size** became stacked COUNT bars (length = decisions in the band scaled to the busiest band, magenta accepted + muted grey declined) so the rate reads as the coloured share and a 100 % of four quotes no longer looks solid.
+- **Quotes accepted vs declined** (added on request): a full-width Sales card with the two counts and totals, the acceptance rate with a delta against the previous period, and stacked accepted/declined bars per day (per week past 45 days). Backend: `daily[].declined` and `previous.declined`.
+- **Toolbar in the statistics view**: only the active Statistics toggle (the way back) and the timeframe selector remain; search, Show done, Trash, Import, New project, the in-production count and the print-backlog badge are hidden. The timeframe state lives in `AitoPage` and is passed to `StatsView` as `range`.
+
