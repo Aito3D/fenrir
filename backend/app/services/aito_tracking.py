@@ -48,12 +48,16 @@ DORMANT_COLUMNS = frozenset({"devis", "waiting"})
 # park a declined quote in Done, which the page would otherwise read as
 # "collected" — on the link printed on the very quote the client declined.
 CLOSED_QUOTE_STATUSES = frozenset({"declined", "expired"})
-NOTES_PREFIX = "Lien de suivi de votre projet : "
+# "Suivi et paiement": the page is also where the client pays (card link,
+# transfer details or in-shop terms), and a link sold as tracking alone was
+# being ignored by clients who only wanted to pay.
+NOTES_PREFIX = "Suivi et paiement de votre projet : "
 NOTES_CODE_PREFIX = "Code de suivi : "
-# Wordings this app wrote before 2026-09-08. Stripped on merge, so a card
-# re-synced after the change carries one tracking block, not two.
-_LEGACY_NOTES_PREFIXES = ("Suivez votre commande : ",)
-SMS_PREFIX = "\nSuivi : "
+# Wordings this app wrote before (2026-09-08, then 2026-09-18). Stripped on
+# merge, so a card re-synced after a change carries one tracking block, not
+# two.
+_LEGACY_NOTES_PREFIXES = ("Suivez votre commande : ", "Lien de suivi de votre projet : ")
+SMS_PREFIX = "\nSuivi et paiement : "
 SMS_SIGNATURE = "Aito3D"
 # The blank line before the signature: the link is the message's last word,
 # « Aito3D » is the sign-off under it.

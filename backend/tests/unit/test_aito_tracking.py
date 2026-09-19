@@ -791,7 +791,7 @@ async def test_regenerate_rewrites_the_quote_notes_with_the_new_link(async_clien
     old = await _token(async_client, db_session, pid)
     await _set(db_session, pid, quote_id="E1")
     remote = {
-        "notes": f"Signature du client\n\nLien de suivi de votre projet : https://aito.example/t/{old}\nCode de suivi : {old}"
+        "notes": f"Signature du client\n\nSuivi et paiement de votre projet : https://aito.example/t/{old}\nCode de suivi : {old}"
     }
     written = []
 
@@ -811,7 +811,7 @@ async def test_regenerate_rewrites_the_quote_notes_with_the_new_link(async_clien
     assert written == [
         (
             "E1",
-            f"Signature du client\n\nLien de suivi de votre projet : https://aito.example/t/{new}\nCode de suivi : {new}",
+            f"Signature du client\n\nSuivi et paiement de votre projet : https://aito.example/t/{new}\nCode de suivi : {new}",
         )
     ]
     # "detail" depth: the regenerate is filed there (services/aito_events.py), below the story.

@@ -57,7 +57,7 @@ async def test_pickup_draft_ends_with_the_link_when_configured(async_client, db_
     body = (await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")).json()
     # The signature stays the last line: the link slots in between the
     # message and « Aito3D », not after it.
-    assert body["message"].startswith("Bonjour, c'est prêt.\nSuivi : https://aito.example/t/")
+    assert body["message"].startswith("Bonjour, c'est prêt.\nSuivi et paiement : https://aito.example/t/")
     assert body["message"].endswith("\n\nAito3D")
     # The draft request committed the minted token: the public link works.
     token = body["message"].splitlines()[1].rsplit("/", 1)[1]
@@ -69,12 +69,12 @@ def test_with_tracking_sms_seats_the_signature_under_the_link():
 
     url = "https://aito.example/t/K7F3XQ"
     # Link glued to the message, blank line, signature.
-    assert with_tracking_sms("Prêt.\nAito3D", url) == f"Prêt.\nSuivi : {url}\n\nAito3D"
+    assert with_tracking_sms("Prêt.\nAito3D", url) == f"Prêt.\nSuivi et paiement : {url}\n\nAito3D"
     # A draft without the signature (edited, or a model that dropped it)
     # simply gets the link at the end.
-    assert with_tracking_sms("Prêt.", url) == f"Prêt.\nSuivi : {url}"
+    assert with_tracking_sms("Prêt.", url) == f"Prêt.\nSuivi et paiement : {url}"
     # Stray whitespace around the signature never survives.
-    assert with_tracking_sms("Prêt.\n\nAito3D  ", url) == f"Prêt.\nSuivi : {url}\n\nAito3D"
+    assert with_tracking_sms("Prêt.\n\nAito3D  ", url) == f"Prêt.\nSuivi et paiement : {url}\n\nAito3D"
 
 
 @pytest.mark.asyncio
@@ -165,7 +165,7 @@ async def test_create_estimate_carries_notes_only_when_configured(db_session, mo
     default, blank, link, code_line = notes.split("\n")
     assert default == "Signature du client (précédée de la mention « Bon pour accord »)"
     assert blank == ""
-    assert link.startswith("Lien de suivi de votre projet : https://aito.example/t/")
+    assert link.startswith("Suivi et paiement de votre projet : https://aito.example/t/")
     # The code on its own line, for the client who reads the PDF on paper.
     assert code_line == f"Code de suivi : {link.rsplit('/', 1)[1]}"
     assert len(code_line.split(": ")[1]) == 6
@@ -253,7 +253,7 @@ async def test_update_estimate_lines_passes_notes_through(db_session, monkeypatc
     # blank line.
     assert notes.startswith(
         "Signature du client (précédée de la mention « Bon pour accord ») "
-        + "\nRemise fidélité incluse.\n\nLien de suivi de votre projet : https://aito.example/t/"
+        + "\nRemise fidélité incluse.\n\nSuivi et paiement de votre projet : https://aito.example/t/"
     )
     assert "OLDTOKEN" not in notes and "Suivez votre commande" not in notes
     assert notes.count("Code de suivi : ") == 1
@@ -303,18 +303,19 @@ def test_tracking_notes_adds_the_code_line_only_for_a_short_code():
     from backend.app.services.aito_tracking import tracking_notes
 
     assert tracking_notes("https://x.pf/t/V9HV2M", "V9HV2M") == (
-        "Lien de suivi de votre projet : https://x.pf/t/V9HV2M\nCode de suivi : V9HV2M"
+        "Suivi et paiement de votre projet : https://x.pf/t/V9HV2M\nCode de suivi : V9HV2M"
     )
     legacy = "lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4"
     assert (
-        tracking_notes(f"https://x.pf/t/{legacy}", legacy) == f"Lien de suivi de votre projet : https://x.pf/t/{legacy}"
+        tracking_notes(f"https://x.pf/t/{legacy}", legacy)
+        == f"Suivi et paiement de votre projet : https://x.pf/t/{legacy}"
     )
 
 
 def test_with_tracking_notes_keeps_books_text_and_is_idempotent():
     from backend.app.services.aito_tracking import with_tracking_notes
 
-    block = "Lien de suivi de votre projet : https://x.pf/t/V9HV2M\nCode de suivi : V9HV2M"
+    block = "Suivi et paiement de votre projet : https://x.pf/t/V9HV2M\nCode de suivi : V9HV2M"
     assert with_tracking_notes(None, "https://x.pf/t/V9HV2M", "V9HV2M") == block
     assert with_tracking_notes("", "https://x.pf/t/V9HV2M", "V9HV2M") == block
     once = with_tracking_notes("Signature du client ", "https://x.pf/t/V9HV2M", "V9HV2M")
@@ -323,8 +324,23 @@ def test_with_tracking_notes_keeps_books_text_and_is_idempotent():
     # A regenerated link replaces the block rather than stacking a second one.
     again = with_tracking_notes(once, "https://x.pf/t/NEW123", "NEW123")
     assert (
-        again == "Signature du client\n\nLien de suivi de votre projet : https://x.pf/t/NEW123\nCode de suivi : NEW123"
+        again
+        == "Signature du client\n\nSuivi et paiement de votre projet : https://x.pf/t/NEW123\nCode de suivi : NEW123"
     )
+
+
+def test_with_tracking_notes_strips_every_wording_this_app_ever_wrote():
+    """A quote synced before 2026-09-18 carries the « Lien de suivi » block;
+    the next sync must replace it, not stack « Suivi et paiement » under it."""
+    from backend.app.services.aito_tracking import with_tracking_notes
+
+    before = "Signature du client\n\nLien de suivi de votre projet : https://x.pf/t/OLD123\nCode de suivi : OLD123"
+    after = with_tracking_notes(before, "https://x.pf/t/OLD123", "OLD123")
+    assert (
+        after
+        == "Signature du client\n\nSuivi et paiement de votre projet : https://x.pf/t/OLD123\nCode de suivi : OLD123"
+    )
+    assert after.count("OLD123") == 2
 
 
 @pytest.mark.asyncio
@@ -336,6 +352,6 @@ async def test_update_estimate_notes_sends_notes_only(db_session, monkeypatch):
         return {"estimate": {"estimate_id": "E1"}}
 
     monkeypatch.setattr(zoho_service, "_request", fake_request)
-    await zoho_service.update_estimate_notes(db_session, "E1", "Signature\n\nLien de suivi de votre projet : u")
+    await zoho_service.update_estimate_notes(db_session, "E1", "Signature\n\nSuivi et paiement de votre projet : u")
     assert seen["method"] == "PUT" and seen["path"] == "/estimates/E1"
-    assert seen["json"] == {"notes": "Signature\n\nLien de suivi de votre projet : u"}
+    assert seen["json"] == {"notes": "Signature\n\nSuivi et paiement de votre projet : u"}
