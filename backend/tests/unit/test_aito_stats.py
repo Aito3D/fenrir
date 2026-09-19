@@ -398,13 +398,21 @@ async def test_daily_rows_are_zero_filled_local_days(async_client, db_session):
     # 2026-03-02 23:30 UTC is 2026-03-03 in UTC+1
     await _move_event(db_session, p, "project.created", "2026-03-02 23:30:00")
     await _event(db_session, p, "quote.accepted", "2026-03-03 12:00:00")
+    q = await _create(async_client)
+    await _move_event(db_session, q, "project.created", "2026-02-20 10:00:00")
+    await _event(db_session, q, "quote.declined", "2026-03-04 12:00:00")
 
     r = await async_client.get(
         STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-04", "tz_offset_minutes": 60}
     )
     daily = r.json()["daily"]
     assert [d["day"] for d in daily] == ["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04"]
-    assert [(d["created"], d["accepted"], d["done"]) for d in daily] == [(0, 0, 0), (0, 0, 0), (1, 1, 0), (0, 0, 0)]
+    assert [(d["created"], d["accepted"], d["declined"], d["done"]) for d in daily] == [
+        (0, 0, 0, 0),
+        (0, 0, 0, 0),
+        (1, 1, 0, 0),
+        (0, 0, 1, 0),
+    ]
 
 
 @pytest.mark.asyncio
@@ -413,11 +421,12 @@ async def test_previous_block_is_the_preceding_window_of_equal_length(async_clie
     b = await _create(async_client)
     await _move_event(db_session, a, "project.created", "2026-03-02 10:00:00")  # previous window (Feb 27 - Mar 3)
     await _move_event(db_session, b, "project.created", "2026-03-05 10:00:00")  # current window (Mar 4 - Mar 8)
+    await _event(db_session, a, "quote.declined", "2026-03-03 10:00:00")  # previous window
 
     r = await async_client.get(STATS, params={"date_from": "2026-03-04", "date_to": "2026-03-08"})
     body = r.json()
     assert body["throughput"]["created"] == 1
-    assert body["previous"] == {"created": 1, "accepted": 0, "done": 0, "lead_days": None}
+    assert body["previous"] == {"created": 1, "accepted": 0, "declined": 1, "done": 0, "lead_days": None}
 
 
 @pytest.mark.asyncio

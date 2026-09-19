@@ -4263,7 +4263,7 @@ export interface AitoStatsThroughput {
   production_days: number | null;
   active: number;
 }
-export interface AitoStatsDay { day: string; created: number; accepted: number; done: number }
+export interface AitoStatsDay { day: string; created: number; accepted: number; declined?: number; done: number }
 export interface AitoStatsQuoteAge { bucket: '0-3' | '4-7' | '8-14' | '15+'; count: number; total: number }
 export interface AitoStatsSizeBand { min: number; max: number; accepted: number; declined: number; rate: number | null }
 export interface AitoStatsOverdue {
@@ -4289,7 +4289,7 @@ export interface AitoStats {
   tracking?: { views: number; cards_viewed: number; cards_with_link: number };
   // Optional: a deployed backend behind this bundle may predate the statistics view.
   throughput?: AitoStatsThroughput;
-  previous?: { created: number; accepted: number; done: number; lead_days: number | null } | null;
+  previous?: { created: number; accepted: number; declined?: number; done: number; lead_days: number | null } | null;
   daily?: AitoStatsDay[];
   // The four sections' blocks (2026-09-19); every one optional for the same reason.
   quote_age?: AitoStatsQuoteAge[];

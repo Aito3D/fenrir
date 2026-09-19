@@ -54,13 +54,23 @@ describe('AitoPage statistics view', () => {
     await user.click(stats);
     expect(await screen.findByTestId('aito-stats-view')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Support GoPro/ })).toBeNull();
-    // The active toggle is the way back; the other detours keep their names.
+    // The active toggle is the way back. Everything about the live board —
+    // search, the archives, creation, the count and the print backlog — is
+    // gone; the timeframe selector takes the creation buttons' slot.
     expect(screen.getByRole('button', { name: 'Back to board' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Trash' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Show done/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Trash' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Show done/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Import' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
+    expect(screen.queryByPlaceholderText(/Search projects/)).toBeNull();
+    expect(screen.queryByText(/in production$/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Last 30 Days/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Back to board' }));
     expect(screen.queryByTestId('aito-stats-view')).toBeNull();
     expect(await screen.findByRole('button', { name: /Support GoPro/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trash' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Show done/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Last 30 Days/ })).toBeNull();
   });
 });

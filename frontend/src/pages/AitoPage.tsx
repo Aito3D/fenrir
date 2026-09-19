@@ -15,6 +15,8 @@ import { NewProjectDrawer } from '../components/aito/NewProjectDrawer';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashGrid } from '../components/aito/TrashGrid';
 import { StatsView } from '../components/aito/StatsView';
+import { TimeframeSelector } from '../components/stats/TimeframeSelector';
+import { useTimeframe } from '../components/stats/timeframe';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
 import { api, type AitoProject } from '../api/client';
 import { formatPhone } from '../utils/clientDraft';
@@ -128,6 +130,10 @@ export function AitoPage() {
   // the working view; landing on an archive after a reload would be wrong
   // every time but the one you asked for it.
   const [view, setView] = useState<'board' | 'done' | 'trash' | 'stats'>('board');
+  // The statistics view's range lives here, not in the view: its selector
+  // sits in the page toolbar, in the slot Import / New project use for the
+  // board, so the header reads as one row of controls whichever view is up.
+  const statsTimeframe = useTimeframe('bambuddy-aito-stats-timeframe', 'last-30');
   const [search, setSearch] = useState('');
   const [followup, setFollowup] = useState<FollowupKey | null>(null);
   // Thresholds ride the same settings query the rest of the app shares; the
@@ -389,42 +395,58 @@ export function AitoPage() {
               The number alone is meaningless read aloud ("Aito, four"), so
               the digits are aria-hidden and the phrase sits beside them for
               screen readers. `title` covers the mouse. */}
-          <span
-            key={inProduction}
-            title={t('aito.inProduction', { count: inProduction })}
-            className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
-          >
-            <span aria-hidden="true">{pending ? '–' : inProduction}</span>
-            <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
-          </span>
-          <PrintBacklogBadge
-            minutes={backlogMinutes}
-            printerCount={printersQuery.data?.length}
-            dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
-          />
+          {/* The live-board facts (count, print backlog) are the board's; the
+              statistics view has its own caption and they would contradict
+              a range that is not "now". */}
+          {view !== 'stats' && (
+            <span
+              key={inProduction}
+              title={t('aito.inProduction', { count: inProduction })}
+              className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
+            >
+              <span aria-hidden="true">{pending ? '–' : inProduction}</span>
+              <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
+            </span>
+          )}
+          {view !== 'stats' && (
+            <PrintBacklogBadge
+              minutes={backlogMinutes}
+              printerCount={printersQuery.data?.length}
+              dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
+            />
+          )}
         </h1>
         {view === 'board' && (
           <FollowupStrip buckets={buckets} active={followup} onChange={setFollowup} projects={aitoQuery.data ?? []} />
         )}
-        <BoardSearch value={search} onChange={setSearch} className="w-full lg:ml-auto lg:w-52 lg:flex-none" />
-        <div className="flex flex-wrap items-center gap-2 flex-none">
+        {view !== 'stats' && (
+          <BoardSearch value={search} onChange={setSearch} className="w-full lg:ml-auto lg:w-52 lg:flex-none" />
+        )}
+        <div className={`flex flex-wrap items-center gap-2 flex-none ${view === 'stats' ? 'lg:ml-auto' : ''}`}>
           {/* Each toggle returns to the board, so switching straight from one
               archive to the other is not possible — and does not need to be.
-              They are both detours; the board is where the work is. */}
-          <ViewToggleButton
-            active={view === 'done'}
-            onToggle={() => changeView(view === 'done' ? 'board' : 'done')}
-            icon={Archive}
-            label={`${t('aito.showDone')} (${pending ? '–' : doneCount})`}
-            data-flight-target=""
-          />
-          <ViewToggleButton
-            iconOnly
-            active={view === 'trash'}
-            onToggle={() => changeView(view === 'trash' ? 'board' : 'trash')}
-            icon={Trash2}
-            label={t('aito.trash')}
-          />
+              They are both detours; the board is where the work is. The
+              statistics view keeps only its own toggle (the way back) and
+              its timeframe selector: search, archives and creation are all
+              about the live board. */}
+          {view !== 'stats' && (
+            <ViewToggleButton
+              active={view === 'done'}
+              onToggle={() => changeView(view === 'done' ? 'board' : 'done')}
+              icon={Archive}
+              label={`${t('aito.showDone')} (${pending ? '–' : doneCount})`}
+              data-flight-target=""
+            />
+          )}
+          {view !== 'stats' && (
+            <ViewToggleButton
+              iconOnly
+              active={view === 'trash'}
+              onToggle={() => changeView(view === 'trash' ? 'board' : 'trash')}
+              icon={Trash2}
+              label={t('aito.trash')}
+            />
+          )}
           <ViewToggleButton
             iconOnly
             active={view === 'stats'}
@@ -432,18 +454,19 @@ export function AitoPage() {
             icon={BarChart3}
             label={t('aito.statistics')}
           />
-          {canCreate && (
+          {canCreate && view !== 'stats' && (
             <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
               <FileInput className="w-4 h-4 mr-2" />
               {t('aito.importQuote')}
             </Button>
           )}
-          {canCreate && (
+          {canCreate && view !== 'stats' && (
             <Button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none">
               <Plus className="w-4 h-4 mr-2" />
               {t('aito.newProject')}
             </Button>
           )}
+          {view === 'stats' && <TimeframeSelector timeframe={statsTimeframe.timeframe} onChange={statsTimeframe.setTimeframe} />}
         </div>
       </div>
 
@@ -498,7 +521,7 @@ export function AitoPage() {
           canUpdate={canUpdate}
         />
       ) : view === 'stats' ? (
-        <StatsView />
+        <StatsView range={statsTimeframe.range} />
       ) : (
         <DndContext
           sensors={sensors}

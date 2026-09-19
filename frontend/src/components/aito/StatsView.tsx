@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { api, type AitoStats } from '../../api/client';
 import { Button } from '../Button';
-import { TimeframeSelector } from '../stats/TimeframeSelector';
-import { useTimeframe } from '../stats/timeframe';
+import type { DateRange } from '../stats/timeframe';
 import { computeDelta } from '../stats/deltas';
 import { ActivityChart } from './stats/ActivityChart';
 import { ClientsSection } from './stats/ClientsSection';
@@ -19,11 +18,12 @@ import { useStatsFormat } from './stats/useStatsFormat';
 /** The board's statistics view: how much work comes in, how much goes out,
  *  and how long it takes — the questions the board itself cannot answer
  *  because it only shows now. Same endpoint as the Stats page's pipeline
- *  widget, sliced by the same timeframe selector. The overview (tiles +
- *  activity) sits on top; four sections follow under a sticky jump strip. */
-export function StatsView() {
+ *  widget, sliced by the same timeframe selector — which the PAGE renders in
+ *  its toolbar (where Import and New project sit for the board) and passes
+ *  down as `range`. The overview (tiles + activity) sits on top; four
+ *  sections follow under a sticky jump strip. */
+export function StatsView({ range }: { range: DateRange }) {
   const { t } = useTranslation();
-  const { timeframe, setTimeframe, range } = useTimeframe('bambuddy-aito-stats-timeframe', 'last-30');
   const query = useQuery({
     queryKey: ['aitoStats', range.dateFrom, range.dateTo],
     queryFn: () => api.getAitoStats(range),
@@ -32,17 +32,14 @@ export function StatsView() {
 
   return (
     <section data-testid="aito-stats-view" className="animate-rise space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-bambu-gray-light">
-          {data?.throughput
-            ? t('aito.stats.caption', {
-                active: data.throughput.active,
-                done: data.board.find((b) => b.column === 'done')?.count ?? 0,
-              })
-            : ' '}
-        </p>
-        <TimeframeSelector timeframe={timeframe} onChange={setTimeframe} />
-      </div>
+      <p className="text-sm text-bambu-gray-light">
+        {data?.throughput
+          ? t('aito.stats.caption', {
+              active: data.throughput.active,
+              done: data.board.find((b) => b.column === 'done')?.count ?? 0,
+            })
+          : ' '}
+      </p>
 
       {query.isPending ? (
         <div className="flex justify-center py-16">

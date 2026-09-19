@@ -1076,6 +1076,7 @@ class AitoStatsPrevious(BaseModel):
 
     created: int
     accepted: int
+    declined: int
     done: int
     lead_days: float | None
 
@@ -1086,6 +1087,7 @@ class AitoStatsDay(BaseModel):
     day: date
     created: int
     accepted: int
+    declined: int
     done: int
 
 

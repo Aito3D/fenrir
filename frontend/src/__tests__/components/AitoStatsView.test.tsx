@@ -70,7 +70,7 @@ describe('StatsView', () => {
 
   it('renders the headline tiles with deltas against the previous period', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     expect(await screen.findByTestId('aito-stats-view')).toBeInTheDocument();
     expect(await screen.findByText('12 in production · 6 completed overall')).toBeInTheDocument();
 
@@ -92,7 +92,7 @@ describe('StatsView', () => {
 
   it('renders the flow, the funnel and the money strip', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const flow = await screen.findByTestId('aito-stats-flow');
     expect(within(flow).getByText(/^Printing/).parentElement!.parentElement).toHaveTextContent('1.5 d');
     const funnel = screen.getByTestId('aito-stats-funnel');
@@ -107,7 +107,7 @@ describe('StatsView', () => {
 
   it('draws one bar per series and the legend names them', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const activity = await screen.findByTestId('aito-stats-activity');
     expect(within(activity).getByText('Activity per day')).toBeInTheDocument();
     expect(within(activity).getByText('7-day average of completed')).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe('StatsView', () => {
       return { day: key, created: i % 7 === 0 ? 1 : 0, accepted: 0, done: i % 10 === 0 ? 1 : 0 };
     });
     serve(fixture({ daily }));
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const activity = await screen.findByTestId('aito-stats-activity');
     expect(within(activity).queryByText('7-day average of completed')).toBeNull();
     expect(activity.querySelectorAll('.recharts-line').length).toBe(0);
@@ -144,7 +144,7 @@ describe('StatsView', () => {
         invoicing: { invoiced_total: 0, invoiced_count: 0, outstanding_balance: 0, outstanding_count: 0 },
       }),
     );
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const activity = await screen.findByTestId('aito-stats-activity');
     expect(within(activity).getByText('Nothing happened in this period')).toBeInTheDocument();
     expect(screen.queryByTestId('aito-stats-money')).toBeNull();
@@ -153,13 +153,13 @@ describe('StatsView', () => {
   it('degrades to the empty line on a backend that predates the throughput block', async () => {
     const { throughput: _t, previous: _p, daily: _d, ...older } = fixture();
     serve(older as AitoStats);
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     expect(await screen.findByText('Nothing happened in this period')).toBeInTheDocument();
   });
 
   it('shows the error state with a retry', async () => {
     server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json({ detail: 'nope' }, { status: 500 })));
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 });

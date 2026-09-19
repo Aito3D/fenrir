@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { SERIES } from './palette';
+import { DecisionsCard } from './DecisionsCard';
 import { AsOfToday, Card, Empty, Heading, InnerTile, Step } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
@@ -16,6 +17,7 @@ export function SalesSection({ data }: { data: AitoStats }) {
   const pctOfSent = sent > 0 ? Math.round((accepted / sent) * 100) : null;
   const pctOfAccepted = accepted > 0 ? Math.round((done / accepted) * 100) : null;
   const lost = data.conversion.declined;
+  const busiest = Math.max(0, ...(data.size_bands ?? []).map((b) => b.accepted + b.declined));
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -61,6 +63,10 @@ export function SalesSection({ data }: { data: AitoStats }) {
         )}
       </Card>
 
+      <div className="lg:col-span-2">
+        <DecisionsCard data={data} />
+      </div>
+
       <Card testId="aito-stats-win-rate" className="lg:col-span-2">
         <Heading>{t('aito.stats.winRate')}</Heading>
         {data.size_bands && data.size_bands.length > 0 ? (
@@ -73,8 +79,29 @@ export function SalesSection({ data }: { data: AitoStats }) {
                   <span className="w-40 shrink-0 truncate text-bambu-gray-light sm:w-52">
                     {money(band.min)} – {money(band.max)}
                   </span>
-                  <span className="h-2 flex-1 overflow-hidden rounded-full bg-bambu-dark" aria-hidden="true">
-                    <span className="block h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: SERIES.accepted }} />
+                  {/* Length = decisions in the band (scaled to the busiest band), split
+                      accepted / declined so the rate reads as the coloured share and
+                      a 100% of four quotes no longer looks like a solid fact. */}
+                  <span className="flex-1 min-w-0" aria-hidden="true">
+                    <span
+                      className="flex h-2.5 gap-[2px] overflow-hidden rounded-full"
+                      style={{ width: `${busiest > 0 ? (n / busiest) * 100 : 0}%` }}
+                    >
+                      {band.accepted > 0 && (
+                        <span
+                          data-segment="accepted"
+                          className="block h-full min-w-[3px] rounded-full"
+                          style={{ flexGrow: band.accepted, backgroundColor: SERIES.accepted }}
+                        />
+                      )}
+                      {band.declined > 0 && (
+                        <span
+                          data-segment="declined"
+                          className="block h-full min-w-[3px] rounded-full bg-bambu-dark-tertiary"
+                          style={{ flexGrow: band.declined }}
+                        />
+                      )}
+                    </span>
                   </span>
                   <span className="w-28 shrink-0 text-right text-bambu-gray-light">
                     <span className="font-medium text-white">{pct}%</span> · {t('aito.stats.decisions', { count: n })}

@@ -36,8 +36,11 @@ function fixture(overrides: Partial<AitoStats> = {}): AitoStats {
     invoicing: { invoiced_total: 1800, invoiced_count: 1, outstanding_balance: 300, outstanding_count: 1 },
     tracking: { views: 0, cards_viewed: 0, cards_with_link: 0 },
     throughput: { created: 3, accepted: 2, done: 1, per_day: 0.1, lead_days: 4.75, lead_days_median: 4.5, production_days: 2.04, active: 12 },
-    previous: null,
-    daily: [{ day: '2026-09-02', created: 2, accepted: 2, done: 1 }],
+    previous: { created: 2, accepted: 1, declined: 3, done: 0, lead_days: null },
+    daily: [
+      { day: '2026-09-01', created: 0, accepted: 0, declined: 1, done: 0 },
+      { day: '2026-09-02', created: 2, accepted: 2, declined: 0, done: 1 },
+    ],
     quote_age: [
       { bucket: '0-3', count: 2, total: 1200 },
       { bucket: '4-7', count: 0, total: 0 },
@@ -91,7 +94,7 @@ describe('StatsView sections', () => {
 
   it('renders the four sections under a jump strip that scrolls to them', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
     const pills = within(nav).getAllByRole('button');
     expect(pills.map((b) => b.textContent)).toEqual(['Sales', 'Time', 'Money', 'Clients']);
@@ -107,7 +110,7 @@ describe('StatsView sections', () => {
 
   it('Sales: lost line, quote age tiles with the 15+ alert, win rate bars', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const funnel = await screen.findByTestId('aito-stats-funnel');
     expect(funnel).toHaveTextContent('Lost: 1 ·');
     const age = screen.getByTestId('aito-stats-quote-age');
@@ -120,11 +123,28 @@ describe('StatsView sections', () => {
     expect(win).toHaveTextContent('50%');
     expect(win).toHaveTextContent('2 decided');
     expect(win).toHaveTextContent('100%');
+    // Stacked count bars: the first band has both segments, the all-accepted one only the magenta.
+    const bars = within(win).getAllByRole('listitem');
+    expect(bars[0].querySelectorAll('[data-segment]').length).toBe(2);
+    expect(bars[1].querySelectorAll('[data-segment="declined"]').length).toBe(0);
+  });
+
+  it('Sales: the decisions card shows both counts, the rate against the previous period, and stacked bars', async () => {
+    serve(fixture());
+    render(<StatsView range={{}} />);
+    const card = await screen.findByTestId('aito-stats-decisions');
+    // The legend names the series first; the tiles come after.
+    expect(within(card).getAllByText('Accepted')[1].parentElement).toHaveTextContent('2');
+    expect(within(card).getAllByText('Declined')[1].parentElement).toHaveTextContent('1');
+    expect(card).toHaveTextContent('67% accepted');
+    // previous period: 1 of 4 = 25% → up
+    expect(card).toHaveTextContent('▲');
+    expect(card.querySelectorAll('.recharts-bar').length).toBe(2);
   });
 
   it('Time: one stacked bar per completed card, longest first, and the rework tile', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const st = await screen.findByTestId('aito-stats-stage-time');
     const rows = within(st).getAllByRole('listitem').filter((li) => li.textContent?.includes(' d'));
     expect(rows[0]).toHaveTextContent('ACME');
@@ -138,7 +158,7 @@ describe('StatsView sections', () => {
 
   it('Money: overdue buckets with oldest, and the service mix legend with shares', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const od = await screen.findByTestId('aito-stats-overdue');
     expect(od).toHaveTextContent('As of today · oldest 45 d');
     expect(within(od).getByText('31+ days').parentElement).toHaveTextContent('1');
@@ -152,7 +172,7 @@ describe('StatsView sections', () => {
 
   it('Clients: new vs returning with revenue share, the arrivals grid, islands with pickup last', async () => {
     serve(fixture());
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     const clients = await screen.findByTestId('aito-stats-clients');
     expect(clients).toHaveTextContent('75% of revenue from returning clients');
     const arrivals = screen.getByTestId('aito-stats-arrivals');
@@ -170,7 +190,7 @@ describe('StatsView sections', () => {
       overdue: { buckets: [{ bucket: '1-7', count: 0, balance: 0 }, { bucket: '8-30', count: 0, balance: 0 }, { bucket: '31+', count: 0, balance: 0 }], oldest_days: null },
     });
     serve(older as AitoStats);
-    render(<StatsView />);
+    render(<StatsView range={{}} />);
     expect(await screen.findByText('Nothing overdue')).toBeInTheDocument();
     expect(within(screen.getByTestId('aito-stats-win-rate')).getByText('Not enough decided quotes yet')).toBeInTheDocument();
     expect(within(screen.getByTestId('aito-stats-quote-age')).getByText('Nothing happened in this period')).toBeInTheDocument();

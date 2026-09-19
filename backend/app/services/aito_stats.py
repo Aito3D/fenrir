@@ -521,6 +521,7 @@ def _throughput(
 def _daily(
     born: dict[int, datetime],
     accepted: dict[int, datetime],
+    declined: dict[int, datetime],
     done: dict[int, datetime],
     first_day: date | None,
     last_day: date | None,
@@ -528,15 +529,15 @@ def _daily(
 ) -> list[AitoStatsDay]:
     if first_day is None or last_day is None or last_day < first_day:
         return []
-    counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0])
-    for index, moments in enumerate((born, accepted, done)):
+    counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+    for index, moments in enumerate((born, accepted, declined, done)):
         for at in moments.values():
             counts[_local_day(at, tz_offset_minutes)][index] += 1
     rows: list[AitoStatsDay] = []
     day = first_day
     while day <= last_day:
-        c = counts.get(day, [0, 0, 0])
-        rows.append(AitoStatsDay(day=day, created=c[0], accepted=c[1], done=c[2]))
+        c = counts.get(day, [0, 0, 0, 0])
+        rows.append(AitoStatsDay(day=day, created=c[0], accepted=c[1], declined=c[2], done=c[3]))
         day += timedelta(days=1)
     return rows
 
@@ -586,8 +587,13 @@ async def compute_aito_stats(
         prev = _throughput(
             projects, born, accepted, done, start - timedelta(days=days), start - timedelta(microseconds=1), days
         )
+        prev_start, prev_end = start - timedelta(days=days), start - timedelta(microseconds=1)
         previous = AitoStatsPrevious(
-            created=prev.created, accepted=prev.accepted, done=prev.done, lead_days=prev.lead_days
+            created=prev.created,
+            accepted=prev.accepted,
+            declined=sum(1 for at in declined.values() if _in_range(at, prev_start, prev_end)),
+            done=prev.done,
+            lead_days=prev.lead_days,
         )
 
     acc = _bucket(accepted, projects, start, end)
@@ -621,7 +627,7 @@ async def compute_aito_stats(
         tracking=await _tracking(db, projects, start, end),
         throughput=throughput,
         previous=previous,
-        daily=_daily(born, accepted, done, first_day, last_day, tz_offset_minutes),
+        daily=_daily(born, accepted, declined, done, first_day, last_day, tz_offset_minutes),
         quote_age=_quote_age(projects, now),
         size_bands=_size_bands(projects, accepted, declined, start, end),
         overdue=_overdue(projects, today),
