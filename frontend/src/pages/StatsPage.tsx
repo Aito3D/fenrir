@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Package,
@@ -55,53 +55,8 @@ import { FilamentForecastWidget } from '../components/stats/FilamentForecastWidg
 import { MaintenanceReliabilityWidget } from '../components/stats/MaintenanceReliabilityWidget';
 import { EnergyWidget } from '../components/stats/EnergyWidget';
 import { PipelineWidget } from '../components/stats/PipelineWidget';
-
-// Timeframe types and helpers
-type TimeframePreset = 'today' | 'this-week' | 'this-month' | 'last-7' | 'last-30' | 'last-90' | 'this-year' | 'all-time' | 'custom';
-
-interface TimeframeState {
-  preset: TimeframePreset;
-  dateFrom: string | undefined; // YYYY-MM-DD
-  dateTo: string | undefined;   // YYYY-MM-DD
-}
-
-function computeDateRange(preset: TimeframePreset): { dateFrom?: string; dateTo?: string } {
-  // Ranges are the user's local calendar days; the API client sends the
-  // browser's UTC offset alongside so the backend can build the UTC window.
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  const todayStr = localDateKey(now);
-
-  switch (preset) {
-    case 'today':
-      return { dateFrom: todayStr, dateTo: todayStr };
-    case 'this-week': {
-      const day = now.getDay();
-      const start = new Date(y, m, d - (day === 0 ? 6 : day - 1));
-      return { dateFrom: localDateKey(start), dateTo: todayStr };
-    }
-    case 'this-month':
-      return { dateFrom: localDateKey(new Date(y, m, 1)), dateTo: todayStr };
-    case 'last-7':
-      return { dateFrom: localDateKey(new Date(y, m, d - 6)), dateTo: todayStr };
-    case 'last-30':
-      return { dateFrom: localDateKey(new Date(y, m, d - 29)), dateTo: todayStr };
-    case 'last-90':
-      return { dateFrom: localDateKey(new Date(y, m, d - 89)), dateTo: todayStr };
-    case 'this-year':
-      return { dateFrom: localDateKey(new Date(y, 0, 1)), dateTo: todayStr };
-    case 'all-time':
-      return { dateFrom: undefined, dateTo: undefined };
-    case 'custom':
-      return {};
-  }
-}
-
-const TIMEFRAME_PRESETS: TimeframePreset[] = [
-  'today', 'this-week', 'this-month',
-  'last-7', 'last-30', 'last-90',
-  'this-year', 'all-time',
-];
+import { TimeframeSelector } from '../components/stats/TimeframeSelector';
+import { useTimeframe } from '../components/stats/timeframe';
 
 // Constants
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -1078,29 +1033,7 @@ export function StatsPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [showUserPicker, setShowUserPicker] = useState(false);
   const canFilterByUser = authEnabled && hasPermission('stats:filter_by_user');
-  const [timeframe, setTimeframe] = useState<TimeframeState>(() => {
-    try {
-      const saved = localStorage.getItem('bambusy-stats-timeframe');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.preset) return parsed;
-      }
-    } catch { /* ignore */ }
-    return { preset: 'all-time', dateFrom: undefined, dateTo: undefined };
-  });
-  const [showTimeframePicker, setShowTimeframePicker] = useState(false);
-
-  // Persist timeframe selection
-  useEffect(() => {
-    localStorage.setItem('bambusy-stats-timeframe', JSON.stringify(timeframe));
-  }, [timeframe]);
-
-  const effectiveDateRange = useMemo(() => {
-    if (timeframe.preset === 'custom') {
-      return { dateFrom: timeframe.dateFrom, dateTo: timeframe.dateTo };
-    }
-    return computeDateRange(timeframe.preset);
-  }, [timeframe]);
+  const { timeframe, setTimeframe, range: effectiveDateRange } = useTimeframe('bambusy-stats-timeframe', 'all-time');
 
   // Preceding window of equal length for period-over-period deltas.
   // Null (no comparison) for all-time or half-open custom ranges.
@@ -1553,90 +1486,7 @@ export function StatsPage() {
               )}
             </div>
           )}
-          {/* Timeframe Selector */}
-          <div className="relative">
-            <Button
-              variant="secondary"
-              onClick={() => setShowTimeframePicker(!showTimeframePicker)}
-            >
-              <Calendar className="w-4 h-4" />
-              {t(`stats.timeframe.${timeframe.preset}`)}
-              <ChevronDown className="w-3 h-3" />
-            </Button>
-
-            {showTimeframePicker && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setShowTimeframePicker(false)}
-                />
-                <div className="absolute right-0 top-full mt-1 w-64 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2">
-                  {TIMEFRAME_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      className={`w-full px-3 py-2 text-left text-sm rounded-md transition-colors ${
-                        timeframe.preset === preset
-                          ? 'bg-bambu-green text-white'
-                          : 'text-white hover:bg-bambu-dark-tertiary'
-                      }`}
-                      onClick={() => {
-                        setTimeframe({ preset, dateFrom: undefined, dateTo: undefined });
-                        setShowTimeframePicker(false);
-                      }}
-                    >
-                      {t(`stats.timeframe.${preset}`)}
-                    </button>
-                  ))}
-
-                  <div className="border-t border-bambu-dark-tertiary my-2" />
-
-                  <button
-                    className={`w-full px-3 py-2 text-left text-sm rounded-md transition-colors ${
-                      timeframe.preset === 'custom'
-                        ? 'bg-bambu-green text-white'
-                        : 'text-white hover:bg-bambu-dark-tertiary'
-                    }`}
-                    onClick={() => setTimeframe(prev => ({ ...prev, preset: 'custom' }))}
-                  >
-                    {t('stats.timeframe.custom')}
-                  </button>
-
-                  {timeframe.preset === 'custom' && (
-                    <div className="mt-2 px-1 pb-1 space-y-2">
-                      <div>
-                        <label className="text-xs text-bambu-gray block mb-1">{t('stats.timeframe.from')}</label>
-                        <input
-                          type="date"
-                          value={timeframe.dateFrom || ''}
-                          max={timeframe.dateTo || new Date().toISOString().split('T')[0]}
-                          onChange={(e) => setTimeframe(prev => ({ ...prev, dateFrom: e.target.value || undefined }))}
-                          className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-bambu-gray block mb-1">{t('stats.timeframe.to')}</label>
-                        <input
-                          type="date"
-                          value={timeframe.dateTo || ''}
-                          min={timeframe.dateFrom}
-                          max={new Date().toISOString().split('T')[0]}
-                          onChange={(e) => setTimeframe(prev => ({ ...prev, dateTo: e.target.value || undefined }))}
-                          className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
-                        />
-                      </div>
-                      <Button
-                        variant="primary"
-                        onClick={() => setShowTimeframePicker(false)}
-                        className="w-full"
-                      >
-                        {t('common.apply')}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <TimeframeSelector timeframe={timeframe} onChange={setTimeframe} />
         </div>
       </div>
 
