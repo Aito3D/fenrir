@@ -339,3 +339,95 @@ async def test_tracking_block_excludes_views_of_a_trashed_card(async_client, db_
 
     body = (await async_client.get(f"{STATS}?date_from=2026-08-01&date_to=2026-08-31")).json()
     assert body["tracking"] == {"views": 2, "cards_viewed": 2, "cards_with_link": 2}
+
+
+# ---------------------------------------------------------------------------
+# Statistics view: throughput / previous / daily
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_throughput_counts_created_accepted_done_in_range(async_client, db_session):
+    a = await _create(async_client)
+    b = await _create(async_client)
+    c = await _create(async_client)
+    await _move_event(db_session, a, "project.created", "2026-03-02 10:00:00")
+    await _move_event(db_session, b, "project.created", "2026-03-03 10:00:00")
+    await _move_event(db_session, c, "project.created", "2026-02-20 10:00:00")  # before the range
+    await _set(db_session, a, created_at="2026-03-02 10:00:00")
+    await _set(db_session, b, created_at="2026-03-03 10:00:00")
+    await _event(db_session, a, "quote.accepted", "2026-03-04 09:00:00")
+    await _event(db_session, a, "stage.changed", "2026-03-06 10:00:00", changes=_stage("finish", "done"))
+    await _event(db_session, b, "stage.changed", "2026-03-08 22:00:00", changes=_stage("finish", "done"))
+    await _set(db_session, a, board_column="done")
+    await _set(db_session, b, board_column="done")
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.status_code == 200, r.text
+    tp = r.json()["throughput"]
+    assert (tp["created"], tp["accepted"], tp["done"]) == (2, 1, 2)
+    assert tp["per_day"] == 0.2  # 2 created / 10 days
+    # lead: a = 4 days, b = 5.5 days -> mean 4.75, median 4.75
+    assert tp["lead_days"] == 4.75
+    assert tp["lead_days_median"] == 4.75
+    # production: only a has an acceptance -> 2 days 1h = 2.04
+    assert tp["production_days"] == 2.04
+    assert tp["active"] == 1  # c is still on the board
+
+
+@pytest.mark.asyncio
+async def test_done_moment_is_the_first_real_move_into_done(async_client, db_session):
+    p = await _create(async_client)
+    await _move_event(db_session, p, "project.created", "2026-03-01 10:00:00")
+    # Creation-time placement into done (an imported, invoiced quote) is not a completion.
+    await _event(db_session, p, "stage.changed", "2026-03-01 10:00:20", changes=_stage("devis", "done"))
+    await _event(db_session, p, "stage.changed", "2026-03-05 10:00:00", changes=_stage("done", "finish"))
+    await _event(db_session, p, "stage.changed", "2026-03-07 10:00:00", changes=_stage("finish", "done"))
+    await _event(db_session, p, "stage.changed", "2026-03-09 10:00:00", changes=_stage("done", "finish"))
+    await _event(db_session, p, "stage.changed", "2026-03-11 10:00:00", changes=_stage("finish", "done"))
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-06", "date_to": "2026-03-08"})
+    assert r.json()["throughput"]["done"] == 1
+    r = await async_client.get(STATS, params={"date_from": "2026-03-10", "date_to": "2026-03-12"})
+    assert r.json()["throughput"]["done"] == 0  # the re-open + re-close is not a second completion
+
+
+@pytest.mark.asyncio
+async def test_daily_rows_are_zero_filled_local_days(async_client, db_session):
+    p = await _create(async_client)
+    # 2026-03-02 23:30 UTC is 2026-03-03 in UTC+1
+    await _move_event(db_session, p, "project.created", "2026-03-02 23:30:00")
+    await _event(db_session, p, "quote.accepted", "2026-03-03 12:00:00")
+
+    r = await async_client.get(
+        STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-04", "tz_offset_minutes": 60}
+    )
+    daily = r.json()["daily"]
+    assert [d["day"] for d in daily] == ["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04"]
+    assert [(d["created"], d["accepted"], d["done"]) for d in daily] == [(0, 0, 0), (0, 0, 0), (1, 1, 0), (0, 0, 0)]
+
+
+@pytest.mark.asyncio
+async def test_previous_block_is_the_preceding_window_of_equal_length(async_client, db_session):
+    a = await _create(async_client)
+    b = await _create(async_client)
+    await _move_event(db_session, a, "project.created", "2026-03-02 10:00:00")  # previous window (Feb 27 - Mar 3)
+    await _move_event(db_session, b, "project.created", "2026-03-05 10:00:00")  # current window (Mar 4 - Mar 8)
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-04", "date_to": "2026-03-08"})
+    body = r.json()
+    assert body["throughput"]["created"] == 1
+    assert body["previous"] == {"created": 1, "accepted": 0, "done": 0, "lead_days": None}
+
+
+@pytest.mark.asyncio
+async def test_all_time_has_no_previous_and_spans_from_first_project(async_client, db_session):
+    p = await _create(async_client)
+    await _move_event(db_session, p, "project.created", "2026-03-02 10:00:00")
+
+    r = await async_client.get(STATS)
+    body = r.json()
+    assert body["previous"] is None
+    assert body["daily"][0]["day"] == "2026-03-02"
+    assert body["daily"][0]["created"] == 1
+    assert body["throughput"]["per_day"] is not None and body["throughput"]["per_day"] > 0

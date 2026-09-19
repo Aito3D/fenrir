@@ -1054,6 +1054,41 @@ class AitoStatsTracking(BaseModel):
     cards_with_link: int
 
 
+class AitoStatsThroughput(BaseModel):
+    """The statistics view's headline counts for the period."""
+
+    created: int
+    accepted: int
+    done: int
+    # created / calendar days in the period; None when nothing bounds the period.
+    per_day: float | None
+    # Mean and median days from the card's created_at to its first real move into Done.
+    lead_days: float | None
+    lead_days_median: float | None
+    # Mean days from the quote's acceptance to Done, over done cards that have one.
+    production_days: float | None
+    # Snapshot: active cards not in Done.
+    active: int
+
+
+class AitoStatsPrevious(BaseModel):
+    """`throughput` over the preceding window of equal length, for the deltas."""
+
+    created: int
+    accepted: int
+    done: int
+    lead_days: float | None
+
+
+class AitoStatsDay(BaseModel):
+    """One LOCAL calendar day of the period, zero-filled."""
+
+    day: date
+    created: int
+    accepted: int
+    done: int
+
+
 class AitoStatsResponse(BaseModel):
     """The pipeline widget's five blocks — see docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md."""
 
@@ -1062,6 +1097,9 @@ class AitoStatsResponse(BaseModel):
     stage_days: list[AitoStatsStageDays]
     invoicing: AitoStatsInvoicing
     tracking: AitoStatsTracking
+    throughput: AitoStatsThroughput
+    previous: AitoStatsPrevious | None
+    daily: list[AitoStatsDay]
     date_from: date | None
     date_to: date | None
 
