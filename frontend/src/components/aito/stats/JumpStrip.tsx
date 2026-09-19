@@ -38,6 +38,8 @@ export function JumpStrip({ sections }: { sections: JumpSection[] }) {
   const { t } = useTranslation();
   const reduced = useReducedMotion();
   const [active, setActive] = useState(sections[0]?.id);
+  // Pinned to the pane's top edge: a hairline under the strip says it floats.
+  const [stuck, setStuck] = useState(false);
   const navRef = useRef<HTMLElement>(null);
   const lockUntil = useRef(0);
 
@@ -49,8 +51,11 @@ export function JumpStrip({ sections }: { sections: JumpSection[] }) {
     let frame = 0;
     const measure = () => {
       frame = 0;
+      const navRect = nav.getBoundingClientRect();
+      const paneTop = pane ? pane.getBoundingClientRect().top : 0;
+      setStuck(navRect.top <= paneTop + 1);
       if (performance.now() < lockUntil.current) return;
-      const stripBottom = nav.getBoundingClientRect().bottom + 8;
+      const stripBottom = navRect.bottom + 8;
       const atEnd = pane
         ? pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 2
         : window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
@@ -85,7 +90,10 @@ export function JumpStrip({ sections }: { sections: JumpSection[] }) {
     <nav
       ref={navRef}
       aria-label={t('aito.stats.sections')}
-      className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-bambu-dark px-1 py-2"
+      data-stuck={stuck || undefined}
+      className={`sticky top-0 z-10 -mx-1 overflow-x-auto bg-bambu-dark px-1 py-2 transition-shadow duration-150 ease-(--ease-signature) motion-reduce:transition-none ${
+        stuck ? 'shadow-[0_1px_0_var(--color-bambu-dark-tertiary)]' : 'shadow-none'
+      }`}
     >
       <ul className="flex gap-2">
         {sections.map((s) => (

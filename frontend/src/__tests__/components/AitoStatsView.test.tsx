@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse, delay } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { StatsView } from '../../components/aito/StatsView';
@@ -161,5 +161,33 @@ describe('StatsView', () => {
     server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json({ detail: 'nope' }, { status: 500 })));
     render(<StatsView range={{}} />);
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('holds the previous numbers, dimmed, while a new range loads instead of showing a spinner', async () => {
+    server.use(
+      http.get('/api/v1/aito/stats', async ({ request }) => {
+        const from = new URL(request.url).searchParams.get('date_from');
+        if (from === '2026-08-01') {
+          await delay(150);
+          return HttpResponse.json(fixture({ throughput: { ...fixture().throughput!, created: 9 } }));
+        }
+        return HttpResponse.json(fixture());
+      }),
+    );
+    const { rerender } = render(<StatsView range={{ dateFrom: '2026-09-01', dateTo: '2026-09-10' }} />);
+    const kpis = await screen.findByTestId('aito-stats-kpis');
+    expect(within(kpis).getByText('Added').closest('div')!.parentElement).toHaveTextContent('3');
+
+    rerender(<StatsView range={{ dateFrom: '2026-08-01', dateTo: '2026-09-10' }} />);
+    // Still the old numbers, dimmed and marked busy — no spinner, no unmount.
+    const body = screen.getByTestId('aito-stats-body');
+    expect(body).toHaveAttribute('aria-busy', 'true');
+    expect(body).toHaveClass('opacity-60');
+    expect(within(kpis).getByText('Added').closest('div')!.parentElement).toHaveTextContent('3');
+    expect(document.querySelector('.animate-spin')).toBeNull();
+
+    await waitFor(() => expect(screen.getByTestId('aito-stats-body')).not.toHaveAttribute('aria-busy'));
+    expect(screen.getByTestId('aito-stats-body')).toHaveClass('opacity-100');
+    expect(within(screen.getByTestId('aito-stats-kpis')).getByText('Added').closest('div')!.parentElement).toHaveTextContent('9');
   });
 });

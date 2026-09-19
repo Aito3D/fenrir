@@ -80,6 +80,8 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
             <Tooltip
               cursor={{ stroke: GRID, fill: 'rgba(255,255,255,0.04)' }}
               contentStyle={CHART_TOOLTIP_STYLE}
+              animationDuration={120}
+              animationEasing="ease-out"
               labelStyle={{ color: '#fff' }}
               itemStyle={{ color: '#a0a0a0' }}
               separator=": "

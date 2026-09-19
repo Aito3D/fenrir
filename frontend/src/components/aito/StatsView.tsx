@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { api, type AitoStats } from '../../api/client';
@@ -27,8 +28,13 @@ export function StatsView({ range }: { range: DateRange }) {
   const query = useQuery({
     queryKey: ['aitoStats', range.dateFrom, range.dateTo],
     queryFn: () => api.getAitoStats(range),
+    // A range change keeps the previous numbers on screen, dimmed, until the
+    // new ones land in place — never a spinner and a re-layout. The KPI ticks
+    // then mark what changed.
+    placeholderData: keepPreviousData,
   });
   const data = query.data;
+  const holding = query.isPlaceholderData || (query.isFetching && data !== undefined);
 
   return (
     <section data-testid="aito-stats-view" className="animate-rise space-y-6">
@@ -56,7 +62,13 @@ export function StatsView({ range }: { range: DateRange }) {
       ) : !data.throughput ? (
         <Empty>{t('aito.stats.empty')}</Empty>
       ) : (
-        <Body data={data} />
+        <div
+          aria-busy={holding || undefined}
+          data-testid="aito-stats-body"
+          className={`space-y-6 transition-opacity duration-150 ease-(--ease-signature) motion-reduce:transition-none ${holding ? 'opacity-60' : 'opacity-100'}`}
+        >
+          <Body data={data} />
+        </div>
       )}
     </section>
   );
@@ -75,8 +87,13 @@ function Body({ data }: { data: AitoStats }) {
 
   return (
     <>
-      <div data-testid="aito-stats-kpis" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      {/* Two-level entrance, the page's idiom: the tiles cascade at the 50ms
+          child cadence, then the chart and each section land as parents on
+          the 80ms slots, so the eye is led down the page once. Nothing below
+          waits on a scroll. */}
+      <div data-testid="aito-stats-kpis" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 stagger-children">
         <Tile
+          enter
           label={t('aito.stats.added')}
           value={String(tp.created)}
           accent={SERIES.created}
@@ -84,6 +101,7 @@ function Body({ data }: { data: AitoStats }) {
           deltaTitle={previousTitle(prev?.created)}
         />
         <Tile
+          enter
           label={t('aito.stats.accepted')}
           value={String(tp.accepted)}
           accent={SERIES.accepted}
@@ -91,6 +109,7 @@ function Body({ data }: { data: AitoStats }) {
           deltaTitle={previousTitle(prev?.accepted)}
         />
         <Tile
+          enter
           label={t('aito.stats.completed')}
           value={String(tp.done)}
           accent={SERIES.done}
@@ -98,40 +117,43 @@ function Body({ data }: { data: AitoStats }) {
           deltaTitle={previousTitle(prev?.done)}
         />
         <Tile
+          enter
           label={t('aito.stats.perDay')}
           value={tp.per_day === null ? '—' : tp.per_day.toFixed(tp.per_day < 1 ? 2 : 1)}
           sub={tp.per_day === null ? undefined : t('aito.stats.perWeek', { count: Math.round(tp.per_day * 7 * 10) / 10 })}
         />
         <Tile
+          enter
           label={t('aito.stats.leadTime')}
           value={days(tp.lead_days)}
           sub={tp.lead_days_median === null ? undefined : t('aito.stats.median', { days: tp.lead_days_median.toFixed(1) })}
           delta={computeDelta(tp.lead_days ?? 0, prev?.lead_days, 'more-is-bad')}
           deltaTitle={previousTitle(prev?.lead_days === null || prev?.lead_days === undefined ? null : days(prev.lead_days))}
         />
-        <Tile label={t('aito.stats.productionTime')} value={days(tp.production_days)} />
+        <Tile enter label={t('aito.stats.productionTime')} value={days(tp.production_days)} />
       </div>
 
-      <ActivityChart daily={data.daily ?? []} />
+      <div className="animate-rise-lg" style={{ '--enter-delay': '160ms' } as CSSProperties}>
+        <ActivityChart daily={data.daily ?? []} />
+      </div>
 
       <JumpStrip sections={sections} />
 
-      <section id="aito-stats-sales" data-testid="aito-stats-section-sales" className="scroll-mt-14 space-y-3">
-        <SectionHeading>{t('aito.stats.sales')}</SectionHeading>
-        <SalesSection data={data} />
-      </section>
-      <section id="aito-stats-time" data-testid="aito-stats-section-time" className="scroll-mt-14 space-y-3">
-        <SectionHeading>{t('aito.stats.time')}</SectionHeading>
-        <TimeSection data={data} />
-      </section>
-      <section id="aito-stats-money" data-testid="aito-stats-section-money" className="scroll-mt-14 space-y-3">
-        <SectionHeading>{t('aito.stats.money')}</SectionHeading>
-        <MoneySection data={data} />
-      </section>
-      <section id="aito-stats-clients" data-testid="aito-stats-section-clients" className="scroll-mt-14 space-y-3">
-        <SectionHeading>{t('aito.stats.clients')}</SectionHeading>
-        <ClientsSection data={data} />
-      </section>
+      {SECTION_IDS.map((id, i) => (
+        <section
+          key={id}
+          id={`aito-stats-${id}`}
+          data-testid={`aito-stats-section-${id}`}
+          className="scroll-mt-14 space-y-3 animate-rise-lg"
+          style={{ '--enter-delay': `${240 + i * 80}ms` } as CSSProperties}
+        >
+          <SectionHeading>{t(`aito.stats.${id}`)}</SectionHeading>
+          {id === 'sales' && <SalesSection data={data} />}
+          {id === 'time' && <TimeSection data={data} />}
+          {id === 'money' && <MoneySection data={data} />}
+          {id === 'clients' && <ClientsSection data={data} />}
+        </section>
+      ))}
     </>
   );
 }

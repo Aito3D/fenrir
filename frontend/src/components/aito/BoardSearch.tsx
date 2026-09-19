@@ -34,7 +34,10 @@ export function BoardSearch({
           type="button"
           onClick={() => onChange('')}
           aria-label={t('aito.clearSearch')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+          // Fades and settles in over 120ms on the first character (Tailwind's
+          // `starting:` is @starting-style); leaving on the last is instant.
+          // Anything slower would fight typing.
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-[color,background-color,opacity,scale] duration-[120ms] ease-(--ease-signature) starting:opacity-0 starting:scale-90 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
         >
           <X className="w-4 h-4" />
         </button>
