@@ -82,3 +82,12 @@ New keys under `aito.stats.*` in all 13 locales (title, added, accepted, complet
 ## Out of scope (proposed follow-ups, listed in the final report)
 
 Per-client leaderboard, revenue per printer-hour, forecast of completion dates from the print backlog, CSV export, week/month bucketing toggle, comparison overlay of two ranges.
+
+## As built (2026-09-19)
+
+- Series colours are `#3d86e8` (added), `#c95aa0` (accepted), `#219653` (completed): the only trio that passed the categorical palette validator on the `#1a1a1a` surface with no colour-vision warning. Amber beside green fails the protan check.
+- The chart folds days into Monday-start weeks past 45 days (31 on viewports under 640 px); the 7-day rolling line only exists in daily mode. Tooltip items are forced into series order (Recharts 3 sorts by name by default).
+- `per_day` is rounded to three decimals server-side so a quiet shop does not read 0.0.
+- The stage pills reuse `stage_days`; the funnel is sent → accepted → completed with the two ratios; the money strip is three tiles and hides at zero.
+- Headings are sentence-case `text-sm font-semibold`, not the pipeline widget's uppercase eyebrow.
+- Verified with the full frontend and backend suites and driven end to end in headless Chrome against a sanitised copy of the live database (the browser extension was not connected).
