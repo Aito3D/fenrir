@@ -1131,6 +1131,101 @@ body {
   }
 }
 
+/* Aito board ⇄ detour scene change (Done, Trash, Statistics). One scoped
+   View Transition, the same mechanism as the card morph below: the page-level
+   root/page-title crossfade is suppressed via html[data-vt='aito-view'] and
+   three named groups animate instead. The CONTENT group plays the page's own
+   exit and entrance (150ms out, then the 250ms `rise` in — the classes the
+   views already carry are what the new snapshot shows). The TOOLBAR crossfades
+   so buttons stop popping, and the SEARCH box gets a group of its own so its
+   change of width is a morph rather than a jump; its snapshots are pinned
+   left at natural size so the box uncovers instead of stretching. Under
+   prefers-reduced-motion the page skips the transition entirely (see
+   AitoPage.changeView), consistent with every other utility in this file. */
+html[data-vt='aito-view']::view-transition-old(root),
+html[data-vt='aito-view']::view-transition-new(root),
+html[data-vt='aito-view']::view-transition-old(page-title),
+html[data-vt='aito-view']::view-transition-new(page-title) {
+  animation: none;
+}
+.vt-aito-view {
+  view-transition-name: aito-view;
+}
+.vt-aito-toolbar {
+  view-transition-name: aito-toolbar;
+}
+.vt-aito-search {
+  view-transition-name: aito-search;
+}
+@keyframes aito-view-out {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes aito-view-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+::view-transition-group(aito-view) {
+  animation-duration: 250ms;
+  animation-timing-function: var(--ease-signature);
+}
+::view-transition-old(aito-view) {
+  animation: aito-view-out 150ms var(--ease-exit) forwards;
+}
+::view-transition-new(aito-view) {
+  animation: aito-view-in 250ms var(--ease-signature) 60ms backwards;
+}
+::view-transition-group(aito-toolbar),
+::view-transition-group(aito-search) {
+  animation-duration: 250ms;
+  animation-timing-function: var(--ease-morph);
+}
+::view-transition-old(aito-toolbar),
+::view-transition-new(aito-toolbar),
+::view-transition-old(aito-search),
+::view-transition-new(aito-search) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-signature);
+}
+::view-transition-old(aito-search),
+::view-transition-new(aito-search) {
+  object-fit: none;
+  object-position: left center;
+}
+
+/* The timeframe dropdown (Stats page + Aito statistics): scales in from its
+   trigger's corner and leaves the way it came. `display` transitions with
+   allow-discrete so the exit can play before the box is removed; a browser
+   without allow-discrete just closes instantly, which is what it did before.
+   `hidden` is the switch so jsdom and screen readers agree it is gone. */
+.aito-tf-menu {
+  display: block;
+  opacity: 1;
+  scale: 1;
+  transform-origin: top right;
+  transition:
+    opacity 160ms var(--ease-signature),
+    scale 160ms var(--ease-signature),
+    display 160ms allow-discrete;
+  @starting-style {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+.aito-tf-menu[hidden] {
+  display: none;
+  opacity: 0;
+  scale: 0.97;
+  transition:
+    opacity 120ms var(--ease-exit),
+    scale 120ms var(--ease-exit),
+    display 120ms allow-discrete;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aito-tf-menu,
+  .aito-tf-menu[hidden] {
+    transition: none;
+  }
+}
+
 /* Aito card → detail panel morph. The card and the panel share one
    view-transition-name; the page-level root/page-title animations are
    suppressed for the duration via html[data-vt='aito-card'] so only the card

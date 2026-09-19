@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -99,5 +99,35 @@ describe('AitoPage statistics view', () => {
     expect(screen.getByRole('button', { name: 'Statistics' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Project' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Search projects/).closest('.lg\\:w-52')).not.toBeNull();
+  });
+
+  it('switches views through a scoped View Transition when the browser has one', async () => {
+    const user = userEvent.setup();
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } };
+    let scopeDuringUpdate: string | undefined;
+    doc.startViewTransition = vi.fn((cb: () => void) => {
+      scopeDuringUpdate = document.documentElement.dataset.vt;
+      cb();
+      return { finished: Promise.resolve() };
+    });
+    try {
+      render(<AitoPage />);
+      await screen.findByRole('button', { name: /Support GoPro/ });
+      await user.click(screen.getByRole('button', { name: 'Statistics' }));
+      expect(doc.startViewTransition).toHaveBeenCalledTimes(1);
+      expect(scopeDuringUpdate).toBe('aito-view');
+      expect(await screen.findByTestId('aito-stats-view')).toBeInTheDocument();
+      await waitFor(() => expect(document.documentElement.dataset.vt).toBeUndefined());
+      // The content wrapper and the toolbar carry the named groups the CSS animates.
+      expect(document.querySelector('.vt-aito-view')).not.toBeNull();
+      expect(document.querySelector('.vt-aito-toolbar')).not.toBeNull();
+      // Pressing the active toggle again is a no-op, not a second transition.
+      await user.click(screen.getByRole('button', { name: 'Back to board' }));
+      expect(doc.startViewTransition).toHaveBeenCalledTimes(2);
+      expect(await screen.findByRole('button', { name: /Support GoPro/ })).toBeInTheDocument();
+    } finally {
+      delete doc.startViewTransition;
+      delete document.documentElement.dataset.vt;
+    }
   });
 });

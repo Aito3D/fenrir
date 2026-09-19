@@ -88,7 +88,12 @@ export function Tile({
         <span className="truncate">{label}</span>
       </div>
       <div className="mt-0.5 flex items-baseline gap-2">
-        <span className={`${small ? 'text-base' : 'text-2xl'} font-semibold truncate ${tone === 'alert' ? 'text-status-error' : 'text-white'}`}>
+        {/* Keyed on the value so the tick replays when the range changes —
+            the same idiom as the board's in-production count. */}
+        <span
+          key={value}
+          className={`${small ? 'text-base' : 'text-2xl'} font-semibold truncate animate-value-tick ${tone === 'alert' ? 'text-status-error' : 'text-white'}`}
+        >
           {value}
         </span>
         {delta !== undefined && <DeltaBadge delta={delta} title={deltaTitle} />}

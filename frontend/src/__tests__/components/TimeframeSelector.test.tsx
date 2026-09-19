@@ -35,4 +35,17 @@ describe('TimeframeSelector', () => {
     render(<Harness />);
     expect(screen.getByRole('button', { name: /Last 7 Days/ })).toBeInTheDocument();
   });
+
+  it('keeps the menu mounted and toggles `hidden`, so it can animate in and out', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const menu = document.querySelector('.aito-tf-menu') as HTMLElement;
+    expect(menu).not.toBeNull();
+    expect(menu.hidden).toBe(true);
+    await user.click(screen.getByRole('button', { name: /Last 30 Days/ }));
+    expect(menu.hidden).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Last 7 Days' }));
+    expect(menu.hidden).toBe(true);
+    expect(screen.getByRole('button', { name: /Last 7 Days/ })).toBeInTheDocument();
+  });
 });

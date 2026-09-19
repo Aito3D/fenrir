@@ -28,4 +28,17 @@ describe('ViewToggleButton', () => {
     rerender(<ViewToggleButton active onToggle={vi.fn()} icon={Trash2} label="Show done (3)" />);
     expect(screen.getByRole('button', { name: 'Back to board' })).toBeInTheDocument();
   });
+
+  it('keeps both layers mounted and crossfades them (opacity + translate), so the width never changes', () => {
+    const { rerender } = render(<ViewToggleButton active={false} onToggle={vi.fn()} icon={Trash2} label="Show done (3)" />);
+    const [inactive, active] = Array.from(screen.getByRole('button').querySelectorAll('span.grid > span'));
+    expect(inactive).toHaveClass('opacity-100', 'translate-x-0');
+    expect(active).toHaveClass('opacity-0', 'translate-x-1', 'pointer-events-none');
+    expect(active.className).toMatch(/transition-\[opacity,translate\]/);
+    rerender(<ViewToggleButton active onToggle={vi.fn()} icon={Trash2} label="Show done (3)" />);
+    expect(inactive).toHaveClass('opacity-0', '-translate-x-1');
+    expect(active).toHaveClass('opacity-100', 'translate-x-0');
+    // Still two layers: the hidden one is the strut that holds the width.
+    expect(screen.getByRole('button').querySelectorAll('span.grid > span')).toHaveLength(2);
+  });
 });

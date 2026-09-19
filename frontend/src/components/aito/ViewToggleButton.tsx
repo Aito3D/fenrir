@@ -40,6 +40,18 @@ interface ViewToggleButtonProps {
  *  The hidden label is `aria-hidden` — it is a layout strut, and a screen
  *  reader that read both would announce the button as "Show done Back to
  *  board". */
+/** The two stacked layers crossfade and slide 4px past each other when the
+ *  view flips — a transition, not keyframes, so a quick double press simply
+ *  retargets. The layer that does not apply is faded out, never removed:
+ *  it is the strut that keeps the button's width (see below). Tailwind v4's
+ *  translate utilities set the `translate` property, so that is what the
+ *  transition names; `transform` would never animate them. */
+const LAYER =
+  '[grid-area:1/1] flex items-center justify-center gap-2 transition-[opacity,translate] duration-[160ms] ease-(--ease-signature) motion-reduce:transition-none';
+const LAYER_IN = 'opacity-100 translate-x-0';
+const LAYER_OUT_LEFT = 'opacity-0 -translate-x-1 pointer-events-none';
+const LAYER_OUT_RIGHT = 'opacity-0 translate-x-1 pointer-events-none';
+
 export function ViewToggleButton({ active, onToggle, icon: Icon, label, iconOnly, ...rest }: ViewToggleButtonProps) {
   const { t } = useTranslation();
 
@@ -47,7 +59,14 @@ export function ViewToggleButton({ active, onToggle, icon: Icon, label, iconOnly
     const name = active ? t('aito.backToBoard') : label;
     return (
       <Button variant="secondary" onClick={onToggle} aria-pressed={active} aria-label={name} title={name} className="px-2.5" {...rest}>
-        {active ? <ArrowLeft className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+        <span className="grid">
+          <span aria-hidden="true" className={`${LAYER} ${active ? LAYER_OUT_LEFT : LAYER_IN}`}>
+            <Icon className="w-4 h-4" />
+          </span>
+          <span aria-hidden="true" className={`${LAYER} ${active ? LAYER_IN : LAYER_OUT_RIGHT}`}>
+            <ArrowLeft className="w-4 h-4" />
+          </span>
+        </span>
       </Button>
     );
   }
@@ -55,17 +74,11 @@ export function ViewToggleButton({ active, onToggle, icon: Icon, label, iconOnly
   return (
     <Button variant="secondary" onClick={onToggle} aria-pressed={active} {...rest}>
       <span className="grid">
-        <span
-          aria-hidden={active}
-          className={`[grid-area:1/1] flex items-center justify-center gap-2 ${active ? 'invisible' : ''}`}
-        >
+        <span aria-hidden={active} className={`${LAYER} ${active ? LAYER_OUT_LEFT : LAYER_IN}`}>
           <Icon className="w-4 h-4 mr-2" />
           {label}
         </span>
-        <span
-          aria-hidden={!active}
-          className={`[grid-area:1/1] flex items-center justify-center gap-2 ${active ? '' : 'invisible'}`}
-        >
+        <span aria-hidden={!active} className={`${LAYER} ${active ? LAYER_IN : LAYER_OUT_RIGHT}`}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           {t('aito.backToBoard')}
         </span>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
@@ -32,6 +33,10 @@ import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardLoadingStatus } from '../hooks/useBoardLoadingStatus';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { prefersReducedMotion } from '../utils/motion';
+
+/** Written to <html> for the board ⇄ detour scene change — see index.css. */
+const VIEW_VT_SCOPE = 'aito-view';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
 import { useQuotePendingPoll } from '../hooks/useQuotePendingPoll';
@@ -265,8 +270,28 @@ export function AitoPage() {
   // the badge exists to avoid. A follow-up is a question about live work
   // anyway; the archives are a different question.
   const changeView = (next: 'board' | 'done' | 'trash' | 'stats') => {
-    if (next !== 'board') setFollowup(null);
-    setView(next);
+    if (next === view) return;
+    const commit = () => {
+      if (next !== 'board') setFollowup(null);
+      setView(next);
+    };
+    // A scene change, not a swap: the old view plays its exit while the new
+    // one rises in, and the toolbar's buttons crossfade instead of popping
+    // (index.css, `aito-view`). Same scoping trick as the card morph — the
+    // <html> attribute silences the page-level crossfade for the duration.
+    // No API or reduced motion: the plain swap, with the entrance classes
+    // the views already carry.
+    if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
+      commit();
+      return;
+    }
+    document.documentElement.dataset.vt = VIEW_VT_SCOPE;
+    const transition = document.startViewTransition(() => {
+      flushSync(commit);
+    });
+    Promise.resolve(transition?.finished).finally(() => {
+      if (document.documentElement.dataset.vt === VIEW_VT_SCOPE) delete document.documentElement.dataset.vt;
+    });
   };
 
   // Live, not read once into a `useMemo`: the CSS half of the motion system
@@ -426,10 +451,10 @@ export function AitoPage() {
           <BoardSearch
             value={search}
             onChange={setSearch}
-            className={`w-full lg:ml-auto lg:flex-none ${archive ? 'lg:w-96' : 'lg:w-52'}`}
+            className={`vt-aito-search w-full lg:ml-auto lg:flex-none ${archive ? 'lg:w-96' : 'lg:w-52'}`}
           />
         )}
-        <div className={`flex flex-wrap items-center gap-2 flex-none ${view === 'stats' ? 'lg:ml-auto' : ''}`}>
+        <div className={`vt-aito-toolbar flex flex-wrap items-center gap-2 flex-none ${view === 'stats' ? 'lg:ml-auto' : ''}`}>
           {/* Each toggle returns to the board, so switching straight from one
               archive to the other is not possible — and does not need to be.
               They are both detours; the board is where the work is. A detour
@@ -516,7 +541,10 @@ export function AitoPage() {
         </div>
       )}
 
-      {/* Board */}
+      {/* Board — inside one wrapper that carries the scene change's
+          view-transition-name; the wrapper mimics the page column so the
+          board's own flex-1 / min-h-0 keep working. */}
+      <div className="vt-aito-view flex-1 min-h-0 flex flex-col">
       {view === 'done' ? (
         <DoneGrid projects={board.done} query={search} onExpandCard={openCard} canUpdate={canUpdate} />
       ) : view === 'trash' ? (
@@ -596,6 +624,7 @@ export function AitoPage() {
           </DragOverlay>
         </DndContext>
       )}
+      </div>
 
       {showModal && <NewProjectDrawer onClose={() => setShowModal(false)} onCreate={createProject} />}
 

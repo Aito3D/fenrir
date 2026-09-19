@@ -27,10 +27,13 @@ export function TimeframeSelector({
         <ChevronDown className="w-3 h-3" />
       </Button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 w-64 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2">
+      {open && <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />}
+      {/* Always mounted, `hidden` when closed: the menu scales in from the
+          trigger's corner and out the same way (index.css, .aito-tf-menu). */}
+      <div
+        hidden={!open}
+        className="aito-tf-menu absolute right-0 top-full mt-1 w-64 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2"
+      >
             {TIMEFRAME_PRESETS.map((preset) => (
               <button
                 key={preset}
@@ -85,9 +88,7 @@ export function TimeframeSelector({
                 </Button>
               </div>
             )}
-          </div>
-        </>
-      )}
+      </div>
     </div>
   );
 }
