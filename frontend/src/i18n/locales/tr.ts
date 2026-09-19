@@ -512,6 +512,7 @@ export default {
       quoteEmailed: 'teklifi e-posta ile gönderdi',
       invoiceEmailed: 'faturayı e-posta ile gönderdi',
       invoiceCreated: 'faturayı oluşturdu',
+      invoiceDepositApplied: 'depozitoyu faturaya uyguladı',
       quoteViewed: 'teklifi görüntüledi',
       quoteAccepted: 'teklifi kabul etti',
       quoteUnaccepted: 'teklifin kabulünü kaldırdı',

@@ -512,6 +512,7 @@ export default {
       quoteEmailed: 'ha inviato il preventivo via e-mail',
       invoiceEmailed: 'ha inviato la fattura via e-mail',
       invoiceCreated: 'ha creato la fattura',
+      invoiceDepositApplied: "ha applicato l'acconto alla fattura",
       quoteViewed: 'ha visualizzato il preventivo',
       quoteAccepted: 'ha accettato il preventivo',
       quoteUnaccepted: 'ha rimosso l\'accettazione del preventivo',

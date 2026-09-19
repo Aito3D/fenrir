@@ -512,6 +512,7 @@ export default {
       quoteEmailed: 'a envoyé le devis par e-mail',
       invoiceEmailed: 'a envoyé la facture par e-mail',
       invoiceCreated: 'a créé la facture',
+      invoiceDepositApplied: "a imputé l'acompte sur la facture",
       quoteViewed: 'a consulté le devis',
       quoteAccepted: 'a accepté le devis',
       quoteUnaccepted: 'a retiré l\'acceptation du devis',

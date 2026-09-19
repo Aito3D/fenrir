@@ -512,6 +512,7 @@ export default {
       quoteEmailed: 'enviou o orçamento por e-mail',
       invoiceEmailed: 'enviou a fatura por e-mail',
       invoiceCreated: 'criou a fatura',
+      invoiceDepositApplied: 'aplicou o sinal à fatura',
       quoteViewed: 'visualizou o orçamento',
       quoteAccepted: 'aceitou o orçamento',
       quoteUnaccepted: 'removeu a aceitação do orçamento',

@@ -10,6 +10,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.emailed': 'aito.history.quoteEmailed',
   'invoice.emailed': 'aito.history.invoiceEmailed',
   'invoice.created': 'aito.history.invoiceCreated',
+  'invoice.deposit_applied': 'aito.history.invoiceDepositApplied',
   'quote.viewed': 'aito.history.quoteViewed',
   'quote.accepted': 'aito.history.quoteAccepted',
   'quote.unaccepted': 'aito.history.quoteUnaccepted',
@@ -137,6 +138,15 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
       parts.push(`${formatValue(detail.previous_expires_on)} → ${formatValue(detail.expires_on)}`);
     }
     return parts.length ? parts.join(' · ') : null;
+  }
+
+  if (kind === 'invoice.deposit_applied') {
+    // Which deposit and how much of it: the label alone says a deposit was
+    // spent, and the retainer number is what the operator looks up in Books.
+    if (typeof detail.retainer_number !== 'string' || !detail.retainer_number) return null;
+    return typeof detail.amount === 'number'
+      ? `${detail.retainer_number} · ${formatValue(detail.amount)}`
+      : detail.retainer_number;
   }
 
   if (kind === 'quote.accepted') {

@@ -55,6 +55,16 @@ describe('detailText', () => {
     expect(detailText('sync.conflict', { ours: null, theirs: 'Declined' })).toBe('— → Declined');
   });
 
+  it('names the retainer and the amount for invoice.deposit_applied', () => {
+    expect(detailText('invoice.deposit_applied', { retainer_number: 'RET26-00295', amount: 4000 })).toBe(
+      'RET26-00295 · 4000'
+    );
+  });
+
+  it('returns null for invoice.deposit_applied when the retainer number is missing', () => {
+    expect(detailText('invoice.deposit_applied', { amount: 4000 })).toBeNull();
+  });
+
   it('returns null for sync.conflict/sync.status_rejected when neither side is a non-empty string', () => {
     expect(detailText('sync.conflict', {})).toBeNull();
     expect(detailText('sync.conflict', { ours: '', theirs: '' })).toBeNull();
@@ -130,5 +140,9 @@ describe('EVENT_LABEL_KEY', () => {
 
   it('labels payment_link.updated', () => {
     expect(EVENT_LABEL_KEY['payment_link.updated']).toBe('aito.history.paymentLinkUpdated');
+  });
+
+  it('labels invoice.deposit_applied', () => {
+    expect(EVENT_LABEL_KEY['invoice.deposit_applied']).toBe('aito.history.invoiceDepositApplied');
   });
 });

@@ -8335,6 +8335,7 @@ export default {
       quoteEmailed: 'heeft de offerte per e-mail verstuurd',
       invoiceEmailed: 'heeft de factuur per e-mail verstuurd',
       invoiceCreated: 'heeft de factuur aangemaakt',
+      invoiceDepositApplied: 'heeft de aanbetaling op de factuur toegepast',
       quoteViewed: 'heeft de offerte bekeken',
       quoteAccepted: 'heeft de offerte geaccepteerd',
       quoteUnaccepted: 'heeft de acceptatie van de offerte ingetrokken',

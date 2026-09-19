@@ -516,6 +516,7 @@ export default {
       quoteEmailed: 'emailed the quote',
       invoiceEmailed: 'emailed the invoice',
       invoiceCreated: 'raised the invoice',
+      invoiceDepositApplied: 'applied the deposit to the invoice',
       quoteViewed: 'viewed the quote',
       quoteAccepted: 'accepted the quote',
       quoteUnaccepted: "removed the quote's acceptance",

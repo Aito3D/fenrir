@@ -603,3 +603,253 @@ async def _immediate(value):
     for the module-level async helpers ``run_sync_loop`` awaits, since
     ``monkeypatch.setattr`` needs a plain callable, not the value itself."""
     return value
+
+
+# --- Quote-linked deposits are applied to the open invoice -----------------
+#
+# An invoice raised in Books by hand (or before its retainer was paid) owes
+# its full total while the customer's deposit sits unused. The sweep is the
+# one place that already reads every open invoice, so it spends the deposits
+# that belong to THIS quote on it, refreshes the row at once, and leaves any
+# advance that is not linked to the quote for the operator.
+
+from sqlalchemy import select  # noqa: E402
+
+from backend.app.models.aito_event import AitoEvent  # noqa: E402
+
+
+def _estimate(*retainer_ids: str, customer_id: str = "z1") -> dict:
+    return {
+        "estimate_id": "EST1",
+        "customer_id": customer_id,
+        "retainerinvoices": [
+            {"retainerinvoice_id": rid, "retainerinvoice_number": f"RET-{rid}", "status": "paid", "total": 4000.0}
+            for rid in retainer_ids
+        ],
+    }
+
+
+def _payment(payment_id: str, retainer_id: str | None, unused: float, amount: float | None = None) -> dict:
+    return {
+        "payment_id": payment_id,
+        "payment_number": "4601",
+        "retainerinvoice_id": retainer_id or "",
+        "amount": amount if amount is not None else unused,
+        "unused_amount": unused,
+        "date": "2026-09-17",
+    }
+
+
+class _Books:
+    """The Books surface the deposit step touches, all patched at once."""
+
+    def __init__(self, monkeypatch, *, invoices, estimate=None, payments=None, fresh=None, apply_error=None):
+        self.applied: list[tuple[str, list[dict]]] = []
+        self.reread: list[str] = []
+        calls: list[str] = []
+        monkeypatch.setattr(zoho_service, "list_project_invoices", _fake(invoices, calls))
+
+        async def get_estimate(db, estimate_id):
+            if isinstance(estimate, Exception):
+                raise estimate
+            return estimate or {}
+
+        async def list_customer_payments(db, customer_id):
+            return list(payments or [])
+
+        async def list_customer_retainers(db, customer_id):
+            return [
+                {"retainerinvoice_id": r["retainerinvoice_id"], "retainerinvoice_number": r["retainerinvoice_number"]}
+                for r in (estimate or {}).get("retainerinvoices", [])
+                if not isinstance(estimate, Exception)
+            ]
+
+        async def apply_invoice_credits(db, invoice_id, invoice_payments):
+            self.applied.append((invoice_id, invoice_payments))
+            if apply_error is not None:
+                raise apply_error
+
+        async def get_invoice(db, invoice_id):
+            self.reread.append(invoice_id)
+            return fresh or {}
+
+        monkeypatch.setattr(zoho_service, "get_estimate", get_estimate)
+        monkeypatch.setattr(zoho_service, "list_customer_payments", list_customer_payments)
+        monkeypatch.setattr(zoho_service, "list_customer_retainers", list_customer_retainers)
+        monkeypatch.setattr(zoho_service, "apply_invoice_credits", apply_invoice_credits)
+        monkeypatch.setattr(zoho_service, "get_invoice", get_invoice)
+
+
+async def _events(db, project_id: int) -> list[AitoEvent]:
+    return list((await db.execute(select(AitoEvent).where(AitoEvent.project_id == project_id))).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_linked_deposit_is_applied_and_the_row_refreshes_at_once(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1", customer_credit_total=0.0)
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 4000.0)],
+        fresh=_invoice(0.0, "paid"),
+    )
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    assert books.applied == [("INV1", [{"payment_id": "P1", "amount_applied": 4000.0}])]
+    assert books.reread == ["INV1"]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance) == ("paid", 0.0)
+    assert row.customer_credit_total == 0.0
+    events = await _events(db_session, p_id)
+    assert [e.kind for e in events] == ["invoice.deposit_applied"]
+    assert events[0].actor_class == "system"
+    assert events[0].detail == {"retainer_number": "RET-RET1", "invoice_number": "INV-1", "amount": 4000.0}
+
+
+@pytest.mark.asyncio
+async def test_application_is_capped_at_the_balance(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1")
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(1000.0, "partially_paid")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 4000.0)],
+        fresh=_invoice(0.0, "paid"),
+    )
+
+    await sweep_invoices(db_session, force=True)
+
+    assert books.applied == [("INV1", [{"payment_id": "P1", "amount_applied": 1000.0}])]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert row.invoice_balance == 0.0
+    # What the customer still has on account after the sweep spent 1000 of it.
+    assert row.customer_credit_total == 3000.0
+    assert (await _events(db_session, p_id))[0].detail["amount"] == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_advance_not_linked_to_the_quote_is_left_for_the_operator(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1", customer_credit_total=None)
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        # One retainer from ANOTHER quote, one plain advance with no retainer.
+        payments=[_payment("P9", "RET-OTHER", 4000.0), _payment("P8", None, 500.0)],
+    )
+
+    await sweep_invoices(db_session, force=True)
+
+    assert books.applied == []
+    assert books.reread == []
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
+    # The credit figure is refreshed anyway: it froze the day the quote was
+    # invoiced, since the status reconcile stops reading a locked estimate.
+    assert row.customer_credit_total == 4500.0
+    assert await _events(db_session, p_id) == []
+
+
+@pytest.mark.asyncio
+async def test_spent_linked_retainer_is_not_applied_twice(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1")
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 0.0, amount=4000.0)],
+    )
+
+    await sweep_invoices(db_session, force=True)
+
+    assert books.applied == []
+    assert await _events(db_session, p.id) == []
+
+
+@pytest.mark.asyncio
+async def test_failed_application_keeps_the_balance_and_records_nothing(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1")
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 4000.0)],
+        apply_error=ZohoUpstreamError("Books said no"),
+    )
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    assert len(books.applied) == 1
+    assert books.reread == []
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
+    assert row.customer_credit_total == 4000.0
+    assert isinstance(row.invoice_checked_at, datetime)
+    assert await _events(db_session, p_id) == []
+
+
+@pytest.mark.asyncio
+async def test_deposit_read_failure_still_refreshes_the_invoice(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1", customer_credit_total=7.0)
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=ZohoUpstreamError("boom"),
+    )
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    assert books.applied == []
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
+    assert row.customer_credit_total == 7.0
+
+
+@pytest.mark.asyncio
+async def test_paid_invoice_costs_no_deposit_reads(db_session, monkeypatch):
+    await _project(db_session, quote_id="EST1")
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(0.0, "paid")]},
+        estimate=ZohoUpstreamError("must not be read"),
+    )
+    reads: list[str] = []
+
+    async def get_estimate(db, estimate_id):
+        reads.append(estimate_id)
+        raise ZohoUpstreamError("must not be read")
+
+    monkeypatch.setattr(zoho_service, "get_estimate", get_estimate)
+
+    await sweep_invoices(db_session, force=True)
+
+    assert reads == []
+    assert books.applied == []
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_during_the_deposit_read_propagates(db_session, monkeypatch):
+    await _project(db_session, quote_id="EST1")
+    _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=ZohoRateLimited("Too many requests", retry_after=5.0),
+    )
+
+    with pytest.raises(ZohoRateLimited):
+        await sweep_invoices(db_session, force=True)

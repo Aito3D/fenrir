@@ -512,6 +512,7 @@ export default {
       quoteEmailed: '견적서를 이메일로 보냈습니다',
       invoiceEmailed: '청구서를 이메일로 보냈습니다',
       invoiceCreated: '청구서를 생성했습니다',
+      invoiceDepositApplied: '선수금을 청구서에 적용했습니다',
       quoteViewed: '견적서를 확인했습니다',
       quoteAccepted: '견적서를 승인했습니다',
       quoteUnaccepted: '견적 승인을 취소했습니다',

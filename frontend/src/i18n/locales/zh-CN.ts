@@ -512,6 +512,7 @@ export default {
       quoteEmailed: '通过电子邮件发送了报价单',
       invoiceEmailed: '通过邮件发送了发票',
       invoiceCreated: '创建了发票',
+      invoiceDepositApplied: '已将定金抵扣至发票',
       quoteViewed: '查看了报价单',
       quoteAccepted: '接受了报价单',
       quoteUnaccepted: '撤销了报价单的接受',

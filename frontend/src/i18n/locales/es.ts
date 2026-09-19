@@ -512,6 +512,7 @@ export default {
       quoteEmailed: 'envió el presupuesto por correo',
       invoiceEmailed: 'envió la factura por correo',
       invoiceCreated: 'creó la factura',
+      invoiceDepositApplied: 'aplicó el anticipo a la factura',
       quoteViewed: 'vio el presupuesto',
       quoteAccepted: 'aceptó el presupuesto',
       quoteUnaccepted: 'quitó la aceptación del presupuesto',

@@ -42,6 +42,11 @@ KINDS: dict[str, str] = {
     # price and becomes a receivable, and it is the only local record that
     # the invoice was raised from Aito rather than by hand in Books.
     "invoice.created": "story",
+    # A deposit the client had already paid was spent on the bill — by the
+    # hourly sweep, for an invoice raised in Books without it. Story: it is
+    # the only local record of WHY an overdue invoice turned paid with no
+    # payment arriving.
+    "invoice.deposit_applied": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
     # Acceptance revoked by hand (the detail panel's hold-to-unaccept pill) —

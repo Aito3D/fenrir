@@ -512,6 +512,7 @@ export default {
       quoteEmailed: '以電子郵件寄出報價單',
       invoiceEmailed: '以電子郵件寄送了發票',
       invoiceCreated: '建立了發票',
+      invoiceDepositApplied: '已將訂金抵扣至發票',
       quoteViewed: '檢視了報價單',
       quoteAccepted: '接受了報價單',
       quoteUnaccepted: '撤銷了報價單的接受',
