@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
-import { AlertTriangle, Archive, FileInput, Kanban, Loader2, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, BarChart3, FileInput, Kanban, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../contexts/AuthContext';
 import { CardView } from '../components/aito/CardView';
@@ -14,6 +14,7 @@ import { ImportQuoteDrawer } from '../components/aito/ImportQuoteDrawer';
 import { NewProjectDrawer } from '../components/aito/NewProjectDrawer';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashGrid } from '../components/aito/TrashGrid';
+import { StatsView } from '../components/aito/StatsView';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
 import { api, type AitoProject } from '../api/client';
 import { formatPhone } from '../utils/clientDraft';
@@ -126,7 +127,7 @@ export function AitoPage() {
   // Deliberately not persisted — not in the URL, not in storage. The board is
   // the working view; landing on an archive after a reload would be wrong
   // every time but the one you asked for it.
-  const [view, setView] = useState<'board' | 'done' | 'trash'>('board');
+  const [view, setView] = useState<'board' | 'done' | 'trash' | 'stats'>('board');
   const [search, setSearch] = useState('');
   const [followup, setFollowup] = useState<FollowupKey | null>(null);
   // Thresholds ride the same settings query the rest of the app shares; the
@@ -256,7 +257,7 @@ export function AitoPage() {
   // would read "(0)" and then land on a grid full of cards, exactly the lie
   // the badge exists to avoid. A follow-up is a question about live work
   // anyway; the archives are a different question.
-  const changeView = (next: 'board' | 'done' | 'trash') => {
+  const changeView = (next: 'board' | 'done' | 'trash' | 'stats') => {
     if (next !== 'board') setFollowup(null);
     setView(next);
   };
@@ -418,10 +419,18 @@ export function AitoPage() {
             data-flight-target=""
           />
           <ViewToggleButton
+            iconOnly
             active={view === 'trash'}
             onToggle={() => changeView(view === 'trash' ? 'board' : 'trash')}
             icon={Trash2}
             label={t('aito.trash')}
+          />
+          <ViewToggleButton
+            iconOnly
+            active={view === 'stats'}
+            onToggle={() => changeView(view === 'stats' ? 'board' : 'stats')}
+            icon={BarChart3}
+            label={t('aito.statistics')}
           />
           {canCreate && (
             <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
@@ -488,6 +497,8 @@ export function AitoPage() {
           onExpandCard={openCard}
           canUpdate={canUpdate}
         />
+      ) : view === 'stats' ? (
+        <StatsView />
       ) : (
         <DndContext
           sensors={sensors}

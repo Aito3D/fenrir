@@ -13,6 +13,11 @@ interface ViewToggleButtonProps {
    *  "Back to board": there is one board, and every one of these views is a
    *  detour from it. */
   label: string;
+  /** Render the icon alone — the label becomes the accessible name and the
+   *  tooltip. For the detours that are glanced at, not read: Trash and
+   *  Statistics. A square button cannot reflow, so the stacked-strut trick
+   *  below is not needed here; the active state swaps the icon for the arrow. */
+  iconOnly?: boolean;
   /** Marks this button as a landing pad for `useCardFlight`: a card that
    *  leaves the board for the archive flies into it. Passed straight through
    *  to the <button>, which is what the hook measures. */
@@ -35,8 +40,17 @@ interface ViewToggleButtonProps {
  *  The hidden label is `aria-hidden` — it is a layout strut, and a screen
  *  reader that read both would announce the button as "Show done Back to
  *  board". */
-export function ViewToggleButton({ active, onToggle, icon: Icon, label, ...rest }: ViewToggleButtonProps) {
+export function ViewToggleButton({ active, onToggle, icon: Icon, label, iconOnly, ...rest }: ViewToggleButtonProps) {
   const { t } = useTranslation();
+
+  if (iconOnly) {
+    const name = active ? t('aito.backToBoard') : label;
+    return (
+      <Button variant="secondary" onClick={onToggle} aria-pressed={active} aria-label={name} title={name} className="px-2.5" {...rest}>
+        {active ? <ArrowLeft className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+      </Button>
+    );
+  }
 
   return (
     <Button variant="secondary" onClick={onToggle} aria-pressed={active} {...rest}>

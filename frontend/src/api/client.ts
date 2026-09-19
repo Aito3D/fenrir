@@ -4249,12 +4249,31 @@ export interface AitoTaskSteps {
 }
 
 export interface AitoStatsBucket { count: number; total: number }
+/** The statistics view's headline block — see StatsView.tsx. Lead time runs
+ *  from the card's created_at (an import backdates it to the quote's date);
+ *  production time from the acceptance. Days are means, `lead_days_median`
+ *  the median of the same sample. */
+export interface AitoStatsThroughput {
+  created: number;
+  accepted: number;
+  done: number;
+  per_day: number | null;
+  lead_days: number | null;
+  lead_days_median: number | null;
+  production_days: number | null;
+  active: number;
+}
+export interface AitoStatsDay { day: string; created: number; accepted: number; done: number }
 export interface AitoStats {
   board: { column: AitoColumnId; count: number; total: number }[];
   conversion: { sent: AitoStatsBucket; accepted: AitoStatsBucket; declined: AitoStatsBucket; acceptance_rate: number | null };
   stage_days: { column: AitoColumnId; median_days: number | null; sample: number }[];
   invoicing: { invoiced_total: number; invoiced_count: number; outstanding_balance: number; outstanding_count: number };
   tracking?: { views: number; cards_viewed: number; cards_with_link: number };
+  // Optional: a deployed backend behind this bundle may predate the statistics view.
+  throughput?: AitoStatsThroughput;
+  previous?: { created: number; accepted: number; done: number; lead_days: number | null } | null;
+  daily?: AitoStatsDay[];
   date_from: string | null;
   date_to: string | null;
 }
