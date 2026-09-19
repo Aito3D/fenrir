@@ -27,3 +27,24 @@ describe('Tooltip', () => {
     expect(tip.style.transform).not.toContain('-50%');
   });
 });
+
+describe('Tooltip inside an outer group', () => {
+  it('only reveals on its OWN trigger, not when any ancestor `.group` is hovered', () => {
+    // TaskRow's card is a `group` (its remove icon reveals on row hover). Two
+    // tooltips inside one card must not both light up when the card is
+    // hovered, so the reveal is keyed to a named group the Tooltip owns.
+    render(
+      <div className="group">
+        <Tooltip content="A">
+          <button type="button">One</button>
+        </Tooltip>
+      </div>,
+    );
+    const tip = screen.getByRole('tooltip');
+    const root = tip.parentElement!;
+    expect(root.className).toContain('group/tip');
+    expect(tip.className).toContain('group-hover/tip:opacity-100');
+    expect(tip.className).toContain('group-focus-visible/tip:opacity-100');
+    expect(tip.className).not.toMatch(/(^|\s)group-hover:opacity-100/);
+  });
+});
