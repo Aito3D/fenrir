@@ -1157,6 +1157,27 @@ html[data-vt='aito-view']::view-transition-new(page-title) {
 .vt-aito-search {
   view-transition-name: aito-search;
 }
+/* The header facts that exist only on the board (follow-up pills, the
+   in-production count, the print backlog) leave and return with a plain
+   fade rather than popping out of the otherwise frozen title group. */
+.vt-aito-followups {
+  view-transition-name: aito-followups;
+}
+.vt-aito-count {
+  view-transition-name: aito-count;
+}
+.vt-aito-backlog {
+  view-transition-name: aito-backlog;
+}
+::view-transition-old(aito-followups),
+::view-transition-new(aito-followups),
+::view-transition-old(aito-count),
+::view-transition-new(aito-count),
+::view-transition-old(aito-backlog),
+::view-transition-new(aito-backlog) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-signature);
+}
 @keyframes aito-view-out {
   to { opacity: 0; transform: translateY(-6px); }
 }
@@ -1189,6 +1210,13 @@ html[data-vt='aito-view']::view-transition-new(page-title) {
 ::view-transition-new(aito-search) {
   object-fit: none;
   object-position: left center;
+}
+/* The toolbar changes width too (five buttons → two): pinned to its right
+   edge, where the way-back button stays put, so nothing is stretched. */
+::view-transition-old(aito-toolbar),
+::view-transition-new(aito-toolbar) {
+  object-fit: none;
+  object-position: right center;
 }
 
 /* The timeframe dropdown (Stats page + Aito statistics): scales in from its

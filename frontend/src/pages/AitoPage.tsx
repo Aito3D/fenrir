@@ -428,22 +428,30 @@ export function AitoPage() {
             <span
               key={inProduction}
               title={t('aito.inProduction', { count: inProduction })}
-              className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
+              className="vt-aito-count px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
             >
               <span aria-hidden="true">{pending ? '–' : inProduction}</span>
               <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
             </span>
           )}
           {view !== 'stats' && (
-            <PrintBacklogBadge
-              minutes={backlogMinutes}
-              printerCount={printersQuery.data?.length}
-              dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
-            />
+            <span className="vt-aito-backlog inline-flex">
+              <PrintBacklogBadge
+                minutes={backlogMinutes}
+                printerCount={printersQuery.data?.length}
+                dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
+              />
+            </span>
           )}
         </h1>
         {view === 'board' && (
-          <FollowupStrip buckets={buckets} active={followup} onChange={setFollowup} projects={aitoQuery.data ?? []} />
+          <FollowupStrip
+            className="vt-aito-followups"
+            buckets={buckets}
+            active={followup}
+            onChange={setFollowup}
+            projects={aitoQuery.data ?? []}
+          />
         )}
         {/* An archive is searched more than it is browsed, so its search box
             takes the room the hidden buttons give back. */}
