@@ -58,9 +58,10 @@ rework: { moves: int, cards: int, share: float|None }
 
 services: [ {service: "scan"|"modelisation"|"impression"|"usinage", tasks: int, revenue: float} ]
   # RANGE. Tasks of cards whose first acceptance is in range. A task counts once per
-  # service whose net_cost is not None; revenue is that net cost × max(quantity, 1)
-  # — the same figure summarise() adds into the board total (reuse it, do not
-  # re-derive). Four rows always present, in SERVICES order.
+  # service whose net_cost is not None; revenue is that net cost as is (the stored
+  # cost is already unit × quantity, net_cost applies the discount) — the same
+  # figure summarise() adds into the board total. Four rows always present, in
+  # SERVICES order.
 
 clients: { new: int, returning: int, new_total: float, returning_total: float }
   # RANGE. Cards created (project.created moment) in range. Returning = the card's
@@ -102,3 +103,10 @@ New keys under `aito.stats.*`: sections (sales, time, money, clients), asOfToday
 - pytest: each block on fixtures — quote age buckets, band cutting (3, 8 and 20 decisions), overdue buckets and oldest, stage_time stays and cap, rework counting and share, services revenue via net_cost, new/returning classification, arrivals weekday×hour with tz offset, islands ordering with pickup last.
 - Vitest: sections render with ids and the jump strip highlights/scrolls; each block from a fixture; the two snapshot captions; empty states; all-zero overdue.
 - Suites, build, parity, headless capture as before.
+
+## As built (2026-09-19)
+
+- Service-mix palette is scan `#3d86e8`, modelisation `#c95aa0`, impression `#c26a1c`, usinage `#1f9e8a` (blue, magenta, orange, teal): the only four-slot order that passed the validator with no colour-vision warning.
+- The view is split into `components/aito/stats/` (palette, primitives, activity chart, jump strip, four sections); `StatsView.tsx` is the shell.
+- Section ids are `aito-stats-{sales,time,money,clients}`; the strip observes them with a `-56px / -55%` root margin so the highlighted pill is the section under the strip, not the one leaving.
+- Stage-time bars are sorted longest first and scaled to the longest card; zero-day stages draw no segment.
