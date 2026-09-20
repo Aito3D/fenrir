@@ -6,6 +6,7 @@ silently returns nothing and the VP bind-interface dropdown comes up empty.
 Everything that isn't Linux must go through the cross-platform psutil path.
 """
 
+import contextlib
 import socket
 from collections import namedtuple
 from unittest.mock import patch
@@ -94,10 +95,21 @@ _IP_ADDR_JSON = """[
 ]"""
 
 
+@contextlib.contextmanager
 def _fake_ip_addr():
-    """Patch `ip -j addr show` with a fixed multi-homed Linux host."""
+    """Patch `ip -j addr show` with a fixed multi-homed Linux host.
+
+    ``sys.platform`` is patched with it: ``get_network_interfaces`` routes
+    everything non-Linux to the psutil path, so on a macOS or Windows dev
+    machine the faked ``ip`` output is never read and the assertions below
+    would answer about the real host instead of the fixture.
+    """
     result = namedtuple("CompletedProcess", ["returncode", "stdout", "stderr"])(0, _IP_ADDR_JSON, "")
-    return patch.object(network_utils, "subprocess", **{"run.return_value": result})
+    with (
+        patch.object(network_utils, "subprocess", **{"run.return_value": result}),
+        patch.object(network_utils.sys, "platform", "linux"),
+    ):
+        yield
 
 
 class TestFindLocalIPv4Network:

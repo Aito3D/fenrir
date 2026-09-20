@@ -106,6 +106,10 @@ function baseHandlers(opts: {
   } = opts;
 
   return [
+    // Since #3123 the page renders the install's currency from
+    // /settings/ui-flags, not the wallet's own — the wallet is still served
+    // with it so a stale field can't quietly become the source again.
+    http.get('*/api/v1/settings/ui-flags', () => HttpResponse.json({ billing_enabled: true, currency })),
     jsonHandler('/api/v1/finance/me/balance', {
       user_id: 1,
       balance,

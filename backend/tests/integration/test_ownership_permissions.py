@@ -1012,13 +1012,16 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
             json={"file_ids": [file.id]},
         )
 
-        assert response.status_code == 200
-        result = response.json()
-        assert result["added"] == []
-        assert len(result["errors"]) == 1
-        assert result["errors"][0]["file_id"] == file.id
-        assert result["errors"][0]["error"] == "File not found"
-        assert result["errors"][0]["filename"] != file.filename
+        # Since #3112 a batch that queued nothing answers 400 and carries the
+        # per-file reasons in the detail; the IDOR properties are unchanged —
+        # the generic "File not found" and no real filename anywhere.
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        errors = detail["errors"]
+        assert len(errors) == 1
+        assert errors[0]["file_id"] == file.id
+        assert errors[0]["error"] == "File not found"
+        assert errors[0]["filename"] != file.filename
         assert file.filename not in response.text
 
         queue_item = (
