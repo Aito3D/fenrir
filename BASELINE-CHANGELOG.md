@@ -12772,3 +12772,58 @@ Standing caveat unchanged and worth repeating: this fake is a model of
 Heimdall, not Heimdall. Neither this probe nor any test in this repo has ever
 run against the real POS bridge — the live ping and the 1-franc probe are
 still owed.
+
+--------------------------------------------------------------------------------
+## T-002 — 2026-09-20 — user-approved behavior change
+
+`_daily()` in `backend/app/services/aito_stats.py` built one `AitoStatsDay` row
+per calendar day between `first_day` and `last_day` with no bound on the
+range. `GET /api/v1/aito/stats` validated only that `date_from <= date_to`,
+never the SPAN, so a caller-chosen range could materialise millions of rows
+(measured: `date_from=0001-01-01` alone built 739,879 rows, ~880 MB RSS on an
+empty DB; `date_from=5001-01-01&date_to=9999-12-31` built ~1.8M rows, ~2.2 GB).
+A marginally wider span instead overflowed `datetime` inside
+`local_day_bounds` (combining an extreme date with `tz_offset_minutes`),
+returning an unhandled 500 — and this overflow was reachable even from a
+two-day span (`date_from=0001-01-01&date_to=0001-01-02`), so the span cap
+alone does not cover it (this folds in T-004, triaged separately for the same
+root cause). A second, non-hostile path to the same blowup exists too: when
+`date_from` is omitted, `first_day` falls back to the earliest
+`project.created` moment, and an import backdates that from an unvalidated
+Books `quote_date` — so one card with a bad year turns the ordinary "all
+time" preset into the same unbounded loop.
+
+Fixed with two new module constants in `aito_stats.py`:
+  * `MAX_STATS_SPAN_DAYS = 1827` (5 years) — comfortably wider than the
+    widest date-bounded preset the frontend offers ("this-year") and than any
+    realistic all-time history for this product.
+  * `MIN_STATS_DATE = date(2000, 1, 1)` / `MAX_STATS_DATE = date(2999, 12,
+    31)` — far enough from `date.min`/`date.max` that combining either bound
+    with the widest allowed `tz_offset_minutes` (+/-840, i.e. +/-14h) inside
+    `local_day_bounds` can never overflow `datetime`.
+
+`GET /api/v1/aito/stats` (`get_aito_stats` in `backend/app/api/routes/aito.py`)
+now rejects with 422 any `date_from`/`date_to` outside `[MIN_STATS_DATE,
+MAX_STATS_DATE]`, and any explicit `date_from` whose span to `date_to` (or to
+today, if `date_to` is omitted) exceeds `MAX_STATS_SPAN_DAYS`. Independently,
+`_daily()` itself now clamps to the most recent `MAX_STATS_SPAN_DAYS` days
+whenever it is asked to walk a wider range — a defensive backstop that also
+covers the derived "all time" path, which has no caller-supplied date for the
+route to validate and must not error on an otherwise ordinary request.
+
+**User-visible change**: a client that asks for a range wider than
+`MAX_STATS_SPAN_DAYS` — including any all-time-style bookmark or script that
+passes a very old `date_from` — now gets a 422 instead of a huge zero-filled
+`daily` array. A stored "all time" request whose derived start is absurdly
+old (a bad imported `quote_date`) now silently shows only the most recent
+five years of `daily` rows instead of crashing or exhausting memory.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14 with no
+re-recording needed. `stats-backend-aggregate` drives `compute_aito_stats`
+directly against six fixed cases, none of which uses a span wider than the
+new cap. `stats-contract` reads the OpenAPI parameter/response schema, which
+this change does not touch (no new route parameter, model, or response code).
+`SURFACE.md` was regenerated (`bash tools/gen_surface_stats.sh > SURFACE.md`)
+and only line-number shifts moved, from the two new constant declarations
+added above `_CREATION_MOVE_GRACE`; no function name, signature, or order
+changed.

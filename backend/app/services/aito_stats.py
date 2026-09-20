@@ -52,6 +52,22 @@ _DAY_SECONDS = 86_400.0
 # rule-driven move would otherwise close a weeks-long fake stay in `devis`.
 _CREATION_MOVE_GRACE = timedelta(seconds=60)
 
+# Bounds for the calendar `/aito/stats` can materialise. `_daily()` emits one
+# AitoStatsDay row per day in [first_day, last_day]; a caller-chosen range —
+# or an "all time" request whose start is derived from the earliest
+# `project.created` moment, which an import can backdate to whatever a Books
+# quote_date says — must never be able to drive that loop past a sane size.
+# Five years is comfortably wider than the widest date-bounded preset the
+# frontend offers ("this-year") and than any realistic all-time history for
+# this product, while keeping row count, JSON size, and memory small.
+MAX_STATS_SPAN_DAYS = 1827  # 5 * 365 + 2 leap days
+# Absolute floor/ceiling for a requested date, wide enough to cover any real
+# usage but far enough from `date.min`/`date.max` that combining it with the
+# widest allowed `tz_offset_minutes` (+/- 14h) in `local_day_bounds` can never
+# overflow `datetime`.
+MIN_STATS_DATE = date(2000, 1, 1)
+MAX_STATS_DATE = date(2999, 12, 31)
+
 
 def _in_range(at: datetime, start: datetime | None, end: datetime | None) -> bool:
     return (start is None or at >= start) and (end is None or at <= end)
@@ -529,6 +545,14 @@ def _daily(
 ) -> list[AitoStatsDay]:
     if first_day is None or last_day is None or last_day < first_day:
         return []
+    # Defensive backstop, independent of the route's own validation: `first_day`
+    # can come from the earliest `project.created` moment rather than from the
+    # caller, so this loop must bound itself rather than trust either source.
+    # Keep the most recent MAX_STATS_SPAN_DAYS days — the same window every
+    # other "all time" widget on the page effectively shows — rather than the
+    # oldest.
+    if (last_day - first_day).days + 1 > MAX_STATS_SPAN_DAYS:
+        first_day = last_day - timedelta(days=MAX_STATS_SPAN_DAYS - 1)
     counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
     for index, moments in enumerate((born, accepted, declined, done)):
         for at in moments.values():

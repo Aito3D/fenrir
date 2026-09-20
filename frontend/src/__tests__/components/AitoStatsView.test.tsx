@@ -134,9 +134,28 @@ describe('StatsView', () => {
     expect(screen.queryByTestId('aito-stats-band')).toBeNull();
     expect(screen.getByTestId('aito-stats-money')).toBeInTheDocument();
 
-    // Arrow keys move and select; Home returns to the first screen.
+    // Arrow keys move and select, wrapping at the ends; Home/End jump to the first/last tab.
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Clients' }));
+    expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
+
+    // Clients is the last tab, so ArrowLeft steps back to Money (no wrap needed here).
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: 'Money' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Money' }));
+    expect(await screen.findByTestId('aito-stats-money')).toBeInTheDocument();
+
+    // Home returns to the first screen regardless of the current tab.
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Overview' }));
+    expect(await screen.findByTestId('aito-stats-band')).toBeInTheDocument();
+
+    // End jumps to the last screen, back to Clients.
+    await user.keyboard('{End}');
+    expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Clients' }));
     expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
 
     unmount();

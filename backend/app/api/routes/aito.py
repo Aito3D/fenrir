@@ -95,7 +95,12 @@ from backend.app.services.aito_shipping import (
     grouped_islands,
     service_for_island,
 )
-from backend.app.services.aito_stats import compute_aito_stats
+from backend.app.services.aito_stats import (
+    MAX_STATS_DATE,
+    MAX_STATS_SPAN_DAYS,
+    MIN_STATS_DATE,
+    compute_aito_stats,
+)
 from backend.app.services.aito_tracking import (
     build_tracking_url,
     compute_tracking,
@@ -1020,8 +1025,24 @@ async def get_aito_stats(
     same way `/archives/stats` does it — the Stats page's sibling widgets all
     range over the user's own days, and a UTC-only window would slice the
     board's period differently from the ones beside it."""
+    # An out-of-bounds date, or a range spanning more than a few years, either
+    # materialises millions of `daily` rows or — combined with a wide
+    # `tz_offset_minutes` — overflows `datetime` inside `local_day_bounds`.
+    # Both are rejected here rather than left to the "all time" preset's own
+    # derived range, which has no caller-supplied date to validate and is
+    # instead bounded defensively inside `_daily()`.
+    if date_from is not None and not (MIN_STATS_DATE <= date_from <= MAX_STATS_DATE):
+        raise HTTPException(status_code=422, detail=f"date_from must be between {MIN_STATS_DATE} and {MAX_STATS_DATE}")
+    if date_to is not None and not (MIN_STATS_DATE <= date_to <= MAX_STATS_DATE):
+        raise HTTPException(status_code=422, detail=f"date_to must be between {MIN_STATS_DATE} and {MAX_STATS_DATE}")
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must not be after date_to")
+    if date_from is not None:
+        span = ((date_to or date.today()) - date_from).days + 1
+        if span > MAX_STATS_SPAN_DAYS:
+            raise HTTPException(
+                status_code=422, detail=f"date_from/date_to must not span more than {MAX_STATS_SPAN_DAYS} days"
+            )
     return await compute_aito_stats(db, date_from, date_to, tz_offset_minutes)
 
 

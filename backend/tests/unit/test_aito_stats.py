@@ -1,8 +1,11 @@
 """GET /aito/stats — the pipeline widget's four blocks, computed server-side."""
 
+from datetime import date, timedelta
+
 import pytest
 from sqlalchemy import text
 
+from backend.app.services.aito_stats import MAX_STATS_SPAN_DAYS
 from backend.tests.unit.test_aito_contacted import _declared_permissions
 
 STATS = "/api/v1/aito/stats"
@@ -288,6 +291,64 @@ async def test_inverted_range_is_422_and_absent_dates_are_allowed(async_client):
     r = await async_client.get(STATS)
     assert r.status_code == 200
     assert r.json()["date_from"] is None and r.json()["date_to"] is None
+
+
+@pytest.mark.asyncio
+async def test_span_wider_than_the_cap_is_422(async_client):
+    """T-002: the route bounds the SPAN, not just the ordering, so a caller
+    cannot ask for a range that would materialise millions of `daily` rows."""
+    date_from = date(2020, 1, 1)
+    date_to = date_from + timedelta(days=MAX_STATS_SPAN_DAYS)  # one day past the cap
+    r = await async_client.get(STATS, params={"date_from": date_from.isoformat(), "date_to": date_to.isoformat()})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_span_exactly_at_the_cap_is_still_200_with_the_full_daily_series(async_client):
+    date_from = date(2020, 1, 1)
+    date_to = date_from + timedelta(days=MAX_STATS_SPAN_DAYS - 1)  # inclusive: exactly the cap
+    r = await async_client.get(STATS, params={"date_from": date_from.isoformat(), "date_to": date_to.isoformat()})
+    assert r.status_code == 200
+    daily = r.json()["daily"]
+    assert len(daily) == MAX_STATS_SPAN_DAYS
+    assert daily[0]["day"] == date_from.isoformat()
+    assert daily[-1]["day"] == date_to.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_all_time_calendar_is_bounded_even_when_the_earliest_card_is_absurdly_old(async_client, db_session):
+    """The 'all time' preset sends no dates at all, so `first_day` is derived
+    from the earliest `project.created` moment — which an import can backdate
+    to whatever a Books quote_date says. That derived range must be bounded
+    the same way an explicit caller-supplied range is, without turning an
+    ordinary all-time request into a 422."""
+    p = await _create(async_client)
+    await _move_event(db_session, p, "project.created", "1900-01-01 00:00:00")
+
+    r = await async_client.get(STATS)
+    assert r.status_code == 200
+    daily = r.json()["daily"]
+    assert len(daily) == MAX_STATS_SPAN_DAYS
+    # Clamped to the most recent window, not the (absurd) actual first day.
+    assert date.fromisoformat(daily[0]["day"]) > date(1950, 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_dates_that_would_overflow_local_day_bounds_are_422_not_500(async_client):
+    """A date near `date.min`/`date.max`, combined with `tz_offset_minutes`,
+    overflows `datetime` inside `local_day_bounds` — even for a two-day span,
+    so the span cap alone does not cover it. The route rejects the date
+    itself before ever calling `local_day_bounds`."""
+    assert (await async_client.get(STATS, params={"date_from": "0001-01-01"})).status_code == 422
+    assert (
+        await async_client.get(STATS, params={"date_from": "0001-01-01", "date_to": "0001-01-02"})
+    ).status_code == 422
+    assert (
+        await async_client.get(STATS, params={"date_from": "5001-01-01", "date_to": "9999-12-31"})
+    ).status_code == 422
+    assert (
+        await async_client.get(STATS, params={"date_from": "0001-01-01", "tz_offset_minutes": 780})
+    ).status_code == 422
 
 
 def test_stats_route_is_gated_on_aito_read():
