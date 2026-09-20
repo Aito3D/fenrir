@@ -6,7 +6,7 @@
 // en.settings.* (plus the handful of shared namespaces the settings panels
 // reach into), so this probe pins those strings verbatim: a reworded hint or
 // a dropped key is a user-visible change even when parity still holds.
-const locales = require('/tmp/bambuddy-refactor-probe/i18nAll.cjs');
+const locales = require('/tmp/fenrir-refactor-probe/i18nAll.cjs');
 
 const flat = (obj, prefix = '', out = {}) => {
   for (const k of Object.keys(obj || {})) {

@@ -66,7 +66,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
 
   // Host-level Tailscale identity (same for every VP) — shown inline on the card when
   // the user has marked this VP as "exposed over Tailscale". Cert handling does NOT
-  // depend on this toggle; the slicer trusts the bambuddy CA the user imports once.
+  // depend on this toggle; the slicer trusts the fenrir CA the user imports once.
   const { data: tailscaleStatus } = useQuery({
     queryKey: ['tailscale-status'],
     queryFn: multiVirtualPrinterApi.getTailscaleStatus,
@@ -287,7 +287,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
 
             It needs three things at once to overflow, which is why it took a
             two-VLAN setup to surface: bind_ip and remote_interface_ip are both
-            set only when Bambuddy and the printer are on different subnets, a
+            set only when Fenrir and the printer are on different subnets, a
             printer adopted without a name is called "Printer at <ip>" (25
             characters of unbreakable text), and the cards sit in a 3-column
             grid. Wrapping keeps every value readable -- these are the addresses

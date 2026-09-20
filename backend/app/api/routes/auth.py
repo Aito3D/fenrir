@@ -171,7 +171,7 @@ _TRUSTED_PROXY_IPS: frozenset[str] = frozenset(
 # #1589: read at call time, not import time, so tests can monkeypatch os.environ
 # between cases without re-importing the module.
 def _local_login_env_bypass() -> bool:
-    """Return True when ``BAMBUDDY_LOCAL_LOGIN`` env var is set truthy.
+    """Return True when ``FENRIR_LOCAL_LOGIN`` env var is set truthy.
 
     Bypasses the ``local_login_enabled`` DB setting on the local-credentials
     code path AND the forgot-password endpoint so a server admin can recover
@@ -182,7 +182,7 @@ def _local_login_env_bypass() -> bool:
     # startup. An unrecognized value must fall back to "off" (the safe default),
     # never raise -- a 500 on the recovery endpoint is the opposite of what this
     # bypass is for.
-    return env_bool("BAMBUDDY_LOCAL_LOGIN", False, strict=False)
+    return env_bool("FENRIR_LOCAL_LOGIN", False, strict=False)
 
 
 def _request_is_https(request: Request) -> bool:
@@ -580,7 +580,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
     # #1589: local username/password gate. LDAP keeps its own switch
     # (ldap_enabled) and is not affected — a delegated directory has its
     # own policy and lockouts and is closer to SSO than to local creds.
-    # The env-var BAMBUDDY_LOCAL_LOGIN=true bypasses this gate so a server
+    # The env-var FENRIR_LOCAL_LOGIN=true bypasses this gate so a server
     # admin can recover an install whose SSO provider is unreachable
     # without editing the DB.
     from backend.app.models.settings import Settings as _Settings_for_local_login
@@ -884,9 +884,9 @@ async def test_smtp_connection(
         send_email(
             smtp_settings=smtp_settings,
             to_email=test_request.test_recipient,
-            subject="BamBuddy SMTP Test",
-            body_text="This is a test email from BamBuddy. If you received this, your SMTP settings are working correctly!",
-            body_html="<p>This is a test email from <strong>BamBuddy</strong>.</p><p>If you received this, your SMTP settings are working correctly!</p>",
+            subject="Fenrir SMTP Test",
+            body_text="This is a test email from Fenrir. If you received this, your SMTP settings are working correctly!",
+            body_html="<p>This is a test email from <strong>Fenrir</strong>.</p><p>If you received this, your SMTP settings are working correctly!</p>",
         )
 
         logger.info(f"Test email sent successfully to {test_request.test_recipient}")
@@ -1020,7 +1020,7 @@ async def get_advanced_auth_status(db: AsyncSession = Depends(get_db)):
     Surfaces ``local_login_enabled`` and ``autologin_provider_id`` (#1589)
     so the LoginPage can decide whether to render the credentials form and
     whether to redirect unauthenticated visitors directly to an SSO
-    provider, in a single query. ``BAMBUDDY_LOCAL_LOGIN=true`` flips the
+    provider, in a single query. ``FENRIR_LOCAL_LOGIN=true`` flips the
     reported value back to True so the recovery path is visible.
     """
     from backend.app.models.oidc_provider import OIDCProvider
@@ -1419,7 +1419,7 @@ async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User
         is_active=True,
     )
 
-    # Map LDAP groups to BamBuddy groups, falling back to the configured default group
+    # Map LDAP groups to Fenrir groups, falling back to the configured default group
     # when the user is authenticated but has no matching group mapping (#921-follow-up).
     mapped_group_names = resolve_group_mapping(ldap_user.groups, ldap_config.group_mapping)
     if not mapped_group_names and ldap_config.default_group:
@@ -1445,12 +1445,12 @@ async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User
 async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) -> None:
     """Sync LDAP user attributes (email, groups) on each login.
 
-    Group sync only touches BamBuddy groups that LDAP is configured to manage —
+    Group sync only touches Fenrir groups that LDAP is configured to manage —
     that is, the values of `group_mapping` plus `default_group`. Any group
     outside that set is assumed to be a manual admin assignment and is
-    preserved across logins (#1292). Manual assignments to a BamBuddy group
+    preserved across logins (#1292). Manual assignments to a Fenrir group
     that IS LDAP-managed are still overridden by LDAP truth, because revoking
-    access in LDAP must propagate to BamBuddy on next login.
+    access in LDAP must propagate to Fenrir on next login.
     """
     import logging
 
@@ -1465,7 +1465,7 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
         user.email = ldap_user.email
         changed = True
 
-    # Compute the set of BamBuddy groups LDAP is allowed to manage. Anything
+    # Compute the set of Fenrir groups LDAP is allowed to manage. Anything
     # outside this set is left alone so manual admin assignments survive logins.
     ldap_managed_names: set[str] = set(ldap_config.group_mapping.values())
     if ldap_config.default_group:
@@ -1579,7 +1579,7 @@ async def search_ldap_directory(
     wildcards on both sides) against sAMAccountName, uid, mail, displayName,
     and cn — covering both AD and OpenLDAP layouts. Each result is annotated
     with `already_provisioned` so the UI can grey out usernames that already
-    exist as BamBuddy users.
+    exist as Fenrir users.
 
     Requires USERS_CREATE permission. Minimum query length is 2 characters.
     """
@@ -1646,7 +1646,7 @@ async def provision_ldap_user(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Provision a BamBuddy user from an existing LDAP directory entry.
+    """Provision a Fenrir user from an existing LDAP directory entry.
 
     Re-resolves the username via the service-account bind (rather than trusting
     the request body) so group mappings and email come from a fresh LDAP read.

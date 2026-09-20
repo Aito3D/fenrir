@@ -160,7 +160,7 @@ def rtsp_socket_timeout_flag() -> str:
     RTSP demuxer's client-side TCP socket I/O timeout, in microseconds.
 
     ffmpeg has shipped three different option arrangements for this over
-    time, and Bambuddy supports the full range:
+    time, and Fenrir supports the full range:
 
     - **Modern ffmpeg (5.x / 6.x / 7.x)** — Debian 13, Ubuntu 24.04, current
       Homebrew, etc. ``-timeout`` is the socket I/O timeout (microseconds);
@@ -659,7 +659,7 @@ async def close_tls_proxy(server: "asyncio.Server") -> None:
     way to guarantee no handler outlives the server that owns it.
 
     ``Server.close_clients()`` would do this natively, but it landed in Python
-    3.13 and Bambuddy supports 3.10, so the handler set is tracked by hand in
+    3.13 and Fenrir supports 3.10, so the handler set is tracked by hand in
     ``_proxy_handlers``.
 
     Safe to call on any ``asyncio.Server`` from anywhere else: a server that

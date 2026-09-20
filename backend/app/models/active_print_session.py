@@ -12,7 +12,7 @@ class ActivePrintSession(Base):
     """Print-start context the completion path needs, persisted per printer.
 
     ``usage_tracker._active_sessions`` holds the same data in memory, and the
-    tray-change log lives on ``PrinterState``. Both are lost when Bambuddy
+    tray-change log lives on ``PrinterState``. Both are lost when Fenrir
     restarts mid-print, which on a long print silently destroys filament
     attribution: without the plate the 3MF parser sums every plate, without the
     assignment snapshot a spool unlinked at runout can't be resolved, and

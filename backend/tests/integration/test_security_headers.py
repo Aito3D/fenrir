@@ -120,7 +120,7 @@ async def test_overlay_route_allows_same_origin_framing(async_client: AsyncClien
 
     'none' blocks that too, which is why the preview showed Firefox's "will not
     allow Firefox to display the page if another site has embedded it". 'self'
-    permits only a framer on this origin — Bambuddy's own UI — so a
+    permits only a framer on this origin — Fenrir's own UI — so a
     clickjacking page on another host is refused exactly as before.
     """
     from backend.app import main as main_module
@@ -191,7 +191,7 @@ async def test_trusted_origins_applies_to_docs_branch(async_client: AsyncClient,
 async def test_default_block_img_src_excludes_https(async_client: AsyncClient, monkeypatch):
     """#1333 regression guard: the default SPA CSP must NOT allow img-src https:.
 
-    Bambuddy's policy for external images is a backend proxy (see
+    Fenrir's policy for external images is a backend proxy (see
     /api/v1/makerworld/thumbnail and /api/v1/auth/oidc/providers/{id}/icon),
     not a CSP relaxation. If a future change adds ``https:`` to img-src to
     "fix" a broken-image, the proxy pattern silently degrades into a

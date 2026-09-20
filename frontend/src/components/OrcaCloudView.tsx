@@ -17,7 +17,7 @@ import { OrcaCloudProfilesView } from './OrcaCloudProfilesView';
  * Auth uses the RFC 8628 device-authorization grant: the backend requests a
  * device code from Orca and returns a short user_code plus a verification link.
  * The user opens the link, approves the code in their Orca Cloud settings, and
- * Bambuddy polls the backend (which polls Orca's token endpoint) until the
+ * Fenrir polls the backend (which polls Orca's token endpoint) until the
  * pairing completes. No redirect URL, no callback paste, no client secret —
  * see backend/app/services/orca_cloud.py for the deep dive.
  */
@@ -56,7 +56,7 @@ export function OrcaCloudView() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // Configured Bambuddy printers — fed into the profile-view's printer
+  // Configured Fenrir printers — fed into the profile-view's printer
   // filter dropdown so the user can narrow profiles to a specific printer
   // model. Same usage as the Bambu Cloud tab.
   const { data: printers = [] } = useQuery({

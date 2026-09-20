@@ -126,7 +126,7 @@ class TestWhatMustNotBeCaptured:
         """Our publish is echoed on *both* topics. The request-topic echo lands
         first and clears ``_own_project_file_key``, so a report-topic branch
         that reused ``_handle_request_message``'s diagnostic would report every
-        Bambuddy-started print as an external one.
+        Fenrir-started print as an external one.
         """
         dispatch = {
             "command": "project_file",

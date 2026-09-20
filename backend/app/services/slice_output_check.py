@@ -1,4 +1,4 @@
-"""Sanity-check a sliced file before Bambuddy is willing to print it.
+"""Sanity-check a sliced file before Fenrir is willing to print it.
 
 A Bambu printer's start G-code is where the AMS load (``M620``) and the
 preparation-stage announcements (``M1002 gcode_claim_action``) live. Slice
@@ -93,10 +93,10 @@ def start_gcode_is_missing(content: bytes, *, export_3mf: bool) -> bool:
 def missing_start_gcode_message(printer_preset_name: str) -> str:
     """The 502 body for a slice that came back without its start G-code.
 
-    Names the sidecar because that is where the fix is: Bambuddy sends the
+    Names the sidecar because that is where the fix is: Fenrir sends the
     bundled preset by name and the sidecar resolves it, so an older image
     resolves it to a generic 577-character stub and no amount of retrying in
-    Bambuddy will change the result.
+    Fenrir will change the result.
     """
     return (
         f"The slicer returned a file with no printer start G-code for '{printer_preset_name}'. "

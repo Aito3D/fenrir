@@ -3,7 +3,7 @@
 The AMS change-hash in ``_handle_ams_data`` is built only from AMS units, so a
 filament swap on the external spool alone (e.g. generic TPU -> generic ABS on
 the printer) used to never re-trigger ``on_ams_change``. That left a stale
-inventory assignment on the ``ams_id=255`` slot: Bambuddy kept showing the old
+inventory assignment on the ``ams_id=255`` slot: Fenrir kept showing the old
 filament after the physical type had changed.
 
 These tests drive full MQTT messages through ``_process_message`` and assert the

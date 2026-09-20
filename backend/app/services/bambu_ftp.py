@@ -98,8 +98,8 @@ def _download_extension(size: int | None, base_timeout: float) -> float:
 # How long a download will wait for another one on the same printer to finish
 # before going ahead alongside it (#2957). A P1S at print start is already
 # serving the print off the same SD card and talking MQTT to the slicer, and a
-# reporter watched Bambu Studio itself lose its connection while Bambuddy pulled
-# a 12 MB 3MF -- with a second Bambuddy transfer for the same file running at
+# reporter watched Bambu Studio itself lose its connection while Fenrir pulled
+# a 12 MB 3MF -- with a second Fenrir transfer for the same file running at
 # the same time. 30 s covers the transfer sizes that actually overlap at print
 # start -- the reporter's 5.4 MB 3MF took 25 s off a healthy SD card -- and the
 # wait is deliberately no longer, because the gate is contention relief and not
@@ -278,7 +278,7 @@ class DeleteResult(Enum):
 # What it is NOT is a wedged file service, which is what this comment used to
 # claim. #2780's reporter power-cycled both affected printers and the state
 # survived it, and ``openssl s_client`` against the same port completes a clean
-# handshake and returns a valid certificate while Bambuddy is failing. The
+# handshake and returns a valid certificate while Fenrir is failing. The
 # leading theory is now a connection-count refusal — vsFTPd answers one in
 # cleartext, which is exactly this error to an implicit-TLS client, and answers
 # the global limit by accepting and never speaking, which is the handshake
@@ -1444,7 +1444,7 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
     (FAT32/exFAT)." #2899's reporter got that after a TLS handshake failure and
     restarted the printer, which could not have helped -- the handshake never
     reached the printer's filesystem, and the state that produced it lives in
-    Bambuddy's own memory. #2780 had already removed advice from this failure's
+    Fenrir's own memory. #2780 had already removed advice from this failure's
     *log* line for the same reason; it survived in the string people read.
 
     So the card is named only where the printer itself raised storage, and
@@ -1471,13 +1471,13 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
         )
     if failure.kind is FtpFailureKind.COOLOFF:
         return (
-            "Bambuddy is holding off from this printer's file service after a recent failed TLS handshake, "
+            "Fenrir is holding off from this printer's file service after a recent failed TLS handshake, "
             "so the file was not sent. This clears on its own within a few minutes."
         )
     if failure.kind is FtpFailureKind.AUTH:
         return (
             "The printer refused the file transfer connection. If the printer's access code changed, "
-            "update it on Bambuddy's Printers page."
+            "update it on Fenrir's Printers page."
         )
     if failure.kind is FtpFailureKind.TIMEOUT:
         return (
@@ -1486,7 +1486,7 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
         )
     if failure.kind is FtpFailureKind.NOT_FOUND:
         return (
-            "The printer rejected the upload path (550). See the server log — this is a Bambuddy-side "
+            "The printer rejected the upload path (550). See the server log — this is a Fenrir-side "
             "problem, not something to fix on the printer."
         )
     return (
@@ -1853,7 +1853,7 @@ async def download_file_try_paths_async(
     # worker walking the remaining paths -- still holding the printer's FTP
     # socket -- long after this coroutine had given up on it. A reporter's log
     # shows one of those still going as the archive flow's own download landed,
-    # two Bambuddy transfers deep into a P1S that was mid-print (#2957). The
+    # two Fenrir transfers deep into a P1S that was mid-print (#2957). The
     # flag stops it at the next chunk instead.
     cancel = threading.Event()
     done = threading.Event()

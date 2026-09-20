@@ -316,7 +316,7 @@ Three rules, in the order that matters:
 
 ### Why this survives theming
 
-Bambuddy has six background palettes, six accents, four style effects and a
+Fenrir has six background palettes, six accents, four style effects and a
 light mode. Every value above is an existing CSS variable or a `color-mix` over
 one, so the treatment follows all of them for free:
 

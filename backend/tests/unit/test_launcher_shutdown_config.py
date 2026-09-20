@@ -1,4 +1,4 @@
-"""Every launcher must be able to shut Bambuddy down gracefully.
+"""Every launcher must be able to shut Fenrir down gracefully.
 
 Two defects, found together, both invisible until you look for them:
 
@@ -126,7 +126,7 @@ class TestInstallScript:
 class TestWindowsService:
     def test_nssm_registration_bounds_the_shutdown(self):
         bat = _read("installers/windows/service/install-service.bat")
-        install_line = next(line for line in _uvicorn_lines(bat) if "install Bambuddy" in line)
+        install_line = next(line for line in _uvicorn_lines(bat) if "install Fenrir" in line)
         assert FLAG in install_line, install_line
 
     def test_nssm_waits_long_enough_for_the_ctrl_c_stop(self):

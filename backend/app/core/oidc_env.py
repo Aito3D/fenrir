@@ -1,4 +1,4 @@
-"""Read the single OIDC provider defined by BAMBUDDY_OIDC_* env vars (#2593).
+"""Read the single OIDC provider defined by FENRIR_OIDC_* env vars (#2593).
 
 A declarative deployment (compose, Helm, GitOps) has no way to click through
 the settings UI, so one provider can be configured entirely from the
@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 
 from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.core.env_compat import env_get
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,10 @@ logger = logging.getLogger(__name__)
 # database and then fail at authorize time, long after the operator could
 # connect the failure to a typo in their compose file.
 _REQUIRED = (
-    "BAMBUDDY_OIDC_NAME",
-    "BAMBUDDY_OIDC_ISSUER_URL",
-    "BAMBUDDY_OIDC_CLIENT_ID",
-    "BAMBUDDY_OIDC_CLIENT_SECRET",
+    "FENRIR_OIDC_NAME",
+    "FENRIR_OIDC_ISSUER_URL",
+    "FENRIR_OIDC_CLIENT_ID",
+    "FENRIR_OIDC_CLIENT_SECRET",
 )
 
 _TRUTHY = {"true", "1", "yes"}
@@ -34,7 +35,7 @@ _FALSY = {"false", "0", "no"}
 
 
 class EnvOIDCConfigError(Exception):
-    """A BAMBUDDY_OIDC_* value the reader cannot interpret. Only ever carries a
+    """A FENRIR_OIDC_* value the reader cannot interpret. Only ever carries a
     boolean variable's name and value -- booleans are not secret, so the message
     is safe to log in full (unlike client_secret, which never reaches here)."""
 
@@ -48,7 +49,7 @@ def env_bool(key: str, default: bool, *, strict: bool = True) -> bool:
     default instead -- for a caller on a request path where a raise would be a
     500, not a skipped startup config (see _local_login_env_bypass).
     """
-    value = os.environ.get(key)
+    value = env_get(key)
     if value is None or value.strip() == "":
         return default  # absent or blank == unset -> default, per the module's promise
     norm = value.strip().lower()
@@ -64,7 +65,7 @@ def env_bool(key: str, default: bool, *, strict: bool = True) -> bool:
 def read_env_oidc_config() -> dict | None:
     """The provider's fields from the environment, or None if it isn't configured.
 
-    An empty required var counts as unset -- `BAMBUDDY_OIDC_CLIENT_SECRET=` in
+    An empty required var counts as unset -- `FENRIR_OIDC_CLIENT_SECRET=` in
     a compose file is a forgotten value, not an intentional empty secret. Blank
     means blank *after* stripping, and the surviving value is stripped too: a
     Kubernetes Secret written as a block scalar (``stringData: secret: |``) or
@@ -74,28 +75,28 @@ def read_env_oidc_config() -> dict | None:
     with httpx.InvalidURL on the first click of the SSO button, which is the
     authorize-time failure the all-or-nothing rule above exists to prevent.
     """
-    required = {key: (os.environ.get(key) or "").strip() for key in _REQUIRED}
+    required = {key: (env_get(key) or "").strip() for key in _REQUIRED}
     if not all(required.values()):
         return None
 
     return {
-        "name": required["BAMBUDDY_OIDC_NAME"],
-        "issuer_url": required["BAMBUDDY_OIDC_ISSUER_URL"],
-        "client_id": required["BAMBUDDY_OIDC_CLIENT_ID"],
-        "client_secret": required["BAMBUDDY_OIDC_CLIENT_SECRET"],
-        "scopes": (os.environ.get("BAMBUDDY_OIDC_SCOPES") or "").strip() or "openid email profile",
-        "is_enabled": env_bool("BAMBUDDY_OIDC_ENABLED", True),
-        "auto_create_users": env_bool("BAMBUDDY_OIDC_AUTO_CREATE_USERS", False),
-        "auto_link_existing_accounts": env_bool("BAMBUDDY_OIDC_AUTO_LINK_EXISTING", False),
-        "email_claim": (os.environ.get("BAMBUDDY_OIDC_EMAIL_CLAIM") or "").strip() or "email",
-        "require_email_verified": env_bool("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", True),
-        "icon_url": (os.environ.get("BAMBUDDY_OIDC_ICON_URL") or "").strip() or None,
-        "is_autologin": env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
+        "name": required["FENRIR_OIDC_NAME"],
+        "issuer_url": required["FENRIR_OIDC_ISSUER_URL"],
+        "client_id": required["FENRIR_OIDC_CLIENT_ID"],
+        "client_secret": required["FENRIR_OIDC_CLIENT_SECRET"],
+        "scopes": (env_get("FENRIR_OIDC_SCOPES") or "").strip() or "openid email profile",
+        "is_enabled": env_bool("FENRIR_OIDC_ENABLED", True),
+        "auto_create_users": env_bool("FENRIR_OIDC_AUTO_CREATE_USERS", False),
+        "auto_link_existing_accounts": env_bool("FENRIR_OIDC_AUTO_LINK_EXISTING", False),
+        "email_claim": (env_get("FENRIR_OIDC_EMAIL_CLAIM") or "").strip() or "email",
+        "require_email_verified": env_bool("FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED", True),
+        "icon_url": (env_get("FENRIR_OIDC_ICON_URL") or "").strip() or None,
+        "is_autologin": env_bool("FENRIR_OIDC_AUTOLOGIN", False),
         # A name, not an id: ids are assigned per install, so the same compose
         # file would point at a different group on every deployment. Resolved
         # against the database in apply_env_oidc_provider -- the reader has no
         # session and stays dumb.
-        "default_group": (os.environ.get("BAMBUDDY_OIDC_DEFAULT_GROUP") or "").strip() or None,
+        "default_group": (env_get("FENRIR_OIDC_DEFAULT_GROUP") or "").strip() or None,
     }
 
 
@@ -131,7 +132,7 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
         await _apply_env_oidc_provider(db)
     except Exception as exc:  # noqa: BLE001 -- startup must survive any failure here
         # Never str(exc): a DB error message can echo a configured value. Class only.
-        logger.error("BAMBUDDY_OIDC_* could not be applied: %s", type(exc).__name__)
+        logger.error("FENRIR_OIDC_* could not be applied: %s", type(exc).__name__)
         # A commit may have half-applied; roll back so the shared session is
         # left clean for the rest of startup. Suppressed because rollback on a
         # wedged connection can itself raise -- and the whole point here is that
@@ -154,7 +155,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
         # Same disposition as a ValidationError or an unmatched DEFAULT_GROUP:
         # log clearly and leave any running provider as it was. Safe to log the
         # full message -- EnvOIDCConfigError only ever carries a boolean var.
-        logger.error("BAMBUDDY_OIDC_* config rejected, provider not applied: %s", exc)
+        logger.error("FENRIR_OIDC_* config rejected, provider not applied: %s", exc)
         return
 
     if config is None:
@@ -181,7 +182,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
             # would silently make it the autologin target again.
             released.is_autologin = False
             logger.info(
-                "BAMBUDDY_OIDC_* is unset -- provider %r disabled and released to the UI.",
+                "FENRIR_OIDC_* is unset -- provider %r disabled and released to the UI.",
                 released.name,
             )
         if released_rows:
@@ -208,7 +209,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
             # boot nothing is created at all and the login page has no SSO
             # button until the name matches.
             logger.error(
-                "BAMBUDDY_OIDC_DEFAULT_GROUP=%r matches no group, provider not applied (%s).",
+                "FENRIR_OIDC_DEFAULT_GROUP=%r matches no group, provider not applied (%s).",
                 group_name,
                 "previous config left running" if existing is not None else "no provider created",
             )
@@ -221,9 +222,9 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
         validated = OIDCProviderCreate(**config)
     except ValidationError as exc:
         # errors(include_input=False) strips the submitted values -- str(exc)
-        # embeds input_value=... and would leak BAMBUDDY_OIDC_CLIENT_SECRET.
+        # embeds input_value=... and would leak FENRIR_OIDC_CLIENT_SECRET.
         logger.error(
-            "BAMBUDDY_OIDC_* config rejected, provider not applied: %s",
+            "FENRIR_OIDC_* config rejected, provider not applied: %s",
             exc.errors(include_input=False),
         )
         return
@@ -231,7 +232,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
         # Log only the exception class, never str(exc): an unexpected error here
         # could carry a configured value in its message. Structural guarantee,
         # not one contingent on which exceptions the schema validators raise.
-        logger.error("BAMBUDDY_OIDC_* config could not be applied: %s", type(exc).__name__)
+        logger.error("FENRIR_OIDC_* config could not be applied: %s", type(exc).__name__)
         return
 
     # Computed before `existing` is reassigned below: a freshly-created row is
@@ -248,7 +249,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
     existing.is_env_managed = True
     await db.flush()  # the id is needed by the sweeps below
 
-    # Renaming BAMBUDDY_OIDC_NAME matches nothing, so the row managed until now
+    # Renaming FENRIR_OIDC_NAME matches nothing, so the row managed until now
     # stays behind. Left flagged it would keep a stale issuer and secret on the
     # login page while the API refuses every edit, disable and delete on it
     # (409) -- the dead end reachable only through the database that the release
@@ -271,7 +272,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
     if adopted_ui_provider:
         logger.warning(
             "Env-managed OIDC provider %r adopted an existing UI-created provider of the "
-            "same name; its issuer, client and secret are now managed by BAMBUDDY_OIDC_*.",
+            "same name; its issuer, client and secret are now managed by FENRIR_OIDC_*.",
             existing.name,
         )
     else:

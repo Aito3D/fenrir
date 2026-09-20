@@ -276,7 +276,7 @@ Expected: all PASS, build exit 0.
 
 - [ ] **Step 7: Full suite**
 
-Run: `cd /Users/paultheis/Documents/Code/bambuddy && ./test_frontend.sh`
+Run: `cd /Users/paultheis/Documents/Code/fenrir && ./test_frontend.sh`
 Expected: PASS (known-flaky PrintModal.test.tsx tolerated only if it passes standalone).
 
 - [ ] **Step 8: Commit**

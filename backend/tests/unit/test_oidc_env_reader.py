@@ -1,4 +1,4 @@
-"""BAMBUDDY_OIDC_* reader (#2593).
+"""FENRIR_OIDC_* reader (#2593).
 
 The reader is deliberately dumb: it maps env vars to field names and applies
 defaults. Whether the resulting provider is *valid* is decided later, by the
@@ -13,22 +13,22 @@ import pytest
 from backend.app.core.oidc_env import EnvOIDCConfigError, env_bool, read_env_oidc_config
 
 REQUIRED = {
-    "BAMBUDDY_OIDC_NAME": "Keycloak",
-    "BAMBUDDY_OIDC_ISSUER_URL": "https://sso.example.com/realms/main",
-    "BAMBUDDY_OIDC_CLIENT_ID": "bambuddy",
-    "BAMBUDDY_OIDC_CLIENT_SECRET": "s3cr3t",
+    "FENRIR_OIDC_NAME": "Keycloak",
+    "FENRIR_OIDC_ISSUER_URL": "https://sso.example.com/realms/main",
+    "FENRIR_OIDC_CLIENT_ID": "fenrir",
+    "FENRIR_OIDC_CLIENT_SECRET": "s3cr3t",
 }
 
 OPTIONAL = (
-    "BAMBUDDY_OIDC_SCOPES",
-    "BAMBUDDY_OIDC_ENABLED",
-    "BAMBUDDY_OIDC_AUTO_CREATE_USERS",
-    "BAMBUDDY_OIDC_AUTO_LINK_EXISTING",
-    "BAMBUDDY_OIDC_EMAIL_CLAIM",
-    "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
-    "BAMBUDDY_OIDC_ICON_URL",
-    "BAMBUDDY_OIDC_AUTOLOGIN",
-    "BAMBUDDY_OIDC_DEFAULT_GROUP",
+    "FENRIR_OIDC_SCOPES",
+    "FENRIR_OIDC_ENABLED",
+    "FENRIR_OIDC_AUTO_CREATE_USERS",
+    "FENRIR_OIDC_AUTO_LINK_EXISTING",
+    "FENRIR_OIDC_EMAIL_CLAIM",
+    "FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED",
+    "FENRIR_OIDC_ICON_URL",
+    "FENRIR_OIDC_AUTOLOGIN",
+    "FENRIR_OIDC_DEFAULT_GROUP",
 )
 
 
@@ -59,7 +59,7 @@ def test_returns_none_when_any_single_required_var_is_missing(monkeypatch, missi
 @pytest.mark.parametrize("raw", ["", "   ", "\n", " \t\n "])
 @pytest.mark.parametrize("key", sorted(REQUIRED))
 def test_an_empty_required_var_counts_as_unset(monkeypatch, key, raw):
-    """`BAMBUDDY_OIDC_CLIENT_SECRET=` in a compose file is a forgotten value,
+    """`FENRIR_OIDC_CLIENT_SECRET=` in a compose file is a forgotten value,
     not an intentional empty secret -- and neither is one holding only
     whitespace, which the optional vars have always treated as unset."""
     _set_required(monkeypatch)
@@ -79,10 +79,10 @@ def test_a_required_var_is_stripped(monkeypatch, key):
 
     cfg = read_env_oidc_config()
     field = {
-        "BAMBUDDY_OIDC_NAME": "name",
-        "BAMBUDDY_OIDC_ISSUER_URL": "issuer_url",
-        "BAMBUDDY_OIDC_CLIENT_ID": "client_id",
-        "BAMBUDDY_OIDC_CLIENT_SECRET": "client_secret",
+        "FENRIR_OIDC_NAME": "name",
+        "FENRIR_OIDC_ISSUER_URL": "issuer_url",
+        "FENRIR_OIDC_CLIENT_ID": "client_id",
+        "FENRIR_OIDC_CLIENT_SECRET": "client_secret",
     }[key]
     assert cfg[field] == REQUIRED[key]
 
@@ -92,7 +92,7 @@ def test_reads_the_required_vars(monkeypatch):
     cfg = read_env_oidc_config()
     assert cfg["name"] == "Keycloak"
     assert cfg["issuer_url"] == "https://sso.example.com/realms/main"
-    assert cfg["client_id"] == "bambuddy"
+    assert cfg["client_id"] == "fenrir"
     assert cfg["client_secret"] == "s3cr3t"
 
 
@@ -112,14 +112,14 @@ def test_applies_the_documented_defaults(monkeypatch):
 @pytest.mark.parametrize("raw", ["true", "TRUE", "True", "1", "yes", "YES", " yes "])
 def test_booleans_accept_the_project_truthy_spellings(monkeypatch, raw):
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_AUTO_CREATE_USERS", raw)
+    monkeypatch.setenv("FENRIR_OIDC_AUTO_CREATE_USERS", raw)
     assert read_env_oidc_config()["auto_create_users"] is True
 
 
 @pytest.mark.parametrize("raw", ["false", "FALSE", "False", "0", "no", "NO"])
 def test_falsy_values_are_false(monkeypatch, raw):
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_AUTO_CREATE_USERS", raw)
+    monkeypatch.setenv("FENRIR_OIDC_AUTO_CREATE_USERS", raw)
     assert read_env_oidc_config()["auto_create_users"] is False
 
 
@@ -129,21 +129,21 @@ def test_an_unrecognized_boolean_is_rejected(monkeypatch, raw):
     not silently turn a flag on or off -- it must refuse the whole config
     instead of guessing (M-R4 strict boolean parsing)."""
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_AUTO_CREATE_USERS", raw)
-    with pytest.raises(EnvOIDCConfigError, match="BAMBUDDY_OIDC_AUTO_CREATE_USERS"):
+    monkeypatch.setenv("FENRIR_OIDC_AUTO_CREATE_USERS", raw)
+    with pytest.raises(EnvOIDCConfigError, match="FENRIR_OIDC_AUTO_CREATE_USERS"):
         read_env_oidc_config()
 
 
 def test_a_boolean_default_of_true_can_be_turned_off(monkeypatch):
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", "false")
+    monkeypatch.setenv("FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED", "false")
     assert read_env_oidc_config()["require_email_verified"] is False
 
 
 # --- env_bool, tested directly ------------------------------------------------
 # The reader-level tests above pin the contract through read_env_oidc_config;
 # these exercise the helper itself so its default/blank/reject behavior is
-# proven independently of any particular BAMBUDDY_OIDC_* field.
+# proven independently of any particular FENRIR_OIDC_* field.
 
 
 @pytest.mark.parametrize("raw", ["false", "FALSE", "0", "no", "NO"])
@@ -175,7 +175,7 @@ def test_env_bool_rejects_an_unrecognized_value(monkeypatch, raw):
 @pytest.mark.parametrize("raw", ["on", "enabled", "y", "nonsense"])
 @pytest.mark.parametrize("default", [True, False])
 def test_env_bool_lenient_falls_back_to_default_on_unrecognized(monkeypatch, raw, default):
-    """strict=False (the request-path callers like BAMBUDDY_LOCAL_LOGIN): an
+    """strict=False (the request-path callers like FENRIR_LOCAL_LOGIN): an
     unrecognized value must return the default, never raise -- a raise there
     would 500 a live endpoint rather than skip a startup config."""
     monkeypatch.setenv("SOME_FLAG", raw)
@@ -184,9 +184,9 @@ def test_env_bool_lenient_falls_back_to_default_on_unrecognized(monkeypatch, raw
 
 def test_optional_strings_override_their_defaults(monkeypatch):
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_SCOPES", "openid profile groups")
-    monkeypatch.setenv("BAMBUDDY_OIDC_EMAIL_CLAIM", "mail")
-    monkeypatch.setenv("BAMBUDDY_OIDC_ICON_URL", "https://sso.example.com/logo.png")
+    monkeypatch.setenv("FENRIR_OIDC_SCOPES", "openid profile groups")
+    monkeypatch.setenv("FENRIR_OIDC_EMAIL_CLAIM", "mail")
+    monkeypatch.setenv("FENRIR_OIDC_ICON_URL", "https://sso.example.com/logo.png")
     cfg = read_env_oidc_config()
     assert cfg["scopes"] == "openid profile groups"
     assert cfg["email_claim"] == "mail"
@@ -195,26 +195,26 @@ def test_optional_strings_override_their_defaults(monkeypatch):
 
 @pytest.mark.parametrize("raw", ["", "   "])
 def test_a_blank_scopes_is_unset(monkeypatch, raw):
-    """`BAMBUDDY_OIDC_SCOPES=` in a compose file is a forgotten value, not a
+    """`FENRIR_OIDC_SCOPES=` in a compose file is a forgotten value, not a
     request for a provider with no scopes -- same rule as default_group."""
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_SCOPES", raw)
+    monkeypatch.setenv("FENRIR_OIDC_SCOPES", raw)
     assert read_env_oidc_config()["scopes"] == "openid email profile"
 
 
 @pytest.mark.parametrize("raw", ["", "   "])
 def test_a_blank_email_claim_is_unset(monkeypatch, raw):
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_EMAIL_CLAIM", raw)
+    monkeypatch.setenv("FENRIR_OIDC_EMAIL_CLAIM", raw)
     assert read_env_oidc_config()["email_claim"] == "email"
 
 
 @pytest.mark.parametrize("raw", ["", "   "])
 def test_a_blank_icon_url_is_unset(monkeypatch, raw):
-    """Uncommenting `# BAMBUDDY_OIDC_ICON_URL=` in .env.example must not take
+    """Uncommenting `# FENRIR_OIDC_ICON_URL=` in .env.example must not take
     the provider down -- the reader must still return a config, not refuse it."""
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_ICON_URL", raw)
+    monkeypatch.setenv("FENRIR_OIDC_ICON_URL", raw)
     cfg = read_env_oidc_config()
     assert cfg is not None, "a blank optional var must not refuse the whole provider"
     assert cfg["icon_url"] is None
@@ -224,7 +224,7 @@ def test_the_default_group_is_read_as_a_name(monkeypatch):
     """A name, not an id: group ids differ per install, so an id in a compose
     file would point at whatever group happened to be created third."""
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_DEFAULT_GROUP", "Operators")
+    monkeypatch.setenv("FENRIR_OIDC_DEFAULT_GROUP", "Operators")
     cfg = read_env_oidc_config()
     assert cfg["default_group"] == "Operators"
     assert "default_group_id" not in cfg, "resolution needs the database, not the reader"
@@ -233,12 +233,12 @@ def test_the_default_group_is_read_as_a_name(monkeypatch):
 @pytest.mark.parametrize("raw", ["", "   "])
 def test_a_blank_default_group_is_unset(monkeypatch, raw):
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_DEFAULT_GROUP", raw)
+    monkeypatch.setenv("FENRIR_OIDC_DEFAULT_GROUP", raw)
     assert read_env_oidc_config()["default_group"] is None
 
 
 def test_every_var_the_reader_knows_is_registered_in_the_typo_guard():
-    """An unregistered BAMBUDDY_* var logs "possible typo" at every boot, which
+    """An unregistered FENRIR_* var logs "possible typo" at every boot, which
     would tell operators their correct config is wrong. Asserted against the
     reader's own vars rather than a copied list, so a var added later is caught
     here instead of in someone's logs."""

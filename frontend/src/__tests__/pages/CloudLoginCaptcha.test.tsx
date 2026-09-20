@@ -2,7 +2,7 @@
  * Bambu Cloud sign-in when Bambu is challenging the network with a CAPTCHA (#2790).
  *
  * The backend answers `reason: 'captcha'`, meaning no credential will be
- * accepted until the challenge clears and there is nothing in Bambuddy that can
+ * accepted until the challenge clears and there is nothing in Fenrir that can
  * answer it. A toast is the wrong shape for that: it names a problem the user
  * cannot act on and then disappears. The reporter saw Bambu's own sentence,
  * "We need you to confirm you are not a robot", flash by with no challenge

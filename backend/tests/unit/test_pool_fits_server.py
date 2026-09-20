@@ -63,7 +63,7 @@ async def _run_check(*, pool_size, max_overflow, max_conn, reserved, in_use=0, s
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_warns_when_the_ceiling_exceeds_what_the_server_allows(caplog):
-    """Bambuddy's own PostgreSQL default against a stock server: 100 vs 100-3."""
+    """Fenrir's own PostgreSQL default against a stock server: 100 vs 100-3."""
     with caplog.at_level(logging.WARNING, logger="backend.app.core.database"):
         await _run_check(pool_size=20, max_overflow=80, max_conn=100, reserved=3)
 
@@ -101,7 +101,7 @@ async def test_both_sides_are_recorded_for_the_support_bundle():
     assert limits == {
         "max_connections": 100,
         "superuser_reserved_connections": 3,
-        "available_to_bambuddy": 97,
+        "available_to_fenrir": 97,
         "client_backends_at_startup": 41,
         "pool_ceiling_per_worker": 100,
     }

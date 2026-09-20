@@ -1,6 +1,6 @@
 """Slot-to-tray mapping fallbacks on the Spoolman path (#2768).
 
-Bambuddy only learns a print's slot-to-tray mapping at print start when it can
+Fenrir only learns a print's slot-to-tray mapping at print start when it can
 intercept the command on the printer's local MQTT request topic, or when the
 print came from its own queue. A print dispatched from Bambu Studio while the
 printer is cloud-bound satisfies neither: the command travels through Bambu's
@@ -215,7 +215,7 @@ class TestReportUsageUsesTheFallback:
 
     @pytest.mark.asyncio
     async def test_a_stored_mapping_is_never_second_guessed(self):
-        """Print start captured the real ams_mapping (LAN print, or a Bambuddy
+        """Print start captured the real ams_mapping (LAN print, or a Fenrir
         queue job). That is the slicer's own instruction and outranks anything
         read back off the printer, whose mapping field may still describe an
         earlier job."""

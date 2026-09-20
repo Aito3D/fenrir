@@ -294,7 +294,7 @@ Service names (`Scan3D`, `Modelisation3D`, `Impression3D`, `Usinage`) are
 **product names and stay untranslated** — they are the workshop's own service
 catalogue, not prose. They go in the locale files as identical values across
 languages, which means `check-i18n-parity.mjs` needs them added to its
-allowlist, exactly as `Zoho` and `Bambuddy` already are.
+allowlist, exactly as `Zoho` and `Fenrir` already are.
 
 ## Out of scope
 

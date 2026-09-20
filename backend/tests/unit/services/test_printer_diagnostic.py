@@ -574,7 +574,7 @@ class TestExternalStorageCheck:
 
     async def test_the_file_being_there_outranks_the_toggle(self):
         """Same printer with the toggle off. The check exists to say whether
-        Bambuddy can read the print file, and the probe just proved it can --
+        Fenrir can read the print file, and the probe just proved it can --
         telling this user to switch something on would be advice for a problem
         they do not have.
         """

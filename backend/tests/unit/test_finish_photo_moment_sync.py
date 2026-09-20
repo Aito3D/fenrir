@@ -229,7 +229,7 @@ async def test_consumer_wait_unblocked_when_producer_completes(patched_env, monk
 
 
 async def test_finish_state_prefers_banked_frame_when_end_gcode_was_injected(patched_env, monkeypatch):
-    """#1867: when Bambuddy injected End G-code, a SwapMod snippet may already
+    """#1867: when Fenrir injected End G-code, a SwapMod snippet may already
     have ejected the plate by FINISH — so the banked in-print frame is used and
     the live grab must not run."""
     print_dispatch_context.mark_pending(patched_env.id)
@@ -802,7 +802,7 @@ class TestMaxZResolution:
         assert height is None
 
     async def test_proceeds_when_a_layer_count_is_simply_unknown(self, resolver_env):
-        """Absent is not the same as contradictory — a print Bambuddy has no
+        """Absent is not the same as contradictory — a print Fenrir has no
         layer count for still gets its height, because the name matched."""
         resolver_env["reported_layers"] = 0
         assert (

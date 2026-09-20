@@ -1,7 +1,7 @@
 """The skip-objects list has to survive a restart mid-print.
 
 ``PrinterState.printable_objects`` is in-memory and is filled by the print-start
-path, which the #1304 guard suppresses on the first RUNNING push after Bambuddy
+path, which the #1304 guard suppresses on the first RUNNING push after Fenrir
 comes back up. So a restart during a print left the list empty for the rest of
 that print: the printer card gates its Skip button on the object count, and the
 one endpoint that can rebuild the list is reachable only from the modal that
@@ -51,7 +51,7 @@ class TestRestartRecovery:
 
     @pytest.mark.asyncio
     async def test_a_list_that_is_already_loaded_is_left_alone(self):
-        """The hook also fires on a reconnect during a print Bambuddy saw start.
+        """The hook also fires on a reconnect during a print Fenrir saw start.
         Reloading there would discard what the user has already skipped, which
         only lives alongside the object list."""
         from backend.app.main import _restore_printable_objects
@@ -120,7 +120,7 @@ class TestRestartRecovery:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch("backend.app.main.printer_manager") as pm,
-            patch("backend.app.main._is_bambuddy_authorized_print", new=AsyncMock(return_value=True)),
+            patch("backend.app.main._is_fenrir_authorized_print", new=AsyncMock(return_value=True)),
             patch("backend.app.main._restore_usage_tracking_session", new=AsyncMock()),
             patch("backend.app.main._restore_printable_objects", new=AsyncMock()) as restore,
         ):

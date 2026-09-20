@@ -1,8 +1,8 @@
 """Regression for #1485 follow-up: timelapse baseline on restart-recovery.
 
-When Bambuddy restarts mid-print, the first MQTT push has
+When Fenrir restarts mid-print, the first MQTT push has
 ``_previous_gcode_state = None`` which the #1304 guard treats as "first push
-after Bambuddy startup, don't fire on_print_start" — avoiding duplicate
+after Fenrir startup, don't fire on_print_start" — avoiding duplicate
 archive creation. But that path is also where ``_capture_timelapse_baseline_at_start``
 lives, so without a separate hook the baseline is never captured. The
 completion-time scan then falls into its "take baseline now" fallback
@@ -95,7 +95,7 @@ async def test_running_observed_captures_baseline_on_restart_recovery():
 
 @pytest.mark.asyncio
 async def test_running_observed_skips_when_baseline_already_present():
-    """If on_print_start already ran in this Bambuddy process for the same
+    """If on_print_start already ran in this Fenrir process for the same
     printer (the realistic same-session race), a second capture would
     overwrite the correct pre-print baseline with one taken later — which
     could include the in-flight MP4. Ownership restore AND the catch-up
@@ -126,7 +126,7 @@ async def test_running_observed_skips_when_baseline_already_present():
         mock_session_maker.assert_called_once()
         mock_list.assert_not_called()
         # The archive lookup is not skipped with the baseline: a print started
-        # while Bambuddy was down still needs its archive row reattached or
+        # while Fenrir was down still needs its archive row reattached or
         # created (fork's catch-up path).
         mock_catch_up.assert_awaited_once()
         assert mock_catch_up.await_args.kwargs.get("catch_up") is True

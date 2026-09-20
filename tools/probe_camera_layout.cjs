@@ -1,7 +1,7 @@
 // Snapshot probe: camera-grid pure layout/highlight logic over the full state
-// matrix. Bundle produced by rolldown into /tmp/bambuddy-refactor-probe/ by the
+// matrix. Bundle produced by rolldown into /tmp/fenrir-refactor-probe/ by the
 // probe command in PROBES.json before this script runs.
-const m = require("/tmp/bambuddy-refactor-probe/cameraGridLayout.cjs");
+const m = require("/tmp/fenrir-refactor-probe/cameraGridLayout.cjs");
 
 const states = ["RUNNING", "PAUSE", "FINISH", "FAILED", "IDLE", null];
 const bools = [false, true];

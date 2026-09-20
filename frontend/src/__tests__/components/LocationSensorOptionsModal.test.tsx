@@ -90,13 +90,13 @@ describe('LocationSensorOptionsModal', () => {
 
     await waitFor(() =>
       expect(window.localStorage.setItem).toHaveBeenCalledWith(
-        'bambuddy-location-sensor-show-on-card-defaults',
+        'fenrir-location-sensor-show-on-card-defaults',
         expect.stringContaining('"temperature":true')
       )
     );
     const written = vi
       .mocked(window.localStorage.setItem)
-      .mock.calls.find((call) => call[0] === 'bambuddy-location-sensor-show-on-card-defaults')?.[1];
+      .mock.calls.find((call) => call[0] === 'fenrir-location-sensor-show-on-card-defaults')?.[1];
     expect(written).not.toContain('alertAbove');
     expect(written).not.toContain('notifyOnAlert');
   });
@@ -146,9 +146,9 @@ describe('LocationSensorOptionsModal', () => {
     await user.selectOptions(screen.getByLabelText(/optimal value color/i), 'blue');
     await user.click(screen.getByRole('button', { name: /save/i }));
 
-    expect(window.localStorage.setItem).toHaveBeenCalledWith('bambuddy-location-sensor-alert-above-color', 'orange');
-    expect(window.localStorage.setItem).toHaveBeenCalledWith('bambuddy-location-sensor-alert-below-color', 'purple');
-    expect(window.localStorage.setItem).toHaveBeenCalledWith('bambuddy-location-sensor-alert-optimal-color', 'blue');
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('fenrir-location-sensor-alert-above-color', 'orange');
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('fenrir-location-sensor-alert-below-color', 'purple');
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('fenrir-location-sensor-alert-optimal-color', 'blue');
   });
 
   it('loads the current poll interval and saves a changed value', async () => {
@@ -283,11 +283,11 @@ describe('LocationSensorOptionsModal', () => {
     // PATCH must leave every local preference untouched — the error toast
     // says nothing was saved, and that has to stay true.
     const writtenKeys = vi.mocked(window.localStorage.setItem).mock.calls.map((call) => call[0]);
-    expect(writtenKeys).not.toContain('bambuddy-location-sensor-show-on-card-defaults');
-    expect(writtenKeys).not.toContain('bambuddy-location-sensor-colorize-values');
-    expect(writtenKeys).not.toContain('bambuddy-location-sensor-alert-above-color');
-    expect(writtenKeys).not.toContain('bambuddy-location-sensor-alert-below-color');
-    expect(writtenKeys).not.toContain('bambuddy-location-sensor-alert-optimal-color');
+    expect(writtenKeys).not.toContain('fenrir-location-sensor-show-on-card-defaults');
+    expect(writtenKeys).not.toContain('fenrir-location-sensor-colorize-values');
+    expect(writtenKeys).not.toContain('fenrir-location-sensor-alert-above-color');
+    expect(writtenKeys).not.toContain('fenrir-location-sensor-alert-below-color');
+    expect(writtenKeys).not.toContain('fenrir-location-sensor-alert-optimal-color');
   });
 
   it('clamps a poll interval below the 60s minimum on blur', async () => {
@@ -385,7 +385,7 @@ describe('LocationSensorOptionsModal', () => {
     // The render itself writes unrelated keys (theme), so scope this to the
     // preferences Save owns.
     const written = vi.mocked(window.localStorage.setItem).mock.calls.map(([key]) => key);
-    expect(written.filter((key) => String(key).startsWith('bambuddy-location-sensor'))).toEqual([]);
+    expect(written.filter((key) => String(key).startsWith('fenrir-location-sensor'))).toEqual([]);
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -435,7 +435,7 @@ describe('LocationSensorOptionsModal', () => {
     await user.click(screen.getByRole('button', { name: /cancel/i }));
 
     expect(window.localStorage.setItem).not.toHaveBeenCalledWith(
-      'bambuddy-location-sensor-auto-add-defaults',
+      'fenrir-location-sensor-auto-add-defaults',
       expect.anything()
     );
     expect(onClose).toHaveBeenCalled();

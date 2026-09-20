@@ -179,7 +179,7 @@ def _start_error_server(missing_packages: list):
     html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>Bambuddy - Setup Required</title>
+    <title>Fenrir - Setup Required</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -216,8 +216,8 @@ def _start_error_server(missing_packages: list):
         <div class="command">pip install -r requirements.txt</div>
         <p>Or if using a virtual environment:</p>
         <div class="command">./venv/bin/pip install -r requirements.txt</div>
-        <p class="note">After installing, restart Bambuddy:<br>
-        <code>sudo systemctl restart bambuddy</code></p>
+        <p class="note">After installing, restart Fenrir:<br>
+        <code>sudo systemctl restart fenrir</code></p>
     </div>
 </body>
 </html>"""
@@ -376,7 +376,7 @@ if not app_settings.debug:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("paho.mqtt").setLevel(logging.WARNING)
 
-logging.info("Bambuddy starting - debug=%s, log_level=%s", app_settings.debug, log_level_str)
+logging.info("Fenrir starting - debug=%s, log_level=%s", app_settings.debug, log_level_str)
 
 
 # Track active prints: {(printer_id, filename): archive_id}
@@ -729,7 +729,7 @@ _ACTIVE_PRINT_STATES: set[str] = {"RUNNING", "PRINTING", "PAUSE"}
 
 
 def _build_status_print_keys(printer_id: int, state: PrinterState) -> list[tuple[int, str]]:
-    """Build filename keys for matching a printer status update to Bambuddy-owned jobs."""
+    """Build filename keys for matching a printer status update to Fenrir-owned jobs."""
 
     possible_keys: list[tuple[int, str]] = []
     filename = (state.gcode_file or state.current_print or "").strip()
@@ -764,7 +764,7 @@ def _build_status_print_keys(printer_id: int, state: PrinterState) -> list[tuple
     return possible_keys
 
 
-def _is_bambuddy_authorized_print_in_memory(printer_id: int, state: PrinterState) -> bool:
+def _is_fenrir_authorized_print_in_memory(printer_id: int, state: PrinterState) -> bool:
     """Check the cheap, process-local print ownership signals."""
 
     if printer_manager.get_current_print_user(printer_id):
@@ -793,20 +793,20 @@ async def _is_printer_kill_switch_enabled_cached() -> bool:
     return enabled
 
 
-async def _is_bambuddy_authorized_print(printer_id: int, state: PrinterState, db) -> bool | None:
-    """Resolve whether the current print was started by Bambuddy.
+async def _is_fenrir_authorized_print(printer_id: int, state: PrinterState, db) -> bool | None:
+    """Resolve whether the current print was started by Fenrir.
 
     ``None`` means identity is not yet safe to decide. The kill switch must
     defer in that case: stopping a print is irreversible, and the first status
     frames after a restart may arrive before all subtask fields are populated.
     """
 
-    if _is_bambuddy_authorized_print_in_memory(printer_id, state):
+    if _is_fenrir_authorized_print_in_memory(printer_id, state):
         return True
 
     possible_keys = _build_status_print_keys(printer_id, state)
 
-    # In-memory ownership is lost on every Bambuddy restart, so fall back to what
+    # In-memory ownership is lost on every Fenrir restart, so fall back to what
     # is on disk. subtask_id is minted per print and pins the answer to the job
     # actually running, rather than to an unrelated one that reuses a filename.
     raw_subtask_id = getattr(state, "subtask_id", None)
@@ -832,7 +832,7 @@ async def _is_bambuddy_authorized_print(printer_id: int, state: PrinterState, db
     # print it observes, including ones started from Bambu Studio or Handy, and
     # stamps them with the same status and subtask_id. Authorizing on its mere
     # existence would disable the kill switch the moment the 3MF finishes
-    # downloading. Only a dispatch marker Bambuddy writes itself counts —
+    # downloading. Only a dispatch marker Fenrir writes itself counts —
     # `billing_run_id` (minted per dispatch in the scheduler) or `created_by_id`
     # (carried over from the queue item that started it).
     if archive is not None and (archive.billing_run_id is not None or archive.created_by_id is not None):
@@ -844,11 +844,11 @@ async def _is_bambuddy_authorized_print(printer_id: int, state: PrinterState, db
         return True
 
     # No dispatch marker. Before calling this someone else's print, check whether
-    # Bambuddy has a job of its own running on this printer: a library-file
+    # Fenrir has a job of its own running on this printer: a library-file
     # dispatch has no archive at send time, and an archive created seconds later
     # by `on_print_start` carries neither marker. The queue row, which the
     # scheduler commits to status="printing" before the MQTT send, is the one
-    # durable record every Bambuddy print has. It cannot be tied to this
+    # durable record every Fenrir print has. It cannot be tied to this
     # subtask_id, so it is grounds to defer, never to authorize — stopping a
     # print is irreversible, and refusing to act costs nothing but a log line.
     from backend.app.models.print_queue import PrintQueueItem
@@ -1428,7 +1428,7 @@ async def _maybe_notify_printer_offline(printer_id: int) -> None:
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
     # Connected-edge reconciliation (#1542 follow-up). When the printer
-    # transitions disconnected → connected — which covers both Bambuddy
+    # transitions disconnected → connected — which covers both Fenrir
     # startup (no prior connection) and a mid-session MQTT reconnect — fire
     # `reconcile_stale_active_prints` exactly once for this connection so
     # any archive still in `status="printing"` that can't actually be
@@ -1617,8 +1617,8 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         # stop_print() was already sent for this print; avoid all further
         # ownership and settings work until the printer leaves an active state.
         pass
-    elif _is_bambuddy_authorized_print_in_memory(printer_id, state):
-        # Normal Bambuddy-started prints stay entirely on the in-memory path.
+    elif _is_fenrir_authorized_print_in_memory(printer_id, state):
+        # Normal Fenrir-started prints stay entirely on the in-memory path.
         _unauthorized_print_kill_sent.discard(printer_id)
     else:
         kill_switch_enabled = False
@@ -1628,7 +1628,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
             kill_switch_enabled = await _is_printer_kill_switch_enabled_cached()
             if kill_switch_enabled:
                 async with async_session() as db:
-                    authorization = await _is_bambuddy_authorized_print(printer_id, state, db)
+                    authorization = await _is_fenrir_authorized_print(printer_id, state, db)
         except Exception as e:
             # Fail safe: a database/reconciliation error must never turn into an
             # irreversible stop of a print whose ownership is still unknown.
@@ -1915,7 +1915,7 @@ async def on_fts_inlet_change(printer_id: int, ams_id: int, inlet: str):
     Configuring a slot is a deliberate preparation step, so this re-selects
     rather than re-configures: only the calibration binding moves, and only for
     slots whose spool already has a stored profile for the new nozzle. A slot
-    Bambuddy knows nothing about is left exactly as the operator left it.
+    Fenrir knows nothing about is left exactly as the operator left it.
     """
     logger = logging.getLogger(__name__)
 
@@ -2217,7 +2217,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # back as "PLA" and would otherwise fail this check and
                         # be auto-unlinked from the slot it was just assigned to.
                         # Reducing the printer's side too keeps slots configured
-                        # by an older Bambuddy, still reporting "PLA+", matching.
+                        # by an older Fenrir, still reporting "PLA+", matching.
                         spool = assignment.spool
                         if spool:
                             spool_color = (spool.rgba or "FFFFFFFF").upper()
@@ -2678,7 +2678,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # Not during a running print: a slot that empties there
                         # is a filament runout, and the spool is still in the
                         # AMS. `spoolman_slot_assignments` is how a tag-less
-                        # spool assigned through the Bambuddy UI is resolved at
+                        # spool assigned through the Fenrir UI is resolved at
                         # completion (#1459), so deleting the row mid-print
                         # loses the runout segment's usage — the same failure
                         # the internal inventory's auto-unlink had.
@@ -3386,7 +3386,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
 
     ``catch_up=True`` is restart-recovery mode (#1304 follow-up): the print was
     already RUNNING on the first MQTT push after this process attached, so the
-    real start moment happened before Bambuddy was up. In this mode only the
+    real start moment happened before Fenrir was up. In this mode only the
     archive work runs — reattach an existing "printing" row, or download the
     3MF and create one. Everything tied to a genuine start moment is skipped:
     the plate check (pausing a live print was the original #1304 bug), start
@@ -3415,7 +3415,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         _inprint_frame_bank.pop(printer_id, None)
         _inprint_frame_bank_ts.pop(printer_id, None)
         # #2547: bind (or clear) the "this print ends with injected End G-code" flag,
-        # so a print Bambuddy didn't dispatch drops the previous print's flag instead
+        # so a print Fenrir didn't dispatch drops the previous print's flag instead
         # of inheriting it. Inside the catch-up gate (unlike upstream): a catch-up
         # means this process just attached, so the in-memory flag store is empty and
         # there is nothing stale to drop.
@@ -3607,7 +3607,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
 
         if not printer.auto_archive:
             # auto-archive disabled — check if there's an expected print (dispatched
-            # by BamBuddy via queue/reprint) that already has an archive to promote.
+            # by Fenrir via queue/reprint) that already has an archive to promote.
             # If so, fall through to the expected-print handling below so the archive
             # is tracked in _active_prints and usage tracking works at completion.
             _fn = data.get("filename", "")
@@ -3762,10 +3762,10 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 # Persist a restart-stable id so a later restart resumes this
                 # archive by subtask_id instead of name-matching + duplicating
                 # it (#1485). The printer often hasn't echoed subtask_id back
-                # this soon after dispatch, so fall back to the id Bambuddy
+                # this soon after dispatch, so fall back to the id Fenrir
                 # minted when it sent the print command. Scoped to this
                 # expected-print branch on purpose: an expected match means
-                # Bambuddy dispatched this exact print in this process, so the
+                # Fenrir dispatched this exact print in this process, so the
                 # client's last-dispatch id genuinely belongs to it — using it
                 # for an externally-started print could mis-tag the archive.
                 effective_subtask_id = subtask_id
@@ -3902,7 +3902,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         # across a backend restart for the same print, so this is the most
         # reliable way to reattach. We also accept a previously stale-cancelled
         # archive here so users upgrading mid-print get revived when the row
-        # their earlier Bambuddy version wrongly cancelled reappears (#972).
+        # their earlier Fenrir version wrongly cancelled reappears (#972).
         if subtask_id:
             by_id = await db.execute(
                 select(PrintArchive)
@@ -4208,7 +4208,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 storage.reason,
                 "no copy of it on external storage either"
                 if storage.probe_filename
-                else "the print file is not on storage Bambuddy can read over FTPS, so no path would find it",
+                else "the print file is not on storage Fenrir can read over FTPS, so no path would find it",
             )
 
         for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
@@ -4968,7 +4968,7 @@ async def _capture_timelapse_baseline_at_start(
         if not _timelapse_listing_is_trustworthy(printer):
             # Recorded anyway, deliberately. An empty baseline taken off a card
             # we could not read is not authoritative, but it is still the right
-            # *default*: Bambuddy deletes each video from the printer once it is
+            # *default*: Fenrir deletes each video from the printer once it is
             # attached, so the usual card holds exactly one video at completion
             # and an empty baseline resolves it correctly. Persisting NULL
             # instead would send completion to take its own snapshot, by which
@@ -5026,7 +5026,7 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
     the archive at print start, then a snapshot taken now. The last of those is
     a poor substitute — by completion the new video may already be on the card,
     in which case it lands in the "baseline" and no diff can ever match — but it
-    is all that is available for a print that began before Bambuddy started.
+    is all that is available for a print that began before Fenrir started.
 
     On success the video is deleted from the printer, which keeps ``/timelapse``
     down to the unclaimed files and makes the next diff unambiguous.
@@ -5559,7 +5559,7 @@ async def on_print_running_observed(printer_id: int, data: dict):
     process first saw the printer's state.
 
     bambu_mqtt.py suppresses ``on_print_start`` on the first RUNNING push
-    after Bambuddy startup (#1304 guard, prevents plate-check pause +
+    after Fenrir startup (#1304 guard, prevents plate-check pause +
     duplicate archive). This hook runs instead. It first restores durable
     print ownership into ``_active_prints`` (for the kill switch) and the
     persisted usage-tracking session, then has two jobs:
@@ -5571,7 +5571,7 @@ async def on_print_running_observed(printer_id: int, data: dict):
        printer doesn't upload the timelapse until after PRINT COMPLETE, so a
        baseline captured any time during the print is still pre-upload.
     2. Reattach or create the print's archive (#1304 follow-up): a print
-       started while Bambuddy was down/restarting would otherwise never get an
+       started while Fenrir was down/restarting would otherwise never get an
        archive row. ``on_print_start(catch_up=True)`` reattaches to an
        existing "printing" row when one matches (no duplicates) and downloads
        the 3MF / creates a fallback row when none does, while skipping the
@@ -5584,9 +5584,9 @@ async def on_print_running_observed(printer_id: int, data: dict):
 
         state = printer_manager.get_status(printer_id)
         if state is not None:
-            authorization = await _is_bambuddy_authorized_print(printer_id, state, db)
+            authorization = await _is_fenrir_authorized_print(printer_id, state, db)
             if authorization is True:
-                logger.info("[RESTART] Restored active Bambuddy print for printer %s", printer_id)
+                logger.info("[RESTART] Restored active Fenrir print for printer %s", printer_id)
 
             await _restore_usage_tracking_session(printer_id, state, db, logger)
             await _restore_printable_objects(printer_id, state, db, logger)
@@ -5687,7 +5687,7 @@ async def prime_kprofile_table(printer_id: int) -> int:
     ``state.kprofiles``, and nothing used to fill it on connect. It arrived by
     luck: someone opening the Profiles page or Configure Slot, a nightly GitHub
     backup, or the printer answering a query BambuStudio made on the report
-    topic we share. A Bambuddy that nobody visited showed a card with no K
+    topic we share. A Fenrir that nobody visited showed a card with no K
     values at all.
 
     Only the diameters actually fitted are asked for, which is one request on a
@@ -5735,11 +5735,11 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
     running on the printer anymore.
 
     Called once per MQTT (re)connection (from on_printer_status_change when
-    the connected edge flips False → True) and at Bambuddy startup (from
+    the connected edge flips False → True) and at Fenrir startup (from
     the FastAPI lifespan). Without this, a print that completes during a
     disconnect window — followed by a smart-plug-driven power cycle — leaves
     the ``.3mf`` on the SD card, the firmware auto-replays it on next boot,
-    and Bambuddy fires a fresh PRINT START for the ghost rather than the
+    and Fenrir fires a fresh PRINT START for the ghost rather than the
     SD cleanup that PRINT COMPLETE was supposed to run. Repeats every
     power cycle until the operator notices (#1542 follow-up). Reconciliation
     closes the loop by faking the missed PRINT COMPLETE — the existing
@@ -5857,7 +5857,7 @@ async def _max_z_for_current_print(printer_id: int, data: dict, logger) -> float
        ``subtask_name``, by equality rather than a ``LIKE``, so "Cube" can never
        resolve to "Cube v2". Matching on "most recent archive for this printer"
        is not good enough — ``on_print_complete`` pops the ``_active_prints``
-       binding concurrently with us, and a print Bambuddy failed to archive
+       binding concurrently with us, and a print Fenrir failed to archive
        would silently resolve to its predecessor.
     2. **Corroboration.** The archive's layer count (parsed from the 3MF) has to
        match the layer count the printer itself reported over MQTT for the print
@@ -6103,7 +6103,7 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
         # On the FINISH-state path the End G-code has already run, and two very
         # different situations arrive here needing opposite answers.
         #
-        # #1867: if Bambuddy injected End G-code into this print, a SwapMod
+        # #1867: if Fenrir injected End G-code into this print, a SwapMod
         # snippet may have ejected the plate — the scene in front of the camera
         # is no longer the finished print, and no amount of moving the plate
         # brings it back. Use the banked in-print frame instead.
@@ -6135,7 +6135,7 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
         # `restore_max_z` is set only once the plate is actually up, because the
         # `finally` reads it to decide whether it owes a move back down.
         #
-        # Never on a print whose End G-code Bambuddy injected, even when the bank
+        # Never on a print whose End G-code Fenrir injected, even when the bank
         # came up empty above: that machine may have just ejected its plate, and
         # driving Z into whatever a swap mechanism is doing is not a risk worth
         # taking for a photo of a bed we already know may be bare.
@@ -6240,7 +6240,7 @@ def _subtask_name_from_filename(filename: str) -> str:
 
     The dispatcher derives the printer-facing subtask name from the archive's
     file name, so stripping the extensions back off gives the value MQTT echoes
-    on completion. Only the two extensions Bambuddy actually stores are removed,
+    on completion. Only the two extensions Fenrir actually stores are removed,
     and in the order they nest (``.gcode.3mf``), so a model whose own name
     contains a dot -- ``My.Model.3mf`` -- keeps it.
     """
@@ -6432,10 +6432,10 @@ async def on_print_complete(printer_id: int, data: dict):
     # twelve-hour print, a printer can self-abort mid-job after a clog, and a
     # touchscreen-stop reports `aborted` rather than `cancelled` because
     # `_user_stopped_printers` is only populated when the user stops via the
-    # Bambuddy queue UI. Earlier code raised the flag only for completed/failed,
+    # Fenrir queue UI. Earlier code raised the flag only for completed/failed,
     # which auto-dispatched the next queued print onto a fouled bed two seconds
     # after a touchscreen-abort (#1171). Persisted to DB so the gate survives
-    # Auto Off power cycles and Bambuddy restarts.
+    # Auto Off power cycles and Fenrir restarts.
     _final_status = data.get("status", "completed")
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
         printer_manager.set_awaiting_plate_clear(printer_id, True)
@@ -7098,7 +7098,7 @@ async def on_print_complete(printer_id: int, data: dict):
 
     # Apply finance wallet charge or release reservations once. For all partial
     # terminal states (failed, aborted at the printer display, or cancelled via
-    # Bambuddy) use this run's measured spool delta, falling back to the last
+    # Fenrir) use this run's measured spool delta, falling back to the last
     # valid printer progress. PrintArchive.filament_used_grams is the slicer
     # estimate and therefore cannot represent an interrupted run.
     try:
@@ -7420,7 +7420,7 @@ async def on_print_complete(printer_id: int, data: dict):
             # would miss (#1397). Skipped for external cameras (those have
             # their own framing and don't see a Bambu timelapse). Only
             # runs when the USER explicitly enabled timelapse for this
-            # print — #1721 removed Bambuddy's force-on at dispatch
+            # print — #1721 removed Fenrir's force-on at dispatch
             # because it caused per-layer nozzle parking on Smooth-mode
             # slicer profiles.
             prefer_timelapse_source = bool(data.get("timelapse_was_active")) and not (
@@ -8045,7 +8045,7 @@ def _ams_has_filament(ams_data: dict) -> bool:
     continuous.
 
     The judgement itself lives in ``has_filament_loaded``, shared with every path
-    that publishes a drying command so an AMS Bambuddy will not alarm about is
+    that publishes a drying command so an AMS Fenrir will not alarm about is
     also one it will not heat. Reading it through the shared helper is what
     brought the per-tray ``exists`` flag into this gate: ``tray_exist_bits`` is
     one bitmask for the whole printer, so consulting it here directly reported a
@@ -8989,7 +8989,7 @@ async def lifespan(app: FastAPI):
         logging.warning("Failed to prune stale printer download bundles: %s", exc)
 
     # After migrations, so the is_env_managed column exists. Never raises --
-    # a bad BAMBUDDY_OIDC_* value is logged and skipped rather than blocking
+    # a bad FENRIR_OIDC_* value is logged and skipped rather than blocking
     # startup (see apply_env_oidc_provider).
     from backend.app.core.oidc_env import apply_env_oidc_provider
 
@@ -9284,7 +9284,7 @@ async def lifespan(app: FastAPI):
             "mqtt_port": int(await get_setting(db, "mqtt_port") or "1883"),
             "mqtt_username": await get_setting(db, "mqtt_username") or "",
             "mqtt_password": await get_setting(db, "mqtt_password") or "",
-            "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
+            "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "fenrir",
             "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
         }
         await mqtt_relay.configure(mqtt_settings)
@@ -9744,7 +9744,7 @@ def _parse_trusted_frame_origins() -> tuple[str, ...]:
 
     Used by ``security_headers_middleware`` to relax ``frame-ancestors`` for
     trusted same-LAN deployments (e.g. Home Assistant Webpage panel embedding
-    Bambuddy from a different port). Defaults to empty — strict ``'none'``.
+    Fenrir from a different port). Defaults to empty — strict ``'none'``.
 
     Invalid entries are dropped with a warning rather than failing startup, so
     a typo in one origin doesn't take the whole deployment down.
@@ -9825,7 +9825,7 @@ def _matches_public_pattern(path: str, pattern: str) -> bool:
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
     # Per-request nonce stamped into `script-src` (#1460). On its own this
-    # changes nothing for Bambuddy's own pages — index.html has no inline
+    # changes nothing for Fenrir's own pages — index.html has no inline
     # scripts since the SW registration moved to /sw-register.js. The reason
     # it's here is Cloudflare: a CF-fronted deployment has the bot-detection
     # script injected into the HTML on the edge, with a fresh hash on every
@@ -9871,7 +9871,7 @@ async def security_headers_middleware(request, call_next):
         # The streaming overlay is embedded same-origin by the URL builder's
         # preview in Settings (#1422), so this branch allows 'self'.
         # Embedding from anywhere else is still refused: 'self'
-        # only permits a framer on this origin, which is Bambuddy's own UI, so
+        # only permits a framer on this origin, which is Fenrir's own UI, so
         # a clickjacking page on another host is blocked exactly as before.
         # (The overlay draws status over a camera feed and its only interactive
         # element is the logo link, so there is nothing to bait a click into
@@ -10183,7 +10183,7 @@ async def serve_frontend():
     if index_file.exists():
         return FileResponse(index_file, headers=_HTML_CACHE_HEADERS)
     return {
-        "message": "Bambuddy API",
+        "message": "Fenrir API",
         "docs": "/docs",
         "frontend": "Build and place React app in /static directory",
     }

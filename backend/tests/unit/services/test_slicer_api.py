@@ -514,7 +514,7 @@ class TestSliceOutputValidation:
     @pytest.mark.asyncio
     async def test_export_3mf_rejects_non_zip_200_body(self):
         # The exact failure from #2671: sidecar/proxy returns 200 with a tiny
-        # garbage body; Bambuddy must NOT accept it as a sliced 3MF.
+        # garbage body; Fenrir must NOT accept it as a sliced 3MF.
         body = b'{"detail":"Not Found"}xxxxxx'  # 28 bytes, not a zip
         assert len(body) == 28
 

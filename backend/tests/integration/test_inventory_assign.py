@@ -1563,7 +1563,7 @@ class TestAutoUnlinkDuringRunout:
 
 class TestSpoolmanSlotAssignmentDuringRunout:
     """`spoolman_slot_assignments` is how a tag-less spool assigned through the
-    Bambuddy UI is resolved at completion (#1459). Deleting the row when a slot
+    Fenrir UI is resolved at completion (#1459). Deleting the row when a slot
     empties mid-print loses the runout segment's usage — the same failure the
     internal inventory's auto-unlink had, so it needs the same guard."""
 

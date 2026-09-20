@@ -10,7 +10,7 @@
 // Usage:  node scripts/generate-slicer-schema.mjs <path-to-three-slicer-package>
 //
 // The upstream data is AGPL-3.0-or-later, extracted from OrcaSlicer's C++
-// sources — same licence as Bambuddy, so vendoring is clean. Re-run this when
+// sources — same licence as Fenrir, so vendoring is clean. Re-run this when
 // bumping to a newer three-slicer release and commit the regenerated output.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';

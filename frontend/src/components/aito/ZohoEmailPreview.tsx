@@ -7,7 +7,7 @@ import DOMPurify from 'dompurify';
  *  An iframe rather than the `dangerouslySetInnerHTML` div used elsewhere in
  *  this codebase (ProjectDetailPage, MakerworldPage): the body is a whole
  *  email document carrying its own <style> blocks with generic selectors.
- *  Inlined into the page that CSS bleeds into Bambuddy; stripped, the preview
+ *  Inlined into the page that CSS bleeds into Fenrir; stripped, the preview
  *  stops resembling the email. Frame isolation is the requirement here, not a
  *  bonus — which is also why <style> survives sanitising while <img> does not.
  *

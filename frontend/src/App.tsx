@@ -17,7 +17,7 @@ import { FullscreenProvider } from './contexts/FullscreenContext';
 // so a lazy route's dynamic import rejects. One forced reload picks up the
 // new index.html; the sessionStorage guard prevents a reload loop when the
 // failure has a different cause.
-const CHUNK_RELOAD_KEY = 'bambuddy-chunk-reload';
+const CHUNK_RELOAD_KEY = 'fenrir-chunk-reload';
 function lazyWithReload(load: () => Promise<{ default: ComponentType }>) {
   return lazy(() =>
     load().then(

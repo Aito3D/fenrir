@@ -831,7 +831,7 @@ describe('SpoolFormModal — SpoolmanFilamentPicker integration (T2)', () => {
 
   it('prefills a translucent filament with its own alpha, not 808080FF (#2912)', async () => {
     // The guard here required exactly 6 hex chars and then appended FF. That was
-    // unreachable while Bambuddy never wrote 8 characters; once a clear filament
+    // unreachable while Fenrir never wrote 8 characters; once a clear filament
     // is storable, picking it out of the Spoolman catalogue prefilled the form
     // with neutral grey — the frontend twin of the read-side regex.
     render(

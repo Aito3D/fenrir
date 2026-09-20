@@ -106,7 +106,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'leaving';
  *  open, into the shop's own paperwork. So the click copies, and does only
  *  that.
  *
- *  `copyTextToClipboard`, not `navigator.clipboard` directly: Bambuddy is
+ *  `copyTextToClipboard`, not `navigator.clipboard` directly: Fenrir is
  *  normally reached over plain HTTP on a LAN address, where the async clipboard
  *  API does not exist and the helper's textarea fallback is the only path that
  *  works.

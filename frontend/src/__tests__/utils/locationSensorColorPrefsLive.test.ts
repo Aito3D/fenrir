@@ -57,7 +57,7 @@ describe('useLocationSensorColorPrefs', () => {
     const removeSpy = vi.spyOn(window, 'removeEventListener');
 
     const { unmount } = renderHook(() => useLocationSensorColorPrefs());
-    const [eventName] = addSpy.mock.calls.find(([name]) => name.startsWith('bambuddy:'))!;
+    const [eventName] = addSpy.mock.calls.find(([name]) => name.startsWith('fenrir:'))!;
 
     unmount();
 

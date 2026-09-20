@@ -1,7 +1,7 @@
 """Heimdall /api/v1 machine client (../heimdall/docs/API.md).
 
 Heimdall is the shop's POS bridge; its /api/v1 surface mints and manages OSB
-payment links. This module is the only thing in Bambuddy that talks to it:
+payment links. This module is the only thing in Fenrir that talks to it:
 five calls, one signing recipe, and an exception per outcome the reconciler
 (services/aito_payment_links.py) branches on.
 

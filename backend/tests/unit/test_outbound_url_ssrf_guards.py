@@ -1,11 +1,11 @@
 """Outbound-URL SSRF policy: two tiers, applied consistently.
 
-Bambuddy makes outbound HTTP requests to hosts the operator configures. Which
+Fenrir makes outbound HTTP requests to hosts the operator configures. Which
 policy applies is a property of the *service*, not the caller:
 
 - LAN-service (Spoolman, ntfy, Bark, webhooks, Home Assistant, Obico ML, the
   slicer sidecars) — loopback and RFC-1918 MUST stay reachable, because
-  self-hosting those next to Bambuddy is the normal topology. Blocking them
+  self-hosting those next to Fenrir is the normal topology. Blocking them
   would break most installs, which is why a blanket private-IP blocklist is
   the wrong fix here.
 - Public-internet (OIDC issuer and icon URLs) — a private address cannot be a
@@ -21,7 +21,7 @@ the default Operators group carries and which does NOT imply
 ``SETTINGS_UPDATE`` — and ``POST /notifications/test-config`` takes the URL
 from the request body without persisting it. Returning the upstream body there
 made an intended reachability check into an authenticated read primitive
-against anything the process can reach. Providers whose host Bambuddy pins
+against anything the process can reach. Providers whose host Fenrir pins
 (Pushover, Telegram, CallMeBot, Discord) may still echo, since the caller
 cannot influence the destination.
 """
@@ -253,12 +253,12 @@ def test_every_url_setting_is_either_guarded_or_explicitly_exempt():
     added per-incident rather than to the whole class of fields.
     """
     exempt = {
-        # Bambuddy's own public address, not a destination it requests. It is
+        # Fenrir's own public address, not a destination it requests. It is
         # rendered into notification bodies and OIDC redirect URIs, and handed
         # to Obico's ML server as the `img` parameter for that server to fetch
         # (obico_detection.py builds `{external_url}/api/v1/obico/cached-frame/
-        # {nonce}`). Pointing it at a private address only breaks Bambuddy's own
-        # links; it cannot make Bambuddy request anything it otherwise wouldn't.
+        # {nonce}`). Pointing it at a private address only breaks Fenrir's own
+        # links; it cannot make Fenrir request anything it otherwise wouldn't.
         "external_url",
         # Guarded by assert_safe_spoolman_url at each consumer (spoolman.py,
         # location_service.py, inventory.py, spoolbuddy.py,
@@ -606,16 +606,16 @@ GUARDED_BODY_URLS = {
     ("SmartPlugUpdate", "rest_energy_url"),
 }
 
-# Not a destination Bambuddy requests — no guard applies.
+# Not a destination Fenrir requests — no guard applies.
 NOT_A_FETCH_TARGET = {
-    ("AppSettingsUpdate", "external_url"),  # Bambuddy's own address (see exempt list above)
+    ("AppSettingsUpdate", "external_url"),  # Fenrir's own address (see exempt list above)
     ("AppSettingsUpdate", "ldap_server_url"),  # ldap://, handed to an LDAP client
     ("ProjectCreate", "url"),  # stored link, rendered in the UI, never fetched
     ("ProjectUpdate", "url"),
     ("BOMItemCreate", "sourcing_url"),  # stored supplier link, never fetched
     ("BOMItemUpdate", "sourcing_url"),
     ("MakerWorldResolveRequest", "url"),  # parsed for a model id; fetches go to a pinned CDN allowlist
-    ("DeviceRegisterRequest", "backend_url"),  # the device's view of Bambuddy's own address
+    ("DeviceRegisterRequest", "backend_url"),  # the device's view of Fenrir's own address
     ("HeartbeatRequest", "backend_url"),
     ("SystemConfigRequest", "backend_url"),
     ("ExternalLinkCreate", "url"),  # sidebar link, rendered in the UI, never requested

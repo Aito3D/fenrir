@@ -126,9 +126,9 @@ class OIDCProvider(Base):
     # carry this flag at a time; setting it on a new provider clears it on the
     # previous one. The frontend always falls back to the local form if the
     # authorize-URL fetch fails or times out, and ``/login?fallback=local``
-    # plus ``BAMBUDDY_LOCAL_LOGIN=true`` provide a documented recovery path.
+    # plus ``FENRIR_LOCAL_LOGIN=true`` provide a documented recovery path.
     is_autologin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    # Marks the single provider defined by BAMBUDDY_OIDC_* env vars. Upserted on
+    # Marks the single provider defined by FENRIR_OIDC_* env vars. Upserted on
     # startup; UI/API writes to it are rejected. Never delete-recreated (user_oidc_links
     # FK is ON DELETE CASCADE).
     is_env_managed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
@@ -155,7 +155,7 @@ class OIDCProvider(Base):
 
 
 class UserOIDCLink(Base):
-    """Links a local Bambuddy user account to an identity at an OIDC provider."""
+    """Links a local Fenrir user account to an identity at an OIDC provider."""
 
     __tablename__ = "user_oidc_links"
     __table_args__ = (

@@ -1,7 +1,7 @@
 """_handle_ams_data must capture tray_tar / tray_pre for the runout UI (#2587).
 
 The firmware reports the slot a paused print now expects (``tray_tar``) and the
-slot loaded before (``tray_pre``) alongside ``tray_now``. Bambuddy historically
+slot loaded before (``tray_pre``) alongside ``tray_now``. Fenrir historically
 parsed only ``tray_now`` and dropped the other two, so "which slot does the
 print now expect" never reached the API. These tests lock in that the raw values
 are stored on PrinterState (globalisation happens later, at the API boundary).

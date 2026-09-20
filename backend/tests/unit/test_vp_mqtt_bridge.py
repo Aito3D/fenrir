@@ -250,7 +250,7 @@ class TestPushStatusCache:
     @pytest.mark.asyncio
     async def test_net_info_ip_rewritten_for_unknown_secondary_interface(self):
         """Regression for #1429: real printers (X1C / H2D Pro) report multiple
-        active interfaces (WiFi + Ethernet) — only ONE matches the IP Bambuddy
+        active interfaces (WiFi + Ethernet) — only ONE matches the IP Fenrir
         tracks. The rewrite must catch every non-zero entry, not just the one
         whose IP equals `_target_ip_uint32_le`, or the slicer's FTP fallback
         path leaks straight to the real printer."""
@@ -259,8 +259,8 @@ class TestPushStatusCache:
         await bridge.start()
 
         h2d_le = _ip_to_uint32_le(H2D_IP)
-        # A second IP Bambuddy never saw (e.g. printer's ethernet interface
-        # while Bambuddy talks over wifi).
+        # A second IP Fenrir never saw (e.g. printer's ethernet interface
+        # while Fenrir talks over wifi).
         other_le = _ip_to_uint32_le("192.168.99.42")
         vp_le = _ip_to_uint32_le(VP_IP)
         payload = json.dumps(
@@ -717,7 +717,7 @@ class TestPushStatusCache:
     async def test_tray_exist_bits_clears_empty_slots_in_slicer_cache(self):
         """#1726 (reported by @needo37): the bridge cache forwards the real
         printer's raw AMS payload to the slicer. Without the empty-slot
-        cleanup that bambu_mqtt.py applies to Bambuddy's internal state, the
+        cleanup that bambu_mqtt.py applies to Fenrir's internal state, the
         cached units carried stale `tray_type` / `tray_color` /
         `tray_info_idx` for slots whose `tray_exist_bits` bit was 0 — and
         BambuStudio's Sync rendered those empty slots as phantom loaded
@@ -786,10 +786,10 @@ class TestPushStatusCache:
     @pytest.mark.asyncio
     async def test_a2l_ams_lite_slots_survive_in_slicer_cache(self):
         """#2697 (reported by @qoatzelcoat): every A2L slot rendered as "?" in
-        BambuStudio through the VP, while Bambuddy's own AMS card was correct.
+        BambuStudio through the VP, while Fenrir's own AMS card was correct.
 
         The A2L reports its AMS Lite as physical unit id 16 but packs the
-        presence bits at base 24. Bambuddy's internal path normalises 16 -> 6
+        presence bits at base 24. Fenrir's internal path normalises 16 -> 6
         before the cleanup runs, so it read the right bits; the bridge parses
         the raw printer payload itself and still held 16, so the cleanup read
         bits 64-67 — never set — and wiped all four slots in the cache the
@@ -1470,7 +1470,7 @@ class TestLiveProgressMirror:
     async def test_print_error_never_mirrored(self):
         """A fault on the printer must not raise a modal error dialog in the slicer.
 
-        The VP is not the machine that threw it — Bambuddy's own printer card
+        The VP is not the machine that threw it — Fenrir's own printer card
         reports the fault.
         """
         server = _make_server()
@@ -1871,7 +1871,7 @@ class TestBindAddressAutoResolve:
 class TestAdvertiseAddressOverride:
     """#2930: behind NAT — Docker bridge networking being the case that
     prompted it — no local interface carries the address a slicer uses to
-    reach Bambuddy, so both the bind address and the auto-resolved host
+    reach Fenrir, so both the bind address and the auto-resolved host
     interface put a container-private IP into `net.info[].ip` and the
     slicer's FTP upload goes nowhere. The env override supplies that address
     directly. It is opt-in precisely so that every install which does not

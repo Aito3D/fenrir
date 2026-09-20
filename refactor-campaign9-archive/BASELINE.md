@@ -10,7 +10,7 @@ campaign: 9                    # campaigns 1-8 are all merged to main; their loo
                                # this campaign tagged BASE, so `git describe --match 'loop-*'` exits
                                # nonzero and the SQUASH+TAG campaign-1 BASE fallback is valid here.
                                # Iteration tags are plain `loop-N`.
-workdir: /Users/paultheis/Documents/Code/bambuddy-refactor
+workdir: /Users/paultheis/Documents/Code/fenrir-refactor
 branch: auto-refactor-loop
 
 ## parameters
@@ -118,7 +118,7 @@ re-running it alone and believing the failure; that is backwards for these two:
   its _register_all_models() helper omits the print_log model, so it only works once
   another test has imported that model into Base.metadata. (Found iteration 1.)
 - frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) >
-  "opens the selected local slicer from the Bambuddy dropdown" — fails deterministically alone
+  "opens the selected local slicer from the Fenrir dropdown" — fails deterministically alone
   (3/3), passes in some full-suite runs. Verified pre-existing at iteration 1: the component and
   its test are byte-identical to BASE and the iteration-1 diff touched zero frontend production
   files. (So the entry above listing ModelViewerModal as ordinary load-flaky is incomplete —

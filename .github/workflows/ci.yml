@@ -146,7 +146,7 @@ jobs:
           #
           # CVE-2025-45768 (PYSEC-2025-183 / GHSA-65pc-fj4g-8rjx): disputed by PyJWT maintainers.
           # Advisory says "key length is chosen by the application that uses the library" — no
-          # PyJWT fix exists or will exist. Bambuddy is safe: backend/app/core/auth.py:184 uses
+          # PyJWT fix exists or will exist. Fenrir is safe: backend/app/core/auth.py:184 uses
           # secrets.token_urlsafe(64) (~86 chars of entropy) for auto-generated secrets and
           # rejects file-loaded secrets shorter than 32 chars at :177. Keep ignored permanently.
           pip-audit --desc on \
@@ -154,7 +154,7 @@ jobs:
             --ignore-vuln CVE-2025-45768
 
   # Host-side run of the backend suite on Python 3.11 — the oldest interpreter
-  # Bambuddy claims to support beyond 3.10 (pyproject: requires-python >=3.10)
+  # Fenrir claims to support beyond 3.10 (pyproject: requires-python >=3.10)
   # and the one bare-metal installs are most likely to be on. It is the same
   # ~13.6k tests that docker-backend-tests runs on 3.13, so between them they
   # were ~46 of the workflow's ~59 runner-minutes for one suite.
@@ -340,7 +340,7 @@ jobs:
                   prod.add(path.split('node_modules/')[-1])
           vulns = data.get('vulnerabilities', {})
           # Documented advisory exceptions: high/critical findings whose only offered
-          # 'fix' is a semver-major change and which do not apply to how Bambuddy ships.
+          # 'fix' is a semver-major change and which do not apply to how Fenrir ships.
           # Keyed by GHSA id. An entry only holds while the fix stays major-only (see
           # fix_is_major below) - once upstream backports, the gate fails until we take
           # the patch. That is what retired the one entry this list used to carry:
@@ -471,7 +471,7 @@ jobs:
   # rare-but-real cases where a test passes on the GHA host but fails in
   # the python:3.13-slim test image (system-binary version differences,
   # locale/timezone, container vs host user, cwd assumptions) — the host
-  # job runs Python 3.11, this one runs the interpreter Bambuddy ships.
+  # job runs Python 3.11, this one runs the interpreter Fenrir ships.
   docker-backend-tests:
     name: Docker Backend Tests (shard ${{ matrix.shard }}/5)
     runs-on: ubuntu-latest
@@ -498,7 +498,7 @@ jobs:
           file: Dockerfile.test
           target: backend-test
           load: true
-          tags: bambuddy-backend-test:latest
+          tags: fenrir-backend-test:latest
           cache-from: type=gha,scope=backend-test
           cache-to: type=gha,scope=backend-test,mode=max
 
@@ -509,7 +509,7 @@ jobs:
           docker run --rm \
             -e TESTING=1 \
             -e PYTHONUNBUFFERED=1 \
-            bambuddy-backend-test:latest \
+            fenrir-backend-test:latest \
             pytest backend/tests/ \
               --tb=short \
               --timeout=120 --timeout-method=thread \
@@ -542,13 +542,13 @@ jobs:
       # the publish-linux/{amd64,arm64} scopes that take docker-publish.yml from
       # ~8 minutes to ~1m45s. Not a good trade.
       - name: Build production image
-        run: docker build -t bambuddy:test .
+        run: docker build -t fenrir:test .
 
       - name: Verify backend imports
-        run: docker run --rm bambuddy:test python -c "import backend.app.main; print('Backend imports OK')"
+        run: docker run --rm fenrir:test python -c "import backend.app.main; print('Backend imports OK')"
 
       - name: Verify static files exist
-        run: docker run --rm bambuddy:test test -d /app/static
+        run: docker run --rm fenrir:test test -d /app/static
 
       # Smoke-test the real production image over a published port. This is the
       # only place anything exercises the shipped image as a running service, so
@@ -556,11 +556,11 @@ jobs:
       # service would rebuild the very image just built here.
       - name: Start the production image
         run: |
-          docker run -d --name bambuddy-integration \
+          docker run -d --name fenrir-integration \
             -e TESTING=1 \
             -e DATA_DIR=/app/data \
             -p 8001:8000 \
-            bambuddy:test
+            fenrir:test
 
       - name: Wait for the health endpoint
         run: |
@@ -603,8 +603,8 @@ jobs:
       #     Python, same code as docker-backend-tests, which already runs
       #     `pytest backend/tests/` (the superset) across its shards.
       #   * The one thing that could have made it different, the
-      #     BAMBUDDY_TEST_URL=http://integration:8000 the compose service set,
-      #     was read by nothing: `grep -rn BAMBUDDY_TEST_URL backend/` matched
+      #     FENRIR_TEST_URL=http://integration:8000 the compose service set,
+      #     was read by nothing: `grep -rn FENRIR_TEST_URL backend/` matched
       #     zero lines. The tests never talked to the live container next to
       #     them; they built their own in-process TestClient exactly as they do
       #     in every other job. No test carries the `docker` marker either.
@@ -615,11 +615,11 @@ jobs:
 
       - name: Show logs on failure
         if: failure()
-        run: docker logs bambuddy-integration || true
+        run: docker logs fenrir-integration || true
 
       - name: Cleanup
         if: always()
-        run: docker rm -f bambuddy-integration || true
+        run: docker rm -f fenrir-integration || true
 
   # ============================================================================
   # Gate

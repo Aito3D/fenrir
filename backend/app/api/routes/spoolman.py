@@ -118,7 +118,7 @@ async def get_spoolman_status(
     locations, so enabling Spoolman there reported "connected" without anything
     having been set up, hiding the Connect button and revealing a sync that then
     failed on every slot (issue #2903). Registration no longer depends on that
-    button, but the flag was still describing Bambuddy's memory rather than the
+    button, but the flag was still describing Fenrir's memory rather than the
     integration, so it is now resolved the same way every other route resolves
     it -- including the stale-URL check, so editing the URL is not reported
     against the old host.

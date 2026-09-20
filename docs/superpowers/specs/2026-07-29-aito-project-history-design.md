@@ -4,7 +4,7 @@
 **Status:** approved, ready for implementation planning
 
 A per-project activity timeline in the expanded project card, mirroring Zoho
-Books' own quote history alongside every action taken in Bambuddy. Plus three
+Books' own quote history alongside every action taken in Fenrir. Plus three
 smaller changes to the quote surfaces that were specified in the same session.
 
 ---

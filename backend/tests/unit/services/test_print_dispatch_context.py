@@ -53,7 +53,7 @@ def test_a_print_we_did_not_dispatch_clears_the_previous_flag():
     print_dispatch_context.adopt(1)
     assert print_dispatch_context.end_gcode_injected(1) is True
 
-    # Next print start, with nothing pending — i.e. Bambuddy didn't send it.
+    # Next print start, with nothing pending — i.e. Fenrir didn't send it.
     assert print_dispatch_context.adopt(1) is False
     assert print_dispatch_context.end_gcode_injected(1) is False
 

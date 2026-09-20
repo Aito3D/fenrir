@@ -436,7 +436,7 @@ def _render_single_label_pdf(template: TemplateName, data_list: list[LabelData],
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(page_w, page_h))
-    c.setTitle(f"Bambuddy spool labels ({template})")
+    c.setTitle(f"Fenrir spool labels ({template})")
 
     for data in data_list:
         _draw_label(c, 0, 0, page_w, page_h, data, monochrome)
@@ -472,7 +472,7 @@ def _render_sheet_pdf(
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=page_size)
-    c.setTitle(f"Bambuddy spool labels ({template})")
+    c.setTitle(f"Fenrir spool labels ({template})")
 
     per_page = cols * rows
     if starting_position < 1 or starting_position > per_page:

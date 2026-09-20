@@ -103,7 +103,7 @@ function mockLog(entries = LOG_ENTRIES, archives: unknown[] = ONE_ARCHIVE) {
  *  size) and answering those with column JSON would derail the whole page. */
 function stubStoredColumns(value: string | null) {
   vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
-    (key === 'bambuddy-printlog-columns' ? value : null),
+    (key === 'fenrir-printlog-columns' ? value : null),
   );
 }
 
@@ -159,7 +159,7 @@ describe('Print Log columns', () => {
 
     await waitFor(() => {
       expect(localStorage.setItem).toHaveBeenCalledWith(
-        'bambuddy-printlog-columns',
+        'fenrir-printlog-columns',
         expect.any(String),
       );
     });
@@ -288,7 +288,7 @@ describe('Print Log columns', () => {
 
   it('starts from the stored sort and ignores one naming a dropped column', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
-      if (key === 'bambuddy-printlog-sort') return JSON.stringify({ column: 'not_a_column', direction: 'asc' });
+      if (key === 'fenrir-printlog-sort') return JSON.stringify({ column: 'not_a_column', direction: 'asc' });
       return null;
     });
     await openLogView();

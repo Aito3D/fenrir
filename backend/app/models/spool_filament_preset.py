@@ -66,9 +66,9 @@ class SpoolFilamentPreset(Base):
 class SpoolmanFilamentPreset(Base):
     """``SpoolFilamentPreset`` for a Spoolman-managed spool.
 
-    Mirrors ``SpoolmanKProfile``: Spoolman owns the spool, Bambuddy owns this
+    Mirrors ``SpoolmanKProfile``: Spoolman owns the spool, Fenrir owns this
     override, so the row is local and keyed by the remote spool id with no
-    foreign key to enforce it. Kept in a Bambuddy table rather than in the
+    foreign key to enforce it. Kept in a Fenrir table rather than in the
     spool's Spoolman ``extra`` dict for the same reason the K profiles are --
     it is Bambu-specific data that no other Spoolman client can use, and the
     extra dict cannot express a per-model list without hand-rolled JSON.

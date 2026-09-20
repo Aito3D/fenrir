@@ -247,7 +247,7 @@ class TestTheGateUsesThePerPrintUrlOnly:
     is sticky for reporting. The gate reads only the first, and that is
     load-bearing rather than tidiness: 18% of the print starts in #2780's
     support bundle (14 of 79) had no ``project_file`` on the request topic at
-    all -- touchscreen reprints, restart recovery, anything Bambuddy did not
+    all -- touchscreen reprints, restart recovery, anything Fenrir did not
     see dispatched. If those inherited the previous job's destination, a
     printer that ran one Studio print to internal storage would skip the FTPS
     sweep for every subsequent screen-started print, losing archives that work
@@ -258,7 +258,7 @@ class TestTheGateUsesThePerPrintUrlOnly:
     """
 
     def test_a_print_with_no_dispatch_of_its_own_still_sweeps(self):
-        """The previous print went to internal storage; this one Bambuddy
+        """The previous print went to internal storage; this one Fenrir
         never saw dispatched. Unknown, so sweep."""
         state = FakeState(
             current_project_url=None,

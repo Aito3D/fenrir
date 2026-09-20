@@ -161,7 +161,7 @@
    159	# Migration: Add subtask_id to print_archives (#972)
    160	# Migration: Add bed_type to print_archives (#1253)
    161	# Migration: Add deleted_at to print_archives (#1343)
-   162	# Migration: Add bambuddy_forced_timelapse to print_archives (#1397)
+   162	# Migration: Add fenrir_forced_timelapse to print_archives (#1397)
    163	# Migration: content verification of print-start downloads (#2104 wrong-file
    164	# Migration: Create smart_plug_energy_snapshots table (#941)
    165	# Migration: Add PKCE code_verifier column to auth_ephemeral_tokens
@@ -248,7 +248,7 @@
    246	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
    247	# Migration: back the one-binding-per-(location, entity) rule with a unique
    248	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   249	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+   249	# Migration: drop the AMS slot markers an older Fenrir wrote into
    250	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:

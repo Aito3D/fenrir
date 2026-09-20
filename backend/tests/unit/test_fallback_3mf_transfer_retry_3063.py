@@ -3,7 +3,7 @@
 The reporter's P1S was sent a 19 MB 3MF, the card had it, and FTPS served it --
 just not inside the 30s budget plus its 30s grace, four times over, while the
 printer was also running MQTT, the camera and the job upload at print start.
-Bambuddy wrote an empty fallback archive at 03:14:23. The same file then
+Fenrir wrote an empty fallback archive at 03:14:23. The same file then
 downloaded successfully at 03:15:11, 03:16:09 and 03:16:36, and every one of
 those copies was thrown away, because the only code that would have attached one
 had already given up.

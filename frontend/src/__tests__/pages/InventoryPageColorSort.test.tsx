@@ -154,13 +154,13 @@ describe('InventoryPage — sorting by colour', () => {
     fireEvent.click(screen.getByRole('columnheader', { name: /^color$/i }));
     await waitFor(() =>
       expect(vi.mocked(localStorage.setItem).mock.calls.some(
-        ([key, value]) => key === 'bambuddy-inventory-sort' && String(value).includes('rgba'),
+        ([key, value]) => key === 'fenrir-inventory-sort' && String(value).includes('rgba'),
       )).toBe(true),
     );
 
     unmount();
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
-      key === 'bambuddy-inventory-sort' ? '{"column":"rgba","direction":"asc"}' : null,
+      key === 'fenrir-inventory-sort' ? '{"column":"rgba","direction":"asc"}' : null,
     );
 
     render(<InventoryPageRouter />);

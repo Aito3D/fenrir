@@ -9,7 +9,7 @@ sees a ``200`` full of local-preset fallbacks with no sign the cloud was never
 contacted. That silent degradation is what #2530 actually reported.
 
 These tests pin the hand-off in both directions, and — just as importantly —
-pin the two cases where Bambuddy must refuse to guess who owns a credential.
+pin the two cases where Fenrir must refuse to guess who owns a credential.
 """
 
 import logging

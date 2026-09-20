@@ -185,7 +185,7 @@ async def is_cloud_token_invalid(db: AsyncSession, user: User | None = None) -> 
 
     Set by :func:`mark_cloud_token_invalid` the first time Bambu answers 401,
     cleared on a fresh login/logout. This is the only durable record we have:
-    Bambu's access token is opaque (no readable expiry) and Bambuddy does not
+    Bambu's access token is opaque (no readable expiry) and Fenrir does not
     persist the refresh token, so without this flag a dead credential looks
     exactly like a live one.
     """

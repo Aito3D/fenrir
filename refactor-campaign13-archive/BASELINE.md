@@ -9,7 +9,7 @@ campaign: 13                   # campaigns 1-12 are all merged to main; their lo
                                # worktree was cut (verified 2026-09-09: no `loop-*` / `refactor-base` tag existed), so
                                # `git describe --match 'loop-*'` exits nonzero and the SQUASH+TAG campaign-1 BASE
                                # fallback is valid. Iteration tags are plain `loop-N`.
-workdir: /Users/paultheis/Documents/Code/bambuddy-refactor
+workdir: /Users/paultheis/Documents/Code/fenrir-refactor
 branch: auto-refactor-loop
 agents: plugin-namespaced refactor-loop:refactor-worker / refactor-loop:refactor-verifier and the four
         refactor-loop:audit-* auditors (plugin 1.2.0). The MAIN checkout's gitignored .claude/agents/
@@ -58,7 +58,7 @@ scope: |
     __tests__/pages/AitoTrackPage|AitoTrackEntryPage|LoginPage.test.tsx, __tests__/contexts/AuthContext.test.tsx,
     __tests__/components/AitoTrackingLinkControl.test.tsx, __tests__/utils/aitoTracking.test.ts, ...).
   UPSTREAM CAUTION: LoginPage.tsx, AuthContext.tsx, routes/auth.py, routes/mfa.py and schemas/auth.py are
-    mostly UPSTREAM Bambuddy code that this fork merges regularly. Changes there must be surgical (small
+    mostly UPSTREAM Fenrir code that this fork merges regularly. Changes there must be surgical (small
     hunks, no reflowing, no wholesale extraction) to keep future upstream merges composable. Auditors should
     weight findings in those files toward real defects over cosmetic cleanliness.
   OUT OF SCOPE: everything else (Aito board, calculator, printers, archives, library, camera, spoolman, stats,
@@ -97,8 +97,8 @@ python: ./venv/bin/python3 (worktree venv — see runtime below). NEVER system p
 
 ## worktree runtime (NOT in git — rebuilt per worktree)
 Built 2026-09-09 by APFS clonefile, not pip/npm (network-independent, instant):
-  cp -c -R ../bambuddy/venv venv && sed -i '' 's#/Code/bambuddy/venv#/Code/bambuddy-refactor/venv#g' venv/bin/*
-  cp -c -R ../bambuddy/frontend/node_modules frontend/node_modules
+  cp -c -R ../fenrir/venv venv && sed -i '' 's#/Code/fenrir/venv#/Code/fenrir-refactor/venv#g' venv/bin/*
+  cp -c -R ../fenrir/frontend/node_modules frontend/node_modules
 venv sys.prefix resolves inside the worktree; pytest 9.0.3 + xdist + cov + timeout. vitest 4.1.8 and tsc 5.9.3
 resolve from frontend/node_modules/.bin (node 25.6.1). Workers must NOT pip/npm install.
 
@@ -163,7 +163,7 @@ isolation on an idle machine.
 - backend:  tests/unit/test_aito_routes.py (thousand-project import; slow under load)
 INVERSE-FLAKY — fail when run ALONE, pass in the full suite (do NOT "confirm" a failure by running alone):
 - backend:  tests/unit/test_settings_dedupe_migration.py — its _register_all_models() omits the print_log model.
-- frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) > "opens the selected local slicer from the Bambuddy dropdown".
+- frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) > "opens the selected local slicer from the Fenrir dropdown".
 
 ## lint baseline
 ruff check + ruff format --check: clean (947 files, worktree @ UPSTREAM, 2026-09-09)

@@ -1,6 +1,6 @@
 """A filament preset the sidecar could not resolve must not pass unnoticed.
 
-Found while investigating #2977. Bambuddy sends a filament profile as a stub
+Found while investigating #2977. Fenrir sends a filament profile as a stub
 naming the preset to inherit, and the sidecar's resolver walks that name
 against its bundled profile tree. When the name is not in that tree the CLI
 does not fail: it inherits nothing, falls back to its compiled-in defaults for

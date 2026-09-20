@@ -1101,7 +1101,7 @@ def extract_bed_temperature_from_3mf(file_path: Path) -> int | None:
     Every failure is None. Deliberately broader than the handful of exceptions a
     malformed zip is expected to raise: the caller runs inside the startup
     migration, which has no handler above it, so anything unlisted escaping here
-    does not skip one archive -- it stops Bambuddy from booting, and keeps
+    does not skip one archive -- it stops Fenrir from booting, and keeps
     stopping it, because the one-shot flag is written in the same transaction
     that just rolled back. A bed temperature is not worth that.
     """

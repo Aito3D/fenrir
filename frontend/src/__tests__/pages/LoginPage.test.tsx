@@ -2114,7 +2114,7 @@ describe('LoginPage', () => {
   // #1889: an already-authenticated visit to /login must redirect to the app,
   // not render the credentials form. Browsers autocomplete the origin to its
   // most-visited path (/login), so live sessions kept landing on the form and
-  // it looked like Bambuddy "never stays logged in".
+  // it looked like Fenrir "never stays logged in".
   describe('authenticated redirect (#1889)', () => {
     const mockUser = {
       id: 1,

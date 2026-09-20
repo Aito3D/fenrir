@@ -1542,7 +1542,7 @@ export function SettingsPage() {
             <SettingsIcon className="w-7 h-7 text-bambu-green" />
             {t('settings.title')}
           </h1>
-          <p className="text-bambu-gray mt-1">{t('settings.configureBambuddy')}</p>
+          <p className="text-bambu-gray mt-1">{t('settings.configureFenrir')}</p>
         </div>
         {/* Cross-tab search */}
         <div className="relative sm:w-72">
@@ -1797,7 +1797,7 @@ export function SettingsPage() {
           <div className="flex-1 min-w-0">
             <p className="text-base font-semibold text-white">
               {sponsorAudience === 'business'
-                ? t('sponsors.businessTitle', 'Bambuddy for business')
+                ? t('sponsors.businessTitle', 'Fenrir for business')
                 : t('sponsors.sectionTitle', 'Independent & community-funded')}
             </p>
             <p className="text-sm text-bambu-gray mt-0.5">
@@ -1809,13 +1809,13 @@ export function SettingsPage() {
                   )
                 : t(
                     'sponsors.tagline',
-                    'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
+                    'Fenrir is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
                   )}
             </p>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bambu-green/20 text-bambu-green group-hover:bg-bambu-green/30 text-sm font-medium whitespace-nowrap self-start md:self-auto">
             {sponsorAudience === 'business'
-              ? t('sponsors.businessCta', 'Bambuddy for business')
+              ? t('sponsors.businessCta', 'Fenrir for business')
               : t('sponsors.viewSupporters', 'View supporters')}
             <ExternalLink className="w-4 h-4" />
           </div>
@@ -3024,7 +3024,7 @@ export function SettingsPage() {
                 </label>
               </div>
               <div className="border-t border-bambu-dark-tertiary pt-4">
-                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">{t('settings.bambuddySoftware')}</p>
+                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">{t('settings.fenrirSoftware')}</p>
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -3168,7 +3168,7 @@ export function SettingsPage() {
                             type="text"
                             value={localSettings?.docker_compose_dir ?? ''}
                             onChange={(e) => updateSetting('docker_compose_dir', e.target.value)}
-                            placeholder={updateCheck?.compose_dir_detected || '/opt/bambuddy'}
+                            placeholder={updateCheck?.compose_dir_detected || '/opt/fenrir'}
                             className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white font-mono placeholder:text-bambu-gray/60 focus:outline-none focus:border-bambu-green"
                           />
                           <span className="block text-xs text-bambu-gray mt-1">
@@ -3245,7 +3245,7 @@ export function SettingsPage() {
               </p>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.bambuddyUrl')}
+                  {t('settings.fenrirUrl')}
                 </label>
                 <input
                   type="text"
@@ -3630,13 +3630,13 @@ export function SettingsPage() {
                     </label>
                     <input
                       type="text"
-                      value={localSettings.mqtt_topic_prefix ?? 'bambuddy'}
+                      value={localSettings.mqtt_topic_prefix ?? 'fenrir'}
                       onChange={(e) => updateSetting('mqtt_topic_prefix', e.target.value)}
-                      placeholder="bambuddy"
+                      placeholder="fenrir"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                     <p className="text-xs text-bambu-gray mt-1">
-                      {t('settings.topicPrefixHint', { prefix: localSettings.mqtt_topic_prefix || 'bambuddy' })}
+                      {t('settings.topicPrefixHint', { prefix: localSettings.mqtt_topic_prefix || 'fenrir' })}
                     </p>
                   </div>
 
@@ -3712,12 +3712,12 @@ export function SettingsPage() {
                   <div className="pt-2 border-t border-bambu-dark-tertiary">
                     <p className="text-sm text-white mb-2">{t('settings.availableMetrics')}</p>
                     <div className="text-xs text-bambu-gray space-y-1">
-                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_printer_connected</code> - {t('settings.metricsConnectionStatus')}</p>
-                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_printer_state</code> - {t('settings.metricsPrinterState')}</p>
-                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_print_progress</code> - {t('settings.metricsPrintProgress')}</p>
-                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_bed_temp_celsius</code> - {t('settings.metricsBedTemp')}</p>
-                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_nozzle_temp_celsius</code> - {t('settings.metricsNozzleTemp')}</p>
-                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_prints_total</code> - {t('settings.metricsPrintsTotal')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">fenrir_printer_connected</code> - {t('settings.metricsConnectionStatus')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">fenrir_printer_state</code> - {t('settings.metricsPrinterState')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">fenrir_print_progress</code> - {t('settings.metricsPrintProgress')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">fenrir_bed_temp_celsius</code> - {t('settings.metricsBedTemp')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">fenrir_nozzle_temp_celsius</code> - {t('settings.metricsNozzleTemp')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">fenrir_prints_total</code> - {t('settings.metricsPrintsTotal')}</p>
                       <p className="text-bambu-gray/70 italic">{t('settings.metricsMore')}</p>
                     </div>
                   </div>
@@ -5263,7 +5263,7 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-bambu-gray">
-                {t('settings.concurrentUploadsDescription', 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Bambuddy host struggles with parallel transfers.')}
+                {t('settings.concurrentUploadsDescription', 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Fenrir host struggles with parallel transfers.')}
               </p>
               <div className="w-full sm:w-1/2">
                 <label className="block text-xs text-bambu-gray mb-1">
@@ -5425,7 +5425,7 @@ export function SettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-bambu-gray mb-2">
-                  {t('settings.preheatFilamentTargetsHint', 'Bambuddy picks the highest target across the loaded AMS slots; PLA-only prints derive 0 and skip the chamber phase automatically.')}
+                  {t('settings.preheatFilamentTargetsHint', 'Fenrir picks the highest target across the loaded AMS slots; PLA-only prints derive 0 and skip the chamber phase automatically.')}
                 </p>
                 <PreheatFilamentTargetsEditor
                   value={localSettings.preheat_filament_targets ?? ''}

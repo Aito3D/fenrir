@@ -266,7 +266,7 @@ describe('SettingsPage', () => {
       });
     });
 
-    it('hides a Bambuddy sidebar page from Sidebar', async () => {
+    it('hides a Fenrir sidebar page from Sidebar', async () => {
       const user = userEvent.setup();
       render(<SettingsPage />);
 
@@ -280,7 +280,7 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Hidden from sidebar')).toBeInTheDocument();
     });
 
-    it('shows a previously hidden Bambuddy sidebar page from Sidebar', async () => {
+    it('shows a previously hidden Fenrir sidebar page from Sidebar', async () => {
       vi.mocked(localStorage.getItem).mockImplementation((key) => {
         if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers']);
         return null;
@@ -310,7 +310,7 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Required in sidebar')).toBeInTheDocument();
     });
 
-    it('presents external links and Bambuddy pages in saved sidebar order', async () => {
+    it('presents external links and Fenrir pages in saved sidebar order', async () => {
       vi.mocked(localStorage.getItem).mockImplementation((key) => {
         if (key === SIDEBAR_ORDER_KEY) return JSON.stringify(['ext-7', 'printers', 'settings']);
         return null;
@@ -594,11 +594,11 @@ describe('SettingsPage', () => {
     };
 
     it('prefixes the command with cd when the backend detected a compose directory', async () => {
-      await renderWithUpdateCheck({ ...DOCKER_CHECK, compose_dir_detected: '/opt/bambuddy' });
+      await renderWithUpdateCheck({ ...DOCKER_CHECK, compose_dir_detected: '/opt/fenrir' });
 
       await waitFor(() => {
         expect(
-          screen.getByText('cd /opt/bambuddy && docker compose pull && docker compose up -d'),
+          screen.getByText('cd /opt/fenrir && docker compose pull && docker compose up -d'),
         ).toBeInTheDocument();
       });
     });
@@ -606,12 +606,12 @@ describe('SettingsPage', () => {
     it('prefers the saved directory over the detected one', async () => {
       await renderWithUpdateCheck(
         { ...DOCKER_CHECK, compose_dir_detected: '/opt/guessed' },
-        { docker_compose_dir: '/srv/stacks/bambuddy' },
+        { docker_compose_dir: '/srv/stacks/fenrir' },
       );
 
       await waitFor(() => {
         expect(
-          screen.getByText('cd /srv/stacks/bambuddy && docker compose pull && docker compose up -d'),
+          screen.getByText('cd /srv/stacks/fenrir && docker compose pull && docker compose up -d'),
         ).toBeInTheDocument();
       });
       expect(screen.queryByText(/\/opt\/guessed/)).not.toBeInTheDocument();
@@ -632,20 +632,20 @@ describe('SettingsPage', () => {
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
       Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
 
-      await renderWithUpdateCheck({ ...DOCKER_CHECK, compose_dir_detected: '/opt/bambuddy' });
+      await renderWithUpdateCheck({ ...DOCKER_CHECK, compose_dir_detected: '/opt/fenrir' });
 
       const copy = await screen.findByRole('button', { name: /copy update command/i });
       await userEvent.click(copy);
 
       expect(writeText).toHaveBeenCalledWith(
-        'cd /opt/bambuddy && docker compose pull && docker compose up -d',
+        'cd /opt/fenrir && docker compose pull && docker compose up -d',
       );
     });
 
     it('offers an editable compose directory field seeded with the detected path', async () => {
-      await renderWithUpdateCheck({ ...DOCKER_CHECK, compose_dir_detected: '/opt/bambuddy' });
+      await renderWithUpdateCheck({ ...DOCKER_CHECK, compose_dir_detected: '/opt/fenrir' });
 
-      const field = await screen.findByPlaceholderText('/opt/bambuddy');
+      const field = await screen.findByPlaceholderText('/opt/fenrir');
       // Placeholder, not value — the detected path is a guess the user has
       // not accepted, so saving must not silently adopt it.
       expect(field).toHaveValue('');
@@ -653,7 +653,7 @@ describe('SettingsPage', () => {
 
     it('shows the installer-download link for Windows installer installs', async () => {
       const downloadUrl =
-        'https://github.com/maziggy/bambuddy/releases/download/v0.2.5/bambuddy-0.2.5-windows-x64-setup.exe';
+        'https://github.com/maziggy/bambuddy/releases/download/v0.2.5/fenrir-0.2.5-windows-x64-setup.exe';
       await renderWithUpdateCheck({
         update_available: true,
         current_version: '0.2.4',
@@ -1888,14 +1888,14 @@ describe('SettingsPage — sponsor banner audience', () => {
 
     const banner = await screen.findByRole('link', { name: /Independent & community-funded/i });
     expect(banner).toHaveAttribute('href', 'https://bambuddy.cool/sponsors.html?from=app-settings');
-    expect(screen.queryByText(/Bambuddy for business/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Fenrir for business/i)).not.toBeInTheDocument();
   });
 
   it('shows the commercial ask for a business-sized fleet', async () => {
     fleet(6);
     render(<SettingsPage />);
 
-    const banner = await screen.findByRole('link', { name: /Bambuddy for business/i });
+    const banner = await screen.findByRole('link', { name: /Fenrir for business/i });
     expect(banner).toHaveAttribute('href', 'https://bambuddy.cool/business.html?from=app-settings');
     // The donation copy is replaced, not merely supplemented.
     expect(screen.queryByText(/Independent & community-funded/i)).not.toBeInTheDocument();

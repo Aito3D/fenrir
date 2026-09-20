@@ -30,7 +30,7 @@ The codebase's established pattern for upstream HTML is
 `dangerouslySetInnerHTML` + `DOMPurify` on a plain div (`ProjectDetailPage.tsx:903`,
 `MakerworldPage.tsx:531`). That is the wrong fit here. Books' body is a
 complete email document carrying its own `<style>` blocks with generic
-selectors. Inlined into the page it either bleeds CSS into Bambuddy, or has its
+selectors. Inlined into the page it either bleeds CSS into Fenrir, or has its
 styles stripped and stops resembling the email — which defeats the point of the
 preview.
 

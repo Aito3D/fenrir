@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile.test
       target: backend-test
-    container_name: bambuddy-backend-test
+    container_name: fenrir-backend-test
     volumes:
       - ./backend:/app/backend:ro
     environment:
@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile.test
       target: frontend-test
-    container_name: bambuddy-frontend-test
+    container_name: fenrir-frontend-test
     volumes:
       - ./frontend/src:/app/frontend/src:ro
       - ./frontend/tests:/app/frontend/tests:ro
@@ -28,7 +28,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bambuddy-integration-test
+    container_name: fenrir-integration-test
     ports:
       - "8001:8000"
     environment:
@@ -48,7 +48,7 @@ services:
 # target backend-test — byte for byte the same image, interpreter and code the
 # `backend-test` service above already runs `pytest backend/tests/` (the
 # superset) in. The one thing that could have made it a distinct test, the
-# BAMBUDDY_TEST_URL=http://integration:8000 it set so the suite would exercise
+# FENRIR_TEST_URL=http://integration:8000 it set so the suite would exercise
 # the live container next to it, was read by nothing: no backend module ever
 # looked the variable up, so the tests built their own in-process TestClient
 # exactly as they do everywhere else, and `depends_on: integration` bought a

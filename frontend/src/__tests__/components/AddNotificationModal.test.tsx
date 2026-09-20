@@ -31,7 +31,7 @@ function buildProvider(overrides: Partial<NotificationProvider> = {}): Notificat
     name: 'My ntfy',
     provider_type: 'ntfy',
     enabled: true,
-    config: { server: 'https://ntfy.sh', topic: 'bambuddy' },
+    config: { server: 'https://ntfy.sh', topic: 'fenrir' },
     on_print_start: false,
     on_print_complete: true,
     on_print_failed: true,
@@ -137,7 +137,7 @@ describe('AddNotificationModal — ntfy Priority (#990)', () => {
     const payload = captured as { config: Record<string, unknown> };
     expect(payload.config).toMatchObject({
       server: 'https://ntfy.sh',
-      topic: 'bambuddy',
+      topic: 'fenrir',
       event_priorities: { on_print_failed: 5 },
     });
   });
@@ -146,7 +146,7 @@ describe('AddNotificationModal — ntfy Priority (#990)', () => {
     const provider = buildProvider({
       config: {
         server: 'https://ntfy.sh',
-        topic: 'bambuddy',
+        topic: 'fenrir',
         event_priorities: { on_print_failed: 5, on_print_complete: 2 },
       },
     });
@@ -607,7 +607,7 @@ describe('AddNotificationModal — Bark provider (#1495)', () => {
       />,
     );
 
-    const groupInput = await screen.findByPlaceholderText('Bambuddy');
+    const groupInput = await screen.findByPlaceholderText('Fenrir');
     await user.type(groupInput, 'Printers');
     const levelRow = screen.getByText(/interruption level/i).closest('div')!;
     await user.selectOptions(within(levelRow).getByRole('combobox'), 'critical');

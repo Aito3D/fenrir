@@ -777,7 +777,7 @@ class TestNtfyPriority:
     async def test_priority_header_set_for_mapped_event(self, service):
         """Mapped event → ntfy Priority header carries the configured value."""
         config = {
-            "topic": "bambuddy",
+            "topic": "fenrir",
             "event_priorities": {"on_print_failed": 5, "on_print_complete": 2},
         }
         mock_client = self._mock_client(service)
@@ -793,7 +793,7 @@ class TestNtfyPriority:
     async def test_priority_header_omitted_for_unmapped_event(self, service):
         """Unmapped event → no Priority header so ntfy uses its server default."""
         config = {
-            "topic": "bambuddy",
+            "topic": "fenrir",
             "event_priorities": {"on_print_failed": 5},
         }
         mock_client = self._mock_client(service)
@@ -807,7 +807,7 @@ class TestNtfyPriority:
     @pytest.mark.asyncio
     async def test_priority_header_omitted_when_no_priorities_set(self, service):
         """Existing setups (no event_priorities key) keep current behaviour."""
-        config = {"topic": "bambuddy"}
+        config = {"topic": "fenrir"}
         mock_client = self._mock_client(service)
         with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_client
@@ -820,7 +820,7 @@ class TestNtfyPriority:
     async def test_priority_header_omitted_when_event_type_missing(self, service):
         """Test sends (no event_type) must not emit a Priority header."""
         config = {
-            "topic": "bambuddy",
+            "topic": "fenrir",
             "event_priorities": {"on_print_failed": 5},
         }
         mock_client = self._mock_client(service)
@@ -836,7 +836,7 @@ class TestNtfyPriority:
         """Values outside 1-5 (or non-numeric) are dropped, not clamped."""
         for bad in (0, 6, 99, -1, "not-a-number", None):
             config = {
-                "topic": "bambuddy",
+                "topic": "fenrir",
                 "event_priorities": {"on_print_failed": bad},
             }
             mock_client = self._mock_client(service)
@@ -851,7 +851,7 @@ class TestNtfyPriority:
     async def test_priority_header_set_on_attachment_path(self, service):
         """Image-attachment path (PUT) must also carry the Priority header."""
         config = {
-            "topic": "bambuddy",
+            "topic": "fenrir",
             "event_priorities": {"on_first_layer_complete": 4},
         }
         mock_client = self._mock_client(service)
@@ -1227,7 +1227,7 @@ class TestBarkProvider:
             config = {
                 "device_key": "abc123",
                 "server": "https://bark.example.com/",
-                "group": "Bambuddy",
+                "group": "Fenrir",
                 "sound": "minuet",
                 "level": "timeSensitive",
             }
@@ -1237,7 +1237,7 @@ class TestBarkProvider:
         call_args = mock_client.post.call_args
         assert call_args[0][0] == "https://bark.example.com/push"
         payload = call_args.kwargs.get("json")
-        assert payload["group"] == "Bambuddy"
+        assert payload["group"] == "Fenrir"
         assert payload["sound"] == "minuet"
         assert payload["level"] == "timeSensitive"
 
@@ -2534,11 +2534,11 @@ class TestNtfyOutbound:
     @pytest.mark.asyncio
     async def test_notification_client_sets_honest_user_agent(self, service):
         """Default httpx UA leaks `python-httpx/<version>` — every other
-        outbound client in the codebase identifies as Bambuddy. The
+        outbound client in the codebase identifies as Fenrir. The
         notification client must too."""
         client = await service._get_client()
         try:
-            assert client.headers.get("user-agent") == "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+            assert client.headers.get("user-agent") == "Fenrir/1.0 (+https://github.com/maziggy/bambuddy)"
         finally:
             await service.close()
 
@@ -2707,7 +2707,7 @@ class TestEmailProvider:
             "smtp_port": "587",
             "username": "alice",
             "password": "secret",
-            "from_email": "bambuddy@example.com",
+            "from_email": "fenrir@example.com",
             "to_email": "alice@example.com",
             "security": "starttls",
             "auth_enabled": "true",
@@ -2750,7 +2750,7 @@ class TestEmailProvider:
         assert ok is True
         assert "image/jpeg" not in captured["raw"]
         assert "multipart/related" not in captured["raw"]
-        assert "cid:bambuddy-finish-photo" not in captured["raw"]
+        assert "cid:fenrir-finish-photo" not in captured["raw"]
         assert "Reason: unknown" in captured["raw"]
 
     @pytest.mark.asyncio
@@ -2776,7 +2776,7 @@ class TestEmailProvider:
         raw = captured["raw"]
         assert "image/jpeg" not in raw
         assert "multipart/related" not in raw
-        assert "cid:bambuddy-finish-photo" not in raw
+        assert "cid:fenrir-finish-photo" not in raw
 
     @pytest.mark.asyncio
     async def test_email_inlines_when_template_uses_finish_photo_url(self, service, smtp_config):
@@ -2802,8 +2802,8 @@ class TestEmailProvider:
         assert "text/html" in raw
         assert "image/jpeg" in raw
         # HTML references the exact cid the Content-ID header registers
-        assert "Content-ID: <bambuddy-finish-photo>" in raw
-        assert 'src="cid:bambuddy-finish-photo"' in raw
+        assert "Content-ID: <fenrir-finish-photo>" in raw
+        assert 'src="cid:fenrir-finish-photo"' in raw
         # Inline disposition so renders embedded, not as download attachment
         assert 'Content-Disposition: inline; filename="finish-photo.jpg"' in raw
         # Plain-text body keeps the URL so non-HTML clients still get a clickable link
@@ -2878,7 +2878,7 @@ class TestEmailProvider:
         assert ok is True
         raw = captured["raw"]
         # The <img> tag appears in the HTML part
-        assert 'src="cid:bambuddy-finish-photo"' in raw
+        assert 'src="cid:fenrir-finish-photo"' in raw
         # The escaped URL is the marker we replaced — the HTML part should not
         # contain BOTH the escaped URL AND the cid img (we swapped, not duplicated).
         # The plain-text part still has the URL; check it's there at least once.

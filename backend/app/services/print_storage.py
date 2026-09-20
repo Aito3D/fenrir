@@ -1,6 +1,6 @@
 """Can FTPS see the file this print is running from? (#2780)
 
-Bambuddy reads a print's 3MF, cover and timelapse off the printer over implicit
+Fenrir reads a print's 3MF, cover and timelapse off the printer over implicit
 FTPS on port 990. On every Bambu model that port serves **external storage only**
 -- the SD card or USB stick. It is not a view of the printer's filesystem.
 
@@ -15,7 +15,7 @@ Before this module we ignored ``url`` and swept anyway: six filename variants
 across five directories with up to four retries for the 3MF, then sixteen more
 paths for the cover, then the timelapse scan -- roughly 110 FTPS connections per
 print, every one of them certain to 550. The user-visible result was an archive
-card with nothing on it and no stated reason, which read as a Bambuddy bug and
+card with nothing on it and no stated reason, which read as a Fenrir bug and
 was reported as one four times (#1170, #2524, #2762, #2780).
 
 But that URL is not the last word on reachability, and reading it as one was
@@ -230,7 +230,7 @@ def print_file_reachable_over_ftp(state: object | None) -> StorageVerdict:
     *state* is a ``PrinterState`` (duck-typed so tests and callers can pass a
     stand-in). Reads ``current_project_url``, ``sdcard`` and ``sdcard_reported``.
 
-    Deliberately the *per-print* URL, not the sticky one: a print Bambuddy saw
+    Deliberately the *per-print* URL, not the sticky one: a print Fenrir saw
     no dispatch for must read as unknown and sweep, rather than inherit the
     previous job's destination. Roughly a fifth of the print starts in #2780's
     bundle had no dispatch on the request topic -- touchscreen reprints and

@@ -261,7 +261,7 @@ class TestIsAmsSlotLocation:
 
 @pytest.mark.asyncio
 async def test_sync_locations_from_spoolman_skips_ams_slot_markers(db_session: AsyncSession):
-    """Bambuddy used to write the loaded slot into Spoolman's `location` field.
+    """Fenrir used to write the loaded slot into Spoolman's `location` field.
     Importing those back offered a printer slot as a storage location, and in
     Spoolman mode they could not even be deleted -- the delete route counts
     spools by that same string and answered 409."""

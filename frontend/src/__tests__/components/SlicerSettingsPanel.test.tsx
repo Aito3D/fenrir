@@ -560,7 +560,7 @@ describe('SlicerSettingsPanel — the picked preset\'s values', () => {
 
   it('names the fix when the sidecar predates the endpoint', async () => {
     // The dominant case: an install pulls SIDECAR_TAG:-latest regardless of
-    // its own release channel, so a current Bambuddy against an old sidecar is
+    // its own release channel, so a current Fenrir against an old sidecar is
     // normal. A generic "could not be read" sends that user hunting.
     await renderPanel({}, { presetValuesResolved: false, presetValuesReason: 'sidecar_outdated' });
     await waitFor(() => expect(screen.getByText(/Update the sidecar image/)).toBeInTheDocument());

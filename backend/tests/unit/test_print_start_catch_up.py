@@ -1,9 +1,9 @@
 """Tests for on_print_start catch-up mode (#1304 follow-up).
 
 The #1304 guard suppresses on_print_start on the first RUNNING push after
-Bambuddy startup so a restart mid-print doesn't re-run the plate check
+Fenrir startup so a restart mid-print doesn't re-run the plate check
 (pausing the live print) or duplicate the archive. But that also meant a
-print started while Bambuddy was down NEVER got an archive row — the
+print started while Fenrir was down NEVER got an archive row — the
 restart-recovery hook only captured a timelapse baseline.
 
 on_print_running_observed now calls ``on_print_start(catch_up=True)``, which:
@@ -219,7 +219,7 @@ async def test_catch_up_reattaches_by_name_to_existing_printing_archive():
 
 @pytest.mark.asyncio
 async def test_catch_up_creates_fallback_archive_when_none_exists():
-    """The print started while Bambuddy was down — no archive row anywhere.
+    """The print started while Fenrir was down — no archive row anywhere.
     Catch-up must create one (no-3MF fallback here: FTP finds nothing), which
     is exactly what #1304 broke for externally-started prints."""
     printer = _make_printer()

@@ -1550,7 +1550,7 @@ class TestNo3MFWarningReason:
     ):
         """Both are real, and only one of them is surprising. "Put a card in"
         is advice the user can act on unprompted; "this model keeps prints
-        somewhere Bambuddy cannot read" is the one they need told.
+        somewhere Fenrir cannot read" is the one they need told.
         """
         printer = await printer_factory()
         await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "no_external_storage"})
@@ -1583,7 +1583,7 @@ class TestNo3MFWarningReason:
         port 990 was told the slicer had not written the file to the card. The
         slicer had; nothing could read it back. The reporter could see the file
         on the stick from his own computer, which is exactly why the advice read
-        as Bambuddy being broken.
+        as Fenrir being broken.
         """
         printer = await printer_factory()
         await archive_factory(

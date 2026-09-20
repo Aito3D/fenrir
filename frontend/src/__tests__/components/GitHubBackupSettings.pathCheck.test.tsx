@@ -46,9 +46,9 @@ const SANDBOXED = {
   writable: false,
   path: '/mnt/nasbackup',
   code: 'sandboxed',
-  detail: "[Errno 30] Read-only file system: '/mnt/nasbackup/.bambuddy-write-test-x'",
+  detail: "[Errno 30] Read-only file system: '/mnt/nasbackup/.fenrir-write-test-x'",
   remedy: 'sudo systemctl edit bambuddy.service\n\n[Service]\nReadWritePaths=/mnt/nasbackup',
-  message: '/mnt/nasbackup is read-only for the Bambuddy service.',
+  message: '/mnt/nasbackup is read-only for the Fenrir service.',
   warning: null,
 };
 
@@ -85,7 +85,7 @@ describe('GitHubBackupSettings — backup path check', () => {
       path: '/backups',
       code: 'ok',
       detail: null,
-      remedy: 'services:\n  bambuddy:\n    volumes:\n      - /backups:/backups',
+      remedy: 'services:\n  fenrir:\n    volumes:\n      - /backups:/backups',
       message: '/backups is writable.',
       warning: 'container_ephemeral',
     });

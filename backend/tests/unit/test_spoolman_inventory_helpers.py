@@ -198,7 +198,7 @@ class TestMapSpoolmanSpool:
 
         This test previously asserted the opposite, on the premise that only 6-char
         hex was valid from Spoolman. Spoolman stores whatever it is given, and
-        Bambuddy's own rgba fields advertise RRGGBBAA — the read was what turned a
+        Fenrir's own rgba fields advertise RRGGBBAA — the read was what turned a
         clear spool into neutral grey.
         """
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "FF000080"}}
@@ -277,7 +277,7 @@ class TestMapSpoolmanSpool:
         """#1357: the canonical store for color_name is
         spool.extra.bambu_color_name (JSON-encoded). Read priority is
         extra > filament.color_name > subtype-synth. The user's
-        Bambuddy-saved value MUST win even when Spoolman's own
+        Fenrir-saved value MUST win even when Spoolman's own
         filament.color_name happens to be populated from some other source.
         """
         spool = {

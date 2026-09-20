@@ -109,7 +109,7 @@ describe('usePrintProgressTitle effect', () => {
     // Replaces <title> too, so set the title after wiring the head up — the hook
     // captures document.title at mount.
     document.head.innerHTML = '<link rel="icon" href="/favicon.svg">';
-    document.title = 'Bambuddy';
+    document.title = 'Fenrir';
   });
   afterEach(() => {
     cleanup();
@@ -136,7 +136,7 @@ describe('usePrintProgressTitle effect', () => {
 
     renderHook(() => usePrintProgressTitle(), { wrapper: wrapper() });
 
-    await waitFor(() => expect(document.title).toBe('42% · Bambuddy'));
+    await waitFor(() => expect(document.title).toBe('42% · Fenrir'));
     expect(faviconHref()).toBe(RING_URL);
   });
 
@@ -146,12 +146,12 @@ describe('usePrintProgressTitle effect', () => {
     h.getPrinterStatus.mockResolvedValue({ state: 'RUNNING', progress: 42, remaining_time: 600 });
 
     const { rerender } = renderHook(() => usePrintProgressTitle(), { wrapper: wrapper() });
-    await waitFor(() => expect(document.title).toBe('42% · Bambuddy'));
+    await waitFor(() => expect(document.title).toBe('42% · Fenrir'));
 
     h.theme.value = { ...h.theme.value, progressInTitle: false };
     rerender();
 
-    await waitFor(() => expect(document.title).toBe('Bambuddy'));
+    await waitFor(() => expect(document.title).toBe('Fenrir'));
     expect(faviconHref()).toContain('/favicon.svg');
   });
 });

@@ -1,7 +1,7 @@
 """Print cost comes from the linked Spoolman spool's price (#2591).
 
 Spoolman exists to hold per-spool pricing, and #261 gave that as the reason for
-integrating with it. Bambuddy never read it. ``archive.py`` prices a print once,
+integrating with it. Fenrir never read it. ``archive.py`` prices a print once,
 at archive time, from the built-in Filament catalogue matched on the primary
 type and falling back to the global default rate -- and in Spoolman mode nothing
 revisited that figure, because the per-spool recompute in

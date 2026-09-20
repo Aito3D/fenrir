@@ -33,6 +33,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
+from backend.app.core.env_compat import env_get
 from backend.app.core.permissions import Permission
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
@@ -500,7 +501,7 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
     Used by the move endpoint when source/target straddle the
     managed↔external boundary (#1112 follow-up — the prior implementation
     updated the DB row's ``folder_id`` but never moved the bytes, so a
-    file moved to an external SMB folder showed up in Bambuddy's UI but
+    file moved to an external SMB folder showed up in Fenrir's UI but
     not on the NAS).
 
     Returns a :class:`_MoveResult` with the new ``file_path`` value to
@@ -1535,19 +1536,19 @@ async def delete_folder(
 # allowlist of operator-opted-in roots rather than the original denylist of
 # system directories. The denylist shape was fail-open-on-growth — anything
 # not enumerated (``/data`` containing other users' archives, ``/root``,
-# arbitrary NFS/SMB mounts, the Bambuddy ``LOG_DIR``) could be mounted by any
+# arbitrary NFS/SMB mounts, the Fenrir ``LOG_DIR``) could be mounted by any
 # user with ``LIBRARY_UPLOAD``. The allowlist defaults to empty and is
-# extended via the ``BAMBUDDY_EXTERNAL_ROOTS`` env var (colon-separated
+# extended via the ``FENRIR_EXTERNAL_ROOTS`` env var (colon-separated
 # absolute paths). The route is additionally gated on ``SETTINGS_UPDATE``
 # (admin scope) rather than ``LIBRARY_UPLOAD`` because mounting host paths
 # is an operator-level capability that crosses user boundaries.
 
 
-# Bambuddy-owned data directories. Hardcode-rejected even if the operator
-# tries to add them to ``BAMBUDDY_EXTERNAL_ROOTS`` — mounting these would
+# Fenrir-owned data directories. Hardcode-rejected even if the operator
+# tries to add them to ``FENRIR_EXTERNAL_ROOTS`` — mounting these would
 # allow reading other users' archives, log files, or the static assets path.
-def _bambuddy_reserved_roots() -> tuple[Path, ...]:
-    """Resolved Bambuddy-owned directories that may NEVER be mounted as an
+def _fenrir_reserved_roots() -> tuple[Path, ...]:
+    """Resolved Fenrir-owned directories that may NEVER be mounted as an
     external folder regardless of the operator's allowlist.
 
     Resolved at call time because tests patch ``settings.base_dir`` /
@@ -1561,15 +1562,15 @@ def _bambuddy_reserved_roots() -> tuple[Path, ...]:
 
 
 def _allowed_external_roots() -> tuple[Path, ...]:
-    """Parse ``BAMBUDDY_EXTERNAL_ROOTS`` into resolved allowed roots.
+    """Parse ``FENRIR_EXTERNAL_ROOTS`` into resolved allowed roots.
 
     Empty env var (the default) means external folders are disabled.
-    Operators opt in explicitly: ``BAMBUDDY_EXTERNAL_ROOTS=/mnt/library:/srv/3d``
+    Operators opt in explicitly: ``FENRIR_EXTERNAL_ROOTS=/mnt/library:/srv/3d``
     Returns a tuple of resolved ``Path`` objects; entries that don't
     resolve to absolute paths are silently dropped (operator error, not
     a security boundary). Resolved lazily so tests can monkeypatch.
     """
-    raw = os.environ.get("BAMBUDDY_EXTERNAL_ROOTS", "")
+    raw = env_get("FENRIR_EXTERNAL_ROOTS", "")
     roots: list[Path] = []
     for entry in raw.split(":"):
         entry = entry.strip()
@@ -1625,12 +1626,12 @@ def _validate_external_path(path_str: str) -> Path:
     1. Path must be absolute and resolve cleanly (symlink-escape rejected
        implicitly by the resolved-startswith check below).
     2. Path must fall under one of the roots enumerated in
-       ``BAMBUDDY_EXTERNAL_ROOTS``; empty allowlist (the default)
+       ``FENRIR_EXTERNAL_ROOTS``; empty allowlist (the default)
        means external folders are not available on this deployment.
-    3. Path must NOT fall under any Bambuddy-owned directory (``base_dir``,
+    3. Path must NOT fall under any Fenrir-owned directory (``base_dir``,
        ``log_dir``, ``static_dir``, ``archive_dir``) — the reserved set
        takes precedence over the allowlist, so an operator who accidentally
-       sets ``BAMBUDDY_EXTERNAL_ROOTS=/`` does not expose ``/data``.
+       sets ``FENRIR_EXTERNAL_ROOTS=/`` does not expose ``/data``.
     4. Existence + directory-type + readability gates remain.
     """
     path = Path(path_str).resolve()
@@ -1644,18 +1645,18 @@ def _validate_external_path(path_str: str) -> Path:
             status_code=400,
             detail=(
                 "External folders are not enabled on this deployment. Ask the "
-                "operator to set BAMBUDDY_EXTERNAL_ROOTS=<colon-separated paths>."
+                "operator to set FENRIR_EXTERNAL_ROOTS=<colon-separated paths>."
             ),
         )
 
-    # Reserved (Bambuddy-owned) paths are rejected before the allowlist check
+    # Reserved (Fenrir-owned) paths are rejected before the allowlist check
     # so an over-broad allowlist (e.g. operator set "/" for testing) cannot
-    # expose Bambuddy's own data dir or log dir.
-    for reserved in _bambuddy_reserved_roots():
+    # expose Fenrir's own data dir or log dir.
+    for reserved in _fenrir_reserved_roots():
         if _path_within(path, reserved):
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot mount Bambuddy-managed directory: {reserved}",
+                detail=f"Cannot mount Fenrir-managed directory: {reserved}",
             )
 
     if not any(_path_within(path, root) for root in allowed_roots):
@@ -1685,7 +1686,7 @@ async def create_external_folder(
     data: ExternalFolderCreate,
     db: AsyncSession = Depends(get_db),
     # GHSA-r2qv follow-up (I1): elevated from LIBRARY_UPLOAD to SETTINGS_UPDATE.
-    # Registering a host filesystem path as a Bambuddy library folder is an
+    # Registering a host filesystem path as a Fenrir library folder is an
     # operator-level capability that crosses user boundaries (one user's
     # registered external folder is visible to every other user via
     # /api/v1/library/folders). LIBRARY_UPLOAD was always the wrong scope —
@@ -2510,7 +2511,7 @@ async def upload_file(
                 raise HTTPException(status_code=404, detail="Folder not found")
 
         # Writable external folders write through to the mount so the file is
-        # visible outside Bambuddy (#1112); everything else lands under the
+        # visible outside Fenrir (#1112); everything else lands under the
         # internal library dir with a UUID-scoped filename. Resolved BEFORE
         # the content validation below so folder-permission rejections
         # (403 read-only, 400 missing path, 409 collision) still surface
@@ -4281,7 +4282,7 @@ async def _run_slicer_with_fallback(
     # config the CLI's StaticPrintConfig pass needs at all. Stripping ANY
     # of them caused the CLI to silently exit immediately after
     # "Initializing StaticPrintConfigs" — exit code 0, no result.json, no
-    # stderr — which Node's child_process treated as failure and Bambuddy
+    # stderr — which Node's child_process treated as failure and Fenrir
     # then masked by falling back to slice_without_profiles using the
     # un-stripped bytes (and the source's embedded printer). Net effect:
     # every 3MF slice with profiles silently produced wrong-printer output.
@@ -4616,7 +4617,7 @@ async def _run_slicer_with_fallback(
                 # arrange on that collapses every plate onto one bed — the
                 # exact outcome the per-plate loop above exists to avoid.
                 # Retrying would hand back a one-plate result for a job the
-                # user asked to slice as N, which reads as a Bambuddy bug
+                # user asked to slice as N, which reads as a Fenrir bug
                 # rather than a slicer failure. Surface the error instead.
                 raise
             logger.warning(
@@ -5586,7 +5587,7 @@ async def delete_file(
     The file's bytes and thumbnail stay on disk until the trash sweeper
     hard-deletes the row after the retention window (see #1008). External
     files skip the trash entirely — they can't be restored from disk and the
-    underlying file is outside Bambuddy's control, so we just drop the DB
+    underlying file is outside Fenrir's control, so we just drop the DB
     record and thumbnail.
     """
     user, can_modify_all = auth_result

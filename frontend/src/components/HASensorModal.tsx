@@ -380,7 +380,7 @@ export function HASensorModal({ sensor, printers, onClose }: Props) {
               </Button>
               {/* An unconfigured Home Assistant leaves nothing to bind to.
                   Editing an existing sensor still saves — its alert rule and
-                  card visibility are Bambuddy's own settings and do not need
+                  card visibility are Fenrir's own settings and do not need
                   Home Assistant to be reachable to change. */}
               <Button type="submit" disabled={isPending || (!haConfigured && !isEditing)}>
                 {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

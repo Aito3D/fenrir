@@ -16,7 +16,7 @@ Auth shape (see :mod:`backend.app.services.orca_cloud` for the deep dive):
     GET  /orca-cloud/status
         Connected/disconnected + user_id.
     POST /orca-cloud/logout
-        Clear stored tokens (Bambuddy then has no token to use; the user can
+        Clear stored tokens (Fenrir then has no token to use; the user can
         also disconnect from Orca Cloud's own settings to revoke server-side).
     GET  /orca-cloud/profiles
         List of the user's Orca Cloud profiles, grouped by type. JIT-refreshes
@@ -528,7 +528,7 @@ async def device_start(
     # card. base_url may be off behind a reverse proxy, but it's harmless if so.
     instance_url = str(request.base_url).rstrip("/") or None
     try:
-        data = await svc.request_device_code(instance_url=instance_url, instance_label="Bambuddy")
+        data = await svc.request_device_code(instance_url=instance_url, instance_label="Fenrir")
     except OrcaCloudAuthError as e:
         # invalid_client etc. — an operator misconfiguration, not user error.
         raise HTTPException(status_code=502, detail=f"Orca Cloud pairing is misconfigured: {e}") from e
@@ -628,7 +628,7 @@ async def logout(
 ):
     """Clear stored Orca Cloud credentials. Does not call Orca's disconnect
     endpoint (the user can revoke server-side from Orca Cloud's own settings;
-    Bambuddy will no longer have the token to use either way)."""
+    Fenrir will no longer have the token to use either way)."""
     await _clear_credentials(db, current_user)
     return {"success": True}
 

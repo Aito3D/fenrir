@@ -23,7 +23,7 @@ readings agree on the answer. The decisive test in practice is the last one: a
 candidate has to actually report a lifetime counter to be chosen, and accessory
 plugs are usually switch-only, so they drop out with nothing configured.
 
-Deliberately *not* enforced: one plug per printer. Bambuddy dropped the UNIQUE
+Deliberately *not* enforced: one plug per printer. Fenrir dropped the UNIQUE
 constraint on ``smart_plugs.printer_id`` on purpose, and the flag defaults to on
 for every existing plug, so clearing it to make it unique would change which
 plugs may mark a printer offline on auto-off (#2629) -- not this module's

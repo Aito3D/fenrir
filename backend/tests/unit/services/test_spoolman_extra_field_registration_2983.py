@@ -5,7 +5,7 @@ Spoolman declares only POST and DELETE at that path -- verified against its own
 OpenAPI document -- so the probe answered 405 and the existence check could
 never succeed. Every call fell through to ``POST /field/spool/{name}``, which is
 an *upsert*: it answered 200 whether or not the field existed, so a field a user
-had renamed or retyped in Spoolman's UI was reset to Bambuddy's version of it
+had renamed or retyped in Spoolman's UI was reset to Fenrir's version of it
 on every client init, and an untrue "Created Spoolman extra field" was logged
 each time.
 

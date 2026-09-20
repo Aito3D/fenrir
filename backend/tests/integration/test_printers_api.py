@@ -3945,7 +3945,7 @@ class TestPrinterAccessCodeVisibility:
 
     Holding ``access_code`` lets the caller talk to the printer's MQTT
     directly with serial+code, bypassing every PRINTERS_CONTROL /
-    PRINTERS_FILES / PRINTERS_AMS_RFID check Bambuddy enforces.
+    PRINTERS_FILES / PRINTERS_AMS_RFID check Fenrir enforces.
 
     Trust matrix encoded here:
       - Auth disabled                  → access_code visible (single-trust mode)
@@ -4854,12 +4854,12 @@ class TestClearPlateOnAPoweredDownPrinter:
     """Releasing the plate-clear gate must not require a reachable printer.
 
     #2864: with Auto Power Off the end-of-print state is a dirty plate on a
-    machine Bambuddy has just switched off. The endpoint answered 400 for
+    machine Fenrir has just switched off. The endpoint answered 400 for
     anything not connected, so the operator who physically cleared that plate
     had no way to say so — not from the API, not from the UI — and everything
     gated on the flag stayed stuck until the printer was powered back on by
     hand. Nothing in the clear path talks to the printer: the flag is
-    Bambuddy-side and persisted.
+    Fenrir-side and persisted.
     """
 
     @pytest.mark.asyncio
@@ -5055,7 +5055,7 @@ class TestPrintableObjectsReload:
 
 
 class TestCoverUsesTheRunningPrintsArchive:
-    """The cover must not re-fetch a 3MF Bambuddy already has on disk.
+    """The cover must not re-fetch a 3MF Fenrir already has on disk.
 
     The in-memory download cache dies with the process, so after a restart
     mid-print every cover, top view and skip-objects plate mask went back to the

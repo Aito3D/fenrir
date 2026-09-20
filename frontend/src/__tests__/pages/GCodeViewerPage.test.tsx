@@ -3,7 +3,7 @@
  *
  * This used to be an iframe onto a vendored copy of PrettyGCode, and most of
  * the page was machinery for detecting when a proxy refused the embed. It now
- * renders Bambuddy's own toolpath viewer directly, so what is worth testing is
+ * renders Fenrir's own toolpath viewer directly, so what is worth testing is
  * that the right file reaches it -- including the plate, which a multi-plate
  * archive needs or the viewer silently shows a different plate than the one
  * that was picked.

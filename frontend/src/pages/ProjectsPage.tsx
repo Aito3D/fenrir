@@ -1155,7 +1155,7 @@ export function ProjectsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bambuddy_projects_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `fenrir_projects_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast(t('projects.toast.exported'), 'success');

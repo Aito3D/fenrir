@@ -1,6 +1,6 @@
 """What a spool's material becomes when it is written into an AMS slot (#2902).
 
-The reporter had eSUN PLA+ in his inventory. Bambuddy wrote "PLA+" into the
+The reporter had eSUN PLA+ in his inventory. Fenrir wrote "PLA+" into the
 slot's ``tray_type``, and neither slicer has such a type -- so a plate sliced
 with any PLA profile could not use that slot. The same string also went into
 the generic-filament-id lookup, which missed, so the slot went out with an
@@ -129,7 +129,7 @@ class TestHowItReadsAName:
 
 class TestTheShippedCatalogue:
     """The catalogue is where the reporter's PLA+ came from, so it is also the
-    honest test set: every material Bambuddy itself puts in front of a user."""
+    honest test set: every material Fenrir itself puts in front of a user."""
 
     def test_every_catalogue_material_lands_on_a_type_or_is_left_alone(self):
         # Names that carry no filament type at all. Nothing can be made of them,
@@ -154,7 +154,7 @@ class TestTheShippedCatalogue:
         assert leftover == {"CPE HG100", "FiberSilk Metallic", "XT", "NylonX", "NylonG"}
 
 
-class TestTheMaterialsBambuddyOffers:
+class TestTheMaterialsFenrirOffers:
     """``filament_fields.json`` is the material list the Profiles editor puts in
     a dropdown, so every value in it is a type a user can legitimately end up
     with on a spool -- and reducing one of those to something shorter is not a

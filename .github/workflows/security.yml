@@ -98,7 +98,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: bambuddy:security-scan
+          tags: fenrir:security-scan
           cache-from: type=gha,scope=publish-linux/amd64
 
       # Bump `version` when it ages rather than leaving it. Old Trivy releases
@@ -115,7 +115,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: 'bambuddy:security-scan'
+          image-ref: 'fenrir:security-scan'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
@@ -182,7 +182,7 @@ jobs:
         run: |
           # CVE-2025-45768 (PYSEC-2025-183 / GHSA-65pc-fj4g-8rjx): disputed by PyJWT maintainers.
           # Advisory says "key length is chosen by the application that uses the library" — no
-          # PyJWT fix exists or will exist. Bambuddy is safe: backend/app/core/auth.py:184 uses
+          # PyJWT fix exists or will exist. Fenrir is safe: backend/app/core/auth.py:184 uses
           # secrets.token_urlsafe(64) (~86 chars of entropy) for auto-generated secrets and
           # rejects file-loaded secrets shorter than 32 chars at :177. Keep ignored permanently.
           pip-audit --desc on --format json --output pip-audit-results.json \
@@ -360,7 +360,7 @@ jobs:
             const vulns = results.vulnerabilities || {};
             // Documented advisory exceptions (keyed by GHSA id) - see ci.yml for the
             // full rationale and the matching hard gate. GHSA-qwww-vcr4-c8h2: React
-            // Router RSC-mode CSRF, not reachable from Bambuddy's BrowserRouter SPA
+            // Router RSC-mode CSRF, not reachable from Fenrir's BrowserRouter SPA
             // (@react-router/server not installed); react-router/-dom pinned to 7.18.1
             // (the most-patched 7.x), no non-major fix exists. Auto-surfaces again if a
             // non-major fix ships.

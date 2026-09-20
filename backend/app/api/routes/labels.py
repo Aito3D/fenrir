@@ -8,7 +8,7 @@ Two endpoints, one per inventory backend:
 Both accept ``{spool_ids: [int], template: str, starting_position: int}`` and
 return a PDF stream.
 The QR code on each label deep-links to ``/inventory?spool=<id>`` so a phone
-scan jumps straight back into Bambuddy at that spool's row.
+scan jumps straight back into Fenrir at that spool's row.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def _split_extra_colors(raw: str | None) -> list[str] | None:
 
 async def _resolve_deeplink_base(request: Request, db: AsyncSession) -> str:
     """Where the QR codes should point. Prefers `external_url` when set so a
-    phone scan reaches the user's public Bambuddy URL rather than an internal
+    phone scan reaches the user's public Fenrir URL rather than an internal
     address; falls back to the request's own scheme+host when no setting is
     configured.
     """
@@ -190,7 +190,7 @@ async def render_local_inventory_labels(
         monochrome=body.monochrome,
         starting_position=body.starting_position,
     )
-    filename = f"bambuddy-labels-{body.template}.pdf"
+    filename = f"fenrir-labels-{body.template}.pdf"
     return _stream_pdf(pdf, filename)
 
 
@@ -239,5 +239,5 @@ async def render_spoolman_labels(
         monochrome=body.monochrome,
         starting_position=body.starting_position,
     )
-    filename = f"bambuddy-labels-spoolman-{body.template}.pdf"
+    filename = f"fenrir-labels-spoolman-{body.template}.pdf"
     return _stream_pdf(pdf, filename)

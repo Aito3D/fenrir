@@ -2,7 +2,7 @@
 
 ``register_expected_print`` has to run *before* the MQTT command, because the
 printer can report the print before the send returns. So any path that
-registers and then fails to send leaves Bambuddy expecting a print that will
+registers and then fails to send leaves Fenrir expecting a print that will
 never arrive: a cancel winning the #1853 CAS race, ``start_print()`` returning
 False, or an exception in between — a PostgreSQL connection failure mid-dispatch
 is the case that surfaced this (#2702 follow-up).

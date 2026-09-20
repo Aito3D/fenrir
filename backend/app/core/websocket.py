@@ -52,7 +52,7 @@ class ConnectionManager:
         for conn in self.active_connections:
             project_id = getattr(conn.state, "aito_project_id", None)
             if project_id is not None:
-                name = getattr(conn.state, "bambuddy_principal", None) or "Operator"
+                name = getattr(conn.state, "fenrir_principal", None) or "Operator"
                 viewers.setdefault(str(project_id), []).append(name)
         return {"type": "aito_presence_state", "viewers": viewers}
 
@@ -211,7 +211,7 @@ class ConnectionManager:
         item's ``created_by_id`` nor the WS principal is set, and the
         existing fan-out semantics are exactly what the user wants.
 
-        Per-user routing reads ``websocket.state.bambuddy_principal_user_id``
+        Per-user routing reads ``websocket.state.fenrir_principal_user_id``
         stamped at connect time (``routes/websocket.py``). Connections
         without a stamped id are skipped on the targeted path so an
         anonymous reader never receives another user's dispatch toast.
@@ -239,7 +239,7 @@ class ConnectionManager:
             connections = [
                 conn
                 for conn in self.active_connections
-                if getattr(conn.state, "bambuddy_principal_user_id", None) == user_id
+                if getattr(conn.state, "fenrir_principal_user_id", None) == user_id
             ]
         if not connections:
             return

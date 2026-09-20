@@ -10,7 +10,7 @@ _OPAQUE_ALPHA = "FF"
 def spoolman_color_hex(rgba: str | None) -> str | None:
     """Normalise an RRGGBB(AA) value to what Spoolman's ``color_hex`` should hold.
 
-    Eight characters only when the spool is genuinely translucent. Bambuddy used
+    Eight characters only when the spool is genuinely translucent. Fenrir used
     to truncate to six unconditionally, which turned a clear spool's ``00000000``
     into opaque black (#2912); passing everything through instead would rewrite
     the ``color_hex`` of every opaque spool on its next touch, churning records in

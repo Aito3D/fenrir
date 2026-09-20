@@ -131,7 +131,7 @@ export function FilamentMapping({
     });
     return map;
   }, [inventoryRemain]);
-  // The other half of the same payload: what Bambuddy has bound to each slot,
+  // The other half of the same payload: what Fenrir has bound to each slot,
   // so a slot reads as the spool the operator assigned rather than as whatever
   // the printer can say about it. A third-party spool reports no sub-brand at
   // all and its colour hex resolves against Bambu's catalogue, so without this

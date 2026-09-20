@@ -4,7 +4,7 @@
  *
  * This is the piece that does not exist upstream. `three-slicer` renders its own
  * slicing kernel's output and ships no G-code parser at all, so a preview of a
- * *file* -- which is all Bambuddy ever has -- needs the toolpath reconstructed
+ * *file* -- which is all Fenrir ever has -- needs the toolpath reconstructed
  * from the text.
  *
  * The renderer's input is one entry per layer:

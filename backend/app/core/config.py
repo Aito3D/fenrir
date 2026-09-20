@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+from backend.app.core.env_compat import legacy_name
+
 # Application version - single source of truth
 APP_VERSION = "1.2.6b1"
 GITHUB_REPO = "maziggy/bambuddy"
@@ -57,7 +59,7 @@ _db_path = _migrate_database() if not _external_db_url else None
 
 
 class Settings(BaseSettings):
-    app_name: str = "Bambuddy"
+    app_name: str = "Fenrir"
     debug: bool = False  # Default to production mode
 
     # Paths
@@ -150,7 +152,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# S6: Warn on unknown MFA_*/BAMBUDDY_* env vars so typos like MFA_ENCYPTION_KEY
+# S6: Warn on unknown MFA_*/FENRIR_* env vars so typos like MFA_ENCYPTION_KEY
 # are not silently swallowed by ``extra = "ignore"``. The original Pydantic
 # behaviour rejected them outright and broke startup (#1219); we now accept
 # them but log every unrecognised one at INFO so operators can spot mistakes.
@@ -164,28 +166,35 @@ _INTENTIONAL_UNSETTINGS = {
     # #1589 — api/routes/auth.py reads this on the login path. Unregistered it
     # logged "possible typo" at every boot, telling an operator who is locked
     # out and following the documented recovery that the variable is not real.
-    "BAMBUDDY_LOCAL_LOGIN",
+    "FENRIR_LOCAL_LOGIN",
     # #2593 — core/oidc_env.py reads these directly; they are not Settings
     # fields because they map to an OIDCProvider row, not to app config.
-    "BAMBUDDY_OIDC_NAME",
-    "BAMBUDDY_OIDC_ISSUER_URL",
-    "BAMBUDDY_OIDC_CLIENT_ID",
-    "BAMBUDDY_OIDC_CLIENT_SECRET",
-    "BAMBUDDY_OIDC_SCOPES",
-    "BAMBUDDY_OIDC_ENABLED",
-    "BAMBUDDY_OIDC_AUTO_CREATE_USERS",
-    "BAMBUDDY_OIDC_AUTO_LINK_EXISTING",
-    "BAMBUDDY_OIDC_EMAIL_CLAIM",
-    "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
-    "BAMBUDDY_OIDC_ICON_URL",
-    "BAMBUDDY_OIDC_AUTOLOGIN",
-    "BAMBUDDY_OIDC_DEFAULT_GROUP",
+    "FENRIR_OIDC_NAME",
+    "FENRIR_OIDC_ISSUER_URL",
+    "FENRIR_OIDC_CLIENT_ID",
+    "FENRIR_OIDC_CLIENT_SECRET",
+    "FENRIR_OIDC_SCOPES",
+    "FENRIR_OIDC_ENABLED",
+    "FENRIR_OIDC_AUTO_CREATE_USERS",
+    "FENRIR_OIDC_AUTO_LINK_EXISTING",
+    "FENRIR_OIDC_EMAIL_CLAIM",
+    "FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED",
+    "FENRIR_OIDC_ICON_URL",
+    "FENRIR_OIDC_AUTOLOGIN",
+    "FENRIR_OIDC_DEFAULT_GROUP",
+}
+
+# The pre-rename spelling of every variable above is still read as a fallback
+# (core/env_compat.py), so an install that has not migrated its compose file
+# must not be told at every boot that its working configuration is a typo.
+_INTENTIONAL_UNSETTINGS |= {
+    _legacy for _name in list(_INTENTIONAL_UNSETTINGS) if (_legacy := legacy_name(_name)) is not None
 }
 
 _known_settings_fields = {f.upper() for f in settings.model_fields}
 
 for _env_key in os.environ:
-    if _re.match(r"^(MFA_|BAMBUDDY_)", _env_key, _re.IGNORECASE):
+    if _re.match(r"^(MFA_|FENRIR_|BAMBUDDY_)", _env_key, _re.IGNORECASE):
         _norm = _env_key.upper()
         if _norm not in _known_settings_fields and _norm not in _INTENTIONAL_UNSETTINGS:
             logging.info(

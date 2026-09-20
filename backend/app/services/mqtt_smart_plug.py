@@ -131,7 +131,7 @@ class MQTTSmartPlugService:
             # Create client with callback API version 2
             self.client = mqtt.Client(
                 callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                client_id=f"bambuddy-smartplug-{id(self)}",
+                client_id=f"fenrir-smartplug-{id(self)}",
                 protocol=mqtt.MQTTv311,
             )
 

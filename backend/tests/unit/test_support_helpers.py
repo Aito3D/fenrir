@@ -1475,7 +1475,7 @@ class TestSanitizePushStatusValues:
 
 
 class TestProcessInfo:
-    """Bambuddy's own footprint in the bundle (#2734).
+    """Fenrir's own footprint in the bundle (#2734).
 
     Bundles carried nothing about the process itself, so "memory climbs over
     days until the OOM killer fires" could not be triaged from a bundle — the

@@ -288,7 +288,7 @@ class TestUpdatesAPI:
         """#1420: once GitHub returns 403 with X-RateLimit-Remaining=0, the
         next call must short-circuit on the backoff window instead of hitting
         api.github.com again. Otherwise the user's logs flood with rate-limit
-        errors and Bambuddy keeps adding to whatever throttle GitHub applies."""
+        errors and Fenrir keeps adding to whatever throttle GitHub applies."""
         import time
 
         import httpx as _httpx
@@ -459,7 +459,7 @@ class TestUpdatesAPI:
             proc = MagicMock()
             # origin is set to a fork — must be rewritten.
             if "get-url" in args and "origin" in args:
-                proc.communicate = AsyncMock(return_value=(b"git@github.com:somefork/bambuddy.git\n", b""))
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:somefork/fenrir.git\n", b""))
             else:
                 proc.communicate = AsyncMock(return_value=(b"", b""))
             proc.returncode = 0
@@ -1046,7 +1046,7 @@ class TestUpdatesAPI:
         from backend.app.api.routes import updates as updates_module
 
         # Set up fake install layout: app_dir has requirements.txt, data_dir is
-        # a sibling (mirroring `INSTALL_PATH=/opt/bambuddy`, `DATA_DIR=/opt/bambuddy/data`).
+        # a sibling (mirroring `INSTALL_PATH=/opt/fenrir`, `DATA_DIR=/opt/fenrir/data`).
         app_dir = tmp_path / "app"
         data_dir = tmp_path / "app" / "data"
         app_dir.mkdir()
@@ -1093,7 +1093,7 @@ class TestUpdatesAPI:
     @pytest.mark.asyncio
     async def test_perform_update_runs_git_in_app_dir_when_data_dir_on_separate_mount(self, tmp_path):
         """Regression for #1715: when DATA_DIR is on a path separate from the
-        install (e.g. WorkingDirectory=/opt/bambuddy + DATA_DIR=/srv/bambuddy/data),
+        install (e.g. WorkingDirectory=/opt/fenrir + DATA_DIR=/srv/fenrir/data),
         ``base_dir`` and the repo working tree are on different mounts. Pre-fix,
         every git subprocess (`remote get-url`, `remote set-url`, `fetch`,
         `reset --hard`) used ``cwd=base_dir`` — and git could no longer walk up
@@ -1107,8 +1107,8 @@ class TestUpdatesAPI:
 
         # Separate-mount layout: app_dir and data_dir are SIBLINGS, not parent/
         # child. base_dir is not under app_dir, so git cannot walk up.
-        app_dir = tmp_path / "opt" / "bambuddy"
-        data_dir = tmp_path / "srv" / "bambuddy" / "data"
+        app_dir = tmp_path / "opt" / "fenrir"
+        data_dir = tmp_path / "srv" / "fenrir" / "data"
         app_dir.mkdir(parents=True)
         data_dir.mkdir(parents=True)
         (app_dir / "requirements.txt").write_text("fastapi\n")
@@ -1198,7 +1198,7 @@ class TestUpdatesAPI:
 
         release = {
             "assets": [
-                {"name": "bambuddy-0.2.5b1-windows-x64-setup.exe", "browser_download_url": "https://x/v.exe"},
+                {"name": "fenrir-0.2.5b1-windows-x64-setup.exe", "browser_download_url": "https://x/v.exe"},
                 {"name": "bambuddy-windows-x64-setup.exe", "browser_download_url": "https://x/alias.exe"},
                 {"name": "checksums.txt", "browser_download_url": "https://x/c.txt"},
             ],
@@ -1258,8 +1258,8 @@ class TestUpdatesAPI:
             "published_at": "2099-01-01T00:00:00Z",
             "assets": [
                 {
-                    "name": "bambuddy-999.9.9-windows-x64-setup.exe",
-                    "browser_download_url": "https://github.com/maziggy/bambuddy/releases/download/v999.9.9/bambuddy-999.9.9-windows-x64-setup.exe",
+                    "name": "fenrir-999.9.9-windows-x64-setup.exe",
+                    "browser_download_url": "https://github.com/maziggy/bambuddy/releases/download/v999.9.9/fenrir-999.9.9-windows-x64-setup.exe",
                 },
             ],
         }
@@ -1297,7 +1297,7 @@ class TestUpdatesAPI:
         assert "update_method" in body, f"unexpected response shape: {body}"
         assert body["update_method"] == "windows_installer"
         assert body["is_windows_installer"] is True
-        assert body["installer_download_url"].endswith("bambuddy-999.9.9-windows-x64-setup.exe")
+        assert body["installer_download_url"].endswith("fenrir-999.9.9-windows-x64-setup.exe")
 
     # --- Compose directory detection (#2664, reporter pchulpjoost) ---
     # `docker compose pull` only works from the directory holding the compose
@@ -1318,9 +1318,9 @@ class TestUpdatesAPI:
 
         with self._mountinfo(
             "2244 1668 0:137 / / rw,relatime - overlay overlay rw,lowerdir=/x",
-            "1437 2244 0:48 /opt/bambuddy/data /app/data rw,relatime - ext4 /dev/sda1 rw",
+            "1437 2244 0:48 /opt/fenrir/data /app/data rw,relatime - ext4 /dev/sda1 rw",
         ):
-            assert _compose_dir_from_mountinfo() == "/opt/bambuddy"
+            assert _compose_dir_from_mountinfo() == "/opt/fenrir"
 
     def test_compose_dir_none_for_named_volume(self):
         """The shipped compose file uses named volumes, which resolve to
@@ -1330,7 +1330,7 @@ class TestUpdatesAPI:
         from backend.app.api.routes.updates import _compose_dir_from_mountinfo
 
         with self._mountinfo(
-            "1290 2246 0:65 /var/lib/docker/volumes/bambuddy_bambuddy_data/_data /app/data rw - ext4 /dev/sda1 rw",
+            "1290 2246 0:65 /var/lib/docker/volumes/fenrir_bambuddy_data/_data /app/data rw - ext4 /dev/sda1 rw",
         ):
             assert _compose_dir_from_mountinfo() is None
 
@@ -1350,10 +1350,10 @@ class TestUpdatesAPI:
         from backend.app.api.routes.updates import _compose_dir_from_mountinfo
 
         with self._mountinfo(
-            "1290 2246 0:65 /var/lib/docker/volumes/bambuddy_bambuddy_data/_data /app/data rw - ext4 /dev/sda1 rw",
-            "1441 2244 0:48 /srv/bambuddy/logs /app/logs rw,relatime - ext4 /dev/sda1 rw",
+            "1290 2246 0:65 /var/lib/docker/volumes/fenrir_bambuddy_data/_data /app/data rw - ext4 /dev/sda1 rw",
+            "1441 2244 0:48 /srv/fenrir/logs /app/logs rw,relatime - ext4 /dev/sda1 rw",
         ):
-            assert _compose_dir_from_mountinfo() == "/srv/bambuddy"
+            assert _compose_dir_from_mountinfo() == "/srv/fenrir"
 
     def test_compose_dir_none_without_mountinfo(self):
         """Windows and macOS have no /proc; the guess simply doesn't happen."""
@@ -1363,15 +1363,15 @@ class TestUpdatesAPI:
             assert _compose_dir_from_mountinfo() is None
 
     def test_detect_compose_dir_prefers_env_var(self):
-        """BAMBUDDY_COMPOSE_DIR is stated rather than inferred, so it wins over
+        """FENRIR_COMPOSE_DIR is stated rather than inferred, so it wins over
         a mountinfo guess that would otherwise point somewhere else."""
         from backend.app.api.routes import updates as updates_module
 
         with (
-            patch.dict("os.environ", {"BAMBUDDY_COMPOSE_DIR": "/srv/stacks/bambuddy"}),
+            patch.dict("os.environ", {"FENRIR_COMPOSE_DIR": "/srv/stacks/fenrir"}),
             patch.object(updates_module, "_compose_dir_from_mountinfo", return_value="/opt/wrong"),
         ):
-            assert updates_module._detect_compose_dir() == "/srv/stacks/bambuddy"
+            assert updates_module._detect_compose_dir() == "/srv/stacks/fenrir"
 
     def test_detect_compose_dir_skips_mountinfo_outside_docker(self):
         """A native install has no compose file; mountinfo would still show
@@ -1379,7 +1379,7 @@ class TestUpdatesAPI:
         from backend.app.api.routes import updates as updates_module
 
         with (
-            patch.dict("os.environ", {"BAMBUDDY_COMPOSE_DIR": ""}),
+            patch.dict("os.environ", {"FENRIR_COMPOSE_DIR": ""}),
             patch.object(updates_module, "_is_docker_environment", return_value=False),
             patch.object(updates_module, "_compose_dir_from_mountinfo", return_value="/opt/wrong"),
         ):
@@ -1422,18 +1422,18 @@ class TestUpdatesAPI:
             patch.object(_httpx, "AsyncClient", _FakeClient),
             patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
             patch("backend.app.api.routes.updates._is_docker_environment", return_value=True),
-            patch("backend.app.api.routes.updates._detect_compose_dir", return_value="/opt/bambuddy"),
+            patch("backend.app.api.routes.updates._detect_compose_dir", return_value="/opt/fenrir"),
         ):
             body = (await async_client.get("/api/v1/updates/check")).json()
         assert body["update_method"] == "docker"
-        assert body["compose_dir_detected"] == "/opt/bambuddy"
+        assert body["compose_dir_detected"] == "/opt/fenrir"
 
         with (
             patch.object(_httpx, "AsyncClient", _FakeClient),
             patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
             patch("backend.app.api.routes.updates._is_docker_environment", return_value=False),
             patch("backend.app.api.routes.updates._is_windows_installer_install", return_value=False),
-            patch("backend.app.api.routes.updates._detect_compose_dir", return_value="/opt/bambuddy"),
+            patch("backend.app.api.routes.updates._detect_compose_dir", return_value="/opt/fenrir"),
         ):
             body = (await async_client.get("/api/v1/updates/check")).json()
         assert body["update_method"] == "git"

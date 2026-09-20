@@ -796,7 +796,7 @@ CREATE TABLE print_archives (
 	content_verified BOOLEAN, 
 	thumbnail_path VARCHAR(500), 
 	timelapse_path VARCHAR(500), 
-	bambuddy_forced_timelapse BOOLEAN DEFAULT '0' NOT NULL, 
+	fenrir_forced_timelapse BOOLEAN DEFAULT '0' NOT NULL, 
 	timelapse_baseline JSON, 
 	source_3mf_path VARCHAR(500), 
 	f3d_path VARCHAR(500), 

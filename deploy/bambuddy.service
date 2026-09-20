@@ -1,21 +1,21 @@
-# BamBuddy Systemd Service Template
+# Fenrir Systemd Service Template
 #
 # INSTALLATION:
 # 1. Copy this file to /etc/systemd/system/bambuddy.service
 # 2. Replace placeholders:
-#    - INSTALL_PATH: Where BamBuddy is installed (e.g., /opt/bambuddy)
-#    - SERVICE_USER: User to run as (e.g., bambuddy)
-#    - DATA_DIR: Data directory (e.g., /opt/bambuddy/data)
-#    - LOG_DIR: Log directory (e.g., /opt/bambuddy/logs)
+#    - INSTALL_PATH: Where Fenrir is installed (e.g., /opt/fenrir)
+#    - SERVICE_USER: User to run as (e.g., fenrir)
+#    - DATA_DIR: Data directory (e.g., /opt/fenrir/data)
+#    - LOG_DIR: Log directory (e.g., /opt/fenrir/logs)
 # 3. Run: sudo systemctl daemon-reload
-# 4. Run: sudo systemctl enable bambuddy
-# 5. Run: sudo systemctl start bambuddy
+# 4. Run: sudo systemctl enable fenrir
+# 5. Run: sudo systemctl start fenrir
 #
 # Or use the install script: ./install/install.sh
 #
 
 [Unit]
-Description=BamBuddy - Bambu Lab Print Management
+Description=Fenrir - Bambu Lab Print Management
 Documentation=https://github.com/maziggy/bambuddy
 After=network.target
 
@@ -54,13 +54,13 @@ RestartSec=5
 TimeoutStopSec=30
 
 # Kill zombie ffmpeg processes (timelapse processing)
-ExecStartPre=-/usr/bin/pkill -9 -f "ffmpeg.*bambuddy"
-ExecStopPost=-/usr/bin/pkill -9 -f "ffmpeg.*bambuddy"
+ExecStartPre=-/usr/bin/pkill -9 -f "ffmpeg.*fenrir"
+ExecStopPost=-/usr/bin/pkill -9 -f "ffmpeg.*fenrir"
 
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=bambuddy
+SyslogIdentifier=fenrir
 
 # Allow binding to privileged ports (322 RTSP, 990 FTPS) for Virtual Printer
 # mode. Without this the VP's sockets never open and the slicer simply never
@@ -76,7 +76,7 @@ PrivateTmp=true
 ProtectSystem=strict
 # ProtectHome=true hides /home/* and breaks ExecStart when INSTALL_PATH is
 # under /home (issue #1685). Default is the safer read-only; flip to true if
-# your INSTALL_PATH is outside /home (e.g. /opt/bambuddy).
+# your INSTALL_PATH is outside /home (e.g. /opt/fenrir).
 ProtectHome=read-only
 #
 # ProtectSystem=strict mounts EVERYTHING outside these three paths read-only for
@@ -87,7 +87,7 @@ ProtectHome=read-only
 # So if you point Scheduled Backups at a directory outside the install, data and
 # log dirs, add it here — or better, in a drop-in that survives a reinstall:
 #
-#   sudo systemctl edit bambuddy
+#   sudo systemctl edit fenrir
 #   [Service]
 #   ReadWritePaths=/mnt/your-nas-share
 #

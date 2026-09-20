@@ -18,7 +18,7 @@ jobs:
         with:
           repository: maziggy/bambuddy
           ghtoken: ${{ secrets.GHRS_GITHUB_API_TOKEN }}
-          ghpagesprefix: https://maziggy.github.io/bambuddy
+          ghpagesprefix: https://maziggy.github.io/fenrir
 
       # Inject ghcr.io container-download stats (cumulative + 30-day
       # sparkline merged into a sidecar CSV so the chart grows beyond
@@ -51,7 +51,7 @@ jobs:
             --report data/maziggy/bambuddy/latest-report/report.html \
             --csv    data/maziggy/bambuddy/ghcr-pulls.csv \
             --owner  maziggy \
-            --pkg    bambuddy
+            --pkg    fenrir
 
       - name: commit-and-push
         working-directory: data

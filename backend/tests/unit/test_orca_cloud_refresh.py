@@ -2,7 +2,7 @@
 
 The refresh token is single-use and rotating, and Orca reports every rejection
 with one composite reason (``unknown, expired, revoked, or already used``), so
-Bambuddy cannot tell a genuine revocation from a lost rotation race. Routes may
+Fenrir cannot tell a genuine revocation from a lost rotation race. Routes may
 still clear on that signal — a person is looking at the page and can pair again
 — but a background job must not, or an unattended run can destroy a working
 pairing (#2717).

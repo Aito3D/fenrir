@@ -1,6 +1,6 @@
 """Smart-plug timestamps must be naive UTC (#2539 collateral).
 
-Every ``DateTime`` column in the smart-plug tables is naive, and Bambuddy's
+Every ``DateTime`` column in the smart-plug tables is naive, and Fenrir's
 convention is that a naive column holds UTC. The smart-plug code wrote *aware*
 datetimes into them anyway. SQLite tolerates that — its bind processor reads the
 datetime's fields and drops the offset — so it went unnoticed for a long time.
@@ -12,7 +12,7 @@ which meant that on Postgres:
   the Statistics page's date-filtered energy figure was permanently zero;
 * every plug status poll raised on ``last_checked``.
 
-Postgres is the setup Bambuddy recommends for multi-printer installs, so this
+Postgres is the setup Fenrir recommends for multi-printer installs, so this
 was not a corner. Both of these tests fail against the pre-#2539 code.
 """
 

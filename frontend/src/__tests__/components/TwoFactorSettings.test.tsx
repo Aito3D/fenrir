@@ -52,7 +52,7 @@ describe('TwoFactorSettings', () => {
         HttpResponse.json({
           secret: 'JBSWY3DPEHPK3PXP',
           qr_code_b64: 'ZmFrZVFSY29kZQ==',
-          issuer: 'Bambuddy',
+          issuer: 'Fenrir',
         }),
       ),
 

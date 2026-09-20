@@ -515,7 +515,7 @@ describe('VirtualPrinterCard - header does not overflow the card', () => {
       mode: 'proxy',
       model_name: 'H2C',
       target_printer_id: 9,
-      // Both are populated only when Bambuddy and the printer sit on
+      // Both are populated only when Fenrir and the printer sit on
       // different subnets -- the reporter's case.
       bind_ip: '192.168.20.175',
       remote_interface_ip: '192.168.30.210',

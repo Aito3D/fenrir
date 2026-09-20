@@ -1,4 +1,4 @@
-"""Shared test fixtures for BamBuddy backend tests."""
+"""Shared test fixtures for Fenrir backend tests."""
 
 import asyncio
 import atexit
@@ -34,7 +34,7 @@ os.environ["DEBUG"] = "false"
 # writes to the developer's real SQLite file, and with a PostgreSQL `.env` it
 # means a live install. A completion test calling ``on_print_complete(1, ...)``
 # closed a queue item belonging to an actual running print that way.
-_TEST_APP_DB_DIR = Path(tempfile.mkdtemp(prefix="bambuddy_test_appdb_"))
+_TEST_APP_DB_DIR = Path(tempfile.mkdtemp(prefix="fenrir_test_appdb_"))
 APP_DATABASE_URL = f"sqlite+aiosqlite:///{_TEST_APP_DB_DIR / 'app.db'}"
 os.environ["DATABASE_URL"] = APP_DATABASE_URL
 
@@ -60,7 +60,7 @@ def _assert_disposable_database(url, source: str) -> None:
         raise RuntimeError(
             f"Refusing to run tests: {source} resolves to {url!r}, which is not the "
             f"disposable SQLite database under {_TEST_APP_DB_DIR}. Tests must never "
-            f"open a session against a real Bambuddy database."
+            f"open a session against a real Fenrir database."
         )
 
 
@@ -79,7 +79,7 @@ if settings.database_url != APP_DATABASE_URL:
     )
 
 # Use a temp directory for plate calibration to avoid deleting real calibration files
-_test_plate_cal_dir = Path(tempfile.mkdtemp(prefix="bambuddy_test_plate_cal_"))
+_test_plate_cal_dir = Path(tempfile.mkdtemp(prefix="fenrir_test_plate_cal_"))
 settings.plate_calibration_dir = _test_plate_cal_dir
 
 

@@ -2,8 +2,8 @@
 
 Covers the four contracts described on the GitHub issue:
 1. POST /auth/login rejects local credentials when local_login_enabled=false
-   AND the BAMBUDDY_LOCAL_LOGIN env var is not set.
-2. The BAMBUDDY_LOCAL_LOGIN=true env var bypasses the gate (recovery path).
+   AND the FENRIR_LOCAL_LOGIN env var is not set.
+2. The FENRIR_LOCAL_LOGIN=true env var bypasses the gate (recovery path).
 3. POST /auth/forgot-password is gated by the same flag (with the same bypass).
 4. GET /auth/advanced-auth/status surfaces both new fields so the LoginPage
    can render the right UI in a single query.
@@ -68,7 +68,7 @@ class TestLocalLoginGate:
         rejected with the same generic 401 as bad creds (no UI-stating leak)."""
         await _enable_auth(async_client, "gatedeny")
         await _set_setting(db_session, "local_login_enabled", "false")
-        monkeypatch.delenv("BAMBUDDY_LOCAL_LOGIN", raising=False)
+        monkeypatch.delenv("FENRIR_LOCAL_LOGIN", raising=False)
 
         response = await async_client.post(
             "/api/v1/auth/login",
@@ -84,11 +84,11 @@ class TestLocalLoginGate:
     async def test_env_var_bypasses_local_disabled_gate(
         self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ):
-        """BAMBUDDY_LOCAL_LOGIN=true opens the recovery path even when the
+        """FENRIR_LOCAL_LOGIN=true opens the recovery path even when the
         DB setting forbids local login (SSO-broken admin recovery)."""
         await _enable_auth(async_client, "gatebypass")
         await _set_setting(db_session, "local_login_enabled", "false")
-        monkeypatch.setenv("BAMBUDDY_LOCAL_LOGIN", "true")
+        monkeypatch.setenv("FENRIR_LOCAL_LOGIN", "true")
 
         response = await async_client.post(
             "/api/v1/auth/login",
@@ -101,13 +101,13 @@ class TestLocalLoginGate:
     async def test_unrecognized_env_value_does_not_500_the_login_path(
         self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ):
-        """The recovery bypass reads BAMBUDDY_LOCAL_LOGIN on the request path, so
-        an unrecognized value (BAMBUDDY_LOCAL_LOGIN=on) must fall back to "off",
+        """The recovery bypass reads FENRIR_LOCAL_LOGIN on the request path, so
+        an unrecognized value (FENRIR_LOCAL_LOGIN=on) must fall back to "off",
         never raise -- env_bool is strict for the startup OIDC reader but lenient
         here. A raise would 500 the very endpoint the bypass exists to keep open."""
         await _enable_auth(async_client, "gateonval")
         await _set_setting(db_session, "local_login_enabled", "false")
-        monkeypatch.setenv("BAMBUDDY_LOCAL_LOGIN", "on")
+        monkeypatch.setenv("FENRIR_LOCAL_LOGIN", "on")
 
         response = await async_client.post(
             "/api/v1/auth/login",
@@ -117,13 +117,13 @@ class TestLocalLoginGate:
         assert response.status_code == 401, response.text
 
     def test_the_bypass_var_is_registered_in_the_typo_guard(self):
-        """config.py logs "possible typo" for any unregistered BAMBUDDY_* var.
+        """config.py logs "possible typo" for any unregistered FENRIR_* var.
         Unregistered, this one tells an operator who is locked out and following
         the documented recovery that the variable they just set is not real --
-        while the same line lists every BAMBUDDY_OIDC_* var as legitimate."""
+        while the same line lists every FENRIR_OIDC_* var as legitimate."""
         from backend.app.core.config import _INTENTIONAL_UNSETTINGS
 
-        assert "BAMBUDDY_LOCAL_LOGIN" in _INTENTIONAL_UNSETTINGS
+        assert "FENRIR_LOCAL_LOGIN" in _INTENTIONAL_UNSETTINGS
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -134,7 +134,7 @@ class TestLocalLoginGate:
         login is off (the reset wouldn't grant access anyway)."""
         await _enable_auth(async_client, "gatefp")
         await _set_setting(db_session, "local_login_enabled", "false")
-        monkeypatch.delenv("BAMBUDDY_LOCAL_LOGIN", raising=False)
+        monkeypatch.delenv("FENRIR_LOCAL_LOGIN", raising=False)
 
         response = await async_client.post(
             "/api/v1/auth/forgot-password",
@@ -176,7 +176,7 @@ class TestLdapLoginNotAffectedByGate:
         await _enable_auth(async_client, "ldapseed")
         await self._enable_ldap(db_session)
         await _set_setting(db_session, "local_login_enabled", "false")
-        monkeypatch.delenv("BAMBUDDY_LOCAL_LOGIN", raising=False)
+        monkeypatch.delenv("FENRIR_LOCAL_LOGIN", raising=False)
 
         fake_ldap = LDAPUserInfo(
             username="ldapuser",
@@ -207,7 +207,7 @@ class TestAdvancedAuthStatusSurfacesGate:
     async def test_status_includes_local_login_and_autologin(
         self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ):
-        monkeypatch.delenv("BAMBUDDY_LOCAL_LOGIN", raising=False)
+        monkeypatch.delenv("FENRIR_LOCAL_LOGIN", raising=False)
         response = await async_client.get("/api/v1/auth/advanced-auth/status")
         assert response.status_code == 200
         result = response.json()
@@ -226,7 +226,7 @@ class TestAdvancedAuthStatusSurfacesGate:
         status reports local_login_enabled=true so the LoginPage shows the
         credentials form (matching what the route will actually accept)."""
         await _set_setting(db_session, "local_login_enabled", "false")
-        monkeypatch.setenv("BAMBUDDY_LOCAL_LOGIN", "true")
+        monkeypatch.setenv("FENRIR_LOCAL_LOGIN", "true")
 
         response = await async_client.get("/api/v1/auth/advanced-auth/status")
         assert response.status_code == 200

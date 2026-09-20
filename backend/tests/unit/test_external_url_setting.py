@@ -1,6 +1,6 @@
 """``external_url`` validation on save.
 
-The setting is the base of every link Bambuddy hands out — notification
+The setting is the base of every link Fenrir hands out — notification
 images, OIDC redirects and, for the fork, the tracking link printed on every
 Zoho estimate. A value without a scheme ("aito.pf") produced links like
 ``aito.pf/t/K7F3XQ`` on every quote until someone noticed; a value with a
@@ -21,7 +21,7 @@ from backend.app.schemas.settings import AppSettingsUpdate
         ("https://aito.pf", "https://aito.pf"),
         ("https://aito.pf/", "https://aito.pf"),  # the trailing slash is dropped once, here
         ("http://192.168.1.10:8000", "http://192.168.1.10:8000"),
-        ("https://home.example/bambuddy/", "https://home.example/bambuddy"),  # a sub-path is a valid base
+        ("https://home.example/fenrir/", "https://home.example/fenrir"),  # a sub-path is a valid base
         (" https://aito.pf ", "https://aito.pf"),
         ("", ""),
         ("   ", ""),

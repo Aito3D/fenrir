@@ -214,7 +214,7 @@ class TestWhatItRefusesToTouch:
         assert await _bed_temperature(engine, archive.id) is None
 
 
-class TestItCannotStopBambuddyBooting:
+class TestItCannotStopFenrirBooting:
     """The migration sequence has no handler above it.
 
     ``run_migrations`` is awaited straight from ``init_db`` with no try/except,

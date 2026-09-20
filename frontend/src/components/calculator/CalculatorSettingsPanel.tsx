@@ -174,12 +174,12 @@ function SettingsForm({
 
   // "K from your own prints" (§7): median unit cost of the last 90 days of
   // completed prints, priced the way the archive card prices them — offered
-  // as a one-click K suggestion under the margin_k field. Bambuddy printers
+  // as a one-click K suggestion under the margin_k field. Fenrir printers
   // (not calculator-printer profiles) name the printer-match hint, since
-  // ArchiveSlim.printer_id is a Bambuddy printer id.
+  // ArchiveSlim.printer_id is a Fenrir printer id.
   const { hasAnyPermission } = useAuth();
   const canReadArchives = hasAnyPermission('archives:read_all', 'archives:read_own');
-  const { data: bambuddyPrinters } = useQuery({
+  const { data: fenrirPrinters } = useQuery({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
     staleTime: 60_000,
@@ -199,9 +199,9 @@ function SettingsForm({
   });
   const kHint = useMemo(() => {
     if (!slim || !filaments?.length || !printers?.length) return null;
-    const names = new Map((bambuddyPrinters ?? []).map((p) => [p.id, p.name] as const));
+    const names = new Map((fenrirPrinters ?? []).map((p) => [p.id, p.name] as const));
     return medianUnitCost(slim, { filaments, printers, defaults }, names);
-  }, [slim, filaments, printers, bambuddyPrinters, defaults]);
+  }, [slim, filaments, printers, fenrirPrinters, defaults]);
   const [example, setExample] = useState<{ unitCost: string; quantity: string }>({
     unitCost: String(defaults.margin_k),
     quantity: '1',

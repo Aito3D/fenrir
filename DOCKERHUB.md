@@ -1,4 +1,4 @@
-# Bambuddy
+# Fenrir
 
 **Self-hosted print archive and management system for Bambu Lab 3D printers.**
 
@@ -11,7 +11,7 @@ No cloud dependency. Complete privacy. Full control.
 ## Quick Start
 
 ```bash
-mkdir bambuddy && cd bambuddy
+mkdir fenrir && cd fenrir
 curl -O https://raw.githubusercontent.com/maziggy/bambuddy/main/docker-compose.yml
 docker compose up -d
 ```
@@ -62,9 +62,9 @@ Open **http://localhost:8000** and add your printer.
 
 ```yaml
 services:
-  bambuddy:
+  fenrir:
     image: maziggy/bambuddy:latest
-    container_name: bambuddy
+    container_name: fenrir
     network_mode: host
     environment:
       - TZ=America/New_York

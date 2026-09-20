@@ -18,7 +18,7 @@ and wrote the answer into the file:
 The array is ``1 + len(filament_settings_id) + 1`` long — verified against real
 files at 2, 3 and 4 filament slots. Index 0 is exactly the set of process keys
 that differ from the system preset, which is the reporter's step 1 for free: no
-baseline resolution, no shipping BBL profiles into Bambuddy, and no new endpoint
+baseline resolution, no shipping BBL profiles into Fenrir, and no new endpoint
 on the slicer sidecar (which exposes bundled presets by name only, with no way to
 flatten one).
 

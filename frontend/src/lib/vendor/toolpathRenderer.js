@@ -9,7 +9,7 @@
  * matches Studio rather than approximating it.
  *
  *   upstream: https://github.com/kimgh06/Web_Three_Slicer
- *   licence:  AGPL-3.0-or-later (same as Bambuddy)
+ *   licence:  AGPL-3.0-or-later (same as Fenrir)
  *
  * Vendored rather than depended upon: the npm package carries an 8 MB WASM
  * slicing kernel and pins `three@^0.160`, neither of which we want. This module

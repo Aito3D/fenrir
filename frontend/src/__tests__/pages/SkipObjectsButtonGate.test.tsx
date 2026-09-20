@@ -1,7 +1,7 @@
 /**
  * The Skip button must stay reachable when the object list is merely unknown.
  *
- * `printable_objects_count` is derived from an in-memory list that a Bambuddy
+ * `printable_objects_count` is derived from an in-memory list that a Fenrir
  * restart wipes, so mid-print it can drop to 0 while the print carries on. The
  * card read 0 as "nothing to skip" and disabled the button — and the button is
  * what opens the modal whose fetch rebuilds the list, so the print never got it

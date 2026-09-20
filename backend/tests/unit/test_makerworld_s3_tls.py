@@ -47,7 +47,7 @@ def _write_test_ca(path) -> str:
     trusts exactly this one cert.
     """
     key = ec.generate_private_key(ec.SECP256R1())
-    common_name = "Bambuddy Test Root CA"
+    common_name = "Fenrir Test Root CA"
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     now = datetime.now(timezone.utc)
     cert = (

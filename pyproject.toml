@@ -1,5 +1,5 @@
 [project]
-name = "bambuddy"
+name = "fenrir"
 version = "0.1.5"
 description = "Archive and manage Bambu Lab 3MF files"
 requires-python = ">=3.10"

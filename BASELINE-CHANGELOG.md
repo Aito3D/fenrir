@@ -188,8 +188,8 @@ matching the sibling components exactly.
 Observable change: a shipping card or drawer showing a Zoho rate (the "Zoho
 rate: <rate> <currency>" line next to the picked island's service) will now
 format that number's thousands grouping and decimal separator according to
-the operator's chosen Bambuddy UI language rather than the browser's own
-locale/language setting. Concretely, an operator whose Bambuddy UI language
+the operator's chosen Fenrir UI language rather than the browser's own
+locale/language setting. Concretely, an operator whose Fenrir UI language
 is French (`fr`) but whose browser/OS locale is English will now see, e.g.,
 `3 200 XPF` (French grouping, narrow no-break space) instead of `3,200 XPF`
 (English grouping) — matching every other number already shown on the same
@@ -579,7 +579,7 @@ task.
 
 `routes/websocket.py`'s connect handler now stamps
 `websocket.state.aito_read: bool` once, alongside the existing
-`bambuddy_principal` / `bambuddy_principal_user_id` stamps, via a new
+`fenrir_principal` / `fenrir_principal_user_id` stamps, via a new
 private helper `_resolve_principal_and_aito_read(principal, db)`. The
 value is `not auth_required` by default (True on an auth-disabled
 install — no principal is ever verified there, so there is nothing to
@@ -3773,7 +3773,7 @@ count/rate delta itself is still a leak the allowlist does not fully close.
 
 Observable change, quoting the approved description verbatim: "The calculator's reality-check
 figures would only be available over a few fixed history windows instead of any number of days
-between 7 and 3650. Nothing in Bambuddy's own UI passes a custom window today, so the calculator
+between 7 and 3650. Nothing in Fenrir's own UI passes a custom window today, so the calculator
 page looks and behaves exactly the same; only an outside script or API key that calls
 `/api/v1/calculator/insights?days=<something else>` would start getting an error and have to pick
 one of the offered windows."
@@ -4210,7 +4210,7 @@ module-private status was chosen specifically to keep this true).
 T-129: `_finite_safe_validation_exception_handler` (`backend/app/main.py`, added by T-071) no
 longer echoes a rejected password/token/secret back verbatim in a 422 body's
 `errors()[i]["input"]`. This handler is **app-global** — it is registered on `app`, not any one
-router, so it renders every `RequestValidationError` in Bambuddy, including the unauthenticated
+router, so it renders every `RequestValidationError` in Fenrir, including the unauthenticated
 routes in `PUBLIC_API_ROUTES` (`/auth/login`, `/auth/setup`, `/auth/forgot-password/confirm`).
 Before this fix, a rejected `password`/`new_password`/`current_password` (e.g. one over
 `LoginRequest`'s `max_length=256`) was returned to the caller in cleartext inside `input`.
@@ -4285,12 +4285,12 @@ match, none moved — `calc-openapi` and `calc-pydantic-schemas` were checked sp
 move, since this is a change to global error-rendering, not to the calculator's request/response
 schemas. `SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
 
-user-approved 2026-08-24: "When a request is rejected for bad input, the error Bambuddy sends back
+user-approved 2026-08-24: "When a request is rejected for bad input, the error Fenrir sends back
 would no longer repeat the exact value you typed for password-like fields — it would say the field
-was rejected and why, but show a placeholder instead of the value. Nothing in the Bambuddy web UI
+was rejected and why, but show a placeholder instead of the value. Nothing in the Fenrir web UI
 displays that value today, so you would see no difference; only a third-party tool that reads the
 raw error payload would notice." Blast radius stated explicitly: this handler is app-global, so the
-redaction applies to every route in Bambuddy that returns a 422, not only the calculator or the
+redaction applies to every route in Fenrir that returns a 422, not only the calculator or the
 auth routes named in the audit evidence.
 
 ## T-130 — 2026-08-24 — `time_accuracy.by_printer` now gates on MIN_SAMPLE, not a bare `3` (user-approved behavior change)
@@ -5497,7 +5497,7 @@ before committing and confirmed the only two changed lines are the `FilamentPres
 `FilamentPresetUpdate` OpenAPI-schema-body lines in section 6, each gaining the same 7
 `"maxLength"` entries — no class added/removed, no other section moved.
 
-`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+`/Users/paultheis/Documents/Code/fenrir/venv/bin/python3 -m pytest
 backend/tests/integration/test_filament_profiles_api.py
 backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 66 passed. `bash
 tools/coverage_fp.sh backend`: 508/509 = 99.80% scoped statements (baseline 504/505 = 99.80%,
@@ -5893,7 +5893,7 @@ signature or Pydantic field changed; `_derive_bare_filename` is a private free f
 schema field). `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`: no diff (the schemas
 file's surface entry only greps `^class `, and the new helper is a private function, not a class).
 
-`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+`/Users/paultheis/Documents/Code/fenrir/venv/bin/python3 -m pytest
 backend/tests/integration/test_filament_profiles_api.py
 backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 69 passed (was 66; 3 net new tests).
 `ruff check` / `ruff format --check` clean on `backend/app/api/routes/filament_profiles.py`,
@@ -5970,7 +5970,7 @@ reads) is untouched. `SURFACE.md` regenerated via `bash tools/gen_surface_fp.sh`
 changed — `_MAX_REPORTED_ATTENTION` added under "Backend module constants", and
 `attention_total` added to `FilamentPresetZohoSyncResponse`'s OpenAPI schema body; both applied.
 
-`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+`/Users/paultheis/Documents/Code/fenrir/venv/bin/python3 -m pytest
 backend/tests/unit/test_filament_profiles_zoho_sync.py
 backend/tests/integration/test_filament_profiles_api.py -q`: 70 passed (was 68; 2 net new tests).
 `cd frontend && npx vitest run src/__tests__/pages/FilamentProfilesPage.test.tsx
@@ -6446,7 +6446,7 @@ from `PROBES.json` directly and diffing against the golden. `SURFACE.md` regener
 tools/gen_surface_fp.sh`: no diff (no route, class, constant, permission gate, DDL, or i18n key
 changed).
 
-`/Users/paultheis/Documents/Code/bambuddy/venv/bin/python3 -m pytest
+`/Users/paultheis/Documents/Code/fenrir/venv/bin/python3 -m pytest
 backend/tests/integration/test_filament_profiles_api.py
 backend/tests/unit/test_filament_profiles_zoho_sync.py -q`: 92 passed (was 84; 8 net new tests).
 `ruff check` / `ruff format --check` clean on `backend/app/schemas/filament_profile.py` and the
@@ -7823,7 +7823,7 @@ re-raises `asyncio.TimeoutError`. Every `process.communicate()` call in `_perfor
 `_origin_points_at_repo`, the local `git remote get-url` helper it calls) now goes through this
 wrapper with a per-step timeout, each picked and justified individually rather than copy-pasted: 30s
 for local git metadata reads/writes (`remote get-url`/`remote set-url` — no network involved), 600s
-(10 min) for `git fetch` (network-bound; Bambuddy commonly runs on constrained/metered connections,
+(10 min) for `git fetch` (network-bound; Fenrir commonly runs on constrained/metered connections,
 e.g. behind a home router or on a Raspberry Pi), 180s (3 min) for `git reset --hard` (local disk I/O
 only, but self-hosted installs sometimes live on SD cards or network shares), 900s (15 min) each for
 `pip install` and `npm install` (network download plus potential native-extension compilation on
@@ -9437,7 +9437,7 @@ NULL-`quote_id` `"error"` branch (the third `or_` clause in `run_sync_once`, and
 ```diff
     235	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
     236	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-    237	# Migration: drop the AMS slot markers an older Bambuddy wrote into
+    237	# Migration: drop the AMS slot markers an older Fenrir wrote into
 +   238	# Migration: whether Books has been directly observed to agree with an
 ```
 
@@ -10610,7 +10610,7 @@ closed the equivalent inbound half — the `aito_presence` message handler — b
 race at connect time.
 
 Fixed by moving the principal-resolution block and all three stamps (`websocket.state
-.bambuddy_principal`, `.bambuddy_principal_user_id`, `.aito_read`) to run *before*
+.fenrir_principal`, `.fenrir_principal_user_id`, `.aito_read`) to run *before*
 `ws_manager.connect(websocket)`, so the socket is never in `active_connections` without
 `aito_read` already set. The fail-closed shape of the resolution itself is unchanged: a DB
 exception while resolving the principal is still caught and logged, `aito_read` still falls back to
@@ -10728,7 +10728,7 @@ user-approved 2026-09-06
 
 `ConnectionManager.broadcast_to_user()` (`backend/app/core/websocket.py`) was the one broadcast path
 T-020/T-028 left untouched: it filtered `active_connections` by
-`websocket.state.bambuddy_principal_user_id` and then `await`ed each matching connection's
+`websocket.state.fenrir_principal_user_id` and then `await`ed each matching connection's
 `send_text()` inline, *inside* `async with self._lock:`, with no timeout at all. During an FTP
 dispatch, `send_queue_item_upload_progress(user_id=A, ...)` hitting operator A's wedged socket (the
 same sleeping-laptop/dead-cell-link case `_BROADCAST_SEND_TIMEOUT` exists for) held the lock for the
@@ -10740,7 +10740,7 @@ quote-status click would hang indefinitely — and `connect()`/`disconnect()` wo
 removing sockets too, all blocked behind the wedged send to a single user's toast.
 
 Fixed by routing `broadcast_to_user()` through the same `_fan_out()` helper `broadcast()` and
-`broadcast_aito()` already use: the `bambuddy_principal_user_id` filter now runs under the lock to
+`broadcast_aito()` already use: the `fenrir_principal_user_id` filter now runs under the lock to
 build a snapshot list (exact same filter — `getattr(..., None) == user_id`, so an unstamped
 connection is still skipped), the lock is released, and `await self._fan_out(snapshot, data)` does
 the actual sends. `_fan_out` already applies the 5s `_BROADCAST_SEND_TIMEOUT`, drops timed-out/
@@ -10759,7 +10759,7 @@ Tests added to `backend/tests/unit/test_ws_broadcast_backpressure.py` (new "T-04
   and closes (`code=1011`) that connection, while a second, healthy connection of the same user A
   still receives the message and is never closed.
 - `test_broadcast_to_user_filter_still_excludes_other_users_and_unstamped_connections` — the
-  `bambuddy_principal_user_id` filter is preserved: a different user's connection and an unstamped
+  `fenrir_principal_user_id` filter is preserved: a different user's connection and an unstamped
   connection receive nothing.
 - `test_broadcast_to_user_lock_is_not_held_across_the_wedged_send` — while user A's send is stalled,
   `connect()`/`disconnect()` of an unrelated socket and a concurrent `broadcast_aito()` all complete
@@ -11130,7 +11130,7 @@ SSO failure redirect previously landed on a bare `/login` with no `oidc_error` p
 with no explanation. Worse, on an install with `autologin_provider_id` set, LoginPage's autologin
 effect only skips its own redirect back to the IdP `if (... || searchParams.get('oidc_error'))` —
 with the param stripped, the browser bounced straight back to the IdP, which failed again,
-producing an endless IdP↔Bambuddy redirect loop with no reachable login form. User-visible effect:
+producing an endless IdP↔Fenrir redirect loop with no reachable login form. User-visible effect:
 after a failed SSO sign-in the address bar now reads `/login?oidc_error=...` instead of
 `/?oidc_error=...`, and the user sees the corresponding error toast where previously they saw
 nothing; an autologin-configured install that used to loop now lands on a real login form showing
@@ -12344,12 +12344,12 @@ propagates unchanged — landing in the row's `sync_error` exactly like every ot
 problem, per the task's guidance.
 
 Considered reusing `backend/app/api/routes/_url_safety.py`'s `assert_safe_lan_service_url`
-instead of a local check, but its semantics are for an OUTBOUND url Bambuddy will dial
+instead of a local check, but its semantics are for an OUTBOUND url Fenrir will dial
 (SSRF: it deliberately permits loopback/RFC-1918, and additionally blocks cloud-metadata,
 multicast and unspecified addresses, and numeric-encoded IPs — all of which are only
-meaningful for a URL Bambuddy itself will request). This is the opposite direction: a URL
-Bambuddy will only ever render as a link for someone else's browser to follow, where a private
-address is not a threat to Bambuddy and rejecting it would wrongly break a legitimate `http://
+meaningful for a URL Fenrir itself will request). This is the opposite direction: a URL
+Fenrir will only ever render as a link for someone else's browser to follow, where a private
+address is not a threat to Fenrir and rejecting it would wrongly break a legitimate `http://
 192.168.1.20:8081/pay/...`-shaped link (the Settings placeholder for `heimdall_base_url` is
 exactly that shape). Bending the SSRF guard to also serve as an output sanitizer would have
 required a second parameter or a near-duplicate function for one narrower check, so a small

@@ -120,7 +120,7 @@ def _preset_filament_type(raw: object) -> str | None:
     agree with it, since that is what fills ``LocalPreset.filament_type``.
 
     The value is still run through ``printer_filament_type`` by the caller.
-    That is a no-op for every type the app knows -- ``TestTheMaterialsBambuddyOffers``
+    That is a no-op for every type the app knows -- ``TestTheMaterialsFenrirOffers``
     pins exactly that -- and a pass-through for a type it does not, so nothing
     the slicer says is discarded. It only bites on a hand-edited profile whose
     ``filament_type`` is a product line, which is the case this whole module

@@ -1,5 +1,5 @@
 services:
-  bambuddy:
+  fenrir:
     image: ghcr.io/aito3d/fenrir:latest
     build:
       context: .
@@ -11,7 +11,7 @@ services:
     # Usage:
     #   docker compose up -d          → pulls pre-built image from ghcr.io
     #   docker compose up -d --build  → builds locally from source
-    container_name: bambuddy
+    container_name: fenrir
     # File ownership inside the data and logs volumes is normalised by the
     # entrypoint at startup (chowns to PUID:PGID and drops privileges via
     # gosu before running the app). Override PUID / PGID below to match
@@ -58,9 +58,9 @@ services:
     # → ~60 processes → ~210 MB instead.
     #
     # Bridge mode is the normal setup for any Linux host that runs
-    # Bambuddy alongside other services (NAS, multi-tenant Docker VM,
+    # Fenrir alongside other services (NAS, multi-tenant Docker VM,
     # Synology DSM, Unraid) — `network_mode: host` would conflict with
-    # ports those other services already bind. Bambuddy uses host mode by
+    # ports those other services already bind. Fenrir uses host mode by
     # default because SSDP printer discovery needs L2 multicast, but it's
     # a deliberate trade-off, not a security-blind default; setups that
     # forgo discovery (add printers by IP) can stay on bridge with the
@@ -69,7 +69,7 @@ services:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
       #
-      # OPTIONAL — only needed if you ALSO run a native install of Bambuddy
+      # OPTIONAL — only needed if you ALSO run a native install of Fenrir
       # on the same host and want both installs to share the same Virtual
       # Printer CA certificate (so the slicer only has to trust one CA).
       # Most Docker-only users should leave this commented out — the
@@ -81,28 +81,28 @@ services:
       # Mount scheduled backup output to NAS or external storage
       # Backups default to DATA_DIR/backups/ inside the data volume.
       # Uncomment to store them externally (e.g. on a NAS share).
-      #- /path/to/nas/bambuddy-backups:/app/data/backups
+      #- /path/to/nas/fenrir-backups:/app/data/backups
       #
       # Tailscale integration (optional): mount the host's tailscaled socket
-      # so Bambuddy can request Let's Encrypt certs for virtual printers via
+      # so Fenrir can request Let's Encrypt certs for virtual printers via
       # your tailnet's MagicDNS name. Requires:
       #   1. Tailscale installed + `tailscale up` completed on the host
       #   2. `sudo tailscale set --operator=<container-user>` on the host so
       #      the user running the container can call `tailscale cert`
       # Without this mount, the Tailscale toggle in the UI is harmless —
-      # Bambuddy falls back to self-signed certs.
+      # Fenrir falls back to self-signed certs.
       #- /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
       #
       # Using a self signed certificate for Home Assistant
       # Add your certificate to certs directory and mount it to the container.
       # The certificate will be added to the system trust store on container startup.
       # Enable the system trust store with the USE_SYSTEM_TRUST_STORE env var to
-      # have Bambuddy trust the certificate.
+      # have Fenrir trust the certificate.
       # - /path/to/certs:/usr/local/share/ca-certificates
       #
       # External library folders. Mount the host paths the operator wants
       # users to be able to register as external folders. The in-container
-      # paths chosen here MUST appear in BAMBUDDY_EXTERNAL_ROOTS below.
+      # paths chosen here MUST appear in FENRIR_EXTERNAL_ROOTS below.
       # Read-only (:ro) is recommended unless you want users uploading
       # files back to the host share.
       #- /mnt/nas/3d-prints:/external/nas:ro
@@ -115,7 +115,7 @@ services:
       # show up as your user on the host. Defaults to 1000:1000.
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Port BamBuddy runs on (default: 8000)
+      # Port Fenrir runs on (default: 8000)
       # Usage: PORT=8080 docker compose up -d
       - PORT=${PORT:-8000}
       # Directory this compose file lives in, so Settings → Updates can print
@@ -124,12 +124,12 @@ services:
       # have Compose fill it in from the shell you run `docker compose` in; the
       # field is also editable in Settings if you would rather set it there or
       # if you drive Compose with `-f` from elsewhere.
-      #- BAMBUDDY_COMPOSE_DIR=${PWD}
+      #- FENRIR_COMPOSE_DIR=${PWD}
       # Virtual printer: Set to the Docker host's IP when using bridge mode (ports:).
       # Required for FTP passive mode to work behind NAT.
       # Example: VIRTUAL_PRINTER_PASV_ADDRESS=192.168.1.100
       #- VIRTUAL_PRINTER_PASV_ADDRESS=
-      # Virtual printer: the address slicers use to reach Bambuddy, written into
+      # Virtual printer: the address slicers use to reach Fenrir, written into
       # the MQTT status the slicer reads its upload destination from. Only needed
       # in bridge mode, where that address belongs to the host and the container
       # cannot see it — without this the slicer is told the container IP (e.g.
@@ -139,7 +139,7 @@ services:
       #- VIRTUAL_PRINTER_ADVERTISE_ADDRESS=
       #
       # External PostgreSQL (optional — uses SQLite by default)
-      # Example: DATABASE_URL=postgresql+asyncpg://bambuddy:password@db-host:5432/bambuddy
+      # Example: DATABASE_URL=postgresql+asyncpg://fenrir:password@db-host:5432/fenrir
       #- DATABASE_URL=
       #
       # Slicer API sidecar (optional — Settings → "Use Slicer API" toggles this on).
@@ -160,15 +160,15 @@ services:
       # The paths must also be bind-mounted from the host — uncomment
       # the matching volume snippet below.
       # Example for a single NAS mount:
-      #- BAMBUDDY_EXTERNAL_ROOTS=/external/nas
+      #- FENRIR_EXTERNAL_ROOTS=/external/nas
       # Example for two roots:
-      #- BAMBUDDY_EXTERNAL_ROOTS=/external/nas:/external/projects
+      #- FENRIR_EXTERNAL_ROOTS=/external/nas:/external/projects
       #
       # Enable System Trust Store for certificate validation (e.g. for local Home Assistant)
       # You also need to mount your certificates to the container (see volumes section above).
       # - USE_SYSTEM_TRUST_STORE=true
     restart: unless-stopped
-    # Docker's default is 10s, after which it SIGKILLs. Bambuddy shuts down in
+    # Docker's default is 10s, after which it SIGKILLs. Fenrir shuts down in
     # well under that (uvicorn caps its wait on in-flight requests at 5s, then
     # the app checkpoints the SQLite WAL, disconnects MQTT and stops the virtual
     # printers), but a Pi with several virtual printers and a slow SD card can be
@@ -177,21 +177,24 @@ services:
     stop_grace_period: 30s
 
   # Optional: External PostgreSQL database
-  # Uncomment to run Postgres alongside Bambuddy (or use an external Postgres host)
+  # Uncomment to run Postgres alongside Fenrir (or use an external Postgres host)
   #postgres:
   #  image: postgres:16-alpine
-  #  container_name: bambuddy-db
+  #  container_name: fenrir-db
   #  restart: unless-stopped
   #  environment:
-  #    POSTGRES_USER: bambuddy
+  #    POSTGRES_USER: fenrir
   #    POSTGRES_PASSWORD: changeme
-  #    POSTGRES_DB: bambuddy
+  #    POSTGRES_DB: fenrir
   #  volumes:
-  #    - bambuddy_pgdata:/var/lib/postgresql/data
+  #    - fenrir_pgdata:/var/lib/postgresql/data
   #  ports:
   #    - "5432:5432"
 
 volumes:
+  # Deliberately still bambuddy_*: docker addresses named volumes by name, so
+  # renaming these would silently start an existing install on empty volumes
+  # and leave its database and logs orphaned under the old names.
   bambuddy_data:
   bambuddy_logs:
-  #bambuddy_pgdata:
+  #fenrir_pgdata:

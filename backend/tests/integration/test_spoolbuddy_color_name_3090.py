@@ -1,6 +1,6 @@
 """The kiosk has to be told when a spool's colour name is only a stand-in (#3090).
 
-SpoolBuddy showed "Unknown color" for spools Bambuddy names perfectly well. The
+SpoolBuddy showed "Unknown color" for spools Fenrir names perfectly well. The
 name is not in the spool record: Bambu's RFID tags frequently carry none, and
 Spoolman has no colour-name field at all, so the frontend resolves the swatch's
 hex against the colour catalog instead. The kiosk was reading the raw column.

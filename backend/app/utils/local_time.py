@@ -1,6 +1,6 @@
 """Local-timezone helpers.
 
-Bambuddy has no timezone *setting* — it takes the container's ``TZ`` env var,
+Fenrir has no timezone *setting* — it takes the container's ``TZ`` env var,
 the same value the support package reports. Anything that has to reason about a
 calendar day ("today", "yesterday", "run the backup at 03:00") needs this,
 because a day boundary computed in UTC rolls over at 01:00 or 02:00 wall-clock
@@ -51,7 +51,7 @@ def local_zone() -> tzinfo:
 def utcnow_naive() -> datetime:
     """Current UTC time, tzinfo stripped.
 
-    Bambuddy's ``DateTime`` columns are naive and hold UTC; only the few that
+    Fenrir's ``DateTime`` columns are naive and hold UTC; only the few that
     genuinely need an offset are declared ``DateTime(timezone=True)``. SQLite
     silently tolerates an aware value written to a naive column (its bind
     processor reads the fields and drops the offset), which is why aware writes

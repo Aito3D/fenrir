@@ -18,7 +18,7 @@ export type LocationSensorDefaults = Record<LocationSensorCategory, LocationSens
 // different browsers must not seed different rules, and a backup has to carry
 // them. `showOnCard` stays per-browser — show_on_card is decided per sensor and
 // this is only the form's pre-selection, not a rule the installation runs on.
-const SHOW_ON_CARD_STORAGE_KEY = 'bambuddy-location-sensor-show-on-card-defaults';
+const SHOW_ON_CARD_STORAGE_KEY = 'fenrir-location-sensor-show-on-card-defaults';
 
 const EMPTY_CATEGORY_DEFAULTS: LocationSensorCategoryDefaults = {
   alertAbove: '',
@@ -109,7 +109,7 @@ export function saveLocationSensorShowOnCardDefaults(defaults: LocationSensorDef
   }
 }
 
-const COLORIZE_VALUES_STORAGE_KEY = 'bambuddy-location-sensor-colorize-values';
+const COLORIZE_VALUES_STORAGE_KEY = 'fenrir-location-sensor-colorize-values';
 
 export function loadLocationSensorColorizeValues(): boolean {
   try {
@@ -126,7 +126,7 @@ export function loadLocationSensorColorizeValues(): boolean {
 // components (the Inventory page, and one SpoolLocationFooter per card).
 // This lets useLocationSensorColorPrefs below re-read after a save instead
 // of every reader needing its own poll or the page needing a reload.
-const COLOR_PREFS_CHANGED_EVENT = 'bambuddy:location-sensor-color-prefs-changed';
+const COLOR_PREFS_CHANGED_EVENT = 'fenrir:location-sensor-color-prefs-changed';
 
 function notifyLocationSensorColorPrefsChanged() {
   window.dispatchEvent(new Event(COLOR_PREFS_CHANGED_EVENT));
@@ -154,9 +154,9 @@ export const LOCATION_SENSOR_ALERT_COLOR_CLASSES: Record<LocationSensorAlertColo
   pink: 'text-pink-400',
 };
 
-const ALERT_ABOVE_COLOR_STORAGE_KEY = 'bambuddy-location-sensor-alert-above-color';
-const ALERT_BELOW_COLOR_STORAGE_KEY = 'bambuddy-location-sensor-alert-below-color';
-const ALERT_OPTIMAL_COLOR_STORAGE_KEY = 'bambuddy-location-sensor-alert-optimal-color';
+const ALERT_ABOVE_COLOR_STORAGE_KEY = 'fenrir-location-sensor-alert-above-color';
+const ALERT_BELOW_COLOR_STORAGE_KEY = 'fenrir-location-sensor-alert-below-color';
+const ALERT_OPTIMAL_COLOR_STORAGE_KEY = 'fenrir-location-sensor-alert-optimal-color';
 
 function isAlertColor(value: string | null): value is LocationSensorAlertColor {
   return !!value && (LOCATION_SENSOR_ALERT_COLORS as readonly string[]).includes(value);

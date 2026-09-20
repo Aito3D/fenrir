@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Tailscale CLI only (no tailscaled — the daemon runs on the host).
-# Bambuddy calls `tailscale status` / `tailscale cert` via the host's socket,
+# Fenrir calls `tailscale status` / `tailscale cert` via the host's socket,
 # which the user mounts in via docker-compose when they want to enable the
 # Tailscale integration for virtual printers. Without the socket mount, the
 # binary is harmless — the code logs a hint and falls back to self-signed.
@@ -87,7 +87,7 @@ COPY backend/ ./backend/
 # flow reads at runtime via detect_current_branch() in spoolbuddy_ssh.py.
 # Without this, the production image has no git metadata at all and would
 # always pull `main` on the remote device regardless of which branch
-# Bambuddy itself was built from.
+# Fenrir itself was built from.
 COPY .git/HEAD ./.git/HEAD
 
 # Copy built frontend from builder stage
@@ -109,8 +109,8 @@ COPY --from=frontend-builder /app/static ./static
 # volume populated and stops resyncing, so the chown is genuinely
 # one-shot.
 RUN mkdir -p /app/data /app/logs && \
-    : >/app/data/.bambuddy && \
-    : >/app/logs/.bambuddy
+    : >/app/data/.fenrir && \
+    : >/app/logs/.fenrir
 
 # Entrypoint script: handles PUID/PGID + ownership normalisation +
 # privilege drop. See deploy/docker-entrypoint.sh for the full rationale.
@@ -131,8 +131,8 @@ ENV PORT=8000
 # makes getpass.getuser() resolve via env vars instead of the passwd db;
 # HOME=/app gives a writable home that is guaranteed to exist.
 ENV HOME=/app
-ENV USER=bambuddy
-ENV LOGNAME=bambuddy
+ENV USER=fenrir
+ENV LOGNAME=fenrir
 
 # Matplotlib (imported lazily by the STL thumbnail generator) tries to create
 # its font/style cache at $HOME/.config/matplotlib on first import. /app is

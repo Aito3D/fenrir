@@ -34,12 +34,12 @@ class PrintArchive(Base):
     content_verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
-    # True when Bambuddy forced timelapse recording on for this print so the
+    # True when Fenrir forced timelapse recording on for this print so the
     # finish-photo extractor (#1397) could pull the post-park-pre-drop frame.
     # The cleanup path uses this to know the timelapse should be deleted
     # both locally and on the printer's SD after extraction — the user
     # didn't opt in to a timelapse recording.
-    bambuddy_forced_timelapse: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    fenrir_forced_timelapse: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     # Video filenames present in the printer's /timelapse directory when this
     # print started (#2704). The printer writes its video only at print end, so
     # anything not in this list belongs to this print — a comparison that needs
@@ -82,7 +82,7 @@ class PrintArchive(Base):
     # if the same subtask_id reappears after restart, we know it's the same
     # print and keep the original row instead of cancel-then-create.
     subtask_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Durable Bambuddy UUID for billing idempotency. Unlike subtask_id, this is
+    # Durable Fenrir UUID for billing idempotency. Unlike subtask_id, this is
     # not constrained by printer firmware and is replaced for every reprint.
     billing_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 

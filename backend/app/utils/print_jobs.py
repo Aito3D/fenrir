@@ -4,7 +4,7 @@ Bambu firmware runs jobs on its own behalf -- bed levelling, vibration
 compensation, the pressure-advance line it lays down before a print when flow
 dynamics calibration is on -- and reports them over MQTT through exactly the
 same print-start and print-complete events a real print uses. Nothing about the
-event says "this one is mine": Bambuddy has to recognise the job by name.
+event says "this one is mine": Fenrir has to recognise the job by name.
 
 Getting that wrong is not free. An unrecognised calibration run has no 3MF
 anywhere on the printer, so the archive path sweeps FTP for a file that cannot

@@ -1058,7 +1058,7 @@ describe('computeAmsMapping preferLowest', () => {
 // #1766: the user reported that "Prefer lowest remaining filament" picked the
 // wrong spool when two identical-material/color spools differed only in the
 // inventory-tracked grams (not the printer's `remain%`). The pre-fix sort
-// looked at `remain%` only and ignored Bambuddy's bound inventory entirely;
+// looked at `remain%` only and ignored Fenrir's bound inventory entirely;
 // now we pass a globalTrayId -> grams map and the sort lifts inventory-bound
 // spools to tier 0 (matching backend _prefer_lowest_sort_key).
 describe('computeAmsMapping preferLowest with inventory map (#1766)', () => {
@@ -1452,7 +1452,7 @@ describe('buildLoadedFilaments — naming a slot after its bound spool', () => {
    * The printer cannot describe a third-party spool. Its tray record has no
    * brand field, `tray_sub_brands` stays empty, and the colour hex gets
    * resolved against Bambu's own catalogue — so a Devil Design PLA Basic
-   * Orange assigned in Bambuddy read back here as "PLA (Sunflower Yellow)",
+   * Orange assigned in Fenrir read back here as "PLA (Sunflower Yellow)",
    * because Bambu sell a Sunflower Yellow at the same FEC600. The printer
    * card names it correctly because it reads the assignment; this is that
    * same identity, reaching the print dialog.

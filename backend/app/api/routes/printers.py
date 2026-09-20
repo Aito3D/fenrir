@@ -116,7 +116,7 @@ async def _caller_can_view_printer_secrets(user: User | None, db: AsyncSession) 
       that already manage printers and the Virtual Printer card UX that
       surfaces a target's code for slicer configuration).
     - JWT Viewer → False (the bug fix: Viewers must not be able to read
-      access_code via PRINTERS_READ and then go around Bambuddy to MQTT).
+      access_code via PRINTERS_READ and then go around Fenrir to MQTT).
     - API-key principal (``user is None`` because the dep returns None for
       API keys) → False. PRINTERS_UPDATE is admin-only and absent from
       ``_APIKEY_SCOPE_BY_PERMISSION``, so no API key can hold it.
@@ -497,7 +497,7 @@ async def get_printer_status(
     state = printer_manager.get_status(printer_id)
     if not state:
         # No MQTT client state — the printer was never connected this run, or it
-        # was disconnected manually. The plate-clear gate is Bambuddy-side and
+        # was disconnected manually. The plate-clear gate is Fenrir-side and
         # persisted, so it still has a truthful value here (#2864); reporting the
         # schema default instead told clients the plate was clean and hid the
         # only control that can release the gate.
@@ -1119,7 +1119,7 @@ def clear_cover_cache(printer_id: int) -> None:
 async def _running_print_archive_file(printer_id: int, state) -> Path | None:
     """Path to the 3MF of the print this printer is running, if we have it.
 
-    Bambuddy archives the sliced file when the print starts, so the copy the
+    Fenrir archives the sliced file when the print starts, so the copy the
     printer is executing is usually already on disk. Anchored on ``subtask_id``,
     which the firmware mints per print: a leftover ``status="printing"`` row from
     a completion that was never seen must not lend its file to another job.
@@ -1198,7 +1198,7 @@ async def get_printer_cover(
         raise HTTPException(404, f"No subtask_name in printer state (state={state.state})")
 
     # Resolve the active plate. Precedence (#1166):
-    #   1. The plate Bambuddy dispatched (authoritative when we sent the print)
+    #   1. The plate Fenrir dispatched (authoritative when we sent the print)
     #   2. plate_(\d+)\.gcode regex on state.gcode_file (works on firmware that
     #      reflects the full path, e.g. some X1C builds)
     #   3. Scan the downloaded 3MF for a unique Metadata/plate_*.gcode (covers
@@ -1384,7 +1384,7 @@ async def _produce_cover_image(
                 _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
                 raise HTTPException(
                     404,
-                    f"The print file for '{subtask_name}' is not on storage Bambuddy can read over FTPS "
+                    f"The print file for '{subtask_name}' is not on storage Fenrir can read over FTPS "
                     f"({storage.reason}), so it has no cover to extract.",
                 )
             remote_paths = ftp_probe_paths(storage.probe_filename)
@@ -1433,7 +1433,7 @@ async def _produce_cover_image(
                 raise HTTPException(
                     503,
                     f"Printer {printer.ip_address} is not answering its file service over TLS. "
-                    "Bambuddy will try again shortly.",
+                    "Fenrir will try again shortly.",
                 )
             try:
                 downloaded = await download_file_try_paths_async(
@@ -1466,7 +1466,7 @@ async def _produce_cover_image(
                 # keep saying so rather than reporting a generic miss (#2780).
                 raise HTTPException(
                     404,
-                    f"The print file for '{subtask_name}' is not on storage Bambuddy can read over FTPS "
+                    f"The print file for '{subtask_name}' is not on storage Fenrir can read over FTPS "
                     f"({storage.reason}), so it has no cover to extract.",
                 )
             raise HTTPException(
@@ -2046,9 +2046,9 @@ async def download_printer_files_as_zip(
         filename="printer-files.zip",
         media_type="application/zip",
         headers={
-            "X-Bambuddy-Files-Requested": str(result.requested),
-            "X-Bambuddy-Files-Downloaded": str(result.successful),
-            "X-Bambuddy-Files-Failed": str(len(result.failed_paths)),
+            "X-Fenrir-Files-Requested": str(result.requested),
+            "X-Fenrir-Files-Downloaded": str(result.successful),
+            "X-Fenrir-Files-Failed": str(len(result.failed_paths)),
         },
         background=BackgroundTask(remove_printer_files_zip, result.path),
     )
@@ -3099,7 +3099,7 @@ async def configure_ams_slot(
 
     # Persist the user's K-profile choice so it survives RFID re-reads and
     # session restarts. Pre-Phase-13 this was ephemeral — the MQTT command
-    # took effect on the printer but bambuddy never recorded it, so the next
+    # took effect on the printer but fenrir never recorded it, so the next
     # `_apply_pa_after_refresh` cycle had no stored profile to re-assert.
     if cali_idx >= 0:
         try:
@@ -3539,7 +3539,7 @@ async def clear_plate(
         raise HTTPException(404, "Printer not found")
 
     # Deliberately NOT gated on the printer being connected. Acknowledging the plate
-    # only mutates Bambuddy-side state — no MQTT command is sent — and with Auto Power
+    # only mutates Fenrir-side state — no MQTT command is sent — and with Auto Power
     # Off the normal end-of-print state is exactly this: gate up, printer powered down.
     # The guard this replaces was inherited from the sibling stop/pause/resume handlers,
     # where reaching the printer IS required, and left farms with no way to release the
@@ -3889,11 +3889,11 @@ async def bed_jog(
     to the user, and a dead-reckoning clamp (track Z from a home, refuse
     out-of-range moves) is the only real fix and is not built.
 
-    What Bambuddy stopped doing is making it worse. The old code wrapped every
+    What Fenrir stopped doing is making it worse. The old code wrapped every
     move in ``M211 S0`` / ``M211 S1`` and the UI sent ``force`` on every jog, so
     the limits came off on every bed move — and ``M211 S0`` disables them
     *globally*, which broke the touchscreen's protection too until the printer
-    was power-cycled. That is the one genuine Bambuddy bug in #2579. This
+    was power-cycled. That is the one genuine Fenrir bug in #2579. This
     endpoint now emits a bare relative move and never touches ``M211`` at all,
     which leaves the touchscreen protected. It does not send ``M211 S1``
     either: that was an unverified attempt to re-enable a printer an older

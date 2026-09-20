@@ -1,6 +1,6 @@
 """Backup-schema fidelity for the PG→SQLite portable export (#1333, #2526).
 
-Bambuddy's ``create_backup_zip`` rebuilds the SQLite backup schema when the
+Fenrir's ``create_backup_zip`` rebuilds the SQLite backup schema when the
 source database is PostgreSQL. It now uses ``Base.metadata.create_all()``
 against a SQLite engine — the same DDL a native SQLite install gets — rather
 than a hand-rolled ``name + type`` CREATE TABLE. The old rebuild dropped two

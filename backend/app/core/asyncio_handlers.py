@@ -1,10 +1,10 @@
 """Event-loop concerns handled at app startup.
 
-Two of them, both about which loop implementation Bambuddy finds itself on.
+Two of them, both about which loop implementation Fenrir finds itself on.
 ``install_proactor_reset_filter`` silences the noisy Windows Proactor
 cleanup-RST that fires whenever a printer / MQTT broker / camera RSTs a socket
 instead of closing it; ``warn_if_running_on_uvloop`` says so out loud when the
-loop is uvloop, which Bambuddy is not launched on and does not want.
+loop is uvloop, which Fenrir is not launched on and does not want.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def install_proactor_reset_filter(loop: asyncio.AbstractEventLoop | None = None)
     return True
 
 
-# Every launch path Bambuddy ships pins ``--loop asyncio``: the Dockerfile,
+# Every launch path Fenrir ships pins ``--loop asyncio``: the Dockerfile,
 # install/install.sh, deploy/bambuddy.service, the Windows service and the
 # SpoolBuddy installer. That flag was added for #1896 and is load-bearing --
 # see the warning text below for what it holds up.
@@ -101,7 +101,7 @@ def running_on_uvloop(loop: asyncio.AbstractEventLoop | None = None) -> bool:
 def warn_if_running_on_uvloop(loop: asyncio.AbstractEventLoop | None = None) -> bool:
     """Log a loud warning when the process is running on uvloop.
 
-    Bambuddy is developed, tested and shipped on asyncio's own loop, and two
+    Fenrir is developed, tested and shipped on asyncio's own loop, and two
     faults have already been traced to uvloop's differences from it:
 
       * #1896 -- uvloop's SSL layer can drop buffered data when a client closes
@@ -129,9 +129,9 @@ def warn_if_running_on_uvloop(loop: asyncio.AbstractEventLoop | None = None) -> 
     if not running_on_uvloop(loop):
         return False
     logger.warning(
-        "Running on uvloop, which Bambuddy is not tested or shipped on. Virtual Printer FTP "
+        "Running on uvloop, which Fenrir is not tested or shipped on. Virtual Printer FTP "
         "uploads can be silently truncated on this loop (#1896). Add '%s' to the uvicorn "
-        "command in your service file and restart. Every installer Bambuddy ships already "
+        "command in your service file and restart. Every installer Fenrir ships already "
         "does this; a unit written by a third-party script, or one created before 2026-07-05, "
         "will not, and updating does not add it.",
         _LOOP_FLAG,

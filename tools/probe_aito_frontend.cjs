@@ -6,9 +6,9 @@
 // observable output over an edge-case matrix so a changed sort key, a dropped
 // field or a shifted aging threshold shows up as a snapshot diff.
 //
-// The bundle is produced by rolldown into /tmp/bambuddy-refactor-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-refactor-probe/ by the
 // probe command in PROBES.json before this script runs.
-const m = require("/tmp/bambuddy-refactor-probe/aitoFrontend.cjs");
+const m = require("/tmp/fenrir-refactor-probe/aitoFrontend.cjs");
 
 const { optimistic, board, aging, search, summary, rules } = m;
 

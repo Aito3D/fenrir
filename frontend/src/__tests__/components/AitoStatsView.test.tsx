@@ -193,7 +193,9 @@ describe('StatsView', () => {
     const { rerender } = render(
       <StatsView range={{ dateFrom: '2026-09-01', dateTo: '2026-09-10' }} timeframe={tf} onTimeframeChange={vi.fn()} />,
     );
-    const band = await screen.findByTestId('aito-stats-band');
+    await screen.findByTestId('aito-stats-band');
+    // Re-queried each time: the hold keeps the node, the assertions must not
+    // hold a stale reference to it.
     const added = () => within(screen.getByTestId('aito-stats-band')).getByText(/^Added/).closest('div.rounded-lg')!;
     expect(added()).toHaveTextContent('3');
 

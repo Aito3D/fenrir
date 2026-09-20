@@ -410,7 +410,7 @@ class TestPartialPrintCharges:
         db_session,
         status,
     ):
-        """Bambuddy stop, display abort, and printer failure share one billing path."""
+        """Fenrir stop, display abort, and printer failure share one billing path."""
         await enable_billing(db_session)
         user = User(username=f"partial_{status}", role="user", is_active=True)
         cost_center = CostCenter(name=f"Partial {status} CC", is_active=True, is_private=False)

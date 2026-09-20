@@ -129,7 +129,7 @@ class TestItRefusesTheDefect:
         assert result.print_time_seconds == 600
 
 
-class TestItDoesNotJudgeProfilesBambuddyDidNotResolve:
+class TestItDoesNotJudgeProfilesFenrirDidNotResolve:
     """The bundle is what makes the absence conclusive. Outside it, the start
     block is the user's to author and an empty one may well be deliberate."""
 

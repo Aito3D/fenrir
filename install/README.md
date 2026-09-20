@@ -1,6 +1,6 @@
-# BamBuddy Installation Scripts
+# Fenrir Installation Scripts
 
-Interactive installation scripts for BamBuddy with support for both native and Docker deployments.
+Interactive installation scripts for Fenrir with support for both native and Docker deployments.
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 
 **Unattended:**
 ```powershell
-.\windows-installer.ps1 -InstallDir C:\Bambuddy -Port 8000 -Yes
+.\windows-installer.ps1 -InstallDir C:\Fenrir -Port 8000 -Yes
 ```
 ---
 
@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 
 ### `install.sh` (Linux/macOS)
 
-Installs BamBuddy with Python virtual environment and optional systemd/launchd service.
+Installs Fenrir with Python virtual environment and optional systemd/launchd service.
 
 **Supported Systems:**
 - Debian/Ubuntu (apt)
@@ -66,7 +66,7 @@ Installs BamBuddy with Python virtual environment and optional systemd/launchd s
 
 **Options:**
 ```
---path PATH        Installation directory (default: /opt/bambuddy)
+--path PATH        Installation directory (default: /opt/fenrir)
 --port PORT        Port to listen on (default: 8000)
 --tz TIMEZONE      Timezone (default: system timezone)
 --data-dir PATH    Data directory (default: INSTALL_PATH/data)
@@ -83,7 +83,7 @@ Installs BamBuddy with Python virtual environment and optional systemd/launchd s
 ./install.sh
 
 # Unattended with custom settings
-./install.sh --path /srv/bambuddy --port 3000 --tz America/New_York --yes
+./install.sh --path /srv/fenrir --port 3000 --tz America/New_York --yes
 
 # Minimal unattended
 ./install.sh -y
@@ -99,24 +99,24 @@ Windows PowerShell (run as Administrator — the installer self-elevates via UAC
 powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-installer.ps1 -OutFile windows-installer.ps1; .\windows-installer.ps1"
 ```
 
-> Installs Bambuddy natively on Windows using Git, Python, a virtual environment, and optional NSSM Windows Service registration. See the [Windows Installer Guide](https://wiki.bambuddy.cool/getting-started/windows-installer/) for full parameter reference.
+> Installs Fenrir natively on Windows using Git, Python, a virtual environment, and optional NSSM Windows Service registration. See the [Windows Installer Guide](https://wiki.bambuddy.cool/getting-started/windows-installer/) for full parameter reference.
 
 **Parameters:**
 ```powershell
--InstallDir PATH  Installation directory (default: C:\Bambuddy)
+-InstallDir PATH  Installation directory (default: C:\Fenrir)
 -Port PORT        Port to listen on (default: 8000)
 -Yes              Non-interactive mode, accept defaults
 -Silent           Non-interactive mode with reduced console output
 -NoService        Skip Windows Service setup
--NoStart          Do not start Bambuddy at the end
+-NoStart          Do not start Fenrir at the end
 -LocalOnly        Bind to 127.0.0.1 instead of all LAN interfaces
 ```
 
-The installer stores the Git checkout in `INSTALL_DIR\bambuddy`, user data in
+The installer stores the Git checkout in `INSTALL_DIR\fenrir`, user data in
 `INSTALL_DIR\data`, and application logs in `INSTALL_DIR\logs` so updates and
 re-clones do not delete runtime data. If an earlier Windows installer run left
 runtime data in the Git checkout, the installer moves known data and log paths
-to the new locations before starting Bambuddy.
+to the new locations before starting Fenrir.
 
 ---
 
@@ -124,11 +124,11 @@ to the new locations before starting Bambuddy.
 
 ### `docker-install.sh` (Linux/macOS)
 
-Installs BamBuddy using Docker containers.
+Installs Fenrir using Docker containers.
 
 **Options:**
 ```
---path PATH        Installation directory (default: ~/bambuddy)
+--path PATH        Installation directory (default: ~/fenrir)
 --port PORT        Port to expose (default: 8000)
 --tz TIMEZONE      Timezone (default: system timezone)
 --build            Build from source instead of using pre-built image
@@ -141,7 +141,7 @@ Installs BamBuddy using Docker containers.
 ./docker-install.sh
 
 # Unattended with custom settings
-./docker-install.sh --path /srv/bambuddy --port 3000 --tz Europe/Berlin --yes
+./docker-install.sh --path /srv/fenrir --port 3000 --tz Europe/Berlin --yes
 
 # Build from source
 ./docker-install.sh --build --yes
@@ -160,7 +160,7 @@ networking), and starts the container.
 
 **Parameters:**
 ```
--InstallPath PATH    Installation directory (default: %USERPROFILE%\bambuddy)
+-InstallPath PATH    Installation directory (default: %USERPROFILE%\fenrir)
 -Port PORT           Port to expose (default: 8000)
 -TimeZone TZ         IANA timezone (default: derived from Get-TimeZone or UTC)
 -Build               Build from source instead of pulling pre-built image
@@ -174,7 +174,7 @@ networking), and starts the container.
 .\docker-install.ps1
 
 # Unattended
-.\docker-install.ps1 -InstallPath C:\bambuddy -Port 8080 -TimeZone Europe/Berlin -Yes
+.\docker-install.ps1 -InstallPath C:\fenrir -Port 8080 -TimeZone Europe/Berlin -Yes
 
 # Build from source
 .\docker-install.ps1 -Build -Yes
@@ -194,7 +194,7 @@ All scripts support these configuration options:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| Install Path | Where BamBuddy is installed | `/opt/bambuddy` (Linux/Docker) |
+| Install Path | Where Fenrir is installed | `/opt/fenrir` (Linux/Docker) |
 | Port | HTTP port for web interface | `8000` |
 | Timezone | Server timezone | System timezone or `UTC` |
 | Data Directory | Database and archives | `INSTALL_PATH/data` |
@@ -206,7 +206,7 @@ All scripts support these configuration options:
 
 ## Post-Installation
 
-### Accessing BamBuddy
+### Accessing Fenrir
 
 After installation, open your browser to:
 ```
@@ -219,27 +219,27 @@ Or use the port you specified during installation.
 
 **Linux (systemd):**
 ```bash
-sudo systemctl status bambuddy    # Check status
-sudo systemctl start bambuddy     # Start
-sudo systemctl stop bambuddy      # Stop
-sudo systemctl restart bambuddy   # Restart
-sudo journalctl -u bambuddy -f    # View logs
+sudo systemctl status fenrir    # Check status
+sudo systemctl start fenrir     # Start
+sudo systemctl stop fenrir      # Stop
+sudo systemctl restart fenrir   # Restart
+sudo journalctl -u fenrir -f    # View logs
 ```
 
 **macOS (launchd):**
 ```bash
-launchctl list | grep bambuddy                              # Check status
-launchctl load ~/Library/LaunchAgents/com.bambuddy.app.plist    # Start
-launchctl unload ~/Library/LaunchAgents/com.bambuddy.app.plist  # Stop
+launchctl list | grep fenrir                              # Check status
+launchctl load ~/Library/LaunchAgents/com.fenrir.app.plist    # Start
+launchctl unload ~/Library/LaunchAgents/com.fenrir.app.plist  # Stop
 ```
 
 **Windows (NSSM service):**
 ```powershell
-Get-Service Bambuddy        # Check status
-Start-Service Bambuddy      # Start
-Stop-Service Bambuddy       # Stop
-Restart-Service Bambuddy    # Restart
-Get-Content "C:\Bambuddy\bambuddy-runtime.log" -Tail 100 -Wait  # View logs
+Get-Service Fenrir        # Check status
+Start-Service Fenrir      # Start
+Stop-Service Fenrir       # Stop
+Restart-Service Fenrir    # Restart
+Get-Content "C:\Fenrir\fenrir-runtime.log" -Tail 100 -Wait  # View logs
 ```
 
 **Docker:**
@@ -271,7 +271,7 @@ The updater performs:
 Useful environment overrides:
 ```bash
 # Typical native install defaults
-INSTALL_DIR=/opt/bambuddy SERVICE_NAME=bambuddy sudo ./update.sh
+INSTALL_DIR=/opt/fenrir SERVICE_NAME=fenrir sudo ./update.sh
 
 # Require backup to succeed (abort update if backup fails)
 BACKUP_MODE=require sudo ./update.sh
@@ -280,28 +280,28 @@ BACKUP_MODE=require sudo ./update.sh
 BACKUP_MODE=skip sudo ./update.sh
 
 # Auth-enabled instances: provide API key for backup endpoint
-BAMBUDDY_API_KEY=bb_xxx BACKUP_MODE=require sudo ./update.sh
+FENRIR_API_KEY=bb_xxx BACKUP_MODE=require sudo ./update.sh
 ```
 
 **Docker (pre-built image):**
 ```bash
-cd ~/bambuddy
+cd ~/fenrir
 docker compose pull
 docker compose up -d
 ```
 
 **Docker (from source):**
 ```bash
-cd ~/bambuddy
+cd ~/fenrir
 git pull
 docker compose up -d --build
 ```
 
 **Windows (native):** rerun the installer; it detects the existing checkout and offers `git pull`, leaving `INSTALL_DIR\data` and `INSTALL_DIR\logs` untouched. Stop the service first if it is registered:
 ```powershell
-Stop-Service Bambuddy
+Stop-Service Fenrir
 .\windows-installer.ps1 -Yes
-Start-Service Bambuddy
+Start-Service Fenrir
 ```
 
 ---
@@ -315,16 +315,16 @@ sudo ./install.sh
 ```
 
 ### Docker: Printer Discovery Not Working
-Docker Desktop for macOS doesn't support host networking. Add printers manually by IP address in the BamBuddy web interface.
+Docker Desktop for macOS doesn't support host networking. Add printers manually by IP address in the Fenrir web interface.
 
 ### Service Won't Start
 Check logs for errors:
 ```bash
 # Linux
-sudo journalctl -u bambuddy -n 50
+sudo journalctl -u fenrir -n 50
 
 # Docker
-docker compose logs bambuddy
+docker compose logs fenrir
 ```
 
 ### Port Already in Use
@@ -342,12 +342,12 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 ### Windows: Service Won't Start
 Test the start script manually first:
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "C:\Bambuddy\Start-Bambuddy.ps1"
+powershell.exe -ExecutionPolicy Bypass -File "C:\Fenrir\Start-Fenrir.ps1"
 ```
 
 Then check the NSSM runtime logs:
 ```powershell
-Get-Content "C:\Bambuddy\bambuddy-runtime-error.log" -Tail 100
+Get-Content "C:\Fenrir\fenrir-runtime-error.log" -Tail 100
 ```
 
 ---

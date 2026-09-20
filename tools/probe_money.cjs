@@ -2,7 +2,7 @@
 // Pure functions only -- no clock, no network, no DOM -- so the output is
 // byte-stable. Any change to a rounding rule, a margin curve, a discount
 // ladder, or a forecast rate moves this file.
-const m = require('/tmp/bambuddy-refactor-probe/money.cjs');
+const m = require('/tmp/fenrir-refactor-probe/money.cjs');
 const D = {
   electricity_tariff: 0.25, labor_rate_per_hour: 35, consumables_packaging_flat: 2,
   failure_rate_pct: 5, prototype_rate_pct: 3, ads_rate_pct: 4, filament_markup_pct: 20,

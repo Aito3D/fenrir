@@ -2681,7 +2681,7 @@ function PrinterCard({
   const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
-  // Not gated on `connected`: the plate-clear gate is Bambuddy-side state, and with
+  // Not gated on `connected`: the plate-clear gate is Fenrir-side state, and with
   // Auto Power Off the printer is powered down exactly when the operator clears the
   // plate. Hiding the control there left no way to release the gate (#2864).
   const showClearPlateButton = needsPlateClear && !isPrintingOrPaused;
@@ -6470,7 +6470,7 @@ function PrinterCard({
         {/* Powered-down printer with a dirty plate: the status block above renders
             nothing without a live connection, so the plate-clear control gets its own
             slot here. Auto Power Off makes this the ordinary end-of-print state, and
-            the gate is Bambuddy-side — releasing it never touches the printer (#2864). */}
+            the gate is Fenrir-side — releasing it never touches the printer (#2864). */}
         {printer.is_active !== false && !status?.connected && viewMode === 'expanded' && showClearPlateButton && (
           expandedClearPlateButton
         )}
@@ -7580,7 +7580,7 @@ export function AddPrinterModal({
   const [detectedSubnets, setDetectedSubnets] = useState<string[]>([]);
   const [subnet, setSubnet] = useState('');
   // Custom subnet — `__custom__` sentinel in the dropdown reveals a CIDR
-  // text input so users can scan a subnet Bambuddy isn't directly on
+  // text input so users can scan a subnet Fenrir isn't directly on
   // (printer behind a router on a different L3 segment — SSDP multicast
   // won't cross that boundary, only an active unicast scan will). #1564
   const [customSubnet, setCustomSubnet] = useState('');
@@ -7609,7 +7609,7 @@ export function AddPrinterModal({
       // Ignore errors, assume not Docker
     });
     try {
-      const saved = localStorage.getItem('bambuddy.discovery.customSubnet');
+      const saved = localStorage.getItem('fenrir.discovery.customSubnet');
       if (saved) setCustomSubnet(saved);
     } catch {
       // localStorage unavailable (private mode, quota); recall is opportunistic
@@ -7655,7 +7655,7 @@ export function AddPrinterModal({
 
     if (wantsSubnetScan && useCustomSubnet) {
       try {
-        localStorage.setItem('bambuddy.discovery.customSubnet', scanCidr);
+        localStorage.setItem('fenrir.discovery.customSubnet', scanCidr);
       } catch {
         // localStorage write best-effort; user just retypes next time
       }
@@ -9058,7 +9058,7 @@ export function PrintersPage() {
     const applicableIds = ids.filter(id => {
       const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', id]);
       // clearPlate is checked before the connection filter: it only releases a
-      // Bambuddy-side gate, so it applies to a printer Auto Power Off has shut
+      // Fenrir-side gate, so it applies to a printer Auto Power Off has shut
       // down — every other action here needs to reach the machine (#2864).
       if (action === 'clearPlate') return !!(status as { awaiting_plate_clear?: boolean } | undefined)?.awaiting_plate_clear;
       if (!status?.connected) return false;

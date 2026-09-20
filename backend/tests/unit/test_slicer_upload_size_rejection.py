@@ -7,7 +7,7 @@ handler fell through to its default status and answered:
 
     HTTP 500 {"message": "File too large"}
 
-A 500 reads as "the slicer crashed". Bambuddy's one good message about request
+A 500 reads as "the slicer crashed". Fenrir's one good message about request
 size lived behind ``if response.status_code == 413``, so it never fired, and the
 reporter of #2802 spent an evening setting ``MAX_FILE_SIZE``,
 ``BODY_PARSER_LIMIT`` and ``EXPRESS_PAYLOAD_LIMIT`` and stopping nginx — none of

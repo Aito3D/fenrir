@@ -160,7 +160,7 @@ class TestTheCooloffOutlastsThePrint:
 
     async def test_a_lone_video_still_resolves(self, test_engine, tmp_path, monkeypatch):
         """The steady state, and why the scan must not simply abort here:
-        Bambuddy deletes each video from the printer once it is attached, so the
+        Fenrir deletes each video from the printer once it is attached, so the
         usual card holds exactly this print's video and nothing else. One
         unclaimed candidate is unambiguous with or without a readable baseline,
         and aborting would lose the common case to protect the rare one."""

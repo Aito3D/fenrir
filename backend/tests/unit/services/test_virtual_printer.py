@@ -3141,7 +3141,7 @@ class TestVirtualPrinterManager:
 
         inst = VirtualPrinterInstance(
             vp_id=1,
-            name="Bambuddy",
+            name="Fenrir",
             mode="archive",
             model="C11",
             access_code="12345678",
@@ -3157,7 +3157,7 @@ class TestVirtualPrinterManager:
         assert status["enabled"] is True
         assert status["running"] is True
         assert status["mode"] == "archive"
-        assert status["name"] == "Bambuddy"
+        assert status["name"] == "Fenrir"
         assert status["serial"] == "01S00A391800001"
         assert status["model"] == "C11"
         assert status["model_name"] == "P1P"
@@ -3786,7 +3786,7 @@ class TestBindServer:
         return BindServer(
             serial="09400A391800001",
             model="O1D",
-            name="Bambuddy",
+            name="Fenrir",
         )
 
     def test_build_frame(self, bind_server):
@@ -3861,7 +3861,7 @@ class TestBindServer:
                 "dev_cap": 1,
                 "id": "09400A391800001",
                 "model": "O1D",
-                "name": "Bambuddy",
+                "name": "Fenrir",
                 "sequence_id": 3021,
                 "version": "01.00.00.00",
             }
@@ -3872,14 +3872,14 @@ class TestBindServer:
         assert parsed is not None
         assert parsed["login"]["id"] == "09400A391800001"
         assert parsed["login"]["model"] == "O1D"
-        assert parsed["login"]["name"] == "Bambuddy"
+        assert parsed["login"]["name"] == "Fenrir"
         assert parsed["login"]["bind"] == "free"
 
     def test_bind_server_stores_config(self, bind_server):
         """Verify bind server stores serial, model, name."""
         assert bind_server.serial == "09400A391800001"
         assert bind_server.model == "O1D"
-        assert bind_server.name == "Bambuddy"
+        assert bind_server.name == "Fenrir"
         assert bind_server.version == "01.00.00.00"
 
     def test_bind_server_custom_version(self):
@@ -4487,7 +4487,7 @@ class TestBindServer:
         return BindServer(
             serial="01S00C000000001",
             model="BL-P001",
-            name="Bambuddy",
+            name="Fenrir",
         )
 
     def test_build_frame(self, bind_server):
@@ -4555,7 +4555,7 @@ class TestBindServer:
         """Verify config is stored correctly."""
         assert bind_server.serial == "01S00C000000001"
         assert bind_server.model == "BL-P001"
-        assert bind_server.name == "Bambuddy"
+        assert bind_server.name == "Fenrir"
         assert bind_server.version == "01.00.00.00"
 
     def test_bind_server_custom_version(self):
@@ -4565,7 +4565,7 @@ class TestBindServer:
         server = BindServer(
             serial="01S00C000000001",
             model="BL-P001",
-            name="Bambuddy",
+            name="Fenrir",
             version="01.09.00.10",
         )
         assert server.version == "01.09.00.10"
@@ -4589,7 +4589,7 @@ class TestBindServer:
 
         inst = VirtualPrinterInstance(
             vp_id=99,
-            name="Bambuddy",
+            name="Fenrir",
             mode="archive",
             model="BL-P001",
             access_code="12345678",
@@ -4638,7 +4638,7 @@ class TestBindServer:
             mock_bind_cls.assert_called_once_with(
                 serial=inst.serial,
                 model="BL-P001",
-                name="Bambuddy",
+                name="Fenrir",
                 bind_address="192.168.1.50",
                 cert_path=Path("/tmp/cert.pem"),  # nosec B108
                 key_path=Path("/tmp/key.pem"),  # nosec B108

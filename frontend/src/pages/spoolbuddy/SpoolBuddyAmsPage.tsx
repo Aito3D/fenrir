@@ -319,7 +319,7 @@ export function SpoolBuddyAmsPage() {
     onSuccess: () => {
       // Two cache-key shapes coexist for spool assignments: this page and a
       // few SpoolBuddy components key by printerId, while AssignSpoolModal
-      // (and most of Bambuddy) keys without it. Both must be invalidated
+      // (and most of Fenrir) keys without it. Both must be invalidated
       // here, otherwise after a SpoolBuddy unassign the modal opens with a
       // stale assignments list, sees the just-freed spool as still taken,
       // filters it out, and shows "no spools available" — even though it's

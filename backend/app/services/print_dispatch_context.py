@@ -1,4 +1,4 @@
-"""Whether Bambuddy injected End G-code into the print now running (#2547).
+"""Whether Fenrir injected End G-code into the print now running (#2547).
 
 The finish-photo path has to know one thing at print completion that no MQTT
 field reports: did this print end with user End G-code? If it did, a SwapMod
@@ -12,7 +12,7 @@ Only the dispatcher ever sees this, so it is recorded here in two steps:
 2. ``adopt`` when the printer reports a print starting, which moves the pending
    flag onto the running print and consumes it.
 
-The two steps exist so the flag can never outlive its print. A print Bambuddy
+The two steps exist so the flag can never outlive its print. A print Fenrir
 did not dispatch — started from the slicer, the SD card, or the printer's own
 screen — finds no pending flag and correctly adopts ``False``, instead of
 inheriting the answer from whatever ran before it.
@@ -44,7 +44,7 @@ def adopt(printer_id: int) -> bool:
     """Bind any pending flag to the print that just started, and return it.
 
     Called once per print start. Always writes ``_active`` — including the
-    ``False`` case — so a print Bambuddy didn't dispatch clears its
+    ``False`` case — so a print Fenrir didn't dispatch clears its
     predecessor's flag rather than inheriting it.
     """
     injected = printer_id in _pending

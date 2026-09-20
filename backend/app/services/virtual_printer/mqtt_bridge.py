@@ -1,7 +1,7 @@
 """MQTT bridge for non-proxy virtual printers.
 
 Mirrors the target printer's state to slicers connected to a virtual printer
-without opening a second MQTT session on the printer (reuses Bambuddy's
+without opening a second MQTT session on the printer (reuses Fenrir's
 existing subscription — firmware inflight budget unaffected, see PR #1164).
 
 Architecture (cached-as-base, not a separate fan-out stream):
@@ -24,8 +24,8 @@ Identity rewriting at cache time:
   - `upgrade_state.sn` (and any other nested dict's `sn` matching the real
     serial) → VP serial
   - `net.info[*].ip` little-endian uint32 → the address a slicer can reach
-    Bambuddy on. BambuStudio reads this as the FTP destination IP. Without
-    this the slicer FTPs straight to the real printer and bypasses Bambuddy.
+    Fenrir on. BambuStudio reads this as the FTP destination IP. Without
+    this the slicer FTPs straight to the real printer and bypasses Fenrir.
     Normally that address is the VP bind IP; `VIRTUAL_PRINTER_ADVERTISE_ADDRESS`
     overrides it for NAT'd deployments (see `ADVERTISE_ADDRESS_ENV`).
   - `ipcam.rtsp_url` is left unchanged: BambuStudio overrides the URL host
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 REFRESH_INTERVAL_SECONDS = 30.0
 
 # Opt-in override for the address written into `net.info[].ip`. Needed only
-# where the address a slicer has to use to reach Bambuddy is not one of the
+# where the address a slicer has to use to reach Fenrir is not one of the
 # container's own interfaces — Docker bridge networking being the case that
 # prompted it (#2930), where the bind address is a container-private IP like
 # `172.24.0.2` and a slicer that follows it opens an FTP connection to
@@ -74,7 +74,7 @@ REFRESH_INTERVAL_SECONDS = 30.0
 # exists for the same reason on the FTP side.
 ADVERTISE_ADDRESS_ENV = "VIRTUAL_PRINTER_ADVERTISE_ADDRESS"
 
-# Bambuddy's internal printer state in bambu_mqtt.py (around line 2686+) is
+# Fenrir's internal printer state in bambu_mqtt.py (around line 2686+) is
 # updated per-field — each `if "X" in data: self.state.X = ...` block leaves
 # every other field untouched, so the state accumulates everything the
 # printer has ever sent. The bridge cache below mirrors that pattern: when
@@ -134,7 +134,7 @@ def _resolve_host_interface_for_target(target_ip: str) -> str | None:
     Used when `mqtt_server.bind_address` is empty or 0.0.0.0 — the listener
     accepts on every interface but we still need ONE concrete IPv4 to write
     into the rewritten `net.info[].ip` field so the slicer's FTP target
-    resolves to Bambuddy rather than the real printer. Returns the IPv4 of
+    resolves to Fenrir rather than the real printer. Returns the IPv4 of
     the host interface that shares a subnet with the printer (best fit
     because the slicer is typically on the same LAN as the printer), or
     None if no interface matches — in which case the bridge leaves
@@ -191,7 +191,7 @@ def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
        — every unit + every tray populated.
 
     2. Status-only incremental: ``{ams_status: 1}`` or ``{humidity: 30}`` —
-       no ``ams`` array at all. Bambuddy logs these as "AMS partial update
+       no ``ams`` array at all. Fenrir logs these as "AMS partial update
        (no tray data)" (#784 vintage).
 
     3. Tray-targeted incremental during a print: ``{ams: [{id: 0, tray:
@@ -419,7 +419,7 @@ class MQTTBridge:
         )
 
         # Trigger a fresh get_version + pushall against the printer so the bridge
-        # cache populates immediately. Bambuddy itself queries these on connect,
+        # cache populates immediately. Fenrir itself queries these on connect,
         # but that fires before the bridge attaches as a raw-message consumer,
         # so without this nudge the cache stays empty until the next periodic
         # query (which can be minutes away).
@@ -529,7 +529,7 @@ class MQTTBridge:
                 _log_not_armed(
                     f"no host interface shares a subnet with printer IP {target_ip} "
                     f"(and VP bind_address is 0.0.0.0/empty) — set {ADVERTISE_ADDRESS_ENV} "
-                    "to the address slicers reach Bambuddy on if this host is NAT'd"
+                    "to the address slicers reach Fenrir on if this host is NAT'd"
                 )
                 return
             vp_ip = resolved
@@ -580,7 +580,7 @@ class MQTTBridge:
         Strategy: rewrite ALL entries with a non-zero `ip`, not only those
         matching `_target_ip_uint32_le`. Real printers (X1C, H2D Pro) can
         report multiple active interfaces (WiFi + Ethernet) with different
-        IPs — only one matches the IP Bambuddy tracks, but the slicer may
+        IPs — only one matches the IP Fenrir tracks, but the slicer may
         read any of them. Leaving non-matching entries pointing at real
         printer interfaces leaks an FTP fallback path that bypasses the VP
         (the #1429 / #1302 symptom). Entries with `ip == 0` are placeholders
@@ -712,7 +712,7 @@ class MQTTBridge:
                         merged.update(new_value)
                         new_state[key] = merged
             # Apply empty-slot cleanup on the merged AMS so the slicer-facing
-            # cache mirrors what Bambuddy's AMS card shows internally. Without
+            # cache mirrors what Fenrir's AMS card shows internally. Without
             # this the cached units carry stale per-tray filament fields for
             # slots whose `tray_exist_bits` bit is 0, and BambuStudio's Sync
             # paints those empty slots as phantom loaded filaments (#1726).
@@ -721,7 +721,7 @@ class MQTTBridge:
             # These units carry the RAW firmware ids — this cache is what the
             # slicer sees, and BambuStudio addresses the A2L's AMS-Lite as the
             # physical id 16 (it sends `ams_get_rfid {ams_id: 16}` through the
-            # VP), so we must not normalise them to 6 the way Bambuddy's
+            # VP), so we must not normalise them to 6 the way Fenrir's
             # internal state does. `apply_tray_exist_bits` folds 16 onto the
             # same bit base internally instead (#2697).
             merged_ams_dict = new_state.get("ams")
@@ -757,7 +757,7 @@ class MQTTBridge:
 
         # Everything else (extrusion_cali_get response, AMS write acks, xcam
         # responses, …): fan out to the slicer. These are responses to commands
-        # the slicer (or Bambuddy) issued; the slicer matches by sequence_id and
+        # the slicer (or Fenrir) issued; the slicer matches by sequence_id and
         # ignores responses to commands it didn't send. Without this, slicer-
         # initiated queries like extrusion_cali_get hang forever and BambuStudio
         # blocks Send waiting for the response.

@@ -398,7 +398,7 @@ export function OIDCProviderSettings() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {/* #2593: startup rewrites the env-managed row from BAMBUDDY_OIDC_*
+                {/* #2593: startup rewrites the env-managed row from FENRIR_OIDC_*
                     and the API answers 409, so offering any of these would promise
                     a change that cannot land -- the icon routes included, where the
                     click only ever produced an error toast. */}

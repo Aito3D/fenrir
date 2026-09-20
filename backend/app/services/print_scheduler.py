@@ -1601,7 +1601,7 @@ class PrintScheduler:
                             # No plug or auto_on disabled. Worded exactly as the
                             # model-based branch words it (#2786): this is the one
                             # entry on that list the user has to act on, because
-                            # Bambuddy will never switch this printer on itself.
+                            # Fenrir will never switch this printer on itself.
                             await hold_for_printer(
                                 item,
                                 item.printer_id,
@@ -1759,7 +1759,7 @@ class PrintScheduler:
                         )
                         continue
 
-                    # Print takes priority: stop a cycle Bambuddy armed, now
+                    # Print takes priority: stop a cycle Fenrir armed, now
                     # that this item is definitely going out.
                     #
                     # Placement is the whole point (#2801). This used to sit up
@@ -2541,7 +2541,7 @@ class PrintScheduler:
                     # Waking this one buys nothing: it would boot into IDLE and
                     # then be held by the plate-clear gate, which is exactly
                     # what the reporter's log shows happening for 80 minutes
-                    # after a fixed-printer wake. The flag is Bambuddy-side and
+                    # after a fixed-printer wake. The flag is Fenrir-side and
                     # persisted, so it is readable while the printer is off.
                     logger.info(
                         "Not powering on printer %s for a %s job: it is awaiting plate-clear acknowledgment",
@@ -2617,7 +2617,7 @@ class PrintScheduler:
                                  on the printer for that slot. Without the flag the existing
                                  colour-preference logic applies.
             wakeable_ids: Printers a smart plug can power on (#2786). Only changes how an
-                          offline printer is worded: one Bambuddy will switch on reads
+                          offline printer is worded: one Fenrir will switch on reads
                           differently from one the user has to go and switch on themselves.
 
         Returns:
@@ -2759,7 +2759,7 @@ class PrintScheduler:
                 # but only if there are no busy printers that DO have the matching color.
                 # If a printer has the right color but is busy, surface "Busy" instead so
                 # the user knows the job will start automatically once that printer is free.
-                # Same for a printer that is merely offline: Bambuddy switches that one on
+                # Same for a printer that is merely offline: Fenrir switches that one on
                 # by itself, so the job is not actually waiting on anybody to change a
                 # spool (#2876 — offline printers reach this list now that a switched-off
                 # printer's own filament is read).
@@ -2778,7 +2778,7 @@ class PrintScheduler:
             reasons.append(f"Offline: {', '.join(printers_offline)}")
         if printers_offline_no_plug:
             # Named separately because it is the one entry on this list the
-            # user has to act on: no enabled Auto On plug means Bambuddy will
+            # user has to act on: no enabled Auto On plug means Fenrir will
             # never power this printer on for the queue (#2786).
             reasons.append(f"Offline, no Auto On smart plug: {', '.join(printers_offline_no_plug)}")
 
@@ -2967,7 +2967,7 @@ class PrintScheduler:
         The smart-plug wake step used to consider only the model, so a job for a
         colour loaded on the last printer in ID order switched on every earlier
         one in turn, evaluated it, rejected it on colour and left it running.
-        Bambuddy knew those colours the whole time. This asks the same three
+        Fenrir knew those colours the whole time. This asks the same three
         questions the matcher asks a live printer — required types, forced
         colours, preferred colours — of the trays it last reported, and returns
         the answers in the same shape the "Waiting for filament" reason uses.
@@ -2975,7 +2975,7 @@ class PrintScheduler:
         Empty means the printer may still be able to take the job.
 
         Fails open, and deliberately: with no tray reading (never connected
-        since Bambuddy started, or the cache dropped by a reconnect) this
+        since Fenrir started, or the cache dropped by a reconnect) this
         returns nothing to report and the printer is treated as it was before.
         A farm restarted while its printers were off must not conclude that
         none of them can print.
@@ -3130,7 +3130,7 @@ class PrintScheduler:
 
         A print dispatched with no mapping goes out as ``use_ams: true`` with no
         ``ams_mapping`` and no ``ams_mapping2``, which the firmware rejects with
-        0700_8012 "Failed to get AMS mapping table" — after Bambuddy has already
+        0700_8012 "Failed to get AMS mapping table" — after Fenrir has already
         uploaded several megabytes and burned its dispatch retries. With an AMS
         attached that error is worth reaching: the user can load the right spool
         and press Resume, so this returns None and today's behaviour stands. With
@@ -3288,7 +3288,7 @@ class PrintScheduler:
             logger.info("[prefer-lowest] skipped (AMS Backup OFF on printer %s)", printer_id)
             prefer_lowest = False
 
-        # When the preference is on, surface Bambuddy's inventory-side
+        # When the preference is on, surface Fenrir's inventory-side
         # remaining for each slot that's bound to a tracked spool, so the
         # sort beats the MQTT-only blind spot (#1508). Skip the lookup
         # entirely when the preference is off — no behaviour change for
@@ -3562,7 +3562,7 @@ class PrintScheduler:
         self, db: AsyncSession, printer_id: int, loaded: list[dict]
     ) -> dict[int, float]:
         """Return ``{global_tray_id: remaining_grams}`` for AMS slots the user
-        has bound to an inventory spool — Bambuddy-side or Spoolman-side.
+        has bound to an inventory spool — Fenrir-side or Spoolman-side.
 
         The MQTT ``remain`` field on a tray is the printer firmware's
         RFID-decremented value, which has two limitations the "Prefer Lowest
@@ -3573,10 +3573,10 @@ class PrintScheduler:
           compare equal and the sort collapses to AMS-slot order — the user
           who's curating inventory weights gets the lower-slot pick instead
           of the lower-remaining pick;
-        - even when set, it's the *printer's* counter, not Bambuddy's
+        - even when set, it's the *printer's* counter, not Fenrir's
           ``label_weight - weight_used`` (internal mode) or Spoolman's
           ``remaining_weight`` (Spoolman mode) — the two diverge any time the
-          user re-spools, swaps cardboard, or runs a print outside Bambuddy.
+          user re-spools, swaps cardboard, or runs a print outside Fenrir.
 
         When the user has bound a spool to a slot, their own inventory
         tracking is authoritative; this helper surfaces that value so the
@@ -4398,7 +4398,7 @@ class PrintScheduler:
                 # reads ~15-20% within minutes of the dryer starting even while the
                 # filament is still saturated. A humidity-based early-stop therefore
                 # always fires at the minimum-time floor, truncating both user-started
-                # manual cycles and Bambuddy's own preset-duration dries to ~30 min
+                # manual cycles and Fenrir's own preset-duration dries to ~30 min
                 # (#1892). The firmware stops when the configured duration elapses;
                 # scheduling stops (print takes priority, queue no longer needs
                 # drying) are handled separately via _stop_drying() and gated by the
@@ -4621,7 +4621,7 @@ class PrintScheduler:
 
         Fires once per suspension — the caller sets ``suspended`` before calling
         and every later pass short-circuits on it — because the whole point is
-        that Bambuddy has stopped acting. Somebody whose printer sits in another
+        that Fenrir has stopped acting. Somebody whose printer sits in another
         building needs that to reach them, and the hourly humidity alarm they
         are already getting says the opposite of what happened here.
 
@@ -4651,7 +4651,7 @@ class PrintScheduler:
         so counting it would suspend auto-drying for a reason that has nothing to
         do with the loop the counter is there to break.
 
-        Two callers, both of them a stop Bambuddy is responsible for: the
+        Two callers, both of them a stop Fenrir is responsible for: the
         print-takes-priority stop below, and the manual Stop button. Left
         uncalled, an install that dries between queue jobs would suspend its own
         auto-drying after two prints interrupted a dry — exactly the install
@@ -4670,9 +4670,9 @@ class PrintScheduler:
 
         One direction only: it prunes, it never adds. A printer drying without an
         entry here — because the user started the cycle from Studio, the printer's
-        screen or Bambuddy's own manual Dry button, or because Bambuddy restarted
+        screen or Fenrir's own manual Dry button, or because Fenrir restarted
         mid-cycle — stays unknown to the scheduler, so the "print takes priority"
-        stop at ``check_queue`` only ever applies to cycles Bambuddy itself began.
+        stop at ``check_queue`` only ever applies to cycles Fenrir itself began.
 
         That is deliberate for now rather than an oversight: populating this from
         telemetry would hand the scheduler authority to stop drying a user started
@@ -4719,14 +4719,14 @@ class PrintScheduler:
         )
 
     async def _stop_drying(self, printer_id: int):
-        """Stop drying cycles Bambuddy armed on a printer (print takes priority).
+        """Stop drying cycles Fenrir armed on a printer (print takes priority).
 
         Scoped to units in ``_auto_dry_units``. It used to send a stop to every
         AMS reporting ``dry_time > 0``, which meant one auto-dried unit was
         enough to kill a cycle the user had started by hand on a *different*
         unit of the same printer (#2801). That contradicted the contract
         ``_sync_drying_state`` already documents -- the entry gate deliberately
-        only knows about cycles Bambuddy began, so the action must not reach
+        only knows about cycles Fenrir began, so the action must not reach
         past them either.
         """
         state = printer_manager.get_status(printer_id)
@@ -4741,7 +4741,7 @@ class PrintScheduler:
                 ams_id = int(ams_data.get("id", 0))
                 if (printer_id, ams_id) not in self._auto_dry_units:
                     logger.debug(
-                        "Auto-drying: leaving printer %d AMS %d alone — not a cycle Bambuddy started",
+                        "Auto-drying: leaving printer %d AMS %d alone — not a cycle Fenrir started",
                         printer_id,
                         ams_id,
                     )
@@ -5516,7 +5516,7 @@ class PrintScheduler:
         Signalling in memory rather than re-reading the row keeps this off the
         database entirely: no second session, no transaction held across a long
         sleep, and no snapshot staleness deciding whether a print goes ahead.
-        Bambuddy serves from a single uvicorn process with one scheduler task,
+        Fenrir serves from a single uvicorn process with one scheduler task,
         so the route and the dispatch always share this object. The flag is
         advisory — dropping it (e.g. after a restart) only costs a wasted
         preheat, never a wrongly-abandoned print.
@@ -7405,7 +7405,7 @@ class PrintScheduler:
     ) -> None:
         """Revert a queue item if the printer never acknowledges the start command.
 
-        Bambuddy optimistically marks the queue item as "printing" right after the
+        Fenrir optimistically marks the queue item as "printing" right after the
         MQTT project_file publish succeeds locally. The watchdog runs in two phases:
 
         Phase A (up to ``timeout``): wait for either an active-state transition
@@ -7424,7 +7424,7 @@ class PrintScheduler:
         used to leave the queue item stuck in 'printing' forever because the
         old watchdog returned success as soon as subtask_id advanced. If Phase
         B times out, revert the queue item so the user can retry without
-        restarting Bambuddy. Skip ``force_reconnect`` here: the file landed and
+        restarting Fenrir. Skip ``force_reconnect`` here: the file landed and
         a forced reconnect mid-parse triggers 0500_4003 (#1150).
 
         Phase A timeout raised from 45 s → 90 s as belt-and-braces for slow
@@ -7592,7 +7592,7 @@ class PrintScheduler:
                     # #2758: the generic message below sent the reporter looking
                     # at the SD card while the actual obstacle — AMS units in a
                     # drying cycle — was on screen the whole time. Name what we
-                    # observed and let the user judge it; Bambuddy does not stop
+                    # observed and let the user judge it; Fenrir does not stop
                     # the cycle itself, because on this hardware drying can run
                     # alongside a print and stopping it may not be the fix.
                     units = ", ".join(f"AMS {i}" for i in drying_ams_ids)

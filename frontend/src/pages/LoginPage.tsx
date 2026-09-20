@@ -207,7 +207,7 @@ export function LoginPage() {
   // `autologin_provider_id`, redirect unauthenticated visitors directly to
   // that provider's authorize URL on mount — unless the URL carries
   // `?fallback=local` (the documented recovery path that pairs with the
-  // server-side BAMBUDDY_LOCAL_LOGIN env-var bypass). The authorize-URL
+  // server-side FENRIR_LOCAL_LOGIN env-var bypass). The authorize-URL
   // fetch is raced against a 5-second timeout; on timeout or fetch error
   // we skip the redirect and render the normal page, surfacing a banner
   // so the user understands why autologin didn't kick in.
@@ -227,7 +227,7 @@ export function LoginPage() {
   // this, a valid session that lands directly on /login (e.g. the browser
   // address bar autocompletes the origin to its most-visited path) renders the
   // credentials form even though the token is live and every request succeeds —
-  // making Bambuddy look like it "never stays logged in". Gate on the
+  // making Fenrir look like it "never stays logged in". Gate on the
   // credentials step so we don't interrupt the 2FA / OIDC-callback branches,
   // which navigate themselves after loginWithToken. Send to '/' rather than
   // resolvePostLoginRedirect() to avoid consuming the OIDC redirect stash: an

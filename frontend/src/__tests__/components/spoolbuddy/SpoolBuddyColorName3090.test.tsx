@@ -1,9 +1,9 @@
 /**
- * The kiosk shows the colour the rest of Bambuddy shows (#3090).
+ * The kiosk shows the colour the rest of Fenrir shows (#3090).
  *
- * Reported by @Sawtaytoes: scan a Bambu RFID spool that Bambuddy's inventory
+ * Reported by @Sawtaytoes: scan a Bambu RFID spool that Fenrir's inventory
  * calls "Candy Red" and SpoolBuddy's dialog says "Unknown color" — with the
- * right red swatch beside it. The name was never in the spool record. Bambu's tags frequently carry none, so Bambuddy resolves the swatch's
+ * right red swatch beside it. The name was never in the spool record. Bambu's tags frequently carry none, so Fenrir resolves the swatch's
  * own hex against the colour catalog; the kiosk was printing the empty column.
  *
  * These render the real components against a catalog, because the bug was not
@@ -105,7 +105,7 @@ describe('SpoolBuddy colour names (#3090)', () => {
 
   it('falls back to a translated label when nothing can name the colour', () => {
     // Unknown hex, no stored name: the string has to come from i18n, because
-    // the kiosk is used in every language Bambuddy ships.
+    // the kiosk is used in every language Fenrir ships.
     render(
       <TagDetectedModal {...modalProps} spool={{ ...candyRed, rgba: '123456FF' }} />,
     );

@@ -1,7 +1,7 @@
 """Telling our own print dispatch from a slicer's (#2843 follow-up).
 
 The old test was ``sequence_id != "20000"``, on the belief that 20000 was
-Bambuddy's alone. Measured on the wire 2026-08-17: OrcaSlicer dispatched
+Fenrir's alone. Measured on the wire 2026-08-17: OrcaSlicer dispatched
 ``20000`` and then ``20001``, while BambuStudio was on ``20009`` / ``20010`` --
 both counting up from the same base, which is also the value
 ``virtual_printer/bind_server`` documents the slicer sending during detect. So
@@ -64,7 +64,7 @@ class TestSlicerDispatchIsReported:
 
 class TestOwnDispatchIsNotReported:
     def test_our_own_echo_is_recognised(self, client, caplog):
-        """Bambuddy publishes to the topic it subscribes to, so it sees its own
+        """Fenrir publishes to the topic it subscribes to, so it sees its own
         dispatch come back."""
         ours = _project_file("20000", url="ftp://MyPrint.3mf", file="MyPrint.3mf", subtask="MyPrint")
         client._own_project_file_key = client._project_file_key(ours["print"])

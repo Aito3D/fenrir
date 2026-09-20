@@ -1,4 +1,4 @@
-"""Restore Bambuddy data from a Git provider backup (issue #2656).
+"""Restore Fenrir data from a Git provider backup (issue #2656).
 
 The backup side (``github_backup.py``) is push-only: it collects a handful of
 JSON documents and commits them. This module is the read side — it walks the
@@ -16,7 +16,7 @@ Design notes worth knowing before editing:
   tables (spool usage history) still line up.
 
   The printer-side ``cali_idx`` behaves the same way and gets the same
-  treatment. Editing a K-profile in Bambuddy is a delete-then-add on a
+  treatment. Editing a K-profile in Fenrir is a delete-then-add on a
   single-nozzle printer, which re-keys it, and ``extrusion_cali_set`` aimed at a
   slot that no longer exists is silently dropped — so the live index is read
   back and matched before writing, never taken from the backup.
@@ -156,7 +156,7 @@ def _parse_dt(value) -> datetime | None:
     value through would store the wrong wall clock, and comparing one against a
     value read back out of a naive column raises ``TypeError``. The collector
     only ever writes naive strings, so this is a guard on hand-edited or
-    foreign backups rather than a path Bambuddy takes itself.
+    foreign backups rather than a path Fenrir takes itself.
     """
     if not value or not isinstance(value, str):
         return None
@@ -1649,7 +1649,7 @@ class GitHubRestoreService:
                     "mqtt_port": int(stored.get("mqtt_port") or "1883"),
                     "mqtt_username": stored.get("mqtt_username") or "",
                     "mqtt_password": stored.get("mqtt_password") or "",
-                    "mqtt_topic_prefix": stored.get("mqtt_topic_prefix") or "bambuddy",
+                    "mqtt_topic_prefix": stored.get("mqtt_topic_prefix") or "fenrir",
                     "mqtt_use_tls": (stored.get("mqtt_use_tls") or "false") == "true",
                 }
             )
@@ -1661,7 +1661,7 @@ class GitHubRestoreService:
             logger.warning("Could not reconfigure the MQTT relay after a settings restore", exc_info=True)
             tally.note(
                 "settingsMqttRelayFailed",
-                "MQTT settings restored, but the relay could not be reconnected — restart Bambuddy",
+                "MQTT settings restored, but the relay could not be reconnected — restart Fenrir",
             )
 
     async def _restore_kprofiles(self, db: AsyncSession, payload: dict, tally: _CategoryTally) -> None:
@@ -1725,7 +1725,7 @@ class GitHubRestoreService:
 
                 # The backup's slot_id is a cali_idx, and cali_idx is as
                 # unstable as the autoincrement ids we already refuse to reuse
-                # for spools and archives: editing a profile in Bambuddy is a
+                # for spools and archives: editing a profile in Fenrir is a
                 # delete-then-add on a single-nozzle printer, which re-keys it.
                 # Addressing extrusion_cali_set at a slot that no longer exists
                 # is a silent no-op — the printer drops it and we would still
@@ -1893,7 +1893,7 @@ class GitHubRestoreService:
 
         ``setting_id`` is the filament preset the profile was calibrated for and
         is the strongest signal; a delete-then-add edit regenerates it, so fall
-        back to the display name, which Bambuddy's own editor preserves.
+        back to the display name, which Fenrir's own editor preserves.
         Both are scoped by ``filament_id`` — the same preset on a different
         filament is a different profile — and by ``extruder_id``, because on a
         dual-nozzle printer the same preset on the other extruder is a different

@@ -1,6 +1,6 @@
 """A fallback archive is filled in when the 3MF finally turns up (#2957).
 
-The reporter's P1S started a print while Bambuddy was inside the five-minute
+The reporter's P1S started a print while Fenrir was inside the five-minute
 FTPS cool-off armed by an earlier failed TLS handshake. The archive flow checks
 that cool-off at the top of its path loop and breaks before opening a single
 connection, so it gave up 13 ms after print start and wrote an empty fallback
@@ -12,7 +12,7 @@ archive flow looks up.
 Nothing ever looked. Every ``get_cached_3mf`` caller runs before or during the
 print-start handler that had already given up, and ``on_print_complete`` drops
 the cache as its first statement, deleting the file. The archive stayed an empty
-shell for a print whose source Bambuddy had held, parsed and indexed.
+shell for a print whose source Fenrir had held, parsed and indexed.
 
 These tests pin the recovery: the row is filled in place (its id is load-bearing
 -- the energy reading, the timelapse session and the start notification were all

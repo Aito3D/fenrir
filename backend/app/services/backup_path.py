@@ -1,6 +1,6 @@
 """Why a backup directory is not writable — and what to actually do about it.
 
-Bambuddy's systemd unit runs with ``ProtectSystem=strict``. That mounts the
+Fenrir's systemd unit runs with ``ProtectSystem=strict``. That mounts the
 entire filesystem read-only inside the service's own mount namespace and carves
 back out only ``ReadWritePaths=<install> <data> <logs>``. A backup output path
 on a NAS mount is therefore read-only *to the service* while the operator's own
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Cgroup line for a systemd service, e.g.
 #   0::/system.slice/bambuddy.service
-#   0::/system.slice/system-bambuddy.slice/bambuddy@1.service
+#   0::/system.slice/system-fenrir.slice/fenrir@1.service
 _SERVICE_CGROUP = re.compile(r"/([^/]+\.service)\b")
 
 
@@ -69,7 +69,7 @@ def _systemd_remedy(unit: str, path: Path) -> str:
 
 
 def _docker_remedy(path: Path) -> str:
-    return f"services:\n  bambuddy:\n    volumes:\n      - {path}:{path}"
+    return f"services:\n  fenrir:\n    volumes:\n      - {path}:{path}"
 
 
 def classify_backup_dir_error(exc: OSError, backup_dir: Path) -> dict:
@@ -90,7 +90,7 @@ def classify_backup_dir_error(exc: OSError, backup_dir: Path) -> dict:
                 "detail": detail,
                 "remedy": _systemd_remedy(unit, backup_dir),
                 "message": (
-                    f"{backup_dir} is read-only for the Bambuddy service. Its systemd unit runs with "
+                    f"{backup_dir} is read-only for the Fenrir service. Its systemd unit runs with "
                     "ProtectSystem=strict, which makes every path outside the install, data and log "
                     f"directories read-only — add ReadWritePaths={backup_dir} to a drop-in "
                     f"(sudo systemctl edit {unit}) and restart. If the path is on a network share, also "
@@ -113,7 +113,7 @@ def classify_backup_dir_error(exc: OSError, backup_dir: Path) -> dict:
             "code": "permission_denied",
             "detail": detail,
             "remedy": None,
-            "message": f"Bambuddy is not allowed to write to {backup_dir}. Check the directory's owner and mode.",
+            "message": f"Fenrir is not allowed to write to {backup_dir}. Check the directory's owner and mode.",
         }
 
     if exc.errno == errno.ENOSPC:
@@ -152,7 +152,7 @@ def classify_backup_dir_error(exc: OSError, backup_dir: Path) -> dict:
         "code": "error",
         "detail": detail,
         "remedy": None,
-        "message": f"Bambuddy cannot write to {backup_dir}: {exc}",
+        "message": f"Fenrir cannot write to {backup_dir}: {exc}",
     }
 
 
@@ -177,8 +177,8 @@ def probe_backup_dir(backup_dir: Path) -> dict:
     """
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=backup_dir, prefix=".bambuddy-write-test-") as probe:
-            probe.write(b"bambuddy")
+        with tempfile.NamedTemporaryFile(dir=backup_dir, prefix=".fenrir-write-test-") as probe:
+            probe.write(b"fenrir")
             probe.flush()
     except OSError as e:
         result = classify_backup_dir_error(e, backup_dir)

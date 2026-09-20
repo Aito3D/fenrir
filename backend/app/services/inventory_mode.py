@@ -1,6 +1,6 @@
 """Which table holds a printer's slot assignments.
 
-Bambuddy keeps AMS slot assignments in two places: ``spool_assignment`` for the
+Fenrir keeps AMS slot assignments in two places: ``spool_assignment`` for the
 built-in inventory and ``spoolman_slot_assignments`` for Spoolman. Exactly one
 of them describes reality at any moment, and which one is a user setting.
 

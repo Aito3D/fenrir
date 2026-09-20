@@ -7,7 +7,7 @@ subclass of ``RequestError`` — the failure was reported as "Slicer sidecar
 unreachable", sending the reporter off to check a sidecar that was reachable
 throughout.
 
-The wait is now bounded by *silence* instead: Bambuddy already polls the
+The wait is now bounded by *silence* instead: Fenrir already polls the
 sidecar's progress endpoint once a second, so it can tell a slow slice from a
 stalled one. The deadline moves forward on every progress update.
 """

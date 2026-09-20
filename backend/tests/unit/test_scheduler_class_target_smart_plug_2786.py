@@ -261,7 +261,7 @@ class TestClassTargetWakesAPrinter:
 
         This is what the reporter's log shows after a fixed-printer wake: the
         printer booted and then reported ``awaiting_plate_clear=True`` every 30
-        seconds for the next 80 minutes. The flag is Bambuddy-side and
+        seconds for the next 80 minutes. The flag is Fenrir-side and
         persisted, so it is readable while the printer is still switched off.
         """
         await _add_plug(queue_db, 1)
@@ -487,7 +487,7 @@ class TestFilamentIsCheckedBeforeSwitchingOn:
     The wake step used to know only a printer's model, so a job for a colour
     loaded on the far end of the farm switched machines on in ID order,
     evaluated each once it booted, rejected it on colour and left it running.
-    Bambuddy held those colours the whole time -- a printer keeps its last
+    Fenrir held those colours the whole time -- a printer keeps its last
     reported trays after the power goes.
     """
 
@@ -522,7 +522,7 @@ class TestFilamentIsCheckedBeforeSwitchingOn:
     async def test_a_printer_we_have_never_heard_from_is_still_woken(self, queue_db):
         """No reading is not the same as no filament, and must not exclude.
 
-        Bambuddy holds the trays in memory only. A restart while the farm was
+        Fenrir holds the trays in memory only. A restart while the farm was
         switched off leaves it knowing nothing, and concluding from that that
         no printer can take the job would strand every queue on the planet.
         """
@@ -672,7 +672,7 @@ class TestFilamentIsCheckedBeforeSwitchingOn:
 
         Before, a wrong-colour printer was woken and then reported as needing
         filament. Passing it over instead has to say the same thing, or the
-        job sits on "Offline:" while Bambuddy silently declines to act on it.
+        job sits on "Offline:" while Fenrir silently declines to act on it.
         """
         await _add_plug(queue_db, 1)
         await _add_plug(queue_db, 2)

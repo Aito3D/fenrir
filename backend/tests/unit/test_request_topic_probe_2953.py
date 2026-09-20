@@ -1,6 +1,6 @@
 """The request-topic probe must not latch on a single unexplained drop (#2953).
 
-Bambuddy subscribes to the printer's own request topic to intercept the
+Fenrir subscribes to the printer's own request topic to intercept the
 ``ams_mapping`` a slicer sends with a print. A1-class printers refuse: their
 broker kills the TCP connection instead of returning a SUBACK failure, so the
 only signal is "we subscribed and then got disconnected". That signal is

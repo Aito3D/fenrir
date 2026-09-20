@@ -78,8 +78,8 @@ def filament_types_compatible(a: str | None, b: str | None) -> bool:
 
 # What a Bambu printer and the slicers accept in an AMS slot's ``tray_type``.
 # Grounded in the catalogues this repo already carries: ``filament_fields.json``
-# is the list Bambuddy itself offers when a preset is created, so every value in
-# it has to appear here -- ``TestTheMaterialsBambuddyOffers`` fails if one does
+# is the list Fenrir itself offers when a preset is created, so every value in
+# it has to appear here -- ``TestTheMaterialsFenrirOffers`` fails if one does
 # not. On top of that, every "Generic X" entry in
 # ``cloud._BUILTIN_FILAMENT_NAMES`` names a real type, the "Bambu X" entries add
 # the composites, and the frontend's ``parsePresetName`` list contributes
@@ -182,12 +182,12 @@ def _word_names_type(word: str, candidate: str) -> bool:
 def printer_filament_type(material: str | None) -> str:
     """Reduce a spool's material to the name an AMS slot can carry.
 
-    Bambuddy lets a spool's material be anything -- typed by hand, synced from
+    Fenrir lets a spool's material be anything -- typed by hand, synced from
     Spoolman, or picked from the colour catalogue, whose material column is the
     vendor's product line ("PLA+", "HTPLA", "PolyTerra PLA"). Every assignment
     path then wrote that string into the slot's ``tray_type``, and a slot whose
     type is "PLA+" satisfies nothing that asks for PLA: not the slicer, and not
-    Bambuddy's own dispatch matcher, which compares the printer's reported
+    Fenrir's own dispatch matcher, which compares the printer's reported
     ``tray_type`` to the 3MF's declared type as plain equality (issue #2902).
 
     Returns the material name unchanged when it cannot be placed. That is the

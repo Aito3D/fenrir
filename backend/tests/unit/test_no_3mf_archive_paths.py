@@ -1,7 +1,7 @@
 """A no-3MF archive still owns a directory, and still explains itself (#2843).
 
 Both cases below are the same underlying situation: an H2-series or P2S print
-sent from the slicer goes to internal eMMC, Bambuddy cannot fetch the 3MF, and
+sent from the slicer goes to internal eMMC, Fenrir cannot fetch the 3MF, and
 the archive is created with ``file_path == ""``.
 """
 

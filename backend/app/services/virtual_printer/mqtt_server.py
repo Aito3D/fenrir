@@ -28,7 +28,7 @@ MQTT_PORT = 8883
 
 # Per-IP MQTT auth rate-limit. 5 failures within 60 s blocks further attempts
 # for the remainder of the window. Bambu printers themselves don't rate-limit,
-# but they're not exposed past the LAN edge; Bambuddy's VPs sometimes are
+# but they're not exposed past the LAN edge; Fenrir's VPs sometimes are
 # (Tailscale, port-forwarded), so an 8-char access code without any
 # brute-force friction is too weak. The window auto-recovers — no manual
 # unblock — so a legitimate user who fat-fingered their access code 5 times
@@ -967,7 +967,7 @@ class SimpleMQTTServer:
                 # push_status (no SD card inserted, older field shapes), and BambuStudio
                 # rejects the send pre-flight with the generic "storage needs to be
                 # inserted before send to printer" error before even attempting FTP.
-                # For VP usage the slicer uploads via FTPS to Bambuddy's filesystem —
+                # For VP usage the slicer uploads via FTPS to Fenrir's filesystem —
                 # the printer's actual SD/storage state is irrelevant on that path.
                 # Force "available" indicators so the pre-flight passes regardless of
                 # what the real printer reports. Restores the 0.2.3.2 synthetic-stub
@@ -994,7 +994,7 @@ class SimpleMQTTServer:
                     print_block["total_layer_num"] = 0
                 # print_error is never mirrored: StatusPanel raises a modal error
                 # dialog for a non-zero code, and the VP is not the machine that
-                # threw it — the user's own printer card in Bambuddy reports the
+                # threw it — the user's own printer card in Fenrir reports the
                 # fault. Zero it in both branches.
                 print_block["print_error"] = 0
                 status = {"print": print_block}
@@ -1416,7 +1416,7 @@ class SimpleMQTTServer:
                 logger.info("MQTT print command: %s for %s", command, filename)
 
                 if command in ("project_file", "gcode_file"):
-                    # File lives on Bambuddy, not the printer — synthetic only.
+                    # File lives on Fenrir, not the printer — synthetic only.
                     file_3mf = print_data.get("file", filename)
                     await self._send_print_response(writer, sequence_id, file_3mf, serial=client_serial)
                     if self.on_print_command:
