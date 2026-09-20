@@ -6,7 +6,7 @@ import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { localDateKey, parseLocalDateKey } from '../../../utils/date';
 import { AXIS, GRID, SERIES, TOOLTIP_ORDER } from './palette';
-import { BlockHeading, Empty, Legend, LegendList } from './primitives';
+import { Empty, Legend, LegendList, Panel } from './primitives';
 
 /** Past this many days the bars turn to hairlines, so the chart folds the
  *  days into Monday-start weeks instead. A phone runs out of pixels sooner.
@@ -59,23 +59,22 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
           : t('aito.stats.rolling7');
 
   return (
-    <div data-testid="aito-stats-activity" className="grid gap-2.5 min-w-0">
-      <BlockHeading
-        aside={
-          <LegendList>
-            <Legend color={SERIES.created}>{t('aito.stats.added')}</Legend>
-            <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
-            <Legend color={SERIES.done}>{t('aito.stats.completed')}</Legend>
-            {!weekly && (
-              <Legend color={SERIES.done} line>
-                {t('aito.stats.rolling7')}
-              </Legend>
-            )}
-          </LegendList>
-        }
-      >
-        {weekly ? t('aito.stats.activityWeekly') : t('aito.stats.activity')}
-      </BlockHeading>
+    <Panel
+      testId="aito-stats-activity"
+      title={weekly ? t('aito.stats.activityWeekly') : t('aito.stats.activity')}
+      action={
+        <LegendList>
+          <Legend color={SERIES.created}>{t('aito.stats.added')}</Legend>
+          <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
+          <Legend color={SERIES.done}>{t('aito.stats.completed')}</Legend>
+          {!weekly && (
+            <Legend color={SERIES.done} line>
+              {t('aito.stats.rolling7')}
+            </Legend>
+          )}
+        </LegendList>
+      }
+    >
       {active ? (
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={rows} barGap={2} barCategoryGap="25%" margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
@@ -114,6 +113,6 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
       ) : (
         <Empty>{t('aito.stats.empty')}</Empty>
       )}
-    </div>
+    </Panel>
   );
 }

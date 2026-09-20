@@ -511,6 +511,11 @@ export default {
       noDecisions: 'No quotes decided in this period',
       decisionsPerWeek: 'Decisions per week',
       decisionsPerDay: 'Decisions per day',
+      thisPeriod: 'This period',
+      funnel: 'From quote to delivery',
+      clientsHeading: 'New and returning',
+      timings: 'How long it takes',
+      totals: 'Totals',
       activityWeekly: 'Activity per week',
       range: '{{from}} – {{to}}',
       screen: {

@@ -7,6 +7,7 @@ import { ageAnchor, dueDateDays } from '../../../utils/aitoAging';
 import { isFinished } from '../../../utils/aitoBoard';
 import { parseLocalDateKey } from '../../../utils/date';
 import { COLUMNS } from '../columns';
+import { Panel } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
 /** What the page hands the strip: the board list and the follow-up buckets
@@ -148,13 +149,17 @@ export function TodayStrip({ brief }: { brief: BriefInput | null }) {
   const due = dueSoon > 0 ? t('aito.stats.strip.dueSoon', { count: dueSoon }) : null;
 
   return (
-    <section data-testid="aito-stats-strip" className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+    <Panel
+      testId="aito-stats-strip"
+      className="space-y-3"
+      title={
         <h3 className="text-[15px] font-semibold text-white">
           <span className="capitalize">{dateLine}</span>
           {inProduction !== null && <> · {t('aito.inProduction', { count: inProduction })}</>}
         </h3>
-        {!allClear && (
+      }
+      action={
+        !allClear ? (
           <p className="text-[12.5px] text-bambu-gray-light">
             {fragments.map((f, i) => (
               <span key={f.kind}>
@@ -164,9 +169,9 @@ export function TodayStrip({ brief }: { brief: BriefInput | null }) {
             ))}
             {due && ` · ${due}`}
           </p>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5 text-[12.5px] text-bambu-gray-light">
           <span>
@@ -211,7 +216,7 @@ export function TodayStrip({ brief }: { brief: BriefInput | null }) {
             <div
               key={c.column.id}
               data-testid={`aito-strip-${c.column.id}`}
-              className={`vt-aito-col-${c.column.id} grid min-w-0 gap-1.5 rounded-[10px] bg-bambu-dark-secondary/50 px-3 py-3`}
+              className={`vt-aito-col-${c.column.id} grid min-w-0 gap-1.5 rounded-lg bg-bambu-dark px-3 py-3`}
             >
               <h4 className="flex items-center gap-1.5 truncate text-xs font-medium text-bambu-gray-light">
                 <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-full ${c.column.dot}`} />
@@ -236,7 +241,7 @@ export function TodayStrip({ brief }: { brief: BriefInput | null }) {
       {allClear ? (
         <p
           data-testid="aito-stats-clear"
-          className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[10px] border border-dashed border-bambu-dark-tertiary px-4 py-3 text-[13px] text-bambu-gray-light"
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg bg-bambu-dark px-4 py-3 text-[13px] text-bambu-gray-light"
         >
           <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-bambu-green" />
           <b className="font-medium text-white">{t('aito.stats.brief.allClear')}</b>
@@ -258,7 +263,7 @@ export function TodayStrip({ brief }: { brief: BriefInput | null }) {
           )}
         </div>
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -291,7 +296,7 @@ function HangList({
             <button
               type="button"
               onClick={() => onOpen?.(row.id)}
-              className="relative grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-px rounded-lg bg-bambu-dark-secondary px-2.5 py-2 text-left text-xs transition-colors duration-150 hover:bg-bambu-dark-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
+              className="card-shadow relative grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-px rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2.5 py-2 text-left text-xs transition-[background-color,border-color] duration-150 hover:border-bambu-green/40 hover:bg-bambu-dark-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
             >
               <span className="col-span-2 truncate pr-4 font-medium text-white">{row.who}</span>
               <ChevronRight aria-hidden="true" className="absolute right-1.5 top-2 h-3.5 w-3.5 text-bambu-gray" />

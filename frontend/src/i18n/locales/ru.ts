@@ -507,6 +507,11 @@ export default {
       noDecisions: 'За этот период нет решённых смет',
       decisionsPerWeek: 'Решений в неделю',
       decisionsPerDay: 'Решений в день',
+      thisPeriod: 'Этот период',
+      funnel: 'От сметы до выдачи',
+      clientsHeading: 'Новые и постоянные',
+      timings: 'Сколько занимает времени',
+      totals: 'Итоги',
       activityWeekly: 'Активность по неделям',
       range: '{{from}} — {{to}}',
       screen: {

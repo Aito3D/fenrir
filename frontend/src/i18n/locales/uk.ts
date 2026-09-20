@@ -508,6 +508,11 @@ export default {
       noDecisions: 'За цей період немає вирішених кошторисів',
       decisionsPerWeek: 'Рішень на тиждень',
       decisionsPerDay: 'Рішень на день',
+      thisPeriod: 'Цей період',
+      funnel: 'Від кошторису до видачі',
+      clientsHeading: 'Нові та постійні',
+      timings: 'Скільки часу займає',
+      totals: 'Підсумки',
       activityWeekly: 'Активність за тижнями',
       range: '{{from}} — {{to}}',
       screen: {

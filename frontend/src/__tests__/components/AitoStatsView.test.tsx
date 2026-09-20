@@ -83,7 +83,8 @@ describe('StatsView', () => {
     );
 
     const band = await screen.findByTestId('aito-stats-band');
-    const figure = (label: RegExp) => within(band).getByText(label).parentElement!;
+    // Each figure is a card: the label sits in its own row above the value.
+    const figure = (label: RegExp) => within(band).getByText(label).closest('div.rounded-lg')!;
     expect(figure(/^Added/)).toHaveTextContent('3');
     expect(figure(/^Added/)).toHaveTextContent('▲ 50%');
     expect(figure(/^Accepted · 67% accepted$/)).toHaveTextContent('2');
@@ -193,7 +194,8 @@ describe('StatsView', () => {
       <StatsView range={{ dateFrom: '2026-09-01', dateTo: '2026-09-10' }} timeframe={tf} onTimeframeChange={vi.fn()} />,
     );
     const band = await screen.findByTestId('aito-stats-band');
-    expect(within(band).getByText(/^Added/).parentElement).toHaveTextContent('3');
+    const added = () => within(screen.getByTestId('aito-stats-band')).getByText(/^Added/).closest('div.rounded-lg')!;
+    expect(added()).toHaveTextContent('3');
 
     rerender(
       <StatsView range={{ dateFrom: '2026-08-01', dateTo: '2026-09-10' }} timeframe={tf} onTimeframeChange={vi.fn()} />,
@@ -202,12 +204,12 @@ describe('StatsView', () => {
     const body = screen.getByTestId('aito-stats-body');
     expect(body).toHaveAttribute('aria-busy', 'true');
     expect(body).toHaveClass('opacity-60');
-    expect(within(band).getByText(/^Added/).parentElement).toHaveTextContent('3');
+    expect(added()).toHaveTextContent('3');
     expect(document.querySelector('.animate-spin')).toBeNull();
 
     await waitFor(() => expect(screen.getByTestId('aito-stats-body')).not.toHaveAttribute('aria-busy'));
     expect(screen.getByTestId('aito-stats-body')).toHaveClass('opacity-100');
-    expect(within(screen.getByTestId('aito-stats-band')).getByText(/^Added/).parentElement).toHaveTextContent('9');
+    expect(added()).toHaveTextContent('9');
   });
 
   it('renders the strip above the period, and the timeframe selector beside the tabs', async () => {

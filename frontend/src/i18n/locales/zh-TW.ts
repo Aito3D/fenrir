@@ -507,6 +507,11 @@ export default {
       noDecisions: '此期間沒有已決定的報價',
       decisionsPerWeek: '每週決定',
       decisionsPerDay: '每日決定',
+      thisPeriod: '本期',
+      funnel: '從報價到交付',
+      clientsHeading: '新客與回頭客',
+      timings: '耗時情況',
+      totals: '合計',
       activityWeekly: '每週活動',
       range: '{{from}} 至 {{to}}',
       screen: {

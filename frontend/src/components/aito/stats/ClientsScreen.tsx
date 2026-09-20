@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
-import { Block, BlockHeading, Empty, Facts, Finding, Split, type FactRow } from './primitives';
+import { Empty, Facts, Finding, Panel, Split, type FactRow } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
@@ -60,13 +60,12 @@ export function ClientsScreen({ data }: { data: AitoStats }) {
     : [];
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-3">
       <Finding testId="aito-stats-finding" lead={lead} rest={clauses.length ? clauses.join(' ') : null} />
       <Split>
-        <Block testId="aito-stats-arrivals">
-          <BlockHeading>{t('aito.stats.arrivals')}</BlockHeading>
+        <Panel testId="aito-stats-arrivals" title={t('aito.stats.arrivals')}>
           {grid && grid.length === 7 ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg bg-bambu-dark px-3 py-3">
               {/* Capped: stretched across a wide column the cells become
                   big squares and the week stops reading as a grid. */}
               <div className="grid min-w-[26rem] max-w-[34rem] grid-cols-[2.25rem_repeat(24,minmax(0,1fr))] gap-[2px] text-[10px] text-bambu-gray">
@@ -89,26 +88,27 @@ export function ClientsScreen({ data }: { data: AitoStats }) {
           ) : (
             <Empty>{t('aito.stats.empty')}</Empty>
           )}
-        </Block>
-        <div className="grid gap-6">
-          {clients ? (
-            <div data-testid="aito-stats-clients" className="grid gap-1.5">
-              <Facts rows={rows} />
-              {returningPct !== null && (
-                <p className="text-xs text-bambu-gray">{t('aito.stats.returningShare', { pct: returningPct })}</p>
-              )}
-            </div>
-          ) : (
-            <Empty>{t('aito.stats.empty')}</Empty>
-          )}
-          <Block>
-            <BlockHeading>{t('aito.stats.islands')}</BlockHeading>
+        </Panel>
+        <div className="grid gap-3">
+          <Panel testId="aito-stats-clients" title={t('aito.stats.clientsHeading')}>
+            {clients ? (
+              <div className="grid gap-1.5">
+                <Facts rows={rows} />
+                {returningPct !== null && (
+                  <p className="px-1 text-xs text-bambu-gray">{t('aito.stats.returningShare', { pct: returningPct })}</p>
+                )}
+              </div>
+            ) : (
+              <Empty>{t('aito.stats.empty')}</Empty>
+            )}
+          </Panel>
+          <Panel title={t('aito.stats.islands')}>
             {islands.length > 0 ? (
-              <ul data-testid="aito-stats-islands" className="grid text-[13px]">
-                {islands.map((row, i) => (
+              <ul data-testid="aito-stats-islands" className="grid gap-1.5 text-[13px]">
+                {islands.map((row) => (
                   <li
                     key={row.island ?? '__pickup'}
-                    className={`flex items-baseline justify-between gap-3 py-2 ${i === 0 ? '' : 'border-t border-bambu-dark-tertiary/70'}`}
+                    className="flex items-baseline justify-between gap-3 rounded-lg bg-bambu-dark px-3 py-2"
                   >
                     <span className={row.island ? 'capitalize text-white' : 'text-bambu-gray-light'}>{row.island ?? t('aito.stats.pickup')}</span>
                     <span className="font-medium tabular-nums text-white">
@@ -119,11 +119,11 @@ export function ClientsScreen({ data }: { data: AitoStats }) {
                 ))}
               </ul>
             ) : (
-              <p data-testid="aito-stats-islands" className="text-xs text-bambu-gray">
+              <p data-testid="aito-stats-islands" className="rounded-lg bg-bambu-dark px-3 py-2.5 text-xs text-bambu-gray">
                 {t('aito.stats.empty')}
               </p>
             )}
-          </Block>
+          </Panel>
         </div>
       </Split>
     </div>

@@ -507,6 +507,11 @@ export default {
       noDecisions: 'Keine entschiedenen Angebote in diesem Zeitraum',
       decisionsPerWeek: 'Entscheidungen pro Woche',
       decisionsPerDay: 'Entscheidungen pro Tag',
+      thisPeriod: 'Dieser Zeitraum',
+      funnel: 'Vom Angebot zur Lieferung',
+      clientsHeading: 'Neu und wiederkehrend',
+      timings: 'Wie lange es dauert',
+      totals: 'Summen',
       activityWeekly: 'Aktivität pro Woche',
       range: '{{from}} bis {{to}}',
       screen: {

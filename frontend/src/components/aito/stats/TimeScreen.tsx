@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { COLUMNS } from '../columns';
-import { Block, BlockHeading, Empty, Facts, Finding, HBars, Journey, Legend, LegendList, Split } from './primitives';
+import { Empty, Facts, Finding, HBars, Journey, Legend, LegendList, Panel, Split } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
 /** Time: how long a project takes, which stage is slow, one stacked bar per
@@ -33,23 +33,22 @@ export function TimeScreen({ data }: { data: AitoStats }) {
   const lead = tp?.lead_days == null ? t('aito.stats.finding.timeNone') : t('aito.stats.finding.timeLead', { days: days(tp.lead_days) });
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-3">
       <Finding testId="aito-stats-finding" lead={lead} rest={clauses.length ? clauses.join(' ') : null} />
       <Split>
-        <Block testId="aito-stats-stage-time">
-          <BlockHeading
-            aside={
-              <LegendList>
-                {COLUMNS.map((c) => (
-                  <Legend key={c.id} cls={c.dot}>
-                    {t(c.labelKey)}
-                  </Legend>
-                ))}
-              </LegendList>
-            }
-          >
-            {t('aito.stats.stageTime')}
-          </BlockHeading>
+        <Panel
+          testId="aito-stats-stage-time"
+          title={t('aito.stats.stageTime')}
+          action={
+            <LegendList>
+              {COLUMNS.map((c) => (
+                <Legend key={c.id} cls={c.dot}>
+                  {t(c.labelKey)}
+                </Legend>
+              ))}
+            </LegendList>
+          }
+        >
           {cards.length > 0 ? (
             <HBars
               testId="aito-stats-stage-rows"
@@ -76,12 +75,16 @@ export function TimeScreen({ data }: { data: AitoStats }) {
           ) : (
             <Empty>{t('aito.stats.empty')}</Empty>
           )}
-        </Block>
-        <div className="grid gap-6">
-          <Block testId="aito-stats-flow">
-            <BlockHeading>{t('aito.stats.flow')}</BlockHeading>
-            {stages.some((s) => s.days > 0) ? <Journey stages={stages} /> : <p className="text-xs text-bambu-gray">{t('aito.stats.empty')}</p>}
-          </Block>
+        </Panel>
+        <div className="grid gap-3">
+          <Panel testId="aito-stats-flow" title={t('aito.stats.flow')}>
+            {stages.some((s) => s.days > 0) ? (
+              <Journey stages={stages} />
+            ) : (
+              <p className="rounded-lg bg-bambu-dark px-3 py-2.5 text-xs text-bambu-gray">{t('aito.stats.empty')}</p>
+            )}
+          </Panel>
+          <Panel title={t('aito.stats.timings')}>
           <Facts
             rows={[
               {
@@ -102,6 +105,7 @@ export function TimeScreen({ data }: { data: AitoStats }) {
               },
             ]}
           />
+          </Panel>
         </div>
       </Split>
     </div>

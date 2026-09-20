@@ -507,6 +507,11 @@ export default {
       noDecisions: 'この期間に決定した見積はありません',
       decisionsPerWeek: '週ごとの決定',
       decisionsPerDay: '日ごとの決定',
+      thisPeriod: 'この期間',
+      funnel: '見積から納品まで',
+      clientsHeading: '新規とリピーター',
+      timings: '所要時間',
+      totals: '合計',
       activityWeekly: '週別の活動',
       range: '{{from}}〜{{to}}',
       screen: {

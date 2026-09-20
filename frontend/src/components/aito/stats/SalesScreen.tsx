@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { DecisionsChart } from './DecisionsChart';
 import { DECLINED, SERIES } from './palette';
-import { Block, BlockHeading, Empty, Facts, Finding, HBars, Split } from './primitives';
+import { Facts, Finding, HBars, Panel, Split } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
 /** Sales: the win rate and what was lost, the decisions over time, and the
@@ -40,11 +40,12 @@ export function SalesScreen({ data }: { data: AitoStats }) {
   const lead = rate === null ? t('aito.stats.finding.salesNone') : t('aito.stats.finding.salesWin', { pct: rate });
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-3">
       <Finding testId="aito-stats-finding" lead={lead} rest={rest} />
       <Split>
         <DecisionsChart daily={data.daily ?? []} />
-        <div className="grid gap-6">
+        <div className="grid gap-3">
+          <Panel title={t('aito.stats.funnel')}>
           <Facts
             testId="aito-stats-funnel"
             rows={[
@@ -69,8 +70,8 @@ export function SalesScreen({ data }: { data: AitoStats }) {
               },
             ]}
           />
-          <Block>
-            <BlockHeading>{t('aito.stats.winRate')}</BlockHeading>
+          </Panel>
+          <Panel title={t('aito.stats.winRate')}>
             {bands.length > 0 ? (
               <HBars
                 testId="aito-stats-win-rate"
@@ -95,14 +96,13 @@ export function SalesScreen({ data }: { data: AitoStats }) {
                 })}
               />
             ) : (
-              <p data-testid="aito-stats-win-rate" className="text-xs text-bambu-gray">
+              <p data-testid="aito-stats-win-rate" className="rounded-lg bg-bambu-dark px-3 py-2.5 text-xs text-bambu-gray">
                 {t('aito.stats.winRateEmpty')}
               </p>
             )}
-          </Block>
+          </Panel>
         </div>
       </Split>
-      {decided === 0 && data.daily === undefined && <Empty>{t('aito.stats.empty')}</Empty>}
     </div>
   );
 }

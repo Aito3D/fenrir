@@ -507,6 +507,11 @@ export default {
       noDecisions: 'Bu dönemde karara bağlanan teklif yok',
       decisionsPerWeek: 'Haftalık kararlar',
       decisionsPerDay: 'Günlük kararlar',
+      thisPeriod: 'Bu dönem',
+      funnel: 'Tekliften teslimata',
+      clientsHeading: 'Yeni ve tekrar gelen',
+      timings: 'Ne kadar sürüyor',
+      totals: 'Toplamlar',
       activityWeekly: 'Haftalık etkinlik',
       range: '{{from}} – {{to}} arası',
       screen: {

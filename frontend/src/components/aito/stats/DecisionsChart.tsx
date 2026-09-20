@@ -6,7 +6,7 @@ import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { localDateKey, parseLocalDateKey } from '../../../utils/date';
 import { AXIS, DECLINED, GRID, SERIES } from './palette';
-import { BlockHeading, Empty, Legend, LegendList } from './primitives';
+import { Empty, Legend, LegendList, Panel } from './primitives';
 
 const WEEKLY_ABOVE_DAYS = 45;
 const WEEKLY_ABOVE_DAYS_NARROW = 31;
@@ -42,17 +42,16 @@ export function DecisionsChart({ daily }: { daily: AitoStatsDay[] }) {
   const anyDecision = rows.some((r) => r.accepted + r.declined > 0);
 
   return (
-    <div data-testid="aito-stats-decisions" className="grid gap-2.5 min-w-0">
-      <BlockHeading
-        aside={
-          <LegendList>
-            <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
-            <Legend color={DECLINED}>{t('aito.stats.declined')}</Legend>
-          </LegendList>
-        }
-      >
-        {weekly ? t('aito.stats.decisionsPerWeek') : t('aito.stats.decisionsPerDay')}
-      </BlockHeading>
+    <Panel
+      testId="aito-stats-decisions"
+      title={weekly ? t('aito.stats.decisionsPerWeek') : t('aito.stats.decisionsPerDay')}
+      action={
+        <LegendList>
+          <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
+          <Legend color={DECLINED}>{t('aito.stats.declined')}</Legend>
+        </LegendList>
+      }
+    >
       {anyDecision ? (
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={rows} barCategoryGap="30%" margin={{ top: 8, right: 4, left: -20, bottom: 0 }}>
@@ -81,6 +80,6 @@ export function DecisionsChart({ daily }: { daily: AitoStatsDay[] }) {
       ) : (
         <Empty>{t('aito.stats.noDecisions')}</Empty>
       )}
-    </div>
+    </Panel>
   );
 }

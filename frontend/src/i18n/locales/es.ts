@@ -507,6 +507,11 @@ export default {
       noDecisions: 'Ningún presupuesto decidido en este periodo',
       decisionsPerWeek: 'Decisiones por semana',
       decisionsPerDay: 'Decisiones por día',
+      thisPeriod: 'Este periodo',
+      funnel: 'Del presupuesto a la entrega',
+      clientsHeading: 'Nuevos y recurrentes',
+      timings: 'Cuánto se tarda',
+      totals: 'Totales',
       activityWeekly: 'Actividad por semana',
       range: 'del {{from}} al {{to}}',
       screen: {

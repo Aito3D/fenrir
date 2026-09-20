@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { AITO_SERVICE_LABEL_KEYS } from '../services';
 import { SERVICE_COLORS } from './palette';
-import { AsOfToday, Block, BlockHeading, Empty, Facts, Finding, HBars, Split } from './primitives';
+import { AsOfToday, Empty, Facts, Finding, HBars, Panel, Split } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
 /** Money: the totals, what is still out and how late, where the accepted
@@ -38,16 +38,15 @@ export function MoneyScreen({ data }: { data: AitoStats }) {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-3">
       <Finding
         testId="aito-stats-finding"
         lead={t('aito.stats.finding.moneyTotals', { accepted: money(quoted), invoiced: money(invoiced) })}
         rest={clauses.join(' ')}
       />
       <Split>
-        <div className="grid gap-6">
-          <Block>
-            <BlockHeading>{t('aito.stats.serviceMix')}</BlockHeading>
+        <div className="grid gap-3">
+          <Panel title={t('aito.stats.serviceMix')}>
             {services.length > 0 && revenue > 0 ? (
               <HBars
                 testId="aito-stats-service-mix"
@@ -69,25 +68,24 @@ export function MoneyScreen({ data }: { data: AitoStats }) {
                 }))}
               />
             ) : (
-              <p data-testid="aito-stats-service-mix" className="text-xs text-bambu-gray">
+              <p data-testid="aito-stats-service-mix" className="rounded-lg bg-bambu-dark px-3 py-2.5 text-xs text-bambu-gray">
                 {t('aito.stats.empty')}
               </p>
             )}
-          </Block>
-          <Block testId="aito-stats-overdue">
-            <BlockHeading
-              aside={
-                <AsOfToday
-                  extra={overdue?.oldest_days !== null && overdue?.oldest_days !== undefined ? t('aito.stats.overdueOldest', { days: overdue.oldest_days }) : undefined}
-                />
-              }
-            >
-              {t('aito.stats.overdue')}
-            </BlockHeading>
+          </Panel>
+          <Panel
+            testId="aito-stats-overdue"
+            title={t('aito.stats.overdue')}
+            action={
+              <AsOfToday
+                extra={overdue?.oldest_days !== null && overdue?.oldest_days !== undefined ? t('aito.stats.overdueOldest', { days: overdue.oldest_days }) : undefined}
+              />
+            }
+          >
             {!overdue ? (
               <Empty>{t('aito.stats.empty')}</Empty>
             ) : overdueCount === 0 ? (
-              <p className="text-xs text-bambu-gray">{t('aito.stats.nothingOverdue')}</p>
+              <p className="rounded-lg bg-bambu-dark px-3 py-2.5 text-xs text-bambu-gray">{t('aito.stats.nothingOverdue')}</p>
             ) : (
               <HBars
                 rows={overdue.buckets.map((b) => ({
@@ -106,8 +104,9 @@ export function MoneyScreen({ data }: { data: AitoStats }) {
                 }))}
               />
             )}
-          </Block>
+          </Panel>
         </div>
+        <Panel title={t('aito.stats.totals')}>
         <Facts
           testId="aito-stats-money"
           rows={[
@@ -123,6 +122,7 @@ export function MoneyScreen({ data }: { data: AitoStats }) {
             { label: t('aito.stats.facts.shippingBilled'), value: money(shipping), note: t('aito.stats.facts.parcels', { count: parcels }) },
           ]}
         />
+        </Panel>
       </Split>
     </div>
   );

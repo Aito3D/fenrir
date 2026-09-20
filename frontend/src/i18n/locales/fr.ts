@@ -507,6 +507,11 @@ export default {
       noDecisions: 'Aucun devis décidé sur cette période',
       decisionsPerWeek: 'Décisions par semaine',
       decisionsPerDay: 'Décisions par jour',
+      thisPeriod: 'Cette période',
+      funnel: 'Du devis à la livraison',
+      clientsHeading: 'Nouveaux et fidèles',
+      timings: 'Combien de temps ça prend',
+      totals: 'Totaux',
       activityWeekly: 'Activité par semaine',
       range: 'du {{from}} au {{to}}',
       screen: {

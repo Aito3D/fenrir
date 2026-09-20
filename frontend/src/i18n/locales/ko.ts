@@ -507,6 +507,11 @@ export default {
       noDecisions: '이 기간에 결정된 견적이 없습니다',
       decisionsPerWeek: '주별 결정',
       decisionsPerDay: '일별 결정',
+      thisPeriod: '이 기간',
+      funnel: '견적에서 납품까지',
+      clientsHeading: '신규와 재방문',
+      timings: '소요 기간',
+      totals: '합계',
       activityWeekly: '주별 활동',
       range: '{{from}} ~ {{to}}',
       screen: {

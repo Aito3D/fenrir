@@ -8336,6 +8336,11 @@ export default {
       noDecisions: 'Geen besliste offertes in deze periode',
       decisionsPerWeek: 'Beslissingen per week',
       decisionsPerDay: 'Beslissingen per dag',
+      thisPeriod: 'Deze periode',
+      funnel: 'Van offerte tot levering',
+      clientsHeading: 'Nieuw en terugkerend',
+      timings: 'Hoe lang het duurt',
+      totals: 'Totalen',
       activityWeekly: 'Activiteit per week',
       range: '{{from}} t/m {{to}}',
       screen: {

@@ -507,6 +507,11 @@ export default {
       noDecisions: 'Nessun preventivo deciso in questo periodo',
       decisionsPerWeek: 'Decisioni per settimana',
       decisionsPerDay: 'Decisioni per giorno',
+      thisPeriod: 'Questo periodo',
+      funnel: 'Dal preventivo alla consegna',
+      clientsHeading: 'Nuovi e abituali',
+      timings: 'Quanto tempo richiede',
+      totals: 'Totali',
       activityWeekly: 'Attività per settimana',
       range: 'dal {{from}} al {{to}}',
       screen: {
