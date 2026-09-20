@@ -643,7 +643,9 @@ def _payment(payment_id: str, retainer_id: str | None, unused: float, amount: fl
 class _Books:
     """The Books surface the deposit step touches, all patched at once."""
 
-    def __init__(self, monkeypatch, *, invoices, estimate=None, payments=None, fresh=None, apply_error=None):
+    def __init__(
+        self, monkeypatch, *, invoices, estimate=None, payments=None, fresh=None, apply_error=None, retainers=None
+    ):
         self.applied: list[tuple[str, list[dict]]] = []
         self.reread: list[str] = []
         calls: list[str] = []
@@ -658,6 +660,12 @@ class _Books:
             return list(payments or [])
 
         async def list_customer_retainers(db, customer_id):
+            # `retainers` stands in for the customer's whole retainer list —
+            # the live org carries retainers the estimate never lists (every
+            # online payment Heimdall books is one). Absent, the list is
+            # derived from the estimate as before.
+            if retainers is not None:
+                return list(retainers)
             return [
                 {"retainerinvoice_id": r["retainerinvoice_id"], "retainerinvoice_number": r["retainerinvoice_number"]}
                 for r in (estimate or {}).get("retainerinvoices", [])
@@ -755,6 +763,71 @@ async def test_advance_not_linked_to_the_quote_is_left_for_the_operator(db_sessi
     assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
     # The credit figure is refreshed anyway: it froze the day the quote was
     # invoiced, since the status reconcile stops reading a locked estimate.
+    assert row.customer_credit_total == 4500.0
+    assert await _events(db_session, p_id) == []
+
+
+@pytest.mark.asyncio
+async def test_retainer_referencing_the_quote_number_is_applied_without_an_estimate_link(db_session, monkeypatch):
+    """Modelled on DEV26-2684 / FA-26-4358 (live, 2026-09-19): Heimdall books
+    an online payment as a retainer that references the QUOTE NUMBER but is
+    never attached to the estimate, so `retainerinvoices` stays empty and the
+    deposit sat unused while the invoice went overdue. The reference number
+    is as unambiguous as the estimate link, so the sweep spends it."""
+    p = await _project(db_session, quote_id="EST1", quote_number="DEV26-2684", customer_credit_total=4000.0)
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate(),  # no retainer listed on the estimate
+        payments=[_payment("P1", "RET-HMD", 4000.0)],
+        retainers=[
+            {
+                "retainerinvoice_id": "RET-HMD",
+                "retainerinvoice_number": "RET26-00295",
+                "reference_number": "dev26-2684 ",
+            }
+        ],
+        fresh=_invoice(0.0, "paid"),
+    )
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    assert books.applied == [("INV1", [{"payment_id": "P1", "amount_applied": 4000.0}])]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance) == ("paid", 0.0)
+    assert row.customer_credit_total == 0.0
+    events = await _events(db_session, p_id)
+    assert [e.kind for e in events] == ["invoice.deposit_applied"]
+    assert events[0].detail == {"retainer_number": "RET26-00295", "invoice_number": "INV-1", "amount": 4000.0}
+
+
+@pytest.mark.asyncio
+async def test_retainer_referencing_another_quote_is_left_alone(db_session, monkeypatch):
+    """The same customer's deposit for a SIBLING job: referenced to a
+    different quote number, not listed on this estimate — the operator's
+    call, never the sweep's. A plain advance with no retainer behind it and
+    no estimate link stays untouched too, whatever its description says."""
+    p = await _project(db_session, quote_id="EST1", quote_number="DEV26-2684", customer_credit_total=None)
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate(),
+        payments=[_payment("P9", "RET-SIB", 4000.0), _payment("P8", None, 500.0)],
+        retainers=[
+            {"retainerinvoice_id": "RET-SIB", "retainerinvoice_number": "RET26-00290", "reference_number": "DEV26-2601"}
+        ],
+    )
+
+    await sweep_invoices(db_session, force=True)
+
+    assert books.applied == []
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
     assert row.customer_credit_total == 4500.0
     assert await _events(db_session, p_id) == []
 

@@ -79,6 +79,12 @@ class RetainerCredit:
     applicable: float
     # (payment_id, unused amount), in the order Books listed them.
     payments: list[tuple[str, float]] = field(default_factory=list)
+    # The retainer's own ``reference_number`` in Books, "" when there is no
+    # retainer (a plain advance) or Books left it blank. Heimdall books every
+    # paid link as a retainer carrying the QUOTE NUMBER here and never
+    # attaches it to the estimate — this is how the sweep still recognises
+    # that money as the quote's (see aito_invoice_sweep.linked_credits).
+    reference: str = ""
 
 
 @dataclass
@@ -163,9 +169,12 @@ async def customer_credits(db: AsyncSession, estimate: dict) -> list[RetainerCre
     # rather than first, so a missing date never jumps a real deposit.
     payments.sort(key=lambda p: (not p.get("date"), str(p.get("date") or "")))
     numbers: dict[str, str] = {}
+    references: dict[str, str] = {}
     if any(p.get("retainerinvoice_id") for p in payments):
         for retainer in await zoho_service.list_customer_retainers(db, customer_id):
-            numbers[str(retainer.get("retainerinvoice_id") or "")] = str(retainer.get("retainerinvoice_number") or "")
+            retainer_id = str(retainer.get("retainerinvoice_id") or "")
+            numbers[retainer_id] = str(retainer.get("retainerinvoice_number") or "")
+            references[retainer_id] = str(retainer.get("reference_number") or "")
 
     by_id: dict[str, RetainerCredit] = {}
     for payment in payments:
@@ -178,7 +187,14 @@ async def customer_credits(db: AsyncSession, estimate: dict) -> list[RetainerCre
             number = numbers.get(retainer_id) if retainer_id else None
             if not number:
                 number = f"#{payment.get('payment_number')}" if payment.get("payment_number") else key
-            credit = by_id[key] = RetainerCredit(id=key, number=number, status="paid", total=0.0, applicable=0.0)
+            credit = by_id[key] = RetainerCredit(
+                id=key,
+                number=number,
+                status="paid",
+                total=0.0,
+                applicable=0.0,
+                reference=references.get(retainer_id, "") if retainer_id else "",
+            )
         credit.total += float(payment.get("amount") or 0)
         credit.applicable += unused
         credit.payments.append((payment_id, unused))

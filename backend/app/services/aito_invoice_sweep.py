@@ -73,22 +73,41 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def linked_credits(estimate: dict, credits: list[RetainerCredit]) -> list[RetainerCredit]:
+def _same_reference(reference: str, quote_number: str | None) -> bool:
+    return bool(quote_number) and reference.strip().casefold() == str(quote_number).strip().casefold()
+
+
+def linked_credits(
+    estimate: dict, credits: list[RetainerCredit], quote_number: str | None = None
+) -> list[RetainerCredit]:
     """The deposits that belong to THIS quote and still have something to spend.
 
     A customer's account can hold advances from other jobs — a retainer raised
     from another estimate, or one raised by hand with no estimate at all. The
-    sweep spends none of those: only a retainer the estimate itself lists is
-    unambiguously this project's money, and anything else is the operator's
-    call in Books (or the Create-invoice dialog, which shows them all).
+    sweep spends none of those: only money unambiguously this project's is
+    applied, and anything else is the operator's call in Books (or the
+    Create-invoice dialog, which shows them all). Two signals count:
+
+    - the estimate lists the retainer in ``retainerinvoices`` (raised from
+      the quote in Books);
+    - the retainer's ``reference_number`` IS the quote number. Heimdall books
+      every paid online link as a retainer referenced this way and never
+      attaches it to the estimate (live DEV26-2684 / RET26-00295, 2026-09-19:
+      empty ``retainerinvoices``, reference "DEV26-2684"), so without this
+      rule an invoice raised before the link was paid sat overdue forever
+      while the money sat unused. An operator typing the quote number as a
+      hand-raised retainer's reference means the same thing.
+
+    A plain advance with no retainer behind it has no reference to match and
+    is never spent here, whatever its description says.
     """
     linked = {str(r.get("retainerinvoice_id") or "") for r in estimate.get("retainerinvoices") or []}
     linked.discard("")
-    return [c for c in credits if c.id in linked and c.applicable > 0]
+    return [c for c in credits if c.applicable > 0 and (c.id in linked or _same_reference(c.reference, quote_number))]
 
 
 async def settle_with_deposits(
-    db: AsyncSession, project_id: int, quote_id: str, invoice: dict
+    db: AsyncSession, project_id: int, quote_id: str, invoice: dict, quote_number: str | None = None
 ) -> tuple[dict, float | None]:
     """Spend the quote's own unused deposits on its open invoice.
 
@@ -113,7 +132,7 @@ async def settle_with_deposits(
         return invoice, None
 
     remaining = sum(c.applicable for c in credits)
-    to_apply = linked_credits(estimate, credits)
+    to_apply = linked_credits(estimate, credits, quote_number)
     if not to_apply:
         return invoice, remaining
 
@@ -219,8 +238,11 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         # object triggers an implicit lazy-load that needs a greenlet and
         # raises ``MissingGreenlet`` outside of one, so the values this loop
         # needs to *read* are pinned to plain locals instead.
-        targets = [(project, project.id, project.quote_id or "", project.client_id or "") for project in projects]
-        for project, project_id, quote_id, client_id in targets:
+        targets = [
+            (project, project.id, project.quote_id or "", project.client_id or "", project.quote_number)
+            for project in projects
+        ]
+        for project, project_id, quote_id, client_id, quote_number in targets:
             try:
                 invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
                 if invoices:
@@ -231,7 +253,7 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                         # it first (a retainer paid online after the invoice
                         # was raised in Books by hand, typically), and cache
                         # whatever Books says the invoice is AFTER that.
-                        newest, credit = await settle_with_deposits(db, project_id, quote_id, newest)
+                        newest, credit = await settle_with_deposits(db, project_id, quote_id, newest, quote_number)
                     # Parsed into locals before any assignment: a ValueError on
                     # the balance must leave the row untouched, not half-written.
                     status = newest.get("status") or None
