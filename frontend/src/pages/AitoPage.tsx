@@ -16,7 +16,6 @@ import { NewProjectDrawer } from '../components/aito/NewProjectDrawer';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashGrid } from '../components/aito/TrashGrid';
 import { StatsView } from '../components/aito/StatsView';
-import { TimeframeSelector } from '../components/stats/TimeframeSelector';
 import { useTimeframe } from '../components/stats/timeframe';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
 import { api, type AitoProject } from '../api/client';
@@ -467,7 +466,8 @@ export function AitoPage() {
               archive to the other is not possible — and does not need to be.
               They are both detours; the board is where the work is. A detour
               keeps only its own toggle (the way back) plus what it needs: the
-              archives their search, the statistics view its timeframe.
+              archives their search. The statistics view renders its own
+              timeframe selector beside its tabs, where the range it changes is.
               Creation and the other detours are all about the live board. */}
           {view !== 'stats' && view !== 'trash' && (
             <ViewToggleButton
@@ -508,7 +508,6 @@ export function AitoPage() {
               {t('aito.newProject')}
             </Button>
           )}
-          {view === 'stats' && <TimeframeSelector timeframe={statsTimeframe.timeframe} onChange={statsTimeframe.setTimeframe} />}
         </div>
       </div>
 
@@ -568,6 +567,8 @@ export function AitoPage() {
       ) : view === 'stats' ? (
         <StatsView
           range={statsTimeframe.range}
+          timeframe={statsTimeframe.timeframe}
+          onTimeframeChange={statsTimeframe.setTimeframe}
           brief={{
             projects: aitoQuery.data ?? [],
             buckets,

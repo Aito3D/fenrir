@@ -3,27 +3,43 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { api, type AitoStats } from '../../api/client';
 import { Button } from '../Button';
-import type { DateRange } from '../stats/timeframe';
-import { ActivityChart } from './stats/ActivityChart';
-import { Briefing, type BriefInput } from './stats/Briefing';
-import { ClientsSection } from './stats/ClientsSection';
-import { FiguresBand } from './stats/FiguresBand';
-import { MoneySection } from './stats/MoneySection';
+import { TimeframeSelector } from '../stats/TimeframeSelector';
+import type { DateRange, TimeframeState } from '../stats/timeframe';
+import { parseLocalDateKey } from '../../utils/date';
+import { ClientsScreen } from './stats/ClientsScreen';
+import { MoneyScreen } from './stats/MoneyScreen';
+import { OverviewScreen } from './stats/OverviewScreen';
 import { Empty } from './stats/primitives';
-import { SalesSection } from './stats/SalesSection';
-import { SectionAccordion } from './stats/SectionAccordion';
-import { TimeSection } from './stats/TimeSection';
-import { AITO_SERVICE_LABEL_KEYS } from './services';
-import { useStatsFormat } from './stats/useStatsFormat';
+import { SalesScreen } from './stats/SalesScreen';
+import { ScreenTabs } from './stats/ScreenTabs';
+import { statsScreenId, statsTabId, useStatsScreen } from './stats/screens';
+import { TimeScreen } from './stats/TimeScreen';
+import { TodayStrip, type BriefInput } from './stats/TodayStrip';
 
-/** The board's statistics view as a morning brief: a sentence that answers
- *  « what do I do today » and the three lists behind it (from the board
- *  list, instantly), then the period's figures, the activity chart and the
- *  four analysis sections folded shut. Same endpoint as the Stats page's
- *  pipeline widget, sliced by the timeframe selector the PAGE renders in its
- *  toolbar and passes down as `range`. */
-export function StatsView({ range, brief = null }: { range: DateRange; brief?: BriefInput | null }) {
-  const { t } = useTranslation();
+/** The board's statistics view: today above the line, the period below it.
+ *
+ *  Above: the board drawn as a strip, with the to-dos hanging under the
+ *  stage they belong to. It answers « what do I do today » and never moves
+ *  when the range changes — it comes from the board list the page already
+ *  holds, not from this call.
+ *
+ *  Below: the period, one question per screen behind a segmented control.
+ *  Each screen leads with the finding in a sentence and proves it with one
+ *  chart. The timeframe selector lives HERE rather than in the page toolbar:
+ *  it only ever changes what sits under the tabs. */
+export function StatsView({
+  range,
+  timeframe,
+  onTimeframeChange,
+  brief = null,
+}: {
+  range: DateRange;
+  timeframe: TimeframeState;
+  onTimeframeChange: (next: TimeframeState | ((prev: TimeframeState) => TimeframeState)) => void;
+  brief?: BriefInput | null;
+}) {
+  const { t, i18n } = useTranslation();
+  const [screen, selectScreen] = useStatsScreen();
   const query = useQuery({
     queryKey: ['aitoStats', range.dateFrom, range.dateTo],
     queryFn: () => api.getAitoStats(range),
@@ -35,92 +51,74 @@ export function StatsView({ range, brief = null }: { range: DateRange; brief?: B
   const data = query.data;
   const holding = query.isPlaceholderData || (query.isFetching && data !== undefined);
 
-  return (
-    <section data-testid="aito-stats-view" className="animate-rise space-y-6">
-      <Briefing brief={brief} stats={data?.throughput ? data : undefined} />
+  const fmt = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'long' });
+  const rangeLine =
+    data?.date_from && data?.date_to
+      ? t('aito.stats.range', { from: fmt.format(parseLocalDateKey(data.date_from)), to: fmt.format(parseLocalDateKey(data.date_to)) })
+      : null;
 
-      {query.isPending ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 text-bambu-gray animate-spin" />
+  return (
+    <section data-testid="aito-stats-view" className="animate-rise space-y-6 pb-6">
+      <TodayStrip brief={brief} />
+
+      <div className="space-y-4 border-t border-bambu-dark-tertiary pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <TimeframeSelector timeframe={timeframe} onChange={onTimeframeChange} />
+            {rangeLine && <span className="text-[12.5px] text-bambu-gray">{rangeLine}</span>}
+          </div>
+          <ScreenTabs selected={screen} onSelect={selectScreen} />
         </div>
-      ) : query.isError || !data ? (
-        <div className="text-center py-12">
-          <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <p className="text-white font-medium">{t('common.errorLoading')}</p>
-          <Button variant="secondary" onClick={() => query.refetch()} className="mt-4 mx-auto">
-            {t('common.retry')}
-          </Button>
-        </div>
-      ) : !data.throughput ? (
-        <Empty>{t('aito.stats.empty')}</Empty>
-      ) : (
-        <div
-          aria-busy={holding || undefined}
-          data-testid="aito-stats-body"
-          className={`space-y-6 transition-opacity duration-150 ease-(--ease-signature) motion-reduce:transition-none ${holding ? 'opacity-60' : 'opacity-100'}`}
-        >
-          <Body data={data} />
-        </div>
-      )}
+
+        {query.isPending ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="w-8 h-8 text-bambu-gray animate-spin" />
+          </div>
+        ) : query.isError || !data ? (
+          <div className="text-center py-12">
+            <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+            <p className="text-white font-medium">{t('common.errorLoading')}</p>
+            <Button variant="secondary" onClick={() => query.refetch()} className="mt-4 mx-auto">
+              {t('common.retry')}
+            </Button>
+          </div>
+        ) : !data.throughput ? (
+          <Empty>{t('aito.stats.empty')}</Empty>
+        ) : (
+          <div
+            aria-busy={holding || undefined}
+            data-testid="aito-stats-body"
+            role="tabpanel"
+            id={statsScreenId(screen)}
+            aria-labelledby={statsTabId(screen)}
+            tabIndex={-1}
+            className={`transition-opacity duration-150 ease-(--ease-signature) motion-reduce:transition-none ${holding ? 'opacity-60' : 'opacity-100'}`}
+          >
+            {/* Keyed on the screen so the incoming one plays the page's rise
+                rather than the charts morphing into each other. */}
+            <div key={screen} className="animate-rise">
+              <Screen screen={screen} data={data} />
+            </div>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
-function Body({ data }: { data: AitoStats }) {
-  const { t } = useTranslation();
-  const { money, days } = useStatsFormat();
-  const tp = data.throughput!;
-  const decided = data.conversion.accepted.count + data.conversion.declined.count;
-  const topService = [...(data.services ?? [])].sort((a, b) => b.revenue - a.revenue)[0];
-  const revenue = (data.services ?? []).reduce((s, r) => s + r.revenue, 0);
-
-  const teasers = {
-    sales:
-      decided > 0
-        ? t('aito.stats.teaser.sales', {
-            pct: Math.round((data.conversion.accepted.count / decided) * 100),
-            lost: data.conversion.declined.count,
-            total: money(data.conversion.declined.total),
-          })
-        : t('aito.stats.noDecisions'),
-    time: t('aito.stats.teaser.time', { lead: days(tp.lead_days), moves: data.rework?.moves ?? 0 }),
-    money:
-      topService && revenue > 0
-        ? t('aito.stats.teaser.money', {
-            accepted: money(data.conversion.accepted.total),
-            outstanding: money(data.invoicing.outstanding_balance),
-            service: t(AITO_SERVICE_LABEL_KEYS[topService.service] ?? topService.service),
-            pct: Math.round((topService.revenue / revenue) * 100),
-          })
-        : t('aito.stats.teaser.moneyPlain', {
-            accepted: money(data.conversion.accepted.total),
-            outstanding: money(data.invoicing.outstanding_balance),
-          }),
-    clients: t('aito.stats.teaser.clients', { new: data.clients?.new ?? 0, returning: data.clients?.returning ?? 0 }),
-  };
-
-  return (
-    <>
-      <FiguresBand data={data} />
-
-      <div className="animate-rise-lg" style={{ '--enter-delay': '160ms' } as React.CSSProperties}>
-        <ActivityChart daily={data.daily ?? []} />
-      </div>
-
-      <div className="space-y-2 animate-rise-lg" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
-        <SectionAccordion id="aito-stats-sales" heading={t('aito.stats.sales')} teaser={teasers.sales}>
-          <SalesSection data={data} />
-        </SectionAccordion>
-        <SectionAccordion id="aito-stats-time" heading={t('aito.stats.time')} teaser={teasers.time}>
-          <TimeSection data={data} />
-        </SectionAccordion>
-        <SectionAccordion id="aito-stats-money" heading={t('aito.stats.money')} teaser={teasers.money}>
-          <MoneySection data={data} />
-        </SectionAccordion>
-        <SectionAccordion id="aito-stats-clients" heading={t('aito.stats.clients')} teaser={teasers.clients}>
-          <ClientsSection data={data} />
-        </SectionAccordion>
-      </div>
-    </>
-  );
+function Screen({ screen, data }: { screen: ReturnType<typeof useStatsScreen>[0]; data: AitoStats }) {
+  switch (screen) {
+    case 'sales':
+      return <SalesScreen data={data} />;
+    case 'time':
+      return <TimeScreen data={data} />;
+    case 'money':
+      return <MoneyScreen data={data} />;
+    case 'clients':
+      return <ClientsScreen data={data} />;
+    default:
+      return <OverviewScreen data={data} />;
+  }
 }
+
+export type { BriefInput };

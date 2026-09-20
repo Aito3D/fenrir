@@ -1169,6 +1169,48 @@ html[data-vt='aito-view']::view-transition-new(page-title) {
 .vt-aito-backlog {
   view-transition-name: aito-backlog;
 }
+
+/* Board column header ⇄ statistics strip cell. One name per column, on the
+   board's column header and on the strip's matching cell, so the six columns
+   fold into the strip and unfold on the way back instead of crossfading with
+   the rest of the content. The names are written out rather than generated:
+   Tailwind and the view-transition property both need literals. */
+.vt-aito-col-devis {
+  view-transition-name: aito-col-devis;
+}
+.vt-aito-col-waiting {
+  view-transition-name: aito-col-waiting;
+}
+.vt-aito-col-scan {
+  view-transition-name: aito-col-scan;
+}
+.vt-aito-col-model {
+  view-transition-name: aito-col-model;
+}
+.vt-aito-col-print {
+  view-transition-name: aito-col-print;
+}
+.vt-aito-col-finish {
+  view-transition-name: aito-col-finish;
+}
+/* A cell and a column header are different widths, so their snapshots would
+   stretch; pinned at natural size on the left edge they travel and uncover
+   instead. */
+::view-transition-old(aito-col-devis),
+::view-transition-new(aito-col-devis),
+::view-transition-old(aito-col-waiting),
+::view-transition-new(aito-col-waiting),
+::view-transition-old(aito-col-scan),
+::view-transition-new(aito-col-scan),
+::view-transition-old(aito-col-model),
+::view-transition-new(aito-col-model),
+::view-transition-old(aito-col-print),
+::view-transition-new(aito-col-print),
+::view-transition-old(aito-col-finish),
+::view-transition-new(aito-col-finish) {
+  object-fit: none;
+  object-position: left top;
+}
 ::view-transition-old(aito-followups),
 ::view-transition-new(aito-followups),
 ::view-transition-old(aito-count),

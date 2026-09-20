@@ -6,12 +6,13 @@ import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { localDateKey, parseLocalDateKey } from '../../../utils/date';
 import { AXIS, GRID, SERIES, TOOLTIP_ORDER } from './palette';
-import { PanelCard } from '../PanelCard';
-import { Empty, Legend } from './primitives';
+import { BlockHeading, Empty, Legend, LegendList } from './primitives';
 
 /** Past this many days the bars turn to hairlines, so the chart folds the
- *  days into Monday-start weeks instead. A phone runs out of pixels sooner. */
-const WEEKLY_ABOVE_DAYS = 45;
+ *  days into Monday-start weeks instead. A phone runs out of pixels sooner.
+ *  Exported: the Overview's finding names the busiest week or day and has to
+ *  agree with what the chart drew. */
+export const WEEKLY_ABOVE_DAYS = 45;
 const WEEKLY_ABOVE_DAYS_NARROW = 31;
 
 type ChartRow = AitoStatsDay & { label: string; done7?: number };
@@ -58,24 +59,25 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
           : t('aito.stats.rolling7');
 
   return (
-    <div data-testid="aito-stats-activity">
-    <PanelCard
-      title={t('aito.stats.activity')}
-      action={
-        <ul className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-xs text-bambu-gray-light">
-          <Legend color={SERIES.created}>{t('aito.stats.added')}</Legend>
-          <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
-          <Legend color={SERIES.done}>{t('aito.stats.completed')}</Legend>
-          {!weekly && (
-            <Legend color={SERIES.done} line>
-              {t('aito.stats.rolling7')}
-            </Legend>
-          )}
-        </ul>
-      }
-    >
+    <div data-testid="aito-stats-activity" className="grid gap-2.5 min-w-0">
+      <BlockHeading
+        aside={
+          <LegendList>
+            <Legend color={SERIES.created}>{t('aito.stats.added')}</Legend>
+            <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
+            <Legend color={SERIES.done}>{t('aito.stats.completed')}</Legend>
+            {!weekly && (
+              <Legend color={SERIES.done} line>
+                {t('aito.stats.rolling7')}
+              </Legend>
+            )}
+          </LegendList>
+        }
+      >
+        {weekly ? t('aito.stats.activityWeekly') : t('aito.stats.activity')}
+      </BlockHeading>
       {active ? (
-        <ResponsiveContainer width="100%" height={240}>
+        <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={rows} barGap={2} barCategoryGap="25%" margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={GRID} />
             <XAxis dataKey="label" stroke={AXIS} tickLine={false} axisLine={{ stroke: GRID }} tick={{ fontSize: 11 }} minTickGap={28} />
@@ -112,7 +114,6 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
       ) : (
         <Empty>{t('aito.stats.empty')}</Empty>
       )}
-    </PanelCard>
     </div>
   );
 }

@@ -352,7 +352,10 @@ export function BoardColumn({
       } ${dropDisabled || pending ? 'opacity-40' : ''}`}
       data-pending={pending || undefined}
     >
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary/60">
+      {/* The header carries the column's view-transition name so the board
+          folds into the statistics strip's matching cell and unfolds on the
+          way back (index.css, `vt-aito-col-*`). */}
+      <div className={`vt-aito-col-${column.id} flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary/60`}>
         <span className={`w-2 h-2 rounded-full ${column.dot}`} />
         <h2 className="text-sm font-semibold text-white flex-1 truncate">{t(column.labelKey)}</h2>
         <span

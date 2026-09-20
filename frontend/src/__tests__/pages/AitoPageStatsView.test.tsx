@@ -63,9 +63,13 @@ describe('AitoPage statistics view', () => {
     expect(screen.queryByRole('button', { name: 'Import' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
     expect(screen.queryByPlaceholderText(/Search projects/)).toBeNull();
-    // The header's own count badge is gone (the brief's date line carries the phrase instead).
+    // The header's own count badge is gone (the strip's day line carries the phrase instead).
     expect(document.querySelector('.vt-aito-count')).toBeNull();
-    expect(screen.getByRole('button', { name: /Last 30 Days/ })).toBeInTheDocument();
+    // The timeframe selector lives inside the view now, beside its tabs, not
+    // in the page toolbar: it only changes what sits under the tabs.
+    const timeframe = screen.getByRole('button', { name: /Last 30 Days/ });
+    expect(timeframe.closest('[data-testid="aito-stats-view"]')).not.toBeNull();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Back to board' }));
     expect(screen.queryByTestId('aito-stats-view')).toBeNull();
@@ -132,7 +136,7 @@ describe('AitoPage statistics view', () => {
     }
   });
 
-  it('a brief row returns to the board and opens that card', async () => {
+  it('a hanging row returns to the board and opens that card', async () => {
     const user = userEvent.setup();
     const sent = { ...project, id: 77, description: 'Engrenage machine à laver', client_name: 'Tehei Neuffer', column: 'waiting', quote_status: 'sent', quote_sent_at: '2026-01-01T10:00:00', quote_total: 4200 };
     server.use(http.get('/api/v1/aito/', () => HttpResponse.json([project, sent])));
