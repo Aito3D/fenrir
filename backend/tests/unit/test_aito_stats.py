@@ -514,9 +514,13 @@ async def test_size_bands_with_three_decisions_is_one_band(async_client, db_sess
 
 @pytest.mark.asyncio
 async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
-    from datetime import date, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    today = date.today()
+    # The endpoint bounds "today" with the request's tz offset, which defaults
+    # to UTC — so the fixture's due dates have to be UTC days too. Local days
+    # made this fail every evening west of Greenwich, where the UTC date has
+    # already rolled over and every age came out one day longer.
+    today = datetime.now(timezone.utc).date()
     a = await _create(async_client)
     b = await _create(async_client)
     c = await _create(async_client)
