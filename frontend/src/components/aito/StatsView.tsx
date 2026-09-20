@@ -64,7 +64,10 @@ export function StatsView({
       <div className="space-y-4 border-t border-bambu-dark-tertiary pt-5">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <TimeframeSelector timeframe={timeframe} onChange={onTimeframeChange} />
+            {/* Left-aligned: this trigger leads its row, so a right-hung
+                menu would open leftwards off the content and under the
+                sidebar. */}
+            <TimeframeSelector timeframe={timeframe} onChange={onTimeframeChange} align="start" />
             {rangeLine && <span className="text-[12.5px] text-bambu-gray">{rangeLine}</span>}
           </div>
           <ScreenTabs selected={screen} onSelect={selectScreen} />

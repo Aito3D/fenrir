@@ -1280,6 +1280,12 @@ html[data-vt='aito-view']::view-transition-new(page-title) {
     scale: 0.97;
   }
 }
+/* A menu hanging from the trigger's LEFT edge scales out of that corner
+   instead — the statistics view's period header, where the selector leads
+   the row rather than closing it. */
+.aito-tf-menu[data-align='start'] {
+  transform-origin: top left;
+}
 .aito-tf-menu[hidden] {
   display: none;
   opacity: 0;

@@ -220,4 +220,19 @@ describe('StatsView', () => {
     expect(await screen.findByTestId('aito-stats-strip')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Last 30 Days/ })).toBeInTheDocument();
   });
+
+  it('hangs the timeframe menu from the trigger’s left edge, where there is room for it', async () => {
+    const user = userEvent.setup();
+    serve(fixture());
+    render(view());
+    await screen.findByTestId('aito-stats-band');
+    await user.click(screen.getByRole('button', { name: /Last 30 Days/ }));
+    // This trigger leads its row: a right-hung menu opens leftwards off the
+    // content and under the sidebar.
+    const menu = document.querySelector('.aito-tf-menu')!;
+    expect(menu).not.toHaveAttribute('hidden');
+    expect(menu).toHaveAttribute('data-align', 'start');
+    expect(menu).toHaveClass('left-0');
+    expect(menu).not.toHaveClass('right-0');
+  });
 });

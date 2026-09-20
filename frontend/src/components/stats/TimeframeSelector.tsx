@@ -11,9 +11,15 @@ import { TIMEFRAME_PRESETS, type TimeframeState } from './timeframe';
 export function TimeframeSelector({
   timeframe,
   onChange,
+  align = 'end',
 }: {
   timeframe: TimeframeState;
   onChange: (next: TimeframeState | ((prev: TimeframeState) => TimeframeState)) => void;
+  /** Which edge of the trigger the menu hangs from. `end` (the default) is
+   *  right-aligned, for a trigger sitting at the right of its row — the
+   *  Stats page's toolbar. A trigger that LEADS its row needs `start`, or a
+   *  16rem menu opens leftwards off the content and under the sidebar. */
+  align?: 'start' | 'end';
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -32,7 +38,8 @@ export function TimeframeSelector({
           trigger's corner and out the same way (index.css, .aito-tf-menu). */}
       <div
         hidden={!open}
-        className="aito-tf-menu absolute right-0 top-full mt-1 w-64 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2"
+        data-align={align}
+        className={`aito-tf-menu absolute ${align === 'start' ? 'left-0' : 'right-0'} top-full mt-1 w-64 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2`}
       >
             {TIMEFRAME_PRESETS.map((preset) => (
               <button
