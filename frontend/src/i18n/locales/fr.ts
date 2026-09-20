@@ -6022,7 +6022,7 @@ export default {
     linkToSpool: 'Lier à une Bobine',
     tagLinked: 'Tag lié à la bobine',
     tagLinkFailed: 'Échec lien tag',
-    tagAlreadyLinked: 'Tag déjà lié à une autre bobine',
+    tagAlreadyLinked: 'Tag déjà lié à la bobine #{{id}}',
     unknownTag: 'Tag RFID inconnu détecté',
     // Usage history
     usageHistory: 'Historique de Consommation',
@@ -8140,11 +8140,20 @@ export default {
         pass: 'Accessible — le flux de la caméra fonctionnera.',
         warn: 'Le port {{port}} est inaccessible. La vue caméra en direct ne fonctionnera pas. Cela n\'affecte pas l\'impression.',
       },
+      macos_local_network: {
+        title: 'Autorisation « Réseau local » de macOS',
+        pass: 'macOS autorise Fenrir à accéder au réseau local.',
+        warn_unsigned: 'Le Python qui exécute Fenrir n’a pas de signature de code : macOS n’a donc rien à quoi rattacher l’autorisation « Réseau local » et rejette silencieusement toutes les connexions vers l’imprimante, sans erreur ni demande. Lancez le script de mise à jour de Fenrir (install/update_macos.sh), qui le signe, puis redémarrez Fenrir. Interpréteur : {{executable}}',
+        warn_permission: 'Si l’imprimante est allumée et joignable à cette adresse, ouvrez Réglages Système > Confidentialité et sécurité > Réseau local et vérifiez que le Python de Fenrir est activé. Sinon macOS rejette les connexions locales en silence, et une mise à jour de Python peut laisser l’ancienne autorisation derrière elle.',
+      },
       network_mode: {
-        title: 'Mode réseau Docker',
-        pass: 'Fonctionne en mode réseau host.',
-        warn: 'Fenrir fonctionne en réseau Docker bridge. La découverte d\'imprimantes et l\'imprimante virtuelle nécessitent le mode réseau host — recréez le conteneur avec "network_mode: host".',
-        skip: 'Ne fonctionne pas dans Docker — non applicable.',
+        title: 'Mode réseau du conteneur',
+        genericRuntime: 'un conteneur',
+        pass: 'Fonctionne dans {{runtime}} en réseau host.',
+        warn: 'Fenrir fonctionne dans {{runtime}} en réseau bridge. La découverte d\'imprimantes et l\'imprimante virtuelle nécessitent le mode réseau host — recréez le conteneur en réseau host ("network_mode: host" dans docker-compose, "--network=host" pour Podman).',
+        skip: 'Ne fonctionne pas dans un conteneur — non applicable.',
+        skip_unknown: 'Fenrir fonctionne dans {{runtime}}, mais son mode réseau n\'a pas pu être déterminé. Si la découverte d\'imprimantes ou l\'imprimante virtuelle ne fonctionnent pas, recréez le conteneur en réseau host.',
+        skip_system_container: 'Fenrir fonctionne dans un conteneur système {{runtime}}, présent sur le LAN comme une machine virtuelle — non applicable.',
       },
       subnet: {
         title: 'Sous-réseau',

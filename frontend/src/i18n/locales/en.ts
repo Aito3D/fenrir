@@ -6082,7 +6082,7 @@ export default {
     linkToSpool: 'Link to Spool',
     tagLinked: 'Tag linked to spool',
     tagLinkFailed: 'Failed to link tag',
-    tagAlreadyLinked: 'Tag already linked to another spool',
+    tagAlreadyLinked: 'Tag already linked to spool #{{id}}',
     unknownTag: 'Unknown RFID tag detected',
     // Usage history
     usageHistory: 'Usage History',
@@ -8205,11 +8205,20 @@ export default {
         pass: 'Reachable — the camera stream will work.',
         warn: 'Port {{port}} is unreachable. The live camera view will not work. This does not affect printing.',
       },
+      macos_local_network: {
+        title: 'macOS Local Network permission',
+        pass: 'macOS is allowing Fenrir to reach the local network.',
+        warn_unsigned: 'The Python that runs Fenrir has no code signature, so macOS has nothing to attach a Local Network permission to and silently drops every connection to the printer — no error and no prompt. Run the Fenrir updater (install/update_macos.sh), which signs it, then restart Fenrir. Interpreter: {{executable}}',
+        warn_permission: 'If the printer is powered on and at this address, open System Settings > Privacy & Security > Local Network and make sure the Python that runs Fenrir is enabled. macOS drops local connections silently when it is not, and updating Python can leave the old permission behind.',
+      },
       network_mode: {
-        title: 'Docker network mode',
-        pass: 'Running in host network mode.',
-        warn: 'Fenrir is running in Docker bridge networking. Printer discovery and the Virtual Printer need host network mode — recreate the container with "network_mode: host".',
-        skip: 'Not running in Docker — not applicable.',
+        title: 'Container network mode',
+        genericRuntime: 'a container',
+        pass: 'Running in {{runtime}} with host networking.',
+        warn: 'Fenrir is running in {{runtime}} with bridge networking. Printer discovery and the Virtual Printer need host networking — recreate the container with host network mode ("network_mode: host" in docker-compose, "--network=host" for Podman).',
+        skip: 'Not running in a container — not applicable.',
+        skip_unknown: 'Fenrir is running in {{runtime}}, but its network mode could not be determined. If printer discovery or the Virtual Printer do not work, recreate the container with host networking.',
+        skip_system_container: 'Fenrir is running in a {{runtime}} system container, which sits on the LAN like a virtual machine — not applicable.',
       },
       subnet: {
         title: 'Network subnet',

@@ -6021,7 +6021,7 @@ export default {
     linkToSpool: 'Collega a bobina',
     tagLinked: 'Tag collegato alla bobina',
     tagLinkFailed: 'Impossibile collegare il tag',
-    tagAlreadyLinked: 'Tag già collegato a un\'altra bobina',
+    tagAlreadyLinked: 'Tag già collegato alla bobina #{{id}}',
     unknownTag: 'Tag RFID sconosciuto rilevato',
     // Usage history
     usageHistory: 'Cronologia utilizzo',
@@ -8139,11 +8139,20 @@ export default {
         pass: 'Raggiungibile — lo streaming della fotocamera funzionerà.',
         warn: 'La porta {{port}} non è raggiungibile. La visualizzazione live della fotocamera non funzionerà. Questo non influisce sulla stampa.',
       },
+      macos_local_network: {
+        title: 'Autorizzazione « Rete locale » di macOS',
+        pass: 'macOS consente a Fenrir di raggiungere la rete locale.',
+        warn_unsigned: 'Il Python che esegue Fenrir non ha una firma del codice, quindi macOS non ha nulla a cui associare l’autorizzazione « Rete locale » e scarta in silenzio ogni connessione alla stampante, senza errori e senza richiesta. Esegui lo script di aggiornamento di Fenrir (install/update_macos.sh), che lo firma, poi riavvia Fenrir. Interprete: {{executable}}',
+        warn_permission: 'Se la stampante è accesa e raggiungibile a questo indirizzo, apri Impostazioni di Sistema > Privacy e sicurezza > Rete locale e verifica che il Python di Fenrir sia abilitato. In caso contrario macOS scarta le connessioni locali in silenzio, e un aggiornamento di Python può lasciare indietro la vecchia autorizzazione.',
+      },
       network_mode: {
-        title: 'Modalità di rete Docker',
-        pass: 'In esecuzione in modalità di rete host.',
-        warn: 'Fenrir è in esecuzione con la rete Docker bridge. Il rilevamento delle stampanti e la stampante virtuale richiedono la modalità di rete host — ricrea il container con "network_mode: host".',
-        skip: 'Non in esecuzione in Docker — non applicabile.',
+        title: 'Modalità di rete del container',
+        genericRuntime: 'un container',
+        pass: 'In esecuzione in {{runtime}} con rete host.',
+        warn: 'Fenrir è in esecuzione in {{runtime}} con rete bridge. Il rilevamento delle stampanti e la stampante virtuale richiedono la modalità di rete host — ricrea il container con rete host ("network_mode: host" in docker-compose, "--network=host" per Podman).',
+        skip: 'Non in esecuzione in un container — non applicabile.',
+        skip_unknown: 'Fenrir è in esecuzione in {{runtime}}, ma non è stato possibile determinarne la modalità di rete. Se il rilevamento delle stampanti o la stampante virtuale non funzionano, ricrea il container con rete host.',
+        skip_system_container: 'Fenrir è in esecuzione in un container di sistema {{runtime}}, presente sulla LAN come una macchina virtuale — non applicabile.',
       },
       subnet: {
         title: 'Sottorete',

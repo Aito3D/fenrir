@@ -5133,7 +5133,7 @@ export default {
     linkToSpool: 'Koppelen aan spoel',
     tagLinked: 'Tag aan spoel gekoppeld',
     tagLinkFailed: 'Tag koppelen mislukt',
-    tagAlreadyLinked: 'Tag is al aan een andere spoel gekoppeld',
+    tagAlreadyLinked: 'Tag is al aan spoel #{{id}} gekoppeld',
     unknownTag: 'Onbekende RFID-tag gedetecteerd',
     // Usage history
     usageHistory: 'Verbruiksgeschiedenis',
@@ -7211,11 +7211,20 @@ export default {
         pass: 'Bereikbaar — de camerastream werkt.',
         warn: 'Poort {{port}} is niet bereikbaar. De livecamera werkt niet. Dit heeft geen invloed op afdrukken.',
       },
+      macos_local_network: {
+        title: 'macOS-toegang tot lokaal netwerk',
+        pass: 'macOS staat Fenrir toe het lokale netwerk te bereiken.',
+        warn_unsigned: 'De Python waarmee Fenrir draait heeft geen codehandtekening, dus macOS heeft niets om de toegang tot het lokale netwerk aan te koppelen en laat elke verbinding met de printer stilletjes vallen — zonder fout en zonder vraag. Voer het updatescript van Fenrir (install/update_macos.sh) uit, dat de handtekening plaatst, en start Fenrir daarna opnieuw. Interpreter: {{executable}}',
+        warn_permission: 'Staat de printer aan en is hij op dit adres bereikbaar, open dan Systeeminstellingen > Privacy en beveiliging > Lokaal netwerk en controleer of de Python van Fenrir is ingeschakeld. Zo niet, dan laat macOS lokale verbindingen stilletjes vallen, en een Python-update kan de oude toestemming achterlaten.',
+      },
       network_mode: {
-        title: 'Docker-netwerkmodus',
-        pass: 'Draait in host-netwerkmodus.',
-        warn: 'Fenrir draait met Docker bridge-netwerken. Printerdetectie en de Virtuele printer vereisen host-netwerkmodus — maak de container opnieuw aan met "network_mode: host".',
-        skip: 'Niet actief in Docker — niet van toepassing.',
+        title: 'Netwerkmodus van de container',
+        genericRuntime: 'een container',
+        pass: 'Draait in {{runtime}} met host-netwerk.',
+        warn: 'Fenrir draait in {{runtime}} met bridge-netwerken. Printerdetectie en de Virtuele printer vereisen host-netwerk — maak de container opnieuw aan met host-netwerk ("network_mode: host" in docker-compose, "--network=host" bij Podman).',
+        skip: 'Draait niet in een container — niet van toepassing.',
+        skip_unknown: 'Fenrir draait in {{runtime}}, maar de netwerkmodus kon niet worden bepaald. Als printerdetectie of de Virtuele printer niet werken, maak de container dan opnieuw aan met host-netwerk.',
+        skip_system_container: 'Fenrir draait in een {{runtime}}-systeemcontainer, die net als een virtuele machine op het LAN zit — niet van toepassing.',
       },
       subnet: {
         title: 'Netwerksubnet',

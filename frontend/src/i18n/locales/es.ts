@@ -6040,7 +6040,7 @@ export default {
     linkToSpool: 'Vincular a bobina',
     tagLinked: 'Etiqueta vinculada a la bobina',
     tagLinkFailed: 'Error al vincular la etiqueta',
-    tagAlreadyLinked: 'La etiqueta ya está vinculada a otra bobina',
+    tagAlreadyLinked: 'La etiqueta ya está vinculada a la bobina #{{id}}',
     unknownTag: 'Se detectó una etiqueta RFID desconocida',
     // Usage history
     usageHistory: 'Historial de uso',
@@ -8158,11 +8158,20 @@ export default {
         pass: 'Accesible — la transmisión de la cámara funcionará.',
         warn: 'El puerto {{port}} no es accesible. La vista de la cámara en directo no funcionará. Esto no afecta a la impresión.',
       },
+      macos_local_network: {
+        title: 'Permiso de red local de macOS',
+        pass: 'macOS permite que Fenrir acceda a la red local.',
+        warn_unsigned: 'El Python que ejecuta Fenrir no tiene firma de código, así que macOS no tiene a qué asociar el permiso de red local y descarta en silencio todas las conexiones con la impresora: sin error y sin solicitud. Ejecuta el actualizador de Fenrir (install/update_macos.sh), que lo firma, y reinicia Fenrir. Intérprete: {{executable}}',
+        warn_permission: 'Si la impresora está encendida y en esta dirección, abre Ajustes del Sistema > Privacidad y seguridad > Red local y comprueba que el Python de Fenrir esté activado. Si no lo está, macOS descarta las conexiones locales en silencio, y actualizar Python puede dejar atrás el permiso anterior.',
+      },
       network_mode: {
-        title: 'Modo de red de Docker',
-        pass: 'Ejecutándose en modo de red de host.',
-        warn: 'Fenrir se está ejecutando en red de tipo bridge de Docker. La detección de impresoras y la impresora virtual necesitan el modo de red de host — vuelva a crear el contenedor con "network_mode: host".',
-        skip: 'No se está ejecutando en Docker — no aplicable.',
+        title: 'Modo de red del contenedor',
+        genericRuntime: 'un contenedor',
+        pass: 'Ejecutándose en {{runtime}} con red de host.',
+        warn: 'Fenrir se está ejecutando en {{runtime}} con red de tipo bridge. La detección de impresoras y la impresora virtual necesitan el modo de red de host — vuelva a crear el contenedor con red de host ("network_mode: host" en docker-compose, "--network=host" en Podman).',
+        skip: 'No se está ejecutando en un contenedor — no aplicable.',
+        skip_unknown: 'Fenrir se está ejecutando en {{runtime}}, pero no se pudo determinar su modo de red. Si la detección de impresoras o la impresora virtual no funcionan, vuelva a crear el contenedor con red de host.',
+        skip_system_container: 'Fenrir se está ejecutando en un contenedor de sistema {{runtime}}, que está en la LAN como una máquina virtual — no aplicable.',
       },
       subnet: {
         title: 'Subred de la red',

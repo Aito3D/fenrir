@@ -6033,7 +6033,7 @@ export default {
     linkToSpool: 'スプールにリンク',
     tagLinked: 'タグがスプールにリンクされました',
     tagLinkFailed: 'タグのリンクに失敗しました',
-    tagAlreadyLinked: 'タグは既に別のスプールにリンクされています',
+    tagAlreadyLinked: 'タグは既にスプール #{{id}} にリンクされています',
     unknownTag: '不明なRFIDタグが検出されました',
     // Usage history
     usageHistory: '使用履歴',
@@ -8151,11 +8151,20 @@ export default {
         pass: '到達可能 — カメラストリームは機能します。',
         warn: 'ポート{{port}}に到達できません。ライブカメラ表示は機能しません。これは印刷には影響しません。',
       },
+      macos_local_network: {
+        title: 'macOS のローカルネットワーク権限',
+        pass: 'macOS は Fenrir のローカルネットワークへのアクセスを許可しています。',
+        warn_unsigned: 'Fenrir を実行している Python にコード署名がないため、macOS はローカルネットワーク権限を結び付ける対象を持てず、プリンターへの接続をエラーも確認ダイアログもなく破棄します。署名を行う Fenrir の更新スクリプト (install/update_macos.sh) を実行してから、Fenrir を再起動してください。インタープリター: {{executable}}',
+        warn_permission: 'プリンターの電源が入っていてこのアドレスで到達できる場合は、システム設定 > プライバシーとセキュリティ > ローカルネットワーク を開き、Fenrir の Python が有効になっているか確認してください。無効だと macOS はローカル接続を無言で破棄します。また Python を更新すると以前の許可が引き継がれないことがあります。',
+      },
       network_mode: {
-        title: 'Dockerネットワークモード',
-        pass: 'ホストネットワークモードで実行中です。',
-        warn: 'FenrirはDockerブリッジネットワークで実行されています。プリンター検出と仮想プリンターにはホストネットワークモードが必要です — "network_mode: host" でコンテナを再作成してください。',
-        skip: 'Dockerで実行されていません — 該当しません。',
+        title: 'コンテナのネットワークモード',
+        genericRuntime: 'コンテナ',
+        pass: '{{runtime}} でホストネットワークを使用して実行中です。',
+        warn: 'Fenrir は {{runtime}} でブリッジネットワークを使用して実行されています。プリンター検出と仮想プリンターにはホストネットワークが必要です — ホストネットワークでコンテナを再作成してください（docker-compose では "network_mode: host"、Podman では "--network=host"）。',
+        skip: 'コンテナで実行されていません — 該当しません。',
+        skip_unknown: 'Fenrir は {{runtime}} で実行されていますが、ネットワークモードを判別できませんでした。プリンター検出や仮想プリンターが動作しない場合は、ホストネットワークでコンテナを再作成してください。',
+        skip_system_container: 'Fenrir は {{runtime}} のシステムコンテナで実行されており、仮想マシンと同様に LAN 上にあります — 該当しません。',
       },
       subnet: {
         title: 'ネットワークサブネット',

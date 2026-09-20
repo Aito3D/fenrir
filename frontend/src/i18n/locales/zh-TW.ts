@@ -6027,7 +6027,7 @@ export default {
     linkToSpool: '連結到耗材',
     tagLinked: '標籤已連結到耗材',
     tagLinkFailed: '連結標籤失敗',
-    tagAlreadyLinked: '標籤已連結到其他耗材',
+    tagAlreadyLinked: '標籤已連結到耗材 #{{id}}',
     unknownTag: '偵測到未知 RFID 標籤',
     // Usage history
     usageHistory: '使用歷史',
@@ -8137,11 +8137,20 @@ export default {
         pass: '可達 — 攝影機串流將正常運作。',
         warn: '連接埠 {{port}} 無法連線。即時攝影機檢視將無法運作。這不影響列印。',
       },
+      macos_local_network: {
+        title: 'macOS 本地網路權限',
+        pass: 'macOS 已允許 Fenrir 存取本地網路。',
+        warn_unsigned: '執行 Fenrir 的 Python 沒有程式碼簽章，macOS 因此無法將本地網路權限繫結到任何身分，會靜默丟棄所有連往印表機的連線——既沒有錯誤，也不會出現授權提示。請執行會完成簽章的 Fenrir 更新指令碼 (install/update_macos.sh)，然後重新啟動 Fenrir。直譯器：{{executable}}',
+        warn_permission: '若印表機已開機且可透過此位址連線，請開啟 系統設定 > 隱私權與安全性 > 本地網路，確認 Fenrir 使用的 Python 已啟用。未啟用時 macOS 會靜默丟棄本地連線，而且更新 Python 可能不會保留原有授權。',
+      },
       network_mode: {
-        title: 'Docker 網路模式',
-        pass: '正在以 host 網路模式執行。',
-        warn: 'Fenrir 正在以 Docker bridge 網路執行。印表機探索與虛擬印表機需要 host 網路模式 — 請使用 "network_mode: host" 重新建立容器。',
-        skip: '未在 Docker 中執行 — 不適用。',
+        title: '容器網路模式',
+        genericRuntime: '容器',
+        pass: '正在 {{runtime}} 中以 host 網路執行。',
+        warn: 'Fenrir 正在 {{runtime}} 中以 bridge 網路執行。印表機探索與虛擬印表機需要 host 網路 — 請使用 host 網路重新建立容器（docker-compose 中為 "network_mode: host"，Podman 中為 "--network=host"）。',
+        skip: '未在容器中執行 — 不適用。',
+        skip_unknown: 'Fenrir 正在 {{runtime}} 中執行，但無法判斷其網路模式。如果印表機探索或虛擬印表機無法使用，請使用 host 網路重新建立容器。',
+        skip_system_container: 'Fenrir 正在 {{runtime}} 系統容器中執行，它像虛擬機器一樣直接位於區域網路中 — 不適用。',
       },
       subnet: {
         title: '網路子網路',
