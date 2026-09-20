@@ -1,0 +1,100 @@
+### exit: 0
+### stdout:
+{
+  "presets": [
+    "today",
+    "this-week",
+    "this-month",
+    "last-7",
+    "last-30",
+    "last-90",
+    "this-year",
+    "all-time"
+  ],
+  "ranges": {
+    "today": {
+      "dateFrom": "2026-03-11",
+      "dateTo": "2026-03-11"
+    },
+    "this-week": {
+      "dateFrom": "2026-03-09",
+      "dateTo": "2026-03-11"
+    },
+    "this-month": {
+      "dateFrom": "2026-03-01",
+      "dateTo": "2026-03-11"
+    },
+    "last-7": {
+      "dateFrom": "2026-03-05",
+      "dateTo": "2026-03-11"
+    },
+    "last-30": {
+      "dateFrom": "2026-02-10",
+      "dateTo": "2026-03-11"
+    },
+    "last-90": {
+      "dateFrom": "2025-12-12",
+      "dateTo": "2026-03-11"
+    },
+    "this-year": {
+      "dateFrom": "2026-01-01",
+      "dateTo": "2026-03-11"
+    },
+    "all-time": {
+      "dateFrom": null,
+      "dateTo": null
+    },
+    "custom": {
+      "dateFrom": null,
+      "dateTo": null
+    }
+  },
+  "screens": {
+    "order": [
+      "overview",
+      "sales",
+      "time",
+      "money",
+      "clients"
+    ],
+    "tabIds": {
+      "overview": "aito-stats-tab-overview",
+      "sales": "aito-stats-tab-sales",
+      "time": "aito-stats-tab-time",
+      "money": "aito-stats-tab-money",
+      "clients": "aito-stats-tab-clients"
+    },
+    "screenIds": {
+      "overview": "aito-stats-screen-overview",
+      "sales": "aito-stats-screen-sales",
+      "time": "aito-stats-screen-time",
+      "money": "aito-stats-screen-money",
+      "clients": "aito-stats-screen-clients"
+    }
+  },
+  "palette": {
+    "SERIES": {
+      "created": "#3d86e8",
+      "accepted": "#c95aa0",
+      "done": "#219653"
+    },
+    "SERVICE_COLORS": {
+      "scan": "#3d86e8",
+      "modelisation": "#c95aa0",
+      "impression": "#c26a1c",
+      "usinage": "#1f9e8a"
+    },
+    "DECLINED": "#808080",
+    "GRID": "#2d2d2d",
+    "AXIS": "#808080",
+    "TOOLTIP_ORDER": [
+      "created",
+      "accepted",
+      "done",
+      "done7"
+    ]
+  }
+}
+
+### stderr:
+
