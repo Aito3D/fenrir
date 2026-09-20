@@ -40,7 +40,10 @@ export function Tooltip({
 
   return (
     <span
-      className="group relative inline-flex"
+      // A NAMED group: `group-hover` alone would also match any ancestor
+      // `.group` — TaskRow's card is one (its remove icon reveals on row
+      // hover), and two tooltips in one card both lit up on a card hover.
+      className="group/tip relative inline-flex"
       tabIndex={0}
       aria-describedby={id}
       onMouseEnter={reposition}
@@ -59,7 +62,7 @@ export function Tooltip({
               ? `translateX(${shift}px) translateY(var(--tip-y, 3px))`
               : `translateX(calc(-50% + ${shift}px)) translateY(var(--tip-y, 3px))`,
         }}
-        className={`pointer-events-none absolute bottom-full ${align === 'end' ? 'right-0' : 'left-1/2'} z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover:opacity-100 group-hover:[--tip-y:0px] group-focus-visible:opacity-100 group-focus-visible:[--tip-y:0px] motion-reduce:transition-opacity`}
+        className={`pointer-events-none absolute bottom-full ${align === 'end' ? 'right-0' : 'left-1/2'} z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tip:opacity-100 group-hover/tip:[--tip-y:0px] group-focus-visible/tip:opacity-100 group-focus-visible/tip:[--tip-y:0px] motion-reduce:transition-opacity`}
       >
         {content}
       </span>
