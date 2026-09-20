@@ -73,12 +73,12 @@ def invalidate_validation_cache(token: str | None = None) -> None:
 
 
 # Client identity sent to Bambu Lab's cloud services. We identify honestly as
-# Bambuddy — the URL in parens makes the source unambiguous so Bambu can
+# Fenrir — the URL in parens makes the source unambiguous so Bambu can
 # distinguish our traffic from impersonators. This is the opposite of what the
 # OrcaSlicer fork was called out for in the May 2026 Bambu Lab blog post
 # ("Setting the record straight on cloud access and community"): we do not
 # introduce ourselves as official Bambu Studio.
-_USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+_USER_AGENT = "Fenrir/1.0 (+https://github.com/maziggy/bambuddy)"
 
 # Cloudflare protection on Bambu Lab's edge intermittently returns interstitials /
 # challenges instead of the JSON the API normally produces (issue #1575). The
@@ -86,7 +86,7 @@ _USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
 # we can surface an actionable message instead of "Invalid response from Bambu Cloud".
 _CF_INTERSTITIAL_USER_MESSAGE = (
     "Bambu Cloud is temporarily blocking automated requests from your network. "
-    "This is a Cloudflare protection on Bambu Lab's side, not a Bambuddy issue. "
+    "This is a Cloudflare protection on Bambu Lab's side, not a Fenrir issue. "
     "Please wait a few minutes and try again. If it persists, signing in to "
     "bambulab.com once from a browser on the same network usually clears the "
     "challenge."
@@ -141,7 +141,7 @@ def _detect_cloudflare_challenge(response) -> str | None:
 # generic error path then lifted Bambu's sentence out of ``error`` and showed it
 # as a bare toast: the reporter saw "We need you to confirm you are not a robot"
 # with no challenge, no explanation and nothing to click, and filed it as a
-# Bambuddy bug.
+# Fenrir bug.
 _CAPTCHA_HTTP_STATUS = 418
 
 # Markers that identify a 418 as the CAPTCHA challenge rather than some other
@@ -151,7 +151,7 @@ _CAPTCHA_BODY_MARKERS = ("captchaid", "captcha", "robot")
 
 CAPTCHA_USER_MESSAGE = (
     "Bambu Cloud is challenging this network with a CAPTCHA before it will accept a sign-in, "
-    "and there is no way to answer it from Bambuddy. Your email and password are not the "
+    "and there is no way to answer it from Fenrir. Your email and password are not the "
     "problem. The block is tied to your public IP address and normally clears by itself within "
     "a few hours — retrying repeatedly extends it. To sign in now, use 'Use access token "
     "instead' and paste a token taken from a browser session."
@@ -162,7 +162,7 @@ CAPTCHA_USER_MESSAGE = (
 # seconds, which is exactly the traffic pattern that deepens the block: every
 # extra request is more evidence for the thing that flagged us. Five minutes is
 # short against the hours the block itself lasts — the point is not to wait it
-# out here, only to stop Bambuddy from making it worse while the user reads the
+# out here, only to stop Fenrir from making it worse while the user reads the
 # explanation.
 _CAPTCHA_COOLOFF_SECONDS = 300.0
 
@@ -232,7 +232,7 @@ def note_captcha_challenge(base_url: str) -> None:
 # for the list, the singular GET/DELETE for a specific preset by setting_id, and
 # the POST for create — requires a `version` query parameter in the XX.YY.ZZ.WW
 # format Bambu Studio releases use. Without it the API returns HTTP 400
-# "field 'version' is not set"; non-matching formats like "bambuddy-1.0" return
+# "field 'version' is not set"; non-matching formats like "fenrir-1.0" return
 # HTTP 422 "Invalid input parameters". However, Bambu's server accepts ANY value
 # within that format — it doesn't validate against a release manifest. We
 # therefore use a neutral "1.0.0.0" placeholder that does not impersonate any
@@ -448,7 +448,7 @@ class BambuCloudService:
             return False
         logger.warning(
             "Bambu Cloud is challenging this network with a CAPTCHA — not sending the sign-in to %s. "
-            "The challenge cannot be answered from Bambuddy and normally clears within a few hours.",
+            "The challenge cannot be answered from Fenrir and normally clears within a few hours.",
             origin,
         )
         return True
@@ -627,7 +627,7 @@ class BambuCloudService:
             # We previously sent a Chrome User-Agent plus Origin/Referer headers
             # under the assumption Cloudflare would block bot-identified
             # requests. Verified 2026-05-12 via curl that the endpoint accepts
-            # honest "Bambuddy/X.Y.Z" identification cleanly (HTTP 400 with the
+            # honest "Fenrir/X.Y.Z" identification cleanly (HTTP 400 with the
             # expected application-level "Login failed" JSON, no Cloudflare
             # interstitial). Browser-impersonation removed to stay clearly on
             # the right side of Bambu Lab's "no falsified client identity" line.
@@ -756,7 +756,7 @@ class BambuCloudService:
 
         This used to stamp ``token_expiry = now + 30 days`` — re-derived from
         *now* on every request, for a token of entirely unknown age. That made
-        ``is_authenticated`` a permanent True and is why Bambuddy went on
+        ``is_authenticated`` a permanent True and is why Fenrir went on
         reporting "connected" long after Bambu had stopped accepting the token.
         A stored token's remaining life is unknowable from the token alone, so
         we record no expiry and let Bambu be the authority.

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Inter, self-hosted (#1460).  Bambuddy is a local-first, offline-capable PWA;
+/* Inter, self-hosted (#1460).  Fenrir is a local-first, offline-capable PWA;
    pulling the font from fonts.googleapis.com at runtime broke the install on
    Android (CSP-blocked cross-origin fetch) and meant the UI couldn't render
    offline.  These are the variable woff2 files Google Fonts serves — one file
@@ -149,7 +149,7 @@ html {
   --viz-6: #e34948;
 
   /* Tell the browser which appearance the page is in, so the parts of a form
-     control it draws itself follow the theme.  Bambuddy themes by
+     control it draws itself follow the theme.  Fenrir themes by
      swapping CSS variables under a `.dark` class, which the browser cannot
      see: without this declaration it assumes light and paints every native
      widget internal that way -- number-input steppers, the date picker's

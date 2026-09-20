@@ -109,7 +109,7 @@ class SpoolmanClient:
         # WeakValueDictionary: locks are GC'd once no coroutine holds a reference.
         self._extra_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
         # Extra-field names this client has already registered with Spoolman.
-        # Bounded by the number of distinct keys Bambuddy writes, so it never
+        # Bounded by the number of distinct keys Fenrir writes, so it never
         # grows with spool count; scoped to the instance so a client pointed at
         # a different Spoolman starts over.
         self._ensured_extra_fields: set[str] = set()
@@ -965,7 +965,7 @@ class SpoolmanClient:
 
         ``None`` and ``set()`` mean different things and the caller acts on the
         difference: an empty set is "Spoolman has no extra fields", which means
-        every field Bambuddy needs must be created; ``None`` is "we could not
+        every field Fenrir needs must be created; ``None`` is "we could not
         find out", where the only safe move is to fall back to attempting the
         write blind.
         """
@@ -985,7 +985,7 @@ class SpoolmanClient:
         if not isinstance(fields, list):
             return None
         # Match on `key`, not `name`: `key` is the identifier the extra dict is
-        # written under and the one Bambuddy cares about, while `name` is the
+        # written under and the one Fenrir cares about, while `name` is the
         # free-text label a user is free to change in Spoolman's UI.
         return {f["key"] for f in fields if isinstance(f, dict) and isinstance(f.get("key"), str)}
 
@@ -994,7 +994,7 @@ class SpoolmanClient:
 
         Spoolman rejects PATCH requests that include unknown extra-dict keys
         with HTTP 400 ('Unknown extra field <name>.'), so any custom field
-        Bambuddy persists alongside spools needs to be pre-registered.
+        Fenrir persists alongside spools needs to be pre-registered.
         Idempotent — returns True if the field already exists.
 
         Existence is read from ``GET /field/spool``, the whole-listing endpoint.
@@ -1007,7 +1007,7 @@ class SpoolmanClient:
         request, because that endpoint is an upsert rather than a create. It
         answered 200 whether or not the field was already there, so a field a
         user had renamed, retyped or given a default in Spoolman's own UI was
-        silently reset to Bambuddy's version of it on every restart. Reading
+        silently reset to Fenrir's version of it on every restart. Reading
         the listing first is what lets an existing field be left alone.
         """
         try:
@@ -1281,7 +1281,7 @@ class SpoolmanClient:
             return await self.create_spool(
                 filament_id=filament_id,
                 remaining_weight=remaining,
-                comment="Created by Bambuddy",
+                comment="Created by Fenrir",
                 extra={"tag": json.dumps(spool_tag)},
             )
 

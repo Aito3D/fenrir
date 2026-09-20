@@ -85,8 +85,8 @@ class TestPeekPlatePredictionIn3mf:
 class TestComputeFileMd5:
     def test_matches_hashlib(self, tmp_path):
         path = tmp_path / "file.bin"
-        path.write_bytes(b"bambuddy" * 5000)
-        assert compute_file_md5(path) == hashlib.md5(b"bambuddy" * 5000, usedforsecurity=False).hexdigest()
+        path.write_bytes(b"fenrir" * 5000)
+        assert compute_file_md5(path) == hashlib.md5(b"fenrir" * 5000, usedforsecurity=False).hexdigest()
 
 
 class TestVerify3mfCandidate:
@@ -146,7 +146,7 @@ class TestVerify3mfCandidate:
         assert verdict == "unverified"
 
     def test_empty_md5_falls_through_to_prediction(self, tmp_path):
-        # Bambuddy's own dispatch sends "md5": "" — must not be treated as a
+        # Fenrir's own dispatch sends "md5": "" — must not be treated as a
         # comparable digest.
         path = _make_3mf(tmp_path, [{"index": 1, "prediction": 1421}])
         verdict, _ = verify_3mf_candidate(path, None, 1, 1421)
@@ -182,7 +182,7 @@ class TestRequestTopicMd5Capture:
         assert mqtt_client._captured_print_md5 == "0879d528ec9574d889a6707f52239808"
 
     def test_empty_md5_is_not_captured(self, mqtt_client):
-        # Bambuddy's own print command deliberately sends "md5": "".
+        # Fenrir's own print command deliberately sends "md5": "".
         mqtt_client._handle_request_message({"print": {"command": "project_file", "md5": ""}})
         assert mqtt_client._captured_print_md5 is None
 

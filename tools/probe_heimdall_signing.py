@@ -7,7 +7,7 @@ accepted at all, so they are pinned two ways here:
    byte-checkable example") — credential, timestamp, nonce, body and the
    resulting `sha256=a1bb7a33...` are copied from that document, which says
    the hex is the real output of Heimdall's own `signParts`. This is the one
-   check that is not a re-derivation of Bambuddy's own recipe: if the six
+   check that is not a re-derivation of Fenrir's own recipe: if the six
    canonical lines, the join order, the body hashing or the hex case ever
    drift, this constant stops matching. backend/tests/unit/test_heimdall_client.py
    recomputes the HMAC with the same recipe it is testing, so it cannot see

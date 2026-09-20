@@ -1,6 +1,6 @@
 """Apply the user's own process-setting choices to an outgoing slice.
 
-Bambuddy's slice modal can edit OrcaSlicer's full process parameter set (layer
+Fenrir's slice modal can edit OrcaSlicer's full process parameter set (layer
 height, wall count, supports, speeds — the same tree the desktop slicer shows
 under Print Settings). Those edits arrive as a sparse ``{key: value}`` map and
 are written into the process JSON that goes out as ``--load-settings``, using

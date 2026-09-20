@@ -48,7 +48,7 @@ class User(Base):
     # has expired or been revoked. NULL means "not known to be dead". The token
     # itself is kept: clearing it would lose the email/region we show on the
     # re-login form, and a token can only be replaced by signing in again anyway.
-    # Bambu's token is opaque and carries no expiry we can read, and Bambuddy
+    # Bambu's token is opaque and carries no expiry we can read, and Fenrir
     # does not persist the refresh token, so this flag is the *only* record that
     # a stored credential has stopped working (#2562 follow-up).
     cloud_token_invalid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)

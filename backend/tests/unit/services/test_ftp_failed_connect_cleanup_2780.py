@@ -9,7 +9,7 @@ recorded 1813 in a day.
 
 That matters beyond tidiness, because the leading explanation for the refusal
 is the printer running out of connection slots -- a single manual connect to
-the same printer completes a clean handshake while Bambuddy is failing, and
+the same printer completes a clean handshake while Fenrir is failing, and
 vsFTPd answers a per-source limit in cleartext, which is exactly the
 ``WRONG_VERSION_NUMBER`` we see. If that is right, abandoning sockets is not a
 side effect of the problem, it is part of what sustains it.

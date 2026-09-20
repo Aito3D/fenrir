@@ -309,7 +309,7 @@ _GC_CENSUS_RSS_LIMIT = 2 * 1024**3
 def _collect_process_info() -> dict:
     """Snapshot this process's resource usage, for reports about it growing.
 
-    Bundles used to carry nothing about Bambuddy's own footprint, which made
+    Bundles used to carry nothing about Fenrir's own footprint, which made
     "memory climbs over days until the OOM killer fires" impossible to triage
     from a bundle alone — the reporter of #2734 had to be asked to run commands
     by hand, and the numbers that would have identified the mechanism could not
@@ -813,7 +813,7 @@ async def _collect_support_info() -> dict:
         "database": {},
         "printers": [],
         "settings": {},
-        # Bambuddy's own footprint. Cheap to collect and the only thing that
+        # Fenrir's own footprint. Cheap to collect and the only thing that
         # makes a "memory grows over days" report triageable from the bundle
         # rather than a round trip of shell commands (#2734). Off the event
         # loop: the heap census walks every tracked object, and a bundle
@@ -1241,7 +1241,7 @@ async def _collect_support_info() -> dict:
     # Active diagnostics — per-printer connection check, per-VP setup check,
     # and the log-health scan. These all surface in the UI today (System page +
     # bug-report bubble) but were never persisted into what the maintainer
-    # receives, so a "looks broken in bambuddy" report arrived with no
+    # receives, so a "looks broken in fenrir" report arrived with no
     # actionable signal beyond raw logs. The snapshot helper is fail-soft per
     # probe and bounded by a per-probe wall-clock cap, so a hung interface
     # adds at most ~15 s to bundle generation regardless of fleet size (probes
@@ -1487,7 +1487,7 @@ async def generate_support_bundle(
 
     zip_buffer.seek(0)
 
-    filename = f"bambuddy-support-{timestamp}.zip"
+    filename = f"fenrir-support-{timestamp}.zip"
     logger.info("Generated support bundle: %s", filename)
 
     return StreamingResponse(

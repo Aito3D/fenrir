@@ -32,7 +32,7 @@ const MAX_LOG_SECONDS = 300; // 5 minutes
  * else it stores, and it survives a close either way — only a reload loses it,
  * and it is the one optional field on the form.
  */
-const SESSION_KEY = 'bambuddy-bug-report-session';
+const SESSION_KEY = 'fenrir-bug-report-session';
 
 interface LoggingSession {
   description: string;

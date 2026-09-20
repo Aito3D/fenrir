@@ -62,7 +62,7 @@ _MAX_LINES = 10
 
 # And a ceiling on the whole thing. Ten lines is only a bound on the log record
 # if the lines are a sane length, and ffmpeg quotes what the peer sent it back
-# at us -- a printer's RTSP response is not something Bambuddy controls. Well
+# at us -- a printer's RTSP response is not something Fenrir controls. Well
 # above any real diagnosis, so this only ever trims a line that was already not
 # going to be read.
 _MAX_CHARACTERS = 2000

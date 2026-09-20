@@ -324,7 +324,7 @@ class SlotSpoolIdentity:
     isn't a Bambu spool, so a client naming a slot from telemetry alone has
     only the type and the colour hex to work with — and turns that hex into
     whichever catalogue colour happens to share it. A Devil Design PLA Basic
-    Orange the operator assigned in Bambuddy reads back as "PLA (Sunflower
+    Orange the operator assigned in Fenrir reads back as "PLA (Sunflower
     Yellow)", because Bambu sell a Sunflower Yellow at the same ``FEC600``.
 
     Only the assignment knows the answer, which is why it is served alongside

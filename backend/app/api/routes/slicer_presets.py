@@ -435,7 +435,7 @@ async def _resolve_slicer_api_url(db: AsyncSession) -> str | None:
     """Pick the sidecar URL the bundled-listing fetch should hit.
 
     Mirrors the slice route's resolution at ``library.py:_run_slicer_with_fallback``:
-    the user's ``preferred_slicer`` setting decides which sidecar Bambuddy
+    the user's ``preferred_slicer`` setting decides which sidecar Fenrir
     talks to, and the per-install URL setting overrides the env default.
     A user who prefers Bambu Studio gets the *bambu-studio-api* sidecar's
     bundled list; a user who prefers OrcaSlicer gets the *orca-slicer-api*
@@ -575,13 +575,13 @@ async def get_preset_values(
     The flattening is done by the *sidecar*, deliberately. A "Standard" pick is
     only a ``{inherits: "<name>"}`` stub on our side, and even local/cloud
     presets are deltas — the values live in the profile tree bundled inside the
-    running sidecar image. Bambuddy's own ``orca_profiles`` resolver walks
+    running sidecar image. Fenrir's own ``orca_profiles`` resolver walks
     OrcaSlicer's published tree instead, which can disagree with what actually
     slices; showing numbers from it would be confidently wrong.
 
     Returns ``{"resolved": false, "values": {}, "reason": "..."}`` rather than
     an error whenever the values can't be obtained. ``reason`` is what makes
-    the fallback actionable: a Bambuddy install pulls its sidecar as
+    the fallback actionable: a Fenrir install pulls its sidecar as
     ``SIDECAR_TAG:-latest`` regardless of its own release channel, so the
     overwhelmingly common cause is a sidecar older than the endpoint — which
     the user fixes by pulling a newer image, if we tell them that instead of

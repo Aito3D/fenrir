@@ -76,7 +76,7 @@ class TestItCannotEscape:
 
 
 class TestWindowsReservedCharacters:
-    """A Windows install fails on the same shape for a different set. Bambuddy
+    """A Windows install fails on the same shape for a different set. Fenrir
     ships a Windows installer, and "Model: v2" is an ordinary title."""
 
     @pytest.mark.parametrize("char", list('<>:"|?*'))

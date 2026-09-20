@@ -680,7 +680,7 @@ function SortableQueueItem({
                     name of a dispatch mode the user may well not have picked -- ASAP and
                     Queue differ only in insert position, and neither is stored on the
                     item, so the two are indistinguishable here. Someone who chose Queue
-                    saw their row labelled ASAP and read it as Bambuddy overriding them
+                    saw their row labelled ASAP and read it as Fenrir overriding them
                     (#2557, #3018). This column answers "when does it run", so it now says
                     that instead of borrowing a mode name. */}
                 {item.scheduled_time

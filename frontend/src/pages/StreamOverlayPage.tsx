@@ -231,7 +231,7 @@ export function StreamOverlayPage() {
 
     // GHSA-r2qv follow-up: mint a ws-token before connecting. Uses
     // api.getWebSocketToken so the JWT Authorization header rides along
-    // (raw fetch+credentials:'include' would miss it — Bambuddy uses
+    // (raw fetch+credentials:'include' would miss it — Fenrir uses
     // Bearer tokens, not cookies, for JWT auth). Auth-disabled deployments
     // succeed even without a token. Each reconnect attempt re-runs the whole
     // mint+connect flow so it never retries with a stale token, and a
@@ -415,7 +415,7 @@ export function StreamOverlayPage() {
         )
       )}
 
-      {/* Bambuddy logo - top right */}
+      {/* Fenrir logo - top right */}
       <a
         href="https://github.com/maziggy/bambuddy"
         target="_blank"
@@ -424,7 +424,7 @@ export function StreamOverlayPage() {
       >
         <img
           src="/img/bambuddy_logo_dark_transparent.png"
-          alt="Bambuddy"
+          alt="Fenrir"
           className={`${sizes.logoHeight} object-contain drop-shadow-lg [@media(hover:hover)]:hover:scale-105 transition-transform`}
         />
       </a>

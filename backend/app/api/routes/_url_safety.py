@@ -1,6 +1,6 @@
 """Shared URL-safety primitives for the SSRF guards in this package.
 
-Bambuddy has exactly two outbound-URL policies, and which one applies is a
+Fenrir has exactly two outbound-URL policies, and which one applies is a
 property of the *service*, not of the caller:
 
 - **LAN-service** (``assert_safe_lan_service_url`` below) — the service
@@ -44,7 +44,7 @@ CLOUD_METADATA_IPS = frozenset(
 # the TOCTOU note on each), so an IP blocklist alone cannot catch these — but a
 # literal-string match needs no resolution and costs nothing. These names only
 # resolve inside the respective cloud, so there is no legitimate reason for any
-# Bambuddy integration to point at one.
+# Fenrir integration to point at one.
 CLOUD_METADATA_HOSTNAMES = frozenset(
     {
         "metadata.google.internal",  # GCP
@@ -82,7 +82,7 @@ def assert_safe_lan_service_url(url: str, *, label: str) -> None:
     server URL", …) so the user sees which field they need to correct.
 
     Loopback (127.0.0.1) and RFC-1918 private ranges are deliberately
-    **permitted** — Bambuddy is self-hosted and running Spoolman, ntfy,
+    **permitted** — Fenrir is self-hosted and running Spoolman, ntfy,
     Bark, Home Assistant, an Obico ML endpoint or a slicer sidecar on the
     same host or home LAN is THE normal topology, not an attack. A blanket
     private-address block would break those integrations for most installs.

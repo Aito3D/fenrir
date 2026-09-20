@@ -16,7 +16,7 @@ import { GcodeToolpathViewer } from '../components/GcodeToolpathViewer';
  * frame-refusal probe to detect when a proxy blocked the embed -- and its
  * output was the thing this page exists to show.
  *
- * It now renders Bambuddy's own toolpath viewer, which draws with OrcaSlicer's
+ * It now renders Fenrir's own toolpath viewer, which draws with OrcaSlicer's
  * `libvgcode` and colours by feature. Same component as the file-manager
  * preview, so the two surfaces cannot drift apart.
  */

@@ -28,7 +28,7 @@ from backend.app.services.printer_media import (
 def test_module_imports_on_every_supported_platform():
     """No POSIX-only import may sit at the top of this module.
 
-    Bambuddy ships a signed Windows installer, and printers.py imports this
+    Fenrir ships a signed Windows installer, and printers.py imports this
     module at startup, so a top-level ``import fcntl`` here is not a degraded
     feature on Windows -- it is an application that does not boot at all.
     network_utils.py is the house pattern: import inside the branch that needs

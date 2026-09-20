@@ -1,6 +1,6 @@
 """HTTP client for an OrcaSlicer / BambuStudio API sidecar.
 
-Bambuddy stores user printer/process/filament profiles itself (cloud-synced
+Fenrir stores user printer/process/filament profiles itself (cloud-synced
 or locally imported), so the slice flow always sends the model file plus an
 explicit JSON profile triplet to the sidecar's `/slice` endpoint. The sidecar
 shape mirrors `AFKFelix/orca-slicer-api` (multipart upload, `--load-settings`
@@ -190,7 +190,7 @@ def _upload_size_rejection(response: httpx.Response, model_size_bytes: int | Non
     # first, because those are the ones that look like they should apply.
     common = (
         f"The slicer sidecar refused the {size}model file as too large. The limit lives inside "
-        "the sidecar container, so it is neither a Bambuddy setting nor a reverse-proxy one — "
+        "the sidecar container, so it is neither a Fenrir setting nor a reverse-proxy one — "
         "raising 'client_max_body_size' or a proxy body limit will not change it."
     )
 
@@ -231,7 +231,7 @@ def _handle_slice_response(
     in front of it) returning **HTTP 200 with a body that isn't a real slice**
     (#2671): a stock/misconfigured sidecar, a proxy interstitial or truncated
     response, or an OrcaSlicer/BambuStudio CLI crash that produces empty output.
-    Without this check Bambuddy would store that tiny blob as a ``.gcode.3mf``,
+    Without this check Fenrir would store that tiny blob as a ``.gcode.3mf``,
     let it be queued, and FTP it to the printer — a silently-broken print. When
     a 3MF export was requested the body must be a valid ZIP (3MF container);
     anything else is treated as a sidecar failure.
@@ -373,7 +373,7 @@ class SlicerApiService:
     ) -> None:
         """``timeout_seconds`` bounds *silence*, not total slicing time (#2730).
 
-        While a slice is running Bambuddy polls the sidecar's progress channel
+        While a slice is running Fenrir polls the sidecar's progress channel
         once a second, so it can tell a model that is merely slow from one that
         has stopped: the clock is reset by every progress update, and only runs
         out when the slicer has said nothing for this long. A heavy model that
@@ -429,14 +429,14 @@ class SlicerApiService:
         lives in the sidecar's bundled profiles).
 
         This deliberately asks the sidecar rather than resolving locally.
-        Bambuddy has its own ``inherits:`` resolver in ``orca_profiles``, but it
+        Fenrir has its own ``inherits:`` resolver in ``orca_profiles``, but it
         walks OrcaSlicer's *published* profile tree, which is not necessarily
         the one baked into the running sidecar image — values from it would look
         authoritative and could quietly disagree with what gets sliced.
 
         Returns a :class:`ResolvedProfile` whose ``reason`` distinguishes *why*
         values are missing. That matters more than it looks: the common case in
-        practice is a sidecar older than this endpoint, because a Bambuddy
+        practice is a sidecar older than this endpoint, because a Fenrir
         install pulls ``SIDECAR_TAG:-latest`` independently of its own release
         channel. "Could not read the values" sends that user hunting; "your
         sidecar image is older than this feature" is a one-line fix. Genuine
@@ -481,7 +481,7 @@ class SlicerApiService:
     async def list_bundled_profiles(self) -> dict:
         """GET /profiles/bundled — return the slicer's stock profiles by slot.
 
-        Powers the "Standard" tier of Bambuddy's SliceModal preset dropdowns.
+        Powers the "Standard" tier of Fenrir's SliceModal preset dropdowns.
         The sidecar walks the slicer's read-only `resources/profiles/BBL/`
         tree and returns ``{printer, process, filament}`` arrays of
         ``{name, base_id}`` (alphabetised, instantiable presets only — abstract
@@ -569,7 +569,7 @@ class SlicerApiService:
         model that Bambu Studio also took a long time over — hit the ceiling
         while it was still slicing perfectly happily, and because
         ``httpx.ReadTimeout`` is a ``RequestError`` it was reported as "Slicer
-        sidecar unreachable". Meanwhile Bambuddy was polling the sidecar's
+        sidecar unreachable". Meanwhile Fenrir was polling the sidecar's
         progress endpoint once a second and could see the thing working.
 
         So the read timeout comes off the HTTP call and the poller supervises
@@ -655,7 +655,7 @@ class SlicerApiService:
 
         ``arrange`` forwards the sidecar's ``--arrange`` flag to BambuStudio.
         When True the slicer auto-repositions objects on the target bed,
-        which Bambuddy uses for cross-nozzle-class re-slices (#1493) where
+        which Fenrir uses for cross-nozzle-class re-slices (#1493) where
         the source's X1C-coordinate layout would otherwise drop into an H2D
         dead zone or trigger the multi-extruder geometry pipeline's polygon
         clipping crash. Default off so single-printer slices preserve the
@@ -665,13 +665,13 @@ class SlicerApiService:
         ``orient`` forwards ``--orient``, the CLI's auto-orientation pass:
         the slicer scores candidate rotations (overhang area, contour,
         unprintability) and rotates each object onto the best one before
-        slicing. User-driven only — nothing in Bambuddy turns it on by
+        slicing. User-driven only — nothing in Fenrir turns it on by
         itself, since rotating a deliberately-laid-out model is not a
         change to make silently.
 
         ``request_id``: when supplied, the sidecar wires --pipe to a
         per-request FIFO and publishes structured JSON progress events to
-        its in-memory ProgressStore under this id. Bambuddy's slice
+        its in-memory ProgressStore under this id. Fenrir's slice
         dispatch polls ``GET /slice/progress/{request_id}`` in parallel
         to drive the live-progress toast.
 

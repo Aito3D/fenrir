@@ -11,7 +11,7 @@ campaign: 11                   # campaigns 1-10 are all merged to main; their lo
                                # its merge, commit 666f416dd), so `git describe --match 'loop-*'`
                                # exits nonzero and the SQUASH+TAG campaign-1 BASE fallback is valid.
                                # Iteration tags are plain `loop-N`.
-workdir: /Users/paultheis/Documents/Code/bambuddy-refactor
+workdir: /Users/paultheis/Documents/Code/fenrir-refactor
 branch: auto-refactor-loop
 agents: plugin-namespaced refactor-loop:refactor-worker / refactor-loop:refactor-verifier and the
         four refactor-loop:audit-* auditors (plugin 1.2.0). The MAIN checkout's gitignored
@@ -77,8 +77,8 @@ python: ./venv/bin/python3 (worktree venv — see runtime below). NEVER system p
 
 ## worktree runtime (NOT in git — rebuilt per worktree)
 Built 2026-09-05 by APFS clonefile, not pip/npm (network-independent, instant):
-  cp -c -R ../bambuddy/venv venv && sed -i '' 's#/Code/bambuddy/venv#/Code/bambuddy-refactor/venv#g' venv/bin/*
-  cp -c -R ../bambuddy/frontend/node_modules frontend/node_modules
+  cp -c -R ../fenrir/venv venv && sed -i '' 's#/Code/fenrir/venv#/Code/fenrir-refactor/venv#g' venv/bin/*
+  cp -c -R ../fenrir/frontend/node_modules frontend/node_modules
 venv is Python 3.13.12 (bin/python3 -> python3.13; pyvenv.cfg's 3.14 `home` is the main venv's
 leftover, harmless), sys.prefix resolves inside the worktree, pytest 9.0.3 + xdist + cov import.
 vitest 4.1.8, tsc 5.9.3 resolve from frontend/node_modules/.bin. Workers must NOT pip/npm install.
@@ -137,7 +137,7 @@ INVERSE-FLAKY — fail when run ALONE, pass in the full suite (do NOT "confirm" 
 - backend:  tests/unit/test_settings_dedupe_migration.py — its _register_all_models() omits the
   print_log model, so it only works once another test has imported that model into Base.metadata.
 - frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) >
-  "opens the selected local slicer from the Bambuddy dropdown" — deterministic failure alone.
+  "opens the selected local slicer from the Fenrir dropdown" — deterministic failure alone.
 
 ## lint baseline
 ruff check + ruff format --check: clean (test_backend.sh on UPSTREAM, 2026-09-05)

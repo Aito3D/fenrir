@@ -3,7 +3,7 @@
 A user with more than one printer model slices the same job once per model. The
 files are unrelated as far as the library is concerned: different names,
 different metadata, often uploaded separately after being sliced in Bambu Studio.
-A variant group is the user telling Bambuddy that they are interchangeable.
+A variant group is the user telling Fenrir that they are interchangeable.
 
 Two features consume that statement from opposite ends:
 
@@ -85,7 +85,7 @@ def resolve_variant_model(lib_file: LibraryFile, explicit: str | None = None) ->
 
     Precedence: the caller's explicit choice for this request, then the durable
     override stored on the file, then what the 3MF itself declares. The override
-    exists because a file imported before Bambuddy parsed ``sliced_for_model``
+    exists because a file imported before Fenrir parsed ``sliced_for_model``
     declares nothing, and without a way to say so it could never be grouped.
     It is kept separate from ``file_metadata`` so a user's assertion is never
     mistaken for something parsed out of the file.

@@ -182,7 +182,7 @@ class TestTOTPSetup:
         assert "secret" in data
         assert len(data["secret"]) > 0
         assert "qr_code_b64" in data
-        assert data["issuer"] == "Bambuddy"
+        assert data["issuer"] == "Fenrir"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1094,7 +1094,7 @@ class TestOIDCProviders:
             json={
                 "name": "PocketID",
                 "issuer_url": "https://auth.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "supersecret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -3600,7 +3600,7 @@ class TestOIDCStateBindingCookie:
             json={
                 "name": name,
                 "issuer_url": issuer,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -3973,7 +3973,7 @@ class TestOIDCStatePerFlowCookies:
             json={
                 "name": name,
                 "issuer_url": issuer,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -4352,7 +4352,7 @@ class TestCookieSecureBehindTrustedProxy:
             json={
                 "name": name,
                 "issuer_url": issuer,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5340,7 +5340,7 @@ class TestOIDCExpiredTokenRejection:
 class TestOIDCIssuerUrlTrailingSlash:
     """Providers like Authentik use issuer URLs with a trailing slash.
 
-    BamBuddy must strip the slash before appending /.well-known/openid-configuration
+    Fenrir must strip the slash before appending /.well-known/openid-configuration
     to avoid a double-slash that results in a 404.
     """
 
@@ -5357,7 +5357,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "Authentik-Slash",
                 "issuer_url": issuer_with_slash,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5410,7 +5410,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "Discovery502",
                 "issuer_url": "https://idp.discovery-502-test.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5478,7 +5478,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "DiscoveryMissingAuthz",
                 "issuer_url": "https://idp.discovery-missing-authz.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5530,7 +5530,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "DiscoveryNonObject",
                 "issuer_url": "https://idp.discovery-non-object-test.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5586,7 +5586,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "SlowIdP",
                 "issuer_url": "https://idp.discovery-deadline-test.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5645,7 +5645,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "OversizedDiscoveryIdP",
                 "issuer_url": "https://idp.discovery-oversized-test.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5720,7 +5720,7 @@ class TestOIDCIssuerUrlTrailingSlash:
             json={
                 "name": "PrivateAuthzIdP",
                 "issuer_url": issuer,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -5768,7 +5768,7 @@ class TestOIDCIssuerUrlTrailingSlash:
         private_pem, jwks_data = _make_test_rsa_key()
         issuer_no_slash = "https://authentik.example.com/application/o/bambuddy"
         issuer_with_slash = issuer_no_slash + "/"
-        client_id = "bambuddy-client"
+        client_id = "fenrir-client"
         nonce = secrets.token_urlsafe(16)
 
         now = int(time.time())
@@ -5906,7 +5906,7 @@ class TestOIDCTokenAndJWKSFetchGuards:
             json={
                 "name": label,
                 "issuer_url": issuer,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -6231,7 +6231,7 @@ class TestOIDCMalformedDocumentTypes:
             json={
                 "name": label,
                 "issuer_url": issuer,
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,
@@ -6525,7 +6525,7 @@ class TestOIDCAuthorizeRateLimit:
             json={
                 "name": "RateLimited",
                 "issuer_url": "https://idp.oidc-ratelimit-test.example.com",
-                "client_id": "bambuddy",
+                "client_id": "fenrir",
                 "client_secret": "secret",
                 "scopes": "openid email profile",
                 "is_enabled": True,

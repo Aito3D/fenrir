@@ -150,7 +150,7 @@ jobs:
 
       - name: Point .git/HEAD at the source branch
         # `ref: <sha>` leaves HEAD detached. The Dockerfile copies .git/HEAD into
-        # the image so detect_current_branch() can report the branch Bambuddy was
+        # the image so detect_current_branch() can report the branch Fenrir was
         # built from; a bare SHA there would make it fall back to "main" silently.
         env:
           BRANCH: ${{ needs.resolve.outputs.branch }}

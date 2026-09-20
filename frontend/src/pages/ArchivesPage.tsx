@@ -122,7 +122,7 @@ type TFunction = (key: string, options?: Record<string, unknown>) => string;
 // every render so a stored config from before a language switch doesn't pin
 // the column picker to the old language.
 // ---------------------------------------------------------------------------
-const LOG_COLUMN_CONFIG_KEY = 'bambuddy-printlog-columns';
+const LOG_COLUMN_CONFIG_KEY = 'fenrir-printlog-columns';
 
 /** Column id -> i18n key. Also the authoritative list of valid ids. */
 const LOG_COLUMN_LABEL_KEYS: Record<string, string> = {
@@ -160,7 +160,7 @@ const DEFAULT_LOG_COLUMNS: Array<{ id: string; visible: boolean }> = [
 ];
 
 /** Stored config merged with the defaults: unknown ids (removed columns) are
- *  dropped and ids added by a later Bambuddy version are appended with their
+ *  dropped and ids added by a later Fenrir version are appended with their
  *  default visibility, so an upgrade never silently hides a new column or
  *  crashes on one that no longer exists. */
 function loadLogColumnConfig(): Array<{ id: string; visible: boolean }> {
@@ -182,7 +182,7 @@ function loadLogColumnConfig(): Array<{ id: string; visible: boolean }> {
   return DEFAULT_LOG_COLUMNS.map((c) => ({ ...c }));
 }
 
-const LOG_SORT_KEY = 'bambuddy-printlog-sort';
+const LOG_SORT_KEY = 'fenrir-printlog-sort';
 
 type LogSortState = { column: string; direction: 'asc' | 'desc' };
 

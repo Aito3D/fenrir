@@ -587,7 +587,7 @@ async def get_storage_usage(
     max_age_seconds: int = STORAGE_USAGE_CACHE_SECONDS,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
 ):
-    """Get storage usage breakdown for Bambuddy data directories."""
+    """Get storage usage breakdown for Fenrir data directories."""
     max_age_seconds = max(0, min(max_age_seconds, 3600))
     return await _get_storage_usage_cached(refresh=refresh, max_age_seconds=max_age_seconds)
 
@@ -630,9 +630,9 @@ async def get_appliance_defaults():
 
     Two file sources, both optional and silently degraded when absent:
 
-    - ``/etc/bambuddy/local.toml`` — hostname / timezone / locale the
+    - ``/etc/fenrir/local.toml`` — hostname / timezone / locale the
       firstboot wizard collected.
-    - ``/run/bambuddy/time-synced`` — chrony NTP gate state. The RPi 5 has
+    - ``/run/fenrir/time-synced`` — chrony NTP gate state. The RPi 5 has
       no battery-backed RTC, so on a fresh boot the clock is wrong until
       ntp-gate.sh writes "ok" (or "warning" if 3-minute timeout elapsed).
       A warning state means JWT expiries and TLS validity windows may be

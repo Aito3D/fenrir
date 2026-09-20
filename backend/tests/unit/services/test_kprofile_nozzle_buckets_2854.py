@@ -6,7 +6,7 @@ PR #2854 put on the slot card is resolved from the printer's calibration table
 in ``state.kprofiles``.
 
 That table is answered per nozzle diameter, and the printer answers whoever
-asks: BambuStudio's queries land on the same report topic Bambuddy subscribes
+asks: BambuStudio's queries land on the same report topic Fenrir subscribes
 to. Assigning each response straight to ``state.kprofiles`` let one answer
 stand for the whole printer. Measured on the maintainer's H2 on 2026-08-25:
 the nightly GitHub backup probes 0.2/0.4/0.6/0.8 in turn, the 0.8 probe found
@@ -294,8 +294,8 @@ class TestPrimeKProfileTable:
 
     ``state.kprofiles`` was filled only when someone opened the Profiles page
     or Configure Slot, when a GitHub backup ran, or when the printer answered
-    a query BambuStudio made on the report topic Bambuddy shares. On the
-    printers whose trays carry no ``k``, a Bambuddy nobody had visited showed
+    a query BambuStudio made on the report topic Fenrir shares. On the
+    printers whose trays carry no ``k``, a Fenrir nobody had visited showed
     an AMS card with no K values at all.
     """
 

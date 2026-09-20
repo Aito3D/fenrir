@@ -1,6 +1,6 @@
 """Tests for the plate-clear gate reaching MQTT and notifications (#2525).
 
-``awaiting_plate_clear`` is a Bambuddy-side flag (#961) — the printer's own MQTT
+``awaiting_plate_clear`` is a Fenrir-side flag (#961) — the printer's own MQTT
 push only ever reports RUNNING/PAUSE/FAILED/FINISH/IDLE, so an external
 automation had no way to tell "finished" from "finished and still waiting for
 someone to clear the bed". It now rides along on the retained per-printer status
@@ -69,7 +69,7 @@ class TestStatusPayload:
         await relay.on_printer_status(1, _state(), "X1C", "01P00A000000001", True)
 
         topic, payload, retain = _published(relay)[0]
-        assert topic == "bambuddy/printers/01P00A000000001/status"
+        assert topic == "fenrir/printers/01P00A000000001/status"
         assert payload["awaiting_plate_clear"] is True
         assert retain is True
 
@@ -94,7 +94,7 @@ class TestPlateClearTopic:
         await relay.on_plate_clear_state(3, "P1S", "01S00C000000003", True)
 
         topic, payload, retain = _published(relay)[0]
-        assert topic == "bambuddy/printers/01S00C000000003/plate_clear"
+        assert topic == "fenrir/printers/01S00C000000003/plate_clear"
         assert payload["awaiting"] is True
         assert payload["printer_id"] == 3
         assert payload["printer_name"] == "P1S"
@@ -106,12 +106,12 @@ class TestPlateClearTopic:
     @pytest.mark.asyncio
     async def test_honours_the_configured_topic_prefix(self):
         relay = _relay()
-        relay.topic_prefix = "farm/bambuddy"
+        relay.topic_prefix = "farm/fenrir"
 
         await relay.on_plate_clear_state(3, "P1S", "01S00C000000003", False)
 
         topic, payload, _ = _published(relay)[0]
-        assert topic == "farm/bambuddy/printers/01S00C000000003/plate_clear"
+        assert topic == "farm/fenrir/printers/01S00C000000003/plate_clear"
         assert payload["awaiting"] is False
 
     @pytest.mark.asyncio

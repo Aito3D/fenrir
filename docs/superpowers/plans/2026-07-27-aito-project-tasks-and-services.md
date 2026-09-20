@@ -138,7 +138,7 @@ Inside the `aito` block of `frontend/src/i18n/locales/en.ts`:
 
 - [ ] **Step 4: Allowlist the service names in the parity script**
 
-`frontend/scripts/check-i18n-parity.mjs` fails when a non-English value is byte-identical to English. Add `Scan3D`, `Modelisation3D`, `Impression3D` and `Usinage` to the brand/technical-name alternation in `isAlwaysAllowedIdentical` — the same list that already carries `Zoho`, `Bambuddy` and `OrcaSlicer`. Do **not** use a shape-based rule; scope it to these exact names.
+`frontend/scripts/check-i18n-parity.mjs` fails when a non-English value is byte-identical to English. Add `Scan3D`, `Modelisation3D`, `Impression3D` and `Usinage` to the brand/technical-name alternation in `isAlwaysAllowedIdentical` — the same list that already carries `Zoho`, `Fenrir` and `OrcaSlicer`. Do **not** use a shape-based rule; scope it to these exact names.
 
 - [ ] **Step 5: Verify and commit**
 

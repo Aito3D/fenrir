@@ -1,6 +1,6 @@
 """A queue item pinned to one printer explains itself (#3074).
 
-Bambuddy has two ways to queue a job. "Any X1C" goes through the model-based
+Fenrir has two ways to queue a job. "Any X1C" goes through the model-based
 branch, which builds a sentence for every way the job could not start and puts
 it on the row: `Busy: X1C-01`, `Waiting for filament: X1C-02 (needs PETG)`. The
 same job pinned to a specific printer went through a branch that wrote nothing.
@@ -196,7 +196,7 @@ class TestThePinnedItemSaysWhyItIsWaiting:
     async def test_a_printer_that_is_off_with_nothing_to_switch_it_on(self, ctx):
         """Worded exactly as the model-based branch words it (#2786). This is
         the one entry here the user has to act on themselves: with no enabled
-        Auto On plug, Bambuddy will never power this printer up for the queue."""
+        Auto On plug, Fenrir will never power this printer up for the queue."""
         item_id = await _add_item(ctx)
 
         await _run(ctx, PrintScheduler(), connected=False)

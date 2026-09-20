@@ -715,7 +715,7 @@ function OptionControl({ id, option, current, onChange, disabled, filamentChoice
 
   if (option.type === 'coEnum' && option.enum_values) {
     // Native select chrome is replaced the same way as everywhere else in
-    // Bambuddy: appearance-none plus our own chevron, so the control matches
+    // Fenrir: appearance-none plus our own chevron, so the control matches
     // the app in both themes instead of whatever the browser paints.
     return (
       <div className="relative w-full">

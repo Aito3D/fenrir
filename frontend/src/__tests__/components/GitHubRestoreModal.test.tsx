@@ -18,14 +18,14 @@ const mockCommits = {
   commits: [
     {
       sha: 'aaa1111bbb2222ccc3333ddd4444eee5555ffff0',
-      message: 'Bambuddy backup - 2026-07-02 10:00:00 UTC',
-      author: 'Bambuddy',
+      message: 'Fenrir backup - 2026-07-02 10:00:00 UTC',
+      author: 'Fenrir',
       date: '2026-07-02T10:00:00Z',
     },
     {
       sha: 'bbb2222ccc3333ddd4444eee5555ffff0aaa1111',
-      message: 'Bambuddy backup - 2026-07-01 10:00:00 UTC',
-      author: 'Bambuddy',
+      message: 'Fenrir backup - 2026-07-01 10:00:00 UTC',
+      author: 'Fenrir',
       date: '2026-07-01T10:00:00Z',
     },
   ],
@@ -467,7 +467,7 @@ describe('GitHubRestoreModal', () => {
 
     // Not the success panel: no reload hint, no "Reload now", and the form is
     // still there so the user can retry once the backup finishes.
-    expect(screen.queryByText(/Reload Bambuddy so the restored data appears/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Reload Fenrir so the restored data appears/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Reload now/ })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Backup commit')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Restore$/ })).toBeEnabled();

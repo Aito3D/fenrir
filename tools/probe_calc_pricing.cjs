@@ -1,9 +1,9 @@
 // Snapshot probe: run the pure calculator pricing engine over fixed inputs.
-// The bundle is produced by rolldown into /tmp/bambuddy-refactor-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-refactor-probe/ by the
 // probe command in PROBES.json before this script runs.
 // Floats are rounded to 8 decimal places so pure re-association noise cannot
 // flake the probe while any real math change still trips it.
-const p = require("/tmp/bambuddy-refactor-probe/pricing.cjs");
+const p = require("/tmp/fenrir-refactor-probe/pricing.cjs");
 
 const filament = { cost_per_kg: 25, sale_price_per_kg: 40, difficulty_pct: 150 };
 const printer = {

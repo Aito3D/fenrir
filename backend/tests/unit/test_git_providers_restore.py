@@ -28,8 +28,8 @@ def _b64(text: str) -> str:
     return base64.b64encode(text.encode("utf-8")).decode()
 
 
-def _github_commit(sha: str, message: str = "Bambuddy backup", date: str = "2026-07-01T10:00:00Z"):
-    return {"sha": sha, "commit": {"message": message, "author": {"name": "Bambuddy", "date": date}}}
+def _github_commit(sha: str, message: str = "Fenrir backup", date: str = "2026-07-01T10:00:00Z"):
+    return {"sha": sha, "commit": {"message": message, "author": {"name": "Fenrir", "date": date}}}
 
 
 class TestGitHubListCommits:
@@ -45,8 +45,8 @@ class TestGitHubListCommits:
             return_value=_make_mock_response(
                 200,
                 [
-                    _github_commit("aaa111", "Bambuddy backup - newest", "2026-07-02T10:00:00Z"),
-                    _github_commit("bbb222", "Bambuddy backup - older", "2026-07-01T10:00:00Z"),
+                    _github_commit("aaa111", "Fenrir backup - newest", "2026-07-02T10:00:00Z"),
+                    _github_commit("bbb222", "Fenrir backup - older", "2026-07-01T10:00:00Z"),
                 ],
             )
         )
@@ -55,8 +55,8 @@ class TestGitHubListCommits:
 
         assert result["success"] is True
         assert [c["sha"] for c in result["commits"]] == ["aaa111", "bbb222"]
-        assert result["commits"][0]["message"] == "Bambuddy backup - newest"
-        assert result["commits"][0]["author"] == "Bambuddy"
+        assert result["commits"][0]["message"] == "Fenrir backup - newest"
+        assert result["commits"][0]["author"] == "Fenrir"
         assert result["commits"][0]["date"] == "2026-07-02T10:00:00Z"
 
     @pytest.mark.asyncio
@@ -128,8 +128,8 @@ class TestGetCommit:
         assert result["success"] is True
         assert result["commit"] == {
             "sha": "abc1234567",
-            "message": "Bambuddy backup",
-            "author": "Bambuddy",
+            "message": "Fenrir backup",
+            "author": "Fenrir",
             "date": "2026-07-01T10:00:00Z",
         }
         assert "repos/owner/repo/commits/abc1234567" in client.get.await_args.args[0]
@@ -153,8 +153,8 @@ class TestGetCommit:
                 200,
                 {
                     "id": "abc1234567",
-                    "message": "Bambuddy backup",
-                    "author_name": "Bambuddy",
+                    "message": "Fenrir backup",
+                    "author_name": "Fenrir",
                     "committed_date": "2026-07-02T10:00:00Z",
                 },
             )
@@ -162,7 +162,7 @@ class TestGetCommit:
 
         result = await GitLabBackend().get_commit("https://gitlab.com/owner/repo", "tok", "abc1234567", client)
 
-        assert result["commit"]["author"] == "Bambuddy"
+        assert result["commit"]["author"] == "Fenrir"
         assert result["commit"]["date"] == "2026-07-02T10:00:00Z"
 
     @pytest.mark.asyncio
@@ -602,8 +602,8 @@ class TestGitLabReads:
                 [
                     {
                         "id": "abc123",
-                        "message": "Bambuddy backup",
-                        "author_name": "Bambuddy",
+                        "message": "Fenrir backup",
+                        "author_name": "Fenrir",
                         "committed_date": "2026-07-02T10:00:00Z",
                     }
                 ],
@@ -616,8 +616,8 @@ class TestGitLabReads:
         assert result["commits"] == [
             {
                 "sha": "abc123",
-                "message": "Bambuddy backup",
-                "author": "Bambuddy",
+                "message": "Fenrir backup",
+                "author": "Fenrir",
                 "date": "2026-07-02T10:00:00Z",
             }
         ]
@@ -627,10 +627,10 @@ class TestGitLabReads:
         client = AsyncMock()
         client.get = AsyncMock(return_value=_make_mock_response(200, []))
 
-        await self.backend.list_commits(self.repo_url, self.token, "bambuddy-backup", client, limit=5)
+        await self.backend.list_commits(self.repo_url, self.token, "fenrir-backup", client, limit=5)
 
         params = client.get.await_args.kwargs["params"]
-        assert params["ref_name"] == "bambuddy-backup"
+        assert params["ref_name"] == "fenrir-backup"
         assert params["per_page"] == 5
 
     @pytest.mark.asyncio

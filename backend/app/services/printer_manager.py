@@ -208,7 +208,7 @@ _DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O
 # manual is explicit: "P1S connected AMS drying functions may only be controlled from
 # the P1S screen." The firmware still answers `ams_filament_drying` with
 # result: success and then does nothing — the reporter of #2533 sent it three times
-# on an idle P1S with an AMS 2 Pro and the unit never left dry_status 0. Bambuddy
+# on an idle P1S with an AMS 2 Pro and the unit never left dry_status 0. Fenrir
 # originally listed P1P/P1S here as fw-gated (01.08+, #292); that version is when P1
 # firmware gained AMS 2 Pro *support*, not remote drying, and it was never verified
 # against a live P1. Nothing we can send will start a cycle, so we don't offer to.
@@ -218,7 +218,7 @@ _DRYING_SCREEN_ONLY_MODELS = frozenset({"P1P", "P1S"})
 def drying_screen_only(model: str | None) -> bool:
     """True when the model's AMS dries only via the printer's own screen (#2533).
 
-    Distinct from "unsupported": these printers *can* dry, and Bambuddy still shows
+    Distinct from "unsupported": these printers *can* dry, and Fenrir still shows
     a cycle started on the printer. They just can't be commanded to start or stop
     one remotely, so the UI explains that instead of silently dropping the control.
     """
@@ -440,12 +440,12 @@ class PrinterManager:
     def set_awaiting_plate_clear(self, printer_id: int, awaiting: bool):
         """Set/clear the awaiting-plate-clear gate and persist it to DB.
 
-        Persisted so the gate survives Bambuddy/printer restarts (#961): after Auto Off
+        Persisted so the gate survives Fenrir/printer restarts (#961): after Auto Off
         cycles the printer, the printer boots into IDLE with no memory of the previous
         finish, and without persistence the queue would bypass the confirmation prompt.
 
         Also broadcasts an updated ``printer_status`` over the WebSocket (#1128).
-        ``awaiting_plate_clear`` is a Bambuddy-side flag — toggling it does not
+        ``awaiting_plate_clear`` is a Fenrir-side flag — toggling it does not
         produce an MQTT push from the printer, so without an explicit broadcast
         any UI subscriber that's NOT the originating tab would stay stale until
         the next coincidental status refresh. The plate-clear button on the
@@ -478,7 +478,7 @@ class PrinterManager:
     async def _emit_plate_clear_change(self, printer_id: int, awaiting: bool) -> None:
         """Relay a plate-clear gate transition to MQTT and notifications (#2525).
 
-        The flag is Bambuddy-side, so nothing about it reaches an external
+        The flag is Fenrir-side, so nothing about it reaches an external
         automation on its own — the printer's own MQTT push knows only
         RUNNING/PAUSE/FAILED/FINISH/IDLE. Emitted from here rather than from the
         three call sites so every current and future caller is covered, the same
@@ -537,10 +537,10 @@ class PrinterManager:
         """Emit a ``printer_status`` WebSocket update for this printer (#1128).
 
         Used for state changes that don't come from MQTT — currently just the
-        ``awaiting_plate_clear`` flag, but any future Bambuddy-side flag added
+        ``awaiting_plate_clear`` flag, but any future Fenrir-side flag added
         to ``printer_state_to_dict`` should plumb through here too. The
         existing MQTT-driven broadcast in ``main.on_printer_status_change``
-        deduplicates on a status_key that intentionally excludes Bambuddy
+        deduplicates on a status_key that intentionally excludes Fenrir
         flags (so e.g. queue-state changes don't get echoed as printer
         events), which is precisely why those flags need their own emit.
 
@@ -569,7 +569,7 @@ class PrinterManager:
             )
         except Exception as e:
             logger.warning(
-                "Failed to broadcast printer_status after Bambuddy-side state change for printer %d: %s",
+                "Failed to broadcast printer_status after Fenrir-side state change for printer %d: %s",
                 printer_id,
                 e,
             )
@@ -617,7 +617,7 @@ class PrinterManager:
     def set_print_running_observed_callback(self, callback: Callable[[int, dict], None]):
         """Set callback for restart-recovery RUNNING-state observations (#1485
         follow-up). Fires the first time we see ``state == RUNNING`` for a
-        printer that started its print before Bambuddy came up — the #1304
+        printer that started its print before Fenrir came up — the #1304
         guard suppresses ``on_print_start`` for these, so anything that
         normally hangs off it (e.g. timelapse baseline capture) needs this
         hook to recover."""
@@ -1159,7 +1159,7 @@ def get_derived_status_name(state: PrinterState, model: str | None = None) -> st
     # Valid stage numbers are 0-254
     if 0 <= state.stg_cur < 255:
         # A stage number the table does not cover is named "Preparing" rather
-        # than "Unknown stage (72)". New models report stages before Bambuddy
+        # than "Unknown stage (72)". New models report stages before Fenrir
         # learns their names -- the H2C still has several -- and the card is
         # the wrong place to say so: the number means nothing to the person
         # reading it, and every stage that has ever turned out to be unnamed
@@ -1236,10 +1236,10 @@ def resolve_plate_id(state) -> int | None:
 
     Some firmware versions (e.g. P1S 01.10.00.00, #1166) put only the .3mf
     filename in print.gcode_file, so parse_plate_id() returns None and the
-    printer card falls back to plate 1 — wrong thumbnail. When Bambuddy
+    printer card falls back to plate 1 — wrong thumbnail. When Fenrir
     dispatched the print itself we already know the right plate, so we prefer
     that over the gcode_file echo. The subtask check prevents stale values
-    from a previous Bambuddy-dispatched print bleeding into a Studio-direct
+    from a previous Fenrir-dispatched print bleeding into a Studio-direct
     print on the same printer.
     """
     dispatched_plate = getattr(state, "dispatched_plate_id", None)

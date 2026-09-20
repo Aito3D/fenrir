@@ -115,7 +115,7 @@ describe('ArchivesPage no-3MF banner', () => {
 
   it('reports a transfer that ran out of time as the transfer, not as the slicer', async () => {
     // #3063: the card had the file and the printer served it three times in the
-    // two minutes after Bambuddy gave up. Telling that owner to switch on
+    // two minutes after Fenrir gave up. Telling that owner to switch on
     // "Store sent files on external storage" describes a setting that was
     // already on and had already worked.
     mockWarning({ has_fallback: true, reason: 'ftp_transfer_failed' });

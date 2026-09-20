@@ -46,7 +46,7 @@ export const HMS_MQTT_VERIFY_FAILED = '0500050000010007';
 // Short-code entries auto-generated from ha-bambulab - 853 codes
 const ERROR_DESCRIPTIONS: Record<string, string> = {
   [HMS_MQTT_VERIFY_FAILED]:
-    'The printer rejected a command because it could not verify it. Prints, temperature changes and filament loads sent from Bambuddy will be ignored until this is fixed.',
+    'The printer rejected a command because it could not verify it. Prints, temperature changes and filament loads sent from Fenrir will be ignored until this is fixed.',
   '0300_4000': 'Z axis homing failed; the task has been stopped.',
   '0300_4001': 'The printer timed out waiting for the nozzle to cool down before homing.',
   '0300_4002': 'Auto Bed Leveling failed; the task has been stopped.',
@@ -1061,9 +1061,9 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                   !!error.full_code && ERROR_DESCRIPTIONS[error.full_code] !== undefined;
                 let description =
                   lookupDescription(error.full_code, shortCode) ?? t('hmsErrors.unknownCode');
-                // The remedy is Bambuddy's, not Bambu's — their wiki says "update
+                // The remedy is Fenrir's, not Bambu's — their wiki says "update
                 // Studio or Handy", which is no help to someone printing from
-                // Bambuddy. Same override shape as the runout guidance below.
+                // Fenrir. Same override shape as the runout guidance below.
                 const remedy =
                   error.full_code === HMS_MQTT_VERIFY_FAILED
                     ? t('hmsErrors.mqttVerifyFailedRemedy')

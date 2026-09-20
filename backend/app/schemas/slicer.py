@@ -37,7 +37,7 @@ class SliceRequest(BaseModel):
 
     - **Legacy** — bare integer ``*_preset_id`` fields point into the
       ``local_presets`` table. Existing clients (and stale browser tabs after
-      a Bambuddy upgrade) keep working unchanged.
+      a Fenrir upgrade) keep working unchanged.
     - **Source-aware** — ``*_preset`` carries an explicit
       ``{source, id}``. Required for cloud / standard tiers; also accepted
       (and equivalent) for local presets when the client is on the new modal.

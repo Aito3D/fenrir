@@ -14,7 +14,7 @@
  * leaves the field enabled. A wrongly-greyed control hides a setting the user
  * needs and looks like a bug; a wrongly-enabled one merely lets them set
  * something the slicer will ignore, which is the pre-existing behaviour of every
- * other settings surface in Bambuddy. Every `undefined` return below is that
+ * other settings surface in Fenrir. Every `undefined` return below is that
  * rule being applied, not an oversight.
  *
  * Deliberately not `eval` / `new Function`: the expressions are vendored data

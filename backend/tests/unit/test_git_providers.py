@@ -87,7 +87,7 @@ class TestGitHubBackendPushFiles:
         self.backend = GitHubBackend()
         self.repo_url = "https://github.com/owner/repo"
         self.token = "ghp_token"
-        self.branch = "bambuddy-backup"
+        self.branch = "fenrir-backup"
 
     @pytest.mark.asyncio
     async def test_successful_push(self):
@@ -220,7 +220,7 @@ class TestGitHubBackendRobustness:
         self.backend = GitHubBackend()
         self.repo_url = "https://github.com/owner/repo"
         self.token = "ghp_token"
-        self.branch = "bambuddy-backup"
+        self.branch = "fenrir-backup"
 
     @pytest.mark.asyncio
     async def test_tree_fetch_failure_returns_failed_not_silent_skip(self):
@@ -489,7 +489,7 @@ class TestGiteaBackendPushFiles:
         self.backend = GiteaBackend()
         self.repo_url = "https://git.example.com/owner/repo"
         self.token = "gitea-token"
-        self.branch = "bambuddy-backup"
+        self.branch = "fenrir-backup"
 
     @pytest.mark.asyncio
     async def test_n_files_produce_single_commit(self):
@@ -981,7 +981,7 @@ class TestGiteaBackendListShapeRefResponse:
         self.backend = GiteaBackend()
         self.repo_url = "https://git.example.com/owner/repo"
         self.token = "gitea-token"
-        self.branch = "bambuddy-backup"
+        self.branch = "fenrir-backup"
 
     def test_ref_sha_extracts_from_list(self):
         assert self.backend._ref_sha([{"object": {"sha": "abc"}}]) == "abc"
@@ -1109,7 +1109,7 @@ class TestGiteaBackendWrappedCommitResponse:
         self.backend = GiteaBackend()
         self.repo_url = "https://git.example.com/owner/repo"
         self.token = "gitea-token"
-        self.branch = "bambuddy-backup"
+        self.branch = "fenrir-backup"
 
     def test_commit_tree_sha_reads_flat_shape(self):
         """GitHub-compatible / older Gitea: ``tree`` at top level."""
@@ -1244,7 +1244,7 @@ class TestGiteaBackendEmptyRepoInitialCommit:
         body = client.post.call_args.kwargs["json"]
         assert body["branch"] == "main"
         assert body["new_branch"] == "main"
-        assert body["message"].startswith("Initial Bambuddy backup")
+        assert body["message"].startswith("Initial Fenrir backup")
         assert len(body["files"]) == 2
         paths = {f["path"] for f in body["files"]}
         assert paths == {"a.json", "nested/b.json"}
@@ -1324,7 +1324,7 @@ class TestForgejoInheritsGiteaFixes:
         result = await backend.push_files(
             "https://forgejo.example.com/owner/repo",
             "token",
-            "bambuddy-backup",
+            "fenrir-backup",
             {"a.json": {"k": "v"}},
             client,
         )
@@ -1624,13 +1624,13 @@ class TestGitLabBackend:
         client = AsyncMock()
         client.get = AsyncMock(
             side_effect=[
-                _make_mock_response(200, {"name": "bambuddy-backup"}),
+                _make_mock_response(200, {"name": "fenrir-backup"}),
                 _make_mock_response(200, []),
             ]
         )
         client.post = AsyncMock(return_value=_make_mock_response(201, {"id": "abc123"}))
 
-        await backend.push_files(repo_url, "token", "bambuddy-backup", {"f.json": {}}, client)
+        await backend.push_files(repo_url, "token", "fenrir-backup", {"f.json": {}}, client)
 
         called_url = client.get.call_args_list[0].args[0]
         assert "group%2Fsubgroup%2Fproject" in called_url
@@ -1654,7 +1654,7 @@ class TestGitLabBackendPushFiles:
         self.backend = GitLabBackend()
         self.repo_url = "https://gitlab.com/owner/repo"
         self.token = "glpat-test"
-        self.branch = "bambuddy-backup"
+        self.branch = "fenrir-backup"
         self.files = {"config/printers.json": {"name": "my-printer"}}
 
     @pytest.mark.asyncio

@@ -94,7 +94,7 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # (see AitoTrackingResponse), and the auth middleware exempts the
         # same "/api/v1/aito/track/" prefix (PUBLIC_API_PREFIXES in main.py).
         ("GET", "/api/v1/aito/track/{token}"),
-        # MakerWorld thumbnail proxy — fetches external URL; no Bambuddy data exposed.
+        # MakerWorld thumbnail proxy — fetches external URL; no Fenrir data exposed.
         ("GET", "/api/v1/makerworld/thumbnail"),
         # ---- HTTP API: operational + UI-bootstrap (no sensitive data) ----
         # Operational liveness probe — minimal payload, used by container orchestrators.
@@ -110,7 +110,7 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/v1/system/appliance"),
         # Slicer printer-models — static catalog, no user data.
         ("GET", "/api/v1/slicer/printer-models"),
-        # Current Bambuddy version — public info (already visible in HTTP response headers + Docker tags).
+        # Current Fenrir version — public info (already visible in HTTP response headers + Docker tags).
         ("GET", "/api/v1/updates/version"),
         # Webhook routes — auth lives inside the handler via get_api_key() + check_permission(), not as a Depends.
         # Once they all migrate to standard auth deps these entries come out; for now exempting the file.

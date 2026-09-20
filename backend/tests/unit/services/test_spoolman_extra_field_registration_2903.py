@@ -1,7 +1,7 @@
 """Extra-field registration travels with the write that needs it (issue #2903).
 
 Spoolman rejects any spool payload carrying an ``extra`` key it has not been
-told about, answering HTTP 400 ``Unknown extra field <name>.``. Bambuddy used
+told about, answering HTTP 400 ``Unknown extra field <name>.``. Fenrir used
 to register those keys from three hand-maintained lists that ran when the
 integration was *set up* -- the connect route, application startup, and two
 inline blocks in the inventory routes. Enabling Spoolman from Settings runs
@@ -134,7 +134,7 @@ def _tray(tray_uuid: str) -> AMSTray:
 
 
 class TestTheReportedCase:
-    """A fresh Spoolman, a fresh Bambuddy, and the first AMS sync."""
+    """A fresh Spoolman, a fresh Fenrir, and the first AMS sync."""
 
     @pytest.mark.asyncio
     async def test_syncing_a_slot_no_longer_fails_on_a_fresh_spoolman(self):

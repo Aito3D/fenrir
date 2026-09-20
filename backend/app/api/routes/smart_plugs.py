@@ -152,7 +152,7 @@ def _can_be_switched(plug: SmartPlug) -> bool:
     Two kinds cannot, and the card's on/off button is useless on both:
 
     - A Home Assistant script. It can be run, not switched.
-    - An MQTT plug. Bambuddy subscribes to it and never publishes, so the
+    - An MQTT plug. Fenrir subscribes to it and never publishes, so the
       control endpoint rejects it outright as monitor-only -- and an MQTT plug
       is exactly the kind that reports watts, so without this it would win the
       power tiebreak below and take the row off a plug that can be switched.

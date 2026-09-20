@@ -38,7 +38,7 @@ branches and tags were all deleted on 2026-09-15.
 ```
 UPSTREAM: dce9cafa66f31cd026acddb68cdd38981280a07f   (main, where the worktree was cut)
 BASE:     refactor-base  ->  2db3c0dc22356f3ea57fd2741a55c8e7f1623726
-WORKDIR:  /Users/paultheis/Documents/Code/bambuddy-refactor
+WORKDIR:  /Users/paultheis/Documents/Code/fenrir-refactor
 ```
 
 ## SCOPE

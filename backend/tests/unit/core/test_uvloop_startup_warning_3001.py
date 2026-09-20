@@ -1,4 +1,4 @@
-"""Bambuddy says so when it finds itself on a loop it is not shipped on (#3001).
+"""Fenrir says so when it finds itself on a loop it is not shipped on (#3001).
 
 Every unit file in this repo pins ``--loop asyncio``, added for #1896 because
 uvloop's SSL layer can truncate a Virtual Printer FTP upload. Two populations

@@ -3445,7 +3445,7 @@ async def delete_reference(
 def _scan_bambu_ffmpeg_pids() -> list[int]:
     """Scan /proc for ffmpeg processes that are ours.
 
-    Two shapes are matched, both unambiguously Bambuddy's:
+    Two shapes are matched, both unambiguously Fenrir's:
     - Bambu RTSP: no other software connects to ``rtsp(s)://bblp:``.
     - External USB (V4L2): an ffmpeg spawned with ``-f v4l2`` is our USB camera
       stream (#2675). Only orphans are killed — the caller excludes PIDs still in

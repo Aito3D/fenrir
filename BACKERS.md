@@ -1,8 +1,8 @@
-# Bambuddy Backers & Sponsors
+# Fenrir Backers & Sponsors
 
-Bambuddy is sustainable thanks to people who put their money where their use is. This page lists everyone who supports the project on [GitHub Sponsors](https://github.com/sponsors/maziggy) or [Ko-fi](https://ko-fi.com/maziggy).
+Fenrir is sustainable thanks to people who put their money where their use is. This page lists everyone who supports the project on [GitHub Sponsors](https://github.com/sponsors/maziggy) or [Ko-fi](https://ko-fi.com/maziggy).
 
-If you'd like to support Bambuddy:
+If you'd like to support Fenrir:
 
 - **GitHub Sponsors** (recurring, 5 tiers from $5/mo to $300/mo) — https://github.com/sponsors/maziggy
 - **Ko-fi** (one-time or recurring) — https://ko-fi.com/maziggy

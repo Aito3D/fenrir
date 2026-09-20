@@ -6,10 +6,10 @@ without it, a job dispatches and looks alive — bed at temperature, toolhead
 moving — while extruding nothing and reporting no stage, which is
 indistinguishable from a print that simply has not started yet.
 
-The defect that produced such files was in the sidecar: Bambuddy sends a
+The defect that produced such files was in the sidecar: Fenrir sends a
 bundled preset by name, and a resolver that walks only ``inherits`` never
 finds the companion file holding the real start G-code, falling through to a
-577-character generic stub. Bambuddy cannot see that resolution happen, so
+577-character generic stub. Fenrir cannot see that resolution happen, so
 this checks the one thing it can see — the bytes that came back.
 """
 
@@ -110,7 +110,7 @@ class TestTheMessage:
 
         assert "Bambu Lab X2D 0.4 nozzle" in message
         # The fix is a sidecar image, not anything the user can change in
-        # Bambuddy — saying so is the whole point of failing loudly.
+        # Fenrir — saying so is the whole point of failing loudly.
         assert "sidecar" in message
 
     def test_it_says_the_file_was_not_kept(self):

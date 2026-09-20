@@ -11,7 +11,7 @@ column holds lowercase and went out verbatim:
     sent 090000FF  ->  AMS reports 090000FF
 
 The damage is not cosmetic. The auto-unlink sweep asks whether the tray still
-matches the spool assigned to it, so the tray Bambuddy had just written stopped
+matches the spool assigned to it, so the tray Fenrir had just written stopped
 matching the spool that asked for it and the assignment was deleted seconds
 later -- which is the disappearing assignment the issue reports.
 """

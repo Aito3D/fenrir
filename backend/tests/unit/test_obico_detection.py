@@ -161,7 +161,7 @@ class TestMlApiToken:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         base.update(overrides)
         return base
@@ -354,7 +354,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="new_task", subtask_name="")
 
@@ -387,7 +387,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -416,7 +416,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -451,7 +451,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -669,7 +669,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -692,7 +692,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
         _args, kwargs = mock_client.get.call_args
         assert _args[0] == "http://obico:3333/p/"
         img_url = kwargs["params"]["img"]
-        assert img_url.startswith("http://bambuddy:8000/api/v1/obico/cached-frame/")
+        assert img_url.startswith("http://fenrir:8000/api/v1/obico/cached-frame/")
         # The path segment after /cached-frame/ is the nonce itself — that nonce must
         # resolve back to our stashed frame (single-use guarantees freshness).
         nonce = img_url.rsplit("/", 1)[-1]
@@ -709,7 +709,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -774,7 +774,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "external_url": "http://fenrir:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -822,7 +822,7 @@ class TestNoVerdictIsNotSafe:
         "action": "notify",
         "poll_interval": 10,
         "enabled_printers": None,
-        "external_url": "http://bambuddy:8000",
+        "external_url": "http://fenrir:8000",
     }
 
     @staticmethod

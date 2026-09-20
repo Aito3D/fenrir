@@ -299,7 +299,7 @@ async def test_disconnect_after_eviction_is_a_no_op():
 
 
 def _stamp_user(conn, user_id: int | None) -> None:
-    conn.state.bambuddy_principal_user_id = user_id
+    conn.state.fenrir_principal_user_id = user_id
 
 
 @pytest.mark.asyncio
@@ -329,7 +329,7 @@ async def test_broadcast_to_user_filter_still_excludes_other_users_and_unstamped
     _stamp_user(target, 7)
     other_user = _FastConn()
     _stamp_user(other_user, 8)
-    unstamped = _FastConn()  # never received bambuddy_principal_user_id at all
+    unstamped = _FastConn()  # never received fenrir_principal_user_id at all
     mgr.active_connections = [target, other_user, unstamped]
 
     await asyncio.wait_for(mgr.broadcast_to_user(7, {"type": "queue_item_acked"}), timeout=2.0)

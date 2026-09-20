@@ -103,7 +103,7 @@ describe('EmailSettings', () => {
       smtp_security: 'starttls',
       smtp_auth_enabled: true,
       smtp_from_email: 'sender@example.com',
-      smtp_from_name: 'BamBuddy',
+      smtp_from_name: 'Fenrir',
     });
     expect(await screen.findByText('SMTP settings saved successfully')).toBeInTheDocument();
   });

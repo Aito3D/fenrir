@@ -342,7 +342,7 @@ class TestRealisticMessageFlow:
         mqtt_client.on_print_start = on_start
         mqtt_client.on_print_complete = on_complete
         # Seed a prior state so the first RUNNING push is treated as a real
-        # state transition rather than a Bambuddy-restart catch-up (#1304).
+        # state transition rather than a Fenrir-restart catch-up (#1304).
         mqtt_client._previous_gcode_state = "IDLE"
 
         # 1. Print starts with timelapse
@@ -2006,7 +2006,7 @@ class TestRequestTopicFailSafe:
 class TestRequestTopicIsCaptured:
     """The MQTT debug log has to show commands going *to* the printer.
 
-    Bambuddy subscribes to the request topic as well as the report topic, so
+    Fenrir subscribes to the request topic as well as the report topic, so
     every command the printer is given crosses this client -- ours echoed back
     by the broker, and whatever Bambu Studio sends. Those messages used to
     return from _on_message before the logging block, which left a capture able
@@ -2182,7 +2182,7 @@ class TestRequestTopicAmsMapping:
         mqtt_client.on_print_start = on_start
         mqtt_client._captured_ams_mapping = [0, 4, -1, -1]
         # Seed a prior state so the first RUNNING push is treated as a real
-        # state transition rather than a Bambuddy-restart catch-up (#1304).
+        # state transition rather than a Fenrir-restart catch-up (#1304).
         mqtt_client._previous_gcode_state = "IDLE"
 
         # Trigger print start
@@ -2207,7 +2207,7 @@ class TestRequestTopicAmsMapping:
 
         mqtt_client.on_print_start = on_start
         # Seed a prior state so the first RUNNING push is treated as a real
-        # state transition rather than a Bambuddy-restart catch-up (#1304).
+        # state transition rather than a Fenrir-restart catch-up (#1304).
         mqtt_client._previous_gcode_state = "IDLE"
 
         mqtt_client._process_message(
@@ -2223,10 +2223,10 @@ class TestRequestTopicAmsMapping:
         assert "ams_mapping" in start_data
         assert start_data["ams_mapping"] is None
 
-    def test_first_running_push_after_bambuddy_restart_does_not_fire_print_start(self, mqtt_client):
-        """Regression for #1304: Bambuddy restart mid-print misfired plate check + archive.
+    def test_first_running_push_after_fenrir_restart_does_not_fire_print_start(self, mqtt_client):
+        """Regression for #1304: Fenrir restart mid-print misfired plate check + archive.
 
-        When Bambuddy restarts while a print is already in progress, the freshly
+        When Fenrir restarts while a print is already in progress, the freshly
         constructed BambuMQTTClient has `_previous_gcode_state = None`. The first
         push_status the printer sends reports `gcode_state: RUNNING`. Before the
         fix, the (None → RUNNING) transition satisfied is_new_print's guard and
@@ -2243,7 +2243,7 @@ class TestRequestTopicAmsMapping:
             start_data.update(data)
 
         mqtt_client.on_print_start = on_start
-        # Explicit: this simulates a fresh Bambuddy process attaching to a
+        # Explicit: this simulates a fresh Fenrir process attaching to a
         # printer that's already in the middle of a print.
         mqtt_client._previous_gcode_state = None
         mqtt_client._was_running = False
@@ -2258,7 +2258,7 @@ class TestRequestTopicAmsMapping:
             }
         )
 
-        assert start_data == {}, "on_print_start must not fire on Bambuddy-restart catch-up"
+        assert start_data == {}, "on_print_start must not fire on Fenrir-restart catch-up"
         # Completion detection still needs to know we're tracking a running job.
         assert mqtt_client._was_running is True
         # And the state-update bookkeeping ran so the NEXT push won't keep
@@ -2998,7 +2998,7 @@ class TestTrayNowDualNozzleH2DSnow(_H2DFixtureMixin):
 
 
 class TestTrayNowDualNozzleH2DPendingTarget(_H2DFixtureMixin):
-    """Pending target disambiguation (when Bambuddy initiates load)."""
+    """Pending target disambiguation (when Fenrir initiates load)."""
 
     def test_pending_target_matches_slot(self, h2d_client):
         """pending=5, tray_now='1' (5%4=1 matches) → tray_now=5."""
@@ -4648,7 +4648,7 @@ class TestStartPrintUniqueIdentityFields:
     def test_submission_id_is_numeric_string(self, mqtt_client):
         """ID format: digits-only string. Studio uses cloud task IDs that are
         also numeric-looking strings; the DB column is VARCHAR(64) and
-        Bambuddy's own subtask_id parser treats '0'/'' as absent — any valid
+        Fenrir's own subtask_id parser treats '0'/'' as absent — any valid
         digit string that isn't '0' is fine."""
         mqtt_client.start_print("test.3mf")
         cmd = self._get_published_command(mqtt_client)
@@ -6578,7 +6578,7 @@ class TestDryingCompleteCallback:
         assert "0700800002000003" in message
 
     def test_early_end_without_a_cached_target_still_logs(self, mqtt_client, caplog):
-        """A cycle Bambuddy did not start — from the printer's screen, from
+        """A cycle Fenrir did not start — from the printer's screen, from
         Studio, or from before a restart — has no cached duration to compare
         against. The remaining time alone still proves it was cut short, so the
         reason codes must be logged rather than withheld for lack of a target."""
@@ -6592,7 +6592,7 @@ class TestDryingCompleteCallback:
         assert "hms=none" in message
 
     def test_stop_we_sent_is_not_blamed_on_the_firmware(self, mqtt_client, caplog):
-        """A stop Bambuddy sends — print takes priority, or the user's Stop
+        """A stop Fenrir sends — print takes priority, or the user's Stop
         button — also ends the cycle far short of its duration, which on the
         telemetry alone looks exactly like the firmware abandoning it. It must
         be named as ours rather than reported as an unexplained early end."""
@@ -6604,7 +6604,7 @@ class TestDryingCompleteCallback:
             mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
 
         message = "\n".join(r.getMessage() for r in caplog.records)
-        assert "drying stopped by Bambuddy" in message
+        assert "drying stopped by Fenrir" in message
         assert "ended early" not in message
         # And the attribution is consumed, so a later firmware-ended cycle on
         # the same unit is not credited to a stop we sent hours earlier.
@@ -6650,7 +6650,7 @@ class TestDryingCompleteCallback:
 class TestPrintRunningObservedCallback:
     """#1485 follow-up: on_print_running_observed fires the FIRST time we
     see ``state == RUNNING`` for a printer whose print started before
-    Bambuddy came up. It lets main.py capture a timelapse baseline at
+    Fenrir came up. It lets main.py capture a timelapse baseline at
     restart-recovery time — when on_print_start was suppressed by the
     #1304 first-push guard. Must NOT fire when on_print_start handles the
     transition (avoids double-capture), and must NOT fire again after
@@ -6677,7 +6677,7 @@ class TestPrintRunningObservedCallback:
         mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
 
         # Pristine state — exactly what we have right after BambuMQTTClient
-        # construction following a Bambuddy restart.
+        # construction following a Fenrir restart.
         mqtt_client._was_running = False
         mqtt_client._previous_gcode_state = None
 
@@ -6957,10 +6957,10 @@ class TestAmsFilamentBackupHoldTimer:
 
 class TestCommandAckIsNotTelemetry:
     """Regression (#3040): a printer's command acknowledgement echoes the
-    fields Bambuddy sent, so ingesting one as status reads our own request
+    fields Fenrir sent, so ingesting one as status reads our own request
     back as the printer's state.
 
-    Bambuddy used to put ``"cfg": "0"`` in every project_file. The ack came
+    Fenrir used to put ``"cfg": "0"`` in every project_file. The ack came
     back carrying it, bit 18 read as "AMS Filament Backup OFF", and on the
     families that don't repeat ``cfg`` in their periodic frames (P1S, A1,
     A1 Mini, A2L) the wrong value stuck until the user toggled it — which
@@ -7040,7 +7040,7 @@ class TestTrayNowH2SExternalSpoolOverride:
     """H2S firmware reports tray_now as the AMS's idle slot (typically 0)
     instead of 254 when the active feed is the external spool.
 
-    Bambuddy detects the all-external case via the slicer-captured
+    Fenrir detects the all-external case via the slicer-captured
     ams_mapping (every entry == -1) and promotes tray_now to 254 so the
     UI active-tray highlight matches the real feed.
 
@@ -7062,7 +7062,7 @@ class TestTrayNowH2SExternalSpoolOverride:
 
     def test_all_external_mapping_promotes_tray_now_to_254(self, mqtt_client):
         """Reporter's scenario: H2S, single nozzle, captured ams_mapping=[-1],
-        firmware sends tray_now=0 -> Bambuddy promotes to 254."""
+        firmware sends tray_now=0 -> Fenrir promotes to 254."""
         mqtt_client._captured_ams_mapping = [-1]
         mqtt_client._process_message(_ams_payload(0))
         assert mqtt_client.state.tray_now == 254
@@ -7090,7 +7090,7 @@ class TestTrayNowH2SExternalSpoolOverride:
         assert mqtt_client.state.tray_now == 0
 
     def test_no_captured_mapping_does_not_override(self, mqtt_client):
-        """Prints started from the printer screen (or before Bambuddy
+        """Prints started from the printer screen (or before Fenrir
         connected) have no captured ams_mapping. Behaviour unchanged from
         pre-#1822 — we accept the wrong value rather than guess."""
         mqtt_client._captured_ams_mapping = None
@@ -7381,7 +7381,7 @@ class TestPresumedPowerOffRecovery:
 
     def test_request_topic_traffic_does_not_restore(self, mqtt_client):
         """Only the printer's own report topic proves it is alive; the request
-        topic also carries slicer/Bambuddy commands."""
+        topic also carries slicer/Fenrir commands."""
         mqtt_client.mark_power_off()
 
         class _Msg:
@@ -7891,7 +7891,7 @@ class TestEndOfPrintProbe:
     what do the stage/action fields do between the last object layer and
     gcode_state=FINISH? stg_cur=22 was supposed to mark "toolhead parked,
     before filament unload" (#1721) and fires on no model in the field, and
-    Bambuddy drops every other stage field unread. These tests pin the
+    Fenrir drops every other stage field unread. These tests pin the
     window's boundaries and the guarantee that instrumentation stays
     instrumentation — it must never raise into the ingest path.
     """
@@ -7962,7 +7962,7 @@ class TestEndOfPrintProbe:
         assert "EOP-PROBE" not in caplog.text
 
     def test_does_not_open_when_the_print_never_ran(self, mqtt_client, caplog):
-        """Bambuddy restarted mid-print, or firmware replayed a stale frame."""
+        """Fenrir restarted mid-print, or firmware replayed a stale frame."""
         mqtt_client._was_running = False
         with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
             mqtt_client._process_message({"print": {"layer_num": 100}})
@@ -7984,7 +7984,7 @@ class TestEndOfPrintProbe:
         assert "'stg_cur': 22" in caplog.text
         assert "layer_num" not in caplog.text.split("EOP-PROBE")[-1]
 
-    def test_captures_the_fields_bambuddy_does_not_parse(self, mqtt_client, caplog):
+    def test_captures_the_fields_fenrir_does_not_parse(self, mqtt_client, caplog):
         """The whole point: mc_stage / mc_action / print_real_action are read
         by nothing else in the codebase, so only the probe can show them."""
         with caplog.at_level(logging.DEBUG, logger=self.LOGGER):

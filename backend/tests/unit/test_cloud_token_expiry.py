@@ -1,8 +1,8 @@
 """Tests for Bambu Cloud sign-in expiry detection.
 
-Bambu's access token is opaque — no readable expiry — and Bambuddy does not
+Bambu's access token is opaque — no readable expiry — and Fenrir does not
 persist the refresh token, so the only authority on whether a stored token still
-works is Bambu itself. Bambuddy used to pretend otherwise: ``set_token()``
+works is Bambu itself. Fenrir used to pretend otherwise: ``set_token()``
 stamped ``token_expiry = now + 30 days`` *every time a stored token was loaded*,
 which reset the expiry check on every request and made ``is_authenticated``
 incapable of ever returning False. ``/cloud/status`` therefore reported

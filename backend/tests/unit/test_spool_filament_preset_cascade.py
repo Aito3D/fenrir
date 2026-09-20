@@ -162,7 +162,7 @@ class TestClearedPreset:
 
 
 class TestSpoolmanFlavour:
-    """Spoolman spools live in Spoolman; the override is Bambuddy's, keyed by
+    """Spoolman spools live in Spoolman; the override is Fenrir's, keyed by
     the remote id. Same cascade -- the two inventory modes must not drift."""
 
     async def test_same_cascade(self, test_engine):

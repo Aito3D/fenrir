@@ -2,12 +2,12 @@
 
 **Date:** 2026-09-12
 **Status:** approved in brainstorming, awaiting spec review
-**Repos:** bambuddy (phases 1–3), heimdall (phase 3 only)
+**Repos:** fenrir (phases 1–3), heimdall (phase 3 only)
 
 ## 1. Goal
 
 Every Aito quote carries an online payment link, created and kept in sync by
-Bambuddy through Heimdall's `/api/v1` machine API (which fronts the OSB
+Fenrir through Heimdall's `/api/v1` machine API (which fronts the OSB
 payment-link gateway). The link always mirrors the quote: same reference
 (the quote number, e.g. `DEV-2026-1234`), same amount (or a configured deposit
 share of it), same expiry day. A paid link — or a paid retainer that covers
@@ -20,7 +20,7 @@ Approved scope, in three phases, each with its own implementation plan:
 |---|---|
 | **1 — core** | settings + Heimdall client, link ledger + reconcile loop, quote expiry (15 days by default), deposit mode, auto-accept (link or retainer), panel row + copy, board badge, tracking "Pay online", paid notification, expiry nudge |
 | **2 — accounting** | a paid link becomes a retainer invoice + customer payment in Zoho Books |
-| **3 — instant** | Heimdall webhook → Bambuddy, polling kept as fallback |
+| **3 — instant** | Heimdall webhook → Fenrir, polling kept as fallback |
 
 Phase 1 is fully usable on its own.
 
@@ -47,7 +47,7 @@ Phase 1 is fully usable on its own.
 - Links created this way are `created_via: api` and appear on Heimdall's Payment links screen. PATCH/cancel are scoped to links this shop's keys created.
 - Connectivity: same LAN, `http://<host>:8081` (decided).
 
-### 2.2 Bambuddy facts this design relies on
+### 2.2 Fenrir facts this design relies on
 
 - `services/aito_quote_sync.py`: `_create_quote` builds the Books estimate payload (no `expiry_date` today); `_apply_estimate` copies `estimate_number / date / total / status` back; the periodic sweep (`run_sync_once`, 300 s default tick, `_wake`-able) already GETs the full estimate for open quotes, and that payload carries `retainerinvoices[] {retainerinvoice_id, retainerinvoice_number, status, total}` (trusted by `_is_locked` and `aito_invoice_create`).
 - `run_sync_loop` calls `sweep_invoices` (hourly gate, per-project commit) and `purge_tracking_views` every tick — the reconciler plugs in beside them.
@@ -264,7 +264,7 @@ New follow-up rule `linkExpiring` in `aitoFollowups.ts`: `payment_link.state == 
 
 ## 8. Phase 2 — Books write-back
 
-When a link reaches `paid` (and after `accept_quote`), Bambuddy books the money on the estimate so `plan_invoice` / `apply_retainers` spend it on the final invoice with no new logic there:
+When a link reaches `paid` (and after `accept_quote`), Fenrir books the money on the estimate so `plan_invoice` / `apply_retainers` spend it on the final invoice with no new logic there:
 
 1. `GET /estimates/{id}` → if any `retainerinvoices[]` entry has `reference_number == "HMD-" + heimdall_id`, adopt its ids and stop (idempotent).
 2. `POST /retainerinvoices` `{customer_id, estimate_id, reference_number: "HMD-<id>", date, line_items: [{description: "Paiement en ligne — <quote_number>", rate: amount, quantity: 1}]}`; mark it sent if Books requires that before a payment.
@@ -277,7 +277,7 @@ Failures: `booking_error` on the row, retried each tick with the same backoff; t
 
 **Heimdall** (own spec in that repo): per-API-key optional `webhook_url` + `webhook_secret`; on any *link* status change (IPN or refresh) POST `{"event": "payment.updated", "id", "status", "reference", "occurred_at"}` signed with the same HMAC scheme (`X-Heimdall-Timestamp/Nonce/Signature`, secret = `webhook_secret`); 5 retries with exponential backoff; delivery log visible under Settings → Machine API.
 
-**Bambuddy**: `POST /api/v1/aito/payments/webhook` — public (added to both public-route allow-lists like `/t/`), rate-limited per IP, verifies the signature against `heimdall_webhook_secret` (write-only setting), looks the `id` up in the ledger, and calls the same `reconcile_link(db, row)` §5.5 uses. The webhook is a trigger, never a source of truth: the GET is still what writes the status. Polling remains as the fallback; an unknown id is a 200 no-op (never a probe oracle).
+**Fenrir**: `POST /api/v1/aito/payments/webhook` — public (added to both public-route allow-lists like `/t/`), rate-limited per IP, verifies the signature against `heimdall_webhook_secret` (write-only setting), looks the `id` up in the ledger, and calls the same `reconcile_link(db, row)` §5.5 uses. The webhook is a trigger, never a source of truth: the GET is still what writes the status. Polling remains as the fallback; an unknown id is a 200 no-op (never a probe oracle).
 
 ## 10. Testing
 
@@ -292,4 +292,4 @@ Failures: `booking_error` on the row, retried each tick with the same backoff; t
 
 ## 11. Out of scope
 
-Per-quote deposit override; partial payments; refunds; EUR/USD links; Heimdall-side Zoho booking for links (phase 2 does it from Bambuddy); any change to Heimdall before phase 3.
+Per-quote deposit override; partial payments; refunds; EUR/USD links; Heimdall-side Zoho booking for links (phase 2 does it from Fenrir); any change to Heimdall before phase 3.

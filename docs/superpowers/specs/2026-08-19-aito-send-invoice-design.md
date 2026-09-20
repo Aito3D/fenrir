@@ -8,7 +8,7 @@
 The Aito project panel can email a quote to the client (`SendQuoteButton` →
 `SendQuoteModal` → `POST /aito/{id}/quote-email`). The Invoice card below it
 offers only Print. An operator who wants to send the bill has to leave
-Bambuddy and do it in Zoho Books.
+Fenrir and do it in Zoho Books.
 
 Add the same affordance to the Invoice card: a Send button that opens a modal
 showing the recipient, the subject, and the rendered email body, and sends it

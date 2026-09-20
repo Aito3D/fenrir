@@ -26,7 +26,7 @@ Proxy mode now requires two additional ports:
 | 322 | TCP | RTSP camera streaming (transparent proxy, end-to-end TLS) |
 
 These ports are proxied automatically — no iptables rules needed. If you have
-a firewall, ensure these ports are open between the slicer and Bambuddy.
+a firewall, ensure these ports are open between the slicer and Fenrir.
 
 ## Migration Steps
 
@@ -46,11 +46,11 @@ a firewall, ensure these ports are open between the slicer and Bambuddy.
 
 3. **Verify systemd service** has `AmbientCapabilities=CAP_NET_BIND_SERVICE`:
    ```bash
-   systemctl cat bambuddy | grep AmbientCapabilities
+   systemctl cat fenrir | grep AmbientCapabilities
    ```
    If missing, add it to the `[Service]` section.
 
-4. **Restart Bambuddy.** Verify FTP binds to port 990:
+4. **Restart Fenrir.** Verify FTP binds to port 990:
    ```bash
    grep "FTPS on" logs/bambuddy.log
    # Should show: Starting virtual printer implicit FTPS on <IP>:990

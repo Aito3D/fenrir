@@ -1247,7 +1247,7 @@ describe('FilamentProfilesPage upload-fallback import', () => {
     zip.file('zipped_two.json', JSON.stringify({ name: 'Zipped Two', filament_vendor: ['Generic'], filament_type: ['PETG'] }));
     zip.file('notes.txt', 'not a preset');
     const blob = await zip.generateAsync({ type: 'blob' });
-    const zipFile = new File([blob], 'bambuddy-presets.zip', { type: 'application/zip' });
+    const zipFile = new File([blob], 'fenrir-presets.zip', { type: 'application/zip' });
 
     render(<FilamentProfilesPage />);
     await screen.findByText('White');

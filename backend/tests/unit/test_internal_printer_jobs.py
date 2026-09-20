@@ -4,7 +4,7 @@ Auto pressure-advance calibration -- the K-profile line the printer lays down
 before a print when flow dynamics calibration is on -- reports over MQTT through
 the same print-start event a real print uses, as the subtask name
 ``auto_pa_line_calib_mode`` with no ``/usr/`` path attached. The only guard
-Bambuddy had tested ``filename.startswith("/usr/")``, so the calibration sailed
+Fenrir had tested ``filename.startswith("/usr/")``, so the calibration sailed
 past it, found no 3MF anywhere on the printer (there is none to find), and left
 a no-3MF archive named after itself in the user's history.
 
@@ -12,7 +12,7 @@ The same name is already known to the completion guard: #2829's capture of
 queue item 649 has ``auto_pa_line_calib_mode`` arriving as the subtask name of a
 completion that had to be refused against a running job.
 
-The manual flow-dynamics run reaches Bambuddy the same way under two further
+The manual flow-dynamics run reaches Fenrir the same way under two further
 names -- ``pa_line_calib_mode`` and ``pa_pattern_calib_mode``, the line and the
 pattern shape, both without the ``auto_`` prefix -- so the automatic entry never
 covered either of them.
@@ -215,7 +215,7 @@ class TestPrintCompleteStaysQuiet:
 
     @pytest.mark.asyncio
     async def test_a_real_orphan_print_still_notifies(self):
-        """The no-archive path exists for prints started outside Bambuddy. The
+        """The no-archive path exists for prints started outside Fenrir. The
         guard must not take those down with it.
         """
         with (

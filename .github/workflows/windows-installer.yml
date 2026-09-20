@@ -157,7 +157,7 @@ jobs:
           # Not a credential -- the organization ID appears in ordinary SignPath
           # URLs and is useless without the API token above.
           organization-id: '4d7e5b59-d0fb-4a6b-b385-b861e18c6386'
-          project-slug: 'bambuddy'
+          project-slug: 'fenrir'
           signing-policy-slug: 'test-signing'
           github-artifact-id: ${{ needs.build.outputs.artifact-id }}
           wait-for-completion: true
@@ -224,7 +224,7 @@ jobs:
         shell: pwsh
         working-directory: installers/windows/build/output
         run: |
-          $versioned = Get-ChildItem -Filter "bambuddy-*-windows-x64-setup.exe" | Select-Object -First 1
+          $versioned = Get-ChildItem -Filter "fenrir-*-windows-x64-setup.exe" | Select-Object -First 1
           if (-not $versioned) { throw "no versioned installer .exe found" }
           Copy-Item $versioned.FullName "bambuddy-windows-x64-setup.exe"
           Write-Host "alias: bambuddy-windows-x64-setup.exe -> $($versioned.Name)"

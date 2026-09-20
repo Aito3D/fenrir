@@ -884,7 +884,7 @@ class VirtualPrinterInstance:
                             return resolved
                     return settings_default
 
-                # Note the MQTT field names differ from Bambuddy's column
+                # Note the MQTT field names differ from Fenrir's column
                 # names: MQTT uses `bed_leveling` (single L) while the
                 # column / settings key use `bed_levelling` (double L).
                 bed_levelling = _slicer_tristate(
@@ -924,7 +924,7 @@ class VirtualPrinterInstance:
                     if raw is not None:
                         # BambuStudio's NetworkAgent embeds this as parsed
                         # JSON in the project_file body (matching the
-                        # ams_mapping shape Bambuddy already consumes as
+                        # ams_mapping shape Fenrir already consumes as
                         # list[int]). Accept a JSON-encoded string defensively
                         # in case any path arrives stringified.
                         if isinstance(raw, str):
@@ -972,7 +972,7 @@ class VirtualPrinterInstance:
                 if slicer_opts is not None and self.target_printer_id is not None and self.save_ams_mapping:
                     ams_mapping_json = _extract_slicer_ams_mapping_json(slicer_opts, f"[VP {self.name}]")
 
-                # `Force color match` is the user asking Bambuddy to do the
+                # `Force color match` is the user asking Fenrir to do the
                 # matching strictly, against the printer's live trays. Its only
                 # effect on a fixed-printer item is via the per-slot
                 # `filament_overrides` written below, which are consumed inside
@@ -1370,7 +1370,7 @@ class VirtualPrinterInstance:
             #   chamber-image (A1/P1P/P1S)  → 6000
             #
             # `get_camera_port()` is the same source of truth used by
-            # `routes/camera.py`, so slicer and Bambuddy UI agree.
+            # `routes/camera.py`, so slicer and Fenrir UI agree.
             target_client = self._printer_manager.get_client(self.target_printer_id)
             target_ip = getattr(target_client, "ip_address", None) if target_client else None
             target_model = getattr(target_client, "model", None) if target_client else None
@@ -1871,7 +1871,7 @@ class VirtualPrinterManager:
             "enabled": False,
             "running": False,
             "mode": VP_MODE_ARCHIVE,
-            "name": "Bambuddy",
+            "name": "Fenrir",
             "serial": "",
             "model": DEFAULT_VIRTUAL_PRINTER_MODEL,
             "model_name": VIRTUAL_PRINTER_MODELS[DEFAULT_VIRTUAL_PRINTER_MODEL],

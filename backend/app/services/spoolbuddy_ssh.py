@@ -1,7 +1,7 @@
 """SSH-based update service for SpoolBuddy devices.
 
 Instead of the daemon updating itself (fragile: permission issues, self-modifying
-code, hardcoded branch), Bambuddy SSHes into the SpoolBuddy Pi and drives the
+code, hardcoded branch), Fenrir SSHes into the SpoolBuddy Pi and drives the
 update remotely: git fetch/checkout, pip install, systemctl restart.
 
 Uses `asyncssh` (pure-Python async SSH client) rather than shelling out to the
@@ -27,7 +27,7 @@ from backend.app.core.config import settings
 logger = logging.getLogger(__name__)
 
 SSH_USER = "spoolbuddy"
-DEFAULT_INSTALL_PATH = "/opt/bambuddy"
+DEFAULT_INSTALL_PATH = "/opt/fenrir"
 
 # Project root — where the `.git` directory lives for native installs and for
 # Docker containers that bind-mount the repo. This is intentionally distinct
@@ -82,6 +82,8 @@ async def get_or_create_keypair() -> tuple[Path, Path]:
     )
     # OpenSSH public format has no comment field by default; append one to match
     # the previous ssh-keygen output so the authorized_keys line is identifiable.
+    # Kept at the pre-rename spelling to stay in step with the SpoolBuddy
+    # daemon's SSH_KEY_TAG, which already tags keys on every deployed unit.
     public_line = public_bytes + b" bambuddy-spoolbuddy\n"
 
     private_key.write_bytes(private_bytes)
@@ -99,7 +101,7 @@ async def get_public_key() -> str:
 
 
 def detect_current_branch() -> str:
-    """Detect the git branch Bambuddy is running on.
+    """Detect the git branch Fenrir is running on.
 
     Reads `.git/HEAD` directly from the application root (``_APP_DIR``) rather
     than shelling out to `git`. The application root is deliberately distinct
@@ -189,7 +191,7 @@ async def _run_ssh_command(
 
 
 async def perform_ssh_update(device_id: str, ip_address: str, install_path: str | None = None) -> None:
-    """SSH into a SpoolBuddy device and update it to match Bambuddy's branch.
+    """SSH into a SpoolBuddy device and update it to match Fenrir's branch.
 
     Updates device.update_status/update_message in the DB and broadcasts
     progress via WebSocket at each step.  Host key verification uses TOFU:

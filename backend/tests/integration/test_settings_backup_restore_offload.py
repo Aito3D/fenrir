@@ -393,7 +393,7 @@ class TestRestoreSuccessPath:
             assert resp.status_code == 200, resp.text
             assert resp.json() == {
                 "success": True,
-                "message": "Backup restored successfully. Please restart Bambuddy for changes to take effect.",
+                "message": "Backup restored successfully. Please restart Fenrir for changes to take effect.",
             }
             reinit_mock.assert_awaited_once()
             init_mock.assert_awaited_once()

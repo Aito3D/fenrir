@@ -19,7 +19,7 @@ interface CopyButtonProps {
  * the same control (#2664). The fallback is the whole reason this is shared
  * rather than re-written per call site: navigator.clipboard is gated behind
  * the secure-context requirement, so on a LAN install reached over plain HTTP
- * — which is most Bambuddy installs — the API is simply undefined, and a
+ * — which is most Fenrir installs — the API is simply undefined, and a
  * naive implementation swallows the failure with no tick and nothing copied.
  */
 export function CopyButton({

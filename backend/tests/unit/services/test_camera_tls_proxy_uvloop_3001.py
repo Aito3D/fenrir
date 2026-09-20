@@ -1,12 +1,12 @@
 """The RTSPS proxy must survive whichever event loop production actually runs (#3001).
 
-1.2.5.4 shipped ``server._bambuddy_proxy_handlers = handlers`` at the end of
+1.2.5.4 shipped ``server._fenrir_proxy_handlers = handlers`` at the end of
 ``create_tls_proxy``. That is legal on ``asyncio.base_events.Server``, which
 carries a ``__dict__``, and an outright ``AttributeError`` on
 ``uvloop.loop.Server``, a Cython cdef class that does not::
 
     AttributeError: 'uvloop.loop.Server' object has no attribute
-    '_bambuddy_proxy_handlers' and no __dict__ for setting new attributes
+    '_fenrir_proxy_handlers' and no __dict__ for setting new attributes
 
 Which loop you get is decided by the launch command, not by anything in the
 app. Every unit file this repo ships pins ``--loop asyncio`` (added for #1896),

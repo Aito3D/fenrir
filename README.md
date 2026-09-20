@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="static/img/bambuddy_logo_dark.png" alt="Bambuddy Logo" width="300">
+  <img src="static/img/bambuddy_logo_dark.png" alt="Fenrir Logo" width="300">
 </p>
 
-<h1 align="center">Bambuddy</h1>
+<h1 align="center">Fenrir</h1>
 
 <p align="center">
   <strong>Your printers. No cloud. Your rules.</strong><br>
@@ -48,40 +48,40 @@
     <img src="https://img.shields.io/badge/🎮_Live_Demo-demo.bambuddy.cool-00ae42?style=for-the-badge&labelColor=0a0d14" alt="Live Demo">
   </a>
   <br>
-  <em>Spin up your own private Bambuddy in ~10 seconds — no install, no signup, 30-minute session.</em>
+  <em>Spin up your own private Fenrir in ~10 seconds — no install, no signup, 30-minute session.</em>
 </p>
 
 ---
 
 > [!IMPORTANT]
 > **H2-series and P2S owners — how you send a print decides what gets archived.**
-> Bambu Studio's **Print** button sends sliced files to the printer's internal memory, which Bambuddy cannot read — so those prints archive with a name and timing but no thumbnail, filament total or cost. The printer's "Store sent files on external storage" option does not change it (measured on an H2C and an H2D with it enabled); [BambuStudio#10481](https://github.com/bambulab/BambuStudio/issues/10481) tracks the default upstream.
-> **Start the print from Bambuddy, or slice in OrcaSlicer** — both put the file on the card in one step. Staying in Bambu Studio means using **Send** with **External** picked and starting the print afterwards, because Print itself offers no choice. All of them need a card or stick in the printer; X1 and P1 series are unaffected.
+> Bambu Studio's **Print** button sends sliced files to the printer's internal memory, which Fenrir cannot read — so those prints archive with a name and timing but no thumbnail, filament total or cost. The printer's "Store sent files on external storage" option does not change it (measured on an H2C and an H2D with it enabled); [BambuStudio#10481](https://github.com/bambulab/BambuStudio/issues/10481) tracks the default upstream.
+> **Start the print from Fenrir, or slice in OrcaSlicer** — both put the file on the card in one step. Staying in Bambu Studio means using **Send** with **External** picked and starting the print afterwards, because Print itself offers no choice. All of them need a card or stick in the printer; X1 and P1 series are unaffected.
 > [Why this happens →](https://wiki.bambuddy.cool/reference/troubleshooting/#archive-card-has-only-a-name)
 
 ---
 
 ## 📰 As Featured In
 
-> **"Bambuddy is the companion app that Bambu Lab should have built from day one."**
+> **"Fenrir is the companion app that Bambu Lab should have built from day one."**
 > — Adam Conway, [XDA-Developers](https://www.xda-developers.com/finally-have-full-control-bambu-lab-printer-ditched-bambu-cloud/)
 
 <p align="center">
-  <a href="https://hackaday.com/2026/06/13/bambuddy-says-bye-to-bambu-lab-cloud-services/"><img src="https://img.shields.io/badge/Hackaday-Read-F2A724?style=flat-square&labelColor=000000" alt="Hackaday"></a>
+  <a href="https://hackaday.com/2026/06/13/fenrir-says-bye-to-bambu-lab-cloud-services/"><img src="https://img.shields.io/badge/Hackaday-Read-F2A724?style=flat-square&labelColor=000000" alt="Hackaday"></a>
   <a href="https://www.xda-developers.com/finally-have-full-control-bambu-lab-printer-ditched-bambu-cloud/"><img src="https://img.shields.io/badge/XDA--Developers-Read-C8102E?style=flat-square" alt="XDA-Developers"></a>
   <a href="https://www.howtogeek.com/free-your-bambu-lab-3d-printer-from-the-cloud/"><img src="https://img.shields.io/badge/How--To%20Geek-Read-33A6CA?style=flat-square" alt="How-To Geek"></a>
   <a href="https://www.makeuseof.com/free-browser-tool-beats-bambu-lab-at-own-game/"><img src="https://img.shields.io/badge/MakeUseOf-Read-E02D2D?style=flat-square" alt="MakeUseOf"></a>
-  <a href="https://www.fabbaloo.com/news/bambuddy-launches-as-open-source-alternative-to-bambu-labs-cloud"><img src="https://img.shields.io/badge/Fabbaloo-Read-F77B0F?style=flat-square" alt="Fabbaloo"></a>
-  <a href="https://itsfoss.com/news/bambuddy-self-hosted-bambu-lab-alternative/"><img src="https://img.shields.io/badge/It's%20FOSS-Read-00B5AD?style=flat-square" alt="It's FOSS"></a>
-  <a href="https://www.igorslab.de/en/bambuddy-the-silent-alternative-to-the-bamboo-cloud/"><img src="https://img.shields.io/badge/Igor's%20Lab-Read-E10000?style=flat-square" alt="Igor's Lab"></a>
+  <a href="https://www.fabbaloo.com/news/fenrir-launches-as-open-source-alternative-to-bambu-labs-cloud"><img src="https://img.shields.io/badge/Fabbaloo-Read-F77B0F?style=flat-square" alt="Fabbaloo"></a>
+  <a href="https://itsfoss.com/news/fenrir-self-hosted-bambu-lab-alternative/"><img src="https://img.shields.io/badge/It's%20FOSS-Read-00B5AD?style=flat-square" alt="It's FOSS"></a>
+  <a href="https://www.igorslab.de/en/fenrir-the-silent-alternative-to-the-bamboo-cloud/"><img src="https://img.shields.io/badge/Igor's%20Lab-Read-E10000?style=flat-square" alt="Igor's Lab"></a>
   <a href="https://3druck.com/en/programs/bambuddy-open-source-tool-replaces-bambu-cloud-for-management-and-automation-of-3d-print-jobs-38153226/"><img src="https://img.shields.io/badge/3Druck-Read-0080C0?style=flat-square" alt="3Druck"></a>
-  <a href="https://www.fastblinker.com/bambuddy-the-open-source-solution-thats-revolutionizing-bambu-lab-3d-printer-management/"><img src="https://img.shields.io/badge/FastBlinker-Read-00B0FF?style=flat-square" alt="FastBlinker"></a>
+  <a href="https://www.fastblinker.com/fenrir-the-open-source-solution-thats-revolutionizing-bambu-lab-3d-printer-management/"><img src="https://img.shields.io/badge/FastBlinker-Read-00B0FF?style=flat-square" alt="FastBlinker"></a>
   <a href="https://3dbite.com/bambuddy-deep-dive-self-hosted-bambu-dashboard/"><img src="https://img.shields.io/badge/3DBite-Read-046BD2?style=flat-square" alt="3DBite"></a>
 </p>
 
-Two leading 3D-printing publications independently concluded that Bambuddy's feature set **already exceeds Bambu's own cloud**:
+Two leading 3D-printing publications independently concluded that Fenrir's feature set **already exceeds Bambu's own cloud**:
 
-> *"The features seem to exceed those provided by Bambu Lab's own cloud."* — [Fabbaloo](https://www.fabbaloo.com/news/bambuddy-launches-as-open-source-alternative-to-bambu-labs-cloud)
+> *"The features seem to exceed those provided by Bambu Lab's own cloud."* — [Fabbaloo](https://www.fabbaloo.com/news/fenrir-launches-as-open-source-alternative-to-bambu-labs-cloud)
 >
 > *"The list of functions seems so extensive that it even goes beyond what Bambu Lab offers in its own cloud."* — [3Druck.com](https://3druck.com/en/programs/bambuddy-open-source-tool-replaces-bambu-cloud-for-management-and-automation-of-3d-print-jobs-38153226/)
 
@@ -95,11 +95,11 @@ Two leading 3D-printing publications independently concluded that Bambuddy's fea
   <img src="docs/images/proxy-mode-diagram.png" alt="Proxy Mode Architecture" width="800">
 </p>
 
-**Print from anywhere in the world** — Bambuddy's new Proxy Mode acts as a secure relay between your slicer and printer:
+**Print from anywhere in the world** — Fenrir's new Proxy Mode acts as a secure relay between your slicer and printer:
 
 - 🔒 **End-to-end TLS encryption** — FTP, file transfer, and camera are transparently proxied with the printer's real TLS certificate
-- 🛡️ **Optional Tailscale integration** — per-VP toggle + Docker socket mount surface the host's Tailscale IP on the VP card, so you know which `100.x.x.x` to paste into the slicer when you want a virtual printer reachable over your tailnet ([setup](https://wiki.bambuddy.cool/features/virtual-printer/)). Bambuddy's self-signed CA import is still required on the slicer side: Bambu Studio / OrcaSlicer validate printer TLS against a bundled BBL CA (not the system trust store), **and** their Add Printer dialog is IP-only (no hostname to match an LE cert against), so a publicly-trusted cert can't help on either dimension. Tailscale's role is the private tunnel (reachability from anywhere, no port forwarding), not cert-import elimination.
-- 🌍 **No cloud dependency** — Direct connection through your own Bambuddy server
+- 🛡️ **Optional Tailscale integration** — per-VP toggle + Docker socket mount surface the host's Tailscale IP on the VP card, so you know which `100.x.x.x` to paste into the slicer when you want a virtual printer reachable over your tailnet ([setup](https://wiki.bambuddy.cool/features/virtual-printer/)). Fenrir's self-signed CA import is still required on the slicer side: Bambu Studio / OrcaSlicer validate printer TLS against a bundled BBL CA (not the system trust store), **and** their Add Printer dialog is IP-only (no hostname to match an LE cert against), so a publicly-trusted cert can't help on either dimension. Tailscale's role is the private tunnel (reachability from anywhere, no port forwarding), not cert-import elimination.
+- 🌍 **No cloud dependency** — Direct connection through your own Fenrir server
 - 🔑 **Uses printer's access code** — No additional credentials needed
 - ⚡ **Full-speed printing** — Transparent TCP proxy, only MQTT is decrypted for IP rewriting
 
@@ -111,16 +111,16 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ## 🍰 NEW: Integrated Slicing — Slice & Print, All In One Place
 
-**No desktop slicer required.** Drop an STL or 3MF into Bambuddy's File Manager, hit **Slice**, and the result lands as a ready-to-print `.gcode.3mf` in the same folder — without ever opening Bambu Studio or Orca Slicer.
+**No desktop slicer required.** Drop an STL or 3MF into Fenrir's File Manager, hit **Slice**, and the result lands as a ready-to-print `.gcode.3mf` in the same folder — without ever opening Bambu Studio or Orca Slicer.
 
 - 🍰 **One-click slicing** — Slice from any browser. The job runs server-side in a [tiny sidecar container](slicer-api/README.md), progress streams back as a toast, and the sliced file appears in your library when it's done.
-- 📱 **Slice from your phone or tablet** — Bambuddy's PWA + the new server-side slicer means you can drop an STL in from mobile and queue a print without ever touching a desktop.
+- 📱 **Slice from your phone or tablet** — Fenrir's PWA + the new server-side slicer means you can drop an STL in from mobile and queue a print without ever touching a desktop.
 - 🎒 **Bring your own profiles** — Import a `Printer Preset Bundle` (`.bbscfg`) exported from Bambu Studio: pick a curated **printer + process + filament** triplet from a dropdown in the Slice dialog, no more juggling JSON files.
-- 🔄 **Re-slice for a different printer in one click** — Open any sliced archive in Bambuddy and re-slice it for any printer, including across the single-nozzle ↔ dual-nozzle (H2D / H2D Pro) boundary that BambuStudio's CLI would normally reject. Bambuddy detects the class change and auto-arranges objects laid out for the source bed (e.g. X1C 256×256) so they land safely on the target (e.g. H2D 350×320 with its per-nozzle dead zones).
+- 🔄 **Re-slice for a different printer in one click** — Open any sliced archive in Fenrir and re-slice it for any printer, including across the single-nozzle ↔ dual-nozzle (H2D / H2D Pro) boundary that BambuStudio's CLI would normally reject. Fenrir detects the class change and auto-arranges objects laid out for the source bed (e.g. X1C 256×256) so they land safely on the target (e.g. H2D 350×320 with its per-nozzle dead zones).
 - 🍱 **Slice all plates at once** — Multi-plate projects (parted statues, multi-part kits) get a "Slice all N plates" toggle in the Slice dialog. One click produces a single `.gcode.3mf` containing every plate's gcode, ready for the printer. The toast shows "Plate 2 of 5 — Generating G-code (47%)" as the loop runs.
-- 🔁 **Same dispatch as the rest of Bambuddy** — The sliced output flows into the existing queue / plate-picker / AMS-mapping path, so all the regular conveniences (multi-printer dispatch, AMS routing, scheduled prints) just work.
+- 🔁 **Same dispatch as the rest of Fenrir** — The sliced output flows into the existing queue / plate-picker / AMS-mapping path, so all the regular conveniences (multi-printer dispatch, AMS routing, scheduled prints) just work.
 
-Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/README.md) next to your Bambuddy install and the **Slice** button lights up everywhere.
+Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/README.md) next to your Fenrir install and the **Slice** button lights up everywhere.
 
 👉 **[Slicer Integration Guide →](https://wiki.bambuddy.cool/features/slicer-api/)**
 
@@ -140,7 +140,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ---
 
-## Why Bambuddy?
+## Why Fenrir?
 
 - **Own your data** — All print history stored locally, no cloud dependency
 - **Works offline** — Uses Developer Mode for direct printer control via local network
@@ -171,7 +171,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
 - **Print progress in the browser tab** — optional (off by default, toggle under Settings → Appearance): shows the soonest-finishing print's percentage in the tab title and a progress-ring favicon in your theme accent colour
-- Live camera streaming (MJPEG) & snapshots with multi-viewer support — most Bambu printers only allow one upstream connection, so Bambuddy fans out a single shared stream to all browser tabs / cards / overlays
+- Live camera streaming (MJPEG) & snapshots with multi-viewer support — most Bambu printers only allow one upstream connection, so Fenrir fans out a single shared stream to all browser tabs / cards / overlays
 - **Cam Wall view** — Toggle the Printers page from cards into a responsive grid of camera tiles for at-a-glance monitoring across the whole farm. On-screen tiles stream live up to a configurable cap (default 4) so RPi installs stay sustainable; the rest fall back to periodic snapshot polling, and off-screen tiles pause entirely. Per-user settings (live cap, snapshot interval); click any tile to open the floating viewer or the dedicated camera window depending on your existing camera-view preference
 - **Long-lived camera tokens** for Home Assistant / Frigate / kiosks — mint a token from Settings → API Keys, paste it once, capped at 365 days, revocable at any time (no infinite tokens — leaked permanent tokens are unsafe by design)
 - **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`), configurable FPS (`?fps=30`), status-only mode (`?camera=false`)
@@ -181,14 +181,14 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Printer control (stop, pause, resume, chamber light, print speed, **airduct mode** for P2S/H2*, **temperature setpoints** for nozzle / bed / **chamber heater** on H2C/H2D/H2DPro/H2S/X2D, **Z-jog / XY-jog / extruder jog**, customizable temperature & fan presets under Settings → Workflow)
 - **Status badges on printer card**: SD Card (green / red), Enclosure Door (green / yellow — X1/P1S/P2S/H2*), Airduct Mode (cooling / heating)
 - **Force Refresh** menu item — request a full status push from the printer without reconnecting
-- **Maintenance Mode** — put a printer "out of service" without removing it. Toggle from the card's three-dot menu, the in-card amber banner, or the Edit Printer dialog; the printer disconnects MQTT, drops out of queue dispatch, the scheduler, model-based filament lookups, metrics, and notifications until you take it out again. The card stays visible (amber wrench banner + Exit button) so the printer never disappears from your dashboard. Useful for parallel Bambuddy installs sharing the same hardware, printers under repair or awaiting parts, and temporary suspension.
+- **Maintenance Mode** — put a printer "out of service" without removing it. Toggle from the card's three-dot menu, the in-card amber banner, or the Edit Printer dialog; the printer disconnects MQTT, drops out of queue dispatch, the scheduler, model-based filament lookups, metrics, and notifications until you take it out again. The card stays visible (amber wrench banner + Exit button) so the printer never disappears from your dashboard. Useful for parallel Fenrir installs sharing the same hardware, printers under repair or awaiting parts, and temporary suspension.
 - Bulk printer actions (multi-select cards, then stop/pause/resume/clear all — select by state or location)
 - Printer search and filters — live search by name/model/location/serial plus status and location dropdown filters (WebSocket-reactive, mobile-friendly)
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
 - **AMS slot Load / Unload from the printer card** — Hover any AMS slot or external spool, click the menu button, and load that tray or unload the currently-loaded one without going to the touchscreen; supports dual-extruder H2D (Ext-L / Ext-R drive their own nozzle)
-- **AMS Filament Backup status + control with pair view** — Mirrors BambuStudio's per-printer "AMS Filament Backup" auto-switch (when a spool runs out, the printer rolls over to a same-preset, same-colour spool in another slot). A small badge in the Filaments section header on each printer card shows the live state (blue circular-arrow icon = ON, dim = OFF, "?" = A1 family with no `cfg` field yet); click to open the AMS Filament Backup modal — a BambuStudio Auto Refill-style ring graphic per backup pair, with the filament colour as the ring fill and member slot labels (e.g. `A·1`, `B·3`) on contrast-aware pills around the band. Dual-extruder printers (H2D / H2C / X2D) carry an `R` / `L` badge per ring because the firmware can't cross extruders. State syncs in real time whether you toggled from Bambuddy, BambuStudio, or the printer's touchscreen. Bambuddy's "insufficient filament" check is **backup-aware**: when Backup is ON, the deficit check pools remaining grams across same-`(preset, colour)` spools on the printer, so the warning doesn't fire spuriously when the firmware will swap to a peer mid-print (#1762). Bambuddy's **Prefer Lowest Remaining Filament** sort also respects the toggle — when Backup is OFF the dispatcher skips the prefer-lowest sort entirely so it won't reach for a near-empty spool the printer can't roll off of.
+- **AMS Filament Backup status + control with pair view** — Mirrors BambuStudio's per-printer "AMS Filament Backup" auto-switch (when a spool runs out, the printer rolls over to a same-preset, same-colour spool in another slot). A small badge in the Filaments section header on each printer card shows the live state (blue circular-arrow icon = ON, dim = OFF, "?" = A1 family with no `cfg` field yet); click to open the AMS Filament Backup modal — a BambuStudio Auto Refill-style ring graphic per backup pair, with the filament colour as the ring fill and member slot labels (e.g. `A·1`, `B·3`) on contrast-aware pills around the band. Dual-extruder printers (H2D / H2C / X2D) carry an `R` / `L` badge per ring because the firmware can't cross extruders. State syncs in real time whether you toggled from Fenrir, BambuStudio, or the printer's touchscreen. Fenrir's "insufficient filament" check is **backup-aware**: when Backup is ON, the deficit check pools remaining grams across same-`(preset, colour)` spools on the printer, so the warning doesn't fire spuriously when the firmware will swap to a peer mid-print (#1762). Fenrir's **Prefer Lowest Remaining Filament** sort also respects the toggle — when Backup is OFF the dispatcher skips the prefer-lowest sort entirely so it won't reach for a near-empty spool the printer can't roll off of.
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets, optional spool rotation; automatic PSU detection and HMS power error reporting. Rotate-spool toggle is disabled per-AMS when any tray has filament threaded into the feed tube (the AMS mechanism is locked there — rotating would jam the filament)
@@ -199,7 +199,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Per-filament humidity threshold** — Set a different humidity trigger per filament type (e.g. Nylon at 20%, PLA at 60%, ASA at 30%) instead of one global value. Mixed-material AMS units use the most-restrictive threshold across the loaded spools so a single PLA + Nylon unit triggers at Nylon's level. Drives both the auto-drying scheduler and the hourly humidity alarm so the two can never disagree on whether a unit is "too humid"
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - **HMS error monitoring with one-click actions** — Live HMS error log with history and the same Resume / Stop / Continue / Retry / Check Assistant / Don't Remind Me action buttons BambuStudio shows. Click and the matching MQTT command goes back to the printer — no more walking to the device just to dismiss a paused-print dialog. Catalog covers every Bambu model (X1 / P1 / A1 / H2 series); buttons are translated in all 13 supported locales
-- **Heater history charts** — Bambuddy logs nozzle, bed, and chamber readings every minute and surfaces them via a tiny chart icon on each heater tile in the printer card. Click for a per-heater modal with current / average / min / max stats, target overlay, and a 6h / 24h / 48h / 7d time range — works on read-only chamber sensors (X1C / P2S) too. AMS humidity and temperature get the same treatment (already shipped).
+- **Heater history charts** — Fenrir logs nozzle, bed, and chamber readings every minute and surfaces them via a tiny chart icon on each heater tile in the printer card. Click for a per-heater modal with current / average / min / max stats, target overlay, and a 6h / 24h / 48h / 7d time range — works on read-only chamber sensors (X1C / P2S) too. AMS humidity and temperature get the same treatment (already shipped).
 - Print success rates & trends
 - Filament usage tracking
 - Cost analytics & failure analysis
@@ -208,7 +208,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - CSV/Excel export
 
 ### ⏰ Scheduling & Automation
-- **Unified dispatch through the queue** — Every print Bambuddy starts (File Manager, archive reprint, printer-card upload-and-print, scheduled queue items) flows through the same queue scheduler, so each print is visible on the queue page, attributable to the user that started it, deficit-checked, and cancellable from one place. FTP uploads and print-start commands run in the background with real-time WebSocket progress toasts (per-job upload bars, status badges, cancel button). Installations with custom groups or API keys: the immediate-print actions now require the `queue:create` permission alongside the existing `printers:control` — see [the permissions guide](https://wiki.bambuddy.cool/admin/permissions/) if you've granted control without queue-create
+- **Unified dispatch through the queue** — Every print Fenrir starts (File Manager, archive reprint, printer-card upload-and-print, scheduled queue items) flows through the same queue scheduler, so each print is visible on the queue page, attributable to the user that started it, deficit-checked, and cancellable from one place. FTP uploads and print-start commands run in the background with real-time WebSocket progress toasts (per-job upload bars, status badges, cancel button). Installations with custom groups or API keys: the immediate-print actions now require the `queue:create` permission alongside the existing `printers:control` — see [the permissions guide](https://wiki.bambuddy.cool/admin/permissions/) if you've granted control without queue-create
 - Print queue with three tabs (Queue / History / Timeline), multi-select drag-and-drop, batch grouping, and a Gantt-style timeline
 - Multi-printer selection (send to multiple printers at once)
 - Batch grouping — multi-plate prints auto-group into a collapsible row; any 2+ selected items can be grouped manually via "Group as batch", with ungroup on the batch parent
@@ -237,7 +237,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ### 📁 File Manager (Library)
 - Upload and organize sliced files (3MF, gcode, STL)
-- **External folder mounting** - Mount host directories (NAS, USB, network shares) without copying files. Operator-controlled via the `BAMBUDDY_EXTERNAL_ROOTS` env var (colon-separated allowlist of host paths users are permitted to register; empty by default to disable the feature). See [Docker → External library folders](https://wiki.bambuddy.cool/getting-started/docker/#external-library-folders-bambuddy_external_roots).
+- **External folder mounting** - Mount host directories (NAS, USB, network shares) without copying files. Operator-controlled via the `FENRIR_EXTERNAL_ROOTS` env var (colon-separated allowlist of host paths users are permitted to register; empty by default to disable the feature). See [Docker → External library folders](https://wiki.bambuddy.cool/getting-started/docker/#external-library-folders-fenrir_external_roots).
 - **STL thumbnail generation** - Auto-generate previews for STL files on upload or batch generate for existing files
 - ZIP file extraction with folder structure preservation
 - Option to create folder from ZIP filename
@@ -251,7 +251,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Server-side Slice button** (optional) — slice STL/3MF without a desktop slicer when the [`slicer-api/` Compose stack](slicer-api/README.md) is running; the result lands as a new `.gcode.3mf` in the same folder, with progress shown via a toast tracker that follows the job to completion. Supports importing **Bambu Studio Printer Preset Bundles** (`.bbscfg`) so a curated printer + process + filament triplet can be picked in the Slice dialog without re-uploading JSON profiles ([details](https://wiki.bambuddy.cool/features/slicer-api/#slicer-bundles-bbscfg))
 
 ### 🌍 MakerWorld Integration
-- Paste any `makerworld.com/models/…` URL → preview, plate picker, and import without leaving Bambuddy
+- Paste any `makerworld.com/models/…` URL → preview, plate picker, and import without leaving Fenrir
 - Per-plate **Save** or **Save & Slice in Bambu Studio / OrcaSlicer** (your preferred slicer from Settings)
 - **Import all plates** button for multi-plate models
 - Auto-creates a "MakerWorld" folder in File Manager; override with any existing folder via the picker
@@ -298,14 +298,14 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Bulk spool addition** — Add multiple identical spools at once (quantity 1–100) with a single form submission. Quick Add mode for stock spools that only need material, color, and weight.
 - Spool catalog, color catalog, PA profile matching, and low-stock alerts
 - **Multi-colour gradients, transparency, and visual effects** — Paste a comma-separated hex list (e.g. from 3dfilamentprofiles.com) to render a spool as a gradient or conic colour wheel; transparency shows through a checkerboard so the alpha you set is the alpha you see; pick a visual effect (sparkle, wood, marble, glow, matte) for the swatch overlay. Same fields are editable on the colour catalog so combos can be reused across spools.
-- **Printable spool labels** — Generate PDF labels for any selection of spools in four pre-built sizes: AMS holder (30×15 mm), box label (62×29 mm), Avery L7160 sheet (A4, 21 per page), and Avery 5160 sheet (US Letter, 30 per page). Each label shows the colour swatch, brand, material, name, the **spool ID** (for at-a-glance identification across many similar spools), and a QR code that deep-links straight back to the spool's row in Bambuddy when scanned with a phone. Pick from the inventory page — search, filter by material, multi-select spools, then print or save to PDF. For a partially used Avery sheet, choose the first unused label position; Bambuddy leaves the earlier positions blank and starts later pages from position 1.
+- **Printable spool labels** — Generate PDF labels for any selection of spools in four pre-built sizes: AMS holder (30×15 mm), box label (62×29 mm), Avery L7160 sheet (A4, 21 per page), and Avery 5160 sheet (US Letter, 30 per page). Each label shows the colour swatch, brand, material, name, the **spool ID** (for at-a-glance identification across many similar spools), and a QR code that deep-links straight back to the spool's row in Fenrir when scanned with a phone. Pick from the inventory page — search, filter by material, multi-select spools, then print or save to PDF. For a partially used Avery sheet, choose the first unused label position; Fenrir leaves the earlier positions blank and starts later pages from position 1.
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync with per-filament usage tracking and fill level display
 - MQTT publishing for Home Assistant, Node-RED, etc.
 - **Prometheus metrics** - Export printer telemetry for Grafana dashboards
 - Bambu Cloud profile management
-- **Orca Cloud profile sync** — read your OrcaSlicer 2.4.0+ cloud-synced profiles directly in Bambuddy, usable for slicing alongside Bambu Cloud / local / standard presets. Four sign-in providers (Google / Apple / GitHub / email+password)
+- **Orca Cloud profile sync** — read your OrcaSlicer 2.4.0+ cloud-synced profiles directly in Fenrir, usable for slicing alongside Bambu Cloud / local / standard presets. Four sign-in providers (Google / Apple / GitHub / email+password)
 - **Local Profiles** - Import OrcaSlicer presets (`.orca_filament`, `.bbscfg`, `.bbsflmt`, `.zip`, `.json`) without Bambu Cloud
 - K-profiles (pressure advance)
 - **GitHub backup** - Schedule automatic backups of cloud profiles, k profiles and settings to GitHub
@@ -318,7 +318,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ### 🖨️ Virtual Printer & Remote Printing
 - **🌐 Proxy Mode** — Print remotely from anywhere via secure TLS relay
-- **🪞 Live target-printer mirror in non-proxy modes (NEW!)** — Immediate / Review / Queue VPs now mirror their target printer's live state to the slicer: AMS slot contents, FTS / dual-extruder routing, k-profiles, AMS load / dry / calibration commands, and the camera stream all flow through the VP. Use the slicer as a full remote for the printer behind the VP without giving up Bambuddy's queue / archive / dispatch features.
+- **🪞 Live target-printer mirror in non-proxy modes (NEW!)** — Immediate / Review / Queue VPs now mirror their target printer's live state to the slicer: AMS slot contents, FTS / dual-extruder routing, k-profiles, AMS load / dry / calibration commands, and the camera stream all flow through the VP. Use the slicer as a full remote for the printer behind the VP without giving up Fenrir's queue / archive / dispatch features.
 - Emulates a Bambu Lab printer on your network
 - Send prints directly from Bambu Studio/Orca Slicer
 - Configurable printer model (X1C, P1S, A1, H2D, etc.)
@@ -353,7 +353,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Users can reset their own password from the login screen (no admin needed)
 - Customizable email templates (welcome email, password reset)
 - **Two-Factor Authentication (TOTP + Email OTP)** — Per-user opt-in 2FA compatible with Google Authenticator, Authy, 2FAS and any standard TOTP app, or a 6-digit code delivered by email. Each user gets 10 single-use backup codes. Brute-force-protected (per-user + per-IP rate limits), replay-protected (same code cannot be accepted twice in the same 30 s window), and the pre-auth token is a single-use DB-backed challenge bound to the browser session via an HttpOnly cookie.
-- **Single Sign-On (OIDC / SSO)** — Log in via PocketID, Authentik, Keycloak, or any standards-compliant OIDC provider. PKCE (S256) for public clients, `email_verified` gating, issuer & `aud`/`nonce` validation, opt-in account linking via verified email, optional auto-provisioning of new BamBuddy accounts, and strict SSRF hardening on every URL pulled from the OIDC discovery document (scheme + private/loopback/link-local IP checks).
+- **Single Sign-On (OIDC / SSO)** — Log in via PocketID, Authentik, Keycloak, or any standards-compliant OIDC provider. PKCE (S256) for public clients, `email_verified` gating, issuer & `aud`/`nonce` validation, opt-in account linking via verified email, optional auto-provisioning of new Fenrir accounts, and strict SSRF hardening on every URL pulled from the OIDC discovery document (scheme + private/loopback/link-local IP checks).
 - **Per-user email notifications** — Users receive email alerts for their own print jobs (start, complete, failed, stopped) with individual toggle controls
 
 </td>
@@ -371,7 +371,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
     <img src="https://img.shields.io/badge/🎮_Try_It_Live-demo.bambuddy.cool-00ae42?style=for-the-badge&labelColor=0a0d14" alt="Live Demo">
   </a>
   <br>
-  <em>Spin up your own private Bambuddy with simulated printers and pre-loaded print history. Click around freely — it's your sandbox. ~10 seconds to spawn, 30-minute session, no signup.</em>
+  <em>Spin up your own private Fenrir with simulated printers and pre-loaded print history. Click around freely — it's your sandbox. ~10 seconds to spawn, 30-minute session, no signup.</em>
 </p>
 
 <p align="center">
@@ -380,7 +380,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 <p align="center">
   <a href="https://youtu.be/bmq2Z0lEXeo">
-    <img src="https://img.youtube.com/vi/bmq2Z0lEXeo/maxresdefault.jpg" alt="Bambuddy Demo Video" width="800">
+    <img src="https://img.youtube.com/vi/bmq2Z0lEXeo/maxresdefault.jpg" alt="Fenrir Demo Video" width="800">
   </a>
   <br><em>Click to watch the demo on YouTube</em>
 </p>
@@ -530,13 +530,13 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 #### Windows (Native Installer)
 
-Self-contained `.exe` — no Python, Node, Docker, or Git required on the target machine. The installer bundles Python 3.13, the React frontend, ffmpeg, and registers Bambuddy as a Windows service.
+Self-contained `.exe` — no Python, Node, Docker, or Git required on the target machine. The installer bundles Python 3.13, the React frontend, ffmpeg, and registers Fenrir as a Windows service.
 
 Download the latest installer:
 
 > https://github.com/maziggy/bambuddy/releases/latest/download/bambuddy-windows-x64-setup.exe
 
-Run it (one-time UAC prompt — admin install) → Bambuddy starts as a Windows service and the dashboard opens at **http://localhost:8000** automatically. Data lives at `C:\ProgramData\Bambuddy\`, install at `C:\Program Files\Bambuddy\`. To update, just run a newer installer over the existing install — your database and archives are preserved.
+Run it (one-time UAC prompt — admin install) → Fenrir starts as a Windows service and the dashboard opens at **http://localhost:8000** automatically. Data lives at `C:\ProgramData\Fenrir\`, install at `C:\Program Files\Fenrir\`. To update, just run a newer installer over the existing install — your database and archives are preserved.
 
 > **SmartScreen warning:** until our SignPath OSS code-signing approval lands, you'll see "Windows protected your PC" on first run. Click **More info → Run anyway**.
 
@@ -546,7 +546,7 @@ See the [Windows Installer Guide](https://wiki.bambuddy.cool/getting-started/win
 
 **Option A: Pre-built image (fastest)**
 ```bash
-mkdir bambuddy && cd bambuddy
+mkdir fenrir && cd fenrir
 curl -O https://raw.githubusercontent.com/maziggy/bambuddy/main/docker-compose.yml
 docker compose up -d
 ```
@@ -554,7 +554,7 @@ docker compose up -d
 **Option B: Build from source**
 ```bash
 git clone https://github.com/maziggy/bambuddy.git
-cd bambuddy
+cd fenrir
 docker compose up -d --build
 ```
 
@@ -574,7 +574,7 @@ Open **http://localhost:8000** in your browser.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TZ` | `UTC` | Your timezone (e.g., `America/New_York`, `Europe/Berlin`) |
-| `PORT` | `8000` | Port BamBuddy runs on (with host networking mode) |
+| `PORT` | `8000` | Port Fenrir runs on (with host networking mode) |
 | `DEBUG` | `false` | Enable debug logging |
 | `LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
@@ -593,7 +593,7 @@ Open **http://localhost:8000** in your browser.
 docker compose pull && docker compose up -d
 
 # From source: rebuild after pulling changes
-cd bambuddy && git pull && docker compose up -d --build
+cd fenrir && git pull && docker compose up -d --build
 ```
 
 **Daily Beta Builds:**
@@ -622,7 +622,7 @@ docker compose down
 docker compose up -d
 
 # Shell access
-docker compose exec bambuddy /bin/bash
+docker compose exec fenrir /bin/bash
 ```
 
 **Custom Port:**
@@ -637,7 +637,7 @@ ports:
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name bambuddy.yourdomain.com;
+    server_name fenrir.yourdomain.com;
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
@@ -662,12 +662,12 @@ server {
 
 ```yaml
 services:
-  bambuddy:
+  fenrir:
     build: .
     network_mode: host
 ```
 
-> **Note:** Docker's default bridge networking cannot receive SSDP multicast packets for automatic printer discovery. When using `network_mode: host`, Bambuddy auto-detects your network subnet and can discover printers via subnet scanning in the Add Printer dialog.
+> **Note:** Docker's default bridge networking cannot receive SSDP multicast packets for automatic printer discovery. When using `network_mode: host`, Fenrir auto-detects your network subnet and can discover printers via subnet scanning in the Add Printer dialog.
 
 </details>
 
@@ -676,7 +676,7 @@ services:
 ```bash
 # Clone and setup
 git clone https://github.com/maziggy/bambuddy.git
-cd bambuddy
+cd fenrir
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -697,11 +697,11 @@ Windows PowerShell (run as Administrator — the installer self-elevates via UAC
 powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-installer.ps1 -OutFile windows-installer.ps1; .\windows-installer.ps1"
 ```
 
-> Installs Bambuddy natively on Windows using Git, Python, a virtual environment, separate data/log directories, and optional NSSM Windows Service registration. See the [Windows Installer Guide](http://wiki.bambuddy.cool/getting-started/windows-installer/) for parameters and unattended-install options.
+> Installs Fenrir natively on Windows using Git, Python, a virtual environment, separate data/log directories, and optional NSSM Windows Service registration. See the [Windows Installer Guide](http://wiki.bambuddy.cool/getting-started/windows-installer/) for parameters and unattended-install options.
 
 ### Enabling Developer Mode
 
-Developer Mode allows third-party software like Bambuddy to control your printer over the local network.
+Developer Mode allows third-party software like Fenrir to control your printer over the local network.
 
 1. On printer: **Settings** → **Network** → **LAN Only Mode** → Enable
 2. Enable **Developer Mode** (appears after LAN Only Mode is enabled)
@@ -713,7 +713,7 @@ Developer Mode allows third-party software like Bambuddy to control your printer
 
 ### Slicer Settings
 
-In Bambu Studio or OrcaSlicer, enable **"Store sent files on external storage"** so that print files (3MF) are saved to the printer's SD card. Bambuddy needs these files to extract thumbnails and 3D model previews.
+In Bambu Studio or OrcaSlicer, enable **"Store sent files on external storage"** so that print files (3MF) are saved to the printer's SD card. Fenrir needs these files to extract thumbnails and 3D model previews.
 
 1. Open **Bambu Studio** or **OrcaSlicer**
 2. Go to the **Device** tab for your printer
@@ -773,7 +773,7 @@ Not sure where to start? Reach out on [Discord](https://discord.gg/aFS3ZfScHM) o
 
 ### 🔒 Looking for a security-focused contributor
 
-I'm bringing on a contributor whose specific focus is keeping an eye on Bambuddy's security.
+I'm bringing on a contributor whose specific focus is keeping an eye on Fenrir's security.
 
 Concretely:
 
@@ -802,9 +802,9 @@ AGPL-3.0 License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 💖 Support Bambuddy
+## 💖 Support Fenrir
 
-Bambuddy stays independent because real people support it directly. If Bambuddy makes your printers more useful, please consider:
+Fenrir stays independent because real people support it directly. If Fenrir makes your printers more useful, please consider:
 
 - **[GitHub Sponsors](https://github.com/sponsors/maziggy)** — five recurring tiers from $5/mo (Backer) to $300/mo (Corporate). Supporter+ ($15/mo) get access to a private sponsors space with a monthly newsletter and early release notes. Patron+ ($35/mo) vote on the quarterly roadmap. Sustaining Sponsor+ ($150/mo) get a direct async email line for technical questions (~2-3 business days). Corporate ($300/mo) get priority email response (next business day), README header logo, sitewide footer logo on [bambuddy.cool](https://bambuddy.cool), and [Press page](https://bambuddy.cool/press.html) placement.
 - **[Ko-fi](https://ko-fi.com/maziggy)** — one-time tip or recurring.

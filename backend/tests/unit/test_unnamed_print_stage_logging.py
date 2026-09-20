@@ -1,4 +1,4 @@
-"""A print stage Bambuddy cannot name has to leave a trace at the default log level.
+"""A print stage Fenrir cannot name has to leave a trace at the default log level.
 
 ``STAGE_NAMES`` is a hand-maintained table and every new printer adds to it: an
 H2C first print surfaced stage 72, where the table runs 0-66 and then jumps
@@ -78,7 +78,7 @@ class TestQuietWhereItShouldBe:
         assert _stage_records(caplog) == []
 
     def test_idle_is_not_an_unnamed_stage(self, client, caplog):
-        """-1 is Bambuddy's own "not in a stage" sentinel, not a firmware value."""
+        """-1 is Fenrir's own "not in a stage" sentinel, not a firmware value."""
         with caplog.at_level(logging.INFO):
             client._update_state({"stg_cur": 0})
             client._update_state({"stg_cur": -1})

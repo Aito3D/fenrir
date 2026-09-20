@@ -3,7 +3,7 @@
  *
  * The reporter's P1S accepted `ams_filament_drying` with result=success and
  * then never dried. Two gaps: the Start button gave no confirmation at all,
- * and Bambuddy treated the MQTT ack as proof the cycle had begun. These tests
+ * and Fenrir treated the MQTT ack as proof the cycle had begun. These tests
  * cover the toast and the post-ack watcher that catches a printer which takes
  * the command and drops it.
  *

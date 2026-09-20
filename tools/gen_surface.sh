@@ -1,5 +1,5 @@
 set -u
-cd /Users/paultheis/Documents/Code/bambuddy-refactor
+cd /Users/paultheis/Documents/Code/fenrir-refactor
 R1='./venv/bin/python3 -c "from backend.app.main import app; [print(r.path, sorted(r.methods)) for r in sorted(app.routes, key=lambda r: r.path) if hasattr(r, \"methods\") and \"/aito\" in r.path]" 2>/dev/null'
 R2='grep -hoE "^export (const|function|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/utils/aito*.ts frontend/src/hooks/useAito*.ts | sort'
 R3='grep -rhoE --include="*.ts" --include="*.tsx" "^export (default function|function|const|type|interface) [A-Za-z0-9_]+" frontend/src/components/aito frontend/src/pages/AitoPage.tsx | sort | uniq -c | sed "s/^ *//"'

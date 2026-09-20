@@ -119,7 +119,7 @@ class TestWhatMustStillBeAccepted:
 
     def test_nothing_known_accepts_anything(self, tmp_path):
         """The reporter's firmware echoes only the 3MF filename and the print
-        was not one Bambuddy dispatched, so the plate is unknowable. Accepting
+        was not one Fenrir dispatched, so the plate is unknowable. Accepting
         is the pre-existing behaviour and stays -- refusing here would retire
         the fallback recovery this same issue asked for -- but it is logged."""
         donor = _write_3mf(tmp_path / "donor.3mf", plate=7, filaments=4)

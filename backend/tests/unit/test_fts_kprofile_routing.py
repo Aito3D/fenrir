@@ -1,7 +1,7 @@
 """K-profiles follow an AMS when it moves between Filament Track Switch inlets.
 
 Measured on the maintainer's H2C, 2026-08-16. Spool 75, "HF Bambu PLA Matte
-Black", is calibrated on both hotends and Bambuddy stores both:
+Black", is calibrated on both hotends and Fenrir stores both:
 
     extruder 1 (left)   K 0.018   cali_idx 16
     extruder 0 (right)  K 0.020   cali_idx 15

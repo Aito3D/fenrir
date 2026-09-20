@@ -210,7 +210,7 @@ export function matchCalculatorFilament(
 
 /** Match an archive's printer against the calculator's printer profiles by
  *  case-insensitive containment in either direction, trying each hint in
- *  order (typically the Bambuddy printer name, then the model the file was
+ *  order (typically the Fenrir printer name, then the model the file was
  *  sliced for). Falls back to the first profile with matched=false. */
 export function matchCalculatorPrinter(
   hints: Array<string | null | undefined>,

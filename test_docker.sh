@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Docker Test Suite for BamBuddy
+# Docker Test Suite for Fenrir
 # Runs build verification, unit tests, and integration tests in Docker
 #
 
@@ -129,7 +129,7 @@ if [ "$FRESH_BUILD" = true ]; then
     print_info "Fresh build enabled (--no-cache)"
 fi
 
-print_header "BamBuddy Docker Test Suite"
+print_header "Fenrir Docker Test Suite"
 
 # ============================================
 # Pre-build: Build all test images in parallel
@@ -165,18 +165,18 @@ if [ "$RUN_BUILD" = true ]; then
     print_header "Test 1: Docker Build (Production)"
     print_info "Building production Docker image..."
 
-    if sudo docker build -t bambuddy:test . $CACHE_FLAG --progress=plain; then
+    if sudo docker build -t fenrir:test . $CACHE_FLAG --progress=plain; then
         print_success "Production image builds successfully"
 
         # Verify image has expected labels/structure
         print_info "Verifying image structure..."
-        if sudo docker run --rm bambuddy:test python -c "import backend.app.main; print('Backend imports OK')"; then
+        if sudo docker run --rm fenrir:test python -c "import backend.app.main; print('Backend imports OK')"; then
             print_success "Backend module imports correctly"
         else
             print_failure "Backend module import failed"
         fi
 
-        if sudo docker run --rm bambuddy:test test -d /app/static; then
+        if sudo docker run --rm fenrir:test test -d /app/static; then
             print_success "Static files directory exists"
         else
             print_failure "Static files directory missing"
@@ -272,7 +272,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         # same image via the backend-test service; the runner that used to sit
         # at this point ran a strict subset of it in an identical container
         # and, despite the name, never talked to the application container it
-        # waited for -- nothing reads the BAMBUDDY_TEST_URL it was given. The
+        # waited for -- nothing reads the FENRIR_TEST_URL it was given. The
         # checks above are what exercise the running image.
     fi
 

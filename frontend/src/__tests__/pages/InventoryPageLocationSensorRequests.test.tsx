@@ -97,7 +97,7 @@ const mockReading = {
   show_on_card: true,
 };
 
-const COLUMN_CONFIG_KEY = 'bambuddy-inventory-columns';
+const COLUMN_CONFIG_KEY = 'fenrir-inventory-columns';
 
 describe('InventoryPage - location sensor readings request count', () => {
   let readingsRequestCount: number;

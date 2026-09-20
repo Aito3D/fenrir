@@ -175,7 +175,7 @@
    "capture_finish_photo": {
     "constraints": [],
     "default": "True",
-    "description": "Capture photo from printer camera when print completes. Bambuddy records a brief timelapse during the print so the photo can be sourced from the moment before the bed drops; the timelapse file is kept if you enabled timelapse for this print, otherwise it is deleted automatically after the photo is captured.",
+    "description": "Capture photo from printer camera when print completes. Fenrir records a brief timelapse during the print so the photo can be sourced from the moment before the bed drops; the timelapse file is kept if you enabled timelapse for this print, otherwise it is deleted automatically after the photo is captured.",
     "required": false,
     "type": "<class 'bool'>"
    },
@@ -349,7 +349,7 @@
    "external_url": {
     "constraints": [],
     "default": "''",
-    "description": "External URL where Bambuddy is accessible (for notification images)",
+    "description": "External URL where Fenrir is accessible (for notification images)",
     "required": false,
     "type": "<class 'str'>"
    },
@@ -380,7 +380,7 @@
    "finish_photo_restore_plate": {
     "constraints": [],
     "default": "True",
-    "description": "Raise the build plate back into camera framing before taking the finish photo. Bambu's end G-code drops the plate ~100mm as the last thing it does, leaving the finished print far below the camera's natural framing. Bambuddy moves it back to just above the last printed layer, takes the photo, then lowers it again. Skipped when the print height is unknown or another job is queued for the printer.",
+    "description": "Raise the build plate back into camera framing before taking the finish photo. Bambu's end G-code drops the plate ~100mm as the last thing it does, leaving the finished print far below the camera's natural framing. Fenrir moves it back to just above the last printed layer, takes the photo, then lowers it again. Skipped when the print height is unknown or another job is queued for the printer.",
     "required": false,
     "type": "<class 'bool'>"
    },
@@ -501,7 +501,7 @@
    "ldap_auto_provision": {
     "constraints": [],
     "default": "False",
-    "description": "Auto-create BamBuddy user on first successful LDAP login",
+    "description": "Auto-create Fenrir user on first successful LDAP login",
     "required": false,
     "type": "<class 'bool'>"
    },
@@ -522,7 +522,7 @@
    "ldap_default_group": {
     "constraints": [],
     "default": "''",
-    "description": "Fallback BamBuddy group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
+    "description": "Fallback Fenrir group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
     "required": false,
     "type": "<class 'str'>"
    },
@@ -536,7 +536,7 @@
    "ldap_group_mapping": {
     "constraints": [],
     "default": "''",
-    "description": "JSON: LDAP group to BamBuddy group mapping {ldap_group_dn: bambuddy_group_name}",
+    "description": "JSON: LDAP group to Fenrir group mapping {ldap_group_dn: fenrir_group_name}",
     "required": false,
     "type": "<class 'str'>"
    },
@@ -641,7 +641,7 @@
    "local_login_enabled": {
     "constraints": [],
     "default": "True",
-    "description": "Allow username + password login on /auth/login. Disable when only SSO should be usable. BAMBUDDY_LOCAL_LOGIN=true on the server overrides this to keep a recovery path open.",
+    "description": "Allow username + password login on /auth/login. Disable when only SSO should be usable. FENRIR_LOCAL_LOGIN=true on the server overrides this to keep a recovery path open.",
     "required": false,
     "type": "<class 'bool'>"
    },
@@ -685,7 +685,7 @@
    },
    "mqtt_topic_prefix": {
     "constraints": [],
-    "default": "'bambuddy'",
+    "default": "'fenrir'",
     "description": "Topic prefix for all published messages",
     "required": false,
     "type": "<class 'str'>"
@@ -873,7 +873,7 @@
    "printer_kill_switch_enabled": {
     "constraints": [],
     "default": "False",
-    "description": "Immediately stop printer jobs that start without Bambuddy authorization",
+    "description": "Immediately stop printer jobs that start without Fenrir authorization",
     "required": false,
     "type": "<class 'bool'>"
    },
@@ -952,7 +952,7 @@
      "Le(le=16)"
     ],
     "default": "4",
-    "description": "How many printers the queue may upload to at the same time. Printers are independent machines, so raising this starts a multi-printer batch proportionally sooner; each concurrent upload costs one connection and one thread on the Bambuddy host.",
+    "description": "How many printers the queue may upload to at the same time. Printers are independent machines, so raising this starts a multi-printer batch proportionally sooner; each concurrent upload costs one connection and one thread on the Fenrir host.",
     "required": false,
     "type": "<class 'int'>"
    },
@@ -2450,7 +2450,7 @@
   "mqtt_enabled": false,
   "mqtt_password": "",
   "mqtt_port": 1883,
-  "mqtt_topic_prefix": "bambuddy",
+  "mqtt_topic_prefix": "fenrir",
   "mqtt_use_tls": false,
   "mqtt_username": "",
   "notification_language": "en",

@@ -765,7 +765,7 @@ class TestWatchdogNamesDryingAsTheObstacle:
     whole 3MF each lap, and closed with a message about the SD card — while the
     actual obstacle was on the printer's own screen the whole time.
 
-    Detection only. Bambuddy does not stop the cycle: this hardware supports
+    Detection only. Fenrir does not stop the cycle: this hardware supports
     drying concurrently with an active print, so drying is not incompatible with
     printing, and it is not yet established whether the blocker is the drying or
     the power budget of an AMS drying without its external PSU.

@@ -3,10 +3,10 @@ Orca Cloud API Service
 
 Handles pairing and profile sync with the Orca Cloud external-app surface.
 
-Auth shape: OAuth 2.0 Device Authorization Grant (RFC 8628). Bambuddy is a
+Auth shape: OAuth 2.0 Device Authorization Grant (RFC 8628). Fenrir is a
 public client (``client_id`` only, no secret) — there is no redirect URL, so
 the flow works from a LAN IP, ``localhost``, or behind a reverse proxy. The
-user approves a short ``user_code`` in their Orca Cloud settings; Bambuddy
+user approves a short ``user_code`` in their Orca Cloud settings; Fenrir
 polls the token endpoint until a token pair is issued.
 
     POST /oauth/device/code   -> {device_code, user_code, verification_uri,
@@ -29,7 +29,7 @@ these tokens.
 
 Cloudflare fronts ``api.orcaslicer.com`` and blocks unusual User-Agents
 (``python-urllib`` gets a ``403 "error code: 1010"``); an honest
-``Bambuddy/<version>`` UA clears it. No TLS-fingerprint matching needed.
+``Fenrir/<version>`` UA clears it. No TLS-fingerprint matching needed.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ ORCA_API_BASE = os.environ.get("ORCA_CLOUD_API_BASE", _DEFAULT_API_BASE).rstrip(
 # only for the (unlikely) case of a separate staging registration.
 ORCA_CLIENT_ID = os.environ.get("ORCA_CLOUD_CLIENT_ID", "oc_app_e873d49ce7dbcc7dca8ba386")
 
-# Scope requested at pairing time. Bambuddy currently only READS the user's
+# Scope requested at pairing time. Fenrir currently only READS the user's
 # Orca Cloud profiles (list + view), so we request the minimum — read-only.
 # ``sync:read`` grants pull + versions; bump to ``sync:write`` here if/when a
 # push-to-cloud feature lands (which forces existing users to re-pair, since
@@ -71,9 +71,9 @@ ORCA_CLIENT_ID = os.environ.get("ORCA_CLOUD_CLIENT_ID", "oc_app_e873d49ce7dbcc7d
 ORCA_SCOPE = os.environ.get("ORCA_CLOUD_SCOPE", "sync:read")
 
 # Honest client identity. Same posture as the Bambu Cloud client: identifies
-# Bambuddy without impersonating Orca's desktop client. Also the thing that
+# Fenrir without impersonating Orca's desktop client. Also the thing that
 # clears Cloudflare's User-Agent gate in front of the API.
-_USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+_USER_AGENT = "Fenrir/1.0 (+https://github.com/maziggy/bambuddy)"
 
 # Refresh the access token when it has less than this much life left, so a
 # slow downstream API call doesn't expire the token mid-flight.
@@ -356,7 +356,7 @@ class OrcaCloudService:
     async def introspect(self) -> dict[str, Any]:
         """Return the pairing's introspection record (``user_id``,
         ``client_id``, ``connection_id``, ``scope``, ``expires_at``). Used
-        after pairing to record the user's id for display in Bambuddy's UI."""
+        after pairing to record the user's id for display in Fenrir's UI."""
         url = f"{ORCA_API_BASE}/api/v1/external-apps/me"
         try:
             resp = await self._client.get(url, headers=self._api_headers())

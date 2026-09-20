@@ -50,7 +50,7 @@ def test_printer_recovers_and_queue_can_dispatch_again(registered_client):
     scheduler = PrintScheduler()
     assert scheduler._is_printer_idle(PRINTER_ID, require_plate_clear=False) is True
 
-    # An accessory plug (filter fan) switches off; Bambuddy presumes power loss.
+    # An accessory plug (filter fan) switches off; Fenrir presumes power loss.
     printer_manager.mark_printer_offline(PRINTER_ID)
     assert printer_manager.get_status(PRINTER_ID).state == "unknown"
     assert scheduler._is_printer_idle(PRINTER_ID, require_plate_clear=False) is False

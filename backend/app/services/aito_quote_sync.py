@@ -2307,7 +2307,7 @@ async def run_sync_loop() -> None:
                             logger.warning("Aito invoice sweep deferred (Zoho Books rate limit): %s", e)
                             _arm_rate_limit_throttle(e)
                 # Retention for the tracking-view log: unlike the sweep above,
-                # this has nothing to do with Zoho — a Bambuddy instance can
+                # this has nothing to do with Zoho — a Fenrir instance can
                 # run the public tracking page with only `external_url` set
                 # and no Books connection at all — so it runs every tick,
                 # gated only by its own try/except like the sweep guards each

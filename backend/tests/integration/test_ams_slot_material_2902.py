@@ -3,7 +3,7 @@
 The reporter assigned an eSUN PLA+ spool and the slot came out unusable: any
 plate sliced with a PLA profile refused it. Four routes configure a slot and
 all four wrote the spool's material straight into ``tray_type``, where "PLA+"
-matches nothing -- not the slicer, and not Bambuddy's own dispatch matcher,
+matches nothing -- not the slicer, and not Fenrir's own dispatch matcher,
 which compares the printer's reported ``tray_type`` to the 3MF's declared type
 as plain equality.
 
@@ -710,7 +710,7 @@ class TestAFilledOrFoamedVariantIsATypeOfItsOwn:
     """The first cut of this fix reduced PLA-AERO, PLA-GF, ASA-GF and PPS-GF
     onto their base material, because the reduction table was assembled from
     the cloud filament names and the frontend preset parser and never checked
-    against ``filament_fields.json`` -- the list Bambuddy itself offers when a
+    against ``filament_fields.json`` -- the list Fenrir itself offers when a
     preset is created. @doncaruana caught PLA Aero on the issue.
 
     That is worse than the bug it replaced. "PLA-AERO" matched nothing before,

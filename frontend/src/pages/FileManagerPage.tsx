@@ -1077,7 +1077,7 @@ export function FileManagerPage() {
   // State
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(initialFolderId);
   // Which top-level pseudo-view the sidebar shows when no specific folder is
-  // selected: "internal" = files in Bambuddy's managed storage, "external" =
+  // selected: "internal" = files in Fenrir's managed storage, "external" =
   // combined view across every linked external folder (#1621). Per-folder
   // selection bypasses this (selectedFolderId !== null disables the filter).
   const [topLevelView, setTopLevelView] = useState<'internal' | 'external'>('internal');
@@ -3048,7 +3048,7 @@ export function FileManagerPage() {
           title={viewerFile.print_name || viewerFile.filename}
           fileType={viewerFile.file_type}
           onClose={() => setViewerFile(null)}
-          onSliceWithBambuddy={
+          onSliceWithFenrir={
             // Only offer in-app slicing on files the SliceModal can actually
             // handle (matches the file-row Cog visibility check at :2127).
             isSliceableLibraryFile(viewerFile, true, preferredSlicer) && hasPermission('library:upload')

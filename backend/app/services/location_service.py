@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 DUPLICATE_LOCATION_NAME = "A location with this name already exists"
 
-# AMS residency markers, not storage locations. Bambuddy used to write the slot
+# AMS residency markers, not storage locations. Fenrir used to write the slot
 # a spool was loaded into -- "<printer> - AMS A1", the shape
 # `SpoolmanClient.convert_ams_slot_to_location` still produces -- straight into
 # Spoolman's `location` field. That writer went away when Storage Location
 # became a place the user chooses (#1114), but the strings survive on people's
 # Spoolman spools, and importing them offers a printer slot as somewhere to put
 # a spool away. A slot is where a spool is loaded, not where it is stored, and
-# Bambuddy tracks that separately through slot assignments.
+# Fenrir tracks that separately through slot assignments.
 _AMS_SLOT_LOCATION_RE = re.compile(
     r"^(?:.+\s-\s)?(?:AMS[- ]HT [A-Z]\d+|AMS [A-Z]\d+|External Spool)$",
     re.IGNORECASE,

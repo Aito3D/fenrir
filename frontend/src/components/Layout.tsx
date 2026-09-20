@@ -528,7 +528,7 @@ export function Layout() {
           </button>
           {/* Transparent logo. In dark mode invert luminance so the dark "AITO"
               reads on the dark header; hue-rotate-180 keeps the "3D" blue.
-              This is the fork's branding and stays — upstream's Bambuddy logo
+              This is the fork's branding and stays — upstream's Fenrir logo
               is deliberately not taken here. */}
           <img src={aito3dLogo} alt="AITO3D" className="ml-3 h-6 w-auto dark:invert dark:hue-rotate-180" />
         </header>

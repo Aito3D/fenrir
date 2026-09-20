@@ -220,7 +220,7 @@ def _detect_docker_network_mode() -> str:
 
 
 def _get_host_ip() -> str | None:
-    """Best-effort IPv4 address the Bambuddy host routes from."""
+    """Best-effort IPv4 address the Fenrir host routes from."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -339,7 +339,7 @@ async def run_connection_diagnostic(
     # this check will pass even when the user is missing step 4. That gap
     # is covered separately by the "no_3mf_available" archive-fallback
     # banner. An FTP upload-and-verify probe was tried and rejected — the
-    # /cache directory is always writable from Bambuddy regardless of
+    # /cache directory is always writable from Fenrir regardless of
     # either toggle, so the probe always passes and detects nothing.
     #
     # Skip entirely on models with no external-storage slot at all (A1
@@ -411,7 +411,7 @@ async def run_connection_diagnostic(
     elif not last_verdict.reachable:
         # Reached only when the probe above found the file: the printer named
         # internal storage and served it over FTPS anyway. What this check is
-        # for is whether Bambuddy can read the print file, and it demonstrably
+        # for is whether Fenrir can read the print file, and it demonstrably
         # can — so pass, whatever the toggle happens to say (#2856).
         checks.append(DiagnosticCheck(id="external_storage", status="pass"))
     elif store_to_sdcard is True:

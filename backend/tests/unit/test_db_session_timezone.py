@@ -1,6 +1,6 @@
 """Database-side timestamps are UTC on both dialects (#2855).
 
-Bambuddy stores naive datetimes that hold UTC, and the frontend's
+Fenrir stores naive datetimes that hold UTC, and the frontend's
 ``parseUTCDate()`` reads a timestamp with no offset as UTC. #504 swept the
 Python side onto ``datetime.now(timezone.utc)``, but roughly 96 columns take
 their value from ``server_default=func.now()`` and the migration DDL carries
@@ -46,7 +46,7 @@ class TestConnectArgs:
 
         monkeypatch.setattr(database, "is_sqlite", lambda: False)
         monkeypatch.setattr(
-            database.settings, "database_url", "postgresql+asyncpg://u:p@host:5432/bambuddy", raising=False
+            database.settings, "database_url", "postgresql+asyncpg://u:p@host:5432/fenrir", raising=False
         )
 
         assert database._resolve_connect_args() == {"server_settings": {"timezone": "UTC"}}
@@ -58,7 +58,7 @@ class TestConnectArgs:
 
         monkeypatch.setattr(database, "is_sqlite", lambda: False)
         monkeypatch.setattr(
-            database.settings, "database_url", "postgresql+psycopg://u:p@host:5432/bambuddy", raising=False
+            database.settings, "database_url", "postgresql+psycopg://u:p@host:5432/fenrir", raising=False
         )
 
         assert database._resolve_connect_args() == {"options": "-c timezone=UTC"}
@@ -76,7 +76,7 @@ class TestConnectArgs:
 
         monkeypatch.setattr(database, "is_sqlite", lambda: False)
         monkeypatch.setattr(
-            database.settings, "database_url", "postgresql+asyncpg://u:p@host:5432/bambuddy", raising=False
+            database.settings, "database_url", "postgresql+asyncpg://u:p@host:5432/fenrir", raising=False
         )
         monkeypatch.setattr(database, "create_async_engine", fake_create_async_engine)
 

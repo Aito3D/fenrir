@@ -2,7 +2,7 @@
 
 The ``project_file`` command has always carried a ``url`` saying which storage
 the file landed on -- ``ftp://<name>`` for the card, ``brtc://emmc/<name>`` for
-the printer's internal storage. Bambuddy discarded it and swept FTPS regardless,
+the printer's internal storage. Fenrir discarded it and swept FTPS regardless,
 which on an H2C or P2S is ~110 connections that cannot succeed followed by a
 blank archive card with no stated reason.
 
@@ -45,7 +45,7 @@ class TestProjectUrlCapture:
     def test_our_own_dispatch_is_recorded_too(self, mqtt_client):
         """We publish to the request topic and subscribe to it, so our own
         commands come back. Capturing them is wanted, not incidental: after a
-        Bambuddy-launched print the file really is on external storage, and a
+        Fenrir-launched print the file really is on external storage, and a
         stale internal-storage URL from the slicer's last job would otherwise
         suppress a sweep that would have worked.
 
@@ -114,7 +114,7 @@ class TestTheTwoFieldsHaveDifferentLifetimes:
         mqtt_client._update_state({"gcode_state": "FINISH"})
 
         assert mqtt_client.state.current_project_url is None, (
-            "a print Bambuddy saw no dispatch for must read as unknown, not inherit this one"
+            "a print Fenrir saw no dispatch for must read as unknown, not inherit this one"
         )
         assert mqtt_client.state.last_project_url == "brtc://emmc/x.3mf", (
             "the diagnostic runs after the print that prompted it and still needs the answer"

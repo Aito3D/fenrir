@@ -16,8 +16,8 @@ from backend.app.core.websocket import ConnectionManager
 def _conn(principal):
     conn = SimpleNamespace()
     conn.state = SimpleNamespace()
-    conn.state.bambuddy_principal = principal
-    conn.state.bambuddy_principal_user_id = None
+    conn.state.fenrir_principal = principal
+    conn.state.fenrir_principal_user_id = None
     # T-030: broadcast_aito() now fails closed on an unstamped connection,
     # and every connection that can reach set_aito_presence() in real usage
     # (gated on aito_read by the inbound message handler) is, by

@@ -302,7 +302,7 @@ export function disambiguateColorNames(
  * - A Bambu internal code ("A06-D0"), which is what some RFID tags carry in
  *   place of a name. The same code is not unique across material families, so
  *   it cannot be translated on its own (#857).
- * - A name Bambuddy synthesised from the spool's subtype because the inventory
+ * - A name Fenrir synthesised from the spool's subtype because the inventory
  *   backend had none. Spoolman has no `color_name` field at all, so every
  *   Spoolman-backed spool arrives carrying its subtype as a stand-in, and
  *   "Silk+" is not a colour (#3090). `colorNameIsSynthesized` is the flag the

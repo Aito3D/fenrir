@@ -602,7 +602,7 @@ async def no_3mf_warning(
     # -- a printer whose file service is still refusing, days later.
     #
     # REASON_FTP_TRANSFER_FAILED sits second for the same reasons and one more:
-    # it is the only slug here whose remedy is a Bambuddy setting rather than a
+    # it is the only slug here whose remedy is a Fenrir setting rather than a
     # slicer one or a card. It ranks below the cool-off because a printer that
     # will not complete a TLS handshake is the worse fault of the two, and its
     # own retry (#3063) clears the row the same way, so a row still carrying
@@ -2742,7 +2742,7 @@ async def scan_timelapse(
             raise HTTPException(
                 503,
                 f"Printer {printer.ip_address} is not answering its file service over TLS. "
-                "Bambuddy will try again shortly.",
+                "Fenrir will try again shortly.",
             )
         raise HTTPException(404, "No timelapse directory found on the printer")
 
@@ -4805,7 +4805,7 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
 
     Normal archives nest the source under ``<archive_file_dir>/source/``.
     "Fallback" archives (created in main.py when MQTT reports a print start
-    but Bambuddy never saw the source 3MF — cloud / Handy / pre-existing
+    but Fenrir never saw the source 3MF — cloud / Handy / pre-existing
     SD-card prints) carry ``file_path=""``. Joining that with ``base_dir``
     via the ``/`` operator silently yields ``base_dir`` itself, whose parent
     is ``base_dir.parent`` — which sent the upload to ``/app/source/`` and

@@ -9,7 +9,7 @@ campaign: 12                   # campaigns 1-11 are all merged to main; their lo
                                # this worktree was cut (verified 2026-09-06: no `loop-*` / `refactor-base`
                                # tag existed), so `git describe --match 'loop-*'` exits nonzero and the
                                # SQUASH+TAG campaign-1 BASE fallback is valid. Iteration tags are plain `loop-N`.
-workdir: /Users/paultheis/Documents/Code/bambuddy-refactor
+workdir: /Users/paultheis/Documents/Code/fenrir-refactor
 branch: auto-refactor-loop
 agents: plugin-namespaced refactor-loop:refactor-worker / refactor-loop:refactor-verifier and the four
         refactor-loop:audit-* auditors (plugin 1.2.0). The MAIN checkout's gitignored .claude/agents/
@@ -85,8 +85,8 @@ python: ./venv/bin/python3 (worktree venv — see runtime below). NEVER system p
 
 ## worktree runtime (NOT in git — rebuilt per worktree)
 Built 2026-09-06 by APFS clonefile, not pip/npm (network-independent, instant):
-  cp -c -R ../bambuddy/venv venv && sed -i '' 's#/Code/bambuddy/venv#/Code/bambuddy-refactor/venv#g' venv/bin/*
-  cp -c -R ../bambuddy/frontend/node_modules frontend/node_modules
+  cp -c -R ../fenrir/venv venv && sed -i '' 's#/Code/fenrir/venv#/Code/fenrir-refactor/venv#g' venv/bin/*
+  cp -c -R ../fenrir/frontend/node_modules frontend/node_modules
 venv is Python 3.13.12, sys.prefix resolves inside the worktree, pytest 9.0.3 + xdist + cov + timeout.
 vitest and tsc resolve from frontend/node_modules/.bin. Workers must NOT pip/npm install.
 
@@ -148,7 +148,7 @@ isolation on an idle machine.
 - backend:  tests/unit/test_aito_routes.py (thousand-project import; got its own CI timeout in 5580a351e — slow under load)
 INVERSE-FLAKY — fail when run ALONE, pass in the full suite (do NOT "confirm" a failure by running alone):
 - backend:  tests/unit/test_settings_dedupe_migration.py — its _register_all_models() omits the print_log model.
-- frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) > "opens the selected local slicer from the Bambuddy dropdown".
+- frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) > "opens the selected local slicer from the Fenrir dropdown".
 
 ## lint baseline
 ruff check + ruff format --check: clean (942 files, worktree @ refactor-base, 2026-09-06)

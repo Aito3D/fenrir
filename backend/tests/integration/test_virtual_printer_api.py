@@ -151,7 +151,7 @@ class TestVirtualPrinterSettingsAPI:
                     "enabled": True,
                     "running": True,
                     "mode": "archive",
-                    "name": "Bambuddy",
+                    "name": "Fenrir",
                     "serial": "00M09A391800001",
                     "pending_files": 0,
                 }
@@ -172,7 +172,7 @@ class TestVirtualPrinterSettingsAPI:
                     "enabled": False,
                     "running": False,
                     "mode": "archive",
-                    "name": "Bambuddy",
+                    "name": "Fenrir",
                     "serial": "00M09A391800001",
                     "pending_files": 0,
                 }
@@ -237,7 +237,7 @@ class TestVirtualPrinterSettingsAPI:
                     "enabled": False,
                     "running": False,
                     "mode": "proxy",
-                    "name": "Bambuddy",
+                    "name": "Fenrir",
                     "serial": "00M09A391800001",
                     "pending_files": 0,
                 }

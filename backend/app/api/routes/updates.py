@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import APP_VERSION, GITHUB_REPO, settings
 from backend.app.core.database import get_db
+from backend.app.core.env_compat import env_get
 from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -111,7 +112,7 @@ def _is_docker_environment() -> bool:
     return False
 
 
-# Mount points the shipped compose file gives Bambuddy. Only these are
+# Mount points the shipped compose file gives Fenrir. Only these are
 # consulted when guessing the compose directory — an arbitrary bind mount
 # (a NAS share, an external library root) says nothing about where the
 # compose file lives.
@@ -131,12 +132,12 @@ def _compose_dir_from_mountinfo() -> str | None:
     user remembers where that is. Compose knows the answer — it stamps
     ``com.docker.compose.project.working_dir`` onto every container it
     creates — but reading your own labels requires the Docker socket, and
-    mounting that into Bambuddy would hand the container root-equivalent
+    mounting that into Fenrir would hand the container root-equivalent
     access to the host in exchange for a convenience string. So we infer.
 
     ``/proc/self/mountinfo`` exposes the *host* side of a bind mount in its
     root field: a ``./data:/app/data`` line in the compose file surfaces as
-    ``/opt/bambuddy/data``, whose parent is the compose directory. The leaf
+    ``/opt/fenrir/data``, whose parent is the compose directory. The leaf
     must match the mount point's own name before we take the parent —
     ``/mnt/nas/prints:/app/data`` is a bind mount whose parent is emphatically
     not a compose directory.
@@ -177,11 +178,11 @@ def _compose_dir_from_mountinfo() -> str | None:
 def _detect_compose_dir() -> str | None:
     """Best-effort compose directory for the update instructions (#2664).
 
-    ``BAMBUDDY_COMPOSE_DIR`` wins when set — it is the only source that is
+    ``FENRIR_COMPOSE_DIR`` wins when set — it is the only source that is
     stated rather than inferred, and the shipped compose file carries a
     commented ``${PWD}`` line for it.
     """
-    env_dir = os.environ.get("BAMBUDDY_COMPOSE_DIR", "").strip()
+    env_dir = env_get("FENRIR_COMPOSE_DIR", "").strip()
     if env_dir:
         return env_dir
     if not _is_docker_environment():
@@ -220,7 +221,7 @@ def _find_windows_installer_asset(release_data: dict) -> str | None:
     """Pick the Windows installer .exe out of a GitHub release's assets list.
 
     Both filenames the workflow uploads end in ``windows-x64-setup.exe``
-    (versioned ``bambuddy-<version>-windows-x64-setup.exe`` and the
+    (versioned ``fenrir-<version>-windows-x64-setup.exe`` and the
     unversioned alias ``bambuddy-windows-x64-setup.exe`` on non-daily tags
     only). Either works as a download URL; we prefer the versioned form
     because it's the one guaranteed to exist on every release including
@@ -692,7 +693,7 @@ async def _discover_target_release(db: AsyncSession) -> str | None:
 # - Local git metadata reads/writes (`remote get-url`, `remote set-url`) never
 #   touch the network — 30s is generous headroom for disk/lock contention on a
 #   busy host while still failing far faster than a real hang would.
-# - `git fetch --tags` is network-bound and Bambuddy commonly runs on
+# - `git fetch --tags` is network-bound and Fenrir commonly runs on
 #   constrained/metered connections (self-hosted, e.g. behind a home router or
 #   on a Raspberry Pi) — 10 minutes matches typical CI git-fetch conventions.
 # - `git reset --hard` is local disk I/O only (no network) but self-hosted
@@ -836,8 +837,8 @@ async def _perform_update(target_ref: str):
         # On a standard install with DATA_DIR=INSTALL_PATH/data, git happens
         # to walk up from a subdirectory of the repo to find .git so cwd=base_dir
         # used to silently work — but only by accident. On a native install with
-        # DATA_DIR mounted at an unrelated path (e.g. /srv/bambuddy/data while
-        # the install is /opt/bambuddy — see #1715), git can't walk up and every
+        # DATA_DIR mounted at an unrelated path (e.g. /srv/fenrir/data while
+        # the install is /opt/fenrir — see #1715), git can't walk up and every
         # operation fails with "not a git repository". safe.directory has the
         # same requirement: it must equal the repo root git discovers, not the
         # data dir, or every call returns "fatal: detected dubious ownership."
@@ -1156,9 +1157,9 @@ async def apply_update(
             "is_ha_addon": True,
             "is_docker": True,
             "message": (
-                "Bambuddy is running as a Home Assistant addon. "
+                "Fenrir is running as a Home Assistant addon. "
                 "Updates are managed by the Home Assistant Supervisor "
-                "(Settings → Add-ons → Bambuddy → Update)."
+                "(Settings → Add-ons → Fenrir → Update)."
             ),
         }
     if _is_docker_environment():
@@ -1181,7 +1182,7 @@ async def apply_update(
             "is_windows_installer": True,
             "message": (
                 "Windows installations are updated by re-running the installer. "
-                "Download the latest installer from the Bambuddy releases page."
+                "Download the latest installer from the Fenrir releases page."
             ),
         }
 

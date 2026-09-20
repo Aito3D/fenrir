@@ -52,7 +52,7 @@ class RESTSmartPlugService:
         anything that wasn't a bare IP literal fell through to ``True``.
 
         Loopback and RFC-1918 stay permitted on purpose: a REST-controlled
-        plug bridge running next to Bambuddy is the normal topology.
+        plug bridge running next to Fenrir is the normal topology.
         """
         return RESTSmartPlugService._url_error(url) is None
 

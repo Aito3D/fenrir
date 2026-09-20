@@ -5,7 +5,7 @@
    "evidence": "return LoginResponse(\n            requires_2fa=True,\n            pre_auth_token=pre_auth_token,\n            two_fa_methods=two_fa_methods,\n            user=_user_to_response(user),\n        )  # _user_to_response includes email, role, is_admin, groups, sorted(user.get_permissions())",
    "fix": "drop the `user=_user_to_response(user)` argument from the requires_2fa branch of oidc_exchange so it matches auth.py:login(), which returns only requires_2fa/pre_auth_token/two_fa_methods (LoginResponse.user is already Optional and LoginPage never reads resp.user in that branch)",
    "behavior_change": true,
-   "behavior_change_note": "an OIDC user with 2FA enabled no longer receives the `user` object in the POST /auth/oidc/exchange response; any client that reads resp.user before completing 2FA would now see null (Bambuddy's own LoginPage does not)"},
+   "behavior_change_note": "an OIDC user with 2FA enabled no longer receives the `user` object in the POST /auth/oidc/exchange response; any client that reads resp.user before completing 2FA would now see null (Fenrir's own LoginPage does not)"},
   {"severity": "medium", "category": "information-disclosure",
    "file": "backend/app/api/routes/mfa.py", "line": 1389,
    "title": "list_oidc_providers() exposes each provider's account-linking policy to unauthenticated callers",

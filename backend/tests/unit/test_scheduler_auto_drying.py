@@ -470,12 +470,12 @@ class TestStopDrying:
 
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
-    async def test_leaves_cycles_bambuddy_did_not_start(self, mock_pm, scheduler):
+    async def test_leaves_cycles_fenrir_did_not_start(self, mock_pm, scheduler):
         """A hand-started dry on another unit survives (#2801).
 
         One auto-dried unit used to be enough to stop every AMS on the
         printer reporting dry_time > 0, which took the user's own cycle with
-        it. The entry gate only ever knew about cycles Bambuddy began; the
+        it. The entry gate only ever knew about cycles Fenrir began; the
         action now matches.
         """
         scheduler._drying_in_progress = {1: time.monotonic()}
@@ -492,7 +492,7 @@ class TestStopDrying:
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
     async def test_stops_nothing_it_cannot_prove_it_started(self, mock_pm, scheduler):
-        """After a restart Bambuddy cannot tell its own cycle from a manual one.
+        """After a restart Fenrir cannot tell its own cycle from a manual one.
 
         _sync_drying_state prunes but never adopts, for exactly this reason, so
         a cycle armed before the restart is left running rather than risking a
@@ -524,7 +524,7 @@ class TestMinimumDryingTime:
 
     Relative humidity reads low in heated air (the AMS sensor sees ~15-20% within
     minutes of the dryer starting even while the filament is still saturated), so a
-    humidity-based auto-stop would truncate every cycle — manual or Bambuddy-started —
+    humidity-based auto-stop would truncate every cycle — manual or Fenrir-started —
     to the old minimum-time floor. Drying is now left to run to its configured
     duration; the firmware stops it when the duration elapses.
     """
@@ -1999,7 +1999,7 @@ class TestAutoDryRearmGuards(_DryingTestBase):
         mock_pm.send_drying_command.assert_not_called()
         assert (1, 0) not in scheduler._auto_dry_units
 
-        # It ends; Bambuddy is free to arm its own cycle, with a clean slate.
+        # It ends; Fenrir is free to arm its own cycle, with a clean slate.
         await self._pass(scheduler, mock_pm, db, 0, self.ABOVE)
         mock_pm.send_drying_command.assert_called_once_with(1, 0, 45, 12, mode=1, filament="PLA")
         assert scheduler._auto_dry_units[(1, 0)]["unproductive"] == 0
@@ -2017,8 +2017,8 @@ class TestAutoDryRearmGuards(_DryingTestBase):
         assert scheduler._auto_dry_units == {}
 
 
-class TestAutoDryStoppedByBambuddy(_DryingTestBase):
-    """A cycle Bambuddy itself cut short must not count against the unit."""
+class TestAutoDryStoppedByFenrir(_DryingTestBase):
+    """A cycle Fenrir itself cut short must not count against the unit."""
 
     THRESHOLD = "14"
     ABOVE = 16
@@ -2064,7 +2064,7 @@ class TestAutoDryStoppedByBambuddy(_DryingTestBase):
     @patch("backend.app.services.print_scheduler.printer_manager")
     @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
     async def test_print_takes_priority_stop_is_not_an_unproductive_cycle(self, mock_sd, mock_pm, scheduler):
-        """The queue stopping a dry so a print can start is Bambuddy's own doing.
+        """The queue stopping a dry so a print can start is Fenrir's own doing.
 
         Counting it would suspend auto-drying on any printer that dries between
         jobs often enough -- exactly the install queue-drying exists for.

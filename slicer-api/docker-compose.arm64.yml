@@ -16,7 +16,7 @@
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.arm64.yml
 #
 # For any setup questions, see the 'Server-Side Slicing (Slicer API)' page in
-# the Bambuddy wiki. Also check the README and default compose file in this
+# the Fenrir wiki. Also check the README and default compose file in this
 # directory for usage instructions and other details.
 
 services:

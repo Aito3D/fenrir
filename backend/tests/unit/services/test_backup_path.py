@@ -34,7 +34,7 @@ class TestSystemdUnitName:
         ("cgroup", "expected"),
         [
             ("0::/system.slice/bambuddy.service\n", "bambuddy.service"),
-            ("0::/system.slice/system-bambuddy.slice/bambuddy@1.service\n", "bambuddy@1.service"),
+            ("0::/system.slice/system-fenrir.slice/fenrir@1.service\n", "fenrir@1.service"),
             # No .service in the path (a user scope, say) — still name something usable.
             ("0::/user.slice/user-1000.slice/session-3.scope\n", "bambuddy.service"),
         ],
@@ -45,7 +45,7 @@ class TestSystemdUnitName:
 
         assert systemd_unit_name() == expected
 
-    def test_falls_back_to_bambuddy_when_the_cgroup_is_unreadable(self, monkeypatch):
+    def test_falls_back_to_fenrir_when_the_cgroup_is_unreadable(self, monkeypatch):
         monkeypatch.setenv("INVOCATION_ID", "deadbeef")
 
         def boom(_path):

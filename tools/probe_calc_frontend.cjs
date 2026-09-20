@@ -1,11 +1,11 @@
 // Snapshot probe: the calculator's pure frontend decision logic — the
 // reality-check selection/impact table (calculatorInsights.ts) and the quote
 // summary builder (quoteSummary.ts) — over fixed inputs.
-// The bundle is produced by rolldown into /tmp/bambuddy-refactor-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-refactor-probe/ by the
 // probe command in PROBES.json before this script runs.
 // Floats are rounded to 8 dp so re-association noise cannot flake the probe
 // while any real change in the arithmetic still trips it.
-const m = require("/tmp/bambuddy-refactor-probe/calcFrontend.cjs");
+const m = require("/tmp/fenrir-refactor-probe/calcFrontend.cjs");
 
 const defaults = {
   id: 1,

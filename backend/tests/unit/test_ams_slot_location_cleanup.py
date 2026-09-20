@@ -1,6 +1,6 @@
 """Cleanup of AMS slot markers imported into the storage-location catalogue.
 
-Bambuddy used to write the slot a spool was loaded into -- "<printer> - AMS A1"
+Fenrir used to write the slot a spool was loaded into -- "<printer> - AMS A1"
 -- into Spoolman's ``location`` field, and the location sync then imported every
 distinct one as a storage location. ``_migrate_drop_ams_slot_locations`` clears
 the rows that already landed; the import side is covered in

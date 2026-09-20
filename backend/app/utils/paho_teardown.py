@@ -10,7 +10,7 @@ A broker that still answers on its port but never finishes the handshake
 therefore holds the join open for as long as it keeps trickling; a silent one
 still holds it 30s.
 
-Whoever called `loop_stop()` waits that out, and in Bambuddy that caller is the
+Whoever called `loop_stop()` waits that out, and in Fenrir that caller is the
 asyncio thread. #3068: a printer 38 hours offline, still answering on 8883, was
 picked up by the connection watchdog exactly as intended; the rebuild ended in
 that join and the process stopped serving HTTP -- UI, API and health check --
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # bundle. A healthy paho thread exits in well under a second.
 _RETIRE_SLOW_SECONDS = 5.0
 
-# The callbacks Bambuddy's three MQTT services set between them. Anything else
+# The callbacks Fenrir's three MQTT services set between them. Anything else
 # paho offers is already None because nobody here assigns it.
 _CALLBACKS = ("on_connect", "on_disconnect", "on_subscribe", "on_message")
 

@@ -139,7 +139,7 @@ class TestDisposableDatabaseGuard:
 
         with pytest.raises(RuntimeError, match="Refusing to run tests"):
             _assert_disposable_database(
-                make_url("postgresql+asyncpg://user:pw@192.168.0.2:5432/bambuddy"),
+                make_url("postgresql+asyncpg://user:pw@192.168.0.2:5432/fenrir"),
                 "test",
             )
 

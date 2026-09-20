@@ -1,7 +1,7 @@
 """Reinstalling must not silently take away a writable path (#2544).
 
 ``ProtectSystem=strict`` means the unit's ``ReadWritePaths`` is the *complete*
-list of places Bambuddy can write. An operator who backs up to a NAS adds their
+list of places Fenrir can write. An operator who backs up to a NAS adds their
 share to it by hand — and both installers overwrite the unit file wholesale, so
 that line used to vanish on the next install. The backups then failed with EROFS
 every night, which looks like a NAS permission problem and is not one.

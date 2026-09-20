@@ -3002,7 +3002,7 @@ export function ProfilesPage() {
 
           {/* A stored token Bambu has stopped accepting logs the user out of the
               cloud without them doing anything, so the login form reappearing
-              needs an explanation — otherwise it reads as Bambuddy losing the
+              needs an explanation — otherwise it reads as Fenrir losing the
               session for no reason. */}
           {status?.sign_in_expired && (
             <div className="flex items-start gap-3 p-3 mb-6 rounded-lg border border-yellow-500/40 bg-yellow-500/10">

@@ -4,7 +4,7 @@
 mapping when print start captured none: the printer's ``mapping`` field, and a
 colour match of the 3MF's slots against the loaded trays. An A1 can satisfy
 neither. It publishes no ``mapping`` field, and it drops the MQTT connection
-when Bambuddy subscribes to its request topic, so the slicer's own instruction
+when Fenrir subscribes to its request topic, so the slicer's own instruction
 never arrives either. That leaves the colour match, which compares hex strings
 exactly.
 

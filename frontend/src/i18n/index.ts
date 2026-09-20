@@ -48,7 +48,7 @@ const resources = {
 };
 
 const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'tr', 'uk', 'zh-CN', 'zh-TW'];
-const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
+const APPLIANCE_CONSUMED_KEY = 'fenrir_appliance_locale_consumed';
 
 i18n
   .use(lazyLocaleBackend)
@@ -83,7 +83,7 @@ i18n
   });
 
 /**
- * Bambuddy Appliance hook: on the first SPA load after the firstboot wizard
+ * Fenrir Appliance hook: on the first SPA load after the firstboot wizard
  * runs, /api/v1/system/appliance returns the locale the user picked. We
  * apply it once (gated by a localStorage flag) and stop. On non-appliance
  * installs the endpoint either 404s or returns nulls — silent no-op.

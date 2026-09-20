@@ -328,7 +328,7 @@ describe('BugReportBubble', () => {
      *  the theme context among them -- so only answer for our own key. */
     const storeSession = (session: Record<string, unknown>) => {
       vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
-        key === 'bambuddy-bug-report-session' ? JSON.stringify(session) : null
+        key === 'fenrir-bug-report-session' ? JSON.stringify(session) : null
       );
     };
 

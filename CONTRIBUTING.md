@@ -1,6 +1,6 @@
-# Contributing to Bambuddy
+# Contributing to Fenrir
 
-Thank you for your interest in contributing to Bambuddy! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Fenrir! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -40,8 +40,8 @@ This keeps everyone on the same page, avoids wasted effort on changes that may n
 
 Features and user-visible behavior changes **must** include matching documentation updates in the docs repos:
 
-- **[bambuddy-wiki](https://github.com/maziggy/bambuddy-wiki)** — end-user guide (installation, configuration, feature walkthroughs, reference)
-- **[bambuddy-website](https://github.com/maziggy/bambuddy-website)** — marketing site (updated only when the change affects public claims or feature lists)
+- **[fenrir-wiki](https://github.com/maziggy/bambuddy-wiki)** — end-user guide (installation, configuration, feature walkthroughs, reference)
+- **[fenrir-website](https://github.com/maziggy/bambuddy-website)** — marketing site (updated only when the change affects public claims or feature lists)
 
 ### When docs updates are required
 
@@ -58,8 +58,8 @@ Features and user-visible behavior changes **must** include matching documentati
 
 ### Workflow
 
-1. Open your code PR here in `bambuddy`
-2. Open companion PR(s) in `bambuddy-wiki` and/or `bambuddy-website`
+1. Open your code PR here in `fenrir`
+2. Open companion PR(s) in `fenrir-wiki` and/or `fenrir-website`
 3. **Link the companion PR(s) in the code PR description** (the PR template has a dedicated section)
 4. Merge the PRs together — usually code first, then docs, unless the docs reference new things that don't exist yet
 
@@ -69,8 +69,8 @@ If your change truly doesn't need docs (internal refactor, silent bug fix), say 
 
 Clone the docs repo and run it locally to see your changes rendered with the real theme before opening the PR:
 
-- **Wiki** (`bambuddy-wiki`) — `pip install -r requirements.txt && mkdocs serve` — live-reload on `http://localhost:8000`
-- **Website** (`bambuddy-website`) — static HTML/CSS, open the changed file directly or serve with `python -m http.server`
+- **Wiki** (`fenrir-wiki`) — `pip install -r requirements.txt && mkdocs serve` — live-reload on `http://localhost:8000`
+- **Website** (`fenrir-website`) — static HTML/CSS, open the changed file directly or serve with `python -m http.server`
 
 Review like you would the production site. Catch broken links, layout regressions, typos, missing images. If it looks right, open the PR.
 
@@ -86,8 +86,8 @@ Both docs repos can be edited directly in the browser, no `git clone` required:
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/bambuddy.git
-   cd bambuddy
+   git clone https://github.com/YOUR_USERNAME/fenrir.git
+   cd fenrir
    ```
 3. **Add the upstream remote**:
    ```bash
@@ -257,7 +257,7 @@ function MyComponent() {
 
 ## Authentication & Permissions
 
-Bambuddy has an optional authentication system. When auth is enabled, API endpoints are protected by granular permissions.
+Fenrir has an optional authentication system. When auth is enabled, API endpoints are protected by granular permissions.
 
 ### How It Works
 
@@ -421,4 +421,4 @@ Use the [Feature Request template](https://github.com/maziggy/bambuddy/issues/ne
 
 ---
 
-Thank you for contributing to Bambuddy!
+Thank you for contributing to Fenrir!

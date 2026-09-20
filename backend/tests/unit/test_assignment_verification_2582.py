@@ -1,10 +1,10 @@
 """Read-back verification of AMS spool assignments (#2582).
 
-After Bambuddy pushes an assignment (``ams_filament_setting`` +
+After Fenrir pushes an assignment (``ams_filament_setting`` +
 ``extrusion_cali_sel``) it registers the desired end-state and watches the
 periodic AMS telemetry to confirm the tray actually accepted it. Historically
 this was fire-and-forget, so a silently-dropped assignment (the reporter's
-"assigned in Bambuddy but Studio never saw it") produced no feedback at all.
+"assigned in Fenrir but Studio never saw it") produced no feedback at all.
 
 These tests lock in the matcher: a tray_info_idx echo confirms the push landed,
 cali_idx is a secondary "K-profile applied" signal, and a timeout without a

@@ -1,6 +1,6 @@
 """Upserting the env-managed OIDC provider (#2593).
 
-Startup applies BAMBUDDY_OIDC_* to the database. The row is updated in place,
+Startup applies FENRIR_OIDC_* to the database. The row is updated in place,
 never delete-recreated: user_oidc_links.provider_id is FK ON DELETE CASCADE, so
 recreating the provider would silently unlink every account bound to it.
 """
@@ -17,23 +17,23 @@ from backend.app.core.oidc_env import apply_env_oidc_provider
 from backend.app.models.oidc_provider import OIDCProvider
 
 REQUIRED = {
-    "BAMBUDDY_OIDC_NAME": "Keycloak",
-    "BAMBUDDY_OIDC_ISSUER_URL": "https://sso.example.com/realms/main",
-    "BAMBUDDY_OIDC_CLIENT_ID": "bambuddy",
-    "BAMBUDDY_OIDC_CLIENT_SECRET": "s3cr3t",
+    "FENRIR_OIDC_NAME": "Keycloak",
+    "FENRIR_OIDC_ISSUER_URL": "https://sso.example.com/realms/main",
+    "FENRIR_OIDC_CLIENT_ID": "fenrir",
+    "FENRIR_OIDC_CLIENT_SECRET": "s3cr3t",
 }
 
 ALL_VARS = (
     *REQUIRED,
-    "BAMBUDDY_OIDC_SCOPES",
-    "BAMBUDDY_OIDC_ENABLED",
-    "BAMBUDDY_OIDC_AUTO_CREATE_USERS",
-    "BAMBUDDY_OIDC_AUTO_LINK_EXISTING",
-    "BAMBUDDY_OIDC_EMAIL_CLAIM",
-    "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
-    "BAMBUDDY_OIDC_ICON_URL",
-    "BAMBUDDY_OIDC_AUTOLOGIN",
-    "BAMBUDDY_OIDC_DEFAULT_GROUP",
+    "FENRIR_OIDC_SCOPES",
+    "FENRIR_OIDC_ENABLED",
+    "FENRIR_OIDC_AUTO_CREATE_USERS",
+    "FENRIR_OIDC_AUTO_LINK_EXISTING",
+    "FENRIR_OIDC_EMAIL_CLAIM",
+    "FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED",
+    "FENRIR_OIDC_ICON_URL",
+    "FENRIR_OIDC_AUTOLOGIN",
+    "FENRIR_OIDC_DEFAULT_GROUP",
 )
 
 
@@ -63,7 +63,7 @@ async def test_creates_the_provider_from_env(db_session, monkeypatch):
     provider = await _env_provider(db_session)
     assert provider is not None
     assert provider.name == "Keycloak"
-    assert provider.client_id == "bambuddy"
+    assert provider.client_id == "fenrir"
     assert provider.is_env_managed is True
     assert provider.client_secret == "s3cr3t"  # property decrypts
 
@@ -76,7 +76,7 @@ async def test_a_changed_var_updates_the_same_row(db_session, monkeypatch):
     await apply_env_oidc_provider(db_session)
     original_id = (await _env_provider(db_session)).id
 
-    monkeypatch.setenv("BAMBUDDY_OIDC_CLIENT_ID", "rotated")
+    monkeypatch.setenv("FENRIR_OIDC_CLIENT_ID", "rotated")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -116,7 +116,7 @@ async def test_env_autologin_clears_it_on_other_providers(db_session, monkeypatc
     db_session.add(ui_provider)
     await db_session.commit()
 
-    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    _configure(monkeypatch, FENRIR_OIDC_AUTOLOGIN="true")
     await apply_env_oidc_provider(db_session)
 
     await db_session.refresh(ui_provider)
@@ -147,8 +147,8 @@ async def test_an_unsafe_auto_link_config_is_skipped_not_raised(db_session, monk
     -- but a bad variable must not stop the app from booting either."""
     _configure(
         monkeypatch,
-        BAMBUDDY_OIDC_AUTO_LINK_EXISTING="true",
-        BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED="false",
+        FENRIR_OIDC_AUTO_LINK_EXISTING="true",
+        FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED="false",
     )
 
     await apply_env_oidc_provider(db_session)
@@ -162,7 +162,7 @@ async def test_a_rejected_config_never_logs_the_client_secret(db_session, monkey
     string_too_long. The rejection must be logged without the value: str(exc)
     embeds input_value=..., which would leak the secret (no-secrets-in-logs)."""
     secret = "S3CR3T" * 100  # > 512 chars -> ValidationError on client_secret
-    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET=secret)
+    _configure(monkeypatch, FENRIR_OIDC_CLIENT_SECRET=secret)
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)
@@ -175,8 +175,8 @@ async def test_a_rejected_config_never_logs_the_client_secret(db_session, monkey
 
 # --- an unrecognized boolean is rejected, not guessed --------------------------
 # `_env_bool` used to return the default for anything outside {true,1,yes}, so
-# BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED=on silently read as OFF and
-# BAMBUDDY_OIDC_ENABLED=on silently disabled the provider. Strict parsing
+# FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED=on silently read as OFF and
+# FENRIR_OIDC_ENABLED=on silently disabled the provider. Strict parsing
 # refuses the config instead -- through the same clean path a bad
 # DEFAULT_GROUP or a ValidationError already uses, so a typo never releases a
 # provider that was running fine.
@@ -189,7 +189,7 @@ async def test_an_unrecognized_require_email_verified_leaves_a_running_provider_
     original = await _env_provider(db_session)
     original_id, original_enabled = original.id, original.is_enabled
 
-    monkeypatch.setenv("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", "on")
+    monkeypatch.setenv("FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED", "on")
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)
 
@@ -199,7 +199,7 @@ async def test_an_unrecognized_require_email_verified_leaves_a_running_provider_
     assert provider.is_enabled == original_enabled
     assert provider.is_env_managed is True
     assert "rejected" in caplog.text
-    assert "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED" in caplog.text
+    assert "FENRIR_OIDC_REQUIRE_EMAIL_VERIFIED" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -209,7 +209,7 @@ async def test_an_unrecognized_enabled_leaves_a_running_provider_intact(db_sessi
     original = await _env_provider(db_session)
     original_id, original_enabled = original.id, original.is_enabled
 
-    monkeypatch.setenv("BAMBUDDY_OIDC_ENABLED", "on")
+    monkeypatch.setenv("FENRIR_OIDC_ENABLED", "on")
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)
 
@@ -219,7 +219,7 @@ async def test_an_unrecognized_enabled_leaves_a_running_provider_intact(db_sessi
     assert provider.is_enabled == original_enabled
     assert provider.is_env_managed is True
     assert "rejected" in caplog.text
-    assert "BAMBUDDY_OIDC_ENABLED" in caplog.text
+    assert "FENRIR_OIDC_ENABLED" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -236,7 +236,7 @@ async def test_a_non_validation_error_is_survivable_and_leaks_nothing(db_session
         raise RuntimeError("boom leaked-secret")
 
     monkeypatch.setattr(auth_schemas, "OIDCProviderCreate", _raise)
-    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET="leaked-secret")
+    _configure(monkeypatch, FENRIR_OIDC_CLIENT_SECRET="leaked-secret")
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)  # must not raise
@@ -259,7 +259,7 @@ async def test_a_commit_failure_is_survivable_and_leaks_nothing(db_session, monk
         raise RuntimeError("database is locked")
 
     monkeypatch.setattr(db_session, "commit", _raise_on_commit)
-    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET="leaked-secret")
+    _configure(monkeypatch, FENRIR_OIDC_CLIENT_SECRET="leaked-secret")
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)  # must not raise
@@ -283,7 +283,7 @@ async def test_a_failing_rollback_is_also_survivable(db_session, monkeypatch, ca
 
     monkeypatch.setattr(db_session, "commit", _raise_on_commit)
     monkeypatch.setattr(db_session, "rollback", _raise_on_rollback)
-    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET="leaked-secret")
+    _configure(monkeypatch, FENRIR_OIDC_CLIENT_SECRET="leaked-secret")
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)  # must not raise, even here
@@ -304,7 +304,7 @@ async def test_applying_twice_without_changes_is_a_no_op(db_session, monkeypatch
 
 
 # --- identity is the name, not the flag ---------------------------------------
-# The provider is looked up by BAMBUDDY_OIDC_NAME, which is unique on the table.
+# The provider is looked up by FENRIR_OIDC_NAME, which is unique on the table.
 # Matching on is_env_managed instead made three things impossible: adopting a
 # provider that already carries the name (the insert hit the unique constraint
 # and took startup down with it), releasing the provider when the config goes
@@ -327,7 +327,7 @@ async def test_a_name_collision_adopts_the_existing_provider(db_session, monkeyp
     provider = await _env_provider(db_session)
     assert provider is not None
     assert provider.id == original_id, "adopted, not duplicated"
-    assert provider.client_id == "bambuddy"
+    assert provider.client_id == "fenrir"
 
     result = await db_session.execute(select(OIDCProvider).where(OIDCProvider.name == "Keycloak"))
     assert len(result.scalars().all()) == 1
@@ -407,8 +407,8 @@ async def test_the_issuer_and_client_can_change_under_the_same_name(db_session, 
     await apply_env_oidc_provider(db_session)
     original_id = (await _env_provider(db_session)).id
 
-    monkeypatch.setenv("BAMBUDDY_OIDC_ISSUER_URL", "https://sso.example.com/realms/other")
-    monkeypatch.setenv("BAMBUDDY_OIDC_CLIENT_ID", "rotated")
+    monkeypatch.setenv("FENRIR_OIDC_ISSUER_URL", "https://sso.example.com/realms/other")
+    monkeypatch.setenv("FENRIR_OIDC_CLIENT_ID", "rotated")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -418,7 +418,7 @@ async def test_the_issuer_and_client_can_change_under_the_same_name(db_session, 
 
 
 # --- a rename must not leave the old row managed -------------------------------
-# Identity is the name, so renaming BAMBUDDY_OIDC_NAME matches nothing and
+# Identity is the name, so renaming FENRIR_OIDC_NAME matches nothing and
 # creates a second row. Leaving the flag on the first one is what makes that
 # fatal: it stays enabled with a stale issuer and secret on the login page, the
 # API refuses every edit/disable/delete on it (409), and the release path's
@@ -433,11 +433,11 @@ async def _env_managed(db_session) -> list[OIDCProvider]:
 
 @pytest.mark.asyncio
 async def test_renaming_the_provider_releases_the_row_it_managed_before(db_session, monkeypatch):
-    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    _configure(monkeypatch, FENRIR_OIDC_AUTOLOGIN="true")
     await apply_env_oidc_provider(db_session)
     old_id = (await _env_provider(db_session)).id
 
-    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    monkeypatch.setenv("FENRIR_OIDC_NAME", "Authentik")
     await apply_env_oidc_provider(db_session)
 
     managed = await _env_managed(db_session)
@@ -455,7 +455,7 @@ async def test_boot_survives_removing_the_config_after_a_rename(db_session, monk
     """The MultipleResultsFound path: rename, then unset. Must not raise."""
     _configure(monkeypatch)
     await apply_env_oidc_provider(db_session)
-    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    monkeypatch.setenv("FENRIR_OIDC_NAME", "Authentik")
     await apply_env_oidc_provider(db_session)
 
     for key in ALL_VARS:
@@ -476,7 +476,7 @@ async def test_every_managed_row_is_released_not_just_one(db_session, monkeypatc
         stale = OIDCProvider(
             name=name,
             issuer_url="https://sso.example.com/realms/main",
-            client_id="bambuddy",
+            client_id="fenrir",
             is_env_managed=True,
         )
         stale.client_secret = "s3cr3t"
@@ -494,7 +494,7 @@ async def test_releasing_the_provider_clears_autologin(db_session, monkeypatch):
     latent autologin claim: update_oidc_provider only runs the exclusivity
     sweep when a request sets is_autologin=True, so merely re-enabling this row
     makes it the autologin target again."""
-    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    _configure(monkeypatch, FENRIR_OIDC_AUTOLOGIN="true")
     await apply_env_oidc_provider(db_session)
     assert (await _env_provider(db_session)).is_autologin is True
 
@@ -524,7 +524,7 @@ async def _group(db_session, name: str):
 @pytest.mark.asyncio
 async def test_the_default_group_is_resolved_by_name(db_session, monkeypatch):
     group = await _group(db_session, "Operators")
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Operators")
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="Operators")
 
     await apply_env_oidc_provider(db_session)
 
@@ -536,13 +536,13 @@ async def test_an_unknown_group_name_is_rejected_rather_than_defaulted(db_sessio
     """Silently falling back to Viewers is how a typo mints under-privileged
     users for weeks. The API answers 400 for a default_group_id that does not
     exist; env config gets the same answer, logged and survivable."""
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Nope")
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="Nope")
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)
 
     assert await _env_provider(db_session) is None
-    assert "BAMBUDDY_OIDC_DEFAULT_GROUP" in caplog.text
+    assert "FENRIR_OIDC_DEFAULT_GROUP" in caplog.text
     assert "Nope" in caplog.text
 
 
@@ -551,10 +551,10 @@ async def test_an_unknown_group_name_leaves_the_previous_provider_intact(db_sess
     """Rejection happens before the upsert, so the running config survives a
     bad edit -- the provider keeps working until the operator fixes the name."""
     group = await _group(db_session, "Operators")
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Operators")
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="Operators")
     await apply_env_oidc_provider(db_session)
 
-    monkeypatch.setenv("BAMBUDDY_OIDC_DEFAULT_GROUP", "Typo")
+    monkeypatch.setenv("FENRIR_OIDC_DEFAULT_GROUP", "Typo")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -575,10 +575,10 @@ async def test_removing_the_group_variable_clears_the_default_group(db_session, 
     """The environment is the whole truth for this row; a group that is no
     longer declared must not linger, since the lock blocks removing it in the UI."""
     await _group(db_session, "Operators")
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Operators")
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="Operators")
     await apply_env_oidc_provider(db_session)
 
-    monkeypatch.delenv("BAMBUDDY_OIDC_DEFAULT_GROUP")
+    monkeypatch.delenv("FENRIR_OIDC_DEFAULT_GROUP")
     await apply_env_oidc_provider(db_session)
 
     assert (await _env_provider(db_session)).default_group_id is None
@@ -588,7 +588,7 @@ async def test_removing_the_group_variable_clears_the_default_group(db_session, 
 async def test_an_empty_group_variable_counts_as_unset(db_session, monkeypatch):
     """Same rule the required vars follow: an empty value in a compose file is
     a forgotten value, not a request to reject the config."""
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="")
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -597,13 +597,13 @@ async def test_an_empty_group_variable_counts_as_unset(db_session, monkeypatch):
 
 
 # --- blank optional strings count as unset, not a refusal ---------------------
-# `.env.example` ships `# BAMBUDDY_OIDC_ICON_URL=` commented out, so uncommenting
+# `.env.example` ships `# FENRIR_OIDC_ICON_URL=` commented out, so uncommenting
 # it must not take the provider down -- same rule default_group already follows.
 
 
 @pytest.mark.asyncio
 async def test_a_blank_scopes_still_creates_the_provider(db_session, monkeypatch):
-    _configure(monkeypatch, BAMBUDDY_OIDC_SCOPES="")
+    _configure(monkeypatch, FENRIR_OIDC_SCOPES="")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -613,7 +613,7 @@ async def test_a_blank_scopes_still_creates_the_provider(db_session, monkeypatch
 
 @pytest.mark.asyncio
 async def test_a_blank_email_claim_still_creates_the_provider(db_session, monkeypatch):
-    _configure(monkeypatch, BAMBUDDY_OIDC_EMAIL_CLAIM="")
+    _configure(monkeypatch, FENRIR_OIDC_EMAIL_CLAIM="")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -623,7 +623,7 @@ async def test_a_blank_email_claim_still_creates_the_provider(db_session, monkey
 
 @pytest.mark.asyncio
 async def test_a_blank_icon_url_still_creates_the_provider(db_session, monkeypatch):
-    _configure(monkeypatch, BAMBUDDY_OIDC_ICON_URL="")
+    _configure(monkeypatch, FENRIR_OIDC_ICON_URL="")
     await apply_env_oidc_provider(db_session)
 
     provider = await _env_provider(db_session)
@@ -652,14 +652,14 @@ async def test_renaming_to_match_a_ui_provider_adopts_it_and_releases_the_old_ro
     ui_id = ui_provider.id
 
     # Rename env provider to "Authentik" — matches the UI provider
-    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    monkeypatch.setenv("FENRIR_OIDC_NAME", "Authentik")
     await apply_env_oidc_provider(db_session)
 
     # The UI provider is adopted and becomes env-managed
     provider = await _env_provider(db_session)
     assert provider.id == ui_id, "adopted the UI provider"
     assert provider.name == "Authentik"
-    assert provider.client_id == "bambuddy"  # updated from env
+    assert provider.client_id == "fenrir"  # updated from env
     assert provider.is_env_managed is True
 
     # The old Keycloak row is released
@@ -695,7 +695,7 @@ async def test_account_links_survive_a_provider_rename(db_session, monkeypatch):
     await db_session.commit()
 
     # Rename the env provider
-    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    monkeypatch.setenv("FENRIR_OIDC_NAME", "Authentik")
     await apply_env_oidc_provider(db_session)
 
     # The link still exists, pointing to the old row (which is now released)
@@ -710,7 +710,7 @@ async def test_renaming_with_autologin_updates_the_exclusivity_sweep(db_session,
     """When renamed env config has autologin=true, the sweep clears autologin
     from other rows. The old row is released (autologin cleared there too)."""
     # Setup: env provider "Keycloak" with autologin
-    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    _configure(monkeypatch, FENRIR_OIDC_AUTOLOGIN="true")
     await apply_env_oidc_provider(db_session)
     old_id = (await _env_provider(db_session)).id
     assert (await _env_provider(db_session)).is_autologin is True
@@ -723,7 +723,7 @@ async def test_renaming_with_autologin_updates_the_exclusivity_sweep(db_session,
     await db_session.commit()
 
     # Rename env provider to "Authentik" with autologin=true
-    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    monkeypatch.setenv("FENRIR_OIDC_NAME", "Authentik")
     await apply_env_oidc_provider(db_session)
 
     # New row is the autologin target
@@ -745,7 +745,7 @@ async def test_renaming_with_autologin_updates_the_exclusivity_sweep(db_session,
 async def test_group_name_matching_is_case_sensitive(db_session, monkeypatch, caplog):
     """Group name is resolved by exact match; 'operators' != 'Operators'."""
     await _group(db_session, "Operators")  # capital O
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="operators")  # lowercase
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="operators")  # lowercase
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)
@@ -753,15 +753,15 @@ async def test_group_name_matching_is_case_sensitive(db_session, monkeypatch, ca
     # Config is rejected
     assert await _env_provider(db_session) is None
     assert "operators" in caplog.text
-    assert "BAMBUDDY_OIDC_DEFAULT_GROUP" in caplog.text
+    assert "FENRIR_OIDC_DEFAULT_GROUP" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_group_name_rejection_does_not_log_the_secret(db_session, monkeypatch, caplog):
     """Group resolution happens before schema validation, so the secret is
     not yet in scope, but verify it's not leaked by the error path."""
-    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="NonExistent")
-    secret = os.environ["BAMBUDDY_OIDC_CLIENT_SECRET"]
+    _configure(monkeypatch, FENRIR_OIDC_DEFAULT_GROUP="NonExistent")
+    secret = os.environ["FENRIR_OIDC_CLIENT_SECRET"]
 
     with caplog.at_level(logging.ERROR):
         await apply_env_oidc_provider(db_session)
@@ -780,7 +780,7 @@ async def test_restoring_env_config_after_rename_then_unset_finds_the_original_r
     original_id = (await _env_provider(db_session)).id
 
     # Rename to Authentik
-    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    monkeypatch.setenv("FENRIR_OIDC_NAME", "Authentik")
     await apply_env_oidc_provider(db_session)
     assert (await _env_provider(db_session)).name == "Authentik"
 

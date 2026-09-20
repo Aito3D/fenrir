@@ -14,7 +14,7 @@ import {
 } from '../utils/amsHelpers';
 import type { PrinterStatus, SlotSpoolIdentity } from '../api/client';
 
-/** Global-tray-id → the identity of the spool Bambuddy has bound to that slot. */
+/** Global-tray-id → the identity of the spool Fenrir has bound to that slot. */
 export type SlotSpoolIdentities = Map<number, SlotSpoolIdentity>;
 
 /**
@@ -23,7 +23,7 @@ export type SlotSpoolIdentities = Map<number, SlotSpoolIdentity>;
  * Telemetry can only ever say "PLA" plus a colour hex for anything that isn't
  * a Bambu spool: the tray record has no brand field, `tray_sub_brands` stays
  * empty, and the hex gets resolved against Bambu's own colour catalogue. So a
- * Devil Design PLA Basic Orange the operator assigned in Bambuddy read back as
+ * Devil Design PLA Basic Orange the operator assigned in Fenrir read back as
  * "PLA (Sunflower Yellow)" here while the printer card named it correctly.
  *
  * Returns null when the slot has no binding or the binding says nothing
@@ -176,7 +176,7 @@ export interface LoadedFilament {
   trayInfoIdx?: string;
   /** Filament subtype name (e.g., "PLA Basic", "PLA Matte", "PETG HF") */
   traySubBrands?: string;
-  /** "Devil Design PLA Basic" — the spool Bambuddy has bound to this slot,
+  /** "Devil Design PLA Basic" — the spool Fenrir has bound to this slot,
    *  when there is one. Display only; prefer it over `traySubBrands`, which
    *  the printer leaves empty for everything that isn't a Bambu spool. */
   spoolName?: string;

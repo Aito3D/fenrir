@@ -1,6 +1,6 @@
 # FINAL_REPORT.md — refactor-loop campaign 16 (the settings feature)
 
-Campaign 16 · worktree `../bambuddy-refactor-c16` · branch `auto-refactor-loop-c16` · BASE `refactor-base-c16` (a7edcbf47, cut from main 911c08b25 on 2026-09-14)
+Campaign 16 · worktree `../fenrir-refactor-c16` · branch `auto-refactor-loop-c16` · BASE `refactor-base-c16` (a7edcbf47, cut from main 911c08b25 on 2026-09-14)
 Scope: backend settings route/schema/model, SettingsPage.tsx and its 15 settings panels + SecurityStatusCard, settingsSearch.ts, and their tests (see BASELINE.md for the exact boundary and the upstream-vs-fork ownership caution).
 Parameters: TRIAGE P3 · MAX_ITER 8 · MAX_ROUNDS 3 · BATCH 3 · MODE auto · COMMIT_STYLE grouped · MERGE_CADENCE at-exit.
 

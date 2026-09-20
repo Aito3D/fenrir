@@ -3,22 +3,22 @@
 # SpoolBuddy Installation Script for Raspberry Pi
 #
 # Supports two scenarios:
-#   1) SpoolBuddy only — NFC/scale companion connecting to a remote Bambuddy instance
-#   2) SpoolBuddy + Bambuddy — both running natively on this Raspberry Pi
+#   1) SpoolBuddy only — NFC/scale companion connecting to a remote Fenrir instance
+#   2) SpoolBuddy + Fenrir — both running natively on this Raspberry Pi
 #
 # Usage:
 #   Interactive:  curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/spoolbuddy/install.sh -o install.sh && chmod +x install.sh && sudo ./install.sh
-#   Unattended:   sudo ./install.sh --mode spoolbuddy --bambuddy-url http://192.168.1.100:8000 --api-key bb_xxx --yes
+#   Unattended:   sudo ./install.sh --mode spoolbuddy --fenrir-url http://192.168.1.100:8000 --api-key bb_xxx --yes
 #
 # Options:
 #   --mode MODE          Installation mode: "spoolbuddy" (companion only) or "full" (both)
 #   --repo URL           Git repository URL to install from (default: upstream repo)
 #   --ref REF            Git ref to install (branch/tag/commit, default: main)
-#   --bambuddy-url URL   Bambuddy server URL (required for spoolbuddy mode)
-#   --api-key KEY        Bambuddy API key (required for spoolbuddy mode)
-#   --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/bambuddy)
-#   --port PORT          Bambuddy port (full mode only, default: 8000)
-#   --ssh-pubkey KEY     Bambuddy SSH public key for remote updates
+#   --fenrir-url URL   Fenrir server URL (required for spoolbuddy mode)
+#   --api-key KEY        Fenrir API key (required for spoolbuddy mode)
+#   --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/fenrir)
+#   --port PORT          Fenrir port (full mode only, default: 8000)
+#   --ssh-pubkey KEY     Fenrir SSH public key for remote updates
 #   --yes, -y            Non-interactive mode, accept defaults
 #   --help, -h           Show this help message
 #
@@ -38,7 +38,7 @@ NC='\033[0m'
 
 GITHUB_REPO="https://github.com/maziggy/bambuddy.git"
 SPOOLBUDDY_SERVICE_USER="spoolbuddy"
-BAMBUDDY_SERVICE_USER="bambuddy"
+FENRIR_SERVICE_USER="fenrir"
 
 # Packages needed for SpoolBuddy hardware (NFC reader + scale)
 SYSTEM_PACKAGES="python3 python3-pip python3-venv python3-dev python3-spidev python3-libgpiod gpiod libgpiod-dev i2c-tools git plymouth-themes"
@@ -56,14 +56,14 @@ INSTALL_REPO=""
 INSTALL_REF=""
 DETECTED_INSTALLER_REPO=""
 DETECTED_INSTALLER_REF=""
-BAMBUDDY_URL=""
+FENRIR_URL=""
 API_KEY=""
-BAMBUDDY_PORT="8000"
+FENRIR_PORT="8000"
 NON_INTERACTIVE="false"
 REBOOT_NEEDED="false"
 KIOSK_USER=""            # auto-detected from $SUDO_USER
-KIOSK_URL=""             # derived from $BAMBUDDY_URL/spoolbuddy?token=$API_KEY
-SSH_PUBKEY=""            # Bambuddy's SSH public key for remote updates
+KIOSK_URL=""             # derived from $FENRIR_URL/spoolbuddy?token=$API_KEY
+SSH_PUBKEY=""            # Fenrir's SSH public key for remote updates
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -193,14 +193,14 @@ show_help() {
     echo "Usage: sudo $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --mode MODE          \"spoolbuddy\" (companion only) or \"full\" (Bambuddy + SpoolBuddy)"
+    echo "  --mode MODE          \"spoolbuddy\" (companion only) or \"full\" (Fenrir + SpoolBuddy)"
     echo "  --repo URL           Git repository URL to install from"
     echo "  --ref REF            Git ref to install (branch/tag/commit)"
-    echo "  --bambuddy-url URL   Bambuddy server URL (required for spoolbuddy mode)"
-    echo "  --api-key KEY        Bambuddy API key (required for spoolbuddy mode)"
-    echo "  --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/bambuddy)"
-    echo "  --port PORT          Bambuddy port (full mode only, default: 8000)"
-    echo "  --ssh-pubkey KEY     Bambuddy SSH public key for remote updates"
+    echo "  --fenrir-url URL   Fenrir server URL (required for spoolbuddy mode)"
+    echo "  --api-key KEY        Fenrir API key (required for spoolbuddy mode)"
+    echo "  --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/fenrir)"
+    echo "  --port PORT          Fenrir port (full mode only, default: 8000)"
+    echo "  --ssh-pubkey KEY     Fenrir SSH public key for remote updates"
     echo "  --yes, -y            Non-interactive mode, accept defaults"
     echo "  --help, -h           Show this help message"
     echo ""
@@ -209,7 +209,7 @@ show_help() {
     echo "    sudo ./install.sh"
     echo ""
     echo "  SpoolBuddy companion (unattended):"
-    echo "    sudo ./install.sh --mode spoolbuddy --bambuddy-url http://192.168.1.100:8000 --api-key bb_xxx -y"
+    echo "    sudo ./install.sh --mode spoolbuddy --fenrir-url http://192.168.1.100:8000 --api-key bb_xxx -y"
     echo ""
     echo "  Full install (unattended):"
     echo "    sudo ./install.sh --mode full --port 8000 -y"
@@ -513,7 +513,7 @@ create_spoolbuddy_user() {
     done
     success "User added to gpio, spi, i2c, video groups"
 
-    # Allow passwordless restart of daemon + kiosk (needed for SSH-based updates from Bambuddy)
+    # Allow passwordless restart of daemon + kiosk (needed for SSH-based updates from Fenrir)
     cat > /etc/sudoers.d/spoolbuddy << 'SUDOERS'
 spoolbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart spoolbuddy.service
 spoolbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart getty@tty1.service
@@ -570,10 +570,10 @@ create_spoolbuddy_env() {
 # SpoolBuddy Configuration
 # Generated by install.sh on $(date)
 
-# Bambuddy backend URL
-SPOOLBUDDY_BACKEND_URL=$BAMBUDDY_URL
+# Fenrir backend URL
+SPOOLBUDDY_BACKEND_URL=$FENRIR_URL
 
-# API key (create one in Bambuddy Settings -> API Keys)
+# API key (create one in Fenrir Settings -> API Keys)
 SPOOLBUDDY_API_KEY=$API_KEY
 
 # NAU7802 scale bus (RPi GPIO2/GPIO3)
@@ -616,7 +616,7 @@ ensure_kiosk_env_access() {
 }
 
 setup_ssh_key() {
-    info "Setting up SSH access for Bambuddy remote updates..."
+    info "Setting up SSH access for Fenrir remote updates..."
 
     local ssh_dir="$INSTALL_PATH/.ssh"
     local auth_keys="$ssh_dir/authorized_keys"
@@ -634,7 +634,7 @@ setup_ssh_key() {
         fi
     else
         # No manual key — the daemon will auto-deploy it on first registration
-        info "SSH key will be deployed automatically when the daemon connects to Bambuddy"
+        info "SSH key will be deployed automatically when the daemon connects to Fenrir"
         touch "$auth_keys"
     fi
 
@@ -678,28 +678,28 @@ EOF
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bambuddy Installation (full mode only)
+# Fenrir Installation (full mode only)
 # ─────────────────────────────────────────────────────────────────────────────
 
-create_bambuddy_user() {
-    if id "$BAMBUDDY_SERVICE_USER" &>/dev/null; then
-        info "User '$BAMBUDDY_SERVICE_USER' already exists"
+create_fenrir_user() {
+    if id "$FENRIR_SERVICE_USER" &>/dev/null; then
+        info "User '$FENRIR_SERVICE_USER' already exists"
         return
     fi
 
-    info "Creating service user '$BAMBUDDY_SERVICE_USER'..."
-    useradd --system --shell /usr/sbin/nologin --home-dir "$INSTALL_PATH" "$BAMBUDDY_SERVICE_USER"
+    info "Creating service user '$FENRIR_SERVICE_USER'..."
+    useradd --system --shell /usr/sbin/nologin --home-dir "$INSTALL_PATH" "$FENRIR_SERVICE_USER"
     success "Service user created"
 }
 
-setup_bambuddy_venv() {
+setup_fenrir_venv() {
     cd "$INSTALL_PATH"
 
-    run_with_progress "Creating Bambuddy venv" $PYTHON_CMD -m venv venv
+    run_with_progress "Creating Fenrir venv" $PYTHON_CMD -m venv venv
     run_with_progress "Upgrading pip" "$INSTALL_PATH/venv/bin/pip" install --upgrade pip
-    run_with_progress "Installing Bambuddy dependencies" "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
+    run_with_progress "Installing Fenrir dependencies" "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
 
-    chown -R "$BAMBUDDY_SERVICE_USER:$BAMBUDDY_SERVICE_USER" "$INSTALL_PATH/venv"
+    chown -R "$FENRIR_SERVICE_USER:$FENRIR_SERVICE_USER" "$INSTALL_PATH/venv"
 }
 
 install_nodejs() {
@@ -728,13 +728,13 @@ build_frontend() {
     run_with_progress "Building frontend" npm run build
 }
 
-create_bambuddy_env() {
-    info "Creating Bambuddy configuration..."
+create_fenrir_env() {
+    info "Creating Fenrir configuration..."
 
     local env_file="$INSTALL_PATH/.env"
 
     cat > "$env_file" << EOF
-# Bambuddy Configuration
+# Fenrir Configuration
 # Generated by install.sh on $(date)
 
 DEBUG=false
@@ -742,19 +742,19 @@ LOG_LEVEL=INFO
 LOG_TO_FILE=true
 EOF
 
-    chown "$BAMBUDDY_SERVICE_USER:$BAMBUDDY_SERVICE_USER" "$env_file"
+    chown "$FENRIR_SERVICE_USER:$FENRIR_SERVICE_USER" "$env_file"
     chmod 600 "$env_file"
     success "Configuration saved to $env_file"
 }
 
-create_bambuddy_directories() {
+create_fenrir_directories() {
     mkdir -p "$INSTALL_PATH/data" "$INSTALL_PATH/logs"
-    chown -R "$BAMBUDDY_SERVICE_USER:$BAMBUDDY_SERVICE_USER" "$INSTALL_PATH/data" "$INSTALL_PATH/logs"
+    chown -R "$FENRIR_SERVICE_USER:$FENRIR_SERVICE_USER" "$INSTALL_PATH/data" "$INSTALL_PATH/logs"
     success "Data directories created"
 }
 
-create_bambuddy_service() {
-    info "Creating Bambuddy systemd service..."
+create_fenrir_service() {
+    info "Creating Fenrir systemd service..."
 
     # Overwriting the unit used to silently drop any ReadWritePaths the operator
     # had added — a NAS share for Scheduled Backups, typically — after which the
@@ -782,14 +782,14 @@ create_bambuddy_service() {
 
     cat > /etc/systemd/system/bambuddy.service << EOF
 [Unit]
-Description=Bambuddy - Bambu Lab Print Management
+Description=Fenrir - Bambu Lab Print Management
 Documentation=https://github.com/maziggy/bambuddy
 After=network.target
 
 [Service]
 Type=simple
-User=$BAMBUDDY_SERVICE_USER
-Group=$BAMBUDDY_SERVICE_USER
+User=$FENRIR_SERVICE_USER
+Group=$FENRIR_SERVICE_USER
 WorkingDirectory=$INSTALL_PATH
 EnvironmentFile=$INSTALL_PATH/.env
 Environment="DATA_DIR=$INSTALL_PATH/data"
@@ -800,7 +800,7 @@ Environment="LOG_DIR=$INSTALL_PATH/logs"
 # camera tile hangs the stop until systemd SIGKILLs, skipping the WAL
 # checkpoint and the MQTT / virtual-printer teardown. A kiosk sitting on the
 # printers page holds exactly such a stream open, so this bites every reboot.
-ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port $BAMBUDDY_PORT --loop asyncio --timeout-graceful-shutdown 5
+ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port $FENRIR_PORT --loop asyncio --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
 # Backstop only — uvicorn bounds its own wait at 5s and teardown takes ~1-2s.
@@ -809,7 +809,7 @@ StandardOutput=journal
 StandardError=journal
 
 # Allow binding to privileged ports (322 RTSP, 990 FTPS) for Virtual Printer
-# mode. The Bambuddy-only installer has had this since #757; this unit did not,
+# mode. The Fenrir-only installer has had this since #757; this unit did not,
 # so a full-mode install produced a virtual printer whose sockets never opened
 # (#2549). Compatible with NoNewPrivileges below — systemd raises the ambient
 # set at exec, which is not the escalation that setting forbids.
@@ -821,7 +821,7 @@ ProtectSystem=strict
 ProtectHome=true
 # ProtectSystem=strict makes every path outside the ones below read-only for this
 # service. To back up to a NAS share, add it here or in a drop-in that survives a
-# reinstall: sudo systemctl edit bambuddy → [Service] → ReadWritePaths=/mnt/share
+# reinstall: sudo systemctl edit fenrir → [Service] → ReadWritePaths=/mnt/share
 ReadWritePaths=$INSTALL_PATH/data $INSTALL_PATH/logs $INSTALL_PATH$extra_rw
 
 [Install]
@@ -830,13 +830,13 @@ EOF
 
     systemctl daemon-reload
     systemctl enable bambuddy.service
-    success "Bambuddy service created and enabled"
+    success "Fenrir service created and enabled"
 }
 
 bootstrap_spoolbuddy_kiosk_key() {
     # Provision an API key for the local SpoolBuddy kiosk and write it into
-    # spoolbuddy/.env. Runs against the Bambuddy DB directly (via the CLI),
-    # so the bambuddy service does not need to be running yet.
+    # spoolbuddy/.env. Runs against the Fenrir DB directly (via the CLI),
+    # so the fenrir service does not need to be running yet.
     info "Provisioning SpoolBuddy kiosk API key..."
 
     local env_file="$INSTALL_PATH/spoolbuddy/.env"
@@ -848,7 +848,7 @@ bootstrap_spoolbuddy_kiosk_key() {
     # CWD must be $INSTALL_PATH so `python -m backend.app.cli` finds the backend
     # package on sys.path (matches the systemd unit's WorkingDirectory).
     local kiosk_key
-    if ! kiosk_key="$(cd "$INSTALL_PATH" && sudo -u "$BAMBUDDY_SERVICE_USER" \
+    if ! kiosk_key="$(cd "$INSTALL_PATH" && sudo -u "$FENRIR_SERVICE_USER" \
             env DATA_DIR="$INSTALL_PATH/data" LOG_DIR="$INSTALL_PATH/logs" \
             "$INSTALL_PATH/venv/bin/python" -m backend.app.cli kiosk-bootstrap --force)"; then
         error "Failed to bootstrap SpoolBuddy kiosk API key"
@@ -1010,7 +1010,7 @@ setup_kiosk() {
 
     # Detect kiosk user (the human user who ran sudo)
     KIOSK_USER="${SUDO_USER:-$(logname 2>/dev/null || echo pi)}"
-    KIOSK_URL="${BAMBUDDY_URL}/spoolbuddy?token=${API_KEY}"
+    KIOSK_URL="${FENRIR_URL}/spoolbuddy?token=${API_KEY}"
     local KIOSK_HOME
     KIOSK_HOME=$(eval echo "~$KIOSK_USER")
 
@@ -1248,7 +1248,7 @@ else
     kiosk_url="\$FALLBACK_URL"
 fi
 
-# Wait for the Bambuddy backend to be reachable before launching Chromium.
+# Wait for the Fenrir backend to be reachable before launching Chromium.
 # Without this the browser opens before uvicorn has bound to the port on a
 # cold boot and the user sees an ERR_CONNECTION_REFUSED splash until they
 # manually reload. Probe /health (no auth, no body) with a short timeout.
@@ -1363,8 +1363,8 @@ parse_args() {
                 INSTALL_REF="$2"
                 shift 2
                 ;;
-            --bambuddy-url)
-                BAMBUDDY_URL="$2"
+            --fenrir-url)
+                FENRIR_URL="$2"
                 shift 2
                 ;;
             --api-key)
@@ -1376,7 +1376,7 @@ parse_args() {
                 shift 2
                 ;;
             --port)
-                BAMBUDDY_PORT="$2"
+                FENRIR_PORT="$2"
                 shift 2
                 ;;
             --ssh-pubkey)
@@ -1406,9 +1406,9 @@ ask_install_mode() {
     echo -e "${BOLD}How would you like to set up SpoolBuddy?${NC}"
     echo ""
     echo -e "  ${CYAN}1)${NC} SpoolBuddy only"
-    echo "     NFC reader + scale on this RPi, Bambuddy runs on another device"
+    echo "     NFC reader + scale on this RPi, Fenrir runs on another device"
     echo ""
-    echo -e "  ${CYAN}2)${NC} SpoolBuddy + Bambuddy"
+    echo -e "  ${CYAN}2)${NC} SpoolBuddy + Fenrir"
     echo "     Both running natively on this Raspberry Pi"
     echo ""
 
@@ -1432,9 +1432,9 @@ gather_config() {
     # Set default install path based on mode
     if [[ -z "$INSTALL_PATH" ]]; then
         if [[ "$INSTALL_MODE" == "full" ]]; then
-            INSTALL_PATH="/opt/bambuddy"
+            INSTALL_PATH="/opt/fenrir"
         else
-            INSTALL_PATH="/opt/bambuddy"
+            INSTALL_PATH="/opt/fenrir"
         fi
     fi
     prompt "Installation directory" "$INSTALL_PATH" INSTALL_PATH
@@ -1481,32 +1481,32 @@ gather_config() {
     fi
 
     if [[ "$INSTALL_MODE" == "spoolbuddy" ]]; then
-        # Need remote Bambuddy URL and API key
+        # Need remote Fenrir URL and API key
         echo ""
-        info "SpoolBuddy needs to connect to your Bambuddy server."
-        info "You can find/create an API key in Bambuddy under Settings -> API Keys."
+        info "SpoolBuddy needs to connect to your Fenrir server."
+        info "You can find/create an API key in Fenrir under Settings -> API Keys."
         echo ""
 
-        while [[ -z "$BAMBUDDY_URL" ]]; do
-            prompt "Bambuddy server URL (e.g. http://192.168.1.100:8000)" "" BAMBUDDY_URL
-            if [[ -z "$BAMBUDDY_URL" ]]; then
-                warn "Bambuddy URL is required"
+        while [[ -z "$FENRIR_URL" ]]; do
+            prompt "Fenrir server URL (e.g. http://192.168.1.100:8000)" "" FENRIR_URL
+            if [[ -z "$FENRIR_URL" ]]; then
+                warn "Fenrir URL is required"
             fi
         done
 
         while [[ -z "$API_KEY" ]]; do
-            prompt "Bambuddy API key" "" API_KEY
+            prompt "Fenrir API key" "" API_KEY
             if [[ -z "$API_KEY" ]]; then
                 warn "API key is required"
             fi
         done
     else
-        # Full mode — Bambuddy runs locally
-        prompt "Bambuddy port" "$BAMBUDDY_PORT" BAMBUDDY_PORT
-        BAMBUDDY_URL="http://localhost:$BAMBUDDY_PORT"
+        # Full mode — Fenrir runs locally
+        prompt "Fenrir port" "$FENRIR_PORT" FENRIR_PORT
+        FENRIR_URL="http://localhost:$FENRIR_PORT"
 
         echo ""
-        info "After installation, create an API key in Bambuddy (Settings -> API Keys)"
+        info "After installation, create an API key in Fenrir (Settings -> API Keys)"
         info "and update it in: $INSTALL_PATH/spoolbuddy/.env"
         API_KEY="CHANGE_ME_AFTER_SETUP"
     fi
@@ -1515,15 +1515,15 @@ gather_config() {
     echo ""
     echo -e "${BOLD}Installation Summary${NC}"
     echo -e "${CYAN}─────────────────────────────────────────${NC}"
-    echo -e "  Mode:           ${GREEN}$([ "$INSTALL_MODE" == "full" ] && echo "Bambuddy + SpoolBuddy" || echo "SpoolBuddy only")${NC}"
+    echo -e "  Mode:           ${GREEN}$([ "$INSTALL_MODE" == "full" ] && echo "Fenrir + SpoolBuddy" || echo "SpoolBuddy only")${NC}"
     echo -e "  Install path:   ${GREEN}$INSTALL_PATH${NC}"
     echo -e "  Git repo:       ${GREEN}$INSTALL_REPO${NC}"
     echo -e "  Git ref:        ${GREEN}$INSTALL_REF${NC}"
     if [[ "$INSTALL_MODE" == "full" ]]; then
-        echo -e "  Bambuddy port:  ${GREEN}$BAMBUDDY_PORT${NC}"
-        echo -e "  Bambuddy URL:   ${GREEN}$BAMBUDDY_URL${NC}"
+        echo -e "  Fenrir port:  ${GREEN}$FENRIR_PORT${NC}"
+        echo -e "  Fenrir URL:   ${GREEN}$FENRIR_URL${NC}"
     else
-        echo -e "  Bambuddy URL:   ${GREEN}$BAMBUDDY_URL${NC}"
+        echo -e "  Fenrir URL:   ${GREEN}$FENRIR_URL${NC}"
     fi
     echo ""
 
@@ -1551,7 +1551,7 @@ main() {
     echo -e "${CYAN}║  |____/| .__/ \\___/ \\___/|_|____/ \\__,_|\\__,_|\\__,_|\\__, |║${NC}"
     echo -e "${CYAN}║        |_|                                          |___/ ║${NC}"
     echo -e "${CYAN}║                                                          ║${NC}"
-    echo -e "${CYAN}║          NFC Spool Management for Bambuddy               ║${NC}"
+    echo -e "${CYAN}║          NFC Spool Management for Fenrir               ║${NC}"
     echo -e "${CYAN}║                                                          ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -1624,16 +1624,16 @@ main() {
     create_spoolbuddy_service
     echo ""
 
-    # ── Step 5: Bambuddy setup (full mode only) ───────────────────────────
+    # ── Step 5: Fenrir setup (full mode only) ───────────────────────────
     if [[ "$INSTALL_MODE" == "full" ]]; then
-        info "Setting up Bambuddy..."
-        create_bambuddy_user
-        setup_bambuddy_venv
+        info "Setting up Fenrir..."
+        create_fenrir_user
+        setup_fenrir_venv
         install_nodejs
         build_frontend
-        create_bambuddy_directories
-        create_bambuddy_env
-        create_bambuddy_service
+        create_fenrir_directories
+        create_fenrir_env
+        create_fenrir_service
         bootstrap_spoolbuddy_kiosk_key
         echo ""
     fi
@@ -1651,9 +1651,9 @@ main() {
     ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}') || ip_addr="<your-ip>"
 
     if [[ "$INSTALL_MODE" == "full" ]]; then
-        echo -e "  ${BOLD}Bambuddy:${NC}         ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC}"
+        echo -e "  ${BOLD}Fenrir:${NC}         ${CYAN}http://$ip_addr:$FENRIR_PORT${NC}"
     else
-        echo -e "  ${BOLD}SpoolBuddy:${NC}       Connecting to ${CYAN}$BAMBUDDY_URL${NC}"
+        echo -e "  ${BOLD}SpoolBuddy:${NC}       Connecting to ${CYAN}$FENRIR_URL${NC}"
     fi
     echo -e "  ${BOLD}Kiosk URL:${NC}        ${CYAN}$KIOSK_URL${NC}"
     echo -e "  ${BOLD}Kiosk user:${NC}       ${CYAN}$KIOSK_USER${NC}"
@@ -1663,7 +1663,7 @@ main() {
         echo -e "  ${BOLD}Next steps:${NC}"
         echo -e "    1. Reboot (required for kiosk, Plymouth splash, and hardware changes)"
         echo -e "    2. The touchscreen kiosk will start automatically after reboot"
-        echo -e "    3. On another device, open ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC} to complete first-run admin setup"
+        echo -e "    3. On another device, open ${CYAN}http://$ip_addr:$FENRIR_PORT${NC} to complete first-run admin setup"
     fi
 
     echo ""
@@ -1671,8 +1671,8 @@ main() {
     echo -e "    SpoolBuddy status:   ${CYAN}sudo systemctl status spoolbuddy${NC}"
     echo -e "    SpoolBuddy logs:     ${CYAN}sudo journalctl -u spoolbuddy -f${NC}"
     if [[ "$INSTALL_MODE" == "full" ]]; then
-        echo -e "    Bambuddy status:     ${CYAN}sudo systemctl status bambuddy${NC}"
-        echo -e "    Bambuddy logs:       ${CYAN}sudo journalctl -u bambuddy -f${NC}"
+        echo -e "    Fenrir status:     ${CYAN}sudo systemctl status fenrir${NC}"
+        echo -e "    Fenrir logs:       ${CYAN}sudo journalctl -u fenrir -f${NC}"
     fi
 
     echo ""

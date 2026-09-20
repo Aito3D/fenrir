@@ -128,9 +128,9 @@ scan_codeql_python() {
         return 2
     fi
     echo "Creating database..."
-    gh codeql database create --overwrite --language=python --threads=0 /tmp/bambuddy-codeql-python &>/dev/null
+    gh codeql database create --overwrite --language=python --threads=0 /tmp/fenrir-codeql-python &>/dev/null
     echo "Analyzing..."
-    gh codeql database analyze /tmp/bambuddy-codeql-python \
+    gh codeql database analyze /tmp/fenrir-codeql-python \
         "$PROJECT_ROOT/.codeql/python-bambuddy.qls" \
         --threads=0 --format=sarifv2.1.0 --output="$sarif" &>/dev/null
     echo ""
@@ -144,9 +144,9 @@ scan_codeql_js() {
         return 2
     fi
     echo "Creating database..."
-    gh codeql database create --overwrite --language=javascript --source-root=frontend --threads=0 /tmp/bambuddy-codeql-javascript &>/dev/null
+    gh codeql database create --overwrite --language=javascript --source-root=frontend --threads=0 /tmp/fenrir-codeql-javascript &>/dev/null
     echo "Analyzing..."
-    gh codeql database analyze /tmp/bambuddy-codeql-javascript \
+    gh codeql database analyze /tmp/fenrir-codeql-javascript \
         "$PROJECT_ROOT/.codeql/javascript-bambuddy.qls" \
         --threads=0 --format=sarifv2.1.0 --output="$sarif" &>/dev/null
     echo ""
@@ -160,9 +160,9 @@ scan_codeql_actions() {
         return 2
     fi
     echo "Creating database..."
-    gh codeql database create --overwrite --language=actions --threads=0 /tmp/bambuddy-codeql-actions &>/dev/null
+    gh codeql database create --overwrite --language=actions --threads=0 /tmp/fenrir-codeql-actions &>/dev/null
     echo "Analyzing..."
-    gh codeql database analyze /tmp/bambuddy-codeql-actions \
+    gh codeql database analyze /tmp/fenrir-codeql-actions \
         codeql/actions-queries \
         --threads=0 --format=sarifv2.1.0 --output="$sarif" &>/dev/null
     echo ""
@@ -179,9 +179,9 @@ scan_trivy_image() {
         return 2
     fi
     echo "Building Docker image..."
-    docker build -t bambuddy:security-scan . 2>&1
+    docker build -t fenrir:security-scan . 2>&1
     echo ""
-    trivy image --severity CRITICAL,HIGH,MEDIUM bambuddy:security-scan 2>&1
+    trivy image --severity CRITICAL,HIGH,MEDIUM fenrir:security-scan 2>&1
 }
 
 scan_trivy_config() {
@@ -354,7 +354,7 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     exit 0
 fi
 
-echo -e "${BOLD}Bambuddy Security Scanner${NC}"
+echo -e "${BOLD}Fenrir Security Scanner${NC}"
 echo -e "${DIM}$(date '+%Y-%m-%d %H:%M:%S')  •  $(nproc) CPU cores available${NC}"
 echo ""
 

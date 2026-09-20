@@ -61,7 +61,7 @@ class TestBedJogAPI:
 
         Not because a bare move is clamped: the firmware ignores soft endstops
         on MQTT G-code whatever we send. But ``M211 S0`` disabled them
-        *globally*, so Bambuddy was also taking away the protection on the
+        *globally*, so Fenrir was also taking away the protection on the
         printer's own touchscreen, and that part was ours to stop doing."""
         printer = await printer_factory(name="P1")
         mock_client = MagicMock()

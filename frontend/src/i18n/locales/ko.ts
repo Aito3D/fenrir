@@ -49,7 +49,7 @@ export default {
     createInvoiceIntro_other: '견적 {{quote}}, {{count}}개 항목. Zoho Books에 청구서 초안이 생성됩니다 — 메일은 발송되지 않습니다.',
     createInvoiceAmount: '청구 금액',
     createInvoiceRemaining: '미결제 잔액',
-    createInvoiceLockWarning: '청구되면 이 견적은 Bambuddy에서의 항목 변경을 더 이상 반영하지 않습니다.',
+    createInvoiceLockWarning: '청구되면 이 견적은 Fenrir에서의 항목 변경을 더 이상 반영하지 않습니다.',
     createInvoiceConfirm: '생성',
     createInvoiceLoadFailed: '청구서를 준비하지 못했습니다',
     createInvoiceDone: '청구서 {{number}} 생성됨',
@@ -644,7 +644,7 @@ export default {
     smartSwitches: '스마트 스위치',
     logout: '로그아웃',
     installApp: '앱 설치',
-    installAppSuccess: 'Bambuddy가 설치되었습니다'
+    installAppSuccess: 'Fenrir가 설치되었습니다'
   },
   common: {
     plusNMore: '외 {{count}}개',
@@ -957,7 +957,7 @@ export default {
       confirmMidPrintTitle: '인쇄 중 유지보수 모드로 전환하시겠습니까?',
       confirmMidPrintMessage: '{{name}} 은(는) 현재 인쇄 중입니다. 유지보수 모드로 전환하면 MQTT가 연결 해제되고 이 작업의 진행률 추적 및 완료 알림이 중지됩니다. 계속하시겠습니까?',
       editFieldLabel: '유지보수 모드',
-      editFieldHelp: '활성화하면 이 프린터는 MQTT, 대기열 디스패치 및 알림에서 일시 중지됩니다 — 수리, 병렬 Bambuddy 설치 또는 임시 중지에 유용합니다.',
+      editFieldHelp: '활성화하면 이 프린터는 MQTT, 대기열 디스패치 및 알림에서 일시 중지됩니다 — 수리, 병렬 Fenrir 설치 또는 임시 중지에 유용합니다.',
     },
     chamberLightOn: '챔버 조명 켜기',
     chamberLightOff: '챔버 조명 끄기',
@@ -1484,19 +1484,19 @@ export default {
     title: '인쇄 아카이브',
     no3mfBanner: {
       title: '최근 일부 인쇄가 썸네일과 함께 아카이브되지 않았습니다',
-      body: '슬라이서가 프린터의 SD 카드에 .gcode.3mf 파일을 남기지 않아서 Bambuddy가 썸네일이나 슬라이서 메타데이터를 가져올 수 없었습니다. 일반적으로 슬라이서 (Bambu Studio / OrcaSlicer 장치 탭)에서 "전송된 파일을 외부 저장소에 저장"이 꺼져 있을 때 발생합니다.',
+      body: '슬라이서가 프린터의 SD 카드에 .gcode.3mf 파일을 남기지 않아서 Fenrir가 썸네일이나 슬라이서 메타데이터를 가져올 수 없었습니다. 일반적으로 슬라이서 (Bambu Studio / OrcaSlicer 장치 탭)에서 "전송된 파일을 외부 저장소에 저장"이 꺼져 있을 때 발생합니다.',
       docsLink: '설치 단계 4 보기',
       docsLinkInternalStorage: '왜 이런 일이 생기나요',
       titleInternalStorage: '최근 일부 출력물이 프린터 내부 저장소에 남았습니다',
-      bodyInternalStorage: '슬라이싱된 파일을 Bambu Studio가 카드가 아니라 프린터 내부 저장소에 저장해서 Bambuddy가 FTP로 읽을 것이 없었습니다. H2 시리즈와 P2S에서는 «인쇄» 버튼이 항상 그렇게 동작하며, 선택할 수 있는 것은 «보내기»뿐인데 그것도 기본값이 «캐시»입니다. 해당 출력물은 이름과 시간과 함께 계속 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나 OrcaSlicer로 슬라이싱하세요. Bambu Studio를 쓴다면 «보내기»에서 «외부 저장소»를 고른 뒤 출력을 시작하면 됩니다. 모두 프린터에 카드나 USB 메모리가 필요합니다.',
+      bodyInternalStorage: '슬라이싱된 파일을 Bambu Studio가 카드가 아니라 프린터 내부 저장소에 저장해서 Fenrir가 FTP로 읽을 것이 없었습니다. H2 시리즈와 P2S에서는 «인쇄» 버튼이 항상 그렇게 동작하며, 선택할 수 있는 것은 «보내기»뿐인데 그것도 기본값이 «캐시»입니다. 해당 출력물은 이름과 시간과 함께 계속 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Fenrir에서 출력을 시작하거나 OrcaSlicer로 슬라이싱하세요. Bambu Studio를 쓴다면 «보내기»에서 «외부 저장소»를 고른 뒤 출력을 시작하면 됩니다. 모두 프린터에 카드나 USB 메모리가 필요합니다.',
       titleNoExternalStorage: '최근 일부 출력물을 보관하지 못했습니다 — 프린터에 저장소가 없습니다',
-      bodyNoExternalStorage: '프린터 슬롯에 카드도 USB도 감지되지 않아 슬라이싱된 파일이 저장될 곳이 없었고 Bambuddy가 읽을 것도 없었습니다. 하나 넣으면 다음 출력물은 온전히 보관됩니다.',
+      bodyNoExternalStorage: '프린터 슬롯에 카드도 USB도 감지되지 않아 슬라이싱된 파일이 저장될 곳이 없었고 Fenrir가 읽을 것도 없었습니다. 하나 넣으면 다음 출력물은 온전히 보관됩니다.',
       titleInternalHistory: '최근 일부 출력물은 이미 프린터에 있던 파일에서 시작되었습니다',
-      bodyInternalHistory: '해당 출력물은 프린터 자체 라이브러리에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보내 두고 나중에 출력한 파일입니다. Bambuddy는 출력 파일을 FTP로 읽는데 FTP는 카드나 USB만 제공하고, 프린터는 그 라이브러리를 FTP가 닿지 않는 영역에 보관하므로 읽을 3MF가 없었습니다. 이 출력물들은 아무것도 전송되지 않았으므로 슬라이서 설정으로는 해결되지 않습니다. 이름과 시간과 함께 계속 보관되며, "아카이브 편집"에서 사용된 필라멘트를 직접 입력할 수 있습니다. 온전한 보관을 원하면 Bambuddy나 슬라이서에서 출력을 시작하세요.',
+      bodyInternalHistory: '해당 출력물은 프린터 자체 라이브러리에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보내 두고 나중에 출력한 파일입니다. Fenrir는 출력 파일을 FTP로 읽는데 FTP는 카드나 USB만 제공하고, 프린터는 그 라이브러리를 FTP가 닿지 않는 영역에 보관하므로 읽을 3MF가 없었습니다. 이 출력물들은 아무것도 전송되지 않았으므로 슬라이서 설정으로는 해결되지 않습니다. 이름과 시간과 함께 계속 보관되며, "아카이브 편집"에서 사용된 필라멘트를 직접 입력할 수 있습니다. 온전한 보관을 원하면 Fenrir나 슬라이서에서 출력을 시작하세요.',
       titleFtpsCooloff: '최근 일부 출력물을 보관하지 못했습니다 — 프린터가 파일 연결을 거부했습니다',
-      bodyFtpsCooloff: 'Bambuddy가 프린터의 파일 전송 포트(FTPS 990)를 열었으나 프린터가 TLS가 아닌 것으로 응답해 아무것도 읽을 수 없었습니다. 해당 출력물은 이름과 시간과 함께 보관되지만 미리보기와 슬라이서 메타데이터는 없습니다. 이는 슬라이서 설정 문제도, 사용자가 바꾼 것도 아닙니다. 같은 모델과 같은 펌웨어가 다른 설치 환경에서는 정상 동작하며, 문제가 생긴 프린터도 대개 나중에 저절로 다시 동작합니다. 이런 실패 후 Bambuddy는 해당 프린터로의 전송을 5분간 멈추고, 그 후 파일을 다시 가지러 갑니다. 짧은 문제라면 스스로 채워지고, 카드가 계속 비어 있다면 거부가 재시도보다 오래 지속되었다는 뜻입니다. 무엇이 원인인지는 아직 밝혀지지 않았습니다. 반복된다면 시스템 페이지에서 디버그 로깅을 켠 뒤 지원 번들을 보고에 첨부해 주세요.',
+      bodyFtpsCooloff: 'Fenrir가 프린터의 파일 전송 포트(FTPS 990)를 열었으나 프린터가 TLS가 아닌 것으로 응답해 아무것도 읽을 수 없었습니다. 해당 출력물은 이름과 시간과 함께 보관되지만 미리보기와 슬라이서 메타데이터는 없습니다. 이는 슬라이서 설정 문제도, 사용자가 바꾼 것도 아닙니다. 같은 모델과 같은 펌웨어가 다른 설치 환경에서는 정상 동작하며, 문제가 생긴 프린터도 대개 나중에 저절로 다시 동작합니다. 이런 실패 후 Fenrir는 해당 프린터로의 전송을 5분간 멈추고, 그 후 파일을 다시 가지러 갑니다. 짧은 문제라면 스스로 채워지고, 카드가 계속 비어 있다면 거부가 재시도보다 오래 지속되었다는 뜻입니다. 무엇이 원인인지는 아직 밝혀지지 않았습니다. 반복된다면 시스템 페이지에서 디버그 로깅을 켠 뒤 지원 번들을 보고에 첨부해 주세요.',
       titleFtpTransferFailed: '최근 일부 출력을 보관하지 못했습니다 — 파일 전송이 시간 내에 끝나지 않았습니다',
-      bodyFtpTransferFailed: '슬라이싱된 파일은 프린터 카드에 있었고 프린터도 실제로 전송을 시작했지만, 허용된 시간 안에 전송이 끝나지 않았습니다. 출력 시작 시점의 프린터는 카메라와 상태 메시지, 작업 업로드까지 함께 처리하고 있어서 큰 3MF 파일은 그 사이를 통과하지 못할 때가 있습니다. 해당 출력은 이름과 시간과 함께 보관되어 있고, 썸네일과 슬라이서 정보만 없습니다. 슬라이서 설정 문제도 아니고 사용자가 바꾼 것 때문도 아닙니다. Bambuddy가 이후 10분 동안 파일을 세 번 더 가지러 가므로 대부분은 저절로 채워집니다. 카드가 계속 비어 있다면 그 시도들도 모두 시간 내에 끝나지 않았다는 뜻입니다. 계속 발생하면 설정 > 네트워크 > FTP 재시도 의 연결 제한 시간을 늘리세요.',
+      bodyFtpTransferFailed: '슬라이싱된 파일은 프린터 카드에 있었고 프린터도 실제로 전송을 시작했지만, 허용된 시간 안에 전송이 끝나지 않았습니다. 출력 시작 시점의 프린터는 카메라와 상태 메시지, 작업 업로드까지 함께 처리하고 있어서 큰 3MF 파일은 그 사이를 통과하지 못할 때가 있습니다. 해당 출력은 이름과 시간과 함께 보관되어 있고, 썸네일과 슬라이서 정보만 없습니다. 슬라이서 설정 문제도 아니고 사용자가 바꾼 것 때문도 아닙니다. Fenrir가 이후 10분 동안 파일을 세 번 더 가지러 가므로 대부분은 저절로 채워집니다. 카드가 계속 비어 있다면 그 시도들도 모두 시간 내에 끝나지 않았다는 뜻입니다. 계속 발생하면 설정 > 네트워크 > FTP 재시도 의 연결 제한 시간을 늘리세요.',
       dismissLabel: '이 알림 닫기'
     },
     searchPlaceholder: '아카이브 검색...',
@@ -2538,7 +2538,7 @@ export default {
       disabled: 'LDAP 인증 비활성화됨',
       feature1: '사용자가 LDAP 자격 증명으로 로그인 가능',
       feature2: '로컬 관리자 계정이 대체 수단으로 유지됨',
-      feature3: 'LDAP 그룹이 로그인 시 Bambuddy 그룹에 매핑됨',
+      feature3: 'LDAP 그룹이 로그인 시 Fenrir 그룹에 매핑됨',
       serverConfig: 'LDAP 서버 설정',
       serverUrl: '서버 URL',
       serverUrlHint: 'SSL에는 ldaps://, StartTLS에는 ldap:// 사용',
@@ -2550,12 +2550,12 @@ export default {
       userFilter: '사용자 검색 필터',
       userFilterHint: '{username}은 로그인 사용자명으로 대체됩니다. OpenLDAP의 경우 (uid={username})을 사용하세요.',
       autoProvision: '사용자 자동 프로비저닝',
-      autoProvisionHint: '첫 LDAP 로그인 시 자동으로 Bambuddy 계정 생성',
+      autoProvisionHint: '첫 LDAP 로그인 시 자동으로 Fenrir 계정 생성',
       defaultGroup: '기본 그룹',
       defaultGroupNone: '— 없음 (대체 없음) —',
       defaultGroupHint: 'LDAP 사용자가 인증되었지만 매핑된 LDAP 그룹에 없을 때 할당되는 대체 그룹. 비워두면 매핑되지 않은 사용자에게 권한이 없습니다.',
       groupMapping: '그룹 매핑 (JSON)',
-      groupMappingHint: 'LDAP 그룹 DN을 Bambuddy 그룹에 매핑합니다. 사용 가능한 그룹: ',
+      groupMappingHint: 'LDAP 그룹 DN을 Fenrir 그룹에 매핑합니다. 사용 가능한 그룹: ',
       testConnection: '연결 테스트',
       settingsSaved: 'LDAP 설정이 저장되었습니다',
       errors: {
@@ -2755,7 +2755,7 @@ export default {
     includeBetaUpdatesDesc: '업데이트 확인 시 베타 및 사전 릴리스 버전에 대해 알림',
     localLogin: {
       disable: '로컬 사용자명/비밀번호 로그인 비활성화',
-      disableHint: '활성화하면 SSO 공급자로만 로그인할 수 있습니다. LDAP는 영향을 받지 않습니다. 서버에서 BAMBUDDY_LOCAL_LOGIN=true 를 설정하면 복구 경로가 유지됩니다.'
+      disableHint: '활성화하면 SSO 공급자로만 로그인할 수 있습니다. LDAP는 영향을 받지 않습니다. 서버에서 FENRIR_LOCAL_LOGIN=true 를 설정하면 복구 경로가 유지됩니다.'
     },
     enableRetry: '재시도 활성화',
     homeAssistantDescription: 'Home Assistant를 통해 스마트 플러그 제어',
@@ -2897,7 +2897,7 @@ export default {
     tempFanPresetsFan: '팬 속도',
     tempFanPresetsReset: '기본값으로 재설정',
     concurrentUploadsTitle: '동시 업로드',
-    concurrentUploadsDescription: '대기열이 동시에 파일을 보낼 수 있는 프린터 수입니다. 프린터는 파일을 느리게 받으며(큰 출력물은 몇 분이 걸릴 수 있습니다) 각 프린터는 자기 차례를 기다립니다. 따라서 프린터가 많은 환경에서는 이 값을 높이면 배치의 마지막 프린터가 앞선 모든 전송이 끝나기를 기다리지 않아도 됩니다. 네트워크나 Bambuddy 호스트가 병렬 전송을 버거워하면 값을 낮추세요.',
+    concurrentUploadsDescription: '대기열이 동시에 파일을 보낼 수 있는 프린터 수입니다. 프린터는 파일을 느리게 받으며(큰 출력물은 몇 분이 걸릴 수 있습니다) 각 프린터는 자기 차례를 기다립니다. 따라서 프린터가 많은 환경에서는 이 값을 높이면 배치의 마지막 프린터가 앞선 모든 전송이 끝나기를 기다리지 않아도 됩니다. 네트워크나 Fenrir 호스트가 병렬 전송을 버거워하면 값을 낮추세요.',
     concurrentUploadsLabel: '동시에 전송할 프린터 수',
     concurrentUploadsHelp: '1이면 한 번에 한 대씩 전송합니다(기존 동작). 기본값은 4입니다.',
     staggeredStart: '엇갈린 시작',
@@ -2907,7 +2907,7 @@ export default {
     preheatEnabled: '예열 & 소크 활성화',
     preheatEnabledDesc: '꺼짐일 경우 대기열 인쇄가 즉시 시작됩니다. 각 항목은 인쇄별로 재정의할 수 있습니다.',
     preheatFilamentTargetsLabel: '필라멘트별 챔버 목표 (°C)',
-    preheatFilamentTargetsHint: 'Bambuddy는 로드된 AMS 슬롯 중 가장 높은 목표를 선택합니다. 모든 슬롯이 0으로 도출되는 인쇄(PLA, PETG, TPU, PVA)는 예열을 완전히 건너뛰고 즉시 시작합니다.',
+    preheatFilamentTargetsHint: 'Fenrir는 로드된 AMS 슬롯 중 가장 높은 목표를 선택합니다. 모든 슬롯이 0으로 도출되는 인쇄(PLA, PETG, TPU, PVA)는 예열을 완전히 건너뛰고 즉시 시작합니다.',
     preheatFilamentTargetsReset: '기본값으로 재설정',
     preheatFilamentTargetsDefaultRow: '기타 / 미매핑',
     preheatMaxWait: '최대 대기 (초)',
@@ -2970,7 +2970,7 @@ export default {
     authentication: '인증',
     authEnabledDescription: '인스턴스가 사용자 인증으로 보안됨',
     authDisabledDescription: '로그인 필요 및 사용자 접근 관리를 위해 활성화',
-    authDisabledMessage: '사용자 계정 생성, 권한 관리, Bambuddy 인스턴스 보안을 위해 인증을 활성화하세요.',
+    authDisabledMessage: '사용자 계정 생성, 권한 관리, Fenrir 인스턴스 보안을 위해 인증을 활성화하세요.',
     enableAuthentication: '인증 활성화',
     currentUser: '현재 사용자',
     changePassword: '비밀번호 변경',
@@ -3003,9 +3003,9 @@ export default {
     deleteGroupMessage: '이 그룹을 삭제하시겠습니까? 이 그룹의 사용자는 이 권한을 잃게 됩니다.',
     deleteGroup: '그룹 삭제',
     disableAuthenticationTitle: '인증 비활성화',
-    disableAuthenticationMessage: '인증을 비활성화하시겠습니까? 이렇게 하면 로그인 없이 Bambuddy 인스턴스에 접근할 수 있게 됩니다. 모든 사용자는 데이터베이스에 유지되지만 인증은 비활성화됩니다.',
+    disableAuthenticationMessage: '인증을 비활성화하시겠습니까? 이렇게 하면 로그인 없이 Fenrir 인스턴스에 접근할 수 있게 됩니다. 모든 사용자는 데이터베이스에 유지되지만 인증은 비활성화됩니다.',
     disableAuthentication: '인증 비활성화',
-    configureBambuddy: 'Bambuddy 설정',
+    configureFenrir: 'Fenrir 설정',
     systemDefault: '시스템 기본값',
     archiveSettings: '아카이브 설정',
     newWindow: '새 창',
@@ -3243,9 +3243,9 @@ export default {
     autoArchivePrints: '인쇄 자동 아카이브',
     autoArchiveDescription: '인쇄 완료 시 3MF 파일 자동 저장',
     saveThumbnailsDescription: '3MF 파일에서 미리보기 이미지 추출 및 저장',
-    captureFinishPhotoDescription: '인쇄 완료 시 프린터 카메라로 사진 촬영. Bambuddy는 인쇄 중 짧은 타임랩스를 기록하여 베드가 내려가기 전 순간에서 사진을 가져올 수 있도록 합니다. 이 인쇄에 대해 타임랩스를 활성화한 경우 타임랩스 파일이 보관되며, 그렇지 않으면 사진 촬영 후 자동으로 삭제됩니다.',
+    captureFinishPhotoDescription: '인쇄 완료 시 프린터 카메라로 사진 촬영. Fenrir는 인쇄 중 짧은 타임랩스를 기록하여 베드가 내려가기 전 순간에서 사진을 가져올 수 있도록 합니다. 이 인쇄에 대해 타임랩스를 활성화한 경우 타임랩스 파일이 보관되며, 그렇지 않으면 사진 촬영 후 자동으로 삭제됩니다.',
     finishPhotoRestorePlate: '완료 사진을 위해 베드 올리기',
-    finishPhotoRestorePlateDescription: '프린터는 인쇄가 끝나면 베드를 약 100 mm 내리므로 완성된 출력물이 카메라 화각 아래에 놓입니다. Bambuddy는 베드를 마지막 인쇄 레이어 바로 위까지 다시 올려 사진을 찍은 뒤 다시 내립니다. 출력 높이를 알 수 없거나 다른 작업이 대기 중이면 건너뜁니다.',
+    finishPhotoRestorePlateDescription: '프린터는 인쇄가 끝나면 베드를 약 100 mm 내리므로 완성된 출력물이 카메라 화각 아래에 놓입니다. Fenrir는 베드를 마지막 인쇄 레이어 바로 위까지 다시 올려 사진을 찍은 뒤 다시 내립니다. 출력 높이를 알 수 없거나 다른 작업이 대기 중이면 건너뜁니다.',
     ffmpegNotInstalled: 'ffmpeg 미설치',
     ffmpegRequired: '카메라 캡처에 ffmpeg가 필요합니다. macOS에서는 <brew>brew install ffmpeg</brew>, Linux에서는 <apt>apt install ffmpeg</apt>로 설치하세요.',
     camera: '카메라',
@@ -3298,7 +3298,7 @@ export default {
     lowDiskSpaceDescription: '여유 디스크 공간이 이 임계값 아래로 떨어지면 경고 표시',
     printerFirmware: '프린터 펌웨어',
     checkFirmwareDescription: 'Bambu Lab의 프린터 펌웨어 업데이트 확인',
-    bambuddySoftware: 'Bambuddy 소프트웨어',
+    fenrirSoftware: 'Fenrir 소프트웨어',
     autoCheckDescription: '시작 시 자동으로 새 버전 확인',
     checkNow: '지금 확인',
     updateAvailableVersion: '업데이트 가능: v{{version}}',
@@ -3307,7 +3307,7 @@ export default {
     composeDirectory: 'Compose 디렉터리',
     composeDirectoryHint: 'docker-compose.yml이 있는 디렉터리입니다. 비워 두면 cd를 생략합니다.',
     copyUpdateCommand: '업데이트 명령 복사',
-    updateViaHomeAssistant: '업데이트는 Home Assistant 수퍼바이저에서 관리됩니다. Home Assistant에서 설정 → 애드온 → Bambuddy를 열어 새 버전을 설치하세요.',
+    updateViaHomeAssistant: '업데이트는 Home Assistant 수퍼바이저에서 관리됩니다. Home Assistant에서 설정 → 애드온 → Fenrir를 열어 새 버전을 설치하세요.',
     updateViaWindowsInstaller: 'Windows 설치본은 설치 프로그램을 다시 실행하여 업데이트합니다. 아래에서 새 버전을 다운로드하세요 — 데이터, 설정 및 프린터는 유지됩니다.',
     downloadWindowsInstaller: 'v{{version}} 설치 프로그램 다운로드',
     installUpdate: '업데이트 설치',
@@ -3317,8 +3317,8 @@ export default {
     backupRestoreDescription: '설정 내보내기/가져오기 및 GitHub 백업 설정',
     goToBackup: '백업으로 이동',
     externalUrl: '외부 URL',
-    externalUrlDescription: 'Bambuddy에 접근할 수 있는 외부 URL. 알림 이미지 및 외부 통합에 사용됩니다.',
-    bambuddyUrl: 'Bambuddy URL',
+    externalUrlDescription: 'Fenrir에 접근할 수 있는 외부 URL. 알림 이미지 및 외부 통합에 사용됩니다.',
+    fenrirUrl: 'Fenrir URL',
     externalUrlHint: '프로토콜과 포트를 포함하세요 (예: http://192.168.1.100:8000)',
     ftpRetry: 'FTP 재시도',
     ftpRetryDescription: '프린터 WiFi가 불안정할 때 FTP 작업을 재시도합니다.',
@@ -3342,7 +3342,7 @@ export default {
     haConnectionSuccess: 'Home Assistant에 성공적으로 연결되었습니다.',
     haConnectionFailed: 'Home Assistant 연결 실패.',
     mqttPublishing: 'MQTT 게시',
-    mqttDescription: 'Node-RED, Home Assistant 등 자동화 시스템과 통합하기 위해 Bambuddy 이벤트를 외부 MQTT 브로커에 게시하세요.',
+    mqttDescription: 'Node-RED, Home Assistant 등 자동화 시스템과 통합하기 위해 Fenrir 이벤트를 외부 MQTT 브로커에 게시하세요.',
     mqttEnableDescription: '외부 MQTT 브로커에 이벤트 게시',
     brokerHostname: '브로커 호스트명',
     port: '포트',
@@ -3479,7 +3479,7 @@ export default {
       enabledFromFile: '저장 시 암호화 활성화됨 (데이터 디렉토리에서 키 로드됨)',
       enabledGenerated: '자동 생성된 키로 저장 시 암호화 활성화됨',
       notConfigured: '저장 시 암호화가 설정되지 않음',
-      notConfiguredDesc: 'TOTP 시크릿 및 OIDC client_secret이 일반 텍스트로 저장됩니다. MFA_ENCRYPTION_KEY를 설정하거나 쓰기 가능한 데이터 디렉토리로 Bambuddy를 재시작하여 자동 생성하세요.',
+      notConfiguredDesc: 'TOTP 시크릿 및 OIDC client_secret이 일반 텍스트로 저장됩니다. MFA_ENCRYPTION_KEY를 설정하거나 쓰기 가능한 데이터 디렉토리로 Fenrir를 재시작하여 자동 생성하세요.',
       allEncrypted: '모든 MFA 시크릿이 저장 시 암호화되어 있습니다.',
       legacyRowsLabel: '레거시 일반 텍스트 행',
       encryptedRowsLabel: '암호화된 행',
@@ -3487,7 +3487,7 @@ export default {
       backupHint: '자동 생성된 키는 DATA_DIR/.mfa_encryption_key에 저장되며 로컬 백업 ZIP에 포함됩니다. 백업을 안전하게 보관하거나 MFA_ENCRYPTION_KEY를 명시적으로 설정하세요.',
       decryptionBrokenTitle: '암호화 키 누락',
       decryptionBrokenError: '암호화 키를 더 이상 사용할 수 없어 {{count}}개의 암호화된 레코드를 복호화할 수 없습니다.',
-      migrationErrorWarning: '시작 시 {{count}}개 레거시 행을 재암호화하지 못했습니다. 서버 로그를 확인하고 Bambuddy를 재시작하여 재시도하세요.'
+      migrationErrorWarning: '시작 시 {{count}}개 레거시 행을 재암호화하지 못했습니다. 서버 로그를 확인하고 Fenrir를 재시작하여 재시도하세요.'
     },
     updateEnergyCost: '전기 요금 업데이트',
     updateEnergyCostDescription: '이 키가 /settings/electricity-price에 새 kWh당 전기 요금을 POST할 수 있도록 허용합니다. Home Assistant 동적 요금 자동화(Tibber, Octopus 등)에 유용합니다. API 키로 쓸 수 있는 유일한 설정 필드입니다.',
@@ -3663,7 +3663,7 @@ export default {
     actionFailed: '작업 전송 실패',
     runoutExpectedSlot: '{{ranOut}}의 필라멘트가 소진되었습니다. 프린터가 이제 {{expected}}에 호환 필라멘트를 기다리고 있습니다. {{expected}}에 스풀을 넣은 다음 다시 시도를 선택하세요.',
     runoutExpectedSlotOnly: '프린터가 {{expected}}에 호환 필라멘트를 기다리고 있습니다. 거기에 스풀을 넣은 다음 다시 시도를 선택하세요.',
-    runoutSlotUnknown: '필라멘트가 소진되어 인쇄가 일시정지되었습니다. Bambuddy가 프린터가 현재 요청하는 슬롯을 확인할 수 없습니다 — 프린터 화면에서 요청된 슬롯을 확인하세요.',
+    runoutSlotUnknown: '필라멘트가 소진되어 인쇄가 일시정지되었습니다. Fenrir가 프린터가 현재 요청하는 슬롯을 확인할 수 없습니다 — 프린터 화면에서 요청된 슬롯을 확인하세요.',
     actions: {
       RESUME_PRINTING: '인쇄 재개',
       RESUME_PRINTING_DEFECTS: '재개 (결함 허용)',
@@ -3750,7 +3750,7 @@ export default {
     clearQueue: '대기열을 지우시겠습니까?'
   },
   login: {
-    title: 'Bambuddy 로그인',
+    title: 'Fenrir 로그인',
     subtitle: '계정에 로그인하세요',
     username: '사용자명',
     usernamePlaceholder: '사용자명을 입력하세요',
@@ -3798,7 +3798,7 @@ export default {
     sending: '전송 중...',
     sendResetEmail: '초기화 이메일 전송',
     howToReset: '비밀번호 초기화 방법:',
-    resetStep1: 'Bambuddy 관리자에게 문의하세요',
+    resetStep1: 'Fenrir 관리자에게 문의하세요',
     resetStep2: '사용자 관리에서 비밀번호 초기화를 요청하세요',
     resetStep3: '관리자가 임시 비밀번호를 설정해 드립니다',
     resetStep4: '새 비밀번호로 로그인하고 설정에서 변경하세요',
@@ -3823,7 +3823,7 @@ export default {
       methodAuthenticator: '인증 앱',
       methodEmail: '이메일 코드',
       methodBackup: '백업 코드',
-      instructionsTotp: '인증 앱을 열고 Bambuddy의 6자리 코드를 입력하세요.',
+      instructionsTotp: '인증 앱을 열고 Fenrir의 6자리 코드를 입력하세요.',
       instructionsEmail: '이메일 주소로 6자리 코드가 전송되었습니다. 10분 후 만료됩니다.',
       instructionsEmailNotSent: '아래 버튼을 클릭하여 이메일로 인증 코드를 받으세요.',
       instructionsBackup: '8자리 백업 복구 코드 중 하나를 입력하세요. 각 코드는 한 번만 사용할 수 있습니다.',
@@ -3845,8 +3845,8 @@ export default {
     }
   },
   setup: {
-    title: 'Bambuddy 설정',
-    subtitle: 'Bambuddy 인스턴스의 인증을 설정하세요',
+    title: 'Fenrir 설정',
+    subtitle: 'Fenrir 인스턴스의 인증을 설정하세요',
     enableAuth: '인증 활성화',
     adminAccount: '관리자 계정',
     adminAccountDesc: '관리자 사용자가 이미 있는 경우 기존 관리자 계정으로 인증이 활성화됩니다. 기존 관리자를 사용하려면 아래 필드를 비워두거나, 새 관리자 사용자를 만들려면 자격 증명을 입력하세요.',
@@ -3999,7 +3999,7 @@ export default {
   },
   users: {
     title: '사용자 관리',
-    subtitle: 'Bambuddy 인스턴스에 대한 사용자 및 접근 권한 관리',
+    subtitle: 'Fenrir 인스턴스에 대한 사용자 및 접근 권한 관리',
     backToSettings: '설정으로 돌아가기',
     createUser: '사용자 생성',
     noPermission: '이 페이지에 접근할 권한이 없습니다.',
@@ -4139,11 +4139,11 @@ export default {
       connectButton: 'Orca Cloud 연결',
       connect: {
         title: 'Orca Cloud에 연결',
-        description: 'Orca Cloud 계정에 로그인하여 슬라이서 프로필을 Bambuddy에 동기화하세요.',
+        description: 'Orca Cloud 계정에 로그인하여 슬라이서 프로필을 Fenrir에 동기화하세요.',
       },
       device: {
-        title: 'Orca Cloud에서 Bambuddy 승인',
-        instruction: 'Orca Cloud를 열고 이 코드를 승인하세요. 승인하면 Bambuddy가 자동으로 연결됩니다.',
+        title: 'Orca Cloud에서 Fenrir 승인',
+        instruction: 'Orca Cloud를 열고 이 코드를 승인하세요. 승인하면 Fenrir가 자동으로 연결됩니다.',
         codeLabel: '페어링 코드',
         openButton: 'Orca Cloud 승인 페이지 열기',
         manualHint: '또는 {{url}}(으)로 이동하여 위 코드를 입력하세요.',
@@ -4236,7 +4236,7 @@ export default {
       setTokenButton: '토큰 설정',
       useToken: '액세스 토큰 대신 사용',
       captchaTitle: 'Bambu Cloud가 CAPTCHA를 요구합니다',
-      captchaBody: 'Bambu가 로그인을 처리하기 전에 네트워크에 CAPTCHA 확인을 요구하고 있으며, 이 확인은 Bambuddy에서 응답할 수 없습니다. 이메일과 비밀번호의 문제가 아닙니다. 차단은 공용 IP 주소에 연결되어 있으며 보통 몇 시간 안에 저절로 풀립니다. 반복해서 재시도하면 오히려 더 오래 지속됩니다. 지금 로그인하려면 브라우저 세션에서 가져온 액세스 토큰을 사용하세요.',
+      captchaBody: 'Bambu가 로그인을 처리하기 전에 네트워크에 CAPTCHA 확인을 요구하고 있으며, 이 확인은 Fenrir에서 응답할 수 없습니다. 이메일과 비밀번호의 문제가 아닙니다. 차단은 공용 IP 주소에 연결되어 있으며 보통 몇 시간 안에 저절로 풀립니다. 반복해서 재시도하면 오히려 더 오래 지속됩니다. 지금 로그인하려면 브라우저 세션에서 가져온 액세스 토큰을 사용하세요.',
       useEmail: '이메일로 로그인',
       toast: {
         loggedIn: '성공적으로 로그인되었습니다',
@@ -5066,16 +5066,16 @@ export default {
   },
   sponsors: {
     sectionTitle: '독립적·커뮤니티 후원',
-    tagline: 'Bambuddy는 무료이며, 자발적으로 후원하는 사용자 덕분에 계속 무료로 유지됩니다. VC도 없고, 클라우드 종속도 없습니다.',
+    tagline: 'Fenrir는 무료이며, 자발적으로 후원하는 사용자 덕분에 계속 무료로 유지됩니다. VC도 없고, 클라우드 종속도 없습니다.',
     viewSupporters: '후원자 보기',
-    toastPrints: 'Bambuddy로 {{count}}회 인쇄를 완료했습니다. Bambuddy는 후원자 덕분에 무료로 유지됩니다.',
-    toastCost: 'Bambuddy로 {{total}}만큼의 필라멘트를 추적했습니다. 프로젝트를 독립적으로 유지하는 사람들을 만나보세요.',
-    toastArchives: 'Bambuddy로 {{count}}회 인쇄를 아카이브했습니다. 독립성을 지지하는 사람들을 만나보세요.',
-    toastAnniversary: 'Bambuddy와 함께한 지 1년입니다! 프로젝트를 독립적으로 유지하는 사람들을 만나보세요.',
-    toastVersionUpdate: 'v{{version}}로 업데이트되었습니다. Bambuddy는 후원자 덕분에 무료로 유지됩니다.',
-    toastBusiness: '프린터 {{count}}대에서 Bambuddy를 운영 중이신가요? 팀을 위한 지원 플랜이 있습니다. 우선 수정, 인보이스 발행, 메인테이너와의 직접 소통을 제공합니다.',
-    businessCta: '비즈니스용 Bambuddy',
-    businessTitle: '비즈니스용 Bambuddy',
+    toastPrints: 'Fenrir로 {{count}}회 인쇄를 완료했습니다. Fenrir는 후원자 덕분에 무료로 유지됩니다.',
+    toastCost: 'Fenrir로 {{total}}만큼의 필라멘트를 추적했습니다. 프로젝트를 독립적으로 유지하는 사람들을 만나보세요.',
+    toastArchives: 'Fenrir로 {{count}}회 인쇄를 아카이브했습니다. 독립성을 지지하는 사람들을 만나보세요.',
+    toastAnniversary: 'Fenrir와 함께한 지 1년입니다! 프로젝트를 독립적으로 유지하는 사람들을 만나보세요.',
+    toastVersionUpdate: 'v{{version}}로 업데이트되었습니다. Fenrir는 후원자 덕분에 무료로 유지됩니다.',
+    toastBusiness: '프린터 {{count}}대에서 Fenrir를 운영 중이신가요? 팀을 위한 지원 플랜이 있습니다. 우선 수정, 인보이스 발행, 메인테이너와의 직접 소통을 제공합니다.',
+    businessCta: '비즈니스용 Fenrir',
+    businessTitle: '비즈니스용 Fenrir',
     businessTagline: '프린터 {{count}}대를 운영 중입니다. 팀과 프린트 팜을 위한 우선 지원, 상용 라이선스, 인보이스 발행을 제공합니다.',
   },
   library: {
@@ -5366,8 +5366,8 @@ export default {
       invalidHex: '16진수 6자(RRGGBB) 또는 8자(RRGGBBAA)를 입력하세요. 그렇지 않으면 필드가 적용되지 않습니다.',
     },
     spoolmanMixedContentTitle: 'HTTPS에서 Spoolman을 불러올 수 없음 — 브라우저가 혼합 콘텐츠를 차단함',
-    spoolmanMixedContentBody: 'Bambuddy가 HTTPS로 서비스되고 있지만 Spoolman URL은 여전히 HTTP입니다. 브라우저는 보안상 혼합 콘텐츠를 차단하므로 내장된 Spoolman UI가 렌더링되지 않습니다. 이 기능이 작동하려면 Spoolman이 HTTPS로 접근 가능해야 합니다.',
-    spoolmanMixedContentFixReverseProxy: 'Spoolman을 Bambuddy와 같은 리버스 프록시(Traefik / Nginx / Caddy) 뒤에 HTTPS로 배치한 다음 설정에서 Spoolman URL을 새 HTTPS 주소로 업데이트하세요.',
+    spoolmanMixedContentBody: 'Fenrir가 HTTPS로 서비스되고 있지만 Spoolman URL은 여전히 HTTP입니다. 브라우저는 보안상 혼합 콘텐츠를 차단하므로 내장된 Spoolman UI가 렌더링되지 않습니다. 이 기능이 작동하려면 Spoolman이 HTTPS로 접근 가능해야 합니다.',
+    spoolmanMixedContentFixReverseProxy: 'Spoolman을 Fenrir와 같은 리버스 프록시(Traefik / Nginx / Caddy) 뒤에 HTTPS로 배치한 다음 설정에서 Spoolman URL을 새 HTTPS 주소로 업데이트하세요.',
     spoolmanMixedContentFixOpenNewTab: '임시 방편으로 HTTP로 새 브라우저 탭에서 Spoolman을 여세요 — 혼합 콘텐츠 규칙은 내장 프레임에만 적용되므로 독립 탭은 여전히 작동합니다.',
     spoolmanOpenInNewTab: '새 탭에서 Spoolman 열기',
     labels: {
@@ -5930,7 +5930,7 @@ export default {
     cloudProfilesDescription: 'Bambu 클라우드와 Orca 클라우드의 필라멘트, 프린터 및 프로세스 프리셋',
     cloudProfilesAccounts: '연결된 계정 — Bambu 클라우드: {{bambu}}, Orca 클라우드: {{orca}}',
     appSettings: '앱 설정',
-    appSettingsDescription: 'Bambuddy 구성 (전체 데이터베이스)',
+    appSettingsDescription: 'Fenrir 구성 (전체 데이터베이스)',
     spoolInventory: '스풀 재고',
     spoolInventoryDescription: '필라멘트 스풀, 사용 기록 및 비용 추적',
     printArchives: '인쇄 아카이브',
@@ -5976,7 +5976,7 @@ export default {
       confirmMessageOverwrite: '선택한 항목을 이 커밋에서 복원하고 로컬에 이미 있는 항목을 덮어씁니다. 이 작업은 취소할 수 없습니다.',
       kprofilesOverwriteCaveat: 'K 프로파일은 예외입니다. 슬롯에 쓰면 프린터의 캘리브레이션이 항상 교체됩니다.',
       tally: '복원 {{restored}}개, 건너뜀 {{skipped}}개, 실패 {{failed}}개',
-      reloadHint: '복원된 데이터가 모든 화면에 반영되도록 Bambuddy를 새로 고치세요.',
+      reloadHint: '복원된 데이터가 모든 화면에 반영되도록 Fenrir를 새로 고치세요.',
       partialHint: '위에 표시된 카테고리는 완료되어 저장되었습니다. 표시되지 않은 카테고리는 실행되지 않았습니다.',
       failed: '복원에 실패했습니다.',
       loadFailed: '백업 저장소를 읽을 수 없습니다.',
@@ -6006,7 +6006,7 @@ export default {
         settingsCredentialsSkipped: '자격 증명처럼 보이는 키 {{count}}개를 건너뛰었습니다 - 비밀 값은 직접 다시 입력하세요',
         settingsAuthSkipped: '인증 설정 {{count}}개를 건너뛰었습니다 - 잠금 검사가 계속 동작하도록 설정 > 인증에서 변경하세요',
         settingsCompanionSkipped: '{{keys}}을(를) 꺼진 상태로 두었습니다 - 각 항목에 필요한 자격 증명은 백업에서 복원할 수 없고 이 인스턴스에도 저장되어 있지 않아, 켜면 연동이 인증 없이 열립니다',
-        settingsMqttRelayFailed: 'MQTT 설정을 복원했지만 릴레이를 다시 연결하지 못했습니다 - Bambuddy를 재시작하세요',
+        settingsMqttRelayFailed: 'MQTT 설정을 복원했지만 릴레이를 다시 연결하지 못했습니다 - Fenrir를 재시작하세요',
         kprofilesAlwaysOverwrite: 'K 프로파일은 항상 프린터의 해당 슬롯을 덮어씁니다',
         kprofilesAckUnreliable: '응답하지 않는 프린터도 복원됨으로 집계됩니다 - 프린터에서 프로파일을 확인하세요',
         kprofilesPrinterMissing: '시리얼 {{serial}}인 프린터가 없습니다 - 건너뛰었습니다',
@@ -6030,7 +6030,7 @@ export default {
     },
     commit: '커밋',
     localBackup: '로컬 백업',
-    localBackupDescription: '데이터베이스, 아카이브, 업로드 및 모든 파일을 포함한 Bambuddy 데이터의 전체 백업을 만듭니다.',
+    localBackupDescription: '데이터베이스, 아카이브, 업로드 및 모든 파일을 포함한 Fenrir 데이터의 전체 백업을 만듭니다.',
     downloadBackupLabel: '백업 다운로드',
     completeBackupZip: '전체 백업: 데이터베이스 + 모든 파일 (ZIP)',
     download: '다운로드',
@@ -6046,7 +6046,7 @@ export default {
     restoreConfirmMessage: '"{{filename}}"에서 복원하시겠습니까? 현재 데이터베이스와 모든 파일이 완전히 교체됩니다. 복원 후 애플리케이션을 재시작해야 합니다.',
     restoreConfirmButton: '백업 복원',
     uploadingFile: '백업 파일 업로드 중...',
-    backupRestoredRestart: '백업 복원됨. Bambuddy를 재시작하세요.',
+    backupRestoredRestart: '백업 복원됨. Fenrir를 재시작하세요.',
     failedToRestore: '백업 복원 실패. 파일 형식을 확인하세요.',
     reloadNow: '지금 새로고침',
     creatingBackup: '백업 만드는 중',
@@ -6117,17 +6117,17 @@ export default {
     defaultPathLabel: '기본값:',
     // Backup output-path probe (#2544)
     pathCheck: {
-      title: 'Bambuddy가 이 디렉터리에 쓸 수 없습니다',
+      title: 'Fenrir가 이 디렉터리에 쓸 수 없습니다',
       howToFix: '해결 방법:',
-      sandboxed: 'Bambuddy 서비스가 {{path}}에 쓸 수 없습니다. systemd 유닛이 ProtectSystem=strict로 실행되어 설치·데이터·로그 디렉터리를 제외한 모든 디렉터리가 서비스에서는 읽기 전용입니다. 사용자 셸에서는 쓸 수 있는 디렉터리라도 마찬가지입니다.',
+      sandboxed: 'Fenrir 서비스가 {{path}}에 쓸 수 없습니다. systemd 유닛이 ProtectSystem=strict로 실행되어 설치·데이터·로그 디렉터리를 제외한 모든 디렉터리가 서비스에서는 읽기 전용입니다. 사용자 셸에서는 쓸 수 있는 디렉터리라도 마찬가지입니다.',
       read_only: '{{path}}이(가) 읽기 전용 파일 시스템에 있습니다.',
-      permission_denied: 'Bambuddy에 {{path}} 쓰기 권한이 없습니다. 디렉터리 소유자와 권한을 확인하세요.',
+      permission_denied: 'Fenrir에 {{path}} 쓰기 권한이 없습니다. 디렉터리 소유자와 권한을 확인하세요.',
       no_space: '{{path}}이(가) 있는 파일 시스템에 남은 공간이 없습니다.',
       not_a_directory: '{{path}}이(가) 존재하지만 디렉터리가 아닙니다.',
       missing: '{{path}}이(가) 존재하지 않으며 생성할 수도 없습니다.',
-      error: 'Bambuddy가 {{path}}에 쓸 수 없습니다.',
+      error: 'Fenrir가 {{path}}에 쓸 수 없습니다.',
       ephemeralTitle: '이 백업은 컨테이너를 다시 만들면 사라집니다',
-      container_ephemeral: '{{path}}은(는) 호스트가 아니라 Bambuddy 컨테이너 내부에 있습니다. 여기에 기록된 백업은 컨테이너를 재생성하면 사라집니다. 호스트의 디렉터리를 마운트하세요:',
+      container_ephemeral: '{{path}}은(는) 호스트가 아니라 Fenrir 컨테이너 내부에 있습니다. 여기에 기록된 백업은 컨테이너를 재생성하면 사라집니다. 호스트의 디렉터리를 마운트하세요:',
     },
     categories: {
       settings: '설정',
@@ -6144,8 +6144,8 @@ export default {
       api_keys: 'API 키'
     },
     repoIsPrivate: '저장소가 비공개입니다 — 안전하게 백업할 수 있습니다.',
-    repoIsPublicWarning: '저장소가 공개입니다. Bambuddy 백업에는 MQTT 자격증명, Home Assistant 토큰, Prometheus 토큰, Bambu Cloud 이메일, K-프로파일을 통한 프린터 액세스 코드가 포함됩니다. 공급자 설정에서 저장소를 비공개로 변경할 때까지 저장이 차단됩니다.',
-    repoVisibilityUnknown: '저장소 공개 여부를 확인할 수 없습니다. Bambuddy는 비공개로 확인된 저장소에만 백업하며, 저장이 차단됩니다.'
+    repoIsPublicWarning: '저장소가 공개입니다. Fenrir 백업에는 MQTT 자격증명, Home Assistant 토큰, Prometheus 토큰, Bambu Cloud 이메일, K-프로파일을 통한 프린터 액세스 코드가 포함됩니다. 공급자 설정에서 저장소를 비공개로 변경할 때까지 저장이 차단됩니다.',
+    repoVisibilityUnknown: '저장소 공개 여부를 확인할 수 없습니다. Fenrir는 비공개로 확인된 저장소에만 백업하며, 저장이 차단됩니다.'
   },
   tags: {
     title: '태그',
@@ -6285,7 +6285,7 @@ export default {
       right: '오른쪽',
       notes: '메모 (로컬 저장)',
       notesPlaceholder: '이 프로필에 대한 메모 추가...',
-      notesHelp: '메모는 프린터가 아닌 Bambuddy에 저장됩니다',
+      notesHelp: '메모는 프린터가 아닌 Fenrir에 저장됩니다',
       syncing: '프린터와 동기화 중...',
       savingExtruder: '압출기 {{current}}/{{total}}에 저장 중...',
       pleaseWait: '기다려 주세요'
@@ -6336,7 +6336,7 @@ export default {
     },
     enable: {
       title: '가상 프린터 활성화',
-      visibleInSlicer: '슬라이서 검색에서 "Bambuddy"로 표시됨',
+      visibleInSlicer: '슬라이서 검색에서 "Fenrir"로 표시됨',
       proxyingTo: '{{name}}으로 프록시 중',
       notActive: '활성화되지 않음'
     },
@@ -6371,7 +6371,7 @@ export default {
       configured: '인터페이스 재정의 활성',
       optional: '선택사항 - 자동 감지된 IP가 잘못된 경우 사용 (예: 여러 NIC, Docker, VPN)',
       placeholder: '자동 감지 (기본값)...',
-      hint: 'SSDP를 통해 광고되고 TLS 인증서에 사용되는 IP 주소를 재정의합니다. Bambuddy에 여러 네트워크 인터페이스가 있을 때 유용합니다.'
+      hint: 'SSDP를 통해 광고되고 TLS 인증서에 사용되는 IP 주소를 재정의합니다. Fenrir에 여러 네트워크 인터페이스가 있을 때 유용합니다.'
     },
     mode: {
       title: '모드',
@@ -6418,7 +6418,7 @@ export default {
     howItWorks: {
       title: '작동 방식',
       step1: '같은 LAN에서 가상 프린터는 검색을 통해 슬라이서(Bambu Studio / OrcaSlicer)에 자동으로 나타납니다. 다른 네트워크에서는 IP 주소와 액세스 코드로 수동으로 추가하세요.',
-      step2: '아카이브, 검토, 대기열 모드에서 슬라이서의 "전송" 버튼을 사용하여 3MF 파일을 Bambuddy에 업로드하세요. 슬라이서는 "인쇄 성공"을 표시하지만 파일은 저장되고 인쇄되지 않습니다.',
+      step2: '아카이브, 검토, 대기열 모드에서 슬라이서의 "전송" 버튼을 사용하여 3MF 파일을 Fenrir에 업로드하세요. 슬라이서는 "인쇄 성공"을 표시하지만 파일은 저장되고 인쇄되지 않습니다.',
       step3: '프록시 모드에서 가상 프린터는 모든 트래픽을 실제 프린터로 릴레이합니다 — 직접 연결된 것처럼 즉시 인쇄가 시작됩니다.'
     },
     status: {
@@ -6475,7 +6475,7 @@ export default {
     },
     caCert: {
       title: '슬라이서 인증서',
-      description: '가상 프린터는 Bambuddy CA가 서명한 TLS 인증서를 사용합니다. 이 CA 인증서를 슬라이서의 신뢰 저장소에 한 번만 가져오면 연결을 수락합니다 — 명령줄에서 복사할 필요가 없습니다.',
+      description: '가상 프린터는 Fenrir CA가 서명한 TLS 인증서를 사용합니다. 이 CA 인증서를 슬라이서의 신뢰 저장소에 한 번만 가져오면 연결을 수락합니다 — 명령줄에서 복사할 필요가 없습니다.',
       copy: '복사',
       copied: '복사됨',
       download: '다운로드',
@@ -6605,7 +6605,7 @@ export default {
     },
     autoAdd: {
       confirmTitle: '다른 센서도 추가할까요?',
-      confirmMessage: 'Bambuddy가 이 위치의 다른 센서도 찾았습니다. 추가할 항목을 선택하세요.',
+      confirmMessage: 'Fenrir가 이 위치의 다른 센서도 찾았습니다. 추가할 항목을 선택하세요.',
       added: '다음도 추가됨: {{names}}',
       noneFound: '이 위치에 일치하는 온도, 습도 또는 배터리 센서를 찾을 수 없습니다.',
       onlyThisOne: '이것만',
@@ -6616,7 +6616,7 @@ export default {
       description: '이 값은 위치의 첫 번째 센서와 함께 온도, 습도 또는 배터리 센서가 자동으로 연결될 때 사용됩니다.',
       generalSettings: '일반 설정',
       pollInterval: '업데이트 간격(초)',
-      pollIntervalHint: 'Bambuddy가 Home Assistant를 폴링하여 화면의 센서 값을 갱신하는 주기입니다. 최소 60초.',
+      pollIntervalHint: 'Fenrir가 Home Assistant를 폴링하여 화면의 센서 값을 갱신하는 주기입니다. 최소 60초.',
       colorizeValues: '경보 임계값에 따라 센서 값에 색상 표시',
       aboveColor: '임계값 초과 색상',
       belowColor: '임계값 미만 색상',
@@ -6799,7 +6799,7 @@ export default {
     restEnergyTotalMultiplier: '누적값 배율',
     restEnergyTotalPathHint: '예: aenergy.total',
     restEnergyTotalHint:
-      '많은 플러그가 — Shelly는 모두 — 초기화되지 않는 누적 카운터만 보고합니다. 그 값은 위 항목이 아니라 여기에 입력하세요. 오늘 사용량으로 읽으면 자정에 초기화되지 않고, 어제와 총계는 계속 비어 있게 됩니다. Bambuddy가 누적값에서 오늘과 어제를 계산하며, 이를 위해 하루에서 이틀 치 측정값이 필요합니다. Shelly는 와트시로 보고하므로 배율은 0.001을 사용하세요.',
+      '많은 플러그가 — Shelly는 모두 — 초기화되지 않는 누적 카운터만 보고합니다. 그 값은 위 항목이 아니라 여기에 입력하세요. 오늘 사용량으로 읽으면 자정에 초기화되지 않고, 어제와 총계는 계속 비어 있게 됩니다. Fenrir가 누적값에서 오늘과 어제를 계산하며, 이를 위해 하루에서 이틀 치 측정값이 필요합니다. Shelly는 와트시로 보고하므로 배율은 0.001을 사용하세요.',
     restEnergyMultiplier: '에너지 배수',
     restUrlRequired: 'REST 플러그에는 URL(ON 또는 OFF) 중 하나 이상이 필요합니다',
     restHeadersHint: '예: {"Authorization": "Bearer your-token"}',
@@ -7090,7 +7090,7 @@ export default {
     title: '사이드바 링크',
     sidebarLayout: '사이드바',
     sidebarLayoutDescription: '기본 제공 페이지를 표시하거나 숨기고, 외부 링크를 추가하고, 항목을 드래그하여 사이드바 탐색 순서를 변경하세요.',
-    systemPages: 'Bambuddy 페이지',
+    systemPages: 'Fenrir 페이지',
     externalLinks: '외부 링크',
     visibleInSidebar: '사이드바에 표시',
     hiddenFromSidebar: '사이드바에서 숨김',
@@ -7288,7 +7288,7 @@ export default {
   },
   emailSettings: {
     placeholders: {
-      fromName: 'Bambuddy'
+      fromName: 'Fenrir'
     }
   },
   tagManagement: {
@@ -7512,7 +7512,7 @@ export default {
       hostname: '호스트',
       uptime: '가동 시간',
       systemConfig: '백엔드 및 인증',
-      backendUrl: 'Bambuddy 백엔드 URL',
+      backendUrl: 'Fenrir 백엔드 URL',
       apiToken: 'API 토큰',
       apiTokenPlaceholder: 'API 토큰 입력',
       saveConfig: '구성 저장',
@@ -7682,7 +7682,7 @@ export default {
     pollInterval: '폴링 간격 (초)',
     pollIntervalHint: '인쇄 중 각 프린터를 확인하는 빈도. 최소 5초, 최대 120초.',
     externalUrlMissing: '외부 URL이 설정되지 않았습니다.',
-    externalUrlHint: 'ML API가 URL을 통해 카메라 스냅샷을 가져옵니다. ML API 컨테이너가 Bambuddy에 도달할 수 있도록 일반 설정에서 외부 URL을 설정하세요.',
+    externalUrlHint: 'ML API가 URL을 통해 카메라 스냅샷을 가져옵니다. ML API 컨테이너가 Fenrir에 도달할 수 있도록 일반 설정에서 외부 URL을 설정하세요.',
     perPrinterTitle: '모니터링되는 프린터',
     perPrinterHint: '감지 서비스가 감시할 프린터를 선택하세요.',
     monitorAll: '연결된 모든 프린터 모니터링',
@@ -7696,14 +7696,14 @@ export default {
   },
   makerworld: {
     title: 'MakerWorld',
-    description: 'MakerWorld 모델 URL을 붙여넣어 Bambu Handy 앱을 떠나지 않고 Bambuddy에서 직접 가져오고 인쇄하세요.',
+    description: 'MakerWorld 모델 URL을 붙여넣어 Bambu Handy 앱을 떠나지 않고 Fenrir에서 직접 가져오고 인쇄하세요.',
     pasteUrlHeader: 'MakerWorld에서 가져오기',
     pasteUrlPlaceholder: 'https://makerworld.com/en/models/… 또는 MakerWorld 링크 붙여넣기',
     resolveButton: '확인',
     signInRequiredTitle: '다운로드하려면 Bambu 클라우드 로그인 필요',
     signInRequiredBody: '익명으로 모델 세부 정보를 탐색할 수 있지만 MakerWorld는 3MF 파일을 다운로드하려면 Bambu 클라우드 계정이 필요합니다.',
     signInExpiredTitle: 'Bambu 클라우드 로그인이 만료되었습니다',
-    signInExpiredBody: 'Bambuddy에는 여전히 로그인되어 있지만 Bambu Lab이 저장된 토큰을 더 이상 허용하지 않아 다운로드가 실패합니다. Bambu 클라우드에 다시 로그인하세요.',
+    signInExpiredBody: 'Fenrir에는 여전히 로그인되어 있지만 Bambu Lab이 저장된 토큰을 더 이상 허용하지 않아 다운로드가 실패합니다. Bambu 클라우드에 다시 로그인하세요.',
     openCloudSettings: '클라우드 설정 열기',
     untitledModel: '제목 없는 모델',
     byCreator: '{{name}} 제작',
@@ -7721,7 +7721,7 @@ export default {
     alsoCompatible: '호환 가능으로도 표시됨: {{printers}}',
     importToLibrary: '저장',
     sliceIn: '{{slicer}}에서 저장 및 슬라이싱',
-    disclaimer: 'MakerWorld 통합은 커뮤니티가 문서화한 API 엔드포인트를 사용합니다. Bambuddy는 MakerWorld 또는 Bambu Lab과 제휴하거나 이들의 승인을 받지 않았습니다.',
+    disclaimer: 'MakerWorld 통합은 커뮤니티가 문서화한 API 엔드포인트를 사용합니다. Fenrir는 MakerWorld 또는 Bambu Lab과 제휴하거나 이들의 승인을 받지 않았습니다.',
     lastImportSuccess: '라이브러리에 가져옴',
     lastImportAlreadyInLibrary: '이미 라이브러리에 있음',
     viewInLibrary: '파일 관리자에서 보기',
@@ -7843,7 +7843,7 @@ export default {
     effect1: '일치하는 파일이 휴지통으로 이동됩니다 — 디스크에서 아직 삭제되지 않습니다.',
     effect2: '보존 기간이 만료되기 전까지 언제든 휴지통에서 복원할 수 있습니다.',
     effect3: '보존 기간 후 휴지통 청소기가 디스크에서 영구적으로 제거합니다.',
-    effect4: '외부(연결된) 폴더의 파일은 건너뜁니다 — Bambuddy는 자신이 소유하지 않은 바이트는 절대 삭제하지 않습니다.',
+    effect4: '외부(연결된) 폴더의 파일은 건너뜁니다 — Fenrir는 자신이 소유하지 않은 바이트는 절대 삭제하지 않습니다.',
     previewLoading: '일치하는 파일 수 확인 중…',
     previewFailed: '삭제 미리보기를 불러올 수 없습니다.',
     previewSummary: '{{count}}개 파일 · {{size}}이(가) 휴지통으로 이동됩니다',
@@ -8104,8 +8104,8 @@ export default {
         skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.',
         skip_unsupported_model: '이 모델에는 SD 슬롯이 있지만 옵션을 켤 방법이 없습니다 — 현재 P1 시리즈 펌웨어는 Bambu Studio에 토글을 표시하지 않으며 프린터에 화면도 없습니다. 여기서 고칠 것은 없습니다. Bambu Lab이 펌웨어로 지원할 때까지 보관된 출력물에는 썸네일과 슬라이서 메타데이터가 없을 수 있습니다.',
         fail_no_media: '옵션은 켜져 있지만 프린터 슬롯에 카드도 USB도 감지되지 않아 보낸 파일이 갈 곳이 없습니다. 하나 넣고 다시 출력하세요. 그전까지는 보관되는 모든 출력물에 썸네일과 슬라이서 메타데이터가 없습니다.',
-        warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 마지막 출력물은 Bambuddy가 읽을 수 없는 프린터 내부 저장소에 저장되었습니다. H2 시리즈와 P2S에서는 이 설정과 관계없이 Bambu Studio의 «인쇄» 버튼이 항상 그쪽으로 보냅니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나, OrcaSlicer로 슬라이싱하거나, Bambu Studio에서 «보내기»로 «외부 저장소»를 고른 뒤 출력을 시작하세요.',
-        warn_internal_history: '옵션은 켜져 있고 저장소도 있지만, 마지막 출력은 이미 프린터에 있던 파일에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보낸 파일입니다. 그 라이브러리는 Bambuddy가 읽을 수 없는 내부 저장소에 있으며, 그 출력에서는 아무것도 전송되지 않았으므로 어떤 설정으로도 바뀌지 않습니다. 이름과 시간과 함께 보관되기는 하지만 썸네일과 슬라이서 메타데이터는 없습니다. 온전한 보관을 원하면 Bambuddy에서 출력을 시작하거나 슬라이서에서 전송하세요.',
+        warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 마지막 출력물은 Fenrir가 읽을 수 없는 프린터 내부 저장소에 저장되었습니다. H2 시리즈와 P2S에서는 이 설정과 관계없이 Bambu Studio의 «인쇄» 버튼이 항상 그쪽으로 보냅니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Fenrir에서 출력을 시작하거나, OrcaSlicer로 슬라이싱하거나, Bambu Studio에서 «보내기»로 «외부 저장소»를 고른 뒤 출력을 시작하세요.',
+        warn_internal_history: '옵션은 켜져 있고 저장소도 있지만, 마지막 출력은 이미 프린터에 있던 파일에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보낸 파일입니다. 그 라이브러리는 Fenrir가 읽을 수 없는 내부 저장소에 있으며, 그 출력에서는 아무것도 전송되지 않았으므로 어떤 설정으로도 바뀌지 않습니다. 이름과 시간과 함께 보관되기는 하지만 썸네일과 슬라이서 메타데이터는 없습니다. 온전한 보관을 원하면 Fenrir에서 출력을 시작하거나 슬라이서에서 전송하세요.',
       },
       port_rtsps: {
         title: '카메라 포트 ({{protocol}} {{port}})',
@@ -8115,20 +8115,20 @@ export default {
       network_mode: {
         title: 'Docker 네트워크 모드',
         pass: '호스트 네트워크 모드로 실행 중입니다.',
-        warn: 'Bambuddy가 Docker 브리지 네트워킹으로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크 모드가 필요합니다 — "network_mode: host"로 컨테이너를 재생성하세요.',
+        warn: 'Fenrir가 Docker 브리지 네트워킹으로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크 모드가 필요합니다 — "network_mode: host"로 컨테이너를 재생성하세요.',
         skip: 'Docker에서 실행 중이 아닙니다 — 해당 없음.'
       },
       subnet: {
         title: '네트워크 서브넷',
-        pass: '프린터와 Bambuddy가 같은 서브넷에 있습니다.',
-        warn: '프린터({{printer_ip}})와 Bambuddy({{host_ip}})가 다른 서브넷에 있습니다. 서브넷 간 라우팅이 구성되어 있지 않으면 서로 연결하지 못할 수 있습니다.',
+        pass: '프린터와 Fenrir가 같은 서브넷에 있습니다.',
+        warn: '프린터({{printer_ip}})와 Fenrir({{host_ip}})가 다른 서브넷에 있습니다. 서브넷 간 라우팅이 구성되어 있지 않으면 서로 연결하지 못할 수 있습니다.',
         skip: '서브넷을 확인할 수 없어 건너뜁니다.'
       },
       mqtt_auth: {
         title: '프린터 자격증명',
         pass: '프린터가 연결을 수락했습니다.',
-        fail: '프린터에 도달할 수 있지만 Bambuddy가 연결되지 않았습니다. 액세스 코드 또는 시리얼 번호가 잘못됐을 가능성이 높습니다 — LAN 전용 모드나 개발자 모드를 토글할 때마다 액세스 코드가 변경되므로 프린터 화면에서 다시 복사하세요. 재부팅 중이거나 이미 동시 연결 한도에 도달한 프린터도 똑같이 보입니다.',
-        fail_auth_rejected: '프린터가 Bambuddy의 자격증명을 거부했습니다. 액세스 코드 또는 시리얼 번호가 잘못됐습니다 — LAN 전용 모드나 개발자 모드를 토글할 때마다 액세스 코드가 변경됩니다. 프린터 화면에서 다시 복사한 뒤 프린터 설정에 저장하세요.',
+        fail: '프린터에 도달할 수 있지만 Fenrir가 연결되지 않았습니다. 액세스 코드 또는 시리얼 번호가 잘못됐을 가능성이 높습니다 — LAN 전용 모드나 개발자 모드를 토글할 때마다 액세스 코드가 변경되므로 프린터 화면에서 다시 복사하세요. 재부팅 중이거나 이미 동시 연결 한도에 도달한 프린터도 똑같이 보입니다.',
+        fail_auth_rejected: '프린터가 Fenrir의 자격증명을 거부했습니다. 액세스 코드 또는 시리얼 번호가 잘못됐습니다 — LAN 전용 모드나 개발자 모드를 토글할 때마다 액세스 코드가 변경됩니다. 프린터 화면에서 다시 복사한 뒤 프린터 설정에 저장하세요.',
         skip: '확인하지 않음 — 프린터에 연결할 수 없었습니다.'
       },
       developer_mode: {
@@ -8163,12 +8163,12 @@ export default {
       "ftp-auth-rejected": {
         name: '프린터가 액세스 코드를 거부함',
         cause: '프린터가 파일 전송 로그인을 거부했습니다. 액세스 코드가 잘못됐거나 개발자 모드를 토글한 후 변경됐습니다.',
-        fix: '프린터 화면(LAN 설정)에서 액세스 코드를 다시 복사하여 Bambuddy의 프린터 설정에서 업데이트하세요.'
+        fix: '프린터 화면(LAN 설정)에서 액세스 코드를 다시 복사하여 Fenrir의 프린터 설정에서 업데이트하세요.'
       },
       "ftp-connection-timeout": {
         name: '파일 전송 연결 시간 초과',
-        cause: 'Bambuddy가 프린터의 파일 전송 포트(FTPS 990)에 연결할 수 없었습니다. 포트가 차단됐거나 프린터가 꺼져 있거나 다른 서브넷에 있습니다.',
-        fix: 'Bambuddy와 프린터 사이에서 포트 990을 차단하는 것이 없는지 확인하고, 같은 네트워크에 있는지 확인하세요.'
+        cause: 'Fenrir가 프린터의 파일 전송 포트(FTPS 990)에 연결할 수 없었습니다. 포트가 차단됐거나 프린터가 꺼져 있거나 다른 서브넷에 있습니다.',
+        fix: 'Fenrir와 프린터 사이에서 포트 990을 차단하는 것이 없는지 확인하고, 같은 네트워크에 있는지 확인하세요.'
       },
       "ftp-ssl-error": {
         name: '보안 파일 전송 핸드셰이크 실패',
@@ -8193,7 +8193,7 @@ export default {
       "database-locked": {
         name: '데이터베이스 쓰기 경합',
         cause: 'SQLite 데이터베이스에 부하 시 "database is locked" 오류가 발생합니다 — 여러 프린터를 동시에 실행할 때 흔한 문제입니다.',
-        fix: 'Bambuddy를 외부 PostgreSQL 데이터베이스로 전환하세요. 설명서의 PostgreSQL 가이드를 참고하세요.'
+        fix: 'Fenrir를 외부 PostgreSQL 데이터베이스로 전환하세요. 설명서의 PostgreSQL 가이드를 참고하세요.'
       }
     }
   },
@@ -8215,7 +8215,7 @@ export default {
       },
       running: {
         title: '서비스 실행 중',
-        fail: '가상 프린터가 활성화됐지만 서비스가 실행 중이 아닙니다. Bambuddy 로그를 확인하세요 — 바인드 IP 충돌이나 권한 오류가 보통 원인입니다.'
+        fail: '가상 프린터가 활성화됐지만 서비스가 실행 중이 아닙니다. Fenrir 로그를 확인하세요 — 바인드 IP 충돌이나 권한 오류가 보통 원인입니다.'
       },
       bind_interface: {
         title: '바인드 네트워크 인터페이스',
@@ -8248,8 +8248,8 @@ export default {
       },
       certificate: {
         title: 'TLS 인증서',
-        pass: '인증서가 준비됐습니다. Bambuddy CA 인증서(위)가 슬라이서의 신뢰 저장소에 가져와져 있는지 확인하세요.',
-        fail: '이 가상 프린터의 TLS 인증서가 없습니다. Bambuddy 데이터 디렉터리가 쓰기 가능한지 확인하세요.'
+        pass: '인증서가 준비됐습니다. Fenrir CA 인증서(위)가 슬라이서의 신뢰 저장소에 가져와져 있는지 확인하세요.',
+        fail: '이 가상 프린터의 TLS 인증서가 없습니다. Fenrir 데이터 디렉터리가 쓰기 가능한지 확인하세요.'
       }
     }
   },

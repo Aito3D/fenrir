@@ -1,6 +1,6 @@
 """Filament attribution has to survive a restart mid-print.
 
-A 14-hour print that spans a Bambuddy restart used to lose everything the
+A 14-hour print that spans a Fenrir restart used to lose everything the
 completion path needs: the plate (so the 3MF parser summed every plate of a
 multi-plate file), the dispatched slot-to-tray mapping (so it fell back to the
 live MQTT ``mapping`` field, which AMS filament backup rewrites to the
@@ -464,7 +464,7 @@ class TestMappingPriority:
 
 
 class TestRestoreOnRestartRecovery:
-    """``on_print_running_observed`` is the only hook that fires when Bambuddy
+    """``on_print_running_observed`` is the only hook that fires when Fenrir
     comes up mid-print — the #1304 guard suppresses ``on_print_start``."""
 
     @pytest.fixture(autouse=True)
@@ -552,7 +552,7 @@ class TestRestoreOnRestartRecovery:
 
     @pytest.mark.asyncio
     async def test_a_row_from_a_different_print_is_discarded(self, db_session, printer):
-        """A completion Bambuddy never saw leaves a row behind; it must not
+        """A completion Fenrir never saw leaves a row behind; it must not
         attach itself to whatever is running now."""
         from backend.app.main import _restore_usage_tracking_session
 

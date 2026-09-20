@@ -1,8 +1,8 @@
 // Snapshot probe: run the frontend board-rules engine over the shared fixture.
-// The bundle is produced by esbuild into /tmp/bambuddy-refactor-probe/ by the
+// The bundle is produced by esbuild into /tmp/fenrir-refactor-probe/ by the
 // probe command in PROBES.json before this script runs.
 const path = require("path");
-const rules = require("/tmp/bambuddy-refactor-probe/aitoBoardRules.cjs");
+const rules = require("/tmp/fenrir-refactor-probe/aitoBoardRules.cjs");
 const cases = require(path.join(
   process.cwd(),
   "frontend/src/__tests__/fixtures/aitoBoardRules.cases.json",

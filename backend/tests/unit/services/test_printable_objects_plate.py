@@ -1,7 +1,7 @@
 """Skip-object extraction must follow the plate that is actually printing (#2522).
 
 An "all plates" sliced export lists every plate in ``slice_info.config`` and
-ships a ``plate_N.json`` per plate. Bambuddy read the *first* plate whatever
+ships a ``plate_N.json`` per plate. Fenrir read the *first* plate whatever
 the printer was running, so a reporter printing plate 2 (one object) was
 offered plate 1's four objects, with plate 1's marker positions drawn over
 plate 2's thumbnail.
@@ -174,8 +174,8 @@ class TestLoadObjectsFromArchiveWiring:
         monkeypatch.setattr(main_module.printer_manager, "get_client", lambda pid: client)
         main_module._load_objects_from_archive(archive, 1, logging.getLogger(__name__))
 
-    def test_uses_the_plate_bambuddy_dispatched(self, monkeypatch, archive_3mf):
-        # Bambuddy-dispatched print: the plate is known from the dispatch itself,
+    def test_uses_the_plate_fenrir_dispatched(self, monkeypatch, archive_3mf):
+        # Fenrir-dispatched print: the plate is known from the dispatch itself,
         # which is what the reporter's P1S does (its gcode_file echo carries no
         # plate path — #1166).
         client = self._client(dispatched_plate_id=2, dispatched_subtask="job", subtask_name="job")
@@ -186,7 +186,7 @@ class TestLoadObjectsFromArchiveWiring:
         assert client.state.skipped_objects == []
 
     def test_uses_the_plate_parsed_from_gcode_file(self, monkeypatch, archive_3mf):
-        # Print started outside Bambuddy: the plate comes from the gcode path.
+        # Print started outside Fenrir: the plate comes from the gcode path.
         client = self._client(gcode_file="/data/Metadata/plate_2.gcode")
         self._load(monkeypatch, client, archive_3mf)
 

@@ -61,7 +61,7 @@ import type { PrinterStatus, PrintQueueItem } from '../api/client';
 /**
  * True when a queue item aimed at this printer would start now rather than wait.
  *
- * Every print Bambuddy sends goes through the queue, so this is not "can we
+ * Every print Fenrir sends goes through the queue, so this is not "can we
  * print at all" — it is "will ASAP mean now". The PrintModal uses it to promise
  * a later start, and the printer card uses it to say whether a dropped file
  * prints or queues. Both must agree, or the card promises one thing and the

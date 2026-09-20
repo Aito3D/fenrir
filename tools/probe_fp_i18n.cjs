@@ -7,9 +7,9 @@
 // language, which no test asserting on the English UI would catch. Placeholder
 // drift ({{priced}} -> {{count}}) breaks the sentence the same way.
 //
-// The bundle is produced by rolldown into /tmp/bambuddy-refactor-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-refactor-probe/ by the
 // probe command in PROBES.json before this script runs.
-const locales = require("/tmp/bambuddy-refactor-probe/fpI18n.cjs");
+const locales = require("/tmp/fenrir-refactor-probe/fpI18n.cjs");
 
 // Every filamentProfiles key whose name relates to the Zoho price sync.
 const KEY_RE = /^zoho|^sync|Zoho/;

@@ -73,7 +73,7 @@
   },
   {
     "id": "fe-i18n-parity",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_fp_i18n_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/i18nAll.cjs >/dev/null 2>&1 && node tools/probe_i18n_parity.cjs",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_fp_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/i18nAll.cjs >/dev/null 2>&1 && node tools/probe_i18n_parity.cjs",
     "timeout": 300,
     "scrub": [
       "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
@@ -82,7 +82,7 @@
   },
   {
     "id": "fe-money-pure",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_money_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/money.cjs >/dev/null 2>&1 && node tools/probe_money.cjs",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_money_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/money.cjs >/dev/null 2>&1 && node tools/probe_money.cjs",
     "timeout": 300,
     "scrub": [
       "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
@@ -91,7 +91,7 @@
   },
   {
     "id": "fe-camera-grid-layout",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/components/cameraGridLayout.ts --format cjs --file /tmp/bambuddy-refactor-probe/cameraGridLayout.cjs >/dev/null 2>&1 && node tools/probe_camera_layout.cjs",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/components/cameraGridLayout.ts --format cjs --file /tmp/fenrir-refactor-probe/cameraGridLayout.cjs >/dev/null 2>&1 && node tools/probe_camera_layout.cjs",
     "timeout": 120,
     "scrub": [
       "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"

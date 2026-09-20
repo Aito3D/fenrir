@@ -1477,7 +1477,7 @@ class TestReadIDORClosure(TestOwnershipPermissionsSetup):
     "see everything" permissions even though the write side was split into
     OWN/ALL. An operator with only ARCHIVES_READ could read, download, and
     queue any user's archive via direct id reference. These tests pin the
-    bambuddy_archive_idor.py and bambuddy_archive_viewer_idor.py PoC paths
+    fenrir_archive_idor.py and fenrir_archive_viewer_idor.py PoC paths
     so the IDOR can't regress silently.
     """
 

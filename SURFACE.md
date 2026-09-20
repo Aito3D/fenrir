@@ -981,15 +981,15 @@ websocket:connect
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "from backend.app.core.config import settings; [print(n, \"=\", repr(f.default)) for n, f in sorted(type(settings).model_fields.items())]" 2>/dev/null```
 ```
 api_prefix = '/api/v1'
-app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
-app_name = 'Bambuddy'
-archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')
+app_dir = PosixPath('/Users/paultheis/Documents/Code/fenrir-refactor')
+app_name = 'Fenrir'
+archive_dir = PosixPath('/Users/paultheis/Documents/Code/fenrir-refactor/archive')
 bambu_studio_api_url = 'http://localhost:3001'
 bambu_studio_bundle_dir = None
 bambu_studio_user_dirs = None
 bambu_user_id = '1961034787'
-base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')
-database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'
+base_dir = PosixPath('/Users/paultheis/Documents/Code/fenrir-refactor')
+database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/fenrir-refactor/bambuddy.db'
 db_max_overflow = None
 db_pool_recycle = None
 db_pool_size = None
@@ -999,13 +999,13 @@ debug = False
 library_max_upload_bytes = 2147483648
 library_max_zip_extract_bytes = 4294967296
 log_backup_count = 3
-log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')
+log_dir = PosixPath('/Users/paultheis/Documents/Code/fenrir-refactor/logs')
 log_level = 'INFO'
 log_max_bytes = 5242880
 log_to_file = True
-plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')
+plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/fenrir-refactor/data/plate_calibration')
 slicer_api_url = 'http://localhost:3003'
-static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')
+static_dir = PosixPath('/Users/paultheis/Documents/Code/fenrir-refactor/static')
 ```
 
 ## Backend service top-level defs (count per signature)

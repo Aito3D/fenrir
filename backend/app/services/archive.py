@@ -200,7 +200,7 @@ def verify_3mf_candidate(
       first-hit behavior but records the archive as unverified.
 
     The md5 comes from the intercepted ``project_file`` command (slicer sends
-    only — touchscreen reprints produce no command, and Bambuddy's own
+    only — touchscreen reprints produce no command, and Fenrir's own
     dispatch sends an empty md5). The prediction fallback is deliberately
     lax: a false reject would replace the *correct* file with a no-3MF
     fallback archive, so only gross mismatches (>2x AND >15 min apart) are
@@ -1887,7 +1887,7 @@ class ArchiveService:
                 # directory; assert_under then narrows it to *this* archive's
                 # own directory, because a row whose timelapse_path names
                 # another archive's file must not take it with this delete.
-                # The column is written by Bambuddy from a filename the printer
+                # The column is written by Fenrir from a filename the printer
                 # supplied over FTP, so it is not a trusted constant.
                 candidate = safe_join_under(settings.base_dir, recorded, http=False)
                 assert_under(directory, candidate, http=False)

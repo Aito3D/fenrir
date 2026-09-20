@@ -1,10 +1,10 @@
-# Filament Profile Manager — bambuddy port design
+# Filament Profile Manager — fenrir port design
 
 Date: 2026-08-24
 Status: approved-by-spec (user supplied a complete feature spec; this doc records the
-mapping of that spec onto bambuddy's stack). The source spec is embedded verbatim in
+mapping of that spec onto fenrir's stack). The source spec is embedded verbatim in
 Appendix A and is normative for every behavior, flow, and edge case; this first half is
-normative for *where* each piece lives in bambuddy and which house conventions replace
+normative for *where* each piece lives in fenrir and which house conventions replace
 the source app's primitives.
 
 ## 1. Scope
@@ -25,9 +25,9 @@ feature with its own nav id `filament-profiles`.
   `main.py` (import block + `include_router` with `app_settings.api_prefix`).
   Static segments (`/base-presets`, `/base-content`, `/bambu-scan`, `/bambu-sync`,
   `/sync-base`) declared **before** `/{preset_id}` routes.
-- **Endpoint map** (spec §3 → bambuddy):
+- **Endpoint map** (spec §3 → fenrir):
 
-  | Spec | bambuddy |
+  | Spec | fenrir |
   |---|---|
   | GET /api/profiles | GET /api/v1/filament-profiles |
   | POST /api/profiles | POST /api/v1/filament-profiles |

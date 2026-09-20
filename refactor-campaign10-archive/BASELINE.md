@@ -10,7 +10,7 @@ campaign: 10                   # campaigns 1-9 are all merged to main; their loo
                                # existed before this campaign, so `git describe --match 'loop-*'`
                                # exits nonzero and the SQUASH+TAG campaign-1 BASE fallback is valid.
                                # Iteration tags are plain `loop-N`.
-workdir: /Users/paultheis/Documents/Code/bambuddy-refactor
+workdir: /Users/paultheis/Documents/Code/fenrir-refactor
 branch: auto-refactor-loop
 agents: plugin-namespaced refactor-loop:refactor-worker / refactor-loop:refactor-verifier and the
         four refactor-loop:audit-* auditors (plugin 1.2.0). The repo's .claude/agents/refactor-worker.md
@@ -100,14 +100,14 @@ Two settings are load-bearing and frozen (weakening either = protocol violation)
 available: semgrep (~/.local/bin), gitleaks (homebrew), pip-audit 2.10.1 (~/.local/bin and venv), bandit 1.9.4 (venv), npm audit (npm 11.9.0)
 missing:   trivy (not installed; CodeQL/Trivy are the `test_security.sh --full` extras)
 NETWORK CAVEAT: on setup day pypi.org and github.com SSH timed out intermittently (pip could not
-resolve fastapi; the worktree venv was cloned OFFLINE from ../bambuddy/venv, see below). pip-audit
+resolve fastapi; the worktree venv was cloned OFFLINE from ../fenrir/venv, see below). pip-audit
 and npm audit both need the network; if they fail to reach their advisory DBs, record "not run
 (network)" rather than "clean". ./test_security.sh needs bash 4 (`declare -A`); macOS stock bash is
 3.2, so run the scanners directly.
 
 ## worktree venv — HOW IT WAS ACTUALLY BUILT (offline clone, not pip)
 pypi was unreachable, so: /opt/homebrew/opt/python@3.13/bin/python3.13 -m venv venv, then
-rsync of ../bambuddy/venv/lib/python3.13/site-packages/ into venv/lib/python3.13/site-packages/,
+rsync of ../fenrir/venv/lib/python3.13/site-packages/ into venv/lib/python3.13/site-packages/,
 plus the main venv's bin/ scripts with shebangs rewritten. The main venv is a Python 3.13 venv
 (bin/python3 -> python3.13; its lib/python3.14 layer is a partial leftover — ignore it).
 Consequence: the worktree venv is isolated (a worker's `pip install` cannot touch the dev venv),
@@ -147,7 +147,7 @@ INVERSE-FLAKY — fail when run ALONE, pass in the full suite (do NOT "confirm" 
   1 passed alone at this setup, 0 failed in the full run). Its _register_all_models() omits the
   print_log model, so it only works once another test has imported that model into Base.metadata.
 - frontend: src/__tests__/components/ModelViewerModal.test.tsx > slicer split button (#2725) >
-  "opens the selected local slicer from the Bambuddy dropdown" — deterministic failure alone.
+  "opens the selected local slicer from the Fenrir dropdown" — deterministic failure alone.
 
 ## coverage gate — CORRECTION found at setup (the reason tools/coverage_all.sh was patched pre-BASE)
 The first backend run reported TOTAL 64% with NO Branch columns. Cause: pytest-cov's default
@@ -158,7 +158,7 @@ shows `config_file: None`; with `--cov-config=../pyproject.toml` it reads the ro
 Branch/BrPart columns appear. tools/coverage_all.sh now passes that flag (in the setup commit).
 Anyone running pytest-cov by hand from backend/ MUST pass `--cov-config=../pyproject.toml` or the
 number is not comparable to the baseline.
-Cosmetic: the cloned venv's copied .pyc files carry co_filename paths pointing at ../bambuddy/venv,
+Cosmetic: the cloned venv's copied .pyc files carry co_filename paths pointing at ../fenrir/venv,
 so warnings/tracebacks from site-packages print the MAIN venv's path. sys.path is worktree-only
 (verified); app code is never in the venv, so coverage is unaffected.
 

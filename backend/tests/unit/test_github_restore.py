@@ -1594,7 +1594,7 @@ class TestRestoreKprofiles:
     # --- cali_idx is resolved live, never taken from the backup -------------
     #
     # Regression cover for the silent no-op found testing on an X1E: the backup
-    # stored cali_idx 8151, a Bambuddy edit re-keyed the profile to 4606, and
+    # stored cali_idx 8151, a Fenrir edit re-keyed the profile to 4606, and
     # the restore aimed extrusion_cali_set at 8151. The printer dropped it and
     # the tally still said "1 restored".
 
@@ -2966,7 +2966,7 @@ class TestMqttRelayReconfigure:
         assert sent["mqtt_port"] == 8883
         assert sent["mqtt_use_tls"] is True
         assert sent["mqtt_password"] == "kept"
-        assert sent["mqtt_topic_prefix"] == "bambuddy"
+        assert sent["mqtt_topic_prefix"] == "fenrir"
         assert tally.notes == []
 
     @pytest.mark.asyncio
@@ -2990,7 +2990,7 @@ class TestMqttRelayReconfigure:
         with patch("backend.app.services.mqtt_relay.mqtt_relay", relay):
             await _service()._reconfigure_mqtt_relay(db_session, {"mqtt_enabled"}, tally)
 
-        assert any("restart Bambuddy" in note for note in _messages(tally))
+        assert any("restart Fenrir" in note for note in _messages(tally))
 
     @pytest.mark.asyncio
     async def test_restore_settings_reports_the_keys_it_wrote(self, db_session):
@@ -3361,7 +3361,7 @@ class TestDescribeCommit:
         return MagicMock(branch="main", provider="github", repository_url="https://github.com/o/r", access_token="t")
 
     def _entry(self, sha: str):
-        return {"sha": sha, "message": "Bambuddy backup", "author": "Bambuddy", "date": "2026-07-01T10:00:00Z"}
+        return {"sha": sha, "message": "Fenrir backup", "author": "Fenrir", "date": "2026-07-01T10:00:00Z"}
 
     @pytest.mark.asyncio
     async def test_an_abbreviated_ref_matches_a_full_sha_in_the_window(self):

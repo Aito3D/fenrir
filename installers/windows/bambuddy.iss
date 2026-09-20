@@ -1,4 +1,4 @@
-; Bambuddy Windows Installer — Inno Setup script
+; Fenrir Windows Installer — Inno Setup script
 ;
 ; Builds a self-contained installer that lays down:
 ;   - embedded Python 3.13 + pre-installed venv
@@ -11,11 +11,11 @@
 ;
 ; See installers/windows/README.md for the full pipeline.
 
-#define MyAppName "Bambuddy"
+#define MyAppName "Fenrir"
 #define MyAppPublisher "Martin Ziegler"
 #define MyAppURL "https://bambuddy.cool"
-#define MyAppExeName "bambuddy.exe"
-#define ServiceName "Bambuddy"
+#define MyAppExeName "fenrir.exe"
+#define ServiceName "Fenrir"
 #define DefaultPort "8000"
 
 ; Version is stamped by build.py into build\staging\version.iss as a
@@ -28,19 +28,19 @@
 #endif
 
 [Setup]
-AppId={{8C9C9E1A-7C5A-4F2A-9F1B-BAMBUDDY00001}}
+AppId={{8C9C9E1A-7C5A-4F2A-9F1B-FENRIR00001}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\Bambuddy
+DefaultDirName={autopf}\Fenrir
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\..\LICENSE
 OutputDir=build\output
-OutputBaseFilename=bambuddy-{#MyAppVersion}-windows-x64-setup
+OutputBaseFilename=fenrir-{#MyAppVersion}-windows-x64-setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -49,7 +49,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Admin required: we register a Windows service and write to ProgramData
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=
-; Bambuddy branding — bambuddy.ico is a multi-resolution .ico (16/32/48/
+; Fenrir branding — bambuddy.ico is a multi-resolution .ico (16/32/48/
 ; 64/128/256) generated from frontend/public/img/favicon.png; lives next
 ; to this .iss so the SourcePath-relative reference works during compile
 ; and the [Files] entry stages it into {app} for Add/Remove Programs.
@@ -67,7 +67,7 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
-Name: "firewallrule"; Description: "Add Windows Firewall rule for Bambuddy (port {#DefaultPort})"; GroupDescription: "Network:"
+Name: "firewallrule"; Description: "Add Windows Firewall rule for Fenrir (port {#DefaultPort})"; GroupDescription: "Network:"
 
 [Files]
 ; Embedded Python (entire tree)
@@ -87,46 +87,46 @@ Source: "bambuddy.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 ; ProgramData layout — created with permissions LocalSystem can write to
-Name: "{commonappdata}\Bambuddy"; Permissions: users-modify
-Name: "{commonappdata}\Bambuddy\data"; Permissions: users-modify
-Name: "{commonappdata}\Bambuddy\logs"; Permissions: users-modify
+Name: "{commonappdata}\Fenrir"; Permissions: users-modify
+Name: "{commonappdata}\Fenrir\data"; Permissions: users-modify
+Name: "{commonappdata}\Fenrir\logs"; Permissions: users-modify
 
 [Icons]
-Name: "{group}\Open Bambuddy Dashboard"; Filename: "http://localhost:{#DefaultPort}"; IconFilename: "{app}\bambuddy.ico"
-Name: "{group}\Bambuddy Logs"; Filename: "{commonappdata}\Bambuddy\logs"
-Name: "{group}\Uninstall Bambuddy"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\Bambuddy"; Filename: "http://localhost:{#DefaultPort}"; IconFilename: "{app}\bambuddy.ico"; Tasks: desktopicon
+Name: "{group}\Open Fenrir Dashboard"; Filename: "http://localhost:{#DefaultPort}"; IconFilename: "{app}\bambuddy.ico"
+Name: "{group}\Fenrir Logs"; Filename: "{commonappdata}\Fenrir\logs"
+Name: "{group}\Uninstall Fenrir"; Filename: "{uninstallexe}"
+Name: "{commondesktop}\Fenrir"; Filename: "http://localhost:{#DefaultPort}"; IconFilename: "{app}\bambuddy.ico"; Tasks: desktopicon
 
 [Run]
 ; Register and start the Windows service
-Filename: "{app}\service\install-service.bat"; Parameters: """{app}"" ""{commonappdata}\Bambuddy"" {#DefaultPort}"; Flags: runhidden waituntilterminated; StatusMsg: "Registering Bambuddy service..."
+Filename: "{app}\service\install-service.bat"; Parameters: """{app}"" ""{commonappdata}\Fenrir"" {#DefaultPort}"; Flags: runhidden waituntilterminated; StatusMsg: "Registering Fenrir service..."
 
 ; Open Windows Firewall on the dashboard port. We do this only if the
 ; user opted in via the firewallrule task — some environments manage
 ; firewall centrally and prefer to handle this themselves.
-Filename: "netsh.exe"; Parameters: "advfirewall firewall add rule name=""Bambuddy Dashboard"" dir=in action=allow protocol=TCP localport={#DefaultPort}"; Flags: runhidden waituntilterminated; Tasks: firewallrule; StatusMsg: "Adding firewall rule..."
+Filename: "netsh.exe"; Parameters: "advfirewall firewall add rule name=""Fenrir Dashboard"" dir=in action=allow protocol=TCP localport={#DefaultPort}"; Flags: runhidden waituntilterminated; Tasks: firewallrule; StatusMsg: "Adding firewall rule..."
 
 ; Open the dashboard in the user's default browser at the end of install
-Filename: "http://localhost:{#DefaultPort}"; Flags: shellexec postinstall nowait skipifsilent; Description: "Open Bambuddy Dashboard"
+Filename: "http://localhost:{#DefaultPort}"; Flags: shellexec postinstall nowait skipifsilent; Description: "Open Fenrir Dashboard"
 
 [UninstallRun]
 ; Stop + deregister the service before file removal. RunOnceId makes the
 ; entry run-once per uninstall pass (Inno Setup default is to re-run on
 ; every pass, which can fire multiple times during upgrade flows).
-Filename: "{app}\service\uninstall-service.bat"; Parameters: """{app}"""; Flags: runhidden waituntilterminated; RunOnceId: "StopBambuddyService"
+Filename: "{app}\service\uninstall-service.bat"; Parameters: """{app}"""; Flags: runhidden waituntilterminated; RunOnceId: "StopFenrirService"
 
 ; Remove the firewall rule (silently — if it doesn't exist, netsh just complains)
-Filename: "netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Bambuddy Dashboard"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
+Filename: "netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Fenrir Dashboard"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
 
 [UninstallDelete]
-; Remove install dir contents; leave ProgramData\Bambuddy alone so the
+; Remove install dir contents; leave ProgramData\Fenrir alone so the
 ; user keeps their database + archives. Re-installing on top picks them
 ; back up automatically.
 Type: filesandordirs; Name: "{app}"
 
 [Code]
 
-// Stop the Bambuddy service BEFORE the [Files] section copies anything,
+// Stop the Fenrir service BEFORE the [Files] section copies anything,
 // so file locks on python.exe / .pyd / nssm.exe release in time for the
 // overwrite. Without this, upgrading over a running install fails with
 // "permission denied" on every file the service has open.
@@ -150,8 +150,8 @@ begin
   NssmPath := ExpandConstant('{app}\bin\nssm.exe');
   if FileExists(NssmPath) then
   begin
-    Log('Stopping Bambuddy service before file copy...');
-    Exec(NssmPath, 'stop Bambuddy', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Log('Stopping Fenrir service before file copy...');
+    Exec(NssmPath, 'stop Fenrir', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     // ResultCode 0 == stopped; non-zero is fine too (already stopped /
     // service not registered). The lock we care about is python.exe's,
     // and it's released the moment the process exits.
@@ -160,7 +160,7 @@ begin
 end;
 
 // Pre-install check: refuse to install if port 8000 is already in use by
-// something other than a previous Bambuddy install. This catches the
+// something other than a previous Fenrir install. This catches the
 // "I have something else on 8000" case early instead of after install.
 function InitializeSetup(): Boolean;
 begin

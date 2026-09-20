@@ -1,7 +1,7 @@
 """Today / Yesterday derived from a plug's lifetime energy counter (#2539).
 
 The reporter's Shelly Plug S Gen3 reports one number, ``aenergy.total``, and it
-only ever climbs. Bambuddy filed that under "today", so Today never reset at
+only ever climbs. Fenrir filed that under "today", so Today never reset at
 midnight and Yesterday and Total stayed at zero forever. These tests pin the
 arithmetic that replaces it, and the two ways it can legitimately have no answer.
 """

@@ -72,7 +72,7 @@ describe('location sensor alert defaults — server-backed', () => {
     saveLocationSensorShowOnCardDefaults(defaults);
 
     expect(localStorage.setItem).toHaveBeenCalledWith(
-      'bambuddy-location-sensor-show-on-card-defaults',
+      'fenrir-location-sensor-show-on-card-defaults',
       JSON.stringify({ temperature: true, humidity: false, battery: true })
     );
   });

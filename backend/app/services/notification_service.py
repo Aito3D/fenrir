@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # inventory). Previously this client leaked python-httpx/<version>, which
 # was both inconsistent with the rest of the project and a more obvious
 # bot signature for upstream WAFs.
-_USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+_USER_AGENT = "Fenrir/1.0 (+https://github.com/maziggy/bambuddy)"
 
 
 def _looks_like_cloudflare_challenge(response: httpx.Response) -> bool:
@@ -94,10 +94,10 @@ def _opaque_http_failure(response: httpx.Response, *, label: str) -> str:
     ``SETTINGS_UPDATE`` — and ``POST /notifications/test-config`` accepts a URL
     straight from the request body without persisting anything. Echoing the
     response body there turned an intended "does my webhook work?" check into
-    an authenticated read primitive against any host the Bambuddy process can
+    an authenticated read primitive against any host the Fenrir process can
     reach, including services that are not exposed to the network at all.
 
-    Providers whose host Bambuddy hardcodes (Pushover, Telegram, CallMeBot)
+    Providers whose host Fenrir hardcodes (Pushover, Telegram, CallMeBot)
     keep returning the upstream body — there is no trust boundary to cross
     when the destination cannot be influenced.
 
@@ -250,7 +250,7 @@ class NotificationService:
         """Build notification title and body from template."""
         # Add common variables
         variables["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        variables["app_name"] = "Bambuddy"
+        variables["app_name"] = "Fenrir"
 
         template = await self._get_template(db, event_type)
         if not template:
@@ -270,7 +270,7 @@ class NotificationService:
         if db:
             title, message = await self._build_message_from_template(db, "test", {})
         else:
-            title = "Bambuddy Test"
+            title = "Fenrir Test"
             message = "This is a test notification. If you see this, notifications are working!"
 
         try:
@@ -434,7 +434,7 @@ class NotificationService:
         if _looks_like_cloudflare_challenge(response):
             return False, (
                 f"HTTP {response.status_code} — ntfy server is behind a Cloudflare "
-                "challenge. Bambuddy was served the JS challenge page instead of "
+                "challenge. Fenrir was served the JS challenge page instead of "
                 "reaching ntfy. Cloudflare cannot be solved from a backend; add a "
                 "Cloudflare security-skip rule for this hostname, disable Bot "
                 "Fight Mode, or front the server with Cloudflare Access using a "
@@ -584,7 +584,7 @@ class NotificationService:
         ``body`` contains the substituted ``{finish_photo_url}`` value AND the
         finish-photo bytes are present, the message is built as
         ``multipart/related`` wrapping a ``multipart/alternative`` (plain + HTML)
-        plus an inline ``MIMEImage`` with ``Content-ID: <bambuddy-finish-photo>``.
+        plus an inline ``MIMEImage`` with ``Content-ID: <fenrir-finish-photo>``.
         The HTML part replaces the URL with ``<img src="cid:...">``; the plain-
         text part keeps the URL as a clickable link. When the template doesn't
         reference ``{finish_photo_url}`` (or image bytes aren't available), the
@@ -619,7 +619,7 @@ class NotificationService:
                 msg = MIMEMultipart("related")
                 msg["From"] = from_email
                 msg["To"] = to_email
-                msg["Subject"] = f"[Bambuddy] {subject}"
+                msg["Subject"] = f"[Fenrir] {subject}"
 
                 alt = MIMEMultipart("alternative")
                 alt.attach(MIMEText(body, "plain"))
@@ -630,7 +630,7 @@ class NotificationService:
                 escaped_body = html.escape(body).replace("\n", "<br>\n")
                 escaped_url = html.escape(finish_photo_url)
                 img_tag = (
-                    '<img src="cid:bambuddy-finish-photo" '
+                    '<img src="cid:fenrir-finish-photo" '
                     'alt="Printer camera snapshot" '
                     'style="max-width:100%;height:auto;border:1px solid #ddd;border-radius:4px;">'
                 )
@@ -640,15 +640,15 @@ class NotificationService:
 
                 img = MIMEImage(image_data, _subtype="jpeg")
                 # Angle-bracketed Content-ID per RFC 2392, referenced from HTML
-                # without the brackets via ``cid:bambuddy-finish-photo``.
-                img.add_header("Content-ID", "<bambuddy-finish-photo>")
+                # without the brackets via ``cid:fenrir-finish-photo``.
+                img.add_header("Content-ID", "<fenrir-finish-photo>")
                 img.add_header("Content-Disposition", "inline", filename="finish-photo.jpg")
                 msg.attach(img)
             else:
                 msg = MIMEMultipart()
                 msg["From"] = from_email
                 msg["To"] = to_email
-                msg["Subject"] = f"[Bambuddy] {subject}"
+                msg["Subject"] = f"[Fenrir] {subject}"
                 msg.attach(MIMEText(body, "plain"))
 
             # smtplib is synchronous and blocking: a wedged / greylisting /
@@ -776,7 +776,7 @@ class NotificationService:
                 custom_field_title: title,
                 custom_field_message: message,
                 "timestamp": datetime.now().isoformat(),
-                "source": "Bambuddy",
+                "source": "Fenrir",
             }
 
         # For generic format, include structured event data for automation tools
@@ -1568,7 +1568,7 @@ class NotificationService:
         """Handle plate-clear-required event — a print ended and the queue is gated (#2525).
 
         Distinct from ``on_plate_not_empty``, which is the camera check *before* a
-        print starts. This one fires on the rising edge of the Bambuddy-side
+        print starts. This one fires on the rising edge of the Fenrir-side
         awaiting-plate-clear flag, i.e. whenever a print reaches a terminal state
         and the next queued job can't dispatch until someone confirms the bed is
         free. Off by default on every provider: it lands at the same moment as the
@@ -1735,7 +1735,7 @@ class NotificationService:
         """Handle automatic drying giving up on one AMS unit (#2770).
 
         Sent immediately rather than folded into a digest: it reports that
-        Bambuddy has STOPPED doing something, and a report of inaction that
+        Fenrir has STOPPED doing something, and a report of inaction that
         arrives with tomorrow's summary has already cost the user a day.
         """
         providers = await self._get_providers_for_event(db, "on_ams_drying_suspended", printer_id)

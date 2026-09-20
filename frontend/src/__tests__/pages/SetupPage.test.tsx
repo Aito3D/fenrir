@@ -34,7 +34,7 @@ describe('SetupPage', () => {
     render(<SetupPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Bambuddy Setup' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Fenrir Setup' })).toBeInTheDocument();
     });
 
     const checkbox = screen.getByLabelText('Enable Authentication') as HTMLInputElement;

@@ -1,7 +1,7 @@
 """A no-3MF archive must not borrow a stranger's 3MF (#2843).
 
 H2-series and P2S firmware keeps a slicer-sent file on internal eMMC, which
-Bambuddy cannot read, so the print becomes an archive with no file and its
+Fenrir cannot read, so the print becomes an archive with no file and its
 ``filename`` stays the path the printer is executing:
 ``/data/Metadata/plate_1.gcode``.
 

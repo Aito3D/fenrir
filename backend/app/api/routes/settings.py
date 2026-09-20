@@ -332,7 +332,7 @@ async def update_settings(
     #   2. The caller has no UserOIDCLink — they would lock themselves out
     #      even if other admins are linked.
     # Either case returns HTTP 400 instead of silently saving. The
-    # ``BAMBUDDY_LOCAL_LOGIN=true`` env-var bypass on /auth/login is a
+    # ``FENRIR_LOCAL_LOGIN=true`` env-var bypass on /auth/login is a
     # separate recovery path; the refusals here protect the *default*
     # configuration where the env var is absent.
     if update_data.get("local_login_enabled") is False:
@@ -411,7 +411,7 @@ async def update_settings(
                 "mqtt_port": int(await get_setting(db, "mqtt_port") or "1883"),
                 "mqtt_username": await get_setting(db, "mqtt_username") or "",
                 "mqtt_password": await get_setting(db, "mqtt_password") or "",
-                "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "bambuddy",
+                "mqtt_topic_prefix": await get_setting(db, "mqtt_topic_prefix") or "fenrir",
                 "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
             }
             await mqtt_relay.configure(mqtt_settings)
@@ -1578,7 +1578,7 @@ async def restore_backup(
             logger.info("Restore complete - restart required")
             return {
                 "success": True,
-                "message": "Backup restored successfully. Please restart Bambuddy for changes to take effect.",
+                "message": "Backup restored successfully. Please restart Fenrir for changes to take effect.",
             }
 
         except HTTPException:

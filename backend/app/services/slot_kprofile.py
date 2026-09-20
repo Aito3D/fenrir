@@ -1,6 +1,6 @@
 """Find the stored K-profile for an AMS slot on a particular nozzle.
 
-K-profiles are per-nozzle: Bambuddy already keeps one row per
+K-profiles are per-nozzle: Fenrir already keeps one row per
 ``(spool, printer, extruder)`` in ``spool_k_profile`` (and the Spoolman mirror
 in ``spoolman_k_profile``), each with its own ``cali_idx`` and K value. On the
 maintainer's H2C, one black PLA reads 0.018 on the left hotend and 0.020 on the

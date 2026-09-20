@@ -6,10 +6,10 @@ how big a file a printer is allowed to serve: the reporter measured the same
 5.4 MB 3MF at 45 s off a worn P1S SD card and 25 s off a new one, and a 15.15 MB
 3MF at 105 s. None of those transfers were unhealthy. And it bounded nothing
 about concurrency -- he watched Bambu Studio lose its own connection to the
-printer while two Bambuddy downloads for the same file ran against it at once.
+printer while two Fenrir downloads for the same file ran against it at once.
 
 So the total deadline now follows the size the printer reports, and a printer
-serves one Bambuddy download at a time. Both are deliberately soft: the
+serves one Fenrir download at a time. Both are deliberately soft: the
 extension is granted only once SIZE has been answered (so a dead printer still
 fails on schedule, and the queue wait #2572 capped is untouched), and a download
 that cannot have the gate goes anyway rather than letting a print lose its 3MF
