@@ -181,6 +181,7 @@ class AitoTaskBase(BaseModel):
     modelisation_description: str | None = None
     impression_description: str | None = None
     usinage_description: str | None = None
+    maindoeuvre_description: str | None = None
     # `allow_inf_nan=False` is NOT set here, on purpose, for the same reason
     # `max_length` is not set here on the description fields two lines below:
     # AitoTaskResponse also inherits from AitoTaskBase, and a constraint here
@@ -192,6 +193,9 @@ class AitoTaskBase(BaseModel):
     scan_cost: float | None = Field(default=None, ge=0)
     modelisation_cost: float | None = Field(default=None, ge=0)
     usinage_cost: float | None = Field(default=None, ge=0)
+    # No maindoeuvre_quantity, no maindoeuvre_discount_pct: labour is always
+    # one unit at one price, with no discount — see the design doc.
+    maindoeuvre_cost: float | None = Field(default=None, ge=0)
     impression_printer_id: int | None = None
     impression_filament_id: int | None = None
     impression_weight_g: float | None = Field(default=None, ge=0)
@@ -214,6 +218,7 @@ class AitoTaskBase(BaseModel):
     modelisation_done: bool = False
     impression_done: bool = False
     usinage_done: bool = False
+    maindoeuvre_done: bool = False
 
 
 class AitoTaskCreate(AitoTaskBase):
@@ -226,6 +231,7 @@ class AitoTaskCreate(AitoTaskBase):
     modelisation_description: str | None = Field(default=None, max_length=10_000)
     impression_description: str | None = Field(default=None, max_length=10_000)
     usinage_description: str | None = Field(default=None, max_length=10_000)
+    maindoeuvre_description: str | None = Field(default=None, max_length=10_000)
     # Same reasoning as the description caps above, and the same precedent
     # this task's own base-class comment documents: redeclared here (and on
     # AitoTaskUpdate) rather than on AitoTaskBase, because AitoTaskResponse
@@ -234,6 +240,7 @@ class AitoTaskCreate(AitoTaskBase):
     scan_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     modelisation_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     usinage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    maindoeuvre_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
@@ -250,11 +257,13 @@ class AitoTaskUpdate(AitoTaskBase):
     modelisation_description: str | None = Field(default=None, max_length=10_000)
     impression_description: str | None = Field(default=None, max_length=10_000)
     usinage_description: str | None = Field(default=None, max_length=10_000)
+    maindoeuvre_description: str | None = Field(default=None, max_length=10_000)
     # See AitoTaskCreate for why this is redeclared per-request-model instead
     # of on AitoTaskBase.
     scan_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     modelisation_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     usinage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    maindoeuvre_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)

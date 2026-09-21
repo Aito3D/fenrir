@@ -272,6 +272,36 @@ async def test_impression_discount_round_trips_through_task_responses(async_clie
 
 
 @pytest.mark.asyncio
+async def test_task_round_trips_a_labour_step(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    created = await async_client.post(
+        f"/api/v1/aito/{project_id}/tasks",
+        json={"title": "Pose sur site", "maindoeuvre_cost": 4000, "maindoeuvre_description": "Pose et réglage"},
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["maindoeuvre_cost"] == 4000
+    assert body["maindoeuvre_description"] == "Pose et réglage"
+    assert body["maindoeuvre_done"] is False
+    task_id = body["id"]
+
+    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert [t["maindoeuvre_cost"] for t in listed.json() if t["id"] == task_id] == [4000]
+
+
+@pytest.mark.asyncio
+async def test_labour_cost_rejects_a_negative(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    response = await async_client.post(
+        f"/api/v1/aito/{project_id}/tasks",
+        json={"maindoeuvre_cost": -1},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_requires_client(async_client):
     r = await _create(async_client, client_id=None, client_name=None)
     assert r.status_code == 422
