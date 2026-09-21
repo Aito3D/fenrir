@@ -25,7 +25,7 @@ interface SummariseCase {
   print_minutes_pending: number;
 }
 
-const SERVICE_IDS: ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage'];
+const SERVICE_IDS: ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage', 'maindoeuvre'];
 
 /** The fixture's wire shape -> the client shape the mirror consumes. */
 function toTaskLike(row: Record<string, number | boolean | string | null>): TaskLike {
@@ -34,6 +34,7 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
     modelisationCost: row.modelisation_cost as number | null,
     impressionCost: row.impression_cost as number | null,
     usinageCost: row.usinage_cost as number | null,
+    maindoeuvreCost: (row.maindoeuvre_cost as number | null | undefined) ?? null,
     scanDiscountPct: (row.scan_discount_pct as number | null | undefined) ?? null,
     modelisationDiscountPct: (row.modelisation_discount_pct as number | null | undefined) ?? null,
     impressionDiscountPct: (row.impression_discount_pct as number | null | undefined) ?? null,
@@ -43,6 +44,7 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
       modelisation: row.modelisation_done === true,
       impression: row.impression_done === true,
       usinage: row.usinage_done === true,
+      maindoeuvre: row.maindoeuvre_done === true,
     },
     title: row.title as string,
     // The wire keeps the print inputs flat (`impression_time_min`) because
@@ -63,8 +65,8 @@ describe('the board-rules contract', () => {
   it('has the full evaluate product loaded', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
-    expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(314);
+    expect(evaluateCases).toHaveLength(8 * 7 * 32);
+    expect(summariseCases).toHaveLength(315);
   });
 
   it('stages every service exactly once', () => {
@@ -87,6 +89,27 @@ describe('the board-rules contract', () => {
     // Report the case itself, not just a count — a bare "expected 3 to be 0"
     // says nothing about which rule drifted.
     expect(mismatches).toEqual([]);
+  });
+
+  it('holds a card in Finish while labour is pending', () => {
+    expect(evaluate('accepted', 'finish', ['maindoeuvre'])).toEqual(['finish', 'steps']);
+  });
+
+  it('evicts a card from Done when labour is re-opened', () => {
+    expect(evaluate('accepted', 'done', ['maindoeuvre'])).toEqual(['finish', 'steps']);
+  });
+
+  it('totals a labour step with no discount field', () => {
+    const task = {
+      scanCost: null,
+      modelisationCost: null,
+      impressionCost: null,
+      usinageCost: null,
+      maindoeuvreCost: 4000,
+      done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
+    };
+    expect(netCost(task, 'maindoeuvre')).toBe(4000);
+    expect(summariseTasks([task]).total).toBe(4000);
   });
 
   it.each(SERVICE_IDS)('treats %s consistently in both directions', (service) => {
@@ -117,7 +140,8 @@ function blank(): TaskLike {
     modelisationCost: null,
     impressionCost: null,
     usinageCost: null,
-    done: { scan: false, modelisation: false, impression: false, usinage: false },
+    maindoeuvreCost: null,
+    done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
   };
 }
 
@@ -126,7 +150,8 @@ const bare = (over: Partial<TaskLike> = {}): TaskLike => ({
   modelisationCost: null,
   impressionCost: null,
   usinageCost: null,
-  done: { scan: false, modelisation: false, impression: false, usinage: false },
+  maindoeuvreCost: null,
+  done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
   ...over,
 });
 
@@ -177,6 +202,8 @@ describe('printMinutesPending', () => {
       scan_discount_pct: null,
       modelisation_discount_pct: null,
       usinage_discount_pct: null,
+      maindoeuvre_description: null,
+      maindoeuvre_cost: null,
     } as AitoTaskCreate;
 
     const summary = summariseTasks([

@@ -52,7 +52,7 @@ export const COLUMN_ORDER: readonly AitoColumnId[] = [
  *  pinned this way — TypeScript has no way to express "every union member
  *  appears in this nested array" — so it is covered by a test instead
  *  (aitoBoardRules.test.ts: "every service is staged exactly once"). */
-export const SERVICES = ['scan', 'modelisation', 'impression', 'usinage'] as const;
+export const SERVICES = ['scan', 'modelisation', 'impression', 'usinage', 'maindoeuvre'] as const;
 
 export type ServiceId = (typeof SERVICES)[number];
 
@@ -73,6 +73,10 @@ export const STAGES: readonly (readonly [AitoColumnId, readonly ServiceId[]])[] 
   ['scan', ['scan']],
   ['model', ['modelisation']],
   ['print', ['impression', 'usinage']],
+  // Finish owns Main d'œuvre, so it is a work stage now and not only the
+  // "nothing left to do" resting place: a card with labour outstanding sits
+  // here with moveLock 'steps', which is what keeps `canMarkDone` false.
+  ['finish', ['maindoeuvre']],
 ];
 
 /** The minimum a task must expose for these rules to read it. Structural, not
@@ -83,6 +87,9 @@ export interface TaskLike {
   modelisationCost: number | null;
   impressionCost: number | null;
   usinageCost: number | null;
+  /** Main d'œuvre: a flat labour cost. No quantity and no discount — hence
+   *  no entry in DISCOUNT_KEYS below, which is what makes that map partial. */
+  maindoeuvreCost: number | null;
   done: Record<ServiceId, boolean>;
   /** Optional so every existing cost/done literal still compiles; absent
    *  reads as '' — the mirror's fallback name, same as a task with none. */
@@ -110,6 +117,7 @@ const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
   modelisation: 'modelisationCost',
   impression: 'impressionCost',
   usinage: 'usinageCost',
+  maindoeuvre: 'maindoeuvreCost',
 };
 
 /** One service's cost, or null when the service is absent from the job.
@@ -118,7 +126,11 @@ export function taskCost(task: TaskLike, service: ServiceId): number | null {
   return task[COST_KEYS[service]] as number | null;
 }
 
-const DISCOUNT_KEYS: Record<ServiceId, keyof TaskLike> = {
+/** Partial on purpose: `maindoeuvre` owns no discount field at all. A total
+ *  `Record<ServiceId, keyof TaskLike>` would force an entry pointing at a
+ *  field that does not exist, and the lookup would read `undefined` off the
+ *  task at runtime with no compile error to catch it. */
+const DISCOUNT_KEYS: Partial<Record<ServiceId, keyof TaskLike>> = {
   scan: 'scanDiscountPct',
   modelisation: 'modelisationDiscountPct',
   impression: 'impressionDiscountPct',
@@ -135,7 +147,8 @@ const DISCOUNT_KEYS: Record<ServiceId, keyof TaskLike> = {
 export function netCost(task: TaskLike, service: ServiceId): number | null {
   const cost = taskCost(task, service);
   if (cost === null) return null;
-  const pct = (task[DISCOUNT_KEYS[service]] as number | null | undefined) ?? 0;
+  const key = DISCOUNT_KEYS[service];
+  const pct = (key === undefined ? null : (task[key] as number | null | undefined)) ?? 0;
   return cost * (1 - pct / 100);
 }
 
@@ -159,11 +172,13 @@ export function toTaskLike(task: AitoTaskCreate): TaskLike {
     modelisationCost: task.modelisation_cost,
     impressionCost: task.impression_cost,
     usinageCost: task.usinage_cost,
+    maindoeuvreCost: task.maindoeuvre_cost,
     done: {
       scan: task.scan_done ?? false,
       modelisation: task.modelisation_done ?? false,
       impression: task.impression_done ?? false,
       usinage: task.usinage_done ?? false,
+      maindoeuvre: task.maindoeuvre_done ?? false,
     },
     // `AitoTaskCreate.title` is nullable (a quote line can be untitled);
     // `TaskLike.title` is optional-string, not nullable, so null collapses
