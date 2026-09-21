@@ -194,6 +194,46 @@ async def test_zoho_side_acceptance_without_an_event_counts_from_quote_accepted_
 
 
 @pytest.mark.asyncio
+async def test_books_only_sent_stamp_counts_in_the_funnel_same_as_accepted(async_client, db_session):
+    """adopt_quote_status stamps quote_sent_at for a quote emailed from Books
+    and records no `quote.sent`/`quote.emailed` event at all — only the app's
+    own Email button does that. `sent` must adopt the column the same way
+    `accepted` already does: earlier-of-the-two when both exist, the column
+    alone when only it exists, and nothing when the stamp lands outside the
+    requested window."""
+    books_only = await _create(async_client, description="books only")
+    both = await _create(async_client, description="both")
+    outside = await _create(async_client, description="outside")
+    also_accepted = await _create(async_client, description="also accepted")
+    await _set(db_session, books_only, quote_total=800.0, quote_status="sent", quote_sent_at="2026-08-14 09:00:00")
+    await _set(db_session, both, quote_total=200.0, quote_status="sent", quote_sent_at="2026-08-20 09:00:00")
+    # Later stamp than the event: the earlier of the two wins, at 2026-08-05.
+    await _event(db_session, both, "quote.sent", "2026-08-05 09:00:00")
+    await _set(db_session, outside, quote_total=999.0, quote_status="sent", quote_sent_at="2026-07-15 09:00:00")
+    await _set(
+        db_session,
+        also_accepted,
+        quote_total=500.0,
+        quote_status="accepted",
+        quote_sent_at="2026-08-01 09:00:00",
+        quote_accepted_at="2026-08-02 09:00:00",
+    )
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    c = body["conversion"]
+    # books_only (800) + both (200, counted once at the earlier moment) + also_accepted (500).
+    assert c["sent"] == {"count": 3, "total": 1500.0}
+    assert c["accepted"] == {"count": 1, "total": 500.0}
+    # Every accepted card in the window was also sent in it: the funnel stays
+    # internally consistent for a card whose whole life is Books-only.
+    assert c["sent"]["count"] >= c["accepted"]["count"]
+
+    # A stamp outside the window contributes nothing.
+    july = (await async_client.get(STATS, params={"date_from": "2026-07-01", "date_to": "2026-07-31"})).json()
+    assert july["conversion"]["sent"] == {"count": 1, "total": 999.0}
+
+
+@pytest.mark.asyncio
 async def test_imported_decision_events_are_not_counted_in_the_import_period(async_client, db_session):
     """A quote imported already-decided records `quote.accepted` at the import
     moment for an acceptance that happened at some unknown past moment."""
@@ -501,6 +541,63 @@ async def test_all_time_has_no_previous_and_spans_from_first_project(async_clien
     assert body["daily"][0]["day"] == "2026-03-02"
     assert body["daily"][0]["created"] == 1
     assert body["throughput"]["per_day"] is not None and body["throughput"]["per_day"] > 0
+
+
+@pytest.mark.asyncio
+async def test_all_time_headline_counts_and_per_day_match_the_clamped_daily_series(async_client, db_session):
+    """T-023: when a card older than MAX_STATS_SPAN_DAYS pushes `first_day`
+    back to the year 1900, `daily` is clamped to the most recent window (per
+    `test_all_time_calendar_is_bounded_even_when_the_earliest_card_is_absurdly_old`
+    above) — but before the fix, `throughput.created` and `per_day` still read
+    over the FULL unclamped span, so the Overview's headline count and rate
+    disagreed with the ActivityChart drawn right beside them. Both must now
+    describe the exact same window: the pre-cap card must vanish from the
+    headline count exactly as it already vanishes from the chart, and
+    `per_day` must divide by the chart's own day count, not the true span."""
+    old = await _create(async_client, description="ancient import")
+    await _move_event(db_session, old, "project.created", "1900-01-01 00:00:00")
+    await _create(async_client, description="recent card")  # born "now" via the real create call
+
+    r = await async_client.get(STATS)
+    assert r.status_code == 200
+    body = r.json()
+    daily = body["daily"]
+    throughput = body["throughput"]
+
+    assert len(daily) == MAX_STATS_SPAN_DAYS
+    # The ancient card is clamped out of the chart...
+    assert date.fromisoformat(daily[0]["day"]) > date(1950, 1, 1)
+    # ...and must be clamped out of the headline count read beside it too: only
+    # the recent card, still inside the clamped window, is counted.
+    assert throughput["created"] == 1
+    assert sum(d["created"] for d in daily) == throughput["created"]
+    # `per_day` must divide by the same MAX_STATS_SPAN_DAYS the chart spans,
+    # not by the true (~46000-day) distance back to 1900.
+    assert throughput["per_day"] == round(1 / MAX_STATS_SPAN_DAYS, 3)
+
+
+@pytest.mark.asyncio
+async def test_all_time_headline_counts_are_unchanged_when_history_is_inside_the_cap(async_client, db_session):
+    """The ordinary case — every real request today, since no board has five
+    years of history yet — must be completely unaffected: with `first_day`
+    already inside the cap the clamp never fires, so `daily`, the headline
+    count, and `per_day` describe the request's true (unclamped) span, same
+    as before this window was unified."""
+    a = await _create(async_client)
+    b = await _create(async_client)
+    await _move_event(db_session, a, "project.created", "2026-03-02 10:00:00")
+    await _move_event(db_session, b, "project.created", "2026-03-05 10:00:00")
+
+    r = await async_client.get(STATS)
+    body = r.json()
+    daily = body["daily"]
+    throughput = body["throughput"]
+
+    assert len(daily) < MAX_STATS_SPAN_DAYS
+    assert daily[0]["day"] == "2026-03-02"
+    assert throughput["created"] == 2
+    assert sum(d["created"] for d in daily) == throughput["created"]
+    assert throughput["per_day"] == round(2 / len(daily), 3)
 
 
 # ---------------------------------------------------------------------------

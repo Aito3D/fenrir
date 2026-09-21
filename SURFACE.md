@@ -22,32 +22,32 @@ async def compute_aito_stats(
 ## aito_stats.py — private helpers (order and names; the module map)
 ```regen: grep -nE "^(def|class|async def) _[a-zA-Z]" backend/app/services/aito_stats.py | sed "s/:.*def /: def /" | sort -t: -k1 -n```
 ```
-76: def _in_range(at: datetime, start: datetime | None, end: datetime | None) -> bool:
-106: def _active_projects(db: AsyncSession) -> dict[int, Row]:
-111: def _board(projects: dict[int, Row]) -> list[AitoStatsStage]:
-120: def _is_creation_time(at: datetime, born: datetime | None) -> bool:
-125: def _first_moments(
-176: def _bucket(
-184:class _Stay:
-191:class _StageScan:
-205: def _scan_stages(
-245: def _stage_days(scan: _StageScan, start: datetime | None, end: datetime | None) -> list[AitoStatsStageDays]:
-262: def _stage_time(
-294: def _rework(scan: _StageScan, start: datetime | None, end: datetime | None) -> AitoStatsRework:
-319: def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) -> str | None:
-326: def _bucket_totals(
-341: def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
-355: def _size_bands(
-398: def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
-436: def _services(
-455: def _clients(
-484: def _arrivals(
-495: def _islands(
-511: def _tracking(
-532: def _days_between(a: datetime, b: datetime) -> float:
-536: def _local_day(at: datetime, tz_offset_minutes: int) -> date:
-540: def _throughput(
-573: def _daily(
+80: def _in_range(at: datetime, start: datetime | None, end: datetime | None) -> bool:
+110: def _active_projects(db: AsyncSession) -> dict[int, Row]:
+115: def _board(projects: dict[int, Row]) -> list[AitoStatsStage]:
+124: def _is_creation_time(at: datetime, born: datetime | None) -> bool:
+129: def _first_moments(
+180: def _bucket(
+188:class _Stay:
+195:class _StageScan:
+209: def _scan_stages(
+249: def _stage_days(scan: _StageScan, start: datetime | None, end: datetime | None) -> list[AitoStatsStageDays]:
+266: def _stage_time(
+298: def _rework(scan: _StageScan, start: datetime | None, end: datetime | None) -> AitoStatsRework:
+323: def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) -> str | None:
+330: def _bucket_totals(
+345: def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
+359: def _size_bands(
+402: def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
+440: def _services(
+459: def _clients(
+488: def _arrivals(
+499: def _islands(
+515: def _tracking(
+536: def _days_between(a: datetime, b: datetime) -> float:
+540: def _local_day(at: datetime, tz_offset_minutes: int) -> date:
+544: def _throughput(
+577: def _daily(
 ```
 
 ## Response models

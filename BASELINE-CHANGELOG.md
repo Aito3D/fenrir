@@ -13069,3 +13069,230 @@ worktree root does not collide with this run's branch data, then filtered
 with `tools/cov_filter.py`): statements 320/326 = 98.16% (floor 98.12%,
 314/320), branches 128/136 = 94.12% (floor 94.03%, 126/134). Both figures
 are at or above the floor.
+
+--------------------------------------------------------------------------------
+## T-022 — 2026-09-20 — user-approved behavior change
+
+`compute_aito_stats` built the funnel's `conversion.sent` bucket from
+`quote.sent`/`quote.emailed` events only (`_first_moments(db, _SENT_KINDS,
+...)`), while the block right below it already repairs the identical gap for
+`conversion.accepted` by folding `project.quote_accepted_at` in when no
+`quote.accepted` event exists. `aito_quote_status.adopt_quote_status` stamps
+`quote_sent_at` and records no event at all — only the app's own Email button
+(`routes/aito.py`) records `quote.sent` — and the sweep's reconcile
+(`aito_quote_sync.py`) calls `adopt_quote_status` on every Books-side status
+change. So a quote emailed from Books and later accepted in Books read as
+`sent.count == 0` / `accepted.count == 1` on the Sales funnel, while the same
+screen's 15+-day quote-age fact (which reads `p.quote_sent_at` directly, not
+the funnel's `sent` map) counted a quote the funnel said was never sent.
+
+Fixed by mirroring the existing `accepted` merge exactly, for `sent`: after
+building `sent` from events, a second pass folds `project.quote_sent_at` in
+per project, taking the EARLIER of the column and the event when both exist
+(so a card with both is never double-counted or shifted to the later
+moment), and skipping a stamp past the request's `end` bound the same way the
+event query already excludes rows past it. The `accepted` merge itself, and
+`_quote_age` (which already read the column directly), were not touched.
+Grepped every use of the `sent` map inside `compute_aito_stats` before
+changing it: it feeds `conversion.sent` and nothing else (no `_daily`,
+`_throughput`, `_services`, `_size_bands`, or `_clients` consumer) — the
+funnel's own denominator/rate for accepted vs. sent is unaffected because
+`acceptance_rate` is computed from `accepted`/`declined` only, never `sent`.
+
+**User-visible change** (explicitly approved): the Sales funnel's "sent"
+count and total on the statistics view will rise for any shop whose quotes
+leave through Books rather than the app's Email button — a Books-only quote
+that was previously invisible to the funnel now counts once, at the earlier
+of its stamp or its event. `conversion.accepted` is untouched (no
+acceptances gained or lost). The funnel and the 15+-day quote-age fact now
+agree: the same `quote_sent_at` stamp that already fed the quote-age bucket
+now also feeds the funnel's `sent` bucket for a Books-only card.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14 after
+re-recording ONLY `stats-backend-aggregate`
+(`tools/probe_stats_backend.py` has two fixture cards, id 5 and id 9, each
+with `quote_status="sent"`/`quote_sent_at` set but no `quote.sent` event).
+The re-recorded diff is exactly four `conversion.sent.count` values, one per
+case whose window contains card 5's or card 9's stamp
+(`all_time_utc` 6→8, `march_utc` 3→4, `march_tahiti` 3→4, `open_start` 3→4);
+`conversion.sent.total` is unchanged in every case because both cards have
+`quote_total` of `0.0`/`None`. Every other field in the probe — `accepted`,
+`declined`, `acceptance_rate`, `daily`, `throughput`, `quote_age`, all
+eighteen other blocks — is byte-identical, confirming the change is scoped
+to exactly what the fix intends. `SURFACE.md` needed no regeneration (diff
+against a fresh `bash tools/gen_surface_stats.sh` run was empty, checked
+twice) — the fix adds a loop body inside an existing function, no new
+function, signature, or module-level name.
+
+New tests in `backend/tests/unit/test_aito_stats.py`:
+`test_books_only_sent_stamp_counts_in_the_funnel_same_as_accepted` covers a
+stamp-only card (no event) counting in `sent`, a card with both an event and
+a later stamp counting once at the earlier moment, a stamp outside the
+requested window contributing nothing, and asserts
+`sent.count >= accepted.count` for the window containing a Books-only card.
+
+Coverage (scope: `backend/app/services/aito_stats.py`, full backend suite —
+`backend/tests/` minus `test_bambu_ftp.py` — run with `COVERAGE_FILE`
+pointed at a scratch path outside the repo so the tracked statement-only
+`.coverage` at the worktree root does not collide with this run's branch
+data, then filtered with `tools/cov_filter.py`): statements 328/332 = 98.80%
+(floor 98.77%, 322/326), branches 135/140 = 96.43% (floor 96.32%, 131/136).
+Both figures are at or above the floor.
+
+## T-023 — 2026-09-20 — user-approved behavior change
+
+`_daily()` clamped its own `first_day` to `MAX_STATS_SPAN_DAYS` (1827 days) when
+the calendar it materialises would otherwise be huge, but nothing else in
+`compute_aito_stats` used that clamped value: `throughput.created`/`accepted`/`done`
+were counted with `_in_range(at, start, end)` where `start` is `None` on an
+"all time" request (unconditionally true for every moment ever recorded), and
+`days`/`per_day` were computed from the FULL unclamped `first_day`..`last_day`
+span. The trigger is one import older than five years — `core/database.py`
+backfills `project.created` with `occurred_at = p.created_at`, and an imported
+card's `created_at` is the Books quote_date, so a single old quote pushes the
+derived "all time" `earliest` back by decades. The Overview's headline count
+and per-day rate then described a completely different (much wider, much
+older) window than the `ActivityChart` drawn right beside them, which only
+ever shows the clamped window.
+
+Fixed by clamping `first_day` exactly once, in `compute_aito_stats`, right
+after it is derived (from `date_from` or the earliest `project.created`
+moment) and before anything downstream reads it. The clamped value now
+drives every figure the statistics view reads beside the daily chart:
+`_daily`'s own rows (unchanged output — the clamp used to happen inside
+`_daily` itself, now it arrives pre-clamped), `days`/`per_day`, and a new
+`throughput_start` lower bound derived from the clamped `first_day` via
+`local_day_bounds()` that is threaded into `_throughput()` in place of the
+raw `start`, so `throughput.created`/`accepted`/`done` and the lead/production
+day averages all stop counting moments the chart has already dropped.
+
+Deliberately left unbounded: every other block that reads the raw `start`/
+`end` — `conversion` (sent/accepted/declined buckets), `stage_days`,
+`stage_time`, `rework`, `services`, `clients`, `arrivals`, `islands`,
+`invoicing`, `tracking`. None of these is drawn next to `daily`, none is
+what the user's approved description ("the headline counts and per-day rate
+drop to what the chart actually shows") refers to, and bounding them would
+be an unapproved behavior change beyond what was asked. The `previous`
+window is also unaffected in practice: it is only ever computed when the
+caller supplies an explicit `date_from`/`date_to` (`start`/`end` both
+non-`None`), and the route already rejects an explicit span wider than
+`MAX_STATS_SPAN_DAYS` before `compute_aito_stats` ever runs — so the clamp
+can only fire for the derived "all time" case, where `previous` is already
+`None`.
+
+Observable change, quoting the approved description verbatim: "on an
+all-time range with history older than five years the headline counts and
+per-day rate drop to what the chart actually shows."
+
+Snapshot fallout: none. `./venv/bin/python3 tools/snapshot.py verify` is
+14/14 with NO re-recording — the `stats-backend-aggregate` fixture's oldest
+card is dated 2026-01-15 against a frozen `now` of 2026-03-15 (about 60
+days), far inside the 1827-day cap, so the clamp never fires for that probe
+and every field is byte-identical to before the fix. `SURFACE.md` needed
+regeneration (`bash tools/gen_surface_stats.sh` diffed against the tracked
+copy) because the new comments and the `throughput_start` block shifted
+every subsequent line number in the `aito_stats.py` private-helpers map;
+regenerated and confirmed the second regen replays byte-identical to the
+committed copy.
+
+New tests in `backend/tests/unit/test_aito_stats.py`:
+`test_all_time_headline_counts_and_per_day_match_the_clamped_daily_series`
+builds a board with one card backdated to 1900 and one card born "now" on an
+all-time request, and asserts `throughput.created` (1, not 2 — the ancient
+card is excluded exactly as it already is from `daily`), the sum of
+`daily[*].created` (equal to `throughput.created`), and `throughput.per_day`
+(`round(1 / MAX_STATS_SPAN_DAYS, 3)`, not divided by the true ~46000-day
+span) all describe the same clamped window.
+`test_all_time_headline_counts_are_unchanged_when_history_is_inside_the_cap`
+covers the ordinary case — every real request today, since no board has five
+years of history yet — asserting the clamp never fires and `daily`,
+`throughput.created`, and `per_day` still describe the request's true,
+unclamped span.
+
+Coverage (scope: `backend/app/services/aito_stats.py`, full backend suite —
+`backend/tests/` minus `test_bambu_ftp.py` — run with `COVERAGE_FILE`
+pointed at a scratch path outside the repo so the tracked statement-only
+`.coverage` at the worktree root does not collide with this run's branch
+data, then filtered with `tools/cov_filter.py`): statements 329/333 = 98.80%
+(floor 98.80%, 328/332), branches 135/140 = 96.43% (floor 96.43%, 135/140).
+Both figures are at or above the floor.
+
+## T-024 — 2026-09-20 — user-approved behavior change
+
+`StatsView` collapsed every `query.isError` case into the same generic
+panel — `AlertTriangle`, `t('common.errorLoading')` ("Error loading data"),
+and a Retry button wired to `query.refetch()` — discarding `ApiError.status`
+and `.message`. A custom range that the backend's own guard rejects (more
+than `MAX_STATS_SPAN_DAYS` days, or a `date_from`/`date_to` outside
+`MIN_STATS_DATE`..`MAX_STATS_DATE` — `routes/aito.py`, both 422s with a
+plain-string `detail`) looked identical to a transient 500 or a dropped
+connection, and the Retry button re-sent the identical rejected range
+forever.
+
+Fixed by adding one branch ahead of the generic error case: when
+`query.error instanceof ApiError && query.error.status === 422`, the panel
+shows `query.error.message` (the backend's own detail string) instead of
+the generic copy, and renders no Retry button. Every other error shape —
+500, network failure, anything that is not an `ApiError` with `status ===
+422` — still falls through to the untouched generic panel with its Retry
+button, unchanged.
+
+Message source: the backend's raw `detail` string via `ApiError.message`,
+not a new i18n key. `backend/app/api/routes/aito.py`'s stats-range 422s
+(`date_from must be between ...`, `date_from must not be after date_to`,
+`date_from/date_to must not span more than {MAX_STATS_SPAN_DAYS} days`) are
+plain `HTTPException(status_code=422, detail=...)` strings, not the
+structured `{code, message}` shape `ApiError.code` exists to look up — so
+there is no i18n key to look up even if one were added here. This also
+matches the established convention in the same feature area:
+`components/aito/CreateInvoiceModal.tsx` already shows `error.message`
+verbatim for its own specific, actionable refusals ("still syncing",
+"already invoiced", "not in Finish"), with a comment explaining that
+flattening those into a generic "failed" would send the operator looking in
+the wrong place — the identical reasoning applies here. The public-facing
+`AitoTrackPage`/`AitoTrackEntryPage` (customer-visible, 14 locales) branch on
+`status` to pick a *translated* string instead, but that is a different
+audience: this stats view is the operator's own board, same as
+`CreateInvoiceModal`. No new i18n key was added, so no locale file changed
+and the `stats-i18n` probe's key tree is untouched.
+
+Escaping the dead end: no extra copy was added pointing back at the
+timeframe selector. The `TimeframeSelector` trigger sits in the row above
+this panel and stays mounted and interactive through every query state —
+picking a different range there fires a new query (the query key includes
+`range.dateFrom`/`range.dateTo`), which replaces the 422 panel the moment it
+resolves. The backend's message itself already names the specific
+constraint that was violated (the span cap or the date bound), which is
+enough to make "pick a different range" the obvious next step without
+restating it.
+
+Retry button: deliberately omitted only for this branch. A 422 here means
+the range itself, not the server, is why the request failed — retrying
+without changing the range reproduces the identical 422 every time, which
+was the specific defect the user approved removing.
+
+Snapshot fallout: none. `./venv/bin/python3 tools/snapshot.py verify` is
+14/14 with no re-recording — no probe renders `StatsView`, and no i18n key
+or backend contract moved. `SURFACE.md` is unchanged:
+`bash tools/gen_surface_stats.sh` diffs empty against the tracked copy,
+since `StatsView`'s only export (`StatsView` itself, plus the re-exported
+`BriefInput` type) is unchanged — the new branch is internal to the
+component body.
+
+New tests in `frontend/src/__tests__/components/AitoStatsView.test.tsx`:
+the existing 500 case was renamed to `'shows the generic error state with a
+retry on a 500'` (assertions unchanged, plus a new assertion that the
+generic copy — "Error loading data" — is present) and a sibling
+`'shows the generic error state with a retry on a network failure'` was
+added using `HttpResponse.error()`, proving the generic panel still covers
+both a real 500 and a fetch-level failure. A new
+`'names the rejected range on a 422 and offers no retry, since one would
+only resend it'` test serves a 422 with a `date_from/date_to must not span
+more than 1827 days` detail and asserts that exact string renders, that no
+`Retry` button exists, and that the generic "Error loading data" copy does
+not appear — proving the two paths are distinct.
+
+Coverage (scope: Aito statistics, `frontend`, `tools/coverage_stats.sh
+frontend`): statements 404/417 = 96.88% (floor 96.88%, 404/417), branches
+430/495 = 86.86% (floor 86.76%, 426/491). Both figures are at or above the
+floor.

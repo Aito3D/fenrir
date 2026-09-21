@@ -61,9 +61,13 @@ _CREATION_MOVE_GRACE = timedelta(seconds=60)
 # or an "all time" request whose start is derived from the earliest
 # `project.created` moment, which an import can backdate to whatever a Books
 # quote_date says — must never be able to drive that loop past a sane size.
-# Five years is comfortably wider than the widest date-bounded preset the
-# frontend offers ("this-year") and than any realistic all-time history for
-# this product, while keeping row count, JSON size, and memory small.
+# `compute_aito_stats` clamps `first_day` to this once and reuses the clamped
+# value for `_daily`, `days`/`per_day`, and the throughput window's lower
+# bound, so the daily series and the counts read beside it always describe
+# the same span. Five years is comfortably wider than the widest date-bounded
+# preset the frontend offers ("this-year") and than any realistic all-time
+# history for this product, while keeping row count, JSON size, and memory
+# small.
 MAX_STATS_SPAN_DAYS = 1827  # 5 * 365 + 2 leap days
 # Absolute floor/ceiling for a requested date, wide enough to cover any real
 # usage but far enough from `date.min`/`date.max` that combining it with the
@@ -581,14 +585,10 @@ def _daily(
 ) -> list[AitoStatsDay]:
     if first_day is None or last_day is None or last_day < first_day:
         return []
-    # Defensive backstop, independent of the route's own validation: `first_day`
-    # can come from the earliest `project.created` moment rather than from the
-    # caller, so this loop must bound itself rather than trust either source.
-    # Keep the most recent MAX_STATS_SPAN_DAYS days — the same window every
-    # other "all time" widget on the page effectively shows — rather than the
-    # oldest.
-    if (last_day - first_day).days + 1 > MAX_STATS_SPAN_DAYS:
-        first_day = last_day - timedelta(days=MAX_STATS_SPAN_DAYS - 1)
+    # `first_day` is already bounded to MAX_STATS_SPAN_DAYS by the caller —
+    # see `compute_aito_stats`, which clamps it once and reuses that same
+    # value for `days`/`per_day` and the throughput window so every figure
+    # on the page describes the same span this loop emits.
     counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
     for index, moments in enumerate((born, accepted, declined, done)):
         for at in moments.values():
@@ -629,6 +629,18 @@ async def compute_aito_stats(
             continue
         known = accepted.get(pid)
         accepted[pid] = stamped if known is None or stamped < known else known
+    # A quote emailed from Books (aito_quote_status.adopt_quote_status) stamps
+    # quote_sent_at and records no event at all — only the app's own Email
+    # button records `quote.sent` — so a Books-sent quote would otherwise read
+    # as never sent. Same "earlier of the two" merge as accepted above, and
+    # the same `end` bound the event query already applies: a stamp past the
+    # window's end must not enter the map, exactly as that query excludes it.
+    for pid, project in projects.items():
+        stamped = project.quote_sent_at
+        if stamped is None or (end is not None and stamped > end):
+            continue
+        known = sent.get(pid)
+        sent[pid] = stamped if known is None or stamped < known else known
     scan = await _scan_stages(db, projects, born, end)
     done = scan.done
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -639,9 +651,32 @@ async def compute_aito_stats(
     earliest = min(born.values(), default=None)
     first_day = date_from if date_from is not None else (_local_day(earliest, tz_offset_minutes) if earliest else None)
     last_day = date_to if date_to is not None else (today if first_day is not None else None)
+    # Clamped once, here, rather than inside `_daily`: an "all time" request's
+    # `first_day` is derived from the earliest `project.created` moment, which
+    # an import can backdate by years, so it must be bounded before anything
+    # else is computed from it. Every figure the statistics view reads beside
+    # the daily chart — `days`/`per_day` and the throughput window's lower
+    # bound below — reuses this same clamped value, so the headline counts
+    # and the chart they sit next to always describe the same span. A
+    # caller-supplied `date_from`/`date_to` is already validated by the route
+    # to never exceed `MAX_STATS_SPAN_DAYS`, so this never fires for a
+    # bounded request; it only ever narrows the derived "all time" case.
+    if first_day is not None and last_day is not None and (last_day - first_day).days + 1 > MAX_STATS_SPAN_DAYS:
+        first_day = last_day - timedelta(days=MAX_STATS_SPAN_DAYS - 1)
     days = (last_day - first_day).days + 1 if first_day is not None and last_day is not None else None
+    # The throughput window's own lower bound, derived from the (now clamped)
+    # `first_day` rather than the raw `start`: on an all-time request `start`
+    # is None, so `throughput.created`/`accepted`/`done` would otherwise count
+    # every moment ever recorded, including the years the clamp above just
+    # dropped from the chart. For a bounded request this equals `start`
+    # exactly, since `first_day` is `date_from` there and the clamp never
+    # fires. Only the counts read beside the daily chart are bounded this way
+    # — the other widgets on the page (conversion, services, clients,
+    # arrivals, islands, invoicing...) are not compared against `daily` and
+    # keep reading the caller's own `start`/`end`.
+    throughput_start = local_day_bounds(first_day, None, tz_offset_minutes)[0] if first_day is not None else None
 
-    throughput = _throughput(projects, born, accepted, done, start, end, days)
+    throughput = _throughput(projects, born, accepted, done, throughput_start, end, days)
     previous = None
     if start is not None and end is not None and days:
         prev = _throughput(

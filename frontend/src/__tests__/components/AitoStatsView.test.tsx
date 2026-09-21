@@ -199,10 +199,30 @@ describe('StatsView', () => {
     expect(await screen.findByText('Nothing happened in this period')).toBeInTheDocument();
   });
 
-  it('shows the error state with a retry', async () => {
+  it('shows the generic error state with a retry on a 500', async () => {
     server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json({ detail: 'nope' }, { status: 500 })));
     render(view());
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('Error loading data')).toBeInTheDocument();
+  });
+
+  it('shows the generic error state with a retry on a network failure', async () => {
+    server.use(http.get('/api/v1/aito/stats', () => HttpResponse.error()));
+    render(view());
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('Error loading data')).toBeInTheDocument();
+  });
+
+  it('names the rejected range on a 422 and offers no retry, since one would only resend it', async () => {
+    server.use(
+      http.get('/api/v1/aito/stats', () =>
+        HttpResponse.json({ detail: 'date_from/date_to must not span more than 1827 days' }, { status: 422 }),
+      ),
+    );
+    render(view());
+    expect(await screen.findByText('date_from/date_to must not span more than 1827 days')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByText('Error loading data')).toBeNull();
   });
 
   it('holds the previous numbers, dimmed, while a new range loads instead of showing a spinner', async () => {
