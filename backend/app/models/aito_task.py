@@ -7,7 +7,7 @@ from backend.app.core.database import Base
 
 
 class AitoTask(Base):
-    """One task of an Aito project, with four optional services.
+    """One task of an Aito project, with five optional services.
 
     The services are a fixed, known set, so they are columns rather than an EAV
     child table. A NULL cost means the service is disabled; 0 stays meaningful
@@ -31,6 +31,13 @@ class AitoTask(Base):
     scan_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     modelisation_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     usinage_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Main d'œuvre (2026-09-20): a flat labour line. No quantity and no
+    # discount columns on purpose — this service is one unit at one price —
+    # so readers must tolerate their absence (aito_board_rules.net_cost
+    # already getattr-defaults the discount). Its description is MANDATORY
+    # when the cost is set: the guard lives in aito_quote_sync, not here, so
+    # an imported Books line with no `Info:` row can still be stored.
+    maindoeuvre_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Per-service quantity and percent discount, mirroring the impression pair
     # below. NULL quantity reads as 1 and NULL discount as none — so rows
     # predating this migration need no backfill. `<service>_cost` stays the
@@ -62,6 +69,7 @@ class AitoTask(Base):
     modelisation_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     impression_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     usinage_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maindoeuvre_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # One flag per service, mirroring the four cost columns above. A step
     # exists when its cost is not NULL; ticking it is what advances the
     # project's board column (see services/aito_board_rules.py). NOT NULL with
@@ -70,5 +78,6 @@ class AitoTask(Base):
     modelisation_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     impression_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     usinage_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    maindoeuvre_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
