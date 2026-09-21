@@ -242,7 +242,7 @@ _TITLE_MAX = 200
 
 @dataclass(frozen=True)
 class Catalogue:
-    """The Books item ids the four services map onto, plus the services tax,
+    """The Books item ids the five services map onto, plus the services tax,
     plus the Books item ids the up-to-five "Livraison Avion" shipping
     services map onto.
 
@@ -337,12 +337,12 @@ def _existing_island(description: str | None) -> str | None:
 
 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
     """True for a line this app does not own: not a header, and not one of the
-    items ``Catalogue.item_ids()`` claims — the four service items plus up to
+    items ``Catalogue.item_ids()`` claims — the five service items plus up to
     five shipping items. Retail items, laser cuts, delivery fees.
 
     Ownership is checked two ways, either of which is enough to claim the
     line: the catalogue's item id, or the SKU prefix. The item id check comes
-    first and is what makes this safe against catalogue overrides — the four
+    first and is what makes this safe against catalogue overrides — the five
     ``zoho_item_*_id`` settings are deliberately overridable to a Books item
     whose SKU does NOT start with the usual ``P3DIMP``-style prefix (that is
     the documented reason the setting exists). Without the id check, such an
