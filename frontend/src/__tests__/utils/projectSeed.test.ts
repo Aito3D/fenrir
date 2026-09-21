@@ -65,7 +65,13 @@ describe('seedFromProject', () => {
     const [copy] = seed().tasks;
     expect(copy.id).toBeNull();
     expect(copy.uid).not.toBe('server-41');
-    expect(copy.done).toEqual({ scan: false, modelisation: false, impression: false, usinage: false });
+    expect(copy.done).toEqual({
+      scan: false,
+      modelisation: false,
+      impression: false,
+      usinage: false,
+      maindoeuvre: false,
+    });
     expect(copy.title).toBe('Support GoPro');
     expect(copy.scanCost).toBe(1000);
     expect(copy.impression).toMatchObject({ printerId: 3, filamentId: 7, weightG: 42, timeMin: 180, quantity: 2, color: 'noir' });

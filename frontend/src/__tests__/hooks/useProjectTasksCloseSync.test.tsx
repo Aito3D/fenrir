@@ -35,10 +35,13 @@ const ROW = {
   impression_quantity: 1,
   impression_color: null,
   impression_cost: null,
+  maindoeuvre_description: null,
+  maindoeuvre_cost: null,
   scan_done: false,
   modelisation_done: false,
   impression_done: false,
   usinage_done: false,
+  maindoeuvre_done: false,
   created_at: '2026-07-29T00:00:00',
   updated_at: '2026-07-29T00:00:00',
 };

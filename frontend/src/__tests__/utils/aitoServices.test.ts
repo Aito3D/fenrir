@@ -14,7 +14,8 @@ function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
     modelisationCost: null,
     impressionCost: null,
     usinageCost: null,
-    done: { scan: false, modelisation: false, impression: false, usinage: false },
+    maindoeuvreCost: null,
+    done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
     ...overrides,
   } as TaskDraft;
 }
@@ -50,7 +51,11 @@ describe('stagesWithWork', () => {
 
   it('folds impression and usinage into the single print column', () => {
     const result = stagesWithWork([
-      task({ impressionCost: 6000, usinageCost: 4000, done: { scan: false, modelisation: false, impression: true, usinage: false } }),
+      task({
+        impressionCost: 6000,
+        usinageCost: 4000,
+        done: { scan: false, modelisation: false, impression: true, usinage: false, maindoeuvre: false },
+      }),
     ]);
     expect(result).toEqual([
       { column: 'print', stepsDone: 1, stepsTotal: 2, value: 10000, valueDone: 6000 },
@@ -59,7 +64,11 @@ describe('stagesWithWork', () => {
 
   it('sums the same stage across several tasks', () => {
     const result = stagesWithWork([
-      task({ uid: 'a', scanCost: 3500, done: { scan: true, modelisation: false, impression: false, usinage: false } }),
+      task({
+        uid: 'a',
+        scanCost: 3500,
+        done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
+      }),
       task({ uid: 'b', scanCost: 1500 }),
     ]);
     expect(result).toEqual([
@@ -90,7 +99,7 @@ describe('stagesWithWork', () => {
       task({
         impressionCost: 10000,
         impressionDiscountPct: 25,
-        done: { scan: false, modelisation: false, impression: true, usinage: false },
+        done: { scan: false, modelisation: false, impression: true, usinage: false, maindoeuvre: false },
       }),
     ]);
     expect(result).toEqual([

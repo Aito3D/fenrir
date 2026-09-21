@@ -329,7 +329,8 @@ describe('applyTaskSummary', () => {
           modelisationCost: null,
           impressionCost: 2,
           usinageCost: null,
-          done: { scan: true, modelisation: false, impression: false, usinage: false },
+          maindoeuvreCost: null,
+          done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
         },
       ]),
     );
@@ -632,7 +633,8 @@ const task = (over: Partial<TaskLike> = {}): TaskLike => ({
   modelisationCost: null,
   impressionCost: null,
   usinageCost: null,
-  done: { scan: false, modelisation: false, impression: false, usinage: false },
+  maindoeuvreCost: null,
+  done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
   ...over,
 });
 
@@ -644,7 +646,12 @@ describe('placeholderProject', () => {
     // prevent.
     const placeholder = placeholderProject({
       ...placeholderFields,
-      tasks: [task({ scanCost: 500, done: { scan: true, modelisation: false, impression: false, usinage: false } })],
+      tasks: [
+        task({
+          scanCost: 500,
+          done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
+        }),
+      ],
     });
     expect(placeholder.task_count).toBe(1);
     expect(placeholder.tasks_total).toBe(500);

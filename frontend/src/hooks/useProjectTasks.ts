@@ -258,9 +258,13 @@ export function useProjectTasks(
       lastSaveAtRef.current = Date.now();
       // A tick is one deliberate click and can change the project's COLUMN, so
       // it refreshes now — the panel's Stage row and the card move together.
-      const tickedAStep = ['scan_done', 'modelisation_done', 'impression_done', 'usinage_done'].some(
-        (key) => key in patch,
-      );
+      const tickedAStep = [
+        'scan_done',
+        'modelisation_done',
+        'impression_done',
+        'usinage_done',
+        'maindoeuvre_done',
+      ].some((key) => key in patch);
       if (tickedAStep) resyncIfIdle(queryClient);
       // Every edit writes an event, not only ticks — this sits outside the
       // guard above deliberately. The two-element prefix (not the query's own

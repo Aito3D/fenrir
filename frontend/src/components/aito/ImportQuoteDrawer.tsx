@@ -275,7 +275,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
                         <Money currency={currency} value={taskTotal(task)} className="flex-shrink-0 text-xs font-medium text-bambu-green" />
                       </div>
                       <ServiceBadges services={servicesOf(task)} className="mt-1.5" />
-                      {(['scan', 'modelisation', 'impression', 'usinage'] as const).map((service) => {
+                      {(['scan', 'modelisation', 'impression', 'usinage', 'maindoeuvre'] as const).map((service) => {
                         const description = task[`${service}_description`];
                         if (!description) return null;
                         return (

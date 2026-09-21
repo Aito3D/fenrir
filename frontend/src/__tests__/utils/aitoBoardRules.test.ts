@@ -168,7 +168,7 @@ describe('printMinutesPending', () => {
       bare({
         impressionCost: 100,
         impression: { timeMin: 90, quantity: 2 },
-        done: { scan: false, modelisation: false, impression: true, usinage: false },
+        done: { scan: false, modelisation: false, impression: true, usinage: false, maindoeuvre: false },
       }),
     ]);
     expect(summary.printMinutesPending).toBe(0);

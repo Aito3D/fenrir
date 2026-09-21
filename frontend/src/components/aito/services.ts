@@ -24,6 +24,7 @@ export const AITO_SERVICE_LABEL_KEYS: Record<string, string> = {
   modelisation: 'aito.serviceModelisation3D',
   impression: 'aito.serviceImpression3D',
   usinage: 'aito.serviceUsinage',
+  maindoeuvre: 'aito.serviceMainDoeuvre',
 };
 
 /** The task's steps, in canonical order — one per service whose cost is set.

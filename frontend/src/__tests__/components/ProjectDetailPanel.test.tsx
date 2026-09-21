@@ -176,6 +176,8 @@ const mockTask: AitoTask = {
   impression_quantity: 1,
   impression_color: null,
   impression_cost: null,
+  maindoeuvre_description: null,
+  maindoeuvre_cost: null,
   scan_quantity: null,
   modelisation_quantity: null,
   usinage_quantity: null,
@@ -186,6 +188,7 @@ const mockTask: AitoTask = {
   modelisation_done: false,
   impression_done: false,
   usinage_done: false,
+  maindoeuvre_done: false,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
@@ -1088,9 +1091,11 @@ describe('ProjectDetailPanel tasks', () => {
       modelisation_description: null,
       impression_description: null,
       usinage_description: null,
+      maindoeuvre_description: null,
       scan_cost: null,
       modelisation_cost: null,
       usinage_cost: null,
+      maindoeuvre_cost: null,
       impression_printer_id: null,
       impression_filament_id: null,
       impression_weight_g: null,
@@ -1109,6 +1114,7 @@ describe('ProjectDetailPanel tasks', () => {
       modelisation_done: false,
       impression_done: false,
       usinage_done: false,
+      maindoeuvre_done: false,
     });
   });
 
@@ -2015,10 +2021,11 @@ describe('diffTaskDraft', () => {
     // taskDraftToTaskCreate but forgotten in the diff would silently never
     // save. Every key of the wire shape must be diffable.
     //
-    // TaskDraft's four step flags are not their own top-level properties —
-    // they live under `done: { scan, modelisation, impression, usinage }`
-    // (see TaskDraft in utils/taskDraft.ts) — so all four are flipped there,
-    // not as scanDone/modelisationDone/impressionDone/usinageDone.
+    // TaskDraft's five step flags are not their own top-level properties —
+    // they live under `done: { scan, modelisation, impression, usinage,
+    // maindoeuvre }` (see TaskDraft in utils/taskDraft.ts) — so all five are
+    // flipped there, not as scanDone/modelisationDone/impressionDone/
+    // usinageDone/maindoeuvreDone.
     const before = emptyTaskDraft();
     const after: typeof before = {
       ...before,
@@ -2027,10 +2034,12 @@ describe('diffTaskDraft', () => {
       modelisationDescription: 'MD',
       impressionDescription: 'ID',
       usinageDescription: 'UD',
+      maindoeuvreDescription: 'LD',
       scanCost: 1,
       modelisationCost: 2,
       usinageCost: 3,
       impressionCost: 4,
+      maindoeuvreCost: 5,
       impressionDiscountPct: 6,
       scanQuantity: 2,
       modelisationQuantity: 3,
@@ -2038,7 +2047,7 @@ describe('diffTaskDraft', () => {
       scanDiscountPct: 7,
       modelisationDiscountPct: 8,
       usinageDiscountPct: 9,
-      done: { scan: true, modelisation: true, impression: true, usinage: true },
+      done: { scan: true, modelisation: true, impression: true, usinage: true, maindoeuvre: true },
       impression: {
         printerId: 1,
         filamentId: 2,

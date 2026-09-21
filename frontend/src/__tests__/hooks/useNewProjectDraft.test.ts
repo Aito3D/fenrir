@@ -115,7 +115,13 @@ describe('useNewProjectDraft', () => {
 
     expect(task?.title).toBe('Capot');
     expect(task?.scanCost).toBe(4000);
-    expect(task?.done).toEqual({ scan: true, modelisation: false, impression: false, usinage: false });
+    expect(task?.done).toEqual({
+      scan: true,
+      modelisation: false,
+      impression: false,
+      usinage: false,
+      maindoeuvre: false,
+    });
     expect(task?.scanDescription).toBe('');
     expect(task?.modelisationDescription).toBe('');
     expect(task?.impressionDescription).toBe('');

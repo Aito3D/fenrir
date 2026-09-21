@@ -101,7 +101,7 @@ function renderRow(
 
 describe('TaskRow', () => {
   it('shows a task step without anything needing to be opened first', () => {
-    renderRow(makeTask({ scanCost: 20, done: { scan: false, modelisation: false, impression: false, usinage: false } }), {
+    renderRow(makeTask({ scanCost: 20, done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false } }), {
       canTick: true,
     });
     // Straight to the Done toggle — no disclosure click in between.
@@ -146,7 +146,7 @@ describe('TaskRow', () => {
         scanCost: 3500,
         modelisationCost: 4500,
         impressionCost: 10000,
-        done: { scan: true, modelisation: false, impression: false, usinage: false },
+        done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
       }),
       { canTick: true },
     );
@@ -180,7 +180,7 @@ describe('TaskRow', () => {
     // variable instead, so this pins the mix target rather than merely the
     // presence of some green class.
     const { container } = renderRow(
-      makeTask({ scanCost: 20, done: { scan: true, modelisation: false, impression: false, usinage: false } }),
+      makeTask({ scanCost: 20, done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false } }),
       { canTick: true },
     );
     // `.group`, not firstElementChild: the card sits inside the removal-fold

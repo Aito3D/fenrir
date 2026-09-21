@@ -31,6 +31,7 @@ const emptyTask = {
   impression_quantity: null,
   impression_color: null,
   impression_cost: null,
+  maindoeuvre_cost: null,
 };
 
 const preview: ZohoQuotePreview = {
