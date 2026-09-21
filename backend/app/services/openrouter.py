@@ -30,6 +30,7 @@ _SERVICE_FIELDS = (
     ("modelisation_cost", "modelisation_description", "modélisation 3D"),
     ("impression_cost", "impression_description", "impression 3D"),
     ("usinage_cost", "usinage_description", "usinage"),
+    ("maindoeuvre_cost", "maindoeuvre_description", "main d'œuvre"),
 )
 
 _SYSTEM_PROMPT = (

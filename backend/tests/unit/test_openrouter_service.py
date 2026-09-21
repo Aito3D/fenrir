@@ -114,6 +114,16 @@ def test_task_lines_states_printings_count_exactly_once():
     assert lines[0].count("x3") == 1
 
 
+def test_task_lines_names_the_labour_service():
+    # Labour has no quantity field at all (unlike usinage's optional count),
+    # so it must emit the bare service name and still carry its description
+    # through the second, per-service free-text loop.
+    lines = _task_lines([{"title": "Pose", "maindoeuvre_cost": 4000, "maindoeuvre_description": "Pose sur site"}])
+    assert lines == ["Pose: main d'œuvre — Pose sur site"]
+    assert "main d'œuvre" in lines[0]
+    assert "Pose sur site" in lines[0]
+
+
 def test_system_prompt_demands_digit_numbers():
     from backend.app.services.openrouter import _SYSTEM_PROMPT
 
