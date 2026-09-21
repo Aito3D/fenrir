@@ -22,6 +22,7 @@ CATALOGUE = Catalogue(
     impression_item_id="ITEM-IMP",
     usinage_item_id="ITEM-USI",
     tax_id="TAX-1",
+    maindoeuvre_item_id="ITEM-MO",
     shipping={"tuamotu": "ITEM-SHIP-T", "marquises": "ITEM-SHIP-M"},
 )
 

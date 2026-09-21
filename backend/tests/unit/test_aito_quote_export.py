@@ -29,6 +29,8 @@ def task(**overrides) -> ExportTask:
         "impression_time_min": None,
         "impression_color": None,
         "material": None,
+        "maindoeuvre_cost": None,
+        "maindoeuvre_description": None,
     }
     base.update(overrides)
     return ExportTask(**base)
@@ -142,7 +144,7 @@ def test_enabled_services_includes_zero_cost_and_excludes_none():
     t = task(scan_cost=0, modelisation_cost=None, impression_cost=15.5, usinage_cost=None)
     assert enabled_services(t) == ("scan", "impression")
     # Every service enabled, canonical order preserved.
-    all_on = task(scan_cost=0, modelisation_cost=0, impression_cost=0, usinage_cost=0)
+    all_on = task(scan_cost=0, modelisation_cost=0, impression_cost=0, usinage_cost=0, maindoeuvre_cost=0)
     assert enabled_services(all_on) == SERVICES
     # Nothing enabled.
     assert enabled_services(task()) == ()
@@ -161,6 +163,7 @@ CATALOGUE = Catalogue(
     impression_item_id="ITEM_IMP",
     usinage_item_id="ITEM_USI",
     tax_id="TAX",
+    maindoeuvre_item_id="ITEM_MO",
 )
 
 
@@ -271,6 +274,7 @@ def test_catalogue_override_to_a_non_matching_sku_does_not_duplicate_our_own_lin
         impression_item_id="ITEM_IMP_CUSTOM",  # overridden away from any P3DIMP-prefixed SKU
         usinage_item_id="ITEM_USI",
         tax_id="TAX",
+        maindoeuvre_item_id="ITEM_MO",
     )
     existing = [
         {"line_item_id": "L1", "item_id": "ITEM_IMP_CUSTOM", "sku": "CUSTOM-NOT-A-KNOWN-PREFIX", "item_order": 1},
@@ -506,6 +510,7 @@ SHIPPING_CATALOGUE = Catalogue(
     impression_item_id="I",
     usinage_item_id="U",
     tax_id="T",
+    maindoeuvre_item_id="MO",
     shipping={"tuamotu": "SHIP-TU", "societe": "SHIP-SO"},
 )
 
@@ -552,7 +557,7 @@ def test_shipping_description_strips_a_missing_first_name():
 
 
 def test_shipping_ids_are_ours_not_foreign():
-    assert SHIPPING_CATALOGUE.item_ids() == frozenset({"S", "M", "I", "U", "SHIP-TU", "SHIP-SO"})
+    assert SHIPPING_CATALOGUE.item_ids() == frozenset({"S", "M", "I", "U", "MO", "SHIP-TU", "SHIP-SO"})
     assert is_foreign({"item_id": "SHIP-TU", "sku": "LIV-TU"}, SHIPPING_CATALOGUE) is False
 
 
@@ -710,3 +715,28 @@ def test_build_line_items_still_emits_printing_the_same_way():
     assert impression["rate"] == 500
     assert impression["quantity"] == 3
     assert impression["discount"] == "10%"
+
+
+def test_labour_line_is_one_unit_at_the_full_cost():
+    t = task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")
+    lines = build_line_items([t], [], CATALOGUE)
+    line = next(item for item in lines if item.get("item_id") == CATALOGUE.maindoeuvre_item_id)
+    assert line["rate"] == 4000
+    assert line["quantity"] == 1
+    assert line["description"] == "Info: Pose et réglage sur site"
+    assert "discount" not in line
+    assert line["header_name"] == "Pose"
+
+
+def test_labour_carries_no_fichier_non_cede_boilerplate():
+    t = task(maindoeuvre_cost=1000.0, maindoeuvre_description="Montage")
+    assert "Fichier non" not in build_description("maindoeuvre", t)
+
+
+def test_labour_comes_last_within_a_task():
+    t = task(scan_cost=100.0, maindoeuvre_cost=200.0, impression_cost=300.0)
+    assert enabled_services(t) == ("scan", "impression", "maindoeuvre")
+
+
+def test_our_own_labour_line_is_not_foreign():
+    assert not is_foreign({"item_id": CATALOGUE.maindoeuvre_item_id, "sku": "PM-CM-D"}, CATALOGUE)

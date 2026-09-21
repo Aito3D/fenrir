@@ -19,7 +19,7 @@ from backend.app.services.aito_shipping import island_for_label
 # Canonical service order — the same order the board renders badges in and the
 # order lines are emitted within a task. Mirrors SERVICE_RANK in
 # aito_quote_import and SERVICES in aito_board_rules.py.
-SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage")
+SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage", "maindoeuvre")
 
 # The boilerplate row the scan and modelisation catalogue items carry. Written
 # exactly as the catalogue spells it; the importer strips it case- and
@@ -67,6 +67,11 @@ class ExportTask:
     modelisation_description: str | None = None
     impression_description: str | None = None
     usinage_description: str | None = None
+    # Main d'œuvre: a flat labour line — no quantity, no discount. Its
+    # description is mandatory (aito_quote_sync refuses to push without one),
+    # so the `Info:` row is always written for a priced labour service.
+    maindoeuvre_cost: float | None = None
+    maindoeuvre_description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,29 +98,32 @@ def cost_of(task: ExportTask, service: str) -> float | None:
         "modelisation": task.modelisation_cost,
         "impression": task.impression_cost,
         "usinage": task.usinage_cost,
+        "maindoeuvre": task.maindoeuvre_cost,
     }[service]
 
 
 def quantity_of(task: ExportTask, service: str) -> int | None:
-    """The task's unit count for one service. None reads as 1."""
+    """The task's unit count for one service. None reads as 1 — which is also
+    what a service with no quantity field at all (maindoeuvre) returns."""
     return {
         "scan": task.scan_quantity,
         "modelisation": task.modelisation_quantity,
         "impression": task.impression_quantity,
         "usinage": task.usinage_quantity,
-    }[service]
+    }.get(service)
 
 
 def discount_of(task: ExportTask, service: str) -> float | None:
     """The task's percent discount for one service, or None for no discount.
     0 is normalised to None by the callers that build an ExportTask — a
-    literal "0%" would put a pointless discount column on the PDF."""
+    literal "0%" would put a pointless discount column on the PDF. A service
+    with no discount field at all (maindoeuvre) returns None the same way."""
     return {
         "scan": task.scan_discount_pct,
         "modelisation": task.modelisation_discount_pct,
         "impression": task.impression_discount_pct,
         "usinage": task.usinage_discount_pct,
-    }[service]
+    }.get(service)
 
 
 def description_of(task: ExportTask, service: str) -> str | None:
@@ -125,6 +133,7 @@ def description_of(task: ExportTask, service: str) -> str | None:
         "modelisation": task.modelisation_description,
         "impression": task.impression_description,
         "usinage": task.usinage_description,
+        "maindoeuvre": task.maindoeuvre_description,
     }[service]
 
 
@@ -246,6 +255,7 @@ class Catalogue:
     impression_item_id: str
     usinage_item_id: str
     tax_id: str
+    maindoeuvre_item_id: str
     # Service key -> Books item id for the five "Livraison Avion" items,
     # resolved from Books and cached (services/zoho.get_shipping_catalogue).
     # A default of {} keeps every existing construction valid; an EMPTY map
@@ -259,6 +269,7 @@ class Catalogue:
             "modelisation": self.modelisation_item_id,
             "impression": self.impression_item_id,
             "usinage": self.usinage_item_id,
+            "maindoeuvre": self.maindoeuvre_item_id,
         }[service]
 
     def shipping_item_id(self, service: str) -> str:
@@ -288,7 +299,13 @@ class Catalogue:
         line_item_id AND re-emitted from the project, duplicating a little more
         on every push."""
         return frozenset(
-            {self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id}
+            {
+                self.scan_item_id,
+                self.modelisation_item_id,
+                self.impression_item_id,
+                self.usinage_item_id,
+                self.maindoeuvre_item_id,
+            }
             | set(self.shipping.values())
         )
 

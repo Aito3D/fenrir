@@ -935,7 +935,7 @@ def test_build_preview_has_no_shipping_by_default():
 def test_shipping_round_trips_export_to_import_to_export():
     from backend.app.services.aito_quote_export import Catalogue, build_line_items
 
-    catalogue = Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP-TU"})
+    catalogue = Catalogue("S", "M", "I", "U", "T", "MO", {"tuamotu": "SHIP-TU"})
     original = ExportShipping(
         service="tuamotu",
         island_label="Rangiroa",

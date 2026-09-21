@@ -5370,11 +5370,11 @@ def _shipped_project():
 
 def test_load_export_shipping_returns_none_without_an_island():
     project = AitoProject(id=1, description="x", board_column="devis", position=0)
-    assert load_export_shipping(project, Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP"})) is None
+    assert load_export_shipping(project, Catalogue("S", "M", "I", "U", "T", "MO", {"tuamotu": "SHIP"})) is None
 
 
 def test_load_export_shipping_resolves_the_island_label():
-    shipping = load_export_shipping(_shipped_project(), Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP"}))
+    shipping = load_export_shipping(_shipped_project(), Catalogue("S", "M", "I", "U", "T", "MO", {"tuamotu": "SHIP"}))
     assert shipping.island_label == "Rangiroa"
     assert shipping.service == "tuamotu"
     assert shipping.price == 3200.0
@@ -5382,7 +5382,7 @@ def test_load_export_shipping_resolves_the_island_label():
 
 def test_load_export_shipping_refuses_an_unresolved_catalogue():
     with pytest.raises(ShippingCatalogueUnavailable):
-        load_export_shipping(_shipped_project(), Catalogue("S", "M", "I", "U", "T", {}))
+        load_export_shipping(_shipped_project(), Catalogue("S", "M", "I", "U", "T", "MO", {}))
 
 
 def test_load_export_shipping_falls_back_to_the_raw_key_when_the_island_table_forgot_it():
@@ -5391,7 +5391,7 @@ def test_load_export_shipping_falls_back_to_the_raw_key_when_the_island_table_fo
     the stored key itself as the label."""
     project = _shipped_project()
     project.shipping_island = "no-longer-in-the-table"
-    shipping = load_export_shipping(project, Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP"}))
+    shipping = load_export_shipping(project, Catalogue("S", "M", "I", "U", "T", "MO", {"tuamotu": "SHIP"}))
     assert shipping.island_label == "no-longer-in-the-table"
 
 
