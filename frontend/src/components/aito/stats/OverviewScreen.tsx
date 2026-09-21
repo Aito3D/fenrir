@@ -2,11 +2,12 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { computeDelta } from '../../stats/deltas';
-import { localDateKey, parseLocalDateKey } from '../../../utils/date';
-import { ActivityChart, WEEKLY_ABOVE_DAYS } from './ActivityChart';
+import { parseLocalDateKey } from '../../../utils/date';
+import { ActivityChart } from './ActivityChart';
 import { SERIES } from './palette';
 import { Finding, Panel, Split, Tile } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
+import { WEEKLY_ABOVE_DAYS, weekKey } from './weeklyFold';
 
 /** Overview: what came in, what was accepted, what went out, and when. */
 export function OverviewScreen({ data }: { data: AitoStats }) {
@@ -27,9 +28,7 @@ export function OverviewScreen({ data }: { data: AitoStats }) {
       const weeks = new Map<string, number>();
       for (const d of daily) {
         const date = parseLocalDateKey(d.day);
-        const start = new Date(date);
-        start.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-        const key = localDateKey(start);
+        const key = weekKey(date);
         weeks.set(key, (weeks.get(key) ?? 0) + d.created + d.accepted + d.done);
       }
       let best: [string, number] | null = null;

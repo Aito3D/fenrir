@@ -606,11 +606,14 @@ async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it(async_client, db_session, caplog):
+async def test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it_once(async_client, db_session, caplog):
     # invoice_due_date is an unvalidated string echoed from Books; "10/02/2026"
     # is a real shape it has sent. date.fromisoformat rejects it, so the row
     # must still be dropped from every bucket and from oldest_days exactly as
-    # before -- but the drop must now be diagnosable in the logs.
+    # before -- but the drop must now be diagnosable in the logs. Logged once
+    # per request rather than once per row: the statistics view refetches
+    # /aito/stats on every load and every timeframe change, so a per-row
+    # warning would repeat forever for one bad card.
     a = await _create(async_client)
     await _set(db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date="10/02/2026")
 
@@ -623,7 +626,34 @@ async def test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it(async_cl
         ("31+", 0, 0),
     ]
     assert od["oldest_days"] is None
-    assert any(str(a) in rec.message and "10/02/2026" in rec.message for rec in caplog.records)
+    warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert str(a) in warnings[0].message and "10/02/2026" in warnings[0].message
+
+
+@pytest.mark.asyncio
+async def test_overdue_names_every_bad_row_in_a_single_warning(async_client, db_session, caplog):
+    # Two malformed dates on one request must still produce exactly one log
+    # line naming both projects, not one line per row.
+    a = await _create(async_client)
+    b = await _create(async_client)
+    await _set(db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date="10/02/2026")
+    await _set(db_session, b, quote_invoiced=1, invoice_balance=200, invoice_due_date="not-a-date")
+
+    with caplog.at_level("WARNING", logger="backend.app.services.aito_stats"):
+        r = await async_client.get(STATS)
+    od = r.json()["overdue"]
+    assert [(x["bucket"], x["count"], x["balance"]) for x in od["buckets"]] == [
+        ("1-7", 0, 0),
+        ("8-30", 0, 0),
+        ("31+", 0, 0),
+    ]
+    assert od["oldest_days"] is None
+    warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+    assert len(warnings) == 1
+    message = warnings[0].message
+    assert str(a) in message and "10/02/2026" in message
+    assert str(b) in message and "not-a-date" in message
 
 
 @pytest.mark.asyncio

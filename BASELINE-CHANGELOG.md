@@ -12918,3 +12918,154 @@ Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14.
 `bash tools/gen_surface_stats.sh > /tmp/s.md && diff /tmp/s.md SURFACE.md` is
 empty, confirming `SURFACE.md` now replays from its own `regen:` command
 again.
+
+--------------------------------------------------------------------------------
+## T-007 (reopened) — 2026-09-20 — NOT a user-approved behavior change (new log output only)
+
+An earlier pass at T-007 added `logger.warning("Project %s has an unparsable
+invoice_due_date %r", p.id, p.invoice_due_date)` inside `_overdue()`'s
+`except ValueError` branch, so a malformed `invoice_due_date` (an unvalidated
+string echoed from Zoho Books — `"10/02/2026"` is a real shape it has sent)
+would be discoverable in the logs instead of silently vanishing from every
+overdue bucket and from `oldest_days`. The blind verifier rejected that
+version: `GET /api/v1/aito/stats` is fetched on every statistics-view load
+and every timeframe change, so a per-row warning repeats the identical line
+on every single one of those requests for as long as one bad card sits in
+the database — plus it was shipped with no changelog entry recording that
+`/aito/stats` gained a new observable side effect at all.
+
+**This entry documents that gap, not a new feature.** No response field,
+status code, HTTP contract, or bucket/count/balance value moves — the row is
+still excluded from every bucket and from `oldest_days` exactly as at BASE.
+The only change, both times, is what appears in the server's log output.
+
+Fixed by moving the warning out of the per-row loop: `_overdue()` now
+collects `(project_id, raw_value)` for every row that fails
+`date.fromisoformat` during its single pass, and — only if that list is
+non-empty — emits ONE `logger.warning` after the loop naming every offending
+project and its raw value, e.g. for two bad rows:
+
+```
+Skipped 2 project(s) with an unparsable invoice_due_date, excluded from overdue: 12 ('10/02/2026'), 13 ('not-a-date')
+```
+
+A request with one bad card logs one WARNING line; a request with three bad
+cards still logs exactly one WARNING line, naming all three. A request with
+zero bad cards logs nothing, same as before either version of this fix
+existed. The line repeats on every request that still has a bad card in the
+active set (there is no cross-request de-duplication — each request's
+warning, if any, is independent and reflects only that request's rows), but
+it no longer repeats PER ROW within a single response, which was the actual
+defect: the worst case went from "one line per bad row per request" to "at
+most one line per request", i.e. it now scales with requests rather than
+with requests × bad rows.
+
+Considered and rejected: a module-level "warn once per project id, ever"
+cache would be quieter for a long-lived server, but it would also make a
+newly-introduced second bad project on a previously-clean install invisible
+until the process restarts, and it leaves state that grows for the life of
+the process (bounded only by however many distinct projects ever carry a bad
+`invoice_due_date`, which is small in practice, but unbounded in principle
+against a hostile or bulk-corrupted import). Dropping the line to DEBUG
+alone was also rejected: at the project's default log level that would make
+the silently-dropped row undiscoverable again in normal operation, which was
+the entire point of the original task.
+
+`backend/tests/unit/test_aito_stats.py`: renamed the existing
+`test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it` to
+`..._and_logs_it_once` and tightened its assertion from "the message appears
+somewhere in the log" to "there is exactly one `WARNING`-level record, and it
+names the project id and the raw string". Added
+`test_overdue_names_every_bad_row_in_a_single_warning`, which puts two
+projects on malformed dates on the SAME request and asserts both remain
+excluded from every bucket and `oldest_days`, and that exactly one `WARNING`
+record fires, naming both project ids and both raw values.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14,
+unchanged — none of the probes exercise logging output. `SURFACE.md` needed
+regenerating: `_overdue`'s signature and every other public/private name in
+`aito_stats.py` are unchanged (the fix only adds a local variable and a
+call inside the existing function body), but the four new lines pushed every
+helper defined below `_overdue` in the file down by the same offset, which
+the tracked line-number map records. While regenerating, the diff also
+picked up an *unrelated* staleness left by the immediately preceding commit
+(`T-014`, "fold weeks in one place instead of three"): that commit added
+`frontend/src/components/aito/stats/weeklyFold.ts` (`weekKey`, `weekStart`,
+`WEEKLY_ABOVE_DAYS`, `WEEKLY_ABOVE_DAYS_NARROW`) without regenerating
+`SURFACE.md`. That frontend gap predates this fix, is untouched by it, and
+is included in the regenerated file only because `gen_surface_stats.sh`
+regenerates the whole document in one pass — confirmed with `git show
+6c2bd365a -- SURFACE.md`, which is empty: `T-014`'s own commit never touched
+`SURFACE.md`, so the drift already existed at HEAD before this fix started,
+independent of anything in this entry. Regenerated with `bash
+tools/gen_surface_stats.sh > SURFACE.md`; `diff <(bash
+tools/gen_surface_stats.sh) SURFACE.md` is now empty.
+
+Coverage (scoped to `backend/app/services/aito_stats.py`, measured with
+`COVERAGE_FILE` pointed at a scratch path so the tracked statement-only
+`.coverage` at the worktree root does not collide with this run's branch
+data): statements 314/320 = 98.12% (floor 98.11%, 311/317), branches
+126/134 = 94.03% (floor 93.94%, 124/132). Both figures are at or above the
+floor; the small increase in the denominators is the new collect-and-log
+code path, and both new lines the test suite added are executed by the two
+tests above.
+
+--------------------------------------------------------------------------------
+## T-012 — 2026-09-20 — NO behavior change (pure refactor, SURFACE.md regen only)
+
+`_quote_age` and `_overdue` both built a `{name: [0, 0.0] for name, _, _ in
+<BUCKETS>}` scaffold, accumulated into it with `rows[name][0] += 1;
+rows[name][1] += <amount>`, then converted it to their response objects with
+`for name, (c, t) in rows.items()` — each carrying its own `#
+type: ignore[arg-type]`. Extracted that scaffold into a new private helper,
+`_bucket_totals(buckets, hits: list[tuple[str, float]]) -> dict[str,
+tuple[int, float]]`, which owns exactly the counting: initialise one entry
+per bucket, accumulate `(name, amount)` hits into it, and return
+`{name: (count, total)}` with `count` already an `int`.
+
+The two callers keep everything that actually differs between them —
+`_quote_age`'s `quote_status`/`quote_sent_at` filter, `_overdue`'s
+`quote_invoiced`/`invoice_balance`/`invoice_due_date` filter, the
+`invoice_due_date` parse with its collect-and-log-once path for unparsable
+values (added in the immediately preceding `T-007 (reopened)` entry above),
+and `_overdue`'s `oldest_days` tracking. Each caller resolves its own bucket
+name via the existing `_bucket_name()` and appends `(name, amount)` to a
+`hits` list only for rows it actually wants counted; `oldest` is updated in
+the same loop, using the `days` value the caller already computed, so no
+bucket-resolution logic is duplicated to recover it. `_bucket_totals` never
+sees the filtering, the parsing, or the oldest tracking, so it does not need
+callback parameters to paper over how the two callers differ.
+
+This is a genuine common surface, not a callback-laden abstraction: the
+helper's signature is four lines, it drops the `for p in projects.values():
+if <skip condition>: continue` divergence entirely (that logic stays in each
+caller, where it belongs), and returning `dict[str, tuple[int, float]]`
+instead of `dict[str, list[float]]` let both call sites drop their `#
+type: ignore[arg-type]` — `count=c` reads as an `int` already, with no `int()`
+cast needed at either call site.
+
+Behavior is unchanged: both functions still skip exactly the same rows for
+exactly the same reasons, still resolve bucket names via `_bucket_name`,
+still return every bucket (even ones with zero hits), and `_overdue` still
+tracks `oldest_days` and logs unparsable dates identically. No response
+schema, route, or field changed.
+
+`backend/tests/unit/test_aito_stats.py` needed no changes — the existing
+`_quote_age`/`_overdue` tests only assert on the returned response objects,
+never on the internal accumulator shape.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14,
+unchanged. `SURFACE.md` needed regenerating: the new `_bucket_totals` helper
+adds one line to the "aito_stats.py — private helpers (order and names; the
+module map)" section, which pushes every helper defined below it in the
+file down by the same offset — the only delta in the diff. Regenerated with
+`bash tools/gen_surface_stats.sh > SURFACE.md`; `diff <(bash
+tools/gen_surface_stats.sh) SURFACE.md` is now empty.
+
+Coverage (scope: `backend/app/services/aito_stats.py`, full backend suite —
+`backend/tests/` minus `test_bambu_ftp.py` — run with `COVERAGE_FILE`
+pointed at a scratch path so the tracked statement-only `.coverage` at the
+worktree root does not collide with this run's branch data, then filtered
+with `tools/cov_filter.py`): statements 320/326 = 98.16% (floor 98.12%,
+314/320), branches 128/136 = 94.12% (floor 94.03%, 126/134). Both figures
+are at or above the floor.

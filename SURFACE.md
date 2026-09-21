@@ -35,18 +35,19 @@ async def compute_aito_stats(
 262: def _stage_time(
 294: def _rework(scan: _StageScan, start: datetime | None, end: datetime | None) -> AitoStatsRework:
 319: def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) -> str | None:
-326: def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
-340: def _size_bands(
-383: def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
-407: def _services(
-426: def _clients(
-455: def _arrivals(
-466: def _islands(
-482: def _tracking(
-503: def _days_between(a: datetime, b: datetime) -> float:
-507: def _local_day(at: datetime, tz_offset_minutes: int) -> date:
-511: def _throughput(
-544: def _daily(
+326: def _bucket_totals(
+341: def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
+355: def _size_bands(
+398: def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
+436: def _services(
+455: def _clients(
+484: def _arrivals(
+495: def _islands(
+511: def _tracking(
+532: def _days_between(a: datetime, b: datetime) -> float:
+536: def _local_day(at: datetime, tz_offset_minutes: int) -> date:
+540: def _throughput(
+573: def _daily(
 ```
 
 ## Response models
@@ -116,6 +117,7 @@ export const statsScreenId
 export const statsTabId
 export const TOOLTIP_ORDER
 export const WEEKLY_ABOVE_DAYS
+export const WEEKLY_ABOVE_DAYS_NARROW
 export function ActivityChart
 export function AsOfToday
 export function ClientsScreen
@@ -139,6 +141,8 @@ export function TimeScreen
 export function TodayStrip
 export function useStatsFormat
 export function useStatsScreen
+export function weekKey
+export function weekStart
 export interface BarSegment
 export interface BriefInput
 export interface FactRow
@@ -282,13 +286,12 @@ const DAY_MS =
 const HOURS =
 const ROW_CAP =
 const STORAGE_KEY =
-const WEEKLY_ABOVE_DAYS =
-const WEEKLY_ABOVE_DAYS_NARROW =
 export const AXIS =
 export const DECLINED =
 export const GRID =
 export const SERIES =
 export const TOOLTIP_ORDER =
 export const WEEKLY_ABOVE_DAYS =
+export const WEEKLY_ABOVE_DAYS_NARROW =
 ```
 

@@ -323,18 +323,33 @@ def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) ->
     return None
 
 
+def _bucket_totals(
+    buckets: tuple[tuple[str, int, int | None], ...], hits: list[tuple[str, float]]
+) -> dict[str, tuple[int, float]]:
+    """Accumulate ``(bucket_name, amount)`` hits into a `{name: (count, total)}`
+    map covering every bucket, even ones no hit landed in. Callers resolve
+    their own bucket name (via `_bucket_name`) and decide what counts as a hit
+    at all — this only does the counting, so it stays free of the filtering
+    quirks and any extra per-row tracking each caller needs."""
+    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in buckets}
+    for name, amount in hits:
+        rows[name][0] += 1
+        rows[name][1] += amount
+    return {name: (int(c), t) for name, (c, t) in rows.items()}
+
+
 def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
     """Snapshot: sent, undecided quotes by whole days since sending."""
-    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _AGE_BUCKETS}
+    hits: list[tuple[str, float]] = []
     for p in projects.values():
         if p.quote_status != "sent" or p.quote_sent_at is None:
             continue
         name = _bucket_name(max(0, (now - p.quote_sent_at).days), _AGE_BUCKETS)
         if name is None:
             continue
-        rows[name][0] += 1
-        rows[name][1] += p.quote_total or 0.0
-    return [AitoStatsQuoteAge(bucket=name, count=int(c), total=t) for name, (c, t) in rows.items()]  # type: ignore[arg-type]
+        hits.append((name, p.quote_total or 0.0))
+    totals = _bucket_totals(_AGE_BUCKETS, hits)
+    return [AitoStatsQuoteAge(bucket=name, count=c, total=t) for name, (c, t) in totals.items()]
 
 
 def _size_bands(
@@ -381,25 +396,39 @@ def _size_bands(
 
 
 def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
-    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _OVERDUE_BUCKETS}
+    hits: list[tuple[str, float]] = []
     oldest: int | None = None
+    # Collected across the whole pass and logged as one line below rather than
+    # one `logger.warning` per row: `invoice_due_date` is an unvalidated string
+    # echoed from Books, and `/aito/stats` is fetched on every statistics-view
+    # load and every timeframe change, so a per-row warning would repeat that
+    # same line forever for a single bad card. One line per request that names
+    # every offending project scales with requests, not with requests x bad
+    # rows, while keeping the condition just as discoverable.
+    unparsable: list[tuple[int, str]] = []
     for p in projects.values():
         if not p.quote_invoiced or (p.invoice_balance or 0.0) <= 0 or not p.invoice_due_date:
             continue
         try:
             due = date.fromisoformat(p.invoice_due_date)
         except ValueError:
-            logger.warning("Project %s has an unparsable invoice_due_date %r", p.id, p.invoice_due_date)
+            unparsable.append((p.id, p.invoice_due_date))
             continue
         days = (today - due).days
         name = _bucket_name(days, _OVERDUE_BUCKETS)
         if name is None:
             continue
         oldest = days if oldest is None else max(oldest, days)
-        rows[name][0] += 1
-        rows[name][1] += p.invoice_balance or 0.0
+        hits.append((name, p.invoice_balance or 0.0))
+    if unparsable:
+        logger.warning(
+            "Skipped %d project(s) with an unparsable invoice_due_date, excluded from overdue: %s",
+            len(unparsable),
+            ", ".join(f"{pid} ({raw!r})" for pid, raw in unparsable),
+        )
+    totals = _bucket_totals(_OVERDUE_BUCKETS, hits)
     return AitoStatsOverdue(
-        buckets=[AitoStatsOverdueBucket(bucket=name, count=int(c), balance=b) for name, (c, b) in rows.items()],  # type: ignore[arg-type]
+        buckets=[AitoStatsOverdueBucket(bucket=name, count=c, balance=b) for name, (c, b) in totals.items()],
         oldest_days=oldest,
     )
 
