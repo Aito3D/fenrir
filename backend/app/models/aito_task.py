@@ -70,7 +70,7 @@ class AitoTask(Base):
     impression_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     usinage_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     maindoeuvre_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # One flag per service, mirroring the four cost columns above. A step
+    # One flag per service, mirroring the five cost columns above. A step
     # exists when its cost is not NULL; ticking it is what advances the
     # project's board column (see services/aito_board_rules.py). NOT NULL with
     # a server default so rows predating this migration read False, not None.

@@ -1002,3 +1002,50 @@ def test_a_labour_line_imports_as_a_labour_step():
     assert task["maindoeuvre_cost"] == 4000
     assert task["maindoeuvre_description"] == "Pose et réglage sur site"
     assert build_preview(estimate, None, "https://x")["skipped_lines"] == []
+
+
+def test_a_discounted_labour_line_stores_the_net_amount():
+    """Labour is the ONE service whose stored cost is POST-discount.
+
+    It has no `maindoeuvre_discount_pct` column to carry the percentage, so
+    the pre-discount convention the other four follow cannot hold here: the
+    percent would simply evaporate and the PRE-discount figure would be read
+    as the price. 30 000 less 20% must therefore store 24 000 — the money the
+    quote actually states — or the next push re-emits `rate: 30000` and
+    raises the customer's already-sent price by 25%.
+    """
+    estimate = _estimate(
+        [
+            _line(
+                "PM-CM-D",
+                30000,
+                description="Info: Pose et réglage sur site",
+                header_name="Pose",
+                discount="20.00%",
+            )
+        ]
+    )
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert task["maindoeuvre_cost"] == 24000
+    # Not merely None — absent. `AitoTaskCreate` has no such fields, so
+    # `extra="ignore"` eats them at the route boundary without a word, which
+    # is exactly how the dropped discount hid.
+    assert "maindoeuvre_discount_pct" not in task
+    assert "maindoeuvre_quantity" not in task
+
+
+def test_an_undiscounted_labour_line_still_stores_the_full_amount():
+    """The net rule must not quietly shave a line that carries no discount."""
+    estimate = _estimate([_line("PM-CM-D", 30000, description="Info: Pose", header_name="Pose")])
+    assert build_preview(estimate, None, "https://x")["tasks"][0]["maindoeuvre_cost"] == 30000
+
+
+def test_the_other_services_keep_their_pre_discount_cost():
+    """The bend is labour-only: the four services that own a
+    `<service>_discount_pct` column still store the PRE-discount total, and
+    their readers apply the percent. Baking it in here as well would
+    double-count it against the field the same import writes."""
+    estimate = _estimate([_line("U3DIMP", 30000, description="Info: Taraudage", header_name="P", discount="20.00%")])
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert task["usinage_cost"] == 30000
+    assert task["usinage_discount_pct"] == 20.0

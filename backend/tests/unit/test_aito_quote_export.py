@@ -497,18 +497,19 @@ def test_round_trip_preserves_labour():
     writes for a PM-CM-D labour line, aito_quote_import must read back
     unchanged.
 
-    Unlike its neighbour above, this does NOT cover quantity/discount: a
-    Books-side labour line with a quantity != 1 or a percent discount is
-    dropped BY DESIGN. `AitoTaskCreate` has no `maindoeuvre_quantity` or
-    `maindoeuvre_discount_pct` field (see the schema's own comment — "labour
-    is always one unit at one price, with no discount"), so a preview built
-    from such a line would carry those keys in the raw dict this function
-    returns, but they never survive validation into an actual task at the
-    route boundary (`ZohoQuotePreview.tasks: list[AitoTaskCreate]` in
-    zoho.py), and nothing downstream ever reads them. Asserted here against
-    the schema directly, not against this test's own preview dict, because
-    `build_preview` itself has no opinion on the shape — it is Pydantic at
-    the response boundary that drops the extra keys."""
+    Unlike its neighbour above, this carries no quantity and no discount
+    FIELD: `AitoTaskCreate` has neither a `maindoeuvre_quantity` nor a
+    `maindoeuvre_discount_pct` (see the schema's own comment — "labour is
+    always one unit at one price, with no discount"), so the importer no
+    longer writes either key at all. It used to, and `extra="ignore"` ate
+    them at the route boundary — which is how a real discount went missing.
+
+    The MONEY on both is preserved regardless. Quantity: `line.amount` is
+    already rate x quantity and labour re-exports as one unit at that full
+    amount. Discount: the importer bakes the percent into
+    `maindoeuvre_cost`, so only its presentation is lost — see
+    `test_a_discounted_labour_line_stores_the_net_amount` in
+    test_aito_quote_import.py and the re-export half below."""
     from backend.app.schemas.aito import AitoTaskCreate
 
     original = [task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")]
@@ -521,6 +522,56 @@ def test_round_trip_preserves_labour():
     assert rebuilt["maindoeuvre_description"] == "Pose et réglage sur site"
     assert "maindoeuvre_quantity" not in AitoTaskCreate.model_fields
     assert "maindoeuvre_discount_pct" not in AitoTaskCreate.model_fields
+
+
+def test_an_imported_discounted_labour_line_re_exports_at_the_same_price():
+    """An import-then-push cycle must not move the money the customer has
+    already seen.
+
+    A Books labour line of 30 000 less 20% states 24 000. The importer bakes
+    that in (labour owns no `maindoeuvre_discount_pct` column to carry the
+    percent), so the re-exported line is a flat 24 000 at one unit with no
+    `discount` key. The PRESENTATION is lost — the PDF no longer shows the
+    20% column — and that is the deliberate trade: the total is what the
+    customer agreed to.
+    """
+    estimate = {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9003",
+        "date": "2026-07-29",
+        "status": "draft",
+        "currency_code": "XPF",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "total": 24000,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "PM-CM-D",
+                "rate": 30000,
+                "quantity": 1,
+                "discount": "20.00%",
+                "description": "Info: Pose et réglage sur site",
+                "header_name": "Pose",
+            }
+        ],
+    }
+    imported = build_preview(estimate, None, "https://x")["tasks"][0]
+    lines = build_line_items(
+        [
+            task(
+                title=imported["title"],
+                maindoeuvre_cost=imported["maindoeuvre_cost"],
+                maindoeuvre_description=imported["maindoeuvre_description"],
+            )
+        ],
+        [],
+        CATALOGUE,
+    )
+    assert len(lines) == 1
+    assert lines[0]["rate"] == 24000
+    assert lines[0]["quantity"] == 1
+    assert "discount" not in lines[0]
 
 
 from backend.app.services.aito_quote_export import (  # noqa: E402
@@ -673,6 +724,47 @@ def test_the_projects_own_shipping_replaces_any_existing_shipping_line():
     existing = [{"line_item_id": "L9", "item_id": "SHIP-TU", "item_order": 5}]
     lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
     assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["S", "SHIP-TU"]
+
+
+def test_a_labour_line_is_echoed_when_no_task_prices_labour():
+    """The shop bills labour by typing a PM-CM line into Books by hand. Until
+    this branch that line was FOREIGN and survived every push untouched; now
+    the catalogue claims it, and no historical task carries a labour cost, so
+    omitting it here would silently DELETE a real charge from a customer's
+    estimate. No task prices labour -> echo it."""
+    existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L7", "item_order": 2}
+
+
+def test_a_labour_line_is_echoed_by_its_sku_when_the_item_id_is_not_ours():
+    """The `zoho_item_maindoeuvre_id` setting is overridable, and a
+    hand-typed line may point at a different Books item that still carries a
+    PM-CM SKU. The SKU alone is enough to recognise it."""
+    existing = [{"line_item_id": "L7", "item_id": "66407000001604625", "sku": "PM-CM-VENTE", "item_order": 5}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L7", "item_order": 2}
+
+
+def test_the_projects_own_labour_replaces_any_existing_labour_line():
+    """The converse: once a task prices labour, our freshly built line is the
+    truth and the old one must NOT be echoed alongside it — one labour line,
+    never two."""
+    existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
+    priced = task(maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")
+    lines = build_line_items([priced], existing, SHIPPING_CATALOGUE)
+    assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["MO"]
+    assert "line_item_id" not in lines[0]
+
+
+def test_a_labour_step_quoted_free_still_counts_as_priced_labour():
+    """0 is a real step ("quoted free"); only None means the service is
+    absent. A falsiness test here would echo the stale line back next to our
+    own 0 XPF one and leave the quote with two labour lines."""
+    existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
+    free = task(maindoeuvre_cost=0.0, maindoeuvre_description="Geste commercial")
+    lines = build_line_items([free], existing, SHIPPING_CATALOGUE)
+    assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["MO"]
 
 
 def test_shipping_item_id_raises_for_an_unresolved_service():

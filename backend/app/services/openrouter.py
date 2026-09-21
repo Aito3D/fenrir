@@ -60,7 +60,7 @@ _PICKUP_SYSTEM_PROMPT = (
     "(I majuscule, comme dans Igloo — jamais « la Ora na »). "
     "Nomme chaque pièce de la liste fournie, toutes sans exception, réduite au nom de l'objet : "
     "pas de couleurs, pas de dimensions, pas de matériaux, pas de prix, et jamais les étapes de "
-    "fabrication (impression, modélisation, scan, usinage). "
+    "fabrication (impression, modélisation, scan, usinage, main d'œuvre). "
     "Exemple — pièces « Cache de vis de jante » et « Cache attelage Fox » : "
     "« Ia Ora na, ton cache de vis de jante et ton cache attelage Fox sont prêts, tu peux venir "
     "les récupérer à nos bureaux à Arue. » "
