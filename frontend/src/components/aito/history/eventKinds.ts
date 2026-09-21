@@ -10,6 +10,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.emailed': 'aito.history.quoteEmailed',
   'invoice.emailed': 'aito.history.invoiceEmailed',
   'invoice.created': 'aito.history.invoiceCreated',
+  'invoice.detected': 'aito.history.invoiceDetected',
   'invoice.deposit_applied': 'aito.history.invoiceDepositApplied',
   'quote.viewed': 'aito.history.quoteViewed',
   'quote.accepted': 'aito.history.quoteAccepted',
@@ -138,6 +139,12 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
       parts.push(`${formatValue(detail.previous_expires_on)} → ${formatValue(detail.expires_on)}`);
     }
     return parts.length ? parts.join(' · ') : null;
+  }
+
+  if (kind === 'invoice.detected') {
+    // The bill's own number, which is what the operator looks up in Books —
+    // the label already says it was found there rather than raised here.
+    return typeof detail.invoice_number === 'string' && detail.invoice_number ? detail.invoice_number : null;
   }
 
   if (kind === 'invoice.deposit_applied') {

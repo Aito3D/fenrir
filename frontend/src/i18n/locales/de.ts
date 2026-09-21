@@ -646,6 +646,7 @@ export default {
       quoteEmailed: 'hat das Angebot per E-Mail gesendet',
       invoiceEmailed: 'hat die Rechnung per E-Mail gesendet',
       invoiceCreated: 'hat die Rechnung erstellt',
+      invoiceDetected: 'hat eine Rechnung in Zoho gefunden',
       invoiceDepositApplied: 'hat die Anzahlung auf die Rechnung angerechnet',
       quoteViewed: 'hat das Angebot angesehen',
       quoteAccepted: 'hat das Angebot angenommen',

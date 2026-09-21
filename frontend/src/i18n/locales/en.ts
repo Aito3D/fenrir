@@ -650,6 +650,7 @@ export default {
       quoteEmailed: 'emailed the quote',
       invoiceEmailed: 'emailed the invoice',
       invoiceCreated: 'raised the invoice',
+      invoiceDetected: 'found an invoice in Zoho',
       invoiceDepositApplied: 'applied the deposit to the invoice',
       quoteViewed: 'viewed the quote',
       quoteAccepted: 'accepted the quote',

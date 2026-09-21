@@ -42,6 +42,12 @@ KINDS: dict[str, str] = {
     # price and becomes a receivable, and it is the only local record that
     # the invoice was raised from Aito rather than by hand in Books.
     "invoice.created": "story",
+    # A bill appeared in Books that this app did not raise — found by the
+    # invoice poll, attributed by its reference number. The counterpart to
+    # invoice.created above: together they are the complete answer to "where
+    # did this receivable come from", and this one is the only local record
+    # that the answer was "somebody billed it by hand".
+    "invoice.detected": "story",
     # A deposit the client had already paid was spent on the bill — by the
     # hourly sweep, for an invoice raised in Books without it. Story: it is
     # the only local record of WHY an overdue invoice turned paid with no

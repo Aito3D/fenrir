@@ -646,6 +646,7 @@ export default {
       quoteEmailed: 'enviou o orçamento por e-mail',
       invoiceEmailed: 'enviou a fatura por e-mail',
       invoiceCreated: 'criou a fatura',
+      invoiceDetected: 'encontrou uma fatura no Zoho',
       invoiceDepositApplied: 'aplicou o sinal à fatura',
       quoteViewed: 'visualizou o orçamento',
       quoteAccepted: 'aceitou o orçamento',

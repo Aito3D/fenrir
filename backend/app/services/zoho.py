@@ -242,6 +242,32 @@ def _map_invoice(invoice: dict) -> dict:
     }
 
 
+# How many pages of invoices one ``list_invoices_modified_since`` pass will
+# walk. 200 rows a page, so 10 pages is ~2000 invoices — comfortably more than
+# the backfill window the poll opens with (a 90-day window read ~4 pages on
+# the live org) and a hard ceiling on a watermark that has somehow gone stale
+# enough to select the org's whole history.
+_MAX_INVOICE_PAGES = 10
+
+
+def _map_invoice_change(invoice: dict) -> dict:
+    """Zoho invoice list row -> the shape the invoice poll attributes and caches.
+
+    ``_map_invoice`` above plus the three fields that make an unattributed row
+    usable: ``reference_number`` (how an invoice names its project),
+    ``customer_id`` (so a match can be sanity-checked against the card's own
+    client) and ``last_modified_time`` (the poll's watermark). Kept as its own
+    mapper rather than widening ``_map_invoice``, which feeds the Invoice card
+    and should keep rendering exactly what it renders.
+    """
+    return {
+        **_map_invoice(invoice),
+        "reference_number": invoice.get("reference_number", ""),
+        "customer_id": invoice.get("customer_id", ""),
+        "last_modified_time": invoice.get("last_modified_time", ""),
+    }
+
+
 class ZohoService:
     def __init__(self) -> None:
         self._access_token: str | None = None
@@ -871,6 +897,65 @@ class ZohoService:
         # a date sort; a missing date sorts last rather than crashing the sort.
         invoices.sort(key=lambda i: i.get("date") or "", reverse=True)
         return [_map_invoice(i) for i in invoices]
+
+    async def list_invoices_modified_since(self, db: AsyncSession, since: str) -> list[dict]:
+        """Every invoice in the org touched since ``since``, newest first.
+
+        The one read that is NOT keyed on a project. ``list_project_invoices``
+        above answers "what has Books raised from THIS estimate", which is a
+        per-project pull: it costs one call per card, it only runs for cards
+        already known to be invoiced, and — because the whole surface keys off
+        ``estimate_id=`` — it is structurally blind to an invoice raised in
+        Books without converting the estimate. This answers the other
+        question, "what changed in Books", for one call per pass regardless of
+        how many cards the board holds.
+
+        ``since`` must be Books' own timestamp spelling, offset included:
+        `2026-09-20T10:00:00+0000` is accepted and `...Z` is refused with a
+        400 (verified against the live org), so callers must not hand this a
+        bare ISO string from ``datetime.isoformat()``.
+
+        Rows keep ``reference_number`` and ``customer_id``, which
+        ``_map_invoice`` drops — they are what attributes an invoice to a
+        project without a second call each. They do NOT carry ``estimate_id``:
+        Books omits it from list rows (it reads ``None`` on every row,
+        including invoices that are demonstrably linked), so a caller that
+        needs the link must read the invoice itself — see ``get_invoice_raw``.
+
+        Paginated because the caller's first pass is a backfill over months,
+        not a five-minute window. Capped at ``_MAX_INVOICE_PAGES``: a
+        watermark that somehow ends up at the epoch must cost a bounded
+        number of calls, not walk the org's entire invoice history.
+        """
+        rows: list[dict] = []
+        for page in range(1, _MAX_INVOICE_PAGES + 1):
+            payload = await self._request(
+                db,
+                "GET",
+                "/invoices",
+                params={
+                    "last_modified_time": since,
+                    "sort_column": "last_modified_time",
+                    "sort_order": "D",
+                    "per_page": "200",
+                    "page": str(page),
+                },
+            )
+            rows.extend(_map_invoice_change(i) for i in payload.get("invoices") or [])
+            if not (payload.get("page_context") or {}).get("has_more_page"):
+                break
+        return rows
+
+    async def get_invoice_raw(self, db: AsyncSession, invoice_id: str) -> dict:
+        """One invoice as Books states it, unmapped.
+
+        Separate from ``get_invoice`` because ``_map_invoice`` exists to feed
+        the Invoice card and deliberately keeps only what that card renders —
+        which excludes ``estimate_id``, the single field the invoice poll
+        reads this for. Widening ``_map_invoice`` instead would put a field on
+        every invoice response in the app to serve one caller.
+        """
+        return (await self._request(db, "GET", f"/invoices/{_seg(invoice_id)}")).get("invoice", {})
 
     async def link_invoice_to_estimate(self, db: AsyncSession, invoice_id: str, estimate_id: str) -> None:
         """Attach an already-raised invoice to the estimate it was billed from.

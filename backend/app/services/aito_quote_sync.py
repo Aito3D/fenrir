@@ -262,10 +262,12 @@ async def _lock_project(
     """Flip a project into 'locked' and record the transition exactly once.
 
     Shared by every site that locks a project (create-path tax-exclusive,
-    update-path invoiced and tax-exclusive, and the sweep's own invoiced
-    catch-up): all four capture `was_already_locked` before mutating state so
-    the debounce below never double-records a project that was already
-    locked. The parameters carry each site's own variance -- the lock reason
+    update-path invoiced and tax-exclusive, the sweep's own invoiced catch-up,
+    and the invoice poll's adoption of a bill raised in Books): all five
+    capture `was_already_locked` before mutating state so the debounce below
+    never double-records a project that was already locked. That debounce is
+    load-bearing for the last two, which can reach the same conclusion about
+    the same project on the same tick. The parameters carry each site's own variance -- the lock reason
     (or none, via the `_UNSET` sentinel, to leave `quote_sync_error`
     untouched entirely), whether `quote_invoiced` gets stamped, whether a
     quote status is adopted from a freshly-read estimate, and whether a
@@ -2355,6 +2357,21 @@ async def run_sync_loop() -> None:
                     if _throttled_until is None or time.monotonic() >= _throttled_until:
                         try:
                             await sweep_invoices(db)
+                            # The other direction: the sweep above asks Books
+                            # about invoices this board already knows it has,
+                            # once an hour. This asks what Books has CHANGED
+                            # since the last tick — one call for the whole
+                            # board — which is what makes an invoice raised in
+                            # Books (including one raised without converting
+                            # the estimate, which the sweep is structurally
+                            # blind to) reach the card within a tick instead
+                            # of an hour or never. Imported here rather than
+                            # at module scope because it imports
+                            # `_lock_project` from this module; same shape as
+                            # the payment-link reconcile below.
+                            from backend.app.services.aito_invoice_poll import poll_invoices
+
+                            await poll_invoices(db)
                         except ZohoRateLimited as e:
                             logger.warning("Aito invoice sweep deferred (Zoho Books rate limit): %s", e)
                             _arm_rate_limit_throttle(e)

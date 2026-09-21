@@ -646,6 +646,7 @@ export default {
       quoteEmailed: 'a envoyé le devis par e-mail',
       invoiceEmailed: 'a envoyé la facture par e-mail',
       invoiceCreated: 'a créé la facture',
+      invoiceDetected: 'a trouvé une facture dans Zoho',
       invoiceDepositApplied: "a imputé l'acompte sur la facture",
       quoteViewed: 'a consulté le devis',
       quoteAccepted: 'a accepté le devis',

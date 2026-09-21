@@ -646,6 +646,7 @@ export default {
       quoteEmailed: '見積もりをメールで送信しました',
       invoiceEmailed: '請求書をメールで送信しました',
       invoiceCreated: '請求書を作成しました',
+      invoiceDetected: 'Zoho で請求書を検出しました',
       invoiceDepositApplied: '前受金を請求書に充当しました',
       quoteViewed: '見積もりを閲覧しました',
       quoteAccepted: '見積もりを承諾しました',

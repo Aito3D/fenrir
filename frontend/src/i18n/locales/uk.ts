@@ -647,6 +647,7 @@ export default {
       quoteEmailed: "надіслав кошторис електронною поштою",
       invoiceEmailed: 'надіслав рахунок електронною поштою',
       invoiceCreated: 'створив рахунок',
+      invoiceDetected: 'виявив рахунок у Zoho',
       invoiceDepositApplied: 'зарахував аванс у рахунок',
       quoteViewed: "переглянув пропозицію",
       quoteAccepted: "прийняв пропозицію",

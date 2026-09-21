@@ -55,6 +55,15 @@ describe('detailText', () => {
     expect(detailText('sync.conflict', { ours: null, theirs: 'Declined' })).toBe('— → Declined');
   });
 
+  it('shows the invoice number for invoice.detected', () => {
+    expect(detailText('invoice.detected', { invoice_number: 'FA-26-4367', status: 'paid' })).toBe('FA-26-4367');
+  });
+
+  it('returns null for invoice.detected when Books gave no number yet', () => {
+    expect(detailText('invoice.detected', { status: 'draft' })).toBeNull();
+    expect(detailText('invoice.detected', { invoice_number: '' })).toBeNull();
+  });
+
   it('names the retainer and the amount for invoice.deposit_applied', () => {
     expect(detailText('invoice.deposit_applied', { retainer_number: 'RET26-00295', amount: 4000 })).toBe(
       'RET26-00295 · 4000'

@@ -646,6 +646,7 @@ export default {
       quoteEmailed: 'отправил смету по электронной почте',
       invoiceEmailed: 'отправил счёт по эл. почте',
       invoiceCreated: 'создал счёт',
+      invoiceDetected: 'обнаружил счёт в Zoho',
       invoiceDepositApplied: 'зачёл аванс в счёт',
       quoteViewed: 'просмотрел смету',
       quoteAccepted: 'принял смету',
