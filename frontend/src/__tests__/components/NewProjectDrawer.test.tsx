@@ -1177,4 +1177,20 @@ describe('repeat-client recall', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
   });
+
+  it('does not create while a labour step has no description', async () => {
+    // Jean-Pierre (not the default walk-in) is reachable straight off the
+    // directory pick, so the only thing left blocking Create is the labour
+    // step's own description — same isolation the shipping-only tests use.
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Labour' }));
+    fireEvent.change(screen.getByLabelText('Labour Cost'), { target: { value: '4000' } });
+    await userEvent.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByText('Labour needs a description')).toBeInTheDocument();
+  });
 });

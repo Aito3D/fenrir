@@ -28,6 +28,7 @@ import {
   visibleClientDraftErrors,
 } from '../../utils/clientDraft';
 import type { ClientDraft, SocialNetwork } from '../../utils/clientDraft';
+import { tasksMissingMaindoeuvreDescription } from '../../utils/maindoeuvreValidation';
 import { islandLabel, visibleShippingDraftErrors } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import {
@@ -406,7 +407,14 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // amber, and only then does this go false.
   const shippingValid =
     shipping === null || Object.values(visibleShippingDraftErrors(shipping)).every((error) => error === null);
-  const canCreate = allPriced && clientReachable && clientValid && configured && shippingValid;
+  // Visible, not raw — the same rule `clientValid` and `shippingValid` follow:
+  // a labour step the user has just switched on must not disable Create with
+  // nothing on screen saying why. The block's own FieldError renders as soon
+  // as the row is revealed, and clicking Create reveals every row.
+  const maindoeuvreValid = !tasksMissingMaindoeuvreDescription(
+    tasks.filter((task) => revealedTaskKeys.has(rowKey(task))),
+  );
+  const canCreate = allPriced && maindoeuvreValid && clientReachable && clientValid && configured && shippingValid;
 
   const summaryState = summaryText.trim() !== '' ? 'ready' : generateNonce > 0 ? 'generating' : 'waiting';
 
