@@ -8,6 +8,15 @@ import { render } from '../utils';
 import { StatsView } from '../../components/aito/StatsView';
 import type { AitoStats } from '../../api/client';
 
+// DecisionsChart's weekly-fold bucketing has no other observable surface
+// (no visible numbers, and the x-axis labels aren't guaranteed to render as
+// ticks once there are dozens of bars) -- capturing the `data` actually
+// handed to recharts' BarChart lets the weekly-fold test assert the real
+// bucketed sums instead of just "fewer bars appeared".
+const chartCapture = vi.hoisted(() => ({
+  decisionsRows: undefined as { label: string; accepted: number; declined: number }[] | undefined,
+}));
+
 vi.mock('recharts', async (orig) => {
   const actual = await orig<typeof import('recharts')>();
   return {
@@ -15,6 +24,10 @@ vi.mock('recharts', async (orig) => {
     ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
       <actual.ResponsiveContainer {...props} width={600} />
     ),
+    BarChart: (props: ComponentProps<typeof actual.BarChart>) => {
+      chartCapture.decisionsRows = props.data as typeof chartCapture.decisionsRows;
+      return <actual.BarChart {...props} />;
+    },
   };
 });
 
@@ -106,6 +119,7 @@ describe('StatsView period screens', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    chartCapture.decisionsRows = undefined;
   });
 
   it('Sales: the finding names the big lost tickets, the facts and the win-rate bars back it', async () => {
@@ -130,6 +144,57 @@ describe('StatsView period screens', () => {
     expect(win[1]).toHaveTextContent('50%');
     expect(win[1].querySelectorAll('[data-segment]')).toHaveLength(2);
     expect(screen.getByTestId('aito-stats-decisions').querySelectorAll('.recharts-bar').length).toBe(2);
+  });
+
+  it('Sales: decisions fold into Monday-start weeks past 45 days, not a naive 7-day chunk', async () => {
+    const daily = Array.from({ length: 70 }, (_, i) => {
+      const d = new Date(2026, 6, 1 + i); // 2026-07-01 is a Wednesday
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      // July 3 (Fri) falls in the Monday-start week of 29 June; July 6 (Mon)
+      // starts the very next week. A naive "chunk every 7 days from the
+      // start of the array" grouping would lump both into the same first
+      // chunk (1-7 July) -- only real calendar weeks split them apart.
+      if (i === 2) return { day: key, created: 0, accepted: 4, declined: 0, done: 0 };
+      if (i === 5) return { day: key, created: 0, accepted: 0, declined: 5, done: 0 };
+      return { day: key, created: 0, accepted: 0, declined: 0, done: 0 };
+    });
+    await open('Sales', fixture({ daily }));
+
+    const chart = screen.getByTestId('aito-stats-decisions');
+    expect(within(chart).getByText('Decisions per week')).toBeInTheDocument();
+    expect(within(chart).queryByText('Decisions per day')).toBeNull();
+
+    const rows = chartCapture.decisionsRows;
+    expect(rows).toBeDefined();
+    const weekOfJune29 = rows!.find((r) => r.label === 'Jun 29');
+    const weekOfJuly6 = rows!.find((r) => r.label === 'Jul 6');
+    expect(weekOfJune29).toEqual({ label: 'Jun 29', accepted: 4, declined: 0 });
+    expect(weekOfJuly6).toEqual({ label: 'Jul 6', accepted: 0, declined: 5 });
+    // Every other week is untouched -- confirms the two events landed in
+    // their own separate buckets rather than being smeared across weeks
+    // (which a wrong bucket key, e.g. a Sunday-start or non-calendar
+    // grouping, would do).
+    const otherWeeks = rows!.filter((r) => r !== weekOfJune29 && r !== weekOfJuly6);
+    expect(otherWeeks.every((r) => r.accepted === 0 && r.declined === 0)).toBe(true);
+  });
+
+  it('Sales: keeps daily decisions bars when too few days in a long range report a decline figure', async () => {
+    // 50 days total (past ActivityChart's identical 45-day threshold) but
+    // only 40 of them carry a `declined` figure at all, as an older backend
+    // would send. DecisionsChart's fold check counts the FILTERED days, not
+    // `daily.length`, so this must stay daily.
+    const daily = Array.from({ length: 50 }, (_, i) => {
+      const d = new Date(2026, 6, 1 + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (i < 10) return { day: key, created: 0, accepted: 0, done: 0 }; // declined omitted
+      return { day: key, created: 0, accepted: i === 20 ? 2 : 0, declined: i === 20 ? 1 : 0, done: 0 };
+    });
+    await open('Sales', fixture({ daily }));
+
+    const chart = screen.getByTestId('aito-stats-decisions');
+    expect(within(chart).getByText('Decisions per day')).toBeInTheDocument();
+    expect(within(chart).queryByText('Decisions per week')).toBeNull();
+    expect(chartCapture.decisionsRows).toHaveLength(40);
   });
 
   it('Sales: says so plainly when nothing was decided', async () => {
@@ -160,6 +225,58 @@ describe('StatsView period screens', () => {
     // The journey bar keeps only the stages with a median.
     expect(screen.getByTestId('aito-stats-flow')).toHaveTextContent('8.9 Scan');
     expect(screen.getByTestId('aito-stats-rework')).toHaveTextContent('1 cards · 50% of cards that moved');
+  });
+
+  it('Time: a real but empty period reads timeNone, drops the rework note and never divides by a zero denominator', async () => {
+    await open(
+      'Time',
+      fixture({
+        throughput: { created: 0, accepted: 0, done: 0, per_day: 0, lead_days: null, lead_days_median: null, production_days: null, active: 0 },
+        stage_days: COLUMNS.filter((c) => c !== 'done').map((column) => ({ column, median_days: null, sample: 0 })),
+        // The block is PRESENT (unlike the "backend predates this block" case
+        // below, which omits `stage_time` entirely) but every card's stages
+        // total zero -- a real board where nothing has moved yet.
+        stage_time: [
+          {
+            project_id: 9,
+            client_name: 'Flatline',
+            description: 'Nothing moved',
+            done_at: '2026-09-08T10:00:00',
+            stages: { devis: 0, waiting: 0, scan: 0, model: 0, print: 0, finish: 0 },
+          },
+        ],
+        rework: { moves: 0, cards: 0, share: null },
+      }),
+    );
+
+    // The finding reads the dedicated "nothing delivered" sentence, not the
+    // slow-stage or rework clauses that ride along on top of it in the
+    // populated-period test above.
+    const finding = screen.getByTestId('aito-stats-finding');
+    expect(finding).toHaveTextContent('No project was delivered in this period.');
+    expect(finding).not.toHaveTextContent('moves went backwards');
+    expect(finding).not.toHaveTextContent('is the slow stage');
+
+    // One card is present -- distinct from the Empty state -- but its total
+    // is 0, so `longest` (the scale's denominator) is 0 too. The
+    // `longest > 0 ? … : 0` guard must fire: a regression to a bare
+    // `row.total / longest` would render a `NaN%` (or `Infinity%`) bar width.
+    const rows = within(screen.getByTestId('aito-stats-stage-rows')).getAllByRole('listitem');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent('Flatline');
+    const track = rows[0].querySelector('[aria-hidden="true"] > span') as HTMLElement;
+    expect(track).not.toBeNull();
+    expect(track.style.width).toBe('0%');
+    // No stage carried any weight, so no coloured segment renders inside it.
+    expect(track.children.length).toBe(0);
+
+    // The rework fact still renders (the object is present, moves is 0) but
+    // without a share note or the "backwards moves" alert tone -- share:
+    // null is a distinct state from share: 0.
+    const reworkRow = screen.getByTestId('aito-stats-rework');
+    expect(reworkRow).toHaveTextContent('0');
+    expect(reworkRow).not.toHaveTextContent('% of cards that moved');
+    expect(reworkRow.querySelector('dd')?.className).not.toContain('text-status-error');
   });
 
   it('Money: the finding adds up what is out and how late, the mix and the overdue bars follow', async () => {

@@ -574,14 +574,25 @@ async def test_size_bands_with_three_decisions_is_one_band(async_client, db_sess
 
 
 @pytest.mark.asyncio
-async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
+async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
-    # The endpoint bounds "today" with the request's tz offset, which defaults
-    # to UTC — so the fixture's due dates have to be UTC days too. Local days
-    # made this fail every evening west of Greenwich, where the UTC date has
-    # already rolled over and every age came out one day longer.
-    today = datetime.now(timezone.utc).date()
+    from backend.app.services import aito_stats
+
+    # compute_aito_stats reads "today" from exactly one clock call
+    # (datetime.now(timezone.utc), module-level). Racing that against a
+    # `today` computed independently in the fixture meant a UTC midnight
+    # landing between the two calls could disagree on the date -- so pin the
+    # same source the endpoint reads instead of reading the real clock twice.
+    frozen_now = datetime(2026, 3, 15, 12, 0, tzinfo=timezone.utc)
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now if tz is not None else frozen_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(aito_stats, "datetime", _FrozenDatetime)
+    today = frozen_now.date()
     a = await _create(async_client)
     b = await _create(async_client)
     c = await _create(async_client)
@@ -737,6 +748,7 @@ async def test_rework_share_is_zero_when_cards_moved_forward_only(async_client, 
     b = await _create(async_client)
     for pid in (a, b):
         await _move_event(db_session, pid, "project.created", "2026-03-01 10:00:00")
+        await _set(db_session, pid, created_at="2026-03-01 10:00:00")
     await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
     await _event(db_session, b, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "waiting"))
 
