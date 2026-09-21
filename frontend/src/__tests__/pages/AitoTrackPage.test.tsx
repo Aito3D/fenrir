@@ -35,7 +35,13 @@ function renderAt(token: string) {
 const FIXTURE: AitoTracking = {
   column: 'print',
   tasks: [{ title: 'Support GoPro', quantity: null }, { title: 'Pièce 2', quantity: 2 }],
-  due_date: '2026-09-20', shipping: null, done_at: null,
+  // Deliberately absurd year: this fixture is the FUTURE-due-date case.
+  // `etaCopy` flips a passed date to "estimation updating" — the case
+  // 'shows the missing-date and passed-date wordings...' covers with its own
+  // 2000-01-01 — so a plausible near date here is a time bomb. This one was
+  // 2026-09-20 and broke CI at midnight on the 21st, on a commit that had
+  // nothing to do with it. A date here must outlive the repo, not the sprint.
+  due_date: '2099-09-20', shipping: null, done_at: null,
   invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
 };
 
@@ -68,7 +74,7 @@ describe('AitoTrackPage', () => {
     expect(screen.getByText('Devis n° EST-000142')).toBeInTheDocument();
     const state = screen.getByTestId('track-state');
     expect(within(state).getByText('Disponibilité estimée')).toBeInTheDocument();
-    expect(within(state).getByText('20 septembre 2026')).toBeInTheDocument();
+    expect(within(state).getByText('20 septembre 2099')).toBeInTheDocument();
     expect(within(state).getByText(/^Mis à jour le 3 septembre à \d{2}:\d{2}$/)).toBeInTheDocument();
     expect(screen.getByText('Support GoPro')).toBeInTheDocument();
     expect(screen.getByText('Pièce 2')).toBeInTheDocument();
@@ -500,7 +506,7 @@ describe('AitoTrackPage language', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'In production' })).toBeInTheDocument();
     expect(screen.getByText('Quote no. EST-000142')).toBeInTheDocument();
     expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Collected');
-    expect(screen.getByText('September 20, 2026')).toBeInTheDocument();
+    expect(screen.getByText('September 20, 2099')).toBeInTheDocument();
     expect(document.title).toBe('Order tracking · Aito 3D');
     // Same nodes, no replay: the entrance classes are still the first ones.
     expect(screen.getByTestId('track-content')).toHaveAttribute('data-entrance', 'true');
