@@ -585,6 +585,8 @@ async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
     a = await _create(async_client)
     b = await _create(async_client)
     c = await _create(async_client)
+    d = await _create(async_client)
+    e = await _create(async_client)
     await _set(
         db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date=(today - timedelta(days=3)).isoformat()
     )
@@ -593,6 +595,14 @@ async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
     )
     await _set(
         db_session, c, quote_invoiced=1, invoice_balance=0, invoice_due_date=(today - timedelta(days=45)).isoformat()
+    )
+    # Due today (days == 0) and due tomorrow (days == -1) both fall outside
+    # every bucket in _OVERDUE_BUCKETS, which starts at ("1-7", 1, 7) -- a
+    # bill that isn't late yet isn't "overdue". They must not appear in any
+    # bucket and must not move oldest_days, even though they carry a balance.
+    await _set(db_session, d, quote_invoiced=1, invoice_balance=500, invoice_due_date=today.isoformat())
+    await _set(
+        db_session, e, quote_invoiced=1, invoice_balance=999, invoice_due_date=(today + timedelta(days=1)).isoformat()
     )
 
     r = await async_client.get(STATS)
@@ -660,20 +670,34 @@ async def test_overdue_names_every_bad_row_in_a_single_warning(async_client, db_
 async def test_stage_time_per_completed_project_newest_first(async_client, db_session):
     a = await _create(async_client, description="Long one")
     b = await _create(async_client, description="Quick")
-    for pid, day in ((a, 1), (b, 5)):
+    c = await _create(async_client, description="Reopened into tracked stage")
+    for pid, day in ((a, 1), (b, 5), (c, 2)):
         await _move_event(db_session, pid, "project.created", f"2026-03-0{day} 10:00:00")
         await _set(db_session, pid, created_at=f"2026-03-0{day} 10:00:00")
     await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
     await _event(db_session, a, "stage.changed", "2026-03-06 10:00:00", changes=_stage("print", "done"))
     await _event(db_session, b, "stage.changed", "2026-03-07 10:00:00", changes=_stage("devis", "done"))
     await _event(db_session, b, "stage.changed", "2026-03-08 10:00:00", changes=_stage("done", "finish"))  # re-open
+    # c reaches done via "finish" (giving it a done_at), is re-opened into that
+    # same TRACKED stage, then moved again -- the only way to close a stay
+    # whose `ended` lands after `done_at`, which is what `_stage_time` must drop.
+    await _event(db_session, c, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "finish"))
+    await _event(db_session, c, "stage.changed", "2026-03-04 10:00:00", changes=_stage("finish", "done"))
+    await _event(db_session, c, "stage.changed", "2026-03-04 20:00:00", changes=_stage("done", "finish"))  # re-open
+    await _event(db_session, c, "stage.changed", "2026-03-06 10:00:00", changes=_stage("finish", "waiting"))
 
     r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
     rows = r.json()["stage_time"]
-    assert [x["project_id"] for x in rows] == [b, a]
+    assert [x["project_id"] for x in rows] == [b, a, c]
     long = next(x for x in rows if x["project_id"] == a)
     assert long["stages"]["devis"] == 2.0 and long["stages"]["print"] == 3.0 and long["stages"]["finish"] == 0.0
     assert long["description"] == "Long one"
+    reopened = next(x for x in rows if x["project_id"] == c)
+    # Only the stay closed by the "finish" -> "done" move (1 day) counts. The
+    # stay opened by the re-open and closed 1.58 days later by "finish" ->
+    # "waiting" ends after `done_at`, so it must not be added on top.
+    assert reopened["stages"]["devis"] == 1.0 and reopened["stages"]["finish"] == 1.0
+    assert reopened["stages"]["waiting"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -689,6 +713,35 @@ async def test_rework_counts_backward_moves_and_share_of_moved_cards(async_clien
 
     r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
     assert r.json()["rework"] == {"moves": 1, "cards": 1, "share": 0.5}
+
+
+@pytest.mark.asyncio
+async def test_rework_share_is_null_when_no_cards_moved_at_all(async_client, db_session):
+    """No `stage.changed` row exists in the period at all, so `moved` stays
+    empty and the share is undefined (`None`) — not the `0` a card that moved
+    without ever going backward would report (see the sibling test below)."""
+    await _create(async_client)
+    await _create(async_client)
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["rework"] == {"moves": 0, "cards": 0, "share": None}
+
+
+@pytest.mark.asyncio
+async def test_rework_share_is_zero_when_cards_moved_forward_only(async_client, db_session):
+    """Cards DID move in the period, but never backwards: `moves` and `cards`
+    are both `0`, same as the null case, but `share` is a real `0.0` because
+    `moved` is non-empty — proving `None` isn't simply what `moves == 0`
+    always produces."""
+    a = await _create(async_client)
+    b = await _create(async_client)
+    for pid in (a, b):
+        await _move_event(db_session, pid, "project.created", "2026-03-01 10:00:00")
+    await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
+    await _event(db_session, b, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "waiting"))
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["rework"] == {"moves": 0, "cards": 0, "share": 0.0}
 
 
 @pytest.mark.asyncio
