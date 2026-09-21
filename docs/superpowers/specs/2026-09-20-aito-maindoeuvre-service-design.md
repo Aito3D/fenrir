@@ -90,10 +90,14 @@ the maps that a service can now legitimately be *missing* from —
 The `NULL` cost means "service absent"; `0` means "quoted free". That rule is
 unchanged and every new reader must test for null, never for falsiness.
 
-The board-column recompute SQL in `database.py` (two occurrences of the
+The two historical backfills in `database.py` that carry their own
 `MAX(CASE WHEN <service>_cost IS NOT NULL AND <service>_done = FALSE …)`
-pattern, plus the service-name tuples beside them) gains the new pair, and the
-`pickup`/`finish` service tuples gain the new name.
+pattern — `_migrate_aito_board_columns` (gated on `scan_done` not having
+existed) and `_heal_invoiced_quote_status` (marker-gated, already run) — are
+deliberately **not** touched. Both are one-shots over rows that predate this
+feature, both can run before the labour columns exist, and no pre-existing
+task can carry a labour step, so their pending-set SQL stays correct as it
+is.
 
 ## Rule engine and its contract
 
@@ -184,10 +188,13 @@ hold the invalid state; only the push is refused.
 - `api/client.ts`: the three wire fields on the task create/update/response
   types.
 - Also enumerating services, each needing the new member: `TaskStepList`
-  (description field map; the quantity map becomes partial), `ServiceBadges`,
+  (description field map; the quantity map loses its "everything but
+  impression" typing, since labour has no count either),
   `ImportQuoteDrawer`'s service list, `aitoSummary`, `useProjectTasks`'s
   ticked-step field list, and `stats/palette.ts` (a fifth colour, distinct
-  from the four in use).
+  from the four in use). `ServiceBadges` needs no change: it renders through
+  `AITO_SERVICE_LABEL_KEYS` and already falls back to the raw id for an
+  unknown service.
 
 `aito_tracking.task_quantity` is left alone: it derives an unambiguous
 per-task count from services that *have* a quantity, and labour has none, so
