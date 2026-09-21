@@ -495,7 +495,22 @@ def test_round_trip_preserves_quantity_and_discount_on_every_service():
 def test_round_trip_preserves_labour():
     """The governing rule, for the fifth service: whatever aito_quote_export
     writes for a PM-CM-D labour line, aito_quote_import must read back
-    unchanged."""
+    unchanged.
+
+    Unlike its neighbour above, this does NOT cover quantity/discount: a
+    Books-side labour line with a quantity != 1 or a percent discount is
+    dropped BY DESIGN. `AitoTaskCreate` has no `maindoeuvre_quantity` or
+    `maindoeuvre_discount_pct` field (see the schema's own comment — "labour
+    is always one unit at one price, with no discount"), so a preview built
+    from such a line would carry those keys in the raw dict this function
+    returns, but they never survive validation into an actual task at the
+    route boundary (`ZohoQuotePreview.tasks: list[AitoTaskCreate]` in
+    zoho.py), and nothing downstream ever reads them. Asserted here against
+    the schema directly, not against this test's own preview dict, because
+    `build_preview` itself has no opinion on the shape — it is Pydantic at
+    the response boundary that drops the extra keys."""
+    from backend.app.schemas.aito import AitoTaskCreate
+
     original = [task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")]
     preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
 
@@ -504,6 +519,8 @@ def test_round_trip_preserves_labour():
     assert rebuilt["title"] == "Pose"
     assert rebuilt["maindoeuvre_cost"] == 4000
     assert rebuilt["maindoeuvre_description"] == "Pose et réglage sur site"
+    assert "maindoeuvre_quantity" not in AitoTaskCreate.model_fields
+    assert "maindoeuvre_discount_pct" not in AitoTaskCreate.model_fields
 
 
 from backend.app.services.aito_quote_export import (  # noqa: E402

@@ -5770,7 +5770,29 @@ async def test_create_refuses_a_labour_line_with_no_description(db_session):
     await _configure_zoho(db_session)
 
     seen: list = []
-    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    # Seeded the same way the positive neighbour below is: without these two
+    # routes the orphan lookup's GET /estimates 404s before the guard is ever
+    # reached, which would make the POST unreachable regardless of the guard
+    # and leave the "nothing pushed" assertion below decorative.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 4000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            },
+            seen,
+        )
+    )
     zoho_service.invalidate_token()
 
     await run_sync_once(db_session)

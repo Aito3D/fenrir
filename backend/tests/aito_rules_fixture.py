@@ -36,7 +36,7 @@ QUOTE_STATUSES: tuple[str | None, ...] = (
 
 
 class _Task:
-    """Duck-types the four cost/done pairs ``summarise`` reads off an AitoTask."""
+    """Duck-types the five cost/done pairs ``summarise`` reads off an AitoTask."""
 
     def __init__(self, **kwargs: Any) -> None:
         for service in SERVICES:
@@ -54,7 +54,7 @@ def _powerset(items: tuple[str, ...]) -> list[list[str]]:
 
 
 def _evaluate_cases() -> list[dict[str, Any]]:
-    """The full cartesian product: 8 statuses x 7 columns x 16 pending sets."""
+    """The full cartesian product: 8 statuses x 7 columns x 32 pending sets (2^5)."""
     cases = []
     for status in QUOTE_STATUSES:
         for column in COLUMN_ORDER:
@@ -233,7 +233,10 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
     for service in SERVICES:
         payload[f"{service}_cost"] = shape.get(f"{service}_cost")
         payload[f"{service}_done"] = shape.get(f"{service}_done", False)
-        payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
+        # Main d'œuvre has no discount column on AitoTask — emitting the key
+        # for it would advertise a wire field that doesn't exist.
+        if service != "maindoeuvre":
+            payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
     payload["title"] = shape.get("title", "")
     payload["impression_time_min"] = shape.get("impression_time_min")
     payload["impression_quantity"] = shape.get("impression_quantity")

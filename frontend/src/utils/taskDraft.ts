@@ -386,7 +386,7 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
   };
 }
 
-/** Sums a task's four cost fields, treating a disabled service (null) as 0.
+/** Sums a task's five cost fields, treating a disabled service (null) as 0.
  *
  *  Delegates to the mirrored rule engine rather than re-adding the fields:
  *  this figure has to agree with `TaskSummary.total` in
@@ -409,7 +409,7 @@ export function projectTotal(tasks: TaskDraft[]): number {
   return summariseTasks(tasks).total;
 }
 
-/** True when at least one of the four services is priced on this task.
+/** True when at least one of the five services is priced on this task.
  *
  *  Tests for `null`, not falsiness: `null` means the service is disabled and
  *  `0` means it is free, and a service quoted at zero is a real line on the

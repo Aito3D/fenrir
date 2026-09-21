@@ -1193,4 +1193,23 @@ describe('repeat-client recall', () => {
     expect(onCreate).not.toHaveBeenCalled();
     expect(screen.getByText('Labour needs a description')).toBeInTheDocument();
   });
+
+  it('creates once the labour step has both a cost and a description', async () => {
+    // The release counterpart to the test above: proves the gate actually
+    // opens once its condition is met, not just that it stays shut — a
+    // flipped condition or a filter that never matches would pass the
+    // negative test forever while permanently pinning Create closed.
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Labour' }));
+    fireEvent.change(screen.getByLabelText('Labour Cost'), { target: { value: '4000' } });
+    fireEvent.change(screen.getByLabelText('Labour Description (required)'), {
+      target: { value: 'Montage et finition' },
+    });
+    await userEvent.click(createButton());
+
+    expect(onCreate).toHaveBeenCalled();
+  });
 });

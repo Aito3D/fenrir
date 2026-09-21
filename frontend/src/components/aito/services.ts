@@ -6,7 +6,7 @@ import { ALL_COLUMNS } from './columns';
 
 export type { ServiceId };
 
-/** The four Aito services, keyed by the ids the backend emits.
+/** The five Aito services, keyed by the ids the backend emits.
  *
  *  Shared by `TaskMiniRows` (the board card's per-task row, which iterates
  *  `SERVICES` directly rather than reading ids off the project response) and

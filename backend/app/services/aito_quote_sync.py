@@ -40,6 +40,7 @@ from backend.app.services.aito_invoice_sweep import sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
+    SERVICES_WITH_QUANTITY,
     Catalogue,
     ExportShipping,
     ExportTask,
@@ -727,13 +728,20 @@ async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int,
         row.id: {
             service: (
                 getattr(row, f"{service}_cost"),
-                # `getattr(..., None)`, not a bare attribute read: maindoeuvre
-                # has no quantity column at all (it is always one unit at the
-                # full cost — see build_line_items), so a missing attribute
-                # must read as the same "no quantity field" None that
-                # `quantity_of` in aito_quote_export.py returns for it, not
-                # raise.
-                max(1, int(getattr(row, f"{service}_quantity", None) or 1)),
+                # Deliberate, not a blanket `getattr(..., None)`: only ask for
+                # a quantity on the services SERVICES_WITH_QUANTITY says have
+                # one. Maindoeuvre reads as the same "no quantity field" None
+                # that `quantity_of` in aito_quote_export.py returns for it —
+                # it is always one unit at the full cost (see
+                # build_line_items). Every other service still does a BARE
+                # attribute read: if `impression_quantity` were ever renamed,
+                # this must raise, not silently read 1 and let
+                # `_write_back_rounded_costs` overwrite a multi-unit cost with
+                # `round(cost)` — real money lost with no exception.
+                max(
+                    1,
+                    int((getattr(row, f"{service}_quantity") if service in SERVICES_WITH_QUANTITY else None) or 1),
+                ),
             )
             for service in SERVICES
             if getattr(row, f"{service}_cost") is not None
@@ -1629,9 +1637,11 @@ async def sync_project(
             # error below as sync_project's own ZohoUpstreamError escalation
             # and nothing else. That holds because EVERY other path that sets
             # 'error' resets this counter to 0 in the same breath — the
-            # no-priced-service guards in _create_quote/_update_quote, and all
-            # four terminal exception handlers below (ZohoRequestRejected,
-            # ZohoAmbiguousReferenceError, ZohoNotFound and the catch-all).
+            # no-priced-service guards in _create_quote/_update_quote, the
+            # missing-maindoeuvre-description guards in the same two
+            # functions, and all four terminal exception handlers below
+            # (ZohoRequestRejected, ZohoAmbiguousReferenceError, ZohoNotFound
+            # and the catch-all).
             # Keep that true if you ever add another: an 'error' that inherits
             # a count it did not earn would have its diagnostic erased here by
             # the next successful read. The ZohoUpstreamError handler for its

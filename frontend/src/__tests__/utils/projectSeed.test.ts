@@ -51,6 +51,9 @@ const task = {
   impression_color: 'noir',
   impression_cost: 3400,
   impression_done: true,
+  maindoeuvre_cost: null,
+  maindoeuvre_description: null,
+  maindoeuvre_done: false,
 } as unknown as AitoTask;
 
 const services: AitoShippingService[] = [

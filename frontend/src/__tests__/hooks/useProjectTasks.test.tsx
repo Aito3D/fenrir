@@ -415,6 +415,40 @@ describe('useProjectTasks', () => {
     await waitFor(() => expect(result.current.tasks[0].done.impression).toBe(false));
   });
 
+  it('resyncs the board when a labour tick lands, same as any other step', async () => {
+    // Regression for `'maindoeuvre_done'` dropping out of the ticked-step
+    // list in onSuccess (useProjectTasks.ts): labour is the Finish stage's
+    // own step, so a tick there is what releases `move_lock` and lets the
+    // card move to Done. A missing entry here would still PATCH the field —
+    // the checkbox would look ticked — but the board behind the panel would
+    // never resync, so the card would silently stay put. Needs its own
+    // QueryClient (not the shared `mounted()` helper) so this test can spy
+    // on `invalidateQueries` directly.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function localWrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={client}>
+          <ToastProvider>{children}</ToastProvider>
+        </QueryClientProvider>
+      );
+    }
+    const { result } = renderHook(() => useProjectTasks(1), { wrapper: localWrapper });
+    await waitFor(() => expect(result.current.tasks).toHaveLength(1));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    act(() => {
+      result.current.onTasksChange([
+        { ...result.current.tasks[0], done: { ...result.current.tasks[0].done, maindoeuvre: true } },
+      ]);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(updateAitoTask).toHaveBeenCalledWith(7, { maindoeuvre_done: true });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+  });
+
   it('restores a failed delete before its correct neighbour, even when another delete overlaps it', async () => {
     // Regression for IMPORTANT 2: `deleteTaskMutation.onError` used to splice
     // the removed row back in at the numeric INDEX captured at click time.

@@ -21,6 +21,14 @@ from backend.app.services.aito_shipping import island_for_label
 # aito_quote_import and SERVICES in aito_board_rules.py.
 SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage", "maindoeuvre")
 
+# The subset of SERVICES that carries its own quantity column. Main d'œuvre is
+# deliberately excluded — a flat labour line is always one unit — and
+# `quantity_of`'s own mapping is keyed off exactly this set. The single source
+# of truth for "does this service even have a quantity?": a caller elsewhere
+# that needs the same answer (aito_quote_sync._snapshot_pushed_costs) reads
+# this rather than hand-rolling a second list that could drift from it.
+SERVICES_WITH_QUANTITY: frozenset[str] = frozenset({"scan", "modelisation", "impression", "usinage"})
+
 # The boilerplate row the scan and modelisation catalogue items carry. Written
 # exactly as the catalogue spells it; the importer strips it case- and
 # accent-insensitively, so it never round-trips into a task description.
