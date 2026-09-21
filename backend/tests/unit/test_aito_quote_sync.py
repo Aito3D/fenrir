@@ -5751,6 +5751,148 @@ async def test_update_with_shipping_but_no_priced_task_does_not_wipe_the_quotes_
 
 
 @pytest.mark.asyncio
+async def test_create_refuses_a_labour_line_with_no_description(db_session):
+    """The push guard's create-path half: a priced Main d'oeuvre line with no
+    ``Info:`` text must block the POST entirely, not send a quote whose only
+    labour line names nothing about the work."""
+    project = AitoProject(
+        description="Pose sur site",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Pose", maindoeuvre_cost=4000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "Main d'oeuvre line has no description"
+    assert not any(method == "POST" for method, _, _ in seen)
+
+
+@pytest.mark.asyncio
+async def test_update_refuses_a_labour_line_with_no_description(db_session):
+    """The destructive half: the same guard on the update path. Without it, a
+    labour line emptied of its description on a live quote would still be
+    PUT to Books, overwriting the real line items with one that names
+    nothing about the work — exactly what the no-priced-service update guard
+    exists to prevent for the no-service case. This is the one that must be
+    pinned, and it must also leave a ``sync.failed`` event for the card's
+    history, same as that guard."""
+    project = AitoProject(
+        description="Pose sur site",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_id="E1",
+        quote_number="DEV26-9001",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Pose", maindoeuvre_cost=4000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [
+                            {"line_item_id": "TASK1", "sku": "PM-CM-D", "item_order": 1},
+                        ],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "Main d'oeuvre line has no description"
+    assert not any(method == "PUT" for method, _, _ in seen)
+
+    events = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalars().all()
+    failed = [e for e in events if e.kind == "sync.failed"]
+    assert failed
+    assert failed[-1].detail["error"] == "Main d'oeuvre line has no description"
+
+
+@pytest.mark.asyncio
+async def test_filling_the_description_lets_a_labour_only_push_through(db_session):
+    """The guard must not over-fire: a labour line with real text pushes
+    normally, same as any other priced service."""
+    project = AitoProject(
+        description="Pose sur site",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(
+        AitoTask(
+            project_id=project.id,
+            position=0,
+            title="Pose",
+            maindoeuvre_cost=4000,
+            maindoeuvre_description="Pose et reglage sur site",
+        )
+    )
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 4000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert any(method == "POST" for method, _, _ in seen)
+
+
+@pytest.mark.asyncio
 async def test_create_with_a_priced_task_and_shipping_still_pushes_normally(db_session):
     """The guard must not over-fire: a project that genuinely has a priced
     service must still create its quote even though shipping is attached."""

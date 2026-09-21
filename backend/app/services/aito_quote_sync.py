@@ -45,6 +45,7 @@ from backend.app.services.aito_quote_export import (
     ExportTask,
     build_line_items,
     enabled_services,
+    missing_maindoeuvre_description,
 )
 from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_shipping import island_label
@@ -560,6 +561,15 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = "Project has no priced service yet"
         project.quote_sync_failures = 0
         return
+    if missing_maindoeuvre_description(tasks):
+        # Labour's description is mandatory (see the helper). Terminal, like
+        # the no-priced-service guard above and for the same reason: leaving
+        # the state alone would re-select this project every tick forever.
+        # The operator's fix is an edit, which re-marks it pending as normal.
+        project.quote_sync_state = "error"
+        project.quote_sync_error = "Main d'oeuvre line has no description"
+        project.quote_sync_failures = 0
+        return
     line_items = build_line_items(tasks, [], catalogue, shipping=load_export_shipping(project, catalogue))
     # Idempotency guard: a prior tick can have POSTed successfully and then
     # died before the commit that would have recorded the returned
@@ -715,7 +725,16 @@ async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int,
     rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
     return {
         row.id: {
-            service: (getattr(row, f"{service}_cost"), max(1, int(getattr(row, f"{service}_quantity") or 1)))
+            service: (
+                getattr(row, f"{service}_cost"),
+                # `getattr(..., None)`, not a bare attribute read: maindoeuvre
+                # has no quantity column at all (it is always one unit at the
+                # full cost — see build_line_items), so a missing attribute
+                # must read as the same "no quantity field" None that
+                # `quantity_of` in aito_quote_export.py returns for it, not
+                # raise.
+                max(1, int(getattr(row, f"{service}_quantity", None) or 1)),
+            )
             for service in SERVICES
             if getattr(row, f"{service}_cost") is not None
         }
@@ -1152,6 +1171,27 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # POST.
         project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
+        project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
+        return
+    if missing_maindoeuvre_description(tasks):
+        # Same reasoning as the create-path guard, but this one guards a live
+        # PUT: writing line_items here would overwrite a real quote's items,
+        # so a labour line with no description must block the write, not
+        # just the initial POST. Terminal for the same reason as the
+        # no-priced-service guard above, and recorded the same way so a
+        # blocked update is as visible on the card's history as an emptied
+        # one.
+        project.quote_sync_state = "error"
+        project.quote_sync_error = "Main d'oeuvre line has no description"
         project.quote_sync_failures = 0
         await record(
             db,

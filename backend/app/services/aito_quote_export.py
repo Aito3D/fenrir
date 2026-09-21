@@ -141,6 +141,22 @@ def enabled_services(task: ExportTask) -> tuple[str, ...]:
     return tuple(service for service in SERVICES if cost_of(task, service) is not None)
 
 
+def missing_maindoeuvre_description(tasks: list[ExportTask]) -> bool:
+    """True when any task carries a priced Main d'œuvre line with no text.
+
+    Labour is the one service whose description is mandatory: its catalogue
+    name says only "Prestation - Main d'oeuvre", so a line without the `Info:`
+    row tells the client nothing about what was actually done. Every other
+    service names its own work.
+
+    Pure, and the mirror of `maindoeuvreDescriptionError` in
+    frontend/src/utils/maindoeuvreValidation.ts. `is not None`, never
+    falsiness: a labour step quoted free is a real line and still has to say
+    what the work was.
+    """
+    return any(task.maindoeuvre_cost is not None and not (task.maindoeuvre_description or "").strip() for task in tasks)
+
+
 def format_weight(grams: float | None) -> str | None:
     """210 -> '210 gr', 1.5 -> '1.5 gr'. Read back by ``parse_weight_g``.
 

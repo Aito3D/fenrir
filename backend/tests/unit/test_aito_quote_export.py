@@ -12,6 +12,7 @@ from backend.app.services.aito_quote_export import (
     enabled_services,
     format_time,
     format_weight,
+    missing_maindoeuvre_description,
 )
 from backend.app.services.aito_quote_import import parse_time_min, parse_weight_g
 
@@ -755,3 +756,16 @@ def test_labour_comes_last_within_a_task():
 
 def test_our_own_labour_line_is_not_foreign():
     assert not is_foreign({"item_id": CATALOGUE.maindoeuvre_item_id, "sku": "PM-CM-D"}, CATALOGUE)
+
+
+def test_missing_maindoeuvre_description_spots_a_blank_labour_line():
+    assert missing_maindoeuvre_description([task(maindoeuvre_cost=4000.0)])
+    assert missing_maindoeuvre_description([task(maindoeuvre_cost=4000.0, maindoeuvre_description="   ")])
+    # 0 is a step quoted free, not an absent one.
+    assert missing_maindoeuvre_description([task(maindoeuvre_cost=0.0)])
+
+
+def test_missing_maindoeuvre_description_is_false_when_described_or_absent():
+    assert not missing_maindoeuvre_description([task(maindoeuvre_cost=4000.0, maindoeuvre_description="Pose")])
+    assert not missing_maindoeuvre_description([task(scan_cost=100.0)])
+    assert not missing_maindoeuvre_description([])
