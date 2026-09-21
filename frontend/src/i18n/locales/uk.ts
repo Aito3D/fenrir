@@ -363,7 +363,7 @@ export default {
     serviceImpression3D: "Друк",
     serviceUsinage: "Механічна обробка",
     serviceMainDoeuvre: "Робота",
-    serviceDescriptionRequired: "Опис (обов'язково)",
+    serviceDescriptionRequired: "Опис (обов’язково)",
     maindoeuvreDescriptionRequired: "Для роботи потрібен опис",
     serviceCost: "Вартість",
     serviceUnitCost: "Вартість за одиницю",
