@@ -113,7 +113,13 @@ export function MoneyScreen({ data }: { data: AitoStats }) {
             { label: t('aito.stats.quoted'), value: money(quoted), note: data.conversion.accepted.count },
             { label: t('aito.stats.invoiced'), value: money(invoiced), note: t('aito.stats.facts.invoices', { count: data.invoicing.invoiced_count }) },
             {
-              label: t('aito.stats.outstanding'),
+              testId: 'aito-stats-money-outstanding',
+              label: (
+                <span className="flex flex-col gap-0.5">
+                  <span>{t('aito.stats.outstanding')}</span>
+                  <AsOfToday />
+                </span>
+              ),
               value: money(outstanding),
               note: outstandingCount > 0 ? t('aito.stats.facts.invoices', { count: outstandingCount }) : undefined,
               tone: outstanding > 0 ? 'alert' : undefined,

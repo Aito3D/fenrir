@@ -125,6 +125,7 @@ export function DecisionsChart
 export function Empty
 export function Facts
 export function Finding
+export function foldWeekly
 export function HBars
 export function Journey
 export function Legend

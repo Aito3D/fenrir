@@ -7,11 +7,7 @@ import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { parseLocalDateKey } from '../../../utils/date';
 import { AXIS, GRID, SERIES, TOOLTIP_ORDER } from './palette';
 import { Empty, Legend, LegendList, Panel } from './primitives';
-import { WEEKLY_ABOVE_DAYS, WEEKLY_ABOVE_DAYS_NARROW, weekKey, weekStart } from './weeklyFold';
-
-/** Re-exported: OverviewScreen's finding names the busiest week or day and
- *  has to agree with what this chart drew. */
-export { WEEKLY_ABOVE_DAYS };
+import { WEEKLY_ABOVE_DAYS, WEEKLY_ABOVE_DAYS_NARROW, foldWeekly } from './weeklyFold';
 
 type ChartRow = AitoStatsDay & { label: string; done7?: number };
 
@@ -24,17 +20,16 @@ export function ActivityChart({ daily }: { daily: AitoStatsDay[] }) {
   const { rows, weekly } = useMemo(() => {
     const fmt = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short' });
     if (daily.length > (narrow ? WEEKLY_ABOVE_DAYS_NARROW : WEEKLY_ABOVE_DAYS)) {
-      const buckets = new Map<string, ChartRow>();
-      for (const d of daily) {
-        const date = parseLocalDateKey(d.day);
-        const start = weekStart(date);
-        const key = weekKey(date);
-        const b = buckets.get(key) ?? { day: key, created: 0, accepted: 0, done: 0, label: fmt.format(start) };
-        b.created += d.created;
-        b.accepted += d.accepted;
-        b.done += d.done;
-        buckets.set(key, b);
-      }
+      const buckets = foldWeekly<ChartRow>(
+        daily,
+        (key, start) => ({ day: key, created: 0, accepted: 0, done: 0, label: fmt.format(start) }),
+        (b, d) => {
+          b.created += d.created;
+          b.accepted += d.accepted;
+          b.done += d.done;
+          return b;
+        },
+      );
       return { rows: [...buckets.values()], weekly: true };
     }
     const rows: ChartRow[] = daily.map((d, i) => {

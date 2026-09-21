@@ -391,6 +391,20 @@ async def test_dates_that_would_overflow_local_day_bounds_are_422_not_500(async_
     ).status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_date_to_alone_out_of_range_is_422(async_client):
+    """`date_to` can be rejected on its own, with no `date_from` at all, or
+    with a valid `date_from` — both must hit the `date_to` bound check itself,
+    not the sibling `date_from` check one branch earlier."""
+    r = await async_client.get(STATS, params={"date_to": "9999-12-31"})
+    assert r.status_code == 422
+    assert "date_to" in r.json()["detail"]
+
+    r = await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "9999-12-31"})
+    assert r.status_code == 422
+    assert "date_to" in r.json()["detail"]
+
+
 def test_stats_route_is_gated_on_aito_read():
     assert _declared_permissions("get_aito_stats") == ["aito:read"]
 

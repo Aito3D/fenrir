@@ -296,6 +296,14 @@ describe('StatsView period screens', () => {
     expect(overdue).toHaveTextContent('As of today · oldest 45 d');
     expect(within(overdue).getAllByRole('listitem')[2]).toHaveTextContent('31+ days');
     expect(screen.getByTestId('aito-stats-money')).toHaveTextContent('Shipping billed');
+
+    // The Totals panel's outstanding row is an all-time snapshot, not a
+    // period figure like the rows beside it -- it carries the same
+    // "As of today" marker the Overdue panel uses, and the value it labels
+    // is unchanged.
+    const outstandingRow = screen.getByTestId('aito-stats-money-outstanding');
+    expect(outstandingRow).toHaveTextContent('As of today');
+    expect(outstandingRow).toHaveTextContent('300');
   });
 
   it('Money: says nothing is outstanding when every invoice is paid', async () => {
