@@ -1212,4 +1212,33 @@ describe('repeat-client recall', () => {
 
     expect(onCreate).toHaveBeenCalled();
   });
+
+  it('does not create from a RESTORED draft whose labour step has no description', async () => {
+    // `maindoeuvreValid` only looks at REVEALED rows, and that set starts
+    // empty on a fresh mount — nothing seeds it from the persisted draft. So
+    // a draft restored from localStorage (close/reopen, a reload, or
+    // DuplicateProjectButton, which writes the same blob) arrives with the
+    // error already on screen and Create live: the exact inverse of the rule
+    // "a rule only names its offender once the user has left the surface".
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({
+        tasks: [{ ...emptyTaskDraft(), maindoeuvreCost: 4000, maindoeuvreDescription: '' }],
+        client: null,
+        summaryText: '',
+        summaryEdited: false,
+        summarySignature: '',
+      }),
+    );
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+
+    // Dimmed from the very first render, not only once clicked: the row was
+    // left in a previous session, so the rule already knows its offender.
+    expect(createButton()).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
+  });
 });

@@ -31,12 +31,16 @@ function servicesOf(task: AitoTaskCreate): string[] {
 
 /** What the quote charges for one preview task.
  *
- *  Every service's cost arrives PRE-discount — `_build_task` in
+ *  Four of the five services' costs arrive PRE-discount — `_build_task` in
  *  services/aito_quote_import.py adopts each line's percent into its own
  *  `<service>_discount_pct` rather than baking it into the cost, so the two
- *  never double-count. `summariseTasks` (utils/aitoBoardRules.ts) already
- *  applies that same discount rule for all four services, so a single-task
- *  summary gives this preview its total without restating it. */
+ *  never double-count — and `summariseTasks` (utils/aitoBoardRules.ts)
+ *  applies that same discount rule to exactly those four, so a single-task
+ *  summary gives this preview its total without restating it.
+ *
+ *  Main d'œuvre is the exception, and needs no handling here: it owns no
+ *  discount column, so the importer bakes any percent into
+ *  `maindoeuvre_cost` and the cost that arrives is already net. */
 function taskTotal(task: AitoTaskCreate): number {
   return summariseTasks([toTaskLike(task)]).total;
 }

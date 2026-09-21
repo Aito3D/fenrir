@@ -68,7 +68,10 @@ export function ProjectDoneAction({
   // would be a button that can only fail. What appears in its place is the
   // step that is actually open: `ContactedControl` in the header row until
   // the client is told, then `CreateInvoiceButton` beside this on the bar
-  // until the quote is invoiced.
+  // until the quote is invoiced. Not every clause has a stand-in, though:
+  // a card still carrying a pending labour step is held by the rules lock,
+  // and nothing takes the pill's place there — the open work is a tick in
+  // the task list, not a control on this bar.
   if (!canMarkDone(project)) {
     return null;
   }

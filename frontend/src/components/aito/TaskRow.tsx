@@ -78,7 +78,7 @@ export interface TaskRowProps {
   locked?: boolean;
 }
 
-/** One task of a project: title/description, the four services (each
+/** One task of a project: title/description, the five services (each
  *  optional — an empty service is a disabled one), the task total, and the
  *  hold-to-remove control. Purely presentational: every edit is reported
  *  upward through `onChange` with a new object, never applied in place, so

@@ -77,8 +77,10 @@ export interface StageWork {
  *  Read, never extended: adding to `aitoBoardRules` would desync the mirror.
  *
  *  Stages carrying no priced step are omitted rather than returned at zero. A
- *  project with no machining should not show an empty Machining row; `devis`,
- *  `waiting`, `finish` and `done` own no services at all and never appear. */
+ *  project with no machining should not show an empty Machining row. `devis`,
+ *  `waiting` and `done` own no services at all and so can never appear;
+ *  `finish` owns exactly one, `maindoeuvre`, and appears only for a project
+ *  that prices labour. */
 export function stagesWithWork(tasks: readonly TaskDraft[]): StageWork[] {
   return STAGES.flatMap(([column, services]) => {
     const entry: StageWork = { column, stepsDone: 0, stepsTotal: 0, value: 0, valueDone: 0 };
@@ -109,11 +111,24 @@ export function stagesWithWork(tasks: readonly TaskDraft[]): StageWork[] {
 /** Service -> the stage dot's Tailwind class, via the rule engine's own
  *  STAGES mapping — shared by the panel's step list and the board card's
  *  task rows so the two can never colour one service two ways. */
-const SERVICE_DOT: Record<string, string> = Object.fromEntries(
-  STAGES.flatMap(([column, services]) =>
-    services.map((service) => [service, ALL_COLUMNS.find((c) => c.id === column)?.dot ?? '']),
+const SERVICE_DOT: Record<string, string> = {
+  ...Object.fromEntries(
+    STAGES.flatMap(([column, services]) =>
+      services.map((service) => [service, ALL_COLUMNS.find((c) => c.id === column)?.dot ?? '']),
+    ),
   ),
-);
+  // The one service that does NOT follow its stage. Main d'œuvre is staged
+  // under Finish, whose dot is `bg-bambu-green` — the colour this UI means
+  // "done" with everywhere else — so an UNTICKED labour step would render in
+  // the done green in the panel's step list and on the card's task rows.
+  // Its own hue instead, the exact violet the statistics palette already
+  // validated for labour (stats/palette.ts SERVICE_COLORS.maindoeuvre), so
+  // the two views name the service the same colour. Written as a literal
+  // because Tailwind scans source text and cannot see a value read out of
+  // that module. Distinct from the Model column's `bg-violet-400` on
+  // purpose: near neighbours, not the same swatch.
+  maindoeuvre: 'bg-[#8f7ae5]',
+};
 export function serviceDotCls(service: string): string {
   return SERVICE_DOT[service] ?? 'bg-bambu-gray';
 }
