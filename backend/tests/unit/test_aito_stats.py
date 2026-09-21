@@ -606,6 +606,27 @@ async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it(async_client, db_session, caplog):
+    # invoice_due_date is an unvalidated string echoed from Books; "10/02/2026"
+    # is a real shape it has sent. date.fromisoformat rejects it, so the row
+    # must still be dropped from every bucket and from oldest_days exactly as
+    # before -- but the drop must now be diagnosable in the logs.
+    a = await _create(async_client)
+    await _set(db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date="10/02/2026")
+
+    with caplog.at_level("WARNING", logger="backend.app.services.aito_stats"):
+        r = await async_client.get(STATS)
+    od = r.json()["overdue"]
+    assert [(x["bucket"], x["count"], x["balance"]) for x in od["buckets"]] == [
+        ("1-7", 0, 0),
+        ("8-30", 0, 0),
+        ("31+", 0, 0),
+    ]
+    assert od["oldest_days"] is None
+    assert any(str(a) in rec.message and "10/02/2026" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_stage_time_per_completed_project_newest_first(async_client, db_session):
     a = await _create(async_client, description="Long one")
     b = await _create(async_client, description="Quick")

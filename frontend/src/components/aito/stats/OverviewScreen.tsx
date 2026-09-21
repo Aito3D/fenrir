@@ -85,7 +85,7 @@ export function OverviewScreen({ data }: { data: AitoStats }) {
                   ? t('aito.stats.leadTime')
                   : `${t('aito.stats.leadTime')} · ${t('aito.stats.median', { days: tp.lead_days_median.toFixed(1) })}`
               }
-              delta={computeDelta(tp.lead_days ?? 0, prev?.lead_days, 'more-is-bad')}
+              delta={tp.lead_days == null ? null : computeDelta(tp.lead_days, prev?.lead_days, 'more-is-bad')}
               deltaTitle={previousTitle(prev?.lead_days == null ? null : days(prev.lead_days))}
             />
             <Tile value={money(data.conversion.accepted.total)} label={t('aito.stats.quoted')} />

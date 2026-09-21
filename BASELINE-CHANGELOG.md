@@ -12827,3 +12827,94 @@ this change does not touch (no new route parameter, model, or response code).
 and only line-number shifts moved, from the two new constant declarations
 added above `_CREATION_MOVE_GRACE`; no function name, signature, or order
 changed.
+
+--------------------------------------------------------------------------------
+## T-005 — 2026-09-20 — user-approved behavior change
+
+The Overview screen's lead-time tile (`frontend/src/components/aito/stats/OverviewScreen.tsx`)
+displayed `days(tp.lead_days)` — "—" whenever no card completed in the period, since
+`tp.lead_days` is `null` in that case — but computed its badge from
+`computeDelta(tp.lead_days ?? 0, prev?.lead_days, 'more-is-bad')`. `computeDelta` (in the
+shared `frontend/src/components/stats/deltas.ts`, out of scope here) only bails out when the
+PREVIOUS value is missing; a null CURRENT value was silently coerced to `0`. With a non-zero
+previous `lead_days` (e.g. 6), that produced `pct = (0 - 6) / 6 * 100 = -100` with
+`semantics: 'more-is-bad'`, so the tile rendered a green "▼ 100%" badge next to the "—" dash —
+inventing the appearance of a halved turnaround in a period where nothing was actually
+delivered.
+
+Checked every other `delta={...}` call site in the same tile row for the identical defect:
+`tp.created`, `tp.accepted`, and `tp.done` are typed `number` (non-nullable) on
+`AitoStatsThroughput`, so their `computeDelta(tp.created, ...)` / `computeDelta(tp.accepted,
+...)` / `computeDelta(tp.done, ...)` calls never coerce a null current value — `tp.lead_days`
+was the only nullable field passed through `computeDelta`, and the only tile with this bug.
+
+Fixed at the call site only (not in `deltas.ts`, which is shared with the Fenrir stats page
+and out of scope for this campaign):
+
+```
+delta={tp.lead_days == null ? null : computeDelta(tp.lead_days, prev?.lead_days, 'more-is-bad')}
+```
+
+**User-visible change**: the lead-time tile no longer renders a delta badge at all when
+`tp.lead_days` is null (no card completed in the period) — previously green "▼ 100%", now no
+badge, matching how every other tile already suppresses its badge when it lacks a genuine
+current value. The exact change approved by the user: "the green '▼ 100%' badge beside the
+lead-time dash disappears in periods with no completed card."
+
+Added an assertion to the existing `AitoStatsView.test.tsx` fixture that already exercised
+this path (`lead_days: null` over `previous.lead_days: 6`, in "shows the empty line instead of
+a blank chart when nothing happened") asserting no `%` text renders inside the lead-time tile;
+the sibling non-null case (a normal badge still rendering) was already covered by the first
+test in that file ("opens on the Overview...", asserting `▼ 21%` on the same tile) and needed
+no new test.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14, unchanged — no probe
+renders this component, so nothing was re-recorded. `SURFACE.md` was regenerated (`bash
+tools/gen_surface_stats.sh > SURFACE.md`) and produced no diff. Frontend coverage in scope
+held exactly at the pre-existing baseline: statements 95.70% (401/419), branches 84.52%
+(415/491).
+
+--------------------------------------------------------------------------------
+## SURFACE.md regeneration — 2026-09-20 — NO behavior change (verifier-fail repair, not a task entry)
+
+Unlike the two `T-002`/`T-005` entries above, this entry records no user-approved
+behavior change at all — it exists only to explain a stale-baseline verifier
+failure and its mechanical fix, so a future reader does not mistake the
+`SURFACE.md` diff below for evidence of a real API or contract change.
+
+Iteration 2's `T-007`, `T-008`, and `T-011` (behaviour-preserving refactors of
+`backend/app/services/aito_stats.py`) each committed without regenerating
+`SURFACE.md`, so the committed copy stopped replaying from its own `regen:`
+command:
+
+  * `T-011` deleted the private helper `_done_moments` (folded into the
+    `_scan_stages` scan during a merge of duplicate per-row scans).
+  * `T-008` narrowed `_active_projects(db)`'s return type from
+    `dict[int, AitoProject]` to `dict[int, Row]` (and correspondingly
+    `_board`, `_quote_age`, and `_overdue`, which all take that dict as a
+    parameter) — a column-projection narrowing, not a behavior change.
+
+Both are private-only: `_done_moments` and `_active_projects` are never
+imported outside `aito_stats.py`, and `AitoProject` vs. `Row` is an internal
+type annotation with no effect on any HTTP route, public function signature,
+response model, or response field.
+
+Fixed by regenerating `SURFACE.md` (`bash tools/gen_surface_stats.sh >
+SURFACE.md`) with no other edits. `git diff SURFACE.md` touches exactly one
+section — "aito_stats.py — private helpers (order and names; the module
+map)" — and within it only: the removal of the `_done_moments` line, the
+`AitoProject` -> `Row` type-parameter changes on `_active_projects`, `_board`,
+`_quote_age`, and `_overdue`, and the line-number shifts those two edits
+caused on every helper listed after them. Every other section — HTTP routes,
+public functions, response models, `AitoStatsResponse` fields, frontend
+exports, timeframe exports, API-client types, translation keys, and tuning
+constants — is byte-identical to before.
+
+**User-visible change: none.** No route, schema, or frontend contract moved;
+only the private-helper module map catalogued in `SURFACE.md` was brought
+back in sync with the code it describes.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14.
+`bash tools/gen_surface_stats.sh > /tmp/s.md && diff /tmp/s.md SURFACE.md` is
+empty, confirming `SURFACE.md` now replays from its own `regen:` command
+again.

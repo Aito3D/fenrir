@@ -182,6 +182,14 @@ describe('StatsView', () => {
     const activity = await screen.findByTestId('aito-stats-activity');
     expect(within(activity).getByText('Nothing happened in this period')).toBeInTheDocument();
     expect(screen.getByTestId('aito-stats-finding')).toHaveTextContent('0 projects came in');
+
+    // No card completed this period (lead_days: null), even though the previous
+    // period's lead_days (6) would otherwise diff against it: no badge, no
+    // fabricated "-100%" improvement.
+    const band = await screen.findByTestId('aito-stats-band');
+    const leadTile = within(band).getByText(/^Quote to delivery/).closest('div.rounded-lg')!;
+    expect(leadTile).toHaveTextContent('—');
+    expect(within(leadTile).queryByText(/%/)).toBeNull();
   });
 
   it('degrades to the empty line on a backend that predates the throughput block', async () => {

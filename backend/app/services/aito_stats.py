@@ -7,12 +7,14 @@ docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md
 """
 
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from statistics import fmean, median
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
@@ -42,6 +44,8 @@ from backend.app.schemas.aito import (
 )
 from backend.app.services.aito_board_rules import COLUMN_ORDER, SERVICES, net_cost
 from backend.app.utils.dates import local_day_bounds
+
+logger = logging.getLogger(__name__)
 
 _SENT_KINDS = ("quote.sent", "quote.emailed")
 _STAGE_COLUMNS = tuple(column for column in COLUMN_ORDER if column != "done")
@@ -73,12 +77,38 @@ def _in_range(at: datetime, start: datetime | None, end: datetime | None) -> boo
     return (start is None or at >= start) and (end is None or at <= end)
 
 
-async def _active_projects(db: AsyncSession) -> dict[int, AitoProject]:
-    rows = (await db.execute(select(AitoProject).where(AitoProject.status == "active"))).scalars().all()
-    return {p.id: p for p in rows}
+# Every column this module actually reads off a project, in one place so the
+# narrowed `_active_projects` select and this list can't drift apart. Every
+# consumer below reads a `p.<attr>` (or `project.<attr>`/`projects[pid].<attr>`)
+# purely as a value — nothing mutates a project, adds it back to a session, or
+# relies on it being a real ORM instance — so a `Row` carrying just these
+# columns is a drop-in replacement for the full `AitoProject`.
+_PROJECT_COLUMNS = (
+    AitoProject.id,
+    AitoProject.board_column,
+    AitoProject.client_id,
+    AitoProject.client_name,
+    AitoProject.created_at,
+    AitoProject.description,
+    AitoProject.invoice_balance,
+    AitoProject.invoice_due_date,
+    AitoProject.quote_accepted_at,
+    AitoProject.quote_invoiced,
+    AitoProject.quote_sent_at,
+    AitoProject.quote_status,
+    AitoProject.quote_total,
+    AitoProject.shipping_island,
+    AitoProject.shipping_price,
+    AitoProject.tracking_token,
+)
 
 
-def _board(projects: dict[int, AitoProject]) -> list[AitoStatsStage]:
+async def _active_projects(db: AsyncSession) -> dict[int, Row]:
+    rows = (await db.execute(select(*_PROJECT_COLUMNS).where(AitoProject.status == "active"))).all()
+    return {row.id: row for row in rows}
+
+
+def _board(projects: dict[int, Row]) -> list[AitoStatsStage]:
     count: dict[str, int] = defaultdict(int)
     total: dict[str, float] = defaultdict(float)
     for p in projects.values():
@@ -144,7 +174,7 @@ async def _first_moments(
 
 
 def _bucket(
-    firsts: dict[int, datetime], projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
+    firsts: dict[int, datetime], projects: dict[int, Row], start: datetime | None, end: datetime | None
 ) -> AitoStatsBucket:
     hits = [pid for pid, at in firsts.items() if _in_range(at, start, end)]
     return AitoStatsBucket(count=len(hits), total=sum(projects[pid].quote_total or 0.0 for pid in hits))
@@ -160,15 +190,20 @@ class _Stay:
 @dataclass
 class _StageScan:
     """One ordered pass over every `stage.changed` row: the closed stays per
-    project and the moments a card moved BACKWARDS on the board. Three blocks
-    read it (days per stage, stage time per card, rework) so the scan runs once."""
+    project, the moments a card moved BACKWARDS on the board, and the first
+    REAL move into Done per project (creation-time placement excluded, same
+    as the other two; a card re-opened and closed again keeps its first
+    completion — a re-open is not a second delivery). Four blocks read it
+    (days per stage, stage time per card, rework, throughput/daily), so the
+    scan runs once."""
 
     stays: dict[int, list[_Stay]] = field(default_factory=lambda: defaultdict(list))
     backward: dict[int, list[datetime]] = field(default_factory=lambda: defaultdict(list))
+    done: dict[int, datetime] = field(default_factory=dict)
 
 
 async def _scan_stages(
-    db: AsyncSession, projects: dict[int, AitoProject], born: dict[int, datetime], end: datetime | None
+    db: AsyncSession, projects: dict[int, Row], born: dict[int, datetime], end: datetime | None
 ) -> _StageScan:
     scan = _StageScan()
     ids = list(projects)
@@ -202,6 +237,8 @@ async def _scan_stages(
             scan.stays[pid].append(_Stay(column=left, began=began, ended=at))
         if left in COLUMN_ORDER and to in COLUMN_ORDER and COLUMN_ORDER.index(to) < COLUMN_ORDER.index(left):
             scan.backward[pid].append(at)
+        if to == "done" and pid not in scan.done:
+            scan.done[pid] = at
     return scan
 
 
@@ -224,7 +261,7 @@ _STAGE_TIME_CAP = 30
 
 def _stage_time(
     scan: _StageScan,
-    projects: dict[int, AitoProject],
+    projects: dict[int, Row],
     done: dict[int, datetime],
     start: datetime | None,
     end: datetime | None,
@@ -286,7 +323,7 @@ def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) ->
     return None
 
 
-def _quote_age(projects: dict[int, AitoProject], now: datetime) -> list[AitoStatsQuoteAge]:
+def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
     """Snapshot: sent, undecided quotes by whole days since sending."""
     rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _AGE_BUCKETS}
     for p in projects.values():
@@ -301,7 +338,7 @@ def _quote_age(projects: dict[int, AitoProject], now: datetime) -> list[AitoStat
 
 
 def _size_bands(
-    projects: dict[int, AitoProject],
+    projects: dict[int, Row],
     accepted: dict[int, datetime],
     declined: dict[int, datetime],
     start: datetime | None,
@@ -343,7 +380,7 @@ def _size_bands(
     return bands
 
 
-def _overdue(projects: dict[int, AitoProject], today: date) -> AitoStatsOverdue:
+def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
     rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _OVERDUE_BUCKETS}
     oldest: int | None = None
     for p in projects.values():
@@ -352,6 +389,7 @@ def _overdue(projects: dict[int, AitoProject], today: date) -> AitoStatsOverdue:
         try:
             due = date.fromisoformat(p.invoice_due_date)
         except ValueError:
+            logger.warning("Project %s has an unparsable invoice_due_date %r", p.id, p.invoice_due_date)
             continue
         days = (today - due).days
         name = _bucket_name(days, _OVERDUE_BUCKETS)
@@ -386,7 +424,7 @@ async def _services(
 
 
 def _clients(
-    projects: dict[int, AitoProject], born: dict[int, datetime], start: datetime | None, end: datetime | None
+    projects: dict[int, Row], born: dict[int, datetime], start: datetime | None, end: datetime | None
 ) -> AitoStatsClients:
     """A card is a returning client's when the same client_id has an active
     card created earlier. No client_id (a walk-in) always reads as new."""
@@ -426,7 +464,7 @@ def _arrivals(
 
 
 def _islands(
-    projects: dict[int, AitoProject], born: dict[int, datetime], start: datetime | None, end: datetime | None
+    projects: dict[int, Row], born: dict[int, datetime], start: datetime | None, end: datetime | None
 ) -> list[AitoStatsIsland]:
     agg: dict[str | None, list[float]] = {}
     for pid, at in born.items():
@@ -442,7 +480,7 @@ def _islands(
 
 
 async def _tracking(
-    db: AsyncSession, projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
+    db: AsyncSession, projects: dict[int, Row], start: datetime | None, end: datetime | None
 ) -> AitoStatsTracking:
     cards_with_link = sum(1 for p in projects.values() if p.tracking_token)
     if not projects:
@@ -470,39 +508,8 @@ def _local_day(at: datetime, tz_offset_minutes: int) -> date:
     return (at + timedelta(minutes=tz_offset_minutes)).date()
 
 
-async def _done_moments(
-    db: AsyncSession, project_ids: list[int], born: dict[int, datetime], end: datetime | None
-) -> dict[int, datetime]:
-    """project_id -> first REAL move into Done.
-
-    The creation-time placement of an imported, already-invoiced quote is
-    skipped (same grace as ``_stage_days``), and a card re-opened and closed
-    again keeps its first completion: a re-open is not a second delivery.
-    """
-    if not project_ids:
-        return {}
-    stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(
-        AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(project_ids)
-    )
-    if end is not None:
-        stmt = stmt.where(AitoEvent.occurred_at <= end)
-    stmt = stmt.order_by(AitoEvent.occurred_at, AitoEvent.id)
-    firsts: dict[int, datetime] = {}
-    for pid, at, changes in (await db.execute(stmt)).all():
-        if pid in firsts:
-            continue
-        if isinstance(changes, str):
-            changes = json.loads(changes)
-        if not changes or changes[0].get("to") != "done":
-            continue
-        if _is_creation_time(at, born.get(pid)):
-            continue
-        firsts[pid] = at
-    return firsts
-
-
 def _throughput(
-    projects: dict[int, AitoProject],
+    projects: dict[int, Row],
     born: dict[int, datetime],
     accepted: dict[int, datetime],
     done: dict[int, datetime],
@@ -593,8 +600,8 @@ async def compute_aito_stats(
             continue
         known = accepted.get(pid)
         accepted[pid] = stamped if known is None or stamped < known else known
-    done = await _done_moments(db, ids, born, end)
     scan = await _scan_stages(db, projects, born, end)
+    done = scan.done
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # The statistics view's calendar. A bounded request is its own calendar;
