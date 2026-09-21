@@ -491,9 +491,11 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
         modelisation_description: null,
         impression_description: null,
         usinage_description: null,
+        maindoeuvre_description: null,
         scan_cost: 0,
         modelisation_cost: null,
         usinage_cost: null,
+        maindoeuvre_cost: null,
         impression_printer_id: null,
         impression_filament_id: null,
         impression_weight_g: null,
@@ -512,6 +514,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
         modelisation_done: false,
         impression_done: false,
         usinage_done: false,
+        maindoeuvre_done: false,
       },
     ]);
   });

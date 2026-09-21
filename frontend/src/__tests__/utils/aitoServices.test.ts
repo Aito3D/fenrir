@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { stagesWithWork, taskSteps } from '../../components/aito/services';
+import { serviceDotCls, stagesWithWork, taskSteps } from '../../components/aito/services';
+import { SERVICE_COLORS } from '../../components/aito/stats/palette';
+import { ALL_COLUMNS } from '../../components/aito/columns';
 import { summariseTasks } from '../../utils/aitoBoardRules';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -14,7 +16,8 @@ function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
     modelisationCost: null,
     impressionCost: null,
     usinageCost: null,
-    done: { scan: false, modelisation: false, impression: false, usinage: false },
+    maindoeuvreCost: null,
+    done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
     ...overrides,
   } as TaskDraft;
 }
@@ -50,7 +53,11 @@ describe('stagesWithWork', () => {
 
   it('folds impression and usinage into the single print column', () => {
     const result = stagesWithWork([
-      task({ impressionCost: 6000, usinageCost: 4000, done: { scan: false, modelisation: false, impression: true, usinage: false } }),
+      task({
+        impressionCost: 6000,
+        usinageCost: 4000,
+        done: { scan: false, modelisation: false, impression: true, usinage: false, maindoeuvre: false },
+      }),
     ]);
     expect(result).toEqual([
       { column: 'print', stepsDone: 1, stepsTotal: 2, value: 10000, valueDone: 6000 },
@@ -59,7 +66,11 @@ describe('stagesWithWork', () => {
 
   it('sums the same stage across several tasks', () => {
     const result = stagesWithWork([
-      task({ uid: 'a', scanCost: 3500, done: { scan: true, modelisation: false, impression: false, usinage: false } }),
+      task({
+        uid: 'a',
+        scanCost: 3500,
+        done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
+      }),
       task({ uid: 'b', scanCost: 1500 }),
     ]);
     expect(result).toEqual([
@@ -90,7 +101,7 @@ describe('stagesWithWork', () => {
       task({
         impressionCost: 10000,
         impressionDiscountPct: 25,
-        done: { scan: false, modelisation: false, impression: true, usinage: false },
+        done: { scan: false, modelisation: false, impression: true, usinage: false, maindoeuvre: false },
       }),
     ]);
     expect(result).toEqual([
@@ -120,5 +131,28 @@ describe('stagesWithWork', () => {
     const t = task({ usinageCost: 1000, usinageDiscountPct: 10 });
     const print = stagesWithWork([t]).find((s) => s.column === 'print');
     expect(print?.value).toBe(900);
+  });
+});
+
+describe('serviceDotCls', () => {
+  it('does not paint an unticked labour step in the done green', () => {
+    // maindoeuvre is staged under Finish, whose dot is the green this UI
+    // means "finished" with. Inheriting it would show every unticked labour
+    // step as complete.
+    const finishDot = ALL_COLUMNS.find((c) => c.id === 'finish')?.dot;
+    expect(finishDot).toBe('bg-bambu-green');
+    expect(serviceDotCls('maindoeuvre')).not.toBe(finishDot);
+  });
+
+  it('uses the statistics palette hue for labour, so the two views agree', () => {
+    expect(serviceDotCls('maindoeuvre')).toBe(`bg-[${SERVICE_COLORS.maindoeuvre}]`);
+  });
+
+  it('still derives the other four services from their stage column', () => {
+    const dotFor = (column: string) => ALL_COLUMNS.find((c) => c.id === column)?.dot;
+    expect(serviceDotCls('scan')).toBe(dotFor('scan'));
+    expect(serviceDotCls('modelisation')).toBe(dotFor('model'));
+    expect(serviceDotCls('impression')).toBe(dotFor('print'));
+    expect(serviceDotCls('usinage')).toBe(dotFor('print'));
   });
 });

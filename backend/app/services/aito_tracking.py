@@ -265,7 +265,10 @@ async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingP
 
 
 # (cost column, quantity column) per service — the quantity of a service
-# only counts when that service is priced (a non-null cost).
+# only counts when that service is priced (a non-null cost). Main d'œuvre is
+# absent deliberately, and not because it was forgotten: a labour line is
+# always one unit and owns no quantity column at all, so it contributes no
+# count. That omission is spec-directed; do not "complete" this tuple.
 _SERVICE_COUNTS = (
     ("scan_cost", "scan_quantity"),
     ("modelisation_cost", "modelisation_quantity"),
@@ -275,8 +278,14 @@ _SERVICE_COUNTS = (
 
 
 def task_quantity(task: AitoTask) -> int | None:
-    """One number only when it is unambiguous: every priced service on the
-    task has the same count and it is > 1. Otherwise None — never a guess."""
+    """One number only when it is unambiguous: every COUNTED service on the
+    task has the same count and it is > 1. Otherwise None — never a guess.
+
+    "Counted", not "priced": main d'œuvre is a priced service that carries no
+    quantity, so it is not in ``_SERVICE_COUNTS`` and a labour-only task has
+    no count at all (the empty set is not a single count, so this returns
+    None). Intended — a labour charge does not describe a number of parts.
+    """
     counts = {(getattr(task, qty) or 1) for cost, qty in _SERVICE_COUNTS if getattr(task, cost) is not None}
     if len(counts) != 1:
         return None

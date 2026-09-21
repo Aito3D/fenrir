@@ -55,7 +55,7 @@ describe('TaskStepList', () => {
   it('un-ticks in one click — undo must be cheap', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
+    const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false } });
     render(<TaskStepList task={ticked} onChange={onChange} canTick />);
 
     expect(screen.getByRole('button', { name: /Scan/i })).toHaveAttribute('aria-pressed', 'true');
@@ -75,7 +75,7 @@ describe('TaskStepList', () => {
   });
 
   it('still shows a ticked step as history when the quote is not accepted', () => {
-    const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
+    const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false, maindoeuvre: false } });
     render(<TaskStepList task={ticked} onChange={vi.fn()} canTick={false} />);
     expect(screen.getByText('Scan')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();

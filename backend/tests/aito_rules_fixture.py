@@ -36,7 +36,7 @@ QUOTE_STATUSES: tuple[str | None, ...] = (
 
 
 class _Task:
-    """Duck-types the four cost/done pairs ``summarise`` reads off an AitoTask."""
+    """Duck-types the five cost/done pairs ``summarise`` reads off an AitoTask."""
 
     def __init__(self, **kwargs: Any) -> None:
         for service in SERVICES:
@@ -54,7 +54,7 @@ def _powerset(items: tuple[str, ...]) -> list[list[str]]:
 
 
 def _evaluate_cases() -> list[dict[str, Any]]:
-    """The full cartesian product: 8 statuses x 7 columns x 16 pending sets."""
+    """The full cartesian product: 8 statuses x 7 columns x 32 pending sets (2^5)."""
     cases = []
     for status in QUOTE_STATUSES:
         for column in COLUMN_ORDER:
@@ -147,6 +147,13 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         ],
     ),
     (
+        # Labour has no discount and no quantity column at all. Pinning it
+        # here is what proves both mirrors read a missing discount attribute
+        # as "no discount" rather than crashing or reading undefined.
+        "labour is priced flat, with no discount to apply",
+        [{"scan_cost": 500.0, "maindoeuvre_cost": 4000.0, "maindoeuvre_done": True}],
+    ),
+    (
         # The design doc's headline example, pinned exactly: three tasks
         # carrying ten steps between them with three ticked is the 30% the
         # card's progress bar must show. The free scan on the second task is
@@ -203,7 +210,15 @@ def _generated_shapes(count: int = 300) -> list[tuple[str, list[dict[str, Any]]]
                 # the mirror most often gets wrong, so both are common draws.
                 shape[f"{service}_cost"] = rng.choice([None, None, 0, 0.0, 1250.0, 99.99])
                 shape[f"{service}_done"] = rng.choice([True, False])
-                shape[f"{service}_discount_pct"] = rng.choice([None, 0, 10, 50, 100])
+                # Main d'œuvre carries no discount field at all on a real
+                # AitoTask — pinning it to None here (rather than drawing
+                # like every other service) is what keeps the corpus from
+                # baking in a discount the real model can never produce, one
+                # the TypeScript mirror would then have no way to reproduce
+                # (DISCOUNT_KEYS has no `maindoeuvre` entry, by design).
+                shape[f"{service}_discount_pct"] = (
+                    None if service == "maindoeuvre" else rng.choice([None, 0, 10, 50, 100])
+                )
             shape["impression_time_min"] = rng.choice([None, 0, 45, 180])
             shape["impression_quantity"] = rng.choice([None, 1, 2, 5])
             tasks.append(shape)
@@ -218,7 +233,10 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
     for service in SERVICES:
         payload[f"{service}_cost"] = shape.get(f"{service}_cost")
         payload[f"{service}_done"] = shape.get(f"{service}_done", False)
-        payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
+        # Main d'œuvre has no discount column on AitoTask — emitting the key
+        # for it would advertise a wire field that doesn't exist.
+        if service != "maindoeuvre":
+            payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
     payload["title"] = shape.get("title", "")
     payload["impression_time_min"] = shape.get("impression_time_min")
     payload["impression_quantity"] = shape.get("impression_quantity")

@@ -5521,6 +5521,18 @@ async def run_migrations(conn):
         await _safe_execute(conn, f"ALTER TABLE aito_tasks ADD COLUMN {_service}_quantity INTEGER")
         await _safe_execute(conn, f"ALTER TABLE aito_tasks ADD COLUMN {_service}_discount_pct FLOAT")
 
+    # Migration: the Main d'œuvre service (2026-09-20). Three additive
+    # columns, no quantity and no discount — a labour line is one unit at one
+    # price. No backfill: no existing task can carry a labour step, so NULL
+    # cost (service absent) is already the right value everywhere.
+    _maindoeuvre_done_default = "0" if is_sqlite() else "false"
+    await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN maindoeuvre_cost FLOAT")
+    await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN maindoeuvre_description TEXT")
+    await _safe_execute(
+        conn,
+        f"ALTER TABLE aito_tasks ADD COLUMN maindoeuvre_done BOOLEAN NOT NULL DEFAULT {_maindoeuvre_done_default}",
+    )
+
     # Migration: per-service descriptions on Aito tasks (2026-08-03). The
     # task's single description moves onto its first enabled service — gated
     # on the new columns not having existed, and on the legacy column still

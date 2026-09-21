@@ -360,3 +360,42 @@ describe('TaskStepFields — a block switched on unfolds', () => {
     expect(screen.getByTestId('step-note-unfold')).not.toHaveClass('starting:grid-rows-[0fr]');
   });
 });
+
+describe('TaskStepFields — Main d\'œuvre', () => {
+  it('adds a labour block with a cost and no quantity or discount', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<TaskStepFields task={emptyTaskDraft()} onChange={onChange} />);
+
+    await user.click(screen.getByRole('button', { name: /Add Labour/i }));
+    expect(screen.getByLabelText(/Labour Cost/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Labour Quantity/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Labour Discount/i)).not.toBeInTheDocument();
+  });
+
+  it('warns while a priced labour step has no description', () => {
+    render(
+      <TaskStepFields task={{ ...emptyTaskDraft(), maindoeuvreCost: 4000 }} onChange={vi.fn()} />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Labour needs a description');
+  });
+
+  it('drops the warning once the description is filled', () => {
+    render(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), maindoeuvreCost: 4000, maindoeuvreDescription: 'Pose et réglage' }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('reports a cleared labour cost as null, never 0', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), maindoeuvreCost: 4000 }} onChange={onChange} />);
+
+    await user.click(screen.getByRole('button', { name: /Remove Labour/i }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ maindoeuvreCost: null }));
+  });
+});

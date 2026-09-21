@@ -658,6 +658,7 @@ class ZohoService:
             impression_item_id=await value("zoho_item_impression_id", "66407000006485012"),
             usinage_item_id=await value("zoho_item_usinage_id", "66407000006884825"),
             tax_id=await value("zoho_service_tax_id", "66407000009281008"),
+            maindoeuvre_item_id=await value("zoho_item_maindoeuvre_id", "66407000001604625"),
             shipping={service: item.item_id for service, item in shipping.items()},
         )
 

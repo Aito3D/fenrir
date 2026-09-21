@@ -13,6 +13,7 @@ the whole point: neither language can change the rules alone.
 import json
 from pathlib import Path
 
+from backend.app.services.aito_board_rules import SERVICES
 from backend.tests.aito_rules_fixture import build_fixture
 
 FIXTURE = (
@@ -33,4 +34,4 @@ def test_evaluate_cases_cover_the_full_product():
     """A generator that silently stopped enumerating would let the mirror pass
     on a subset. Pin the size too."""
     committed = json.loads(FIXTURE.read_text())
-    assert len(committed["evaluate"]) == 8 * 7 * 16
+    assert len(committed["evaluate"]) == 8 * 7 * 2 ** len(SERVICES)

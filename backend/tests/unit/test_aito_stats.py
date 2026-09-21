@@ -591,10 +591,11 @@ async def test_services_revenue_from_net_cost_over_cards_accepted_in_range(async
 
     r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
     rows = {x["service"]: x for x in r.json()["services"]}
-    assert list(rows) == ["scan", "modelisation", "impression", "usinage"]
+    assert list(rows) == ["scan", "modelisation", "impression", "usinage", "maindoeuvre"]
     assert (rows["scan"]["tasks"], rows["scan"]["revenue"]) == (1, 900)
     assert (rows["impression"]["tasks"], rows["impression"]["revenue"]) == (2, 800)
     assert (rows["usinage"]["tasks"], rows["usinage"]["revenue"]) == (0, 0)
+    assert (rows["maindoeuvre"]["tasks"], rows["maindoeuvre"]["revenue"]) == (0, 0)
 
 
 @pytest.mark.asyncio

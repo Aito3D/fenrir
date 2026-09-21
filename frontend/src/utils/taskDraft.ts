@@ -34,10 +34,17 @@ export interface TaskDraft {
   modelisationDescription: string;
   impressionDescription: string;
   usinageDescription: string;
+  /** Main d'œuvre's own free text — the quote line's Info: row, same as the
+   *  other four. */
+  maindoeuvreDescription: string;
   /** null = the service is disabled. 0 stays meaningful as "free". */
   scanCost: number | null;
   modelisationCost: number | null;
   usinageCost: number | null;
+  /** Main d'œuvre: a flat labour cost, no quantity and no discount — one unit
+   *  at one price. null = disabled, 0 = free, same convention as every other
+   *  cost field. */
+  maindoeuvreCost: number | null;
   impression: ImpressionDraft;
   /** Frozen total for a saved task; recomputed while the task is being edited.
    *  Stored PRE-discount: `netCost` (utils/aitoBoardRules.ts) is the one place
@@ -61,7 +68,7 @@ export interface TaskDraft {
   /** One flag per service, keyed by the same ids the backend and
    *  AITO_SERVICE_LABEL_KEYS use. A flag is only meaningful when its cost is
    *  not null — the backend clears it otherwise, and refuses to set it. */
-  done: Record<'scan' | 'modelisation' | 'impression' | 'usinage', boolean>;
+  done: Record<'scan' | 'modelisation' | 'impression' | 'usinage' | 'maindoeuvre', boolean>;
 }
 
 /** Generates the client-side uid a fresh draft is stamped with. Mirrors the
@@ -83,9 +90,11 @@ export function emptyTaskDraft(): TaskDraft {
     modelisationDescription: '',
     impressionDescription: '',
     usinageDescription: '',
+    maindoeuvreDescription: '',
     scanCost: null,
     modelisationCost: null,
     usinageCost: null,
+    maindoeuvreCost: null,
     impression: { printerId: null, filamentId: null, weightG: null, timeMin: null, quantity: 1, color: '' },
     impressionCost: null,
     impressionDiscountPct: null,
@@ -95,7 +104,7 @@ export function emptyTaskDraft(): TaskDraft {
     scanDiscountPct: null,
     modelisationDiscountPct: null,
     usinageDiscountPct: null,
-    done: { scan: false, modelisation: false, impression: false, usinage: false },
+    done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
   };
 }
 
@@ -105,11 +114,12 @@ export function emptyTaskDraft(): TaskDraft {
  *  The new-project drawer round-trips its drafts through localStorage under a
  *  key (`aito.newProjectDraft.v1`) that is not bumped when `TaskDraft` gains a
  *  field — and it has gained several: the four per-service descriptions, `uid`,
- *  `impressionDiscountPct`, and the six per-service quantity/discount fields
+ *  `impressionDiscountPct`, the six per-service quantity/discount fields
  *  (`scanQuantity`, `modelisationQuantity`, `usinageQuantity`,
- *  `scanDiscountPct`, `modelisationDiscountPct`, `usinageDiscountPct`). A
- *  blob written before any of those restores a task
- *  missing them, and the fields are read UNGUARDED all over the drawer
+ *  `scanDiscountPct`, `modelisationDiscountPct`, `usinageDiscountPct`), and
+ *  the Main d'œuvre pair (`maindoeuvreDescription`, `maindoeuvreCost` — no
+ *  quantity or discount field exists for it). A blob written before any of
+ *  those restores a task missing them, and the fields are read UNGUARDED all over the drawer
  *  (`TaskStepList` does `task[DESCRIPTION_FIELD[service]].trim()` on every
  *  render, `tasksSignature` the same) — so the drawer threw
  *  "Cannot read properties of undefined (reading 'trim')" up to the router
@@ -151,9 +161,11 @@ export function normaliseTaskDraft(raw: unknown): TaskDraft {
     modelisationDescription: str(task.modelisationDescription),
     impressionDescription: str(task.impressionDescription),
     usinageDescription: str(task.usinageDescription),
+    maindoeuvreDescription: str(task.maindoeuvreDescription),
     scanCost: num(task.scanCost),
     modelisationCost: num(task.modelisationCost),
     usinageCost: num(task.usinageCost),
+    maindoeuvreCost: num(task.maindoeuvreCost),
     impression: {
       printerId: num(impression.printerId),
       filamentId: num(impression.filamentId),
@@ -184,6 +196,7 @@ export function normaliseTaskDraft(raw: unknown): TaskDraft {
       modelisation: bool(done.modelisation),
       impression: bool(done.impression),
       usinage: bool(done.usinage),
+      maindoeuvre: bool(done.maindoeuvre),
     },
   };
 }
@@ -266,9 +279,11 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
     modelisationDescription: task.modelisation_description ?? '',
     impressionDescription: task.impression_description ?? '',
     usinageDescription: task.usinage_description ?? '',
+    maindoeuvreDescription: task.maindoeuvre_description ?? '',
     scanCost: task.scan_cost,
     modelisationCost: task.modelisation_cost,
     usinageCost: task.usinage_cost,
+    maindoeuvreCost: task.maindoeuvre_cost,
     impression: {
       printerId: task.impression_printer_id,
       filamentId: task.impression_filament_id,
@@ -290,6 +305,7 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
       modelisation: task.modelisation_done,
       impression: task.impression_done,
       usinage: task.usinage_done,
+      maindoeuvre: task.maindoeuvre_done,
     },
   };
 }
@@ -305,7 +321,7 @@ export function freshenTaskDraft(draft: TaskDraft): TaskDraft {
     id: null,
     uid: makeDraftUid(),
     impression: { ...draft.impression },
-    done: { scan: false, modelisation: false, impression: false, usinage: false },
+    done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
   };
 }
 
@@ -343,9 +359,11 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
     modelisation_description: t.modelisationDescription.trim() || null,
     impression_description: t.impressionDescription.trim() || null,
     usinage_description: t.usinageDescription.trim() || null,
+    maindoeuvre_description: t.maindoeuvreDescription.trim() || null,
     scan_cost: t.scanCost,
     modelisation_cost: t.modelisationCost,
     usinage_cost: t.usinageCost,
+    maindoeuvre_cost: t.maindoeuvreCost,
     impression_printer_id: t.impression.printerId,
     impression_filament_id: t.impression.filamentId,
     impression_weight_g: t.impression.weightG,
@@ -364,10 +382,11 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
     modelisation_done: t.done.modelisation,
     impression_done: t.done.impression,
     usinage_done: t.done.usinage,
+    maindoeuvre_done: t.done.maindoeuvre,
   };
 }
 
-/** Sums a task's four cost fields, treating a disabled service (null) as 0.
+/** Sums a task's five cost fields, treating a disabled service (null) as 0.
  *
  *  Delegates to the mirrored rule engine rather than re-adding the fields:
  *  this figure has to agree with `TaskSummary.total` in
@@ -390,7 +409,7 @@ export function projectTotal(tasks: TaskDraft[]): number {
   return summariseTasks(tasks).total;
 }
 
-/** True when at least one of the four services is priced on this task.
+/** True when at least one of the five services is priced on this task.
  *
  *  Tests for `null`, not falsiness: `null` means the service is disabled and
  *  `0` means it is free, and a service quoted at zero is a real line on the
@@ -402,6 +421,7 @@ export function hasPricedService(task: TaskDraft): boolean {
     || task.modelisationCost !== null
     || task.usinageCost !== null
     || task.impressionCost !== null
+    || task.maindoeuvreCost !== null
   );
 }
 

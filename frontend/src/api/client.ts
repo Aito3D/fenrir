@@ -4737,6 +4737,12 @@ export interface AitoTask {
   modelisation_done: boolean;
   impression_done: boolean;
   usinage_done: boolean;
+  /** Main d'œuvre: a flat labour line. No quantity and no discount field —
+   *  one unit at one price — and its description is mandatory once the cost
+   *  is set (the push guard enforces it server-side). */
+  maindoeuvre_description: string | null;
+  maindoeuvre_cost: number | null;
+  maindoeuvre_done: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -4752,11 +4758,13 @@ export type AitoTaskCreate = Omit<
   | 'modelisation_done'
   | 'impression_done'
   | 'usinage_done'
+  | 'maindoeuvre_done'
 > & {
   scan_done?: boolean;
   modelisation_done?: boolean;
   impression_done?: boolean;
   usinage_done?: boolean;
+  maindoeuvre_done?: boolean;
 };
 export type AitoTaskUpdate = Partial<AitoTaskCreate>;
 

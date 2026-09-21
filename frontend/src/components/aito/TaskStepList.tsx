@@ -14,9 +14,12 @@ const DESCRIPTION_FIELD = {
   modelisation: 'modelisationDescription',
   impression: 'impressionDescription',
   usinage: 'usinageDescription',
+  maindoeuvre: 'maindoeuvreDescription',
 } as const;
 
-const QUANTITY_FIELD: Record<Exclude<ServiceId, 'impression'>, 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity'> = {
+/** Only the services that HAVE a unit count. Printing keeps its own inside
+ *  `impression`, and labour has none at all — one unit at one price. */
+const QUANTITY_FIELD: Record<'scan' | 'modelisation' | 'usinage', 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity'> = {
   scan: 'scanQuantity',
   modelisation: 'modelisationQuantity',
   usinage: 'usinageQuantity',
@@ -92,6 +95,8 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
   // already assume. 0 is hidden everywhere: that is not a job.
   const metaFor = (service: ServiceId): { key: string; icon: typeof Layers; label: string; value: string }[] => {
     if (service !== 'impression') {
+      // Labour has no count to state — one unit at one price.
+      if (service === 'maindoeuvre') return [];
       const quantity = task[QUANTITY_FIELD[service]];
       return quantity >= 2
         ? [{ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${quantity}` }]

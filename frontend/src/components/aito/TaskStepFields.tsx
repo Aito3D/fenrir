@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { AiTextField } from './AiTextField';
+import { FieldError } from './FieldError';
 import { ImpressionFields } from './ImpressionFields';
 import { rowLabelCls, DiscountSelect, QuantityInput, ServicePriceFooter } from './servicePriceFields';
 import { Money } from '../calculator/shared';
@@ -10,6 +11,7 @@ import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { netCost } from '../../utils/aitoBoardRules';
+import { maindoeuvreDescriptionError } from '../../utils/maindoeuvreValidation';
 
 /** One numeric cost input for a step. Empty means the step does not exist, not
  *  that it is free — clearing the field must emit `null`, never `0`; once that
@@ -54,21 +56,30 @@ function StepDescriptionInput({
   label,
   value,
   onChange,
+  /** Main d'œuvre only: the field is mandatory, so it names itself
+   *  "(required)" and renders the validator's message underneath. */
+  required = false,
+  errorKey = null,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
+  required?: boolean;
+  errorKey?: string | null;
 }) {
   const { t } = useTranslation();
+  const placeholder = t(required ? 'aito.serviceDescriptionRequired' : 'aito.taskDescriptionPlaceholder');
   return (
-    <AiTextField
-      multiline
-      label={`${label} ${t('aito.taskDescriptionPlaceholder')}`}
-      placeholder={t('aito.taskDescriptionPlaceholder')}
-      value={value}
-      onChange={onChange}
-      className="mt-3"
-    />
+    <div className="mt-3">
+      <AiTextField
+        multiline
+        label={`${label} ${placeholder}`}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+      />
+      <FieldError messageKey={errorKey} />
+    </div>
   );
 }
 
@@ -122,19 +133,26 @@ function StepBlock({
  *  that ends up on a quote. */
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
-type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
+type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage' | 'maindoeuvre';
 
 interface ServiceDef {
   id: ServiceId;
   labelKey: string;
-  costKey: 'scanCost' | 'modelisationCost' | 'usinageCost' | 'impressionCost';
+  costKey: 'scanCost' | 'modelisationCost' | 'usinageCost' | 'impressionCost' | 'maindoeuvreCost';
   /** Every service also owns a free-text description field. Impression's is
-   *  the one behind the note reveal; the rest are always visible. */
-  descKey: 'scanDescription' | 'modelisationDescription' | 'usinageDescription' | 'impressionDescription';
+   *  the one behind the note reveal; Main d'œuvre's is mandatory; the rest
+   *  are always visible. */
+  descKey:
+    | 'scanDescription'
+    | 'modelisationDescription'
+    | 'usinageDescription'
+    | 'impressionDescription'
+    | 'maindoeuvreDescription';
   /** The plain services own a quantity and a discount beside their cost.
    *  Impression's live elsewhere — its quantity is a calculator input inside
    *  `impression`, and its discount is read directly — so it declares
-   *  neither and never goes through `renderPlainService`. */
+   *  neither and never goes through `renderPlainService`. Main d'œuvre
+   *  declares neither either: one unit at one price, no scaling. */
   qtyKey?: 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity';
   discountKey?: 'scanDiscountPct' | 'modelisationDiscountPct' | 'usinageDiscountPct';
 }
@@ -166,6 +184,9 @@ const SERVICE_DEFS: ServiceDef[] = [
     qtyKey: 'usinageQuantity',
     discountKey: 'usinageDiscountPct',
   },
+  // No qtyKey and no discountKey: labour is one unit at one price, so it
+  // never goes through `renderPlainService` (which assumes both).
+  { id: 'maindoeuvre', labelKey: 'aito.serviceMainDoeuvre', costKey: 'maindoeuvreCost', descKey: 'maindoeuvreDescription' },
 ];
 
 const SERVICE_BY_ID = Object.fromEntries(SERVICE_DEFS.map((s) => [s.id, s])) as Record<ServiceId, ServiceDef>;
@@ -524,6 +545,33 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
       )}
 
       {enabled.has('usinage') && renderPlainService(SERVICE_BY_ID.usinage)}
+
+      {enabled.has('maindoeuvre') && (
+        <StepBlock title={t('aito.serviceMainDoeuvre')} unfold={arrives('maindoeuvre')}>
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+            <label htmlFor={`${reactId}-maindoeuvre`} className={rowLabelCls}>
+              {t('aito.serviceCost')}
+            </label>
+            {/* One cost row only — no quantity, no discount, and so no line
+                total to restate: with a single unit and no percentage, the
+                footer would repeat the figure typed one row above. */}
+            <CostInput
+              id={`${reactId}-maindoeuvre`}
+              label={t('aito.serviceMainDoeuvre')}
+              value={task.maindoeuvreCost}
+              onChange={(next) => onChange({ ...task, maindoeuvreCost: next })}
+              autoFocus={autoFocusService === 'maindoeuvre'}
+            />
+          </div>
+          <StepDescriptionInput
+            label={t('aito.serviceMainDoeuvre')}
+            value={task.maindoeuvreDescription}
+            onChange={(next) => onChange({ ...task, maindoeuvreDescription: next })}
+            required
+            errorKey={maindoeuvreDescriptionError(task)}
+          />
+        </StepBlock>
+      )}
 
       <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
         <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>

@@ -40,11 +40,13 @@ from backend.app.services.aito_invoice_sweep import sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
+    SERVICES_WITH_QUANTITY,
     Catalogue,
     ExportShipping,
     ExportTask,
     build_line_items,
     enabled_services,
+    missing_maindoeuvre_description,
 )
 from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_shipping import island_label
@@ -402,6 +404,8 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
             modelisation_discount_pct=row.modelisation_discount_pct,
             impression_discount_pct=row.impression_discount_pct,
             usinage_discount_pct=row.usinage_discount_pct,
+            maindoeuvre_cost=row.maindoeuvre_cost,
+            maindoeuvre_description=row.maindoeuvre_description,
         )
         for row in rows
     ]
@@ -556,6 +560,15 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # before shipping is ever threaded in.
         project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service yet"
+        project.quote_sync_failures = 0
+        return
+    if missing_maindoeuvre_description(tasks):
+        # Labour's description is mandatory (see the helper). Terminal, like
+        # the no-priced-service guard above and for the same reason: leaving
+        # the state alone would re-select this project every tick forever.
+        # The operator's fix is an edit, which re-marks it pending as normal.
+        project.quote_sync_state = "error"
+        project.quote_sync_error = "Main d'oeuvre line has no description"
         project.quote_sync_failures = 0
         return
     line_items = build_line_items(tasks, [], catalogue, shipping=load_export_shipping(project, catalogue))
@@ -713,7 +726,23 @@ async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int,
     rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
     return {
         row.id: {
-            service: (getattr(row, f"{service}_cost"), max(1, int(getattr(row, f"{service}_quantity") or 1)))
+            service: (
+                getattr(row, f"{service}_cost"),
+                # Deliberate, not a blanket `getattr(..., None)`: only ask for
+                # a quantity on the services SERVICES_WITH_QUANTITY says have
+                # one. Maindoeuvre reads as the same "no quantity field" None
+                # that `quantity_of` in aito_quote_export.py returns for it —
+                # it is always one unit at the full cost (see
+                # build_line_items). Every other service still does a BARE
+                # attribute read: if `impression_quantity` were ever renamed,
+                # this must raise, not silently read 1 and let
+                # `_write_back_rounded_costs` overwrite a multi-unit cost with
+                # `round(cost)` — real money lost with no exception.
+                max(
+                    1,
+                    int((getattr(row, f"{service}_quantity") if service in SERVICES_WITH_QUANTITY else None) or 1),
+                ),
+            )
             for service in SERVICES
             if getattr(row, f"{service}_cost") is not None
         }
@@ -1161,6 +1190,27 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
             detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
         )
         return
+    if missing_maindoeuvre_description(tasks):
+        # Same reasoning as the create-path guard, but this one guards a live
+        # PUT: writing line_items here would overwrite a real quote's items,
+        # so a labour line with no description must block the write, not
+        # just the initial POST. Terminal for the same reason as the
+        # no-priced-service guard above, and recorded the same way so a
+        # blocked update is as visible on the card's history as an emptied
+        # one.
+        project.quote_sync_state = "error"
+        project.quote_sync_error = "Main d'oeuvre line has no description"
+        project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
+        return
     line_items = build_line_items(
         tasks,
         estimate.get("line_items") or [],
@@ -1587,9 +1637,11 @@ async def sync_project(
             # error below as sync_project's own ZohoUpstreamError escalation
             # and nothing else. That holds because EVERY other path that sets
             # 'error' resets this counter to 0 in the same breath — the
-            # no-priced-service guards in _create_quote/_update_quote, and all
-            # four terminal exception handlers below (ZohoRequestRejected,
-            # ZohoAmbiguousReferenceError, ZohoNotFound and the catch-all).
+            # no-priced-service guards in _create_quote/_update_quote, the
+            # missing-maindoeuvre-description guards in the same two
+            # functions, and all four terminal exception handlers below
+            # (ZohoRequestRejected, ZohoAmbiguousReferenceError, ZohoNotFound
+            # and the catch-all).
             # Keep that true if you ever add another: an 'error' that inherits
             # a count it did not earn would have its diagnostic erased here by
             # the next successful read. The ZohoUpstreamError handler for its

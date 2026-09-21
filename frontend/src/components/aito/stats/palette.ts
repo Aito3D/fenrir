@@ -7,12 +7,14 @@
 /** The three project moments, in the order they happen. */
 export const SERIES = { created: '#3d86e8', accepted: '#c95aa0', done: '#219653' } as const;
 
-/** The four services, in `SERVICES` order (scan, modeling, printing, machining). */
+/** The five services, in `SERVICES` order (scan, modeling, printing,
+ *  machining, labour). */
 export const SERVICE_COLORS: Record<string, string> = {
   scan: '#3d86e8',
   modelisation: '#c95aa0',
   impression: '#c26a1c',
   usinage: '#1f9e8a',
+  maindoeuvre: '#8f7ae5',
 };
 
 /** Declined is a "no": the muted text tone, never a series hue, wherever it

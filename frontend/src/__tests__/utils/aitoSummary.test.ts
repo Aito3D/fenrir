@@ -11,6 +11,10 @@ describe('tasksSignature', () => {
     expect(tasksSignature([{ ...a, uid: 'other' }])).toBe(sig1);
     expect(tasksSignature([{ ...a, scanCost: 45 }])).not.toBe(sig1);
     expect(tasksSignature([{ ...a, title: 'Capot moteur' }])).not.toBe(sig1);
+    // Labour's description feeds the signature too, same as every other
+    // service's — the AI summary must regenerate when the labour text
+    // changes, not just when a cost changes.
+    expect(tasksSignature([{ ...a, maindoeuvreDescription: 'Pose et réglage' }])).not.toBe(sig1);
   });
 });
 

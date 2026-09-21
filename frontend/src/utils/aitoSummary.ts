@@ -18,6 +18,7 @@ export function tasksSignature(tasks: TaskDraft[]): string {
       t.modelisationDescription.trim(),
       t.impressionDescription.trim(),
       t.usinageDescription.trim(),
+      t.maindoeuvreDescription.trim(),
       enabledServices(t),
       t.impressionCost !== null
         ? [t.impression.color, t.impression.weightG, t.impression.timeMin, t.impression.quantity]

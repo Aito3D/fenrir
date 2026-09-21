@@ -203,6 +203,8 @@ const row: AitoTask = {
   scan_cost: 0,
   modelisation_cost: null,
   usinage_cost: 1500,
+  maindoeuvre_description: null,
+  maindoeuvre_cost: null,
   scan_quantity: null,
   modelisation_quantity: null,
   usinage_quantity: null,
@@ -238,6 +240,8 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
       scan_cost: row.scan_cost,
       modelisation_cost: row.modelisation_cost,
       usinage_cost: row.usinage_cost,
+      maindoeuvre_description: row.maindoeuvre_description,
+      maindoeuvre_cost: row.maindoeuvre_cost,
       impression_printer_id: row.impression_printer_id,
       impression_filament_id: row.impression_filament_id,
       impression_weight_g: row.impression_weight_g,
@@ -439,12 +443,18 @@ describe('freshenTaskDraft', () => {
       impressionDiscountPct: 10,
       scanQuantity: 3,
       impression: { printerId: 1, filamentId: 2, weightG: 30, timeMin: 90, quantity: 2, color: 'black' },
-      done: { scan: true, modelisation: false, impression: true, usinage: false },
+      done: { scan: true, modelisation: false, impression: true, usinage: false, maindoeuvre: false },
     };
     const fresh = freshenTaskDraft(source);
     expect(fresh.id).toBeNull();
     expect(fresh.uid).not.toBe('server-42');
-    expect(fresh.done).toEqual({ scan: false, modelisation: false, impression: false, usinage: false });
+    expect(fresh.done).toEqual({
+      scan: false,
+      modelisation: false,
+      impression: false,
+      usinage: false,
+      maindoeuvre: false,
+    });
     expect(fresh.title).toBe('Bracket');
     expect(fresh.scanCost).toBe(1000);
     expect(fresh.impressionCost).toBe(2500);
@@ -457,5 +467,25 @@ describe('freshenTaskDraft', () => {
   it('gives two freshened copies of the same task different uids', () => {
     const source = { ...emptyTaskDraft(), id: 1, title: 'x' };
     expect(freshenTaskDraft(source).uid).not.toBe(freshenTaskDraft(source).uid);
+  });
+});
+
+describe('Main d\'oeuvre', () => {
+  it('carries a labour step through the API round trip', () => {
+    const draft = { ...emptyTaskDraft(), maindoeuvreCost: 4000, maindoeuvreDescription: 'Pose et réglage' };
+    const wire = taskDraftToTaskCreate(draft);
+    expect(wire.maindoeuvre_cost).toBe(4000);
+    expect(wire.maindoeuvre_description).toBe('Pose et réglage');
+    expect(
+      taskDraftFromAitoTask({ ...row, maindoeuvre_cost: 4000, maindoeuvre_description: 'Pose' }).maindoeuvreCost,
+    ).toBe(4000);
+  });
+
+  it('counts a labour-only task as priced', () => {
+    expect(hasPricedService({ ...emptyTaskDraft(), maindoeuvreCost: 0 })).toBe(true);
+  });
+
+  it('blank description normalises to an empty string, never undefined', () => {
+    expect(normaliseTaskDraft({ maindoeuvreCost: 4000 }).maindoeuvreDescription).toBe('');
   });
 });

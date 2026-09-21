@@ -160,10 +160,13 @@ const task = {
   impression_quantity: 1,
   impression_color: null,
   impression_cost: null,
+  maindoeuvre_cost: null,
+  maindoeuvre_description: null,
   scan_done: false,
   modelisation_done: false,
   impression_done: false,
   usinage_done: false,
+  maindoeuvre_done: false,
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-01T10:00:00Z',
 };

@@ -65,6 +65,8 @@ function historyTask(overrides: Partial<AitoTask>): AitoTask {
     impression_color: null,
     impression_cost: null,
     impression_discount_pct: null,
+    maindoeuvre_description: null,
+    maindoeuvre_cost: null,
     scan_quantity: null,
     modelisation_quantity: null,
     usinage_quantity: null,
@@ -75,6 +77,7 @@ function historyTask(overrides: Partial<AitoTask>): AitoTask {
     modelisation_done: false,
     impression_done: false,
     usinage_done: false,
+    maindoeuvre_done: false,
     created_at: '2026-08-12T09:14:00',
     updated_at: '2026-08-12T09:14:00',
     ...overrides,
@@ -1173,5 +1176,69 @@ describe('repeat-client recall', () => {
     await screen.findByText(/Client account — Jean-Pierre DUPONT/);
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+  });
+
+  it('does not create while a labour step has no description', async () => {
+    // Jean-Pierre (not the default walk-in) is reachable straight off the
+    // directory pick, so the only thing left blocking Create is the labour
+    // step's own description — same isolation the shipping-only tests use.
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Labour' }));
+    fireEvent.change(screen.getByLabelText('Labour Cost'), { target: { value: '4000' } });
+    await userEvent.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByText('Labour needs a description')).toBeInTheDocument();
+  });
+
+  it('creates once the labour step has both a cost and a description', async () => {
+    // The release counterpart to the test above: proves the gate actually
+    // opens once its condition is met, not just that it stays shut — a
+    // flipped condition or a filter that never matches would pass the
+    // negative test forever while permanently pinning Create closed.
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Labour' }));
+    fireEvent.change(screen.getByLabelText('Labour Cost'), { target: { value: '4000' } });
+    fireEvent.change(screen.getByLabelText('Labour Description (required)'), {
+      target: { value: 'Montage et finition' },
+    });
+    await userEvent.click(createButton());
+
+    expect(onCreate).toHaveBeenCalled();
+  });
+
+  it('does not create from a RESTORED draft whose labour step has no description', async () => {
+    // `maindoeuvreValid` only looks at REVEALED rows, and that set starts
+    // empty on a fresh mount — nothing seeds it from the persisted draft. So
+    // a draft restored from localStorage (close/reopen, a reload, or
+    // DuplicateProjectButton, which writes the same blob) arrives with the
+    // error already on screen and Create live: the exact inverse of the rule
+    // "a rule only names its offender once the user has left the surface".
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({
+        tasks: [{ ...emptyTaskDraft(), maindoeuvreCost: 4000, maindoeuvreDescription: '' }],
+        client: null,
+        summaryText: '',
+        summaryEdited: false,
+        summarySignature: '',
+      }),
+    );
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+
+    // Dimmed from the very first render, not only once clicked: the row was
+    // left in a previous session, so the rule already knows its offender.
+    expect(createButton()).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
   });
 });

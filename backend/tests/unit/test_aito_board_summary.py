@@ -1,6 +1,6 @@
 """Everything the board card and the rule engine derive from a project's tasks.
 
-Pure: no database, no FastAPI. `_Task` duck-types the four cost/done pairs the
+Pure: no database, no FastAPI. `_Task` duck-types the five cost/done pairs the
 real AitoTask row exposes, which is the whole reason `summarise` takes an
 iterable of anything.
 """
@@ -17,10 +17,12 @@ class _Task:
     modelisation_cost: float | None = None
     impression_cost: float | None = None
     usinage_cost: float | None = None
+    maindoeuvre_cost: float | None = None
     scan_done: bool = False
     modelisation_done: bool = False
     impression_done: bool = False
     usinage_done: bool = False
+    maindoeuvre_done: bool = False
     impression_time_min: int | None = None
     impression_quantity: int | None = None
 

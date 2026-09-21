@@ -28,6 +28,7 @@ import {
   visibleClientDraftErrors,
 } from '../../utils/clientDraft';
 import type { ClientDraft, SocialNetwork } from '../../utils/clientDraft';
+import { tasksMissingMaindoeuvreDescription } from '../../utils/maindoeuvreValidation';
 import { islandLabel, visibleShippingDraftErrors } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import {
@@ -169,7 +170,15 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const [shipping, setShipping] = useState<ShippingDraft | null>(() => persistence.initial?.shipping ?? null);
   const [dueDate, setDueDate] = useState<string>(() => persistence.initial?.dueDate ?? '');
   const [openSections, setOpenSections] = useState<Set<SectionId>>(() => new Set<SectionId>(['work']));
-  const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(() => new Set());
+  // Seeded from the RESTORED rows, not empty. "Revealed" means "the user has
+  // already left this surface", and a row that survived a close/reopen, a
+  // reload or `DuplicateProjectButton` (which writes this same blob) was left
+  // in a previous session — so its errors are owed to the user immediately.
+  // Empty here is what let a restored draft carrying a priced, undescribed
+  // labour step render its error and keep Create live at the same time.
+  const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(
+    () => new Set((persistence.initial?.tasks ?? []).map(rowKey)),
+  );
   const [clientRevealed, setClientRevealed] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
 
@@ -406,7 +415,14 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // amber, and only then does this go false.
   const shippingValid =
     shipping === null || Object.values(visibleShippingDraftErrors(shipping)).every((error) => error === null);
-  const canCreate = allPriced && clientReachable && clientValid && configured && shippingValid;
+  // Visible, not raw — the same rule `clientValid` and `shippingValid` follow:
+  // a labour step the user has just switched on must not disable Create with
+  // nothing on screen saying why. The block's own FieldError renders as soon
+  // as the row is revealed, and clicking Create reveals every row.
+  const maindoeuvreValid = !tasksMissingMaindoeuvreDescription(
+    tasks.filter((task) => revealedTaskKeys.has(rowKey(task))),
+  );
+  const canCreate = allPriced && maindoeuvreValid && clientReachable && clientValid && configured && shippingValid;
 
   const summaryState = summaryText.trim() !== '' ? 'ready' : generateNonce > 0 ? 'generating' : 'waiting';
 
@@ -447,6 +463,18 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       setShipping(revealedShipping);
       const shippingErrors = visibleShippingDraftErrors(revealedShipping);
       if (Object.values(shippingErrors).some((error) => error !== null)) return;
+    }
+
+    // And the same discipline for labour. `maindoeuvreValid` above is
+    // computed over the REVEALED rows only, so any path that puts a row into
+    // `tasks` without also marking it revealed would slip a priced,
+    // undescribed labour step past Create — the backend's push guard would
+    // then refuse the quote, long after the card was made. Checked over the
+    // WHOLE list here, exactly as the two halves above re-check their own
+    // drafts, so the gate cannot depend on which rows happen to be revealed.
+    if (tasksMissingMaindoeuvreDescription(tasks)) {
+      setRevealedTaskKeys(new Set(tasks.map(rowKey)));
+      return;
     }
 
     // The description is never empty: an unreachable or unconfigured AI leaves

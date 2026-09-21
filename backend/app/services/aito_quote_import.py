@@ -28,9 +28,9 @@ from backend.app.schemas.aito import is_plausible_phone
 from backend.app.services.aito_shipping import island_for_label
 from backend.app.utils.text import fold_text
 
-# The four Aito services, in the canonical order the board renders badges in
+# The five Aito services, in the canonical order the board renders badges in
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
-SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
+SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3, "maindoeuvre": 4}
 
 # The shop's own service names, written into an imported task's descriptions as
 # preserved quote wording. Deliberately NOT the translated UI labels (see
@@ -41,6 +41,7 @@ SERVICE_LABEL: dict[str, str] = {
     "modelisation": "Modelisation3D",
     "impression": "Impression3D",
     "usinage": "Usinage",
+    "maindoeuvre": "Main d'oeuvre",
 }
 
 # How each label is spelled back out when its value is preserved verbatim.
@@ -174,6 +175,10 @@ _SKU_PREFIXES: tuple[tuple[str, str], ...] = (
     ("P3DMOD", "modelisation"),
     ("P3DIMP", "impression"),
     ("U3DIMP", "usinage"),
+    # The labour item is spelled outside the P3D/U3D family (PM-CM-D).
+    # Prefix, not equality, for the same reason U3DIMP is: the catalogue
+    # grows variants.
+    ("PM-CM", "maindoeuvre"),
 )
 
 
@@ -210,6 +215,25 @@ class ParsedLine:
     # discount orgs), or None — including for a flat-amount discount, which
     # has no field to live in and must not be misread as a percent.
     discount_pct: float | None = None
+    # The quote's own `price_precision`, carried here only so `net_amount`
+    # below can round the way `_line_amount` rounded `amount`. A quote-level
+    # value on a line is redundant, but the alternative — threading precision
+    # through `group_lines` into `_build_task` — puts it in two more
+    # signatures for one reader.
+    precision: int = 0
+
+    @property
+    def net_amount(self) -> float:
+        """``amount`` with the percent discount applied.
+
+        Only main d'œuvre reads this. Every other service stores the
+        PRE-discount total and keeps the percent in its own
+        ``<service>_discount_pct`` column, so baking it in for them would
+        double-count against that field.
+        """
+        if not self.discount_pct:
+            return self.amount
+        return round(self.amount * (1 - self.discount_pct / 100), self.precision)
 
 
 def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
@@ -420,6 +444,7 @@ def parse_lines(
                 starts_group=pending_boundary or (header is not None and header != previous_header),
                 header_title=(line.get("header_name") or "").strip() or None,
                 discount_pct=_discount_pct(line),
+                precision=precision,
             )
         )
         pending_boundary = False
@@ -466,9 +491,22 @@ _COST_FIELD: dict[str, str] = {
     "modelisation": "modelisation_cost",
     "impression": "impression_cost",
     "usinage": "usinage_cost",
+    "maindoeuvre": "maindoeuvre_cost",
 }
 # Labels the impression fields consume, so they are not repeated in the body.
 _IMPRESSION_LABELS: tuple[str, ...] = ("poids", "temps", "couleur")
+# The services that own a `<service>_quantity` and a `<service>_discount_pct`
+# column on AitoTask — i.e. every service but main d'œuvre, whose line is
+# always one unit at one price. Writing those two keys for a service that has
+# no such column is not harmless: `AitoTaskCreate` declares neither, so
+# `extra="ignore"` drops them at the route boundary without a word, and a
+# discount written there would simply evaporate (see `_build_task`).
+#
+# Deliberately NOT imported from `aito_quote_export.SERVICES_WITH_QUANTITY`,
+# which states the same fact for the export side: that module imports THIS
+# one, so the dependency only runs one way. The two must be kept in step by
+# hand; the round-trip tests are what catch a drift.
+_SERVICES_WITH_QUANTITY_AND_DISCOUNT: frozenset[str] = frozenset({"scan", "modelisation", "impression", "usinage"})
 
 
 def _title_label(line: ParsedLine) -> str | None:
@@ -615,19 +653,40 @@ def _build_task(group: list[ParsedLine]) -> dict:
     # which is exactly "not part of this job".
     for service in SERVICE_RANK:
         task[f"{service}_cost"] = None
-        task[f"{service}_quantity"] = None
-        task[f"{service}_discount_pct"] = None
+        if service in _SERVICES_WITH_QUANTITY_AND_DISCOUNT:
+            task[f"{service}_quantity"] = None
+            task[f"{service}_discount_pct"] = None
     for service in SERVICE_RANK:
         task[f"{service}_description"] = "\n".join(_dedupe(descriptions[service])) or None
     for line in ordered:
-        # Adopted, not derived: the next push rebuilds the whole line_items
-        # array, so a discount left behind here would wipe the real quote's.
-        # `<service>_cost` stays the PRE-discount rate x quantity
-        # (_line_amount's inclusive branch never subtracts the discount) —
-        # the two fields must not double-count.
-        task[_COST_FIELD[line.service]] = line.amount
-        task[f"{line.service}_quantity"] = max(1, round(line.quantity))
-        task[f"{line.service}_discount_pct"] = line.discount_pct
+        if line.service in _SERVICES_WITH_QUANTITY_AND_DISCOUNT:
+            # Adopted, not derived: the next push rebuilds the whole
+            # line_items array, so a discount left behind here would wipe the
+            # real quote's. `<service>_cost` stays the PRE-discount
+            # rate x quantity (_line_amount's inclusive branch never
+            # subtracts the discount) — the two fields must not double-count.
+            task[_COST_FIELD[line.service]] = line.amount
+            task[f"{line.service}_quantity"] = max(1, round(line.quantity))
+            task[f"{line.service}_discount_pct"] = line.discount_pct
+            continue
+        # Main d'œuvre, and ONLY main d'œuvre, stores a POST-discount cost.
+        # Do not "correct" this back to `line.amount`: labour has no
+        # `maindoeuvre_discount_pct` column, so there is nowhere to keep the
+        # percent, and the pre-discount figure would then be read as the
+        # price by every reader (`net_cost`, the board, the re-export). A
+        # line of 30 000 less 20% would come back to the customer at 30 000
+        # on the very next push — a 25% rise on a quote they already have.
+        #
+        # The trade, stated plainly: the discount's PRESENTATION is lost. The
+        # re-exported line is a flat 24 000 instead of "30 000 less 20%", so
+        # the PDF's discount column disappears. This is the one place the
+        # module's governing round-trip rule is deliberately bent, and it is
+        # bent in the direction that preserves the money the customer sees.
+        #
+        # Quantity needs no equivalent: `line.amount` is already rate x
+        # quantity, and the export re-emits labour as one unit at that full
+        # amount, so the total survives a multi-unit hand-typed line too.
+        task[_COST_FIELD[line.service]] = line.net_amount
     return task
 
 

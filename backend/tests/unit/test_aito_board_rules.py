@@ -9,7 +9,7 @@ class _Task:
     """Stand-in for AitoTask, carrying only what the rules read."""
 
     def __init__(self, **kwargs):
-        for service in ("scan", "modelisation", "impression", "usinage"):
+        for service in ("scan", "modelisation", "impression", "usinage", "maindoeuvre"):
             setattr(self, f"{service}_cost", kwargs.get(f"{service}_cost"))
             setattr(self, f"{service}_done", kwargs.get(f"{service}_done", False))
 
@@ -90,7 +90,7 @@ class _T:
     """Duck-types what the rule engine reads off an AitoTask."""
 
     def __init__(self, **kwargs):
-        for service in ("scan", "modelisation", "impression", "usinage"):
+        for service in ("scan", "modelisation", "impression", "usinage", "maindoeuvre"):
             setattr(self, f"{service}_cost", kwargs.get(f"{service}_cost"))
             setattr(self, f"{service}_done", kwargs.get(f"{service}_done", False))
             setattr(self, f"{service}_quantity", kwargs.get(f"{service}_quantity"))
@@ -143,3 +143,40 @@ def test_summarise_discounts_a_non_printing_service():
     result = summarise([_T(scan_cost=500.0, usinage_cost=1000.0, usinage_discount_pct=10.0)])
     assert result.total == 1400.0
     assert result.steps_total == 2
+
+
+def test_pending_maindoeuvre_holds_the_card_in_finish():
+    assert evaluate("accepted", "finish", ["maindoeuvre"]) == ("finish", "steps")
+
+
+def test_pending_maindoeuvre_evicts_a_card_from_done():
+    assert evaluate("accepted", "done", ["maindoeuvre"]) == ("finish", "steps")
+
+
+def test_ticked_maindoeuvre_releases_the_lock():
+    assert evaluate("accepted", "finish", []) == ("finish", None)
+
+
+def test_printing_still_outranks_labour():
+    assert evaluate("accepted", "finish", ["impression", "maindoeuvre"]) == ("print", "steps")
+
+
+def test_summarise_counts_a_labour_step():
+    class _T:
+        scan_cost = None
+        scan_done = False
+        modelisation_cost = None
+        modelisation_done = False
+        impression_cost = None
+        impression_done = False
+        usinage_cost = None
+        usinage_done = False
+        maindoeuvre_cost = 4000.0
+        maindoeuvre_done = False
+        title = "Pose"
+
+    summary = summarise([_T()])
+    assert summary.services == ("maindoeuvre",)
+    assert summary.pending == ("maindoeuvre",)
+    assert summary.steps_total == 1
+    assert summary.total == 4000.0

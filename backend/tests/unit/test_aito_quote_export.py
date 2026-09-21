@@ -12,6 +12,7 @@ from backend.app.services.aito_quote_export import (
     enabled_services,
     format_time,
     format_weight,
+    missing_maindoeuvre_description,
 )
 from backend.app.services.aito_quote_import import parse_time_min, parse_weight_g
 
@@ -29,6 +30,8 @@ def task(**overrides) -> ExportTask:
         "impression_time_min": None,
         "impression_color": None,
         "material": None,
+        "maindoeuvre_cost": None,
+        "maindoeuvre_description": None,
     }
     base.update(overrides)
     return ExportTask(**base)
@@ -142,7 +145,7 @@ def test_enabled_services_includes_zero_cost_and_excludes_none():
     t = task(scan_cost=0, modelisation_cost=None, impression_cost=15.5, usinage_cost=None)
     assert enabled_services(t) == ("scan", "impression")
     # Every service enabled, canonical order preserved.
-    all_on = task(scan_cost=0, modelisation_cost=0, impression_cost=0, usinage_cost=0)
+    all_on = task(scan_cost=0, modelisation_cost=0, impression_cost=0, usinage_cost=0, maindoeuvre_cost=0)
     assert enabled_services(all_on) == SERVICES
     # Nothing enabled.
     assert enabled_services(task()) == ()
@@ -161,6 +164,7 @@ CATALOGUE = Catalogue(
     impression_item_id="ITEM_IMP",
     usinage_item_id="ITEM_USI",
     tax_id="TAX",
+    maindoeuvre_item_id="ITEM_MO",
 )
 
 
@@ -271,6 +275,7 @@ def test_catalogue_override_to_a_non_matching_sku_does_not_duplicate_our_own_lin
         impression_item_id="ITEM_IMP_CUSTOM",  # overridden away from any P3DIMP-prefixed SKU
         usinage_item_id="ITEM_USI",
         tax_id="TAX",
+        maindoeuvre_item_id="ITEM_MO",
     )
     existing = [
         {"line_item_id": "L1", "item_id": "ITEM_IMP_CUSTOM", "sku": "CUSTOM-NOT-A-KNOWN-PREFIX", "item_order": 1},
@@ -291,6 +296,7 @@ _SKU_FOR_ITEM = {
     "ITEM_MOD": "P3DMOD",
     "ITEM_IMP": "P3DIMP",
     "ITEM_USI": "U3DIMP",
+    "ITEM_MO": "PM-CM-D",
 }
 
 
@@ -486,6 +492,88 @@ def test_round_trip_preserves_quantity_and_discount_on_every_service():
     assert rebuilt["usinage_discount_pct"] == 15.0
 
 
+def test_round_trip_preserves_labour():
+    """The governing rule, for the fifth service: whatever aito_quote_export
+    writes for a PM-CM-D labour line, aito_quote_import must read back
+    unchanged.
+
+    Unlike its neighbour above, this carries no quantity and no discount
+    FIELD: `AitoTaskCreate` has neither a `maindoeuvre_quantity` nor a
+    `maindoeuvre_discount_pct` (see the schema's own comment — "labour is
+    always one unit at one price, with no discount"), so the importer no
+    longer writes either key at all. It used to, and `extra="ignore"` ate
+    them at the route boundary — which is how a real discount went missing.
+
+    The MONEY on both is preserved regardless. Quantity: `line.amount` is
+    already rate x quantity and labour re-exports as one unit at that full
+    amount. Discount: the importer bakes the percent into
+    `maindoeuvre_cost`, so only its presentation is lost — see
+    `test_a_discounted_labour_line_stores_the_net_amount` in
+    test_aito_quote_import.py and the re-export half below."""
+    from backend.app.schemas.aito import AitoTaskCreate
+
+    original = [task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+
+    assert preview["skipped_lines"] == []
+    rebuilt = preview["tasks"][0]
+    assert rebuilt["title"] == "Pose"
+    assert rebuilt["maindoeuvre_cost"] == 4000
+    assert rebuilt["maindoeuvre_description"] == "Pose et réglage sur site"
+    assert "maindoeuvre_quantity" not in AitoTaskCreate.model_fields
+    assert "maindoeuvre_discount_pct" not in AitoTaskCreate.model_fields
+
+
+def test_an_imported_discounted_labour_line_re_exports_at_the_same_price():
+    """An import-then-push cycle must not move the money the customer has
+    already seen.
+
+    A Books labour line of 30 000 less 20% states 24 000. The importer bakes
+    that in (labour owns no `maindoeuvre_discount_pct` column to carry the
+    percent), so the re-exported line is a flat 24 000 at one unit with no
+    `discount` key. The PRESENTATION is lost — the PDF no longer shows the
+    20% column — and that is the deliberate trade: the total is what the
+    customer agreed to.
+    """
+    estimate = {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9003",
+        "date": "2026-07-29",
+        "status": "draft",
+        "currency_code": "XPF",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "total": 24000,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "PM-CM-D",
+                "rate": 30000,
+                "quantity": 1,
+                "discount": "20.00%",
+                "description": "Info: Pose et réglage sur site",
+                "header_name": "Pose",
+            }
+        ],
+    }
+    imported = build_preview(estimate, None, "https://x")["tasks"][0]
+    lines = build_line_items(
+        [
+            task(
+                title=imported["title"],
+                maindoeuvre_cost=imported["maindoeuvre_cost"],
+                maindoeuvre_description=imported["maindoeuvre_description"],
+            )
+        ],
+        [],
+        CATALOGUE,
+    )
+    assert len(lines) == 1
+    assert lines[0]["rate"] == 24000
+    assert lines[0]["quantity"] == 1
+    assert "discount" not in lines[0]
+
+
 from backend.app.services.aito_quote_export import (  # noqa: E402
     Catalogue,
     ExportShipping,
@@ -506,6 +594,7 @@ SHIPPING_CATALOGUE = Catalogue(
     impression_item_id="I",
     usinage_item_id="U",
     tax_id="T",
+    maindoeuvre_item_id="MO",
     shipping={"tuamotu": "SHIP-TU", "societe": "SHIP-SO"},
 )
 
@@ -552,7 +641,7 @@ def test_shipping_description_strips_a_missing_first_name():
 
 
 def test_shipping_ids_are_ours_not_foreign():
-    assert SHIPPING_CATALOGUE.item_ids() == frozenset({"S", "M", "I", "U", "SHIP-TU", "SHIP-SO"})
+    assert SHIPPING_CATALOGUE.item_ids() == frozenset({"S", "M", "I", "U", "MO", "SHIP-TU", "SHIP-SO"})
     assert is_foreign({"item_id": "SHIP-TU", "sku": "LIV-TU"}, SHIPPING_CATALOGUE) is False
 
 
@@ -637,6 +726,47 @@ def test_the_projects_own_shipping_replaces_any_existing_shipping_line():
     assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["S", "SHIP-TU"]
 
 
+def test_a_labour_line_is_echoed_when_no_task_prices_labour():
+    """The shop bills labour by typing a PM-CM line into Books by hand. Until
+    this branch that line was FOREIGN and survived every push untouched; now
+    the catalogue claims it, and no historical task carries a labour cost, so
+    omitting it here would silently DELETE a real charge from a customer's
+    estimate. No task prices labour -> echo it."""
+    existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L7", "item_order": 2}
+
+
+def test_a_labour_line_is_echoed_by_its_sku_when_the_item_id_is_not_ours():
+    """The `zoho_item_maindoeuvre_id` setting is overridable, and a
+    hand-typed line may point at a different Books item that still carries a
+    PM-CM SKU. The SKU alone is enough to recognise it."""
+    existing = [{"line_item_id": "L7", "item_id": "66407000001604625", "sku": "PM-CM-VENTE", "item_order": 5}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L7", "item_order": 2}
+
+
+def test_the_projects_own_labour_replaces_any_existing_labour_line():
+    """The converse: once a task prices labour, our freshly built line is the
+    truth and the old one must NOT be echoed alongside it — one labour line,
+    never two."""
+    existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
+    priced = task(maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")
+    lines = build_line_items([priced], existing, SHIPPING_CATALOGUE)
+    assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["MO"]
+    assert "line_item_id" not in lines[0]
+
+
+def test_a_labour_step_quoted_free_still_counts_as_priced_labour():
+    """0 is a real step ("quoted free"); only None means the service is
+    absent. A falsiness test here would echo the stale line back next to our
+    own 0 XPF one and leave the quote with two labour lines."""
+    existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
+    free = task(maindoeuvre_cost=0.0, maindoeuvre_description="Geste commercial")
+    lines = build_line_items([free], existing, SHIPPING_CATALOGUE)
+    assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["MO"]
+
+
 def test_shipping_item_id_raises_for_an_unresolved_service():
     import pytest
 
@@ -710,3 +840,41 @@ def test_build_line_items_still_emits_printing_the_same_way():
     assert impression["rate"] == 500
     assert impression["quantity"] == 3
     assert impression["discount"] == "10%"
+
+
+def test_labour_line_is_one_unit_at_the_full_cost():
+    t = task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")
+    lines = build_line_items([t], [], CATALOGUE)
+    line = next(item for item in lines if item.get("item_id") == CATALOGUE.maindoeuvre_item_id)
+    assert line["rate"] == 4000
+    assert line["quantity"] == 1
+    assert line["description"] == "Info: Pose et réglage sur site"
+    assert "discount" not in line
+    assert line["header_name"] == "Pose"
+
+
+def test_labour_carries_no_fichier_non_cede_boilerplate():
+    t = task(maindoeuvre_cost=1000.0, maindoeuvre_description="Montage")
+    assert "Fichier non" not in build_description("maindoeuvre", t)
+
+
+def test_labour_comes_last_within_a_task():
+    t = task(scan_cost=100.0, maindoeuvre_cost=200.0, impression_cost=300.0)
+    assert enabled_services(t) == ("scan", "impression", "maindoeuvre")
+
+
+def test_our_own_labour_line_is_not_foreign():
+    assert not is_foreign({"item_id": CATALOGUE.maindoeuvre_item_id, "sku": "PM-CM-D"}, CATALOGUE)
+
+
+def test_missing_maindoeuvre_description_spots_a_blank_labour_line():
+    assert missing_maindoeuvre_description([task(maindoeuvre_cost=4000.0)])
+    assert missing_maindoeuvre_description([task(maindoeuvre_cost=4000.0, maindoeuvre_description="   ")])
+    # 0 is a step quoted free, not an absent one.
+    assert missing_maindoeuvre_description([task(maindoeuvre_cost=0.0)])
+
+
+def test_missing_maindoeuvre_description_is_false_when_described_or_absent():
+    assert not missing_maindoeuvre_description([task(maindoeuvre_cost=4000.0, maindoeuvre_description="Pose")])
+    assert not missing_maindoeuvre_description([task(scan_cost=100.0)])
+    assert not missing_maindoeuvre_description([])

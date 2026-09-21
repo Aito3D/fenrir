@@ -19,7 +19,30 @@ from backend.app.services.aito_shipping import island_for_label
 # Canonical service order — the same order the board renders badges in and the
 # order lines are emitted within a task. Mirrors SERVICE_RANK in
 # aito_quote_import and SERVICES in aito_board_rules.py.
-SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage")
+SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage", "maindoeuvre")
+
+# The subset of SERVICES that carries its own quantity column. Main d'œuvre is
+# deliberately excluded — a flat labour line is always one unit. The answer to
+# "does this service even have a quantity?" for callers elsewhere
+# (aito_quote_sync._snapshot_pushed_costs) that would otherwise hand-roll a
+# second list.
+#
+# `quantity_of`'s mapping below is NOT derived from this set — it is an
+# independent dict literal, and so are `discount_of`'s and
+# `aito_quote_import._SERVICES_WITH_QUANTITY_AND_DISCOUNT`. They must be kept
+# in step by hand; leaving them as literals keeps each function readable at
+# its own site, but nothing enforces the agreement except the round-trip
+# tests.
+#
+# Note the deliberate asymmetry in those mappings: `quantity_of` and
+# `discount_of` end in `.get(service)`, so a service they do not list reads as
+# None (no quantity, no discount) — that is what lets main d'œuvre be legally
+# absent from them. `cost_of`, `description_of` and `Catalogue.item_id` still
+# subscript and so still raise for an unknown service, because a missing cost
+# or item id is a bug, not a default. The cost of that leniency: a NEW service
+# forgotten in `quantity_of` would silently price at x1 instead of failing
+# loudly.
+SERVICES_WITH_QUANTITY: frozenset[str] = frozenset({"scan", "modelisation", "impression", "usinage"})
 
 # The boilerplate row the scan and modelisation catalogue items carry. Written
 # exactly as the catalogue spells it; the importer strips it case- and
@@ -67,6 +90,11 @@ class ExportTask:
     modelisation_description: str | None = None
     impression_description: str | None = None
     usinage_description: str | None = None
+    # Main d'œuvre: a flat labour line — no quantity, no discount. Its
+    # description is mandatory (aito_quote_sync refuses to push without one),
+    # so the `Info:` row is always written for a priced labour service.
+    maindoeuvre_cost: float | None = None
+    maindoeuvre_description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,29 +121,32 @@ def cost_of(task: ExportTask, service: str) -> float | None:
         "modelisation": task.modelisation_cost,
         "impression": task.impression_cost,
         "usinage": task.usinage_cost,
+        "maindoeuvre": task.maindoeuvre_cost,
     }[service]
 
 
 def quantity_of(task: ExportTask, service: str) -> int | None:
-    """The task's unit count for one service. None reads as 1."""
+    """The task's unit count for one service. None reads as 1 — which is also
+    what a service with no quantity field at all (maindoeuvre) returns."""
     return {
         "scan": task.scan_quantity,
         "modelisation": task.modelisation_quantity,
         "impression": task.impression_quantity,
         "usinage": task.usinage_quantity,
-    }[service]
+    }.get(service)
 
 
 def discount_of(task: ExportTask, service: str) -> float | None:
     """The task's percent discount for one service, or None for no discount.
     0 is normalised to None by the callers that build an ExportTask — a
-    literal "0%" would put a pointless discount column on the PDF."""
+    literal "0%" would put a pointless discount column on the PDF. A service
+    with no discount field at all (maindoeuvre) returns None the same way."""
     return {
         "scan": task.scan_discount_pct,
         "modelisation": task.modelisation_discount_pct,
         "impression": task.impression_discount_pct,
         "usinage": task.usinage_discount_pct,
-    }[service]
+    }.get(service)
 
 
 def description_of(task: ExportTask, service: str) -> str | None:
@@ -125,11 +156,28 @@ def description_of(task: ExportTask, service: str) -> str | None:
         "modelisation": task.modelisation_description,
         "impression": task.impression_description,
         "usinage": task.usinage_description,
+        "maindoeuvre": task.maindoeuvre_description,
     }[service]
 
 
 def enabled_services(task: ExportTask) -> tuple[str, ...]:
     return tuple(service for service in SERVICES if cost_of(task, service) is not None)
+
+
+def missing_maindoeuvre_description(tasks: list[ExportTask]) -> bool:
+    """True when any task carries a priced Main d'œuvre line with no text.
+
+    Labour is the one service whose description is mandatory: its catalogue
+    name says only "Prestation - Main d'oeuvre", so a line without the `Info:`
+    row tells the client nothing about what was actually done. Every other
+    service names its own work.
+
+    Pure, and the mirror of `maindoeuvreDescriptionError` in
+    frontend/src/utils/maindoeuvreValidation.ts. `is not None`, never
+    falsiness: a labour step quoted free is a real line and still has to say
+    what the work was.
+    """
+    return any(task.maindoeuvre_cost is not None and not (task.maindoeuvre_description or "").strip() for task in tasks)
 
 
 def format_weight(grams: float | None) -> str | None:
@@ -172,7 +220,7 @@ def format_time(minutes: int | None) -> str | None:
 def _rows(service: str, task: ExportTask) -> list[tuple[str, str | None]]:
     """(label, value) pairs for a service line: impression's print-parameter
     rows, then the optional `Info:` row carrying the service's own
-    description. The other three services have nothing but that Info row. The
+    description. The other four services have nothing but that Info row. The
     task title is deliberately NOWHERE in here — it lives only in the header.
 
     Info comes LAST on impression on purpose, and that ordering is load-
@@ -233,7 +281,7 @@ _TITLE_MAX = 200
 
 @dataclass(frozen=True)
 class Catalogue:
-    """The Books item ids the four services map onto, plus the services tax,
+    """The Books item ids the five services map onto, plus the services tax,
     plus the Books item ids the up-to-five "Livraison Avion" shipping
     services map onto.
 
@@ -246,6 +294,7 @@ class Catalogue:
     impression_item_id: str
     usinage_item_id: str
     tax_id: str
+    maindoeuvre_item_id: str
     # Service key -> Books item id for the five "Livraison Avion" items,
     # resolved from Books and cached (services/zoho.get_shipping_catalogue).
     # A default of {} keeps every existing construction valid; an EMPTY map
@@ -259,6 +308,7 @@ class Catalogue:
             "modelisation": self.modelisation_item_id,
             "impression": self.impression_item_id,
             "usinage": self.usinage_item_id,
+            "maindoeuvre": self.maindoeuvre_item_id,
         }[service]
 
     def shipping_item_id(self, service: str) -> str:
@@ -288,7 +338,13 @@ class Catalogue:
         line_item_id AND re-emitted from the project, duplicating a little more
         on every push."""
         return frozenset(
-            {self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id}
+            {
+                self.scan_item_id,
+                self.modelisation_item_id,
+                self.impression_item_id,
+                self.usinage_item_id,
+                self.maindoeuvre_item_id,
+            }
             | set(self.shipping.values())
         )
 
@@ -320,12 +376,12 @@ def _existing_island(description: str | None) -> str | None:
 
 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
     """True for a line this app does not own: not a header, and not one of the
-    items ``Catalogue.item_ids()`` claims — the four service items plus up to
+    items ``Catalogue.item_ids()`` claims — the five service items plus up to
     five shipping items. Retail items, laser cuts, delivery fees.
 
     Ownership is checked two ways, either of which is enough to claim the
     line: the catalogue's item id, or the SKU prefix. The item id check comes
-    first and is what makes this safe against catalogue overrides — the four
+    first and is what makes this safe against catalogue overrides — the five
     ``zoho_item_*_id`` settings are deliberately overridable to a Books item
     whose SKU does NOT start with the usual ``P3DIMP``-style prefix (that is
     the documented reason the setting exists). Without the id check, such an
@@ -367,8 +423,17 @@ def build_line_items(
 
     Then every foreign line, echoed as a bare ``line_item_id``, which Books
     expands back into the untouched original. Omitting a line deletes it, so
-    anything not returned here is gone. This is also where an EXISTING
-    shipping line the project no longer describes gets handled: when
+    anything not returned here is gone. This is also where an EXISTING line
+    that is ours BY ID but that this project could not have written gets
+    handled — twice over, once for labour and once for shipping.
+
+    A labour line (``maindoeuvre_item_id``, or any ``PM-CM`` SKU) is echoed
+    whenever NO task on the project carries a non-null ``maindoeuvre_cost``:
+    that is the hand-typed line the shop bills labour with today, and
+    dropping it would delete a real charge. When a task does price labour,
+    the freshly-built line above represents it and the old one is not echoed.
+
+    The shipping case is the older and fussier of the two. When
     ``shipping`` is None, a line whose ``item_id`` is one of
     ``catalogue.shipping.values()`` is echoed by ``line_item_id`` ONLY when
     its ``Île:`` row does NOT reverse-lookup to a known island via
@@ -438,8 +503,35 @@ def build_line_items(
             }
         )
     shipping_ids = frozenset(catalogue.shipping.values())
+    # `is not None`, never falsiness: 0 is a labour step quoted free and is a
+    # real step, so a project carrying one DOES describe its own labour line.
+    project_prices_labour = any(task_row.maindoeuvre_cost is not None for task_row in tasks)
     for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):
         if not line.get("line_item_id"):
+            continue
+        # A labour line the project does not describe — the exact analogue of
+        # the shipping rule below, and for the same reason. The shop bills
+        # labour today by typing a `PM-CM` line into Books by hand; before
+        # this service existed that line was FOREIGN and survived every push
+        # untouched. Now the catalogue claims it, and no historical task
+        # carries a labour cost (there is no backfill), so nothing would
+        # re-emit it — and a line omitted from the PUT is DELETED in Books.
+        # A card whose estimate carries a hand-typed 25 000 XPF labour line
+        # would lose it on the next rename or ticked step, silently.
+        #
+        # Recognised the way the shipping branch recognises its own: by
+        # catalogue item id, and ALSO by SKU prefix, because
+        # `zoho_item_maindoeuvre_id` is overridable and a hand-typed line may
+        # point at a different Books item that still spells `PM-CM`.
+        #
+        # The trade, deliberately taken: an operator who prices labour,
+        # pushes, then clears the cost must delete the line in Books by hand,
+        # because from here that is indistinguishable from the hand-typed
+        # case. Far cheaper than silently deleting a real charge — the same
+        # reasoning already written for shipping.
+        if line.get("item_id") == catalogue.maindoeuvre_item_id or service_for_sku(line.get("sku")) == "maindoeuvre":
+            if not project_prices_labour:
+                lines.append({"line_item_id": line["line_item_id"]})
             continue
         # A shipping line the project does not describe. It is OURS by item
         # id, so `is_foreign` says no — but that alone does not mean it

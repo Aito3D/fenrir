@@ -7,15 +7,15 @@ import type { TaskDraft } from '../../utils/taskDraft';
 function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
   return {
     id: null, uid: 'u1', title: '',
-    scanCost: null, modelisationCost: null, impressionCost: null, usinageCost: null,
-    done: { scan: false, modelisation: false, impression: false, usinage: false },
+    scanCost: null, modelisationCost: null, impressionCost: null, usinageCost: null, maindoeuvreCost: null,
+    done: { scan: false, modelisation: false, impression: false, usinage: false, maindoeuvre: false },
     ...overrides,
   } as TaskDraft;
 }
 
 const tasks = [
   task({ uid: 'a', scanCost: 3500, modelisationCost: 4500, impressionCost: 10000,
-         done: { scan: true, modelisation: true, impression: false, usinage: false } }),
+         done: { scan: true, modelisation: true, impression: false, usinage: false, maindoeuvre: false } }),
 ];
 
 describe('StageRail', () => {
