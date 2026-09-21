@@ -28,9 +28,9 @@ from backend.app.schemas.aito import is_plausible_phone
 from backend.app.services.aito_shipping import island_for_label
 from backend.app.utils.text import fold_text
 
-# The four Aito services, in the canonical order the board renders badges in
+# The five Aito services, in the canonical order the board renders badges in
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
-SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
+SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3, "maindoeuvre": 4}
 
 # The shop's own service names, written into an imported task's descriptions as
 # preserved quote wording. Deliberately NOT the translated UI labels (see
@@ -41,6 +41,7 @@ SERVICE_LABEL: dict[str, str] = {
     "modelisation": "Modelisation3D",
     "impression": "Impression3D",
     "usinage": "Usinage",
+    "maindoeuvre": "Main d'oeuvre",
 }
 
 # How each label is spelled back out when its value is preserved verbatim.
@@ -174,6 +175,10 @@ _SKU_PREFIXES: tuple[tuple[str, str], ...] = (
     ("P3DMOD", "modelisation"),
     ("P3DIMP", "impression"),
     ("U3DIMP", "usinage"),
+    # The labour item is spelled outside the P3D/U3D family (PM-CM-D).
+    # Prefix, not equality, for the same reason U3DIMP is: the catalogue
+    # grows variants.
+    ("PM-CM", "maindoeuvre"),
 )
 
 
@@ -466,6 +471,7 @@ _COST_FIELD: dict[str, str] = {
     "modelisation": "modelisation_cost",
     "impression": "impression_cost",
     "usinage": "usinage_cost",
+    "maindoeuvre": "maindoeuvre_cost",
 }
 # Labels the impression fields consume, so they are not repeated in the body.
 _IMPRESSION_LABELS: tuple[str, ...] = ("poids", "temps", "couleur")

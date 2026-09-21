@@ -295,6 +295,7 @@ _SKU_FOR_ITEM = {
     "ITEM_MOD": "P3DMOD",
     "ITEM_IMP": "P3DIMP",
     "ITEM_USI": "U3DIMP",
+    "ITEM_MO": "PM-CM-D",
 }
 
 
@@ -488,6 +489,20 @@ def test_round_trip_preserves_quantity_and_discount_on_every_service():
     assert rebuilt["usinage_cost"] == 36000
     assert rebuilt["usinage_quantity"] == 3
     assert rebuilt["usinage_discount_pct"] == 15.0
+
+
+def test_round_trip_preserves_labour():
+    """The governing rule, for the fifth service: whatever aito_quote_export
+    writes for a PM-CM-D labour line, aito_quote_import must read back
+    unchanged."""
+    original = [task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+
+    assert preview["skipped_lines"] == []
+    rebuilt = preview["tasks"][0]
+    assert rebuilt["title"] == "Pose"
+    assert rebuilt["maindoeuvre_cost"] == 4000
+    assert rebuilt["maindoeuvre_description"] == "Pose et réglage sur site"
 
 
 from backend.app.services.aito_quote_export import (  # noqa: E402

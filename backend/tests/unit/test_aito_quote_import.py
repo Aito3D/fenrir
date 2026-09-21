@@ -979,3 +979,26 @@ def test_an_ile_row_on_an_ordinary_service_line_is_not_silently_erased():
     estimate = _estimate([_line("P3DIMP", 2400, description="Projet: Support\nÎLE: Rangiroa", header_name="Support")])
     task = build_preview(estimate, None, "https://x")["tasks"][0]
     assert "ÎLE: Rangiroa" in task["impression_description"]
+
+
+def test_pm_cm_sku_maps_to_labour():
+    assert service_for_sku("PM-CM-D") == "maindoeuvre"
+    assert service_for_sku("pm-cm-d") == "maindoeuvre"
+    assert service_for_sku("PM-CM-VENTE") == "maindoeuvre"
+
+
+def test_a_labour_line_imports_as_a_labour_step():
+    estimate = _estimate(
+        [
+            _line(
+                "PM-CM-D",
+                4000,
+                description="Info: Pose et réglage sur site",
+                header_name="Pose",
+            )
+        ]
+    )
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert task["maindoeuvre_cost"] == 4000
+    assert task["maindoeuvre_description"] == "Pose et réglage sur site"
+    assert build_preview(estimate, None, "https://x")["skipped_lines"] == []

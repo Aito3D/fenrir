@@ -339,11 +339,11 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # whole list here — an estimate with more than the cap's header groups
     # would have its WHOLE IMPORT rejected, not just lose a summary. A header
     # group is at most one recognised line per service in SERVICE_RANK (scan,
-    # modelisation, impression, usinage — 4 total; a repeated or
+    # modelisation, impression, usinage, maindoeuvre — 5 total; a repeated or
     # lower-ranked service opens a new group), so 300 tasks tolerates a Books
-    # estimate with up to 1200 recognised service line items — a workshop
+    # estimate with up to 1500 recognised service line items — a workshop
     # quote with 300 distinct physical parts, each individually scanned,
-    # modelled, printed and machined, in one estimate. No real Zoho estimate
+    # modelled, printed, machined and labour-priced, in one estimate. No real Zoho estimate
     # this app has imported has come close; this is headroom, not a realistic
     # ceiling. A single task also carries its own `quantity` for the
     # impression service, so a large batch of IDENTICAL prints is one task,
