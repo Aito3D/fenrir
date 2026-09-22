@@ -273,6 +273,34 @@ def _map_invoice_change(invoice: dict) -> dict:
     }
 
 
+def _map_invoice_history(invoice: dict) -> dict:
+    """Zoho invoice list row -> what the client rating scores.
+
+    Its own mapper, like ``_map_invoice_change``: the rating needs the two
+    dates that say WHEN an invoice was paid (``last_payment_date``, with
+    ``last_modified_time`` as the fallback the probe of 2026-09-22 settled
+    on), and nothing the Invoice card renders should grow a field for it.
+    Numbers are coerced so one sloppy row cannot poison a customer's score.
+    """
+
+    def _num(value) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    return {
+        "number": invoice.get("invoice_number", ""),
+        "date": invoice.get("date", ""),
+        "due_date": invoice.get("due_date", ""),
+        "status": invoice.get("status", ""),
+        "balance": _num(invoice.get("balance")),
+        "total": _num(invoice.get("total")),
+        "last_payment_date": invoice.get("last_payment_date", "") or "",
+        "last_modified_time": invoice.get("last_modified_time", "") or "",
+    }
+
+
 class ZohoService:
     def __init__(self) -> None:
         self._access_token: str | None = None
@@ -1090,6 +1118,35 @@ class ZohoService:
             return []
         payload = await self._request(db, "GET", "/retainerinvoices", params={"customer_id": customer_id})
         return list(payload.get("retainerinvoices") or [])
+
+    async def list_customer_invoices(self, db: AsyncSession, customer_id: str) -> list[dict]:
+        """Every invoice Books holds for this customer, oldest to newest as
+        Books returns them, mapped by ``_map_invoice_history``.
+
+        The client rating's one read: a customer's whole billing history in
+        one paginated call, including bills raised by hand in Books that no
+        estimate-keyed read can see. Paged like ``list_invoices_modified_since``
+        and capped by ``_MAX_INVOICE_PAGES`` — a customer with more than 2000
+        invoices is not a case this shop has, and the cap bounds a runaway.
+
+        ``customer_id`` MUST be non-empty, for the same reason as
+        ``list_customer_payments``: Books reads an empty filter as no filter
+        and would answer with the org's entire invoice list.
+        """
+        if not customer_id:
+            return []
+        rows: list[dict] = []
+        for page in range(1, _MAX_INVOICE_PAGES + 1):
+            payload = await self._request(
+                db,
+                "GET",
+                "/invoices",
+                params={"customer_id": customer_id, "per_page": "200", "page": str(page)},
+            )
+            rows.extend(_map_invoice_history(i) for i in payload.get("invoices") or [])
+            if not (payload.get("page_context") or {}).get("has_more_page"):
+                break
+        return rows
 
     async def get_retainer_invoice(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
         """One retainer invoice in full — specifically its ``payments``.

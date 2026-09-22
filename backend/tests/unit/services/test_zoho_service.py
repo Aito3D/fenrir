@@ -1220,3 +1220,91 @@ async def test_an_estimate_id_cannot_walk_out_of_the_books_prefix(db_session, mo
     # The property that actually matters, checked the way httpx sees it:
     url = httpx.Request("GET", f"https://books.example{seen[0]}").url
     assert str(url).startswith("https://books.example/estimates/")
+
+
+@pytest.mark.asyncio
+async def test_list_customer_invoices_refuses_an_empty_id_before_any_call(db_session):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"invoices": []})
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.list_customer_invoices(db_session, "") == []
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_list_customer_invoices_pages_and_maps_history_fields(async_client, db_session):
+    await _configure(async_client)
+    pages = {
+        "1": {
+            "invoices": [
+                {
+                    "invoice_id": "i1",
+                    "invoice_number": "FA-26-0001",
+                    "date": "2026-08-01",
+                    "due_date": "2026-08-31",
+                    "status": "paid",
+                    "balance": 0,
+                    "total": 12000,
+                    "last_payment_date": "2026-08-20",
+                    "last_modified_time": "2026-08-20T10:00:00+0000",
+                    "customer_id": "C1",
+                }
+            ],
+            "page_context": {"has_more_page": True},
+        },
+        "2": {
+            "invoices": [
+                {
+                    "invoice_id": "i2",
+                    "invoice_number": "FA-26-0002",
+                    "date": "2026-09-01",
+                    "due_date": "2026-09-30",
+                    "status": "sent",
+                    "balance": "4500.5",
+                    "total": "4500.5",
+                }
+            ],
+            "page_context": {"has_more_page": False},
+        },
+    }
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        assert request.url.path.endswith("/invoices")
+        params = dict(request.url.params)
+        seen.append(params)
+        return httpx.Response(200, json=pages[params["page"]])
+
+    zoho_service.transport = _transport(handler)
+    rows = await zoho_service.list_customer_invoices(db_session, "C1")
+
+    assert [p["customer_id"] for p in seen] == ["C1", "C1"]
+    assert [p["per_page"] for p in seen] == ["200", "200"]
+    assert rows == [
+        {
+            "number": "FA-26-0001",
+            "date": "2026-08-01",
+            "due_date": "2026-08-31",
+            "status": "paid",
+            "balance": 0.0,
+            "total": 12000.0,
+            "last_payment_date": "2026-08-20",
+            "last_modified_time": "2026-08-20T10:00:00+0000",
+        },
+        {
+            "number": "FA-26-0002",
+            "date": "2026-09-01",
+            "due_date": "2026-09-30",
+            "status": "sent",
+            "balance": 4500.5,
+            "total": 4500.5,
+            "last_payment_date": "",
+            "last_modified_time": "",
+        },
+    ]
