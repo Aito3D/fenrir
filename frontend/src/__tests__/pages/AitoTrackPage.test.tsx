@@ -582,7 +582,29 @@ describe('AitoTrackPage — online payment', () => {
     const card = await screen.findByTestId('track-payment');
     expect(card).toHaveAttribute('data-state', 'paid');
     expect(within(card).getByText('Acompte reçu')).toBeInTheDocument();
+    expect(within(card).queryByText('Paiement reçu')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Payer en ligne' })).not.toBeInTheDocument();
+  });
+
+  it('paid: the plain paid-in-full wording when it was not a deposit', async () => {
+    mockTrack({ ...FIXTURE, payment: { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'paid');
+    expect(within(card).getByText('Paiement reçu')).toBeInTheDocument();
+    expect(within(card).queryByText('Acompte reçu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Payer en ligne' })).not.toBeInTheDocument();
+  });
+
+  it('unpaid: the deposit sub-line when it was a deposit invoice', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'unpaid');
+    expect(
+      within(card).getByText('Un acompte confirme votre commande — réglez en ligne, par virement ou en boutique.'),
+    ).toBeInTheDocument();
+    expect(within(card).queryByText('Réglez en ligne, par virement ou en boutique.')).not.toBeInTheDocument();
   });
 
   it('an invoice outranks the payment link', async () => {
@@ -647,6 +669,9 @@ describe('AitoTrackPage — side panels', () => {
     // The map is a third-party frame: not fetched until someone asks for it.
     const map = within(shopPanel()).getByTitle("Plan d'accès au magasin");
     expect(map).not.toHaveAttribute('src');
+    // The map is a keyless embed, but the page URL carries the tracking code:
+    // never send it to google.com as a Referer.
+    expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(shopButton()).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(shopButton());
     expect(stage()).toHaveAttribute('data-open', 'shop');

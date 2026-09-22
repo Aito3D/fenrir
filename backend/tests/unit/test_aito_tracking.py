@@ -1065,9 +1065,11 @@ async def test_public_route_hit_releases_the_net_reservation(async_client, db_se
 
 
 @pytest.mark.asyncio
-async def test_public_route_net_cap_ipv6_shares_a_slash_64(async_client, monkeypatch):
-    """IPv6 addresses in the same /64 share a budget; a different /64 does
-    not, mirroring the IPv4 /24 behaviour above."""
+async def test_public_route_net_cap_ipv6_shares_a_slash_48(async_client, monkeypatch):
+    """IPv6 addresses in the same /48 share a budget — even across different
+    /64s of that /48, since a /64 is not a whole routed allocation the way a
+    /24 is for IPv4 — and a different /48 does not, mirroring the IPv4 /24
+    behaviour above."""
     from backend.app.api.routes import aito as aito_routes, auth as auth_routes
 
     clock = _Clock()
@@ -1078,10 +1080,13 @@ async def test_public_route_net_cap_ipv6_shares_a_slash_64(async_client, monkeyp
     for _ in range(3):
         r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2001:4860:4860::8888"})
         assert r.status_code == 404
-    # Same /64 (2001:4860:4860::/64), different address: inherits the cap.
+    # Same /48 (2001:4860:4860::/48), same /64, different address: inherits the cap.
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2001:4860:4860::8844"})
     assert r.status_code == 429
-    # A different /64 is unaffected.
+    # Same /48, a different /64 of it (2001:4860:4860:1::/64): still inherits the cap.
+    r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2001:4860:4860:1::9999"})
+    assert r.status_code == 429
+    # A different /48 is unaffected.
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "2606:4700:4700::1111"})
     assert r.status_code == 404
     aito_routes._reset_track_rate_limits()
@@ -1116,9 +1121,10 @@ async def test_public_route_net_cap_scaled_flood_no_longer_reaches_other_network
     [
         ("203.0.113.5", "203.0.113.0/24"),
         ("203.0.113.250", "203.0.113.0/24"),
-        ("2001:4860:4860::8888", "2001:4860:4860::/64"),
-        ("2001:4860:4860::8844", "2001:4860:4860::/64"),
-        ("2606:4700:4700::1111", "2606:4700:4700::/64"),
+        ("2001:4860:4860::8888", "2001:4860:4860::/48"),
+        ("2001:4860:4860::8844", "2001:4860:4860::/48"),
+        ("2001:4860:4860:1::9999", "2001:4860:4860::/48"),  # different /64, same /48
+        ("2606:4700:4700::1111", "2606:4700:4700::/48"),
         ("testclient", "testclient"),  # unparseable — fail closed to its own bucket
         ("__no_ip_deadbeef__", "__no_ip_deadbeef__"),  # no-peer placeholder — same
     ],

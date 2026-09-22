@@ -1077,7 +1077,7 @@ async def get_client_history(
 # their own page. T-122: the miss budget used to be ONE bucket shared by
 # every visitor on the internet, so a single flooding source could trip it
 # and 429 every other client too; it is now keyed per source network
-# (IPv4 /24, IPv6 /64) so a flood from one network cannot exhaust the
+# (IPv4 /24, IPv6 /48) so a flood from one network cannot exhaust the
 # budget of clients on other networks — at the cost of a busy /24 now being
 # able to exhaust its own (still 600-wide) budget sooner than the old
 # shared one. Hits are not free either: a generous per-address ceiling on
@@ -1097,7 +1097,7 @@ async def get_client_history(
 # it, presuming the peer is an unconfigured proxy; the per-net miss cap and
 # the per-IP CALLS cap — both still keyed on the proxy's one address — are
 # the bound instead. On a collapsed bucket the "network" IS the proxy's own
-# /24 or /64, so the per-net budget is once again a single site-wide budget
+# /24 or /48, so the per-net budget is once again a single site-wide budget
 # for that install, same as before T-122. T-121: that presumption alone is
 # spoofable on a DIRECT
 # install — any client could add its own X-Forwarded-For header to lift its
@@ -1131,7 +1131,7 @@ def _reset_track_rate_limits() -> None:
 
 def _track_rate_net_key(host: str) -> str:
     """The source network a miss is budgeted against (T-122): IPv4 hosts
-    collapse to their /24, IPv6 hosts to their /64, so a flood spread over
+    collapse to their /24, IPv6 hosts to their /48, so a flood spread over
     many addresses on one network still shares one budget. A host that does
     not parse as an IP — the `__no_ip_...` placeholder `_get_client_ip`
     mints when there is no peer, or some other unrecognisable string — gets
@@ -1141,7 +1141,7 @@ def _track_rate_net_key(host: str) -> str:
         addr = ipaddress.ip_address(host)
     except ValueError:
         return host
-    prefix = 24 if addr.version == 4 else 64
+    prefix = 24 if addr.version == 4 else 48
     return str(ipaddress.ip_network(f"{host}/{prefix}", strict=False))
 
 
@@ -1188,7 +1188,7 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     client could set its own X-Forwarded-For to buy the same suspension.
     The per-IP CALLS cap and the per-net miss cap, both keyed on that same
     collapsed address (T-122: on a collapsed bucket the "network" is the
-    proxy's own /24 or /64, so this is once again a single site-wide
+    proxy's own /24 or /48, so this is once again a single site-wide
     budget), still apply exactly as they do for a direct, unproxied
     install."""
     now = time.monotonic()

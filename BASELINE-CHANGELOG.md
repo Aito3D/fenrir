@@ -13464,3 +13464,5 @@ already-landed, already-tested commit; no source file changed as part of
 writing this entry.
 
 - T-002 (iteration 1): re-baseline — additive internal export TrackingPaidRow in frontend/src/components/aito/trackingShell.tsx, user-sanctioned 2026-09-22
+- T-010 (iteration 3): user-approved behavior change 2026-09-22 — TrackingShopPanel map iframe referrerPolicy "no-referrer-when-downgrade" -> "no-referrer" so the page URL (which carries the tracking code) is no longer sent to google.com; the user verifies the keyless embed still renders in a real browser after merge.
+- T-011 (iteration 3): user-approved behavior change 2026-09-22 — tracking rate limiter keys IPv6 sources per /48 instead of /64 (_track_rate_net_key); one routed allocation = one per-net miss budget, like a /24 for IPv4. Golden tracking-backend re-recorded (net_key for the IPv6 host only).
