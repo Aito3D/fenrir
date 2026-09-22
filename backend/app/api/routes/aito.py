@@ -1459,11 +1459,19 @@ async def create_project(
         if _is_duplicate_active_quote_error(exc):
             raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL) from exc
         raise
-    if payload.quote_id is None:
-        # After the commit, never before: the sync worker reads through its
-        # own session, and a wake racing an uncommitted row drains nothing.
-        # Only the own-quote branch — an import owes Books nothing yet.
-        request_immediate_sync()
+    # After the commit, never before: the sync worker reads through its own
+    # session, and a wake racing an uncommitted row drains nothing.
+    #
+    # BOTH branches wake the loop. An import owes Books nothing (it was not
+    # marked pending above, and the drain's `run_sync_once(pending_only=True)`
+    # only ever pushes rows in the `pending` state, so the wake costs no Books
+    # call) — but it owes Heimdall a payment link exactly like a hand-made
+    # card, and the link is minted by the change drain the same wake runs
+    # (`reconcile_payment_links(changes_only=True)`). Waking only the
+    # own-quote branch, as this once did, left an imported quote with no link
+    # until the next full tick, up to `aito_quote_poll_seconds` later — which
+    # the operator reads as "no payment link on an imported quote".
+    request_immediate_sync()
     await _broadcast_changed("create", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)

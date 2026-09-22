@@ -151,11 +151,16 @@ async def test_board_payload_matches_the_golden_fixture(async_client, db_session
 
 
 @pytest.mark.asyncio
-async def test_create_wakes_the_quote_sync_worker(async_client):
+async def test_create_wakes_the_quote_sync_worker(async_client, db_session):
     """A new own-quote project must not sit out the 300s poll before its
     estimate exists: creation wakes the outbox worker. An import already has
-    its quote, so it must NOT wake — nothing is owed to Books yet, and the
-    worker's wake drain would find nothing."""
+    its quote, so it owes Books nothing and must NOT be queued for a push —
+    but it wakes the worker all the same, because the same wake runs the
+    payment-link change drain and the import owes Heimdall a link right now,
+    not at the next full tick (test_aito_payment_link_api covers the link
+    side). The drain only pushes `pending` rows, so the wake costs no Books
+    call for an idle import."""
+    from backend.app.models.aito_project import AitoProject
     from backend.app.services import aito_quote_sync
 
     aito_quote_sync._wake.clear()
@@ -165,7 +170,8 @@ async def test_create_wakes_the_quote_sync_worker(async_client):
     aito_quote_sync._wake.clear()
     r = await _create(async_client, quote_id="E77", quote_number="DEV26-1")
     assert r.status_code == 201
-    assert not aito_quote_sync._wake.is_set()
+    assert aito_quote_sync._wake.is_set()
+    assert (await db_session.get(AitoProject, r.json()["id"])).quote_sync_state == "idle"
 
 
 @pytest.mark.asyncio

@@ -241,3 +241,29 @@ async def test_refresh_is_rate_limited_per_user(async_client):
     assert set(aito_routes._ai_rate_limit_calls) == {
         k for k in aito_routes._ai_rate_limit_calls if k.startswith("payment_link_refresh:")
     }
+
+
+@pytest.mark.asyncio
+async def test_importing_a_quote_wakes_the_loop_for_its_link(async_client, db_session):
+    """An import (a create carrying `quote_id`) owes Books nothing — its tasks
+    were derived FROM the estimate — but it owes Heimdall a link exactly like
+    a hand-made card does, and the link is minted by the change drain the
+    loop runs on a wake (`reconcile_payment_links(changes_only=True)`). The
+    import branch used to skip the wake because, when it was written, the
+    wake only served Books pushes; the link then waited for the next full
+    tick, which the operator read as "no payment link on an imported quote".
+    The wake must fire; the project must still not be queued for a push."""
+    import asyncio
+
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.services import aito_quote_sync
+
+    aito_quote_sync._wake = asyncio.Event()
+    aito_quote_sync._debounce_deadline = None
+
+    p = await _create(async_client, quote_id="E9", quote_number="DEV26-9", quote_total=12500.0, quote_status="sent")
+
+    assert aito_quote_sync._wake.is_set()
+    assert aito_quote_sync._debounce_deadline is None
+    project = await db_session.get(AitoProject, p["id"])
+    assert project.quote_sync_state == "idle"
