@@ -958,9 +958,24 @@ body {
 .animate-aito-sheet-in {
   animation: aito-sheet-in 0.16s var(--ease-signature);
 }
+/* The mirror: back up under the band on the exit curve, 140ms — an exit is
+   a beat quicker than the entrance it undoes. `forwards` keeps the sheet
+   hidden through the unmount delay (setTimeout in the panel, not
+   animationend, for the reason drawer-out documents). */
+@keyframes aito-sheet-out {
+  to { opacity: 0; transform: translateY(-14px); }
+}
+.animate-aito-sheet-out {
+  animation: aito-sheet-out 0.14s var(--ease-exit) forwards;
+}
 @media (prefers-reduced-motion: reduce) {
+  /* Fade only, gentler not gone: the travel is what reduced motion asks to
+     drop, the bridge between "no sheet" and "sheet" is still owed. */
   .animate-aito-sheet-in {
-    animation: none;
+    animation: fade-in 0.16s ease-out;
+  }
+  .animate-aito-sheet-out {
+    animation: fadeOut 0.14s ease-out forwards;
   }
 }
 

@@ -32,6 +32,11 @@ export interface ClientEditorProps {
   /** The control that opened the sheet. A press on it is never "outside" —
    *  it reaches its own toggle instead of closing here and reopening there. */
   triggerRef?: RefObject<HTMLElement | null>;
+  /** True while the panel plays the exit: the sheet swaps its entrance for
+   *  `animate-aito-sheet-out` and stops taking pointer input, and the panel
+   *  unmounts it a beat later (SHEET_OUT_MS). Nothing here fires `onCancel`
+   *  again while it is set. */
+  closing?: boolean;
 }
 
 interface Draft {
@@ -97,7 +102,13 @@ function draftFromContact(contact: ZohoContactDetail, project: AitoProject): Dra
  *  highlight. `left-5` matches the header's own padding so the sheet's labels
  *  line up with the project eyebrow above. */
 const sheetCls =
-  'animate-aito-sheet-in absolute left-5 top-0 w-[440px] max-w-[calc(100%-2.5rem)] rounded-b-[14px] border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 pb-3.5 pt-4 shadow-[0_30px_60px_-18px_rgba(0,0,0,.9),0_0_0_1px_rgba(0,0,0,.35)]';
+  'absolute left-5 top-0 w-[440px] max-w-[calc(100%-2.5rem)] rounded-b-[14px] border border-t-0 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 pb-3.5 pt-4 shadow-[0_30px_60px_-18px_rgba(0,0,0,.9),0_0_0_1px_rgba(0,0,0,.35)]';
+
+/** Entrance or exit, never neither: the sheet always arrives from under the
+ *  band and always leaves the same way (spatial consistency — a surface that
+ *  exits differently than it entered reads as two surfaces). */
+const sheetMotionCls = (closing: boolean) =>
+  closing ? 'animate-aito-sheet-out pointer-events-none' : 'animate-aito-sheet-in';
 
 /** Compact field labels: the panel's eyebrow, not the drawer's `labelCls` —
  *  at 440px the sheet has no room for a sentence-case label per field, and
@@ -126,7 +137,7 @@ const fieldLabelCls = `${eyebrowCls} mb-1 block font-medium text-bambu-gray`;
  *  a Books refusal comes back as an error with the draft still on screen —
  *  the editor closes only through `onSaved`. Escape and an outside press
  *  close it through `onCancel`, the same two exits the date picker has. */
-export function ClientEditor({ project, onSaved, onCancel, triggerRef }: ClientEditorProps) {
+export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing = false }: ClientEditorProps) {
   const { t } = useTranslation();
   const isCompany = project.client_is_company === true;
   const rootRef = useRef<HTMLFormElement>(null);
@@ -182,6 +193,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef }: ClientE
   // An outside press abandons the sheet, the same way it abandons the date
   // picker. The trigger is excluded so a press on it reaches its own toggle.
   useEffect(() => {
+    if (closing) return;
     const onDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (rootRef.current?.contains(target)) return;
@@ -190,7 +202,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef }: ClientE
     };
     document.addEventListener('pointerdown', onDown);
     return () => document.removeEventListener('pointerdown', onDown);
-  }, [onCancel, triggerRef]);
+  }, [closing, onCancel, triggerRef]);
 
   const mutation = useMutation({
     mutationFn: (body: AitoClientEdit) => api.editAitoClient(project.id, body),
@@ -208,7 +220,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef }: ClientE
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key !== 'Escape') return;
     event.stopPropagation();
-    onCancel();
+    if (!closing) onCancel();
   };
 
   const TypeIcon = isCompany ? Building2 : User;
@@ -236,7 +248,12 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef }: ClientE
 
   if (draft === null) {
     return (
-      <div ref={rootRef as unknown as RefObject<HTMLDivElement>} className={sheetCls} onKeyDown={onKeyDown}>
+      <div
+        ref={rootRef as unknown as RefObject<HTMLDivElement>}
+        data-testid="client-edit-sheet"
+        className={`${sheetCls} ${sheetMotionCls(closing)}`}
+        onKeyDown={onKeyDown}
+      >
         {header}
         <p className="text-sm text-bambu-gray" role="status">
           {t('aito.clientEditLoading')}
@@ -291,7 +308,8 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef }: ClientE
         submit();
       }}
       onKeyDown={onKeyDown}
-      className={`${sheetCls} space-y-3`}
+      data-testid="client-edit-sheet"
+      className={`${sheetCls} ${sheetMotionCls(closing)} space-y-3`}
       aria-label={t('aito.clientEdit')}
     >
       {header}

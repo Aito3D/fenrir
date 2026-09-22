@@ -512,7 +512,7 @@ function PanelHeader({
               aria-label={t('aito.clientEdit')}
               aria-expanded={editingClient}
               title={t('aito.clientEdit')}
-              className={`flex-shrink-0 rounded-md p-1 transition-opacity focus-visible:opacity-100 ${focusRingCls} ${
+              className={`flex-shrink-0 rounded-md p-1 transition-[opacity,background-color,color] duration-150 focus-visible:opacity-100 ${focusRingCls} ${
                 editingClient
                   ? 'bg-bambu-green/15 text-bambu-green-light opacity-100'
                   : 'text-bambu-gray opacity-0 group-hover/client:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white'
@@ -597,6 +597,10 @@ function PanelHeader({
     </div>
   );
 }
+
+/** A beat past .animate-aito-sheet-out's 140ms — same margin SmsPickupModal
+ *  gives its modal-out. */
+const SHEET_OUT_MS = 160;
 
 /** Explicit map, same reason as SYNC_LABEL_KEY: a dynamic key is invisible to
  *  the i18n gate's literal scan. */
@@ -848,14 +852,37 @@ export function ProjectDetailPanel({
   // siblings in. Not an optimistic write: the server is Zoho-first, so
   // nothing is true until it answers.
   const [editingClient, setEditingClient] = useState(false);
+  // True from a close request until the sheet's exit has played. The blur,
+  // the inert body and the lit pencil all key on `sheetOpen` (open AND not
+  // closing) so they release the moment the sheet starts to leave, in step
+  // with it, rather than a beat after it has gone.
+  const [closingClient, setClosingClient] = useState(false);
+  const sheetOpen = editingClient && !closingClient;
   const clientEditButtonRef = useRef<HTMLButtonElement>(null);
-  // Focus goes back to the pencil on every close — a save, a cancel, Escape
-  // or an outside press — because the sheet took it from there. Programmatic
+  const sheetOutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (sheetOutTimer.current !== null) clearTimeout(sheetOutTimer.current);
+    },
+    [],
+  );
+  // Every close — a save, a cancel, Escape or an outside press — plays the
+  // exit first and unmounts a beat past it (setTimeout, not animationend,
+  // which never fires under reduced motion or in jsdom). Focus goes back to
+  // the pencil then, because the sheet took it from there; programmatic
   // focus after a mouse close shows no ring (focus-visible), so a pointer
-  // user sees nothing move.
+  // user sees nothing move. A second request during the exit is a no-op.
   const closeClientEdit = useCallback(() => {
-    setEditingClient(false);
-    clientEditButtonRef.current?.focus();
+    setClosingClient((already) => {
+      if (already) return already;
+      sheetOutTimer.current = setTimeout(() => {
+        sheetOutTimer.current = null;
+        setEditingClient(false);
+        setClosingClient(false);
+        clientEditButtonRef.current?.focus();
+      }, SHEET_OUT_MS);
+      return true;
+    });
   }, []);
   const onClientSaved = (updated: AitoProject) => {
     queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, updated));
@@ -1097,7 +1124,7 @@ export function ProjectDetailPanel({
           quotedTotal={quotedTotal}
           stepsDone={stepsDone}
           stepsTotal={stepsTotal}
-          editingClient={editingClient}
+          editingClient={sheetOpen}
           onToggleClientEdit={() => (editingClient ? closeClientEdit() : setEditingClient(true))}
           clientEditButtonRef={clientEditButtonRef}
           canUpdate={canUpdate}
@@ -1115,6 +1142,7 @@ export function ProjectDetailPanel({
               onSaved={onClientSaved}
               onCancel={closeClientEdit}
               triggerRef={clientEditButtonRef}
+              closing={closingClient}
             />
           )}
         </div>
@@ -1126,7 +1154,21 @@ export function ProjectDetailPanel({
             identity to filter against there.) */}
         <PresenceBanner names={otherViewers} />
 
-        <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
+        {/* While the contact sheet is open the body behind it blurs and goes
+            `inert`: the sheet is the only live surface, the masthead it hangs
+            from stays sharp, and Tab cannot wander into the blurred columns.
+            `inert` also makes the body non-hit-testable, so a press on it
+            lands on the panel frame — still an outside press to the sheet's
+            listener, which is how a click on the blur closes it. The filter
+            is transitioned rather than snapped so the blur arrives with the
+            sheet rather than a frame before it. */}
+        <div
+          data-testid="panel-body"
+          inert={sheetOpen || undefined}
+          className={`overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden transition-[filter,opacity] duration-200 ${
+            sheetOpen ? 'blur-[5px] opacity-60' : ''
+          }`}
+        >
           {/* Three columns, three scrollers — but only from `lg` up, where the
               grid is actually side by side. Below that the columns stack and
               the body's own scroller is the right one.
@@ -1363,10 +1405,14 @@ export function ProjectDetailPanel({
 
         <div
           data-testid="panel-footer"
+          inert={sheetOpen || undefined}
           // `bg-bambu-dark-secondary`, same as the header and every card: the
           // footer sits on the canvas as a surface too, not a darker recess
-          // of it.
-          className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary"
+          // of it. Blurred with the body while the contact sheet is open —
+          // see the body's own comment.
+          className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary transition-[filter,opacity] duration-200 ${
+            sheetOpen ? 'blur-[5px] opacity-60' : ''
+          }`}
         >
           {/* Destructive far left, safe actions far right — the two ends of the
               bar. This is what the header adjacency to Close cost us.

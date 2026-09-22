@@ -250,6 +250,22 @@ describe('ClientEditor', () => {
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
+  it('plays the exit while closing and stops listening for Escape and outside presses', async () => {
+    mockZoho();
+    const onCancel = vi.fn();
+    const { rerender } = render(<ClientEditor project={project} onSaved={vi.fn()} onCancel={onCancel} />);
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    expect(screen.getByTestId('client-edit-sheet').className).toMatch(/animate-aito-sheet-in/);
+    rerender(<ClientEditor project={project} onSaved={vi.fn()} onCancel={onCancel} closing />);
+    const sheet = screen.getByTestId('client-edit-sheet');
+    expect(sheet.className).toMatch(/animate-aito-sheet-out/);
+    expect(sheet.className).not.toMatch(/animate-aito-sheet-in/);
+    expect(sheet.className).toMatch(/pointer-events-none/);
+    fireEvent.keyDown(firstName(), { key: 'Escape' });
+    fireEvent.pointerDown(document.body);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it('names Zoho Books as the destination on a Books contact and this card only on a walk-in', async () => {
     mockZoho();
     show();

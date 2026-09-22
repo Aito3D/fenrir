@@ -580,6 +580,44 @@ describe('ProjectDetailPanel client edit', () => {
     expect(button).toHaveFocus();
   });
 
+  it('closes by playing the exit first: blur and pencil release at once, the sheet unmounts a beat later', async () => {
+    zohoUp();
+    const user = userEvent.setup();
+    show();
+    const pencil = screen.getByRole('button', { name: /edit the client/i });
+    await user.click(pencil);
+    await screen.findByLabelText(/company name/i);
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    // Still mounted, on its way out.
+    const sheet = screen.getByTestId('client-edit-sheet');
+    expect(sheet.className).toMatch(/animate-aito-sheet-out/);
+    expect(screen.getByTestId('panel-body')).not.toHaveAttribute('inert');
+    expect(pencil).toHaveAttribute('aria-expanded', 'false');
+    // A second close during the exit is a no-op, not a second timer.
+    await user.click(pencil);
+    await waitFor(() => expect(screen.queryByTestId('client-edit-sheet')).not.toBeInTheDocument());
+    expect(pencil).toHaveFocus();
+  });
+
+  it('blurs the body and footer and makes them inert while the sheet is open', async () => {
+    zohoUp();
+    const user = userEvent.setup();
+    show();
+    const body = screen.getByTestId('panel-body');
+    const footer = screen.getByTestId('panel-footer');
+    expect(body).not.toHaveAttribute('inert');
+    expect(body.className).not.toMatch(/blur/);
+    await user.click(screen.getByRole('button', { name: /edit the client/i }));
+    await screen.findByLabelText(/company name/i);
+    expect(body).toHaveAttribute('inert');
+    expect(body.className).toMatch(/blur/);
+    expect(footer).toHaveAttribute('inert');
+    expect(footer.className).toMatch(/blur/);
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitFor(() => expect(body).not.toHaveAttribute('inert'));
+    expect(body.className).not.toMatch(/blur/);
+  });
+
   it('closes the sheet on Escape and keeps the panel open', async () => {
     zohoUp();
     const onClose = vi.fn();
