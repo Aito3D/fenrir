@@ -6,6 +6,8 @@ import { api } from '../../api/client';
 import type { AitoTask, ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { ClientHistory } from './ClientHistory';
+import { useClientRating } from './useClientRating';
+import { ClientRatingPill } from './ClientRatingPill';
 import { PhoneInput } from './PhoneInput';
 import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
@@ -61,6 +63,9 @@ export function ClientSection({
     // request per session is the point of the server-side cache.
     staleTime: 60 * 60_000,
   });
+  // Empty id for the walk-in default: the hook disables itself, and the
+  // backend would answer `new` for it anyway.
+  const rating = useClientRating(value.isDefault ? '' : value.id);
 
   if (statusQuery.data?.configured === false) {
     return (
@@ -114,6 +119,7 @@ export function ClientSection({
         onCreateNew={onCreateNew}
         onReset={() => onChange(defaultClientDraft(defaultContactId, defaultContactName))}
         showReset={value.id !== defaultContactId}
+        trailing={<ClientRatingPill rating={rating.data} />}
       />
 
       <ClientHistory clientId={value.id} isDefault={value.isDefault} onReuse={onReuseTasks} />

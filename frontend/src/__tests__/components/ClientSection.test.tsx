@@ -290,3 +290,49 @@ describe('ClientSection', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/settings?tab=zoho');
   });
 });
+
+const goodRating = {
+  tier: 'good', reason: 'punctual',
+  settled_count: 8, on_time_count: 8, overdue_count: 0, past_due_count: 0,
+  worst_overdue_days: 0, worst_overdue_number: null,
+  computed_at: new Date().toISOString(), stale: false,
+};
+
+describe('client rating in the drawer', () => {
+  it('shows the rating pill beside the chosen client once it resolves', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json(goodRating);
+      }),
+    );
+    renderSection(draftFromContact(acme, DEFAULT_ID));
+    expect(await screen.findByText('Good')).toBeInTheDocument();
+    expect(seen).toEqual(['z1']);
+  });
+
+  it('shows the grey New pill in the drawer (the masthead hides it, the drawer does not)', async () => {
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', () =>
+        HttpResponse.json({ ...goodRating, tier: 'new', reason: 'new', settled_count: 0, on_time_count: 0 }),
+      ),
+    );
+    renderSection(draftFromContact(acme, DEFAULT_ID));
+    expect(await screen.findByText('New')).toBeInTheDocument();
+  });
+
+  it('never asks for the walk-in default contact', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json(goodRating);
+      }),
+    );
+    renderSection();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue(DEFAULT_NAME));
+    expect(seen).toEqual([]);
+    expect(screen.queryByText('Good')).not.toBeInTheDocument();
+  });
+});

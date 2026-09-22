@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Plus, RotateCcw } from 'lucide-react';
@@ -12,6 +13,11 @@ export interface ClientComboboxProps {
   onCreateNew: () => void;
   onReset: () => void;
   showReset: boolean;
+  /** Rendered between the input and the reset button — the drawer puts the
+   *  client's rating pill here so it sits beside the name it rates without
+   *  living inside the input. Takes only its own width; the input keeps
+   *  `flex-1`. */
+  trailing?: ReactNode;
 }
 
 const DEBOUNCE_MS = 300;
@@ -22,7 +28,7 @@ const MIN_QUERY_LENGTH = 2;
  *  blurring without a pick puts the name back. A client is always attached (the
  *  default walk-in contact if nothing else), so there is no "empty" state and no
  *  chip to clear — the reset control returns to the default instead. */
-export function ClientCombobox({ clientName, onSelect, onCreateNew, onReset, showReset }: ClientComboboxProps) {
+export function ClientCombobox({ clientName, onSelect, onCreateNew, onReset, showReset, trailing }: ClientComboboxProps) {
   const { t } = useTranslation();
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -166,6 +172,7 @@ export function ClientCombobox({ clientName, onSelect, onCreateNew, onReset, sho
             </div>
           )}
         </div>
+        {trailing}
         <button
           type="button"
           aria-label={t('aito.resetToDefaultClient')}
