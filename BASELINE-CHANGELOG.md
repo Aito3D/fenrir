@@ -13108,6 +13108,20 @@ acceptances gained or lost). The funnel and the 15+-day quote-age fact now
 agree: the same `quote_sent_at` stamp that already fed the quote-age bucket
 now also feeds the funnel's `sent` bucket for a Books-only card.
 
+The count can also FALL by one for a bounded (non-all-time) window, in one
+specific case: a card whose `quote_sent_at` predates the requested window
+but whose `quote.sent` event falls inside it — an app re-send of a quote
+that originally left through Books. The earlier-of-two merge replaces the
+in-window event moment with the out-of-window stamp, so `sent[pid]` fails
+`_in_range` in `_bucket` and the card stops counting for that window, even
+though it counted before this fix. This is not new behavior introduced only
+for `sent`: it is the same semantics the pre-existing `accepted` merge has
+always had, applied here for consistency. It cannot happen on an all-time
+request, which has no lower bound (`start` is `None`, so `_in_range` is
+unconditionally true). The user's approval above was given against the
+"count rises" summary; this paragraph completes that record rather than
+describing a new decision.
+
 Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14 after
 re-recording ONLY `stats-backend-aggregate`
 (`tools/probe_stats_backend.py` has two fixture cards, id 5 and id 9, each
