@@ -34,18 +34,17 @@ AWAY_STATUSES: frozenset[str] = frozenset({"sent", "viewed", "expired"})
 # imports SERVICES from here rather than defining its own.
 SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage", "maindoeuvre")
 
-# Which services each work stage covers, in board order. Printing and machining
-# share one column while remaining two separate steps on a task: the column is
-# left only once BOTH are ticked everywhere they appear. Main d'œuvre is the
-# Finish column's own step, which is why Finish is no longer purely the
-# "nothing left to do" resting place: a card with labour outstanding is held
-# there with move_lock='steps', and Mark done (canMarkDone / move_project)
-# refuses until it is ticked.
+# Which services each work stage covers, in board order. Printing, machining
+# and Main d'œuvre share one column while remaining three separate steps on a
+# task: the column is left only once ALL of them are ticked everywhere they
+# appear. Labour moved here from Finish on 2026-09-22 so that Finish is purely
+# the "nothing left to do" resting place: a card reaches it only once every
+# step on every task is ticked, and Mark done (canMarkDone / move_project) is
+# therefore always available there. Neither Finish nor Done owns a step.
 STAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("scan", ("scan",)),
     ("model", ("modelisation",)),
-    ("print", ("impression", "usinage")),
-    ("finish", ("maindoeuvre",)),
+    ("print", ("impression", "usinage", "maindoeuvre")),
 )
 
 

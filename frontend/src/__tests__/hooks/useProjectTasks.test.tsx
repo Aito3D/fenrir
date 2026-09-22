@@ -417,9 +417,9 @@ describe('useProjectTasks', () => {
 
   it('resyncs the board when a labour tick lands, same as any other step', async () => {
     // Regression for `'maindoeuvre_done'` dropping out of the ticked-step
-    // list in onSuccess (useProjectTasks.ts): labour is the Finish stage's
-    // own step, so a tick there is what releases `move_lock` and lets the
-    // card move to Done. A missing entry here would still PATCH the field —
+    // list in onSuccess (useProjectTasks.ts): labour is a Printing &
+    // Machining step, so a tick there is what releases `move_lock` and lets
+    // the card reach Finish. A missing entry here would still PATCH the field —
     // the checkbox would look ticked — but the board behind the panel would
     // never resync, so the card would silently stay put. Needs its own
     // QueryClient (not the shared `mounted()` helper) so this test can spy

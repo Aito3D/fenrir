@@ -78,9 +78,8 @@ export interface StageWork {
  *
  *  Stages carrying no priced step are omitted rather than returned at zero. A
  *  project with no machining should not show an empty Machining row. `devis`,
- *  `waiting` and `done` own no services at all and so can never appear;
- *  `finish` owns exactly one, `maindoeuvre`, and appears only for a project
- *  that prices labour. */
+ *  `waiting`, `finish` and `done` own no services at all and so can never
+ *  appear; labour is a `print` step and counts there. */
 export function stagesWithWork(tasks: readonly TaskDraft[]): StageWork[] {
   return STAGES.flatMap(([column, services]) => {
     const entry: StageWork = { column, stepsDone: 0, stepsTotal: 0, value: 0, valueDone: 0 };

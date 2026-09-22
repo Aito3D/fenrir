@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.services.aito_board_rules import evaluate, net_cost, summarise
+from backend.app.services.aito_board_rules import STAGES, evaluate, net_cost, summarise
 
 
 class _Task:
@@ -145,20 +145,33 @@ def test_summarise_discounts_a_non_printing_service():
     assert result.steps_total == 2
 
 
-def test_pending_maindoeuvre_holds_the_card_in_finish():
-    assert evaluate("accepted", "finish", ["maindoeuvre"]) == ("finish", "steps")
+def test_pending_maindoeuvre_holds_the_card_in_print():
+    """Labour is a Printing & Machining step (2026-09-22): a card whose only
+    open work is labour sits in Print, never in Finish."""
+    assert evaluate("accepted", "finish", ["maindoeuvre"]) == ("print", "steps")
 
 
 def test_pending_maindoeuvre_evicts_a_card_from_done():
-    assert evaluate("accepted", "done", ["maindoeuvre"]) == ("finish", "steps")
+    assert evaluate("accepted", "done", ["maindoeuvre"]) == ("print", "steps")
 
 
 def test_ticked_maindoeuvre_releases_the_lock():
     assert evaluate("accepted", "finish", []) == ("finish", None)
 
 
-def test_printing_still_outranks_labour():
-    assert evaluate("accepted", "finish", ["impression", "maindoeuvre"]) == ("print", "steps")
+def test_labour_shares_the_print_column_with_printing():
+    assert evaluate("accepted", "model", ["impression", "maindoeuvre"]) == ("print", "steps")
+
+
+def test_modelling_still_outranks_labour():
+    assert evaluate("accepted", "print", ["modelisation", "maindoeuvre"]) == ("model", "steps")
+
+
+def test_finish_owns_no_step():
+    """Finish is purely the resting place: a card only reaches it once every
+    step on every task is ticked, so no stage may claim it."""
+    assert "finish" not in {stage for stage, _ in STAGES}
+    assert "done" not in {stage for stage, _ in STAGES}
 
 
 def test_summarise_counts_a_labour_step():

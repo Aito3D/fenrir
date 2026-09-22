@@ -132,13 +132,21 @@ describe('stagesWithWork', () => {
     const print = stagesWithWork([t]).find((s) => s.column === 'print');
     expect(print?.value).toBe(900);
   });
+
+  it('stagesWithWork files labour under Printing & Machining, never under Finish', () => {
+    const t = task({ impressionCost: 7000, maindoeuvreCost: 5000 });
+    const stages = stagesWithWork([t]);
+    expect(stages.map((s) => s.column)).toEqual(['print']);
+    const print = stages[0];
+    expect(print.stepsTotal).toBe(2);
+    expect(print.value).toBe(12000);
+  });
 });
 
 describe('serviceDotCls', () => {
   it('does not paint an unticked labour step in the done green', () => {
-    // maindoeuvre is staged under Finish, whose dot is the green this UI
-    // means "finished" with. Inheriting it would show every unticked labour
-    // step as complete.
+    // Finish's dot is the green this UI means "finished" with. Labour must
+    // never inherit it, or every unticked labour step would read as complete.
     const finishDot = ALL_COLUMNS.find((c) => c.id === 'finish')?.dot;
     expect(finishDot).toBe('bg-bambu-green');
     expect(serviceDotCls('maindoeuvre')).not.toBe(finishDot);

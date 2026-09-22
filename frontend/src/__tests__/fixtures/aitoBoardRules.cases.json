@@ -14114,7 +14114,7 @@
       "stored_column": "devis"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"
@@ -14449,7 +14449,7 @@
       "stored_column": "waiting"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"
@@ -14784,7 +14784,7 @@
       "stored_column": "scan"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"
@@ -15119,7 +15119,7 @@
       "stored_column": "model"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"
@@ -15454,7 +15454,7 @@
       "stored_column": "print"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"
@@ -15789,7 +15789,7 @@
       "stored_column": "finish"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"
@@ -16124,7 +16124,7 @@
       "stored_column": "done"
     },
     {
-      "column": "finish",
+      "column": "print",
       "move_lock": "steps",
       "pending": [
         "maindoeuvre"

@@ -61,9 +61,11 @@ export type ServiceId = (typeof SERVICES)[number];
  *  says they never answered — both are still waiting on them. */
 export const AWAY_STATUSES: ReadonlySet<string> = new Set(['sent', 'viewed', 'expired']);
 
-/** Which services each work stage covers, in board order. Printing and
- *  machining share one column while remaining two separate steps on a task:
- *  the column is left only once BOTH are ticked everywhere they appear.
+/** Which services each work stage covers, in board order. Printing, machining
+ *  and Main d'œuvre share one column while remaining three separate steps on
+ *  a task: the column is left only once ALL are ticked everywhere they appear.
+ *  Finish owns no step — it is purely the "nothing left to do" resting place,
+ *  which is what keeps `canMarkDone` true for every card that reaches it.
  *
  *  Exported only so the contract test can assert every member of `SERVICES`
  *  appears in exactly one stage — unlike `ServiceId`, that completeness can't
@@ -72,11 +74,7 @@ export const AWAY_STATUSES: ReadonlySet<string> = new Set(['sent', 'viewed', 'ex
 export const STAGES: readonly (readonly [AitoColumnId, readonly ServiceId[]])[] = [
   ['scan', ['scan']],
   ['model', ['modelisation']],
-  ['print', ['impression', 'usinage']],
-  // Finish owns Main d'œuvre, so it is a work stage now and not only the
-  // "nothing left to do" resting place: a card with labour outstanding sits
-  // here with moveLock 'steps', which is what keeps `canMarkDone` false.
-  ['finish', ['maindoeuvre']],
+  ['print', ['impression', 'usinage', 'maindoeuvre']],
 ];
 
 /** The minimum a task must expose for these rules to read it. Structural, not

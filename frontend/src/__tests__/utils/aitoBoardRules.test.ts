@@ -91,12 +91,19 @@ describe('the board-rules contract', () => {
     expect(mismatches).toEqual([]);
   });
 
-  it('holds a card in Finish while labour is pending', () => {
-    expect(evaluate('accepted', 'finish', ['maindoeuvre'])).toEqual(['finish', 'steps']);
+  it('holds a card in Printing & Machining while labour is pending', () => {
+    // Labour is a print-stage step: Finish only holds fully-ticked cards.
+    expect(evaluate('accepted', 'finish', ['maindoeuvre'])).toEqual(['print', 'steps']);
   });
 
-  it('evicts a card from Done when labour is re-opened', () => {
-    expect(evaluate('accepted', 'done', ['maindoeuvre'])).toEqual(['finish', 'steps']);
+  it('evicts a card from Done back to Printing & Machining when labour is re-opened', () => {
+    expect(evaluate('accepted', 'done', ['maindoeuvre'])).toEqual(['print', 'steps']);
+  });
+
+  it('gives Finish and Done no step of their own', () => {
+    const stages = STAGES.map(([column]) => column);
+    expect(stages).not.toContain('finish');
+    expect(stages).not.toContain('done');
   });
 
   it('totals a labour step with no discount field', () => {
