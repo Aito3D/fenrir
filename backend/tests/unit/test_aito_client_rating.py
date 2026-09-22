@@ -5,12 +5,13 @@ The scorer is pure (rows + today in, dataclass out), so every tier rule and
 every edge is a table row here with no Zoho, no clock and no database.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
+import backend.app.services.aito_client_rating as aito_client_rating_module
 from backend.app.models.aito_client_rating import AitoClientRating
 from backend.app.schemas.aito import AitoClientRatingResponse
 from backend.app.services.aito_client_rating import (
@@ -159,6 +160,43 @@ def test_invoices_older_than_the_window_fade():
     assert rate_invoices(rows_inside, TODAY).settled_count == 4
 
 
+def test_window_boundary_exact_start_date_counts_day_before_does_not():
+    window_start = date(2024, 9, 22)  # exactly 24 months before TODAY
+    on_boundary = _inv(
+        number="EDGE-ON",
+        issued=window_start,
+        due=window_start + timedelta(days=30),
+        paid_on=window_start + timedelta(days=5),
+    )
+    assert rate_invoices([on_boundary], TODAY).settled_count == 1
+
+    day_before = window_start - timedelta(days=1)
+    before_boundary = _inv(
+        number="EDGE-BEFORE",
+        issued=day_before,
+        due=day_before + timedelta(days=30),
+        paid_on=day_before + timedelta(days=5),
+    )
+    assert rate_invoices([before_boundary], TODAY).settled_count == 0
+
+
+def test_window_applies_to_settled_invoices_only_not_to_an_open_balance():
+    # An open invoice older than the window still counts, and still overrides
+    # the history: an unpaid debt does not get to fade just because it is old.
+    issued = TODAY - timedelta(days=30 * 30)  # ~30 months ago
+    due = TODAY - timedelta(days=29 * 30)  # ~29 months ago, 400+ days past due
+    open_row = _inv(number="OLD-OPEN", issued=issued, due=due, status="sent", balance=500.0)
+    rating = rate_invoices([open_row], TODAY)
+    assert (rating.tier, rating.reason, rating.settled_count) == ("bad", "overdue", 0)
+    assert rating.worst_overdue_days > 400
+
+    # The same invoice, settled instead of open: the window still fades it,
+    # even though it was paid 200 days late.
+    paid_row = _inv(number="OLD-PAID", issued=issued, due=due, status="paid", paid_on=due + timedelta(days=200))
+    rating_paid = rate_invoices([paid_row], TODAY)
+    assert (rating_paid.tier, rating_paid.reason, rating_paid.settled_count) == ("new", "new", 0)
+
+
 def test_paid_invoice_without_a_payment_date_counts_as_on_time():
     rows = [r | {"last_payment_date": ""} for r in _paid(3)]
     rating = rate_invoices(rows, TODAY)
@@ -262,10 +300,20 @@ async def test_ttl_expiry_recomputes_and_refresh_forces_it(db_session, monkeypat
     await read_client_rating(db_session, "C1", now=NOW)
 
     expired = await read_client_rating(db_session, "C1", now=NOW + CACHE_TTL)
-    forced = await read_client_rating(db_session, "C1", refresh=True, now=NOW + CACHE_TTL + timedelta(minutes=1))
+    # 2 minutes after the row just written by `expired`, well past the
+    # refresh throttle's 60-second floor, so the force still goes through.
+    forced = await read_client_rating(db_session, "C1", refresh=True, now=NOW + CACHE_TTL + timedelta(minutes=2))
 
     assert expired.computed_at == NOW + CACHE_TTL
-    assert forced.computed_at == NOW + CACHE_TTL + timedelta(minutes=1)
+    assert forced.computed_at == NOW + CACHE_TTL + timedelta(minutes=2)
+    assert calls == ["C1", "C1", "C1"]
+
+    # A refresh request only 30 seconds after that forced compute is inside
+    # the throttle window and must not reach Books at all.
+    throttled = await read_client_rating(
+        db_session, "C1", refresh=True, now=NOW + CACHE_TTL + timedelta(minutes=2, seconds=30)
+    )
+    assert throttled.computed_at == forced.computed_at
     assert calls == ["C1", "C1", "C1"]
 
 
@@ -331,12 +379,37 @@ async def test_cache_write_failure_still_returns_the_fresh_rating(db_session, mo
 
 
 @pytest.mark.asyncio
+async def test_cached_row_read_failure_returns_unavailable_without_raising(db_session, monkeypatch):
+    async def failing_get(*args, **kwargs):
+        raise OperationalError("db is locked", None, Exception("locked"))
+
+    monkeypatch.setattr(db_session, "get", failing_get)
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert body.tier == "unavailable"
+
+
+@pytest.mark.asyncio
 async def test_route_returns_the_rating_and_honours_refresh(async_client, monkeypatch):
     calls: list[str] = []
     _fake_books(monkeypatch, _paid(4), calls)
 
+    # The route has no `now=` seam, so the wall clock is faked here instead:
+    # without it, all three requests land within the same instant and the
+    # refresh throttle (REFRESH_MIN_AGE) would swallow the forced call too.
+    clock = {"now": datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)}
+
+    class _FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock["now"]
+
+    monkeypatch.setattr(aito_client_rating_module, "datetime", _FakeDateTime)
+
     first = await async_client.get("/api/v1/aito/clients/C9/rating")
     second = await async_client.get("/api/v1/aito/clients/C9/rating")
+    clock["now"] = clock["now"] + timedelta(minutes=2)
     forced = await async_client.get("/api/v1/aito/clients/C9/rating?refresh=1")
 
     assert first.status_code == 200, first.text

@@ -1120,20 +1120,26 @@ class ZohoService:
         return list(payload.get("retainerinvoices") or [])
 
     async def list_customer_invoices(self, db: AsyncSession, customer_id: str) -> list[dict]:
-        """Every invoice Books holds for this customer, oldest to newest as
-        Books returns them, mapped by ``_map_invoice_history``.
+        """Every invoice Books holds for this customer, newest first (pinned
+        below), mapped by ``_map_invoice_history``.
 
         The client rating's one read: a customer's whole billing history in
         one paginated call, including bills raised by hand in Books that no
         estimate-keyed read can see. Paged like ``list_invoices_modified_since``
         and capped by ``_MAX_INVOICE_PAGES`` — a customer with more than 2000
         invoices is not a case this shop has, and the cap bounds a runaway.
+        The sort is pinned explicitly (``date`` descending) rather than left
+        to Books' default — the read-only probe of 2026-09-22 found it
+        newest-first already, but pinning it means the page cap can only
+        ever truncate the OLDEST rows, never the most recent ones.
 
         ``customer_id`` MUST be non-empty, for the same reason as
         ``list_customer_payments``: Books reads an empty filter as no filter
-        and would answer with the org's entire invoice list.
+        and would answer with the org's entire invoice list. An id longer
+        than the column's ``String(50)`` cannot be a real Zoho id (they run
+        ~17 digits) and is refused the same way.
         """
-        if not customer_id:
+        if not customer_id or len(customer_id) > 50:
             return []
         rows: list[dict] = []
         for page in range(1, _MAX_INVOICE_PAGES + 1):
@@ -1141,7 +1147,13 @@ class ZohoService:
                 db,
                 "GET",
                 "/invoices",
-                params={"customer_id": customer_id, "per_page": "200", "page": str(page)},
+                params={
+                    "customer_id": customer_id,
+                    "per_page": "200",
+                    "page": str(page),
+                    "sort_column": "date",
+                    "sort_order": "D",
+                },
             )
             rows.extend(_map_invoice_history(i) for i in payload.get("invoices") or [])
             if not (payload.get("page_context") or {}).get("has_more_page"):

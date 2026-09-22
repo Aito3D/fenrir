@@ -1236,6 +1236,20 @@ async def test_list_customer_invoices_refuses_an_empty_id_before_any_call(db_ses
 
 
 @pytest.mark.asyncio
+async def test_list_customer_invoices_refuses_an_id_longer_than_the_column(db_session):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"invoices": []})
+
+    zoho_service.transport = _transport(handler)
+    too_long = "1" * 51
+    assert await zoho_service.list_customer_invoices(db_session, too_long) == []
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_list_customer_invoices_pages_and_maps_history_fields(async_client, db_session):
     await _configure(async_client)
     pages = {
@@ -1286,6 +1300,8 @@ async def test_list_customer_invoices_pages_and_maps_history_fields(async_client
 
     assert [p["customer_id"] for p in seen] == ["C1", "C1"]
     assert [p["per_page"] for p in seen] == ["200", "200"]
+    assert [p["sort_column"] for p in seen] == ["date", "date"]
+    assert [p["sort_order"] for p in seen] == ["D", "D"]
     assert rows == [
         {
             "number": "FA-26-0001",

@@ -44,8 +44,9 @@ reduced to `date`, `due_date`, `status`, `balance`, `total`,
 Filtering:
 
 - `void` and `draft` rows are ignored.
-- Only invoices whose `date` falls in the **last 24 months** count, so an old
-  lapse fades.
+- Only SETTLED invoices whose `date` falls in the last 24 months count, so an
+  old lapse fades; an open invoice with a balance counts whatever its age —
+  an unpaid debt never fades.
 - **Settled**: `status == 'paid'`. Lateness = `last_payment_date − due_date`
   in days (negative is early). A paid invoice with no `last_payment_date` or
   no `due_date` counts as on time.
