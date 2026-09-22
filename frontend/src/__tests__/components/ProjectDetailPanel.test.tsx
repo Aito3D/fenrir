@@ -446,114 +446,93 @@ describe('ProjectDetailPanel client fields', () => {
 });
 
 describe('ProjectDetailPanel social handle', () => {
-  // Same reason the activity-rail describe block restores mocks: without it,
-  // an api.updateAitoProject spy from one of these tests leaks into whatever
-  // runs after it and its PATCHes never reach msw.
   afterEach(() => vi.restoreAllMocks());
+
+  const zohoUp = () =>
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: 'walkin', default_contact_name: 'x' }),
+      ),
+      http.get('/api/v1/zoho/contacts/:id', () =>
+        HttpResponse.json({
+          id: 'z1',
+          name: 'ACME SARL',
+          company_name: 'ACME SARL',
+          customer_sub_type: 'business',
+          phone: '',
+          mobile: '+689-87123456',
+          email: 'hi@acme.pf',
+          first_name: '',
+          last_name: '',
+        }),
+      ),
+    );
 
   it('shows a stored social handle in the header', () => {
     show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
     expect(screen.getByText('moana.3d')).toBeInTheDocument();
   });
 
-  it('shows no value but still offers an affordance to set one when there is no social handle', () => {
-    // The handle is card-only (never written to Zoho), so once it is cleared
-    // nothing else in the product can restore it — this affordance is the
-    // only way back in. Gating it the same way the displayed value is gated
-    // would make "save blank" a one-way door.
+  it('has no pencil of its own: the handle is edited on the contact sheet with the rest of the contact', () => {
     show({ client_social_network: null, client_social_handle: null });
     expect(screen.queryByText(/moana/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /edit the social network/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /social network/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /edit the client/i })).toHaveLength(1);
   });
 
-  it('sets a handle for the first time from the empty-state affordance', async () => {
+  it('sets a handle for the first time through the contact sheet, in the same client save', async () => {
+    zohoUp();
+    let sent: Record<string, unknown> | null = null;
+    server.use(
+      http.put('/api/v1/aito/12/client', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...project, client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+      }),
+    );
     const user = userEvent.setup();
-    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
-      ...project,
-      client_social_network: 'instagram',
-      client_social_handle: 'moana.3d',
-    });
     show({ client_social_network: null, client_social_handle: null });
 
-    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.click(screen.getByRole('button', { name: /edit the client/i }));
+    await screen.findByLabelText(/company name/i);
     await user.click(screen.getByRole('radio', { name: 'Instagram' }));
     await user.type(screen.getByLabelText(/username/i), 'moana.3d');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith(project.id, {
+    await waitFor(() => expect(sent).not.toBeNull());
+    expect(sent).toEqual(
+      expect.objectContaining({
+        company_name: 'ACME SARL',
         client_social_network: 'instagram',
         client_social_handle: 'moana.3d',
         expected_version: project.version,
       }),
     );
+    // The sheet closes on the server's answer. (The header's own echo of the
+    // value comes from the board cache, which `show()`'s static prop never
+    // reads — the client-edit block below covers that path.)
+    await waitFor(() => expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument());
   });
 
-  it('patches both keys when the handle is edited', async () => {
-    const user = userEvent.setup();
-    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
-      ...project,
-      client_social_network: 'tiktok',
-      client_social_handle: 'moana.tt',
-    });
-    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
-
-    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
-    await user.click(screen.getByRole('radio', { name: 'TikTok' }));
-    const input = screen.getByLabelText(/username/i);
-    await user.clear(input);
-    await user.type(input, 'moana.tt');
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
-
-    await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith(project.id, {
-        client_social_network: 'tiktok',
-        client_social_handle: 'moana.tt',
-        expected_version: project.version,
+  it('clears both keys when the handle is emptied on the sheet', async () => {
+    zohoUp();
+    let sent: Record<string, unknown> | null = null;
+    server.use(
+      http.put('/api/v1/aito/12/client', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...project, client_social_network: null, client_social_handle: null });
       }),
     );
-  });
-
-  it('clears both keys when the handle is emptied', async () => {
     const user = userEvent.setup();
-    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
-      ...project,
-      client_social_network: null,
-      client_social_handle: null,
-    });
     show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
 
-    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
-    await user.clear(screen.getByLabelText(/username/i));
+    await user.click(screen.getByRole('button', { name: /edit the client/i }));
+    const handle = await screen.findByLabelText(/username/i);
+    expect(handle).toHaveValue('moana.3d');
+    await user.clear(handle);
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith(project.id, {
-        client_social_network: null,
-        client_social_handle: null,
-        expected_version: project.version,
-      }),
-    );
-  });
-
-  it('keeps the editor open with the typed input on a failed save', async () => {
-    // Pins the fix to `saveSocial`: it used to close the editor before the
-    // mutation settled, so a failed PATCH discarded whatever the user had
-    // just typed with no way to retry it. Closing in `onSuccess` instead
-    // (ShippingCard's own pattern) means a rejection leaves the editor — and
-    // the draft — right where the user left it.
-    const user = userEvent.setup();
-    vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new Error('network error'));
-    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
-
-    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
-    const input = screen.getByLabelText(/username/i);
-    await user.clear(input);
-    await user.type(input, 'moana.tt');
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
-
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).not.toBeDisabled());
-    expect(screen.getByLabelText(/username/i)).toHaveValue('moana.tt');
+    await waitFor(() => expect(sent).not.toBeNull());
+    expect(sent).toEqual(expect.objectContaining({ client_social_network: null, client_social_handle: null }));
   });
 });
 
@@ -590,9 +569,29 @@ describe('ProjectDetailPanel client edit', () => {
     expect(button.className).toMatch(/group-hover/);
     await user.click(button);
     expect(await screen.findByLabelText(/company name/i)).toHaveValue('ACME SARL');
-    // The read-only contact row yields to the editor rather than sitting
-    // beside it as a stale copy.
-    expect(screen.queryByRole('button', { name: /edit the social network/i })).not.toBeInTheDocument();
+    // The sheet hangs from the header rather than growing it: the contact row
+    // stays where it was, and the pencil stays up as the control that closes
+    // the sheet again.
+    expect(screen.getByRole('button', { name: /hi@acme\.pf/i })).toBeInTheDocument();
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    await user.click(button);
+    await waitFor(() => expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument());
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(button).toHaveFocus();
+  });
+
+  it('closes the sheet on Escape and keeps the panel open', async () => {
+    zohoUp();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={onClose} onDelete={vi.fn()} />,
+    );
+    await user.click(screen.getByRole('button', { name: /edit the client/i }));
+    const company = await screen.findByLabelText(/company name/i);
+    await user.type(company, '{Escape}');
+    await waitFor(() => expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('hides the affordance from a reader who may not edit the card', () => {

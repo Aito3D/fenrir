@@ -946,6 +946,24 @@ body {
   animation: rise 0.25s var(--ease-signature) backwards;
 }
 
+/* The Aito contact sheet: slides out from UNDER the panel's masthead. The
+   sheet is stacked below the band (its anchor is z-1, the band z-2), so the
+   first 14px of travel are hidden behind the band and the sheet reads as
+   pulled out of it rather than dropped onto it. 160ms, same as the date
+   picker's arrival — a control that lags the click reads as slow. */
+@keyframes aito-sheet-in {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-aito-sheet-in {
+  animation: aito-sheet-in 0.16s var(--ease-signature);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-aito-sheet-in {
+    animation: none;
+  }
+}
+
 /* Aito: a card that just snapped back after the server refused the change.
    Paired with a toast, never alone — see hooks/useRevertFlash.ts. The ring is
    drawn on a wrapper around the card, so it reads as "this card" without

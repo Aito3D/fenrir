@@ -3354,7 +3354,12 @@ async def edit_project_client(
 
     phone = payload.phone.strip()
     email = payload.email.strip()
-    if not (phone or email or (project.client_social_handle or "").strip()):
+    # The social pair is card-only and optional in the body: mentioned, it is
+    # the value the card will carry after this edit (and what reachability is
+    # judged against); absent, the card's own handle stays as it was.
+    social_mentioned = bool({"client_social_network", "client_social_handle"} & payload.model_fields_set)
+    social_handle = payload.client_social_handle if social_mentioned else project.client_social_handle
+    if not (phone or email or (social_handle or "").strip()):
         raise HTTPException(status_code=400, detail="Client must have a phone, an email or a social handle")
 
     default_id, _default_name = await zoho_service.get_default_contact(db)
@@ -3394,6 +3399,17 @@ async def edit_project_client(
         )
 
     snapshot = {"client_name": name, "client_phone": phone or None, "client_email": email or None}
+    # Never fanned out: the handle is this card's channel, not the contact's —
+    # Books does not hold it, so a sibling card has no record to agree with.
+    social_changes: list[dict] = []
+    if social_mentioned:
+        social_patch = {
+            "client_social_network": payload.client_social_network,
+            "client_social_handle": payload.client_social_handle,
+        }
+        social_changes = diff_fields(project, social_patch)
+        for key, value in social_patch.items():
+            setattr(project, key, value)
     targets = [project]
     if is_zoho_contact:
         siblings = (
@@ -3408,6 +3424,8 @@ async def edit_project_client(
         targets.extend(siblings)
     for target in targets:
         changes = diff_fields(target, snapshot)
+        if target is project:
+            changes = social_changes + changes
         for key, value in snapshot.items():
             setattr(target, key, value)
         await record(

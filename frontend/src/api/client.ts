@@ -4821,6 +4821,10 @@ export interface AitoClientEdit {
   email: string;
   phone: string;
   phone_field: 'phone' | 'mobile';
+  /** Card-only (Books has no field for it). Written only when both keys are
+   *  present; the contact sheet always sends the pair. */
+  client_social_network?: string | null;
+  client_social_handle?: string | null;
   expected_version?: number;
 }
 

@@ -153,6 +153,8 @@ describe('ClientEditor', () => {
       email: 'zoho@example.pf',
       phone: '+689-87000002',
       phone_field: 'mobile',
+      client_social_network: null,
+      client_social_handle: null,
       expected_version: 3,
     });
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ client_name: 'Jean-Pierre DUPONT', version: 4 }));
@@ -173,6 +175,89 @@ describe('ClientEditor', () => {
     expect(firstName()).toBeInTheDocument();
   });
 
+  it('carries the card-only social channel in the same save', async () => {
+    mockZoho();
+    let sent: Record<string, unknown> | null = null;
+    server.use(
+      http.put('/api/v1/aito/12/client', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...project, client_social_network: 'instagram', client_social_handle: 'jean.3d' });
+      }),
+    );
+    const { onSaved } = show();
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    const user = userEvent.setup();
+    // Disabled until a network is picked: a handle with no network is not a
+    // channel, and the placeholder says what to do first.
+    const handle = screen.getByLabelText(i18n.t('aito.socialHandleLabel')) as HTMLInputElement;
+    expect(handle).toBeDisabled();
+    expect(handle.placeholder).toBe(i18n.t('aito.socialPickFirst'));
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(handle, 'jean.3d');
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(sent).toEqual(expect.objectContaining({ client_social_network: 'instagram', client_social_handle: 'jean.3d' }));
+  });
+
+  it('prefills the social channel from the card, not from Zoho, and clears the pair on a blank handle', async () => {
+    mockZoho();
+    let sent: Record<string, unknown> | null = null;
+    server.use(
+      http.put('/api/v1/aito/12/client', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...project, client_social_network: null, client_social_handle: null });
+      }),
+    );
+    show({ client_social_network: 'tiktok', client_social_handle: 'jean.tt' });
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    expect(screen.getByRole('radio', { name: 'TikTok' })).toHaveAttribute('aria-checked', 'true');
+    const handle = screen.getByLabelText(i18n.t('aito.socialHandleLabel')) as HTMLInputElement;
+    expect(handle.value).toBe('jean.tt');
+    const user = userEvent.setup();
+    await user.clear(handle);
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(sent).not.toBeNull());
+    expect(sent).toEqual(expect.objectContaining({ client_social_network: null, client_social_handle: null }));
+  });
+
+  it('counts the handle typed here as a channel, and a cleared one as gone', async () => {
+    mockZoho();
+    show({ client_social_network: 'messenger', client_social_handle: 'jean' });
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    const user = userEvent.setup();
+    await user.clear(phone());
+    await user.clear(email());
+    expect(screen.getByRole('button', { name: i18n.t('common.save') })).not.toBeDisabled();
+    await user.clear(screen.getByLabelText(i18n.t('aito.socialHandleLabel')));
+    expect(screen.getByRole('button', { name: i18n.t('common.save') })).toBeDisabled();
+    expect(screen.getByText(i18n.t('aito.ruleClientContact'))).toBeInTheDocument();
+  });
+
+  it('closes on Escape without letting the key reach the window, and on an outside press', async () => {
+    mockZoho();
+    const windowEscape = vi.fn();
+    window.addEventListener('keydown', windowEscape);
+    const { onCancel } = show();
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    fireEvent.keyDown(firstName(), { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(windowEscape).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', windowEscape);
+    fireEvent.pointerDown(document.body);
+    expect(onCancel).toHaveBeenCalledTimes(2);
+    // A press inside the sheet is not an outside press.
+    fireEvent.pointerDown(email());
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('names Zoho Books as the destination on a Books contact and this card only on a walk-in', async () => {
+    mockZoho();
+    show();
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    expect(screen.getByTestId('client-edit-source')).toHaveTextContent(i18n.t('aito.clientEditSourceZoho'));
+    expect(screen.getByText(i18n.t('aito.clientEditFanOut'))).toBeInTheDocument();
+  });
+
   it('edits a walk-in card from its own snapshot, without reading Zoho, and says so', async () => {
     const contactGets = { n: 0 };
     mockZoho({ contactGets });
@@ -181,6 +266,8 @@ describe('ClientEditor', () => {
     expect(lastName().value).toBe('LE ROUX');
     expect(email().value).toBe('jean@example.pf');
     expect(screen.getByText(i18n.t('aito.clientEditWalkIn'))).toBeInTheDocument();
+    expect(screen.getByTestId('client-edit-source')).toHaveTextContent(i18n.t('aito.clientEditSourceCard'));
+    expect(screen.queryByText(i18n.t('aito.clientEditFanOut'))).not.toBeInTheDocument();
     expect(contactGets.n).toBe(0);
   });
 

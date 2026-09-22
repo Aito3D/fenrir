@@ -23,6 +23,52 @@ export const SOCIAL_LABEL_KEYS: Record<SocialNetwork, string> = {
   tiktok: 'aito.socialNetworkTiktok',
 };
 
+/** The picker as a single icon-only segment, for the panel's contact sheet,
+ *  where the four labelled tiles of `SocialInput` would take a row of their
+ *  own. Same radio semantics — each pill is named after its network for
+ *  assistive tech (`aria-label`), and re-picking the selected one clears it —
+ *  so the two pickers are one control in two densities. The handle field is
+ *  the caller's: on the sheet it sits BESIDE this segment, not under it. */
+export function SocialSegment({
+  network,
+  onChange,
+}: {
+  network: SocialNetwork | null;
+  onChange: (network: SocialNetwork | null) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="radiogroup"
+      aria-label={t('aito.socialLabel')}
+      className="inline-flex gap-0.5 rounded-[10px] border border-bambu-dark-tertiary bg-bambu-dark p-[3px]"
+    >
+      {SOCIAL_NETWORKS.map((id) => {
+        const Icon = SOCIAL_ICONS[id];
+        const selected = network === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={t(SOCIAL_LABEL_KEYS[id])}
+            title={selected ? t('aito.socialRemove') : t(SOCIAL_LABEL_KEYS[id])}
+            onClick={() => onChange(selected ? null : id)}
+            className={`flex h-7 w-8 items-center justify-center rounded-[7px] transition-colors ${focusRingCls} ${
+              selected
+                ? 'bg-bambu-green/20 text-bambu-green-light'
+                : 'text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+            }`}
+          >
+            <Icon className="h-[.95rem] w-[.95rem]" aria-hidden="true" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export interface SocialInputProps {
   /** Prefix for the input id, so both mount sites (ClientSection and
    *  NewContactForm) can be on screen without colliding label targets. */

@@ -354,6 +354,80 @@ async def test_a_social_handle_keeps_the_card_reachable(async_client):
 
 
 @pytest.mark.asyncio
+async def test_social_pair_in_the_body_is_written_to_the_card_only(async_client):
+    """The contact sheet sends the social channel with the Books fields. It is
+    card-only: never pushed to Zoho, never fanned out to sibling cards."""
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen)
+    project = await _create(async_client)
+    sibling = await _create(async_client, description="Second card, same contact")
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client",
+        json={**PERSON_EDIT, "client_social_network": "instagram", "client_social_handle": "jp.3d"},
+    )
+    assert r.status_code == 200, r.text
+    assert (r.json()["client_social_network"], r.json()["client_social_handle"]) == ("instagram", "jp.3d")
+    assert not any("instagram" in json.dumps(body) for _method, _path, body in seen)
+    other = await _read(async_client, sibling["id"])
+    assert other["client_name"] == "Jean-Pierre DUPONT"  # the Books fields DID fan out
+    assert other["client_social_handle"] is None  # the card-only channel did not
+
+
+@pytest.mark.asyncio
+async def test_a_blank_social_handle_in_the_body_clears_the_pair(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([])
+    project = await _create(async_client, client_social_network="tiktok", client_social_handle="jp.tt")
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client",
+        json={**PERSON_EDIT, "client_social_network": "tiktok", "client_social_handle": ""},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["client_social_network"] is None
+    assert r.json()["client_social_handle"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_body_without_the_social_pair_leaves_the_handle_alone(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([])
+    project = await _create(async_client, client_social_network="messenger", client_social_handle="jp")
+    r = await async_client.put(f"/api/v1/aito/{project['id']}/client", json=PERSON_EDIT)
+    assert r.status_code == 200, r.text
+    assert (r.json()["client_social_network"], r.json()["client_social_handle"]) == ("messenger", "jp")
+
+
+@pytest.mark.asyncio
+async def test_reachability_is_judged_on_the_social_handle_after_the_edit(async_client):
+    """Clearing the only channel in the same body is refused; adding one in
+    the same body is enough."""
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([])
+    only_social = await _create(
+        async_client, client_phone=None, client_email=None, client_social_network="messenger", client_social_handle="jp"
+    )
+    r = await async_client.put(
+        f"/api/v1/aito/{only_social['id']}/client",
+        json={**PERSON_EDIT, "email": "", "phone": "", "client_social_network": None, "client_social_handle": ""},
+    )
+    assert r.status_code == 400
+    bare = await _create(async_client)
+    r = await async_client.put(
+        f"/api/v1/aito/{bare['id']}/client",
+        json={
+            **PERSON_EDIT,
+            "email": "",
+            "phone": "",
+            "client_social_network": "whatsapp",
+            "client_social_handle": "87",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["client_social_handle"] == "87"
+
+
+@pytest.mark.asyncio
 async def test_malformed_phone_and_email_are_422(async_client):
     await _configure(async_client)
     zoho_service.transport = _recording_books([])
