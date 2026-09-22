@@ -4,12 +4,10 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { AitoStatsDay } from '../../../api/client';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
-import { localDateKey, parseLocalDateKey } from '../../../utils/date';
+import { parseLocalDateKey } from '../../../utils/date';
 import { AXIS, DECLINED, GRID, SERIES } from './palette';
 import { Empty, Legend, LegendList, Panel } from './primitives';
-
-const WEEKLY_ABOVE_DAYS = 45;
-const WEEKLY_ABOVE_DAYS_NARROW = 31;
+import { WEEKLY_ABOVE_DAYS, WEEKLY_ABOVE_DAYS_NARROW, weekKey, weekStart } from './weeklyFold';
 
 /** Quotes accepted vs declined over time as stacked bars (per day, or per
  *  week on long ranges). The counts themselves live in the Sales facts. */
@@ -27,9 +25,8 @@ export function DecisionsChart({ daily }: { daily: AitoStatsDay[] }) {
       let label = fmt.format(parseLocalDateKey(d.day));
       if (weekly) {
         const date = parseLocalDateKey(d.day);
-        const start = new Date(date);
-        start.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-        key = localDateKey(start);
+        const start = weekStart(date);
+        key = weekKey(date);
         label = fmt.format(start);
       }
       const b = buckets.get(key) ?? { label, accepted: 0, declined: 0 };

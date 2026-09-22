@@ -1,0 +1,9 @@
+{"findings": [
+  {"severity": "high", "category": "denial-of-service",
+   "file": "backend/app/services/aito_stats.py", "line": 538,
+   "title": "unbounded calendar loop in _daily() materialises one row per day of an attacker-chosen range",
+   "evidence": "day = first_day\n    while day <= last_day:\n        c = counts.get(day, [0, 0, 0, 0])\n        rows.append(AitoStatsDay(day=day, created=c[0], accepted=c[1], declined=c[2], done=c[3]))\n        day += timedelta(days=1)  | the route bounds only tz_offset_minutes and date_from<=date_to, never the SPAN, so GET /api/v1/aito/stats?date_from=0001-01-01 builds 739,879 AitoStatsDay models (measured: 880 MB RSS, 50 MB JSON body, on an empty DB) and date_from=5001-01-01&date_to=9999-12-31 builds 1,825,847 (~2.2 GB); a marginally wider span instead raises an unhandled OverflowError at line 588, `start - timedelta(days=days)`, returning 500",
+   "fix": "clamp the span in get_aito_stats(): reject with 422 any date_from/date_to pair whose day count exceeds a sane maximum (a few years), and keep _daily() defensive with a hard row cap so the loop can never be driven past it by a future caller",
+   "behavior_change": true,
+   "behavior_change_note": "a client that asks for a range wider than the new cap — including any all-time-style request that passes a very old date_from — will get a 422 instead of a huge zero-filled `daily` array, so any saved bookmark or script using such a range stops returning data."}
+]}

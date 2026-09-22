@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { api, type AitoStats } from '../../api/client';
+import { api, ApiError, type AitoStats } from '../../api/client';
 import { Button } from '../Button';
 import { TimeframeSelector } from '../stats/TimeframeSelector';
 import type { DateRange, TimeframeState } from '../stats/timeframe';
@@ -76,6 +76,17 @@ export function StatsView({
         {query.isPending ? (
           <div className="flex justify-center py-16">
             <Loader2 className="w-8 h-8 text-bambu-gray animate-spin" />
+          </div>
+        ) : query.error instanceof ApiError && query.error.status === 422 ? (
+          // The server's own message, not the generic one, and no Retry: a
+          // 422 here means the range itself is what the request was refused
+          // for (too many days, or outside the dates the backend accepts),
+          // so retrying would only resend the same rejected range. The
+          // timeframe selector above stays live — picking another range,
+          // not a button in this panel, is the way out.
+          <div className="text-center py-12">
+            <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+            <p className="text-white font-medium">{query.error.message}</p>
           </div>
         ) : query.isError || !data ? (
           <div className="text-center py-12">

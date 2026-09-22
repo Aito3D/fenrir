@@ -177,15 +177,19 @@ class TestLibraryFoldersAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_delete_folder_removes_managed_files_from_disk(
-        self, async_client: AsyncClient, folder_factory, db_session
+        self, async_client: AsyncClient, folder_factory, db_session, monkeypatch, tmp_path
     ):
         """#T-142: delete_folder() must resolve the DB-stored, base_dir-relative
         file_path/thumbnail_path to an absolute path before unlinking, exactly
         like delete_file()/the trash sweeper do. Managed files are stored
         relative to settings.base_dir (see _stored_file_path), which is NOT
-        the same as the process CWD the test suite runs from (backend/) --
-        os.path.exists()/os.remove() on the raw relative path silently no-op
-        against the wrong directory, leaking the bytes forever.
+        necessarily the same as the process CWD -- os.path.exists()/os.remove()
+        on the raw relative path would silently no-op against the wrong
+        directory, leaking the bytes forever. Pin base_dir to an isolated
+        tmp_path (distinct from the pytest-invocation CWD) so the test always
+        creates the CWD-differs condition needed to catch that regression,
+        rather than relying on whatever directory the suite happened to be
+        launched from.
         """
         import os
 
@@ -194,7 +198,7 @@ class TestLibraryFoldersAPI:
         from backend.app.core.config import settings as app_settings
         from backend.app.models.library import LibraryFile
 
-        # Precondition: the bug can only be reproduced if CWD != base_dir.
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
         assert os.getcwd() != str(app_settings.base_dir), (
             "test relies on CWD differing from base_dir to catch relative-path bugs"
         )

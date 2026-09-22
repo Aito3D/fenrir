@@ -1,0 +1,54 @@
+{
+ "findings": [
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 1037,
+   "title": "get_aito_stats never tests date_to alone out of [MIN_STATS_DATE, MAX_STATS_DATE]",
+   "evidence": "pytest --cov=backend.app.api.routes.aito backend/tests/unit/test_aito_stats.py --cov-report=term-missing -> Missing includes '1037' (the `date_to must be between ...` raise). Every existing out-of-range case in test_dates_that_would_overflow_local_day_bounds_are_422_not_500 sends an out-of-range date_from (which trips the sibling check on line 1035 first); no test sends a valid/absent date_from with an out-of-range date_to.",
+   "fix": "add a case like `await async_client.get(STATS, params={'date_to': '9999-12-31'})` (and one with a valid date_from + out-of-range date_to) asserting 422, alongside test_dates_that_would_overflow_local_day_bounds_are_422_not_500",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "vacuous-test",
+   "file": "frontend/src/components/aito/stats/ActivityChart.tsx",
+   "line": 26,
+   "title": "ActivityChart's weekly-fold bucket sums (created/accepted/done per week) are never asserted, only the mode label",
+   "evidence": "AitoStatsView.test.tsx:110-124 ('folds days into weeks past 45 days...') only checks `within(activity).getByText('Activity per week')`, the absence of the rolling-7 text/line, and OverviewScreen's independently-computed peak-week sentence \u2014 it never inspects the `rows` handed to recharts. Unlike DecisionsChart (which AitoStatsScreens.test.tsx now captures via a mocked BarChart's props.data), no test mocks ComposedChart to read ActivityChart's own weekly sums, so mutating `b.created += d.created` (e.g. to `b.accepted += d.created`) in ActivityChart.tsx would still pass every existing test.",
+   "fix": "mock recharts.ComposedChart the same way BarChart is mocked (capture props.data) and assert the actual per-week created/accepted/done sums for a daily fixture spanning >45 days with known per-day values",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/stats/ClientsScreen.tsx",
+   "line": 44,
+   "title": "ClientsScreen's clientsNone finding and the missing-clients-block degrade are never rendered in any test",
+   "evidence": "ClientsScreen.tsx:43-49 branches to t('aito.stats.finding.clientsNone') when `!clients || clients.new + clients.returning === 0`. rg 'clientsNone' frontend/src/__tests__ -> no matches. AitoStatsScreens.test.tsx's 'degrades block by block' test destructures out quote_age/size_bands/stage_time/services/islands/arrivals but keeps `clients` in every fixture, so `!clients` is also never hit.",
+   "fix": "add a Clients-tab case with clients {new:0, returning:0, new_total:0, returning_total:0} asserting the clientsNone text, and extend the degrade fixture to also drop `clients` and assert the Empty state",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/stats/MoneyScreen.tsx",
+   "line": 85,
+   "title": "MoneyScreen's !overdue (backend predates the overdue block) empty state is never tested",
+   "evidence": "MoneyScreen.tsx:85-88: `!overdue ? <Empty>... : overdueCount === 0 ? ... : ...`. The 'degrades block by block' test (line 330) destructures out quote_age/size_bands/stage_time/services/islands/arrivals but never `overdue`, so every Money-tab test always has an overdue object present.",
+   "fix": "extend the 'degrades block by block' fixture to also omit `overdue` and assert the Empty state renders in the aito-stats-overdue panel",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/stats/SalesScreen.tsx",
+   "line": 37,
+   "title": "SalesScreen's plain salesLost wording (declines not concentrated in the top band) is never rendered by any test",
+   "evidence": "SalesScreen.tsx:26-38: the else branch at line 37 (t('aito.stats.finding.salesLost', ...)) only fires when the tie-break at line 29 (bands.length > 1 && top.declined > 0 && top.declined === mostDeclined) is false. rg 'salesLost' frontend/src/__tests__ only matches the salesLostBig assertion at AitoStatsScreens.test.tsx:130; no fixture puts the most declines in a band other than the last, so the plain wording and its {{count}}/{{total}} interpolation are unchecked.",
+   "fix": "add a Sales-tab case with size_bands where the top (last) band has fewer declines than an earlier band, asserting the plain 'quote(s) were lost, worth ...' text instead of the big-tickets wording",
+   "behavior_change": false
+  }
+ ]
+}

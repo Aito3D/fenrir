@@ -8,6 +8,24 @@ import { render } from '../utils';
 import { StatsView } from '../../components/aito/StatsView';
 import type { AitoStats } from '../../api/client';
 
+// ActivityChart's weekly fold has no other observable surface once there are
+// dozens of bars (no visible numbers, and the x-axis labels aren't guaranteed
+// to render as ticks) -- capturing the `data` actually handed to recharts'
+// ComposedChart lets the weekly-fold test assert the real per-week
+// created/accepted/done sums instead of just the "Activity per week" title.
+//
+// `composedDataSets` collects every *distinct* data array seen (re-renders
+// reuse the same array reference via useMemo, so settling on one value does
+// not grow this list) rather than overwriting a single field with whatever
+// rendered last. ActivityChart is the only ComposedChart in this tree today,
+// but if a second one is ever added, its data would show up as a second,
+// different array here -- the test asserts `toHaveLength(1)` before indexing
+// so a future second chart fails loudly instead of silently swapping in its
+// data under this chart's assertions.
+const chartCapture = vi.hoisted(() => ({
+  composedDataSets: [] as unknown[][],
+}));
+
 // jsdom has no layout, so Recharts' ResponsiveContainer measures 0×0 and
 // renders nothing. Pin a width and let the real chart machinery run.
 vi.mock('recharts', async (orig) => {
@@ -17,6 +35,13 @@ vi.mock('recharts', async (orig) => {
     ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
       <actual.ResponsiveContainer {...props} width={600} />
     ),
+    ComposedChart: (props: ComponentProps<typeof actual.ComposedChart>) => {
+      const data = props.data as unknown[];
+      if (!chartCapture.composedDataSets.includes(data)) {
+        chartCapture.composedDataSets.push(data);
+      }
+      return <actual.ComposedChart {...props} />;
+    },
   };
 });
 
@@ -70,6 +95,7 @@ describe('StatsView', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    chartCapture.composedDataSets = [];
   });
 
   it('opens on the Overview: its finding, the activity chart, the figures with deltas', async () => {
@@ -111,7 +137,22 @@ describe('StatsView', () => {
     const daily = Array.from({ length: 70 }, (_, i) => {
       const d = new Date(2026, 6, 1 + i); // 2026-07-01 is a Wednesday
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      return { day: key, created: i === 10 ? 5 : 0, accepted: 0, declined: 0, done: 0 };
+      // Days 1, 3, 4 (Jul 2, 4, 5) fall in the Monday-start week of 29 June;
+      // days 5, 8, 10 (Jul 6, 9, 11) fall in the very next week, starting
+      // Jul 6 (a Monday). A naive "chunk every 7 array elements from the
+      // start" grouping would instead lump index 5 in with indices 0-6 and
+      // split indices 8/10 into a separate chunk from index 5 -- only real
+      // calendar weeks put 1/3/4 together and 5/8/10 together. Each week
+      // also gives created/accepted/done different, non-zero sums so that
+      // swapping which series a day's count lands in (e.g. folding `created`
+      // into `accepted`) changes the asserted numbers, not just the total.
+      if (i === 1) return { day: key, created: 3, accepted: 0, declined: 0, done: 0 };
+      if (i === 3) return { day: key, created: 0, accepted: 2, declined: 0, done: 0 };
+      if (i === 4) return { day: key, created: 0, accepted: 0, declined: 0, done: 4 };
+      if (i === 5) return { day: key, created: 8, accepted: 0, declined: 0, done: 0 };
+      if (i === 8) return { day: key, created: 0, accepted: 7, declined: 0, done: 0 };
+      if (i === 10) return { day: key, created: 0, accepted: 0, declined: 0, done: 2 };
+      return { day: key, created: 0, accepted: 0, declined: 0, done: 0 };
     });
     serve(fixture({ daily }));
     render(view());
@@ -119,8 +160,25 @@ describe('StatsView', () => {
     expect(within(activity).getByText('Activity per week')).toBeInTheDocument();
     expect(within(activity).queryByText('7-day average of completed')).toBeNull();
     expect(activity.querySelectorAll('.recharts-line').length).toBe(0);
-    // 2026-07-11 falls in the Monday-start week of 6 July (en-US formatting).
+    // 2026-07-11 falls in the Monday-start week of 6 July (en-US formatting);
+    // that week's total (8 + 7 + 2 = 17) beats the week of 29 June's
+    // (3 + 2 + 4 = 9), so it is still the busiest week reported.
     expect(screen.getByTestId('aito-stats-finding')).toHaveTextContent('The busiest week was the week of July 6.');
+
+    // Exactly one ComposedChart rendered (ActivityChart is the only user of
+    // it) -- asserted before indexing so a future second chart fails this
+    // assertion loudly instead of silently pointing the rows below at the
+    // wrong chart's data.
+    expect(chartCapture.composedDataSets).toHaveLength(1);
+    const rows = chartCapture.composedDataSets[0] as { day: string; label: string; created: number; accepted: number; done: number }[];
+    const weekOfJune29 = rows.find((r) => r.label === 'Jun 29');
+    const weekOfJuly6 = rows.find((r) => r.label === 'Jul 6');
+    expect(weekOfJune29).toEqual({ day: '2026-06-29', label: 'Jun 29', created: 3, accepted: 2, done: 4 });
+    expect(weekOfJuly6).toEqual({ day: '2026-07-06', label: 'Jul 6', created: 8, accepted: 7, done: 2 });
+    // Every other week is untouched -- confirms the six seeded days landed in
+    // only their own two buckets rather than being smeared across weeks.
+    const otherWeeks = rows.filter((r) => r !== weekOfJune29 && r !== weekOfJuly6);
+    expect(otherWeeks.every((r) => r.created === 0 && r.accepted === 0 && r.done === 0)).toBe(true);
   });
 
   it('switches screens through the tabs and remembers the choice for the session', async () => {
@@ -134,9 +192,28 @@ describe('StatsView', () => {
     expect(screen.queryByTestId('aito-stats-band')).toBeNull();
     expect(screen.getByTestId('aito-stats-money')).toBeInTheDocument();
 
-    // Arrow keys move and select; Home returns to the first screen.
+    // Arrow keys move and select, wrapping at the ends; Home/End jump to the first/last tab.
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Clients' }));
+    expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
+
+    // Clients is the last tab, so ArrowLeft steps back to Money (no wrap needed here).
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: 'Money' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Money' }));
+    expect(await screen.findByTestId('aito-stats-money')).toBeInTheDocument();
+
+    // Home returns to the first screen regardless of the current tab.
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Overview' }));
+    expect(await screen.findByTestId('aito-stats-band')).toBeInTheDocument();
+
+    // End jumps to the last screen, back to Clients.
+    await user.keyboard('{End}');
+    expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Clients' }));
     expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
 
     unmount();
@@ -163,6 +240,14 @@ describe('StatsView', () => {
     const activity = await screen.findByTestId('aito-stats-activity');
     expect(within(activity).getByText('Nothing happened in this period')).toBeInTheDocument();
     expect(screen.getByTestId('aito-stats-finding')).toHaveTextContent('0 projects came in');
+
+    // No card completed this period (lead_days: null), even though the previous
+    // period's lead_days (6) would otherwise diff against it: no badge, no
+    // fabricated "-100%" improvement.
+    const band = await screen.findByTestId('aito-stats-band');
+    const leadTile = within(band).getByText(/^Quote to delivery/).closest('div.rounded-lg')!;
+    expect(leadTile).toHaveTextContent('—');
+    expect(within(leadTile).queryByText(/%/)).toBeNull();
   });
 
   it('degrades to the empty line on a backend that predates the throughput block', async () => {
@@ -172,10 +257,30 @@ describe('StatsView', () => {
     expect(await screen.findByText('Nothing happened in this period')).toBeInTheDocument();
   });
 
-  it('shows the error state with a retry', async () => {
+  it('shows the generic error state with a retry on a 500', async () => {
     server.use(http.get('/api/v1/aito/stats', () => HttpResponse.json({ detail: 'nope' }, { status: 500 })));
     render(view());
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('Error loading data')).toBeInTheDocument();
+  });
+
+  it('shows the generic error state with a retry on a network failure', async () => {
+    server.use(http.get('/api/v1/aito/stats', () => HttpResponse.error()));
+    render(view());
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('Error loading data')).toBeInTheDocument();
+  });
+
+  it('names the rejected range on a 422 and offers no retry, since one would only resend it', async () => {
+    server.use(
+      http.get('/api/v1/aito/stats', () =>
+        HttpResponse.json({ detail: 'date_from/date_to must not span more than 1827 days' }, { status: 422 }),
+      ),
+    );
+    render(view());
+    expect(await screen.findByText('date_from/date_to must not span more than 1827 days')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByText('Error loading data')).toBeNull();
   });
 
   it('holds the previous numbers, dimmed, while a new range loads instead of showing a spinner', async () => {

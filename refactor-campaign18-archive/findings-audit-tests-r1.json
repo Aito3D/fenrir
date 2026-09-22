@@ -1,0 +1,74 @@
+{
+ "findings": [
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 343,
+   "title": "_overdue() never tested for an invoice due today/tomorrow (days<=0), which is silently excluded from every bucket",
+   "evidence": "coverage: line 343 missing (pytest --cov-branch); `_bucket_name(days, _OVERDUE_BUCKETS)` returns None whenever days<=0 since _OVERDUE_BUCKETS starts at ('1-7',1,7), and line 343 `if name is None: continue` then drops the row entirely. test_overdue_buckets_and_oldest_as_of_today only sets due dates 3 and 45 days in the past, never today or in the future with a balance owed.",
+   "fix": "add a case to test_overdue_buckets_and_oldest_as_of_today with a project whose invoice_due_date is today (and/or tomorrow) with a positive balance, and assert it appears in none of the buckets and does not move oldest_days",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "coverage-gap",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 338,
+   "title": "_overdue() silently swallows a malformed invoice_due_date with no test",
+   "evidence": "coverage: lines 338-339 missing; `except ValueError: continue` around `date.fromisoformat(p.invoice_due_date)` has no test driving a non-ISO invoice_due_date value",
+   "fix": "add a case that sets invoice_due_date to a malformed string on an otherwise-qualifying project and asserts it is excluded from buckets/oldest_days without raising",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 225,
+   "title": "_stage_time()'s documented anti-double-count rule (a stay closed by a re-open after done_at) is never exercised",
+   "evidence": "coverage: line 225->224 partial branch; the docstring at lines 216-218 says 'Only stays closed by the completion count: a re-open afterwards is a different story and would double the bar', but no test produces a stay whose `ended` is after the card's `done_at` (test_stage_time_per_completed_project_newest_first's re-open on `b` moves out of a non-tracked 'done' column, so it never creates a trackable stay after done_at)",
+   "fix": "extend test_stage_time_per_completed_project_newest_first with a card that is completed, then reopened into a tracked stage (e.g. finish) and moved again, and assert the post-completion stage duration is NOT added to that card's `stages` total",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "vacuous-test",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 254,
+   "title": "rework.share's null path (no cards moved) runs in almost every other test but is never asserted",
+   "evidence": "`AitoStatsRework(... share=(round(len(cards)/len(moved), 3) if moved else None))` at line 254 \u2014 this False branch executes incidentally in most tests that have no stage.changed events at all (e.g. test_board_counts_and_totals_per_column_with_all_seven_present, test_conversion_counts_first_events_in_range_only), which is why it doesn't show up as a coverage gap, but not one of those tests reads body['rework'] at all. test_rework_counts_backward_moves_and_share_of_moved_cards is the only test that asserts on `rework`, and it only covers the non-null share case (0.5). A regression that turned the null case into 0, or into a ZeroDivisionError caught elsewhere, would pass every existing test.",
+   "fix": "add a case asserting body['rework'] == {'moves': 0, 'cards': 0, 'share': None} when no stage.changed rows exist in the period",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/stats/ScreenTabs.tsx",
+   "line": 18,
+   "title": "ScreenTabs keyboard navigation is untested except ArrowRight \u2014 ArrowLeft, Home and End never execute",
+   "evidence": "vitest coverage: ScreenTabs.tsx 70.83% stmts / 50% branch, uncovered lines 17-19 (`else if (e.key === 'ArrowLeft') ...`, `else if (e.key === 'Home') next = 0`, `else if (e.key === 'End') next = STATS_SCREENS.length - 1`); grep for ArrowLeft/{Home}/{End} across the three scoped test files returns no matches; only AitoStatsView.test.tsx:138 does `await user.keyboard('{ArrowRight}')`. The component's own docstring says 'arrow keys move focus and select' and the test's own comment ('Home returns to the first screen') describes behavior it never actually exercises. The focus hand-off (`document.getElementById(statsTabId(target))?.focus()`) is also never asserted, even for the one key that is tested.",
+   "fix": "extend the 'switches screens through the tabs' test with ArrowLeft (wrap-around to the last tab), Home (jumps to Overview from any tab), and End (jumps to Clients), and assert both the resulting aria-selected tab and that document.activeElement is the newly selected tab button",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/stats/DecisionsChart.tsx",
+   "line": 28,
+   "title": "DecisionsChart's weekly-fold branch (identical in spirit to ActivityChart's, which IS tested) has no test at all",
+   "evidence": "vitest coverage: DecisionsChart.tsx 74.19% stmts / 40.9% branch, uncovered lines 29-33 (the `if (weekly) { ... }` week-bucketing block) and 69-71 (tooltip formatter/labelFormatter); grep for DecisionsChart across frontend/src/__tests__ finds zero direct test references \u2014 it is only mounted indirectly via SalesScreen in AitoStatsScreens.test.tsx, whose only chart assertion is `getByTestId('aito-stats-decisions').querySelectorAll('.recharts-bar').length == 2` with a 2-day fixture. Compare AitoStatsView.test.tsx which has a dedicated test ('folds days into weeks past 45 days...') for the same >45-day fold logic in ActivityChart.tsx.",
+   "fix": "add a Sales-screen test with >45 days of `daily` data (mirroring the ActivityChart weekly-fold test) and assert the chart switches to the 'decisionsPerWeek' title and buckets accepted/declined by Monday-start week",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/stats/TimeScreen.tsx",
+   "line": 100,
+   "title": "TimeScreen's zero/null findings branches (no rework, no lead time, no completed cards) are never exercised",
+   "evidence": "vitest coverage: TimeScreen.tsx uncovered lines include 29-37 and 66-104, spanning `rework.moves > 0` (false), `rework.share !== null` (false, and moves===0), `tp?.lead_days == null -> timeNone`, and `longest > 0 ? ... : 0` (false); the Time-screen fixture always uses `rework: { moves: 2, cards: 1, share: 0.5 }` and `lead_days: 4.75` \u2014 the only null/zero throughput fixture (AitoStatsView.test.tsx:153) is used for the Overview screen, not Time. The existing 'degrades on a backend that predates these blocks' test removes `stage_time` entirely (triggering the Empty state), which is a different code path from a populated-but-all-zero board.",
+   "fix": "add a Time-screen test with a legitimately empty/flat period: rework {moves:0, cards:0, share:null}, throughput.lead_days null, and stage_time rows totaling 0, asserting the finding reads the 'timeNone' key, the rework fact shows no tone/share note, and the stage-time bars render with 0 scale rather than dividing by zero",
+   "behavior_change": false
+  }
+ ]
+}

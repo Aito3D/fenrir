@@ -11479,7 +11479,9 @@
   },
   "AddToQueueRequest": {
    "properties": {
-    "file_ids": "[integer]"
+    "file_ids": "[integer]",
+    "printer_id": "anyOf(integer,null)",
+    "target_model": "anyOf(string,null)"
    },
    "required": [
     "file_ids"
@@ -12125,6 +12127,20 @@
     "total"
    ]
   },
+  "AitoStatsClients": {
+   "properties": {
+    "new": "integer",
+    "new_total": "number",
+    "returning": "integer",
+    "returning_total": "number"
+   },
+   "required": [
+    "new",
+    "new_total",
+    "returning",
+    "returning_total"
+   ]
+  },
   "AitoStatsConversion": {
    "properties": {
     "acceptance_rate": "anyOf(number,null)",
@@ -12137,6 +12153,22 @@
     "accepted",
     "declined",
     "sent"
+   ]
+  },
+  "AitoStatsDay": {
+   "properties": {
+    "accepted": "integer",
+    "created": "integer",
+    "day": "string",
+    "declined": "integer",
+    "done": "integer"
+   },
+   "required": [
+    "accepted",
+    "created",
+    "day",
+    "declined",
+    "done"
    ]
   },
   "AitoStatsInvoicing": {
@@ -12153,24 +12185,150 @@
     "outstanding_count"
    ]
   },
+  "AitoStatsIsland": {
+   "properties": {
+    "count": "integer",
+    "island": "anyOf(string,null)",
+    "shipping_total": "number"
+   },
+   "required": [
+    "count",
+    "island",
+    "shipping_total"
+   ]
+  },
+  "AitoStatsOverdue": {
+   "properties": {
+    "buckets": "[AitoStatsOverdueBucket]",
+    "oldest_days": "anyOf(integer,null)"
+   },
+   "required": [
+    "buckets",
+    "oldest_days"
+   ]
+  },
+  "AitoStatsOverdueBucket": {
+   "properties": {
+    "balance": "number",
+    "bucket": "string",
+    "count": "integer"
+   },
+   "required": [
+    "balance",
+    "bucket",
+    "count"
+   ]
+  },
+  "AitoStatsPrevious": {
+   "properties": {
+    "accepted": "integer",
+    "created": "integer",
+    "declined": "integer",
+    "done": "integer",
+    "lead_days": "anyOf(number,null)"
+   },
+   "required": [
+    "accepted",
+    "created",
+    "declined",
+    "done",
+    "lead_days"
+   ]
+  },
+  "AitoStatsQuoteAge": {
+   "properties": {
+    "bucket": "string",
+    "count": "integer",
+    "total": "number"
+   },
+   "required": [
+    "bucket",
+    "count",
+    "total"
+   ]
+  },
   "AitoStatsResponse": {
    "properties": {
+    "arrivals": "[[integer]]",
     "board": "[AitoStatsStage]",
+    "clients": "AitoStatsClients",
     "conversion": "AitoStatsConversion",
+    "daily": "[AitoStatsDay]",
     "date_from": "anyOf(string,null)",
     "date_to": "anyOf(string,null)",
     "invoicing": "AitoStatsInvoicing",
+    "islands": "[AitoStatsIsland]",
+    "overdue": "AitoStatsOverdue",
+    "previous": "anyOf(AitoStatsPrevious,null)",
+    "quote_age": "[AitoStatsQuoteAge]",
+    "rework": "AitoStatsRework",
+    "services": "[AitoStatsService]",
+    "size_bands": "[AitoStatsSizeBand]",
     "stage_days": "[AitoStatsStageDays]",
+    "stage_time": "[AitoStatsStageTime]",
+    "throughput": "AitoStatsThroughput",
     "tracking": "AitoStatsTracking"
    },
    "required": [
+    "arrivals",
     "board",
+    "clients",
     "conversion",
+    "daily",
     "date_from",
     "date_to",
     "invoicing",
+    "islands",
+    "overdue",
+    "previous",
+    "quote_age",
+    "rework",
+    "services",
+    "size_bands",
     "stage_days",
+    "stage_time",
+    "throughput",
     "tracking"
+   ]
+  },
+  "AitoStatsRework": {
+   "properties": {
+    "cards": "integer",
+    "moves": "integer",
+    "share": "anyOf(number,null)"
+   },
+   "required": [
+    "cards",
+    "moves",
+    "share"
+   ]
+  },
+  "AitoStatsService": {
+   "properties": {
+    "revenue": "number",
+    "service": "string",
+    "tasks": "integer"
+   },
+   "required": [
+    "revenue",
+    "service",
+    "tasks"
+   ]
+  },
+  "AitoStatsSizeBand": {
+   "properties": {
+    "accepted": "integer",
+    "declined": "integer",
+    "max": "number",
+    "min": "number",
+    "rate": "anyOf(number,null)"
+   },
+   "required": [
+    "accepted",
+    "declined",
+    "max",
+    "min",
+    "rate"
    ]
   },
   "AitoStatsStage": {
@@ -12195,6 +12353,44 @@
     "column",
     "median_days",
     "sample"
+   ]
+  },
+  "AitoStatsStageTime": {
+   "properties": {
+    "client_name": "anyOf(string,null)",
+    "description": "string",
+    "done_at": "string",
+    "project_id": "integer",
+    "stages": "object"
+   },
+   "required": [
+    "client_name",
+    "description",
+    "done_at",
+    "project_id",
+    "stages"
+   ]
+  },
+  "AitoStatsThroughput": {
+   "properties": {
+    "accepted": "integer",
+    "active": "integer",
+    "created": "integer",
+    "done": "integer",
+    "lead_days": "anyOf(number,null)",
+    "lead_days_median": "anyOf(number,null)",
+    "per_day": "anyOf(number,null)",
+    "production_days": "anyOf(number,null)"
+   },
+   "required": [
+    "accepted",
+    "active",
+    "created",
+    "done",
+    "lead_days",
+    "lead_days_median",
+    "per_day",
+    "production_days"
    ]
   },
   "AitoStatsTracking": {

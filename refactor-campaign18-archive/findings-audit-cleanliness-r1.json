@@ -1,0 +1,44 @@
+{
+ "findings": [
+  {
+   "severity": "medium",
+   "category": "duplication",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 154,
+   "title": "_scan_stages and _done_moments each run a separate ordered scan over the same stage.changed events",
+   "evidence": "_scan_stages (line 161-163) runs `select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(AitoEvent.kind == \"stage.changed\", AitoEvent.project_id.in_(ids))`; _done_moments (line 468-470) runs the identical filter over the same table for the same active-project set, just to extract a different projection (first move `to == \"done\"` vs. per-column stays/backward moves). Both are awaited unconditionally in compute_aito_stats (lines 572-573). The `_StageScan` dataclass docstring (line 146-148) already states the goal 'so the scan runs once' for stage_days/stage_time/rework, but done_moments (needed by throughput and stage_time) was left as its own separate walk.",
+   "fix": "Fetch the stage.changed rows once (e.g. inside _scan_stages) and derive the first-move-to-done map from that same result set instead of issuing _done_moments as a second query.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "duplication",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 273,
+   "title": "_quote_age and _overdue duplicate the same named-bucket accumulator scaffold",
+   "evidence": "_quote_age (lines 273-284) and _overdue (lines 330-350) both build `rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in <BUCKETS>}`, then `rows[name][0] += 1; rows[name][1] += <amount>` after resolving a bucket via the shared `_bucket_name()`, then convert to a response list with the identical `for name, (c, t) in rows.items()` comprehension (each carrying its own `# type: ignore[arg-type]`). The only real difference is the extra `oldest` tracking in _overdue and which project field is filtered/summed.",
+   "fix": "Extract a shared helper, e.g. `_bucket_amounts(projects, buckets, key_fn, amount_fn)` returning the `{name: (count, total)}` mapping, and have both _quote_age and _overdue build their response objects from it.",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "duplication",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 500,
+   "title": "the `sum(1 for at in X.values() if _in_range(at, start, end))` count idiom is repeated three times",
+   "evidence": "Identical shape at line 500 (`created = sum(1 for at in born.values() if _in_range(at, start, end))`), line 511 (`accepted=sum(1 for at in accepted.values() if _in_range(at, start, end))`), and line 594 (`declined=sum(1 for at in declined.values() if _in_range(at, prev_start, prev_end))`); confirmed by `grep -n \"_in_range(\"`, which shows the pattern nowhere abstracted despite _in_range already existing as a shared filter primitive.",
+   "fix": "Add a small `_count_in_range(moments, start, end)` helper and use it at these three call sites; purely a one-line inlining removal, no behavior change.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "duplication",
+   "file": "frontend/src/components/aito/stats/OverviewScreen.tsx",
+   "line": 26,
+   "title": "the Monday-start week-folding algorithm is copy-pasted across ActivityChart, DecisionsChart and OverviewScreen",
+   "evidence": "The exact expression `start.setDate(date.getDate() - ((date.getDay() + 6) % 7))` appears verbatim in ActivityChart.tsx:33, DecisionsChart.tsx:31 and OverviewScreen.tsx:31 (3 hits), each paired with its own week-bucket Map. The threshold constants have already drifted into two independent copies: ActivityChart.tsx exports `WEEKLY_ABOVE_DAYS = 45` (with a local, unexported `WEEKLY_ABOVE_DAYS_NARROW = 31`), and DecisionsChart.tsx separately re-declares its own local `const WEEKLY_ABOVE_DAYS = 45; const WEEKLY_ABOVE_DAYS_NARROW = 31;` instead of importing ActivityChart's export \u2014 while OverviewScreen imports and reuses only `WEEKLY_ABOVE_DAYS` (not the narrow variant) for its own third copy of the folding loop.",
+   "fix": "Factor the week-folding (threshold + Monday-start bucket key) into one shared function/module (e.g. a `weeklyFold.ts` beside palette.ts) that ActivityChart, DecisionsChart and OverviewScreen's peak-finder all call, so the three copies cannot drift further apart.",
+   "behavior_change": false
+  }
+ ]
+}

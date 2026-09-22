@@ -12772,3 +12772,693 @@ Standing caveat unchanged and worth repeating: this fake is a model of
 Heimdall, not Heimdall. Neither this probe nor any test in this repo has ever
 run against the real POS bridge — the live ping and the 1-franc probe are
 still owed.
+
+--------------------------------------------------------------------------------
+## T-002 — 2026-09-20 — user-approved behavior change
+
+`_daily()` in `backend/app/services/aito_stats.py` built one `AitoStatsDay` row
+per calendar day between `first_day` and `last_day` with no bound on the
+range. `GET /api/v1/aito/stats` validated only that `date_from <= date_to`,
+never the SPAN, so a caller-chosen range could materialise millions of rows
+(measured: `date_from=0001-01-01` alone built 739,879 rows, ~880 MB RSS on an
+empty DB; `date_from=5001-01-01&date_to=9999-12-31` built ~1.8M rows, ~2.2 GB).
+A marginally wider span instead overflowed `datetime` inside
+`local_day_bounds` (combining an extreme date with `tz_offset_minutes`),
+returning an unhandled 500 — and this overflow was reachable even from a
+two-day span (`date_from=0001-01-01&date_to=0001-01-02`), so the span cap
+alone does not cover it (this folds in T-004, triaged separately for the same
+root cause). A second, non-hostile path to the same blowup exists too: when
+`date_from` is omitted, `first_day` falls back to the earliest
+`project.created` moment, and an import backdates that from an unvalidated
+Books `quote_date` — so one card with a bad year turns the ordinary "all
+time" preset into the same unbounded loop.
+
+Fixed with two new module constants in `aito_stats.py`:
+  * `MAX_STATS_SPAN_DAYS = 1827` (5 years) — comfortably wider than the
+    widest date-bounded preset the frontend offers ("this-year") and than any
+    realistic all-time history for this product.
+  * `MIN_STATS_DATE = date(2000, 1, 1)` / `MAX_STATS_DATE = date(2999, 12,
+    31)` — far enough from `date.min`/`date.max` that combining either bound
+    with the widest allowed `tz_offset_minutes` (+/-840, i.e. +/-14h) inside
+    `local_day_bounds` can never overflow `datetime`.
+
+`GET /api/v1/aito/stats` (`get_aito_stats` in `backend/app/api/routes/aito.py`)
+now rejects with 422 any `date_from`/`date_to` outside `[MIN_STATS_DATE,
+MAX_STATS_DATE]`, and any explicit `date_from` whose span to `date_to` (or to
+today, if `date_to` is omitted) exceeds `MAX_STATS_SPAN_DAYS`. Independently,
+`_daily()` itself now clamps to the most recent `MAX_STATS_SPAN_DAYS` days
+whenever it is asked to walk a wider range — a defensive backstop that also
+covers the derived "all time" path, which has no caller-supplied date for the
+route to validate and must not error on an otherwise ordinary request.
+
+**User-visible change**: a client that asks for a range wider than
+`MAX_STATS_SPAN_DAYS` — including any all-time-style bookmark or script that
+passes a very old `date_from` — now gets a 422 instead of a huge zero-filled
+`daily` array. A stored "all time" request whose derived start is absurdly
+old (a bad imported `quote_date`) now silently shows only the most recent
+five years of `daily` rows instead of crashing or exhausting memory.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14 with no
+re-recording needed. `stats-backend-aggregate` drives `compute_aito_stats`
+directly against six fixed cases, none of which uses a span wider than the
+new cap. `stats-contract` reads the OpenAPI parameter/response schema, which
+this change does not touch (no new route parameter, model, or response code).
+`SURFACE.md` was regenerated (`bash tools/gen_surface_stats.sh > SURFACE.md`)
+and only line-number shifts moved, from the two new constant declarations
+added above `_CREATION_MOVE_GRACE`; no function name, signature, or order
+changed.
+
+--------------------------------------------------------------------------------
+## T-005 — 2026-09-20 — user-approved behavior change
+
+The Overview screen's lead-time tile (`frontend/src/components/aito/stats/OverviewScreen.tsx`)
+displayed `days(tp.lead_days)` — "—" whenever no card completed in the period, since
+`tp.lead_days` is `null` in that case — but computed its badge from
+`computeDelta(tp.lead_days ?? 0, prev?.lead_days, 'more-is-bad')`. `computeDelta` (in the
+shared `frontend/src/components/stats/deltas.ts`, out of scope here) only bails out when the
+PREVIOUS value is missing; a null CURRENT value was silently coerced to `0`. With a non-zero
+previous `lead_days` (e.g. 6), that produced `pct = (0 - 6) / 6 * 100 = -100` with
+`semantics: 'more-is-bad'`, so the tile rendered a green "▼ 100%" badge next to the "—" dash —
+inventing the appearance of a halved turnaround in a period where nothing was actually
+delivered.
+
+Checked every other `delta={...}` call site in the same tile row for the identical defect:
+`tp.created`, `tp.accepted`, and `tp.done` are typed `number` (non-nullable) on
+`AitoStatsThroughput`, so their `computeDelta(tp.created, ...)` / `computeDelta(tp.accepted,
+...)` / `computeDelta(tp.done, ...)` calls never coerce a null current value — `tp.lead_days`
+was the only nullable field passed through `computeDelta`, and the only tile with this bug.
+
+Fixed at the call site only (not in `deltas.ts`, which is shared with the Fenrir stats page
+and out of scope for this campaign):
+
+```
+delta={tp.lead_days == null ? null : computeDelta(tp.lead_days, prev?.lead_days, 'more-is-bad')}
+```
+
+**User-visible change**: the lead-time tile no longer renders a delta badge at all when
+`tp.lead_days` is null (no card completed in the period) — previously green "▼ 100%", now no
+badge, matching how every other tile already suppresses its badge when it lacks a genuine
+current value. The exact change approved by the user: "the green '▼ 100%' badge beside the
+lead-time dash disappears in periods with no completed card."
+
+Added an assertion to the existing `AitoStatsView.test.tsx` fixture that already exercised
+this path (`lead_days: null` over `previous.lead_days: 6`, in "shows the empty line instead of
+a blank chart when nothing happened") asserting no `%` text renders inside the lead-time tile;
+the sibling non-null case (a normal badge still rendering) was already covered by the first
+test in that file ("opens on the Overview...", asserting `▼ 21%` on the same tile) and needed
+no new test.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14, unchanged — no probe
+renders this component, so nothing was re-recorded. `SURFACE.md` was regenerated (`bash
+tools/gen_surface_stats.sh > SURFACE.md`) and produced no diff. Frontend coverage in scope
+held exactly at the pre-existing baseline: statements 95.70% (401/419), branches 84.52%
+(415/491).
+
+--------------------------------------------------------------------------------
+## SURFACE.md regeneration — 2026-09-20 — NO behavior change (verifier-fail repair, not a task entry)
+
+Unlike the two `T-002`/`T-005` entries above, this entry records no user-approved
+behavior change at all — it exists only to explain a stale-baseline verifier
+failure and its mechanical fix, so a future reader does not mistake the
+`SURFACE.md` diff below for evidence of a real API or contract change.
+
+Iteration 2's `T-007`, `T-008`, and `T-011` (behaviour-preserving refactors of
+`backend/app/services/aito_stats.py`) each committed without regenerating
+`SURFACE.md`, so the committed copy stopped replaying from its own `regen:`
+command:
+
+  * `T-011` deleted the private helper `_done_moments` (folded into the
+    `_scan_stages` scan during a merge of duplicate per-row scans).
+  * `T-008` narrowed `_active_projects(db)`'s return type from
+    `dict[int, AitoProject]` to `dict[int, Row]` (and correspondingly
+    `_board`, `_quote_age`, and `_overdue`, which all take that dict as a
+    parameter) — a column-projection narrowing, not a behavior change.
+
+Both are private-only: `_done_moments` and `_active_projects` are never
+imported outside `aito_stats.py`, and `AitoProject` vs. `Row` is an internal
+type annotation with no effect on any HTTP route, public function signature,
+response model, or response field.
+
+Fixed by regenerating `SURFACE.md` (`bash tools/gen_surface_stats.sh >
+SURFACE.md`) with no other edits. `git diff SURFACE.md` touches exactly one
+section — "aito_stats.py — private helpers (order and names; the module
+map)" — and within it only: the removal of the `_done_moments` line, the
+`AitoProject` -> `Row` type-parameter changes on `_active_projects`, `_board`,
+`_quote_age`, and `_overdue`, and the line-number shifts those two edits
+caused on every helper listed after them. Every other section — HTTP routes,
+public functions, response models, `AitoStatsResponse` fields, frontend
+exports, timeframe exports, API-client types, translation keys, and tuning
+constants — is byte-identical to before.
+
+**User-visible change: none.** No route, schema, or frontend contract moved;
+only the private-helper module map catalogued in `SURFACE.md` was brought
+back in sync with the code it describes.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14.
+`bash tools/gen_surface_stats.sh > /tmp/s.md && diff /tmp/s.md SURFACE.md` is
+empty, confirming `SURFACE.md` now replays from its own `regen:` command
+again.
+
+--------------------------------------------------------------------------------
+## T-007 (reopened) — 2026-09-20 — NOT a user-approved behavior change (new log output only)
+
+An earlier pass at T-007 added `logger.warning("Project %s has an unparsable
+invoice_due_date %r", p.id, p.invoice_due_date)` inside `_overdue()`'s
+`except ValueError` branch, so a malformed `invoice_due_date` (an unvalidated
+string echoed from Zoho Books — `"10/02/2026"` is a real shape it has sent)
+would be discoverable in the logs instead of silently vanishing from every
+overdue bucket and from `oldest_days`. The blind verifier rejected that
+version: `GET /api/v1/aito/stats` is fetched on every statistics-view load
+and every timeframe change, so a per-row warning repeats the identical line
+on every single one of those requests for as long as one bad card sits in
+the database — plus it was shipped with no changelog entry recording that
+`/aito/stats` gained a new observable side effect at all.
+
+**This entry documents that gap, not a new feature.** No response field,
+status code, HTTP contract, or bucket/count/balance value moves — the row is
+still excluded from every bucket and from `oldest_days` exactly as at BASE.
+The only change, both times, is what appears in the server's log output.
+
+Fixed by moving the warning out of the per-row loop: `_overdue()` now
+collects `(project_id, raw_value)` for every row that fails
+`date.fromisoformat` during its single pass, and — only if that list is
+non-empty — emits ONE `logger.warning` after the loop naming every offending
+project and its raw value, e.g. for two bad rows:
+
+```
+Skipped 2 project(s) with an unparsable invoice_due_date, excluded from overdue: 12 ('10/02/2026'), 13 ('not-a-date')
+```
+
+A request with one bad card logs one WARNING line; a request with three bad
+cards still logs exactly one WARNING line, naming all three. A request with
+zero bad cards logs nothing, same as before either version of this fix
+existed. The line repeats on every request that still has a bad card in the
+active set (there is no cross-request de-duplication — each request's
+warning, if any, is independent and reflects only that request's rows), but
+it no longer repeats PER ROW within a single response, which was the actual
+defect: the worst case went from "one line per bad row per request" to "at
+most one line per request", i.e. it now scales with requests rather than
+with requests × bad rows.
+
+Considered and rejected: a module-level "warn once per project id, ever"
+cache would be quieter for a long-lived server, but it would also make a
+newly-introduced second bad project on a previously-clean install invisible
+until the process restarts, and it leaves state that grows for the life of
+the process (bounded only by however many distinct projects ever carry a bad
+`invoice_due_date`, which is small in practice, but unbounded in principle
+against a hostile or bulk-corrupted import). Dropping the line to DEBUG
+alone was also rejected: at the project's default log level that would make
+the silently-dropped row undiscoverable again in normal operation, which was
+the entire point of the original task.
+
+`backend/tests/unit/test_aito_stats.py`: renamed the existing
+`test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it` to
+`..._and_logs_it_once` and tightened its assertion from "the message appears
+somewhere in the log" to "there is exactly one `WARNING`-level record, and it
+names the project id and the raw string". Added
+`test_overdue_names_every_bad_row_in_a_single_warning`, which puts two
+projects on malformed dates on the SAME request and asserts both remain
+excluded from every bucket and `oldest_days`, and that exactly one `WARNING`
+record fires, naming both project ids and both raw values.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14,
+unchanged — none of the probes exercise logging output. `SURFACE.md` needed
+regenerating: `_overdue`'s signature and every other public/private name in
+`aito_stats.py` are unchanged (the fix only adds a local variable and a
+call inside the existing function body), but the four new lines pushed every
+helper defined below `_overdue` in the file down by the same offset, which
+the tracked line-number map records. While regenerating, the diff also
+picked up an *unrelated* staleness left by the immediately preceding commit
+(`T-014`, "fold weeks in one place instead of three"): that commit added
+`frontend/src/components/aito/stats/weeklyFold.ts` (`weekKey`, `weekStart`,
+`WEEKLY_ABOVE_DAYS`, `WEEKLY_ABOVE_DAYS_NARROW`) without regenerating
+`SURFACE.md`. That frontend gap predates this fix, is untouched by it, and
+is included in the regenerated file only because `gen_surface_stats.sh`
+regenerates the whole document in one pass — confirmed with `git show
+6c2bd365a -- SURFACE.md`, which is empty: `T-014`'s own commit never touched
+`SURFACE.md`, so the drift already existed at HEAD before this fix started,
+independent of anything in this entry. Regenerated with `bash
+tools/gen_surface_stats.sh > SURFACE.md`; `diff <(bash
+tools/gen_surface_stats.sh) SURFACE.md` is now empty.
+
+Coverage (scoped to `backend/app/services/aito_stats.py`, measured with
+`COVERAGE_FILE` pointed at a scratch path so the tracked statement-only
+`.coverage` at the worktree root does not collide with this run's branch
+data): statements 314/320 = 98.12% (floor 98.11%, 311/317), branches
+126/134 = 94.03% (floor 93.94%, 124/132). Both figures are at or above the
+floor; the small increase in the denominators is the new collect-and-log
+code path, and both new lines the test suite added are executed by the two
+tests above.
+
+--------------------------------------------------------------------------------
+## T-012 — 2026-09-20 — NO behavior change (pure refactor, SURFACE.md regen only)
+
+`_quote_age` and `_overdue` both built a `{name: [0, 0.0] for name, _, _ in
+<BUCKETS>}` scaffold, accumulated into it with `rows[name][0] += 1;
+rows[name][1] += <amount>`, then converted it to their response objects with
+`for name, (c, t) in rows.items()` — each carrying its own `#
+type: ignore[arg-type]`. Extracted that scaffold into a new private helper,
+`_bucket_totals(buckets, hits: list[tuple[str, float]]) -> dict[str,
+tuple[int, float]]`, which owns exactly the counting: initialise one entry
+per bucket, accumulate `(name, amount)` hits into it, and return
+`{name: (count, total)}` with `count` already an `int`.
+
+The two callers keep everything that actually differs between them —
+`_quote_age`'s `quote_status`/`quote_sent_at` filter, `_overdue`'s
+`quote_invoiced`/`invoice_balance`/`invoice_due_date` filter, the
+`invoice_due_date` parse with its collect-and-log-once path for unparsable
+values (added in the immediately preceding `T-007 (reopened)` entry above),
+and `_overdue`'s `oldest_days` tracking. Each caller resolves its own bucket
+name via the existing `_bucket_name()` and appends `(name, amount)` to a
+`hits` list only for rows it actually wants counted; `oldest` is updated in
+the same loop, using the `days` value the caller already computed, so no
+bucket-resolution logic is duplicated to recover it. `_bucket_totals` never
+sees the filtering, the parsing, or the oldest tracking, so it does not need
+callback parameters to paper over how the two callers differ.
+
+This is a genuine common surface, not a callback-laden abstraction: the
+helper's signature is four lines, it drops the `for p in projects.values():
+if <skip condition>: continue` divergence entirely (that logic stays in each
+caller, where it belongs), and returning `dict[str, tuple[int, float]]`
+instead of `dict[str, list[float]]` let both call sites drop their `#
+type: ignore[arg-type]` — `count=c` reads as an `int` already, with no `int()`
+cast needed at either call site.
+
+Behavior is unchanged: both functions still skip exactly the same rows for
+exactly the same reasons, still resolve bucket names via `_bucket_name`,
+still return every bucket (even ones with zero hits), and `_overdue` still
+tracks `oldest_days` and logs unparsable dates identically. No response
+schema, route, or field changed.
+
+`backend/tests/unit/test_aito_stats.py` needed no changes — the existing
+`_quote_age`/`_overdue` tests only assert on the returned response objects,
+never on the internal accumulator shape.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14,
+unchanged. `SURFACE.md` needed regenerating: the new `_bucket_totals` helper
+adds one line to the "aito_stats.py — private helpers (order and names; the
+module map)" section, which pushes every helper defined below it in the
+file down by the same offset — the only delta in the diff. Regenerated with
+`bash tools/gen_surface_stats.sh > SURFACE.md`; `diff <(bash
+tools/gen_surface_stats.sh) SURFACE.md` is now empty.
+
+Coverage (scope: `backend/app/services/aito_stats.py`, full backend suite —
+`backend/tests/` minus `test_bambu_ftp.py` — run with `COVERAGE_FILE`
+pointed at a scratch path so the tracked statement-only `.coverage` at the
+worktree root does not collide with this run's branch data, then filtered
+with `tools/cov_filter.py`): statements 320/326 = 98.16% (floor 98.12%,
+314/320), branches 128/136 = 94.12% (floor 94.03%, 126/134). Both figures
+are at or above the floor.
+
+--------------------------------------------------------------------------------
+## T-022 — 2026-09-20 — user-approved behavior change
+
+`compute_aito_stats` built the funnel's `conversion.sent` bucket from
+`quote.sent`/`quote.emailed` events only (`_first_moments(db, _SENT_KINDS,
+...)`), while the block right below it already repairs the identical gap for
+`conversion.accepted` by folding `project.quote_accepted_at` in when no
+`quote.accepted` event exists. `aito_quote_status.adopt_quote_status` stamps
+`quote_sent_at` and records no event at all — only the app's own Email button
+(`routes/aito.py`) records `quote.sent` — and the sweep's reconcile
+(`aito_quote_sync.py`) calls `adopt_quote_status` on every Books-side status
+change. So a quote emailed from Books and later accepted in Books read as
+`sent.count == 0` / `accepted.count == 1` on the Sales funnel, while the same
+screen's 15+-day quote-age fact (which reads `p.quote_sent_at` directly, not
+the funnel's `sent` map) counted a quote the funnel said was never sent.
+
+Fixed by mirroring the existing `accepted` merge exactly, for `sent`: after
+building `sent` from events, a second pass folds `project.quote_sent_at` in
+per project, taking the EARLIER of the column and the event when both exist
+(so a card with both is never double-counted or shifted to the later
+moment), and skipping a stamp past the request's `end` bound the same way the
+event query already excludes rows past it. The `accepted` merge itself, and
+`_quote_age` (which already read the column directly), were not touched.
+Grepped every use of the `sent` map inside `compute_aito_stats` before
+changing it: it feeds `conversion.sent` and nothing else (no `_daily`,
+`_throughput`, `_services`, `_size_bands`, or `_clients` consumer) — the
+funnel's own denominator/rate for accepted vs. sent is unaffected because
+`acceptance_rate` is computed from `accepted`/`declined` only, never `sent`.
+
+**User-visible change** (explicitly approved): the Sales funnel's "sent"
+count and total on the statistics view will rise for any shop whose quotes
+leave through Books rather than the app's Email button — a Books-only quote
+that was previously invisible to the funnel now counts once, at the earlier
+of its stamp or its event. `conversion.accepted` is untouched (no
+acceptances gained or lost). The funnel and the 15+-day quote-age fact now
+agree: the same `quote_sent_at` stamp that already fed the quote-age bucket
+now also feeds the funnel's `sent` bucket for a Books-only card.
+
+The count can also FALL by one for a bounded (non-all-time) window, in one
+specific case: a card whose `quote_sent_at` predates the requested window
+but whose `quote.sent` event falls inside it — an app re-send of a quote
+that originally left through Books. The earlier-of-two merge replaces the
+in-window event moment with the out-of-window stamp, so `sent[pid]` fails
+`_in_range` in `_bucket` and the card stops counting for that window, even
+though it counted before this fix. This is not new behavior introduced only
+for `sent`: it is the same semantics the pre-existing `accepted` merge has
+always had, applied here for consistency. It cannot happen on an all-time
+request, which has no lower bound (`start` is `None`, so `_in_range` is
+unconditionally true). The user's approval above was given against the
+"count rises" summary; this paragraph completes that record rather than
+describing a new decision.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14 after
+re-recording ONLY `stats-backend-aggregate`
+(`tools/probe_stats_backend.py` has two fixture cards, id 5 and id 9, each
+with `quote_status="sent"`/`quote_sent_at` set but no `quote.sent` event).
+The re-recorded diff is exactly four `conversion.sent.count` values, one per
+case whose window contains card 5's or card 9's stamp
+(`all_time_utc` 6→8, `march_utc` 3→4, `march_tahiti` 3→4, `open_start` 3→4);
+`conversion.sent.total` is unchanged in every case because both cards have
+`quote_total` of `0.0`/`None`. Every other field in the probe — `accepted`,
+`declined`, `acceptance_rate`, `daily`, `throughput`, `quote_age`, all
+eighteen other blocks — is byte-identical, confirming the change is scoped
+to exactly what the fix intends. `SURFACE.md` needed no regeneration (diff
+against a fresh `bash tools/gen_surface_stats.sh` run was empty, checked
+twice) — the fix adds a loop body inside an existing function, no new
+function, signature, or module-level name.
+
+New tests in `backend/tests/unit/test_aito_stats.py`:
+`test_books_only_sent_stamp_counts_in_the_funnel_same_as_accepted` covers a
+stamp-only card (no event) counting in `sent`, a card with both an event and
+a later stamp counting once at the earlier moment, a stamp outside the
+requested window contributing nothing, and asserts
+`sent.count >= accepted.count` for the window containing a Books-only card.
+
+Coverage (scope: `backend/app/services/aito_stats.py`, full backend suite —
+`backend/tests/` minus `test_bambu_ftp.py` — run with `COVERAGE_FILE`
+pointed at a scratch path outside the repo so the tracked statement-only
+`.coverage` at the worktree root does not collide with this run's branch
+data, then filtered with `tools/cov_filter.py`): statements 328/332 = 98.80%
+(floor 98.77%, 322/326), branches 135/140 = 96.43% (floor 96.32%, 131/136).
+Both figures are at or above the floor.
+
+## T-023 — 2026-09-20 — user-approved behavior change
+
+`_daily()` clamped its own `first_day` to `MAX_STATS_SPAN_DAYS` (1827 days) when
+the calendar it materialises would otherwise be huge, but nothing else in
+`compute_aito_stats` used that clamped value: `throughput.created`/`accepted`/`done`
+were counted with `_in_range(at, start, end)` where `start` is `None` on an
+"all time" request (unconditionally true for every moment ever recorded), and
+`days`/`per_day` were computed from the FULL unclamped `first_day`..`last_day`
+span. The trigger is one import older than five years — `core/database.py`
+backfills `project.created` with `occurred_at = p.created_at`, and an imported
+card's `created_at` is the Books quote_date, so a single old quote pushes the
+derived "all time" `earliest` back by decades. The Overview's headline count
+and per-day rate then described a completely different (much wider, much
+older) window than the `ActivityChart` drawn right beside them, which only
+ever shows the clamped window.
+
+Fixed by clamping `first_day` exactly once, in `compute_aito_stats`, right
+after it is derived (from `date_from` or the earliest `project.created`
+moment) and before anything downstream reads it. The clamped value now
+drives every figure the statistics view reads beside the daily chart:
+`_daily`'s own rows (unchanged output — the clamp used to happen inside
+`_daily` itself, now it arrives pre-clamped), `days`/`per_day`, and a new
+`throughput_start` lower bound derived from the clamped `first_day` via
+`local_day_bounds()` that is threaded into `_throughput()` in place of the
+raw `start`, so `throughput.created`/`accepted`/`done` and the lead/production
+day averages all stop counting moments the chart has already dropped.
+
+Deliberately left unbounded: every other block that reads the raw `start`/
+`end` — `conversion` (sent/accepted/declined buckets), `stage_days`,
+`stage_time`, `rework`, `services`, `clients`, `arrivals`, `islands`,
+`invoicing`, `tracking`. None of these is drawn next to `daily`, none is
+what the user's approved description ("the headline counts and per-day rate
+drop to what the chart actually shows") refers to, and bounding them would
+be an unapproved behavior change beyond what was asked. The `previous`
+window is also unaffected in practice: it is only ever computed when the
+caller supplies an explicit `date_from`/`date_to` (`start`/`end` both
+non-`None`), and the route already rejects an explicit span wider than
+`MAX_STATS_SPAN_DAYS` before `compute_aito_stats` ever runs — so the clamp
+can only fire for the derived "all time" case, where `previous` is already
+`None`.
+
+Observable change, quoting the approved description verbatim: "on an
+all-time range with history older than five years the headline counts and
+per-day rate drop to what the chart actually shows."
+
+Snapshot fallout: none. `./venv/bin/python3 tools/snapshot.py verify` is
+14/14 with NO re-recording — the `stats-backend-aggregate` fixture's oldest
+card is dated 2026-01-15 against a frozen `now` of 2026-03-15 (about 60
+days), far inside the 1827-day cap, so the clamp never fires for that probe
+and every field is byte-identical to before the fix. `SURFACE.md` needed
+regeneration (`bash tools/gen_surface_stats.sh` diffed against the tracked
+copy) because the new comments and the `throughput_start` block shifted
+every subsequent line number in the `aito_stats.py` private-helpers map;
+regenerated and confirmed the second regen replays byte-identical to the
+committed copy.
+
+New tests in `backend/tests/unit/test_aito_stats.py`:
+`test_all_time_headline_counts_and_per_day_match_the_clamped_daily_series`
+builds a board with one card backdated to 1900 and one card born "now" on an
+all-time request, and asserts `throughput.created` (1, not 2 — the ancient
+card is excluded exactly as it already is from `daily`), the sum of
+`daily[*].created` (equal to `throughput.created`), and `throughput.per_day`
+(`round(1 / MAX_STATS_SPAN_DAYS, 3)`, not divided by the true ~46000-day
+span) all describe the same clamped window.
+`test_all_time_headline_counts_are_unchanged_when_history_is_inside_the_cap`
+covers the ordinary case — every real request today, since no board has five
+years of history yet — asserting the clamp never fires and `daily`,
+`throughput.created`, and `per_day` still describe the request's true,
+unclamped span.
+
+Coverage (scope: `backend/app/services/aito_stats.py`, full backend suite —
+`backend/tests/` minus `test_bambu_ftp.py` — run with `COVERAGE_FILE`
+pointed at a scratch path outside the repo so the tracked statement-only
+`.coverage` at the worktree root does not collide with this run's branch
+data, then filtered with `tools/cov_filter.py`): statements 329/333 = 98.80%
+(floor 98.80%, 328/332), branches 135/140 = 96.43% (floor 96.43%, 135/140).
+Both figures are at or above the floor.
+
+## T-024 — 2026-09-20 — user-approved behavior change
+
+`StatsView` collapsed every `query.isError` case into the same generic
+panel — `AlertTriangle`, `t('common.errorLoading')` ("Error loading data"),
+and a Retry button wired to `query.refetch()` — discarding `ApiError.status`
+and `.message`. A custom range that the backend's own guard rejects (more
+than `MAX_STATS_SPAN_DAYS` days, or a `date_from`/`date_to` outside
+`MIN_STATS_DATE`..`MAX_STATS_DATE` — `routes/aito.py`, both 422s with a
+plain-string `detail`) looked identical to a transient 500 or a dropped
+connection, and the Retry button re-sent the identical rejected range
+forever.
+
+Fixed by adding one branch ahead of the generic error case: when
+`query.error instanceof ApiError && query.error.status === 422`, the panel
+shows `query.error.message` (the backend's own detail string) instead of
+the generic copy, and renders no Retry button. Every other error shape —
+500, network failure, anything that is not an `ApiError` with `status ===
+422` — still falls through to the untouched generic panel with its Retry
+button, unchanged.
+
+Message source: the backend's raw `detail` string via `ApiError.message`,
+not a new i18n key. `backend/app/api/routes/aito.py`'s stats-range 422s
+(`date_from must be between ...`, `date_from must not be after date_to`,
+`date_from/date_to must not span more than {MAX_STATS_SPAN_DAYS} days`) are
+plain `HTTPException(status_code=422, detail=...)` strings, not the
+structured `{code, message}` shape `ApiError.code` exists to look up — so
+there is no i18n key to look up even if one were added here. This also
+matches the established convention in the same feature area:
+`components/aito/CreateInvoiceModal.tsx` already shows `error.message`
+verbatim for its own specific, actionable refusals ("still syncing",
+"already invoiced", "not in Finish"), with a comment explaining that
+flattening those into a generic "failed" would send the operator looking in
+the wrong place — the identical reasoning applies here. The public-facing
+`AitoTrackPage`/`AitoTrackEntryPage` (customer-visible, 14 locales) branch on
+`status` to pick a *translated* string instead, but that is a different
+audience: this stats view is the operator's own board, same as
+`CreateInvoiceModal`. No new i18n key was added, so no locale file changed
+and the `stats-i18n` probe's key tree is untouched.
+
+Escaping the dead end: no extra copy was added pointing back at the
+timeframe selector. The `TimeframeSelector` trigger sits in the row above
+this panel and stays mounted and interactive through every query state —
+picking a different range there fires a new query (the query key includes
+`range.dateFrom`/`range.dateTo`), which replaces the 422 panel the moment it
+resolves. The backend's message itself already names the specific
+constraint that was violated (the span cap or the date bound), which is
+enough to make "pick a different range" the obvious next step without
+restating it.
+
+Retry button: deliberately omitted only for this branch. A 422 here means
+the range itself, not the server, is why the request failed — retrying
+without changing the range reproduces the identical 422 every time, which
+was the specific defect the user approved removing.
+
+Snapshot fallout: none. `./venv/bin/python3 tools/snapshot.py verify` is
+14/14 with no re-recording — no probe renders `StatsView`, and no i18n key
+or backend contract moved. `SURFACE.md` is unchanged:
+`bash tools/gen_surface_stats.sh` diffs empty against the tracked copy,
+since `StatsView`'s only export (`StatsView` itself, plus the re-exported
+`BriefInput` type) is unchanged — the new branch is internal to the
+component body.
+
+New tests in `frontend/src/__tests__/components/AitoStatsView.test.tsx`:
+the existing 500 case was renamed to `'shows the generic error state with a
+retry on a 500'` (assertions unchanged, plus a new assertion that the
+generic copy — "Error loading data" — is present) and a sibling
+`'shows the generic error state with a retry on a network failure'` was
+added using `HttpResponse.error()`, proving the generic panel still covers
+both a real 500 and a fetch-level failure. A new
+`'names the rejected range on a 422 and offers no retry, since one would
+only resend it'` test serves a 422 with a `date_from/date_to must not span
+more than 1827 days` detail and asserts that exact string renders, that no
+`Retry` button exists, and that the generic "Error loading data" copy does
+not appear — proving the two paths are distinct.
+
+Coverage (scope: Aito statistics, `frontend`, `tools/coverage_stats.sh
+frontend`): statements 404/417 = 96.88% (floor 96.88%, 404/417), branches
+430/495 = 86.86% (floor 86.76%, 426/491). Both figures are at or above the
+floor.
+
+--------------------------------------------------------------------------------
+## T-029 — 2026-09-20 — NO behavior change (pure refactor, SURFACE.md regen only)
+
+`weeklyFold.ts` already had the date math (`weekStart`/`weekKey`); the
+`new Map<string, T>(); for (const d of daily) { const key = weekKey(...);
+const b = buckets.get(key) ?? <seed>; <accumulate into b>; buckets.set(key,
+b); }` loop that uses them was still separately written in ActivityChart.tsx,
+DecisionsChart.tsx, and OverviewScreen.tsx. Added a generic `foldWeekly(daily,
+seed, accumulate)` to `weeklyFold.ts` that owns exactly that loop — it computes
+each day's Monday once (`weekStart`/`localDateKey`, not the previous
+double-computation of `weekStart` and then `weekKey` separately), calls
+`seed(key, start)` the first time a week is seen, folds every day into the
+bucket via `accumulate(bucket, day)` (which may mutate-and-return or return a
+new value — either works), and returns the buckets as a `Map` so a caller
+that needs the week's key or start date back (e.g. a peak-finder) still has
+it. The helper is one sentence: it walks `daily` once, grouping into
+Monday-start weeks and folding each day into whatever bucket shape the caller
+wants.
+
+Only ActivityChart.tsx was switched to use it. Its loop was *only* that
+get-or-create-and-accumulate pattern, so the call site went from 12 lines to
+9, dropped the double `weekStart(date)`/`weekKey(date)` computation per row,
+and the dead `export { WEEKLY_ABOVE_DAYS }` re-export (zero importers —
+OverviewScreen already imports it from `./weeklyFold` — and its own comment
+described a dependency that no longer exists) was deleted along with it.
+
+The other two callers were deliberately left alone, for two different
+reasons:
+
+DecisionsChart.tsx's loop is not *only* the fold pattern: on every call it
+first decides, per row, whether to key by week or by the day itself (`let key
+= d.day; ... if (weekly) { key = weekKey(date); ... }`), because it draws
+daily bars below its fold threshold using the same Map instead of a plain
+array map. Drafting `foldWeekly` calls for both branches (weekly via the
+helper, non-weekly via a plain `.map()`) produced *more* lines than the
+original single loop, and forcing the day/week choice into `foldWeekly`
+itself (e.g. via a key-selector callback) would turn a "fold into weeks"
+helper into a generic groupBy, which is a different (and needlessly
+generalised) abstraction. Left as-is, importing `weekStart`/`weekKey`
+directly exactly as it already did.
+
+OverviewScreen.tsx's peak-finder loop, in isolation, is *also* only that
+pattern and reads at least as well through `foldWeekly` (named `{start,
+total}` fields instead of a `[string, number]` tuple, and no round-trip
+re-parse of the week key back into a `Date` for the label — `start` is
+already sitting in the bucket). Verified in isolation: converting only
+OverviewScreen (ActivityChart reverted to its original loop) measured
+branches at exactly 430/495 = 86.86%, matching the floor with zero drop.
+Converting only ActivityChart (OverviewScreen reverted) measured the same:
+exactly 430/495. But converting *both simultaneously* reproducibly measured
+428/493 = 86.81% — a real, structural (not flaky — reran twice, identical
+both times) branch-coverage percentage drop. The reason: each file's own
+`buckets.get(key) ?? <seed>` was previously a separate, fully-covered branch
+site (2 outcomes each, 4 total across the two files); consolidating both
+callers onto the one shared `foldWeekly` implementation collapses that to a
+single physical site (2 outcomes, still fully covered) — the total branch
+count shrinks by 2 along with the covered count, which mechanically lowers
+the ratio even though the exact same 65 branch outcomes remain uncovered
+(same lines, some merely shifted by the code removed elsewhere; nothing new
+is untested). There is no in-scope way to add back the 2 percentage-points'
+worth of denominator without either padding coverage of unrelated
+pre-existing gaps (outside this task's scope) or leaving a genuinely
+duplicate branch in place purely to keep two counters symmetric. Given the
+coverage floor is a hard gate, OverviewScreen keeps its original hand-rolled
+loop (still importing `weekKey` from `weeklyFold.ts`, exactly as it already
+did) rather than trip it. This is recorded in `weeklyFold.ts`'s module
+comment so the next person doesn't "fix" this by wiring OverviewScreen up
+too.
+
+`DecisionsChart.tsx` and `OverviewScreen.tsx` are untouched by this diff.
+
+Tests: `AitoStatsScreens.test.tsx` (10/10), `AitoStatsView.test.tsx`
+(12/12), and `AitoWeeklyFold.test.ts` (4/4) all pass unchanged — no
+assertion was touched, since `AitoStatsScreens.test.tsx` only observes
+ActivityChart/DecisionsChart/OverviewScreen's rendered output and
+`AitoWeeklyFold.test.ts` only pins `weekStart`/`weekKey`, neither of which
+changed shape or value.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14,
+unchanged. `SURFACE.md` needed regenerating: `foldWeekly` is a new
+top-level export in `weeklyFold.ts`, and `ActivityChart.tsx`'s dead
+`export { WEEKLY_ABOVE_DAYS }` (invisible to the generator anyway — it
+greps `^export (const|function|...)`, which an `export { ... }` list does
+not match) is gone. Regenerated with `bash tools/gen_surface_stats.sh >
+SURFACE.md`; `diff <(bash tools/gen_surface_stats.sh) SURFACE.md` is now
+empty.
+
+Coverage (scope: Aito statistics, `frontend`, `tools/coverage_stats.sh
+frontend`): statements 407/420 = 96.90% (floor 96.88%, 404/417), branches
+430/495 = 86.86% (floor 86.86%, 430/495). Both figures are at or above the
+floor — branches are exactly unchanged (verified reproducible; see reasoning
+above for why converting OverviewScreen too, even though it is independently
+a clean win, was rejected specifically to keep this number from moving).
+
+--------------------------------------------------------------------------------
+## T-025 — 2026-09-21 — user-approved behavior change (approved after the fact)
+
+**This entry records a process gap, not a pre-approved change.** Commit
+`673fe32e2` shipped T-025 alongside T-033 in the same iteration with no
+`BASELINE-CHANGELOG.md` entry and no approval marker of any kind. The blind
+verifier caught it on review, flagging that it is user-visible and that the
+campaign had already gated the comparable text change T-024 as
+user-approved — so shipping this one silently was an outlier, not the
+norm. The user was then asked, after the fact, whether to revert the hunk
+or approve it and have the record corrected. They chose to approve it. This
+entry is that correction: T-025 was NOT approved before implementation: it
+was approved only once the gap was found.
+
+WHAT CHANGED: in `frontend/src/components/aito/stats/MoneyScreen.tsx`, the
+Totals panel's `outstanding` row now renders its label as the existing
+`aito.stats.outstanding` text stacked above an `<AsOfToday />` marker,
+instead of the plain text alone — the same component and the same
+`aito.stats.asOfToday` i18n key the Overdue panel two lines above it
+already carries. A `testId` (`aito-stats-money-outstanding`) was added to
+the row so the marker can be asserted on that row specifically, separate
+from the Overdue panel's own copy of the same marker.
+
+WHAT DID NOT CHANGE: the rendered `outstanding` value, `money(outstanding)`;
+`data.invoicing.outstanding_balance`; `data.invoicing.outstanding_count`;
+any backend route, response field, or status code; and the i18n key set —
+`aito.stats.asOfToday` already existed (the Overdue panel was already using
+it) and all 14 locales already carried it, so no locale file changed and no
+new key was added.
+
+WHY: `outstanding` is an all-time snapshot — computed with no `_in_range`
+filter — sitting in the same Totals panel as `quoted`, `invoiced`, and the
+other rows, every one of which IS scoped to the selected timeframe. With
+"Today" selected, the panel can read "quoted 0, invoiced 0" beside a large,
+unlabelled `outstanding` figure that has nothing to do with today — an
+operator reading left-to-right has no reason to think that one figure
+answers a different question than its neighbours. The Overdue panel already
+carries this exact `AsOfToday` marker for exactly this reason (it too is an
+all-time figure living beside period-scoped ones), which is precisely what
+made this omission on the Totals panel easy to miss: the fix for the same
+defect already existed one panel up, just not applied here.
+
+Tests: `backend/tests/unit/test_aito_stats.py` gained
+`test_date_to_alone_out_of_range_is_422` (T-033, unrelated to this entry —
+it covers the `date_to` bound being checked on its own, not only alongside
+`date_from`). `frontend/src/__tests__/components/AitoStatsScreens.test.tsx`
+gained an assertion in the existing Money-panel test that
+`aito-stats-money-outstanding` contains both "As of today" and the
+unchanged value text — no existing assertion was weakened or removed.
+
+Golden probes: `./venv/bin/python3 tools/snapshot.py verify` is 14/14,
+unchanged — no probe renders `MoneyScreen`. `SURFACE.md` is unchanged: the
+marker is internal to `MoneyScreen`'s render body, and no export moved.
+
+Coverage: unaffected — this is a documentation-only repair against an
+already-landed, already-tested commit; no source file changed as part of
+writing this entry.

@@ -90,45 +90,29 @@
     "files": []
   },
   {
-    "id": "fe-camera-grid-layout",
-    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/components/cameraGridLayout.ts --format cjs --file /tmp/fenrir-refactor-probe/cameraGridLayout.cjs >/dev/null 2>&1 && node tools/probe_camera_layout.cjs",
-    "timeout": 120,
-    "scrub": [
-      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-    ],
-    "files": []
-  },
-  {
-    "id": "heimdall-signing",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_heimdall_signing.py 2>/dev/null",
-    "timeout": 60,
+    "id": "stats-backend-aggregate",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_stats_backend.py 2>/dev/null",
+    "timeout": 300,
     "scrub": [],
     "files": []
   },
   {
-    "id": "payment-link-math",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_payment_link_math.py 2>/dev/null",
-    "timeout": 60,
+    "id": "stats-contract",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_stats_contract.py 2>/dev/null",
+    "timeout": 300,
     "scrub": [],
     "files": []
   },
   {
-    "id": "heimdall-wire",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_heimdall_wire.py 2>/dev/null",
-    "timeout": 120,
+    "id": "stats-frontend-pure",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_stats_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/statsFrontend.cjs >/dev/null 2>&1 && TZ=UTC node tools/probe_stats_frontend.cjs",
+    "timeout": 300,
     "scrub": [],
     "files": []
   },
   {
-    "id": "payment-link-api",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_payment_link_api.py 2>/dev/null",
-    "timeout": 180,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "payment-link-reconcile",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_payment_link_reconcile.py 2>/dev/null",
+    "id": "stats-i18n",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_stats_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/statsI18n.cjs >/dev/null 2>&1 && node tools/probe_stats_i18n.cjs",
     "timeout": 300,
     "scrub": [],
     "files": []

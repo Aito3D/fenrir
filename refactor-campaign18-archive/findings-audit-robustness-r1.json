@@ -1,0 +1,87 @@
+{
+ "findings": [
+  {
+   "severity": "high",
+   "category": "unbounded-growth",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 538,
+   "title": "_daily() materialises one row per calendar day with no cap on the requested span",
+   "evidence": "`day = first_day\\n    while day <= last_day:\\n        c = counts.get(day, [0, 0, 0, 0])\\n        rows.append(AitoStatsDay(day=day, ...))\\n        day += timedelta(days=1)` \u2014 first_day/last_day come straight from the caller's `date_from`/`date_to`, which `get_aito_stats` only checks for from<=to. `GET /api/v1/aito/stats?date_from=0001-01-02` (a mistyped year, or any API-key client) makes this build ~739k AitoStatsDay models; measured on a 826-year span it produced 301,953 rows in 1.94 s at 309 MB peak, all inside a sync function on the event loop and before FastAPI then serialises the lot \u2014 so one request pins a CPU, allocates ~1 GB, stalls every other request (WS, MQTT status) for the duration. The same path is reachable without a hostile caller: `first_day` falls back to the earliest `project.created` moment, and an import backdates that from an unvalidated Books quote_date, so one card with a bad year turns the ordinary 'all time' preset into the same blowup.",
+   "fix": "bound the span in get_aito_stats (422, or clamp first_day to a maximum number of days back from last_day) before compute_aito_stats runs, and keep _daily's row count derived from that bounded span",
+   "behavior_change": true,
+   "behavior_change_note": "a request for a range wider than the new cap would return 422 (or a truncated series) instead of the full day-by-day array it returns today."
+  },
+  {
+   "severity": "medium",
+   "category": "boundary-validation",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 1024,
+   "title": "get_aito_stats returns 500 instead of 422 for dates near date.min/date.max",
+   "evidence": "`if date_from and date_to and date_from > date_to: raise HTTPException(status_code=422, ...)` is the endpoint's only validation; the dates themselves are unbounded `date` Query params. compute_aito_stats then calls local_day_bounds, which shifts them by tz_offset_minutes: `local_day_bounds(date(1,1,1), date(9999,12,31), 840)` raises `OverflowError: date value out of range`. So `GET /aito/stats?date_from=0001-01-01&tz_offset_minutes=780` (accepted: the offset is within the ge=-840/le=840 bounds) crashes with an unhandled OverflowError, and the Stats page shows the generic 'error loading' state with a 500 in the log instead of telling the caller the range is invalid. A span cap does not fix this \u2014 date_from=0001-01-01&date_to=0001-01-02 is a two-day span and still overflows.",
+   "fix": "clamp or reject date_from/date_to to a supported range in get_aito_stats (e.g. reject anything outside date.min + 1 day .. date.max - 1 day) before calling compute_aito_stats",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "silent-wrong-result",
+   "file": "frontend/src/components/aito/stats/OverviewScreen.tsx",
+   "line": 88,
+   "title": "Overview lead-time tile fabricates a -100% improvement when lead_days is null",
+   "evidence": "`value={days(tp.lead_days)}` renders '\u2014' when no card completed in the period, but the same tile passes `delta={computeDelta(tp.lead_days ?? 0, prev?.lead_days, 'more-is-bad')}` \u2014 computeDelta only bails on a missing PREVIOUS value, so null-current is coerced to 0 and yields pct = (0 - prev)/prev = -100 with tone 'good'. With the previous period's lead_days = 6 the operator sees '\u2014 \u25bc 100%' in green next to \u00ab Lead time \u00bb and reads the shop as having halved its turnaround in a period where nothing was actually delivered. The existing fixture in AitoStatsView.test.tsx ('shows the empty line instead of a blank chart\u2026', lead_days: null over previous.lead_days: 6) already renders that badge; no assertion covers it.",
+   "fix": "pass null (not 0) as the current value when tp.lead_days is null so no badge renders \u2014 e.g. `delta={tp.lead_days == null ? null : computeDelta(tp.lead_days, prev?.lead_days, 'more-is-bad')}`",
+   "behavior_change": true,
+   "behavior_change_note": "the green '\u25bc 100%' badge beside the lead-time dash disappears in periods with no completed card."
+  },
+  {
+   "severity": "medium",
+   "category": "silent-wrong-result",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 74,
+   "title": "_is_creation_time() trusts project.created's occurred_at, which the startup backfill itself backdates",
+   "evidence": "`def _is_creation_time(at, born): return born is not None and timedelta(0) <= at - born <= _CREATION_MOVE_GRACE` \u2014 `born` is the project.created event's occurred_at, chosen over created_at because 'created_at can be backdated (an import carries the Books quote's date)'. But _backfill_aito_project_created in backend/app/core/database.py inserts exactly that backdated value: `SELECT p.id, p.created_at, 'project.created', ...`. For any card imported before the event log existed, born IS the Books quote date, so its creation-time board placement (recorded weeks or years later, at the real import instant) fails the 60-second grace: _scan_stages records a phantom stay of `import_instant - quote_date` in whatever column it left, which skews the Time screen's median days per stage and its per-card stacked bars, and the same miss lets _first_moments count that card's import-time quote.accepted as a sale in the import week \u2014 the exact outcome the docstring at line 88 says the born check prevents.",
+   "fix": "treat a project.created whose occurred_at equals the project's created_at (the backfill's signature) as unusable for the grace, or stamp the synthesised rows with a marker in detail and skip the grace for them",
+   "behavior_change": true,
+   "behavior_change_note": "stage medians, per-card stage bars and the weekly accepted counts shift for pre-event-log imported cards, so historical figures on the Time and Sales screens will not match what the page showed before."
+  },
+  {
+   "severity": "medium",
+   "category": "error-handling",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 336,
+   "title": "_overdue() drops an invoice whose due date will not parse, with no log line",
+   "evidence": "`try: due = date.fromisoformat(p.invoice_due_date)\\n        except ValueError: continue` \u2014 invoice_due_date is an unvalidated string echoed from Books (the same class of value the quote_sent_at backfill guards against with a GLOB, documenting '10/02/2026' as a real shape it has seen, and date.fromisoformat on the project's 3.10 target also rejects '2026-09-01T00:00:00'). An overdue invoice with such a value silently vanishes from the Money screen's overdue buckets and from oldest_days, so the operator reads \u00ab nothing overdue \u00bb while the money is still out, and nothing anywhere records that a row was skipped.",
+   "fix": "log a warning with project id and the offending string in the except branch so a skipped invoice is diagnosable",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "unbounded-growth",
+   "file": "backend/app/services/aito_stats.py",
+   "line": 161,
+   "title": "Every /stats request scans the whole event history regardless of the requested window",
+   "evidence": "`stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(AitoEvent.kind == 'stage.changed', AitoEvent.project_id.in_(ids))` with only an upper bound applied; _first_moments runs the same shape four more times and _active_projects loads every active row (done cards keep status 'active', so that set only ever grows). A 'today' range therefore reads and materialises years of rows: scan.stays holds every closed stay for every card ever, and cost and memory track total history rather than the window. As the board ages the Stats page's first paint slides from instant to seconds, each range change repeats it, and React Query's keepPreviousData holds two full responses at once; the ids list also rides into SQLite as one bind parameter per active project.",
+   "fix": "bound the stage scan below as well (only stays that can close at or after `start` need their opening row \u2014 fetch from the last event before `start` per project), and page or aggregate _active_projects instead of loading every active ORM row per request",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "boundary-validation",
+   "file": "frontend/src/components/aito/stats/TodayStrip.tsx",
+   "line": 120,
+   "title": "Collect list renders 'late NaN days' for a non-ISO invoice_due_date",
+   "evidence": "`? Math.max(0, Math.round((parseLocalDateKey(brief.today).getTime() - parseLocalDateKey(p.invoice_due_date).getTime()) / DAY_MS))` \u2014 parseLocalDateKey does `key.slice(0,10).split('-').map(Number)`, so a Books-formatted '10/02/2026' yields an Invalid Date, the subtraction is NaN, Math.max(0, NaN) is NaN, and the row shows \u00ab Late NaN days \u00bb while the byWait comparator (b.waitDays - a.waitDays) returns NaN for it and leaves the collect list in arbitrary order. The backend already treats that string as untrustworthy \u2014 _overdue wraps date.fromisoformat in try/except for the same field \u2014 but this path has no guard.",
+   "fix": "reuse a parse that returns null for a non-ISO key and fall back to the 0-day branch, the way the invoice_due_date-less case already does",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "silent-wrong-result",
+   "file": "frontend/src/components/aito/stats/OverviewScreen.tsx",
+   "line": 26,
+   "title": "Overview peak finding uses the wide fold threshold the chart beside it does not use on a phone",
+   "evidence": "`if (daily.length > WEEKLY_ABOVE_DAYS) {` picks week-vs-day wording with the 45-day constant only, but ActivityChart folds at `narrow ? WEEKLY_ABOVE_DAYS_NARROW : WEEKLY_ABOVE_DAYS` (31 below 640px). On a phone with a 31\u201345 day range the chart is titled \u00ab per week \u00bb and draws weekly bars while the finding above it says \u00ab busiest day: 12 September \u00bb, naming a day that has no bar on the chart \u2014 the exact disagreement the exported-constant comment in ActivityChart.tsx says the two must avoid.",
+   "fix": "share the same narrow media query (or lift the fold decision into one hook both consume) so the finding and the chart agree on the threshold",
+   "behavior_change": false
+  }
+ ]
+}

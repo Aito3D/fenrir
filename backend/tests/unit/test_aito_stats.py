@@ -1,8 +1,11 @@
 """GET /aito/stats — the pipeline widget's four blocks, computed server-side."""
 
+from datetime import date, timedelta
+
 import pytest
 from sqlalchemy import text
 
+from backend.app.services.aito_stats import MAX_STATS_SPAN_DAYS
 from backend.tests.unit.test_aito_contacted import _declared_permissions
 
 STATS = "/api/v1/aito/stats"
@@ -191,6 +194,46 @@ async def test_zoho_side_acceptance_without_an_event_counts_from_quote_accepted_
 
 
 @pytest.mark.asyncio
+async def test_books_only_sent_stamp_counts_in_the_funnel_same_as_accepted(async_client, db_session):
+    """adopt_quote_status stamps quote_sent_at for a quote emailed from Books
+    and records no `quote.sent`/`quote.emailed` event at all — only the app's
+    own Email button does that. `sent` must adopt the column the same way
+    `accepted` already does: earlier-of-the-two when both exist, the column
+    alone when only it exists, and nothing when the stamp lands outside the
+    requested window."""
+    books_only = await _create(async_client, description="books only")
+    both = await _create(async_client, description="both")
+    outside = await _create(async_client, description="outside")
+    also_accepted = await _create(async_client, description="also accepted")
+    await _set(db_session, books_only, quote_total=800.0, quote_status="sent", quote_sent_at="2026-08-14 09:00:00")
+    await _set(db_session, both, quote_total=200.0, quote_status="sent", quote_sent_at="2026-08-20 09:00:00")
+    # Later stamp than the event: the earlier of the two wins, at 2026-08-05.
+    await _event(db_session, both, "quote.sent", "2026-08-05 09:00:00")
+    await _set(db_session, outside, quote_total=999.0, quote_status="sent", quote_sent_at="2026-07-15 09:00:00")
+    await _set(
+        db_session,
+        also_accepted,
+        quote_total=500.0,
+        quote_status="accepted",
+        quote_sent_at="2026-08-01 09:00:00",
+        quote_accepted_at="2026-08-02 09:00:00",
+    )
+
+    body = (await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "2026-08-31"})).json()
+    c = body["conversion"]
+    # books_only (800) + both (200, counted once at the earlier moment) + also_accepted (500).
+    assert c["sent"] == {"count": 3, "total": 1500.0}
+    assert c["accepted"] == {"count": 1, "total": 500.0}
+    # Every accepted card in the window was also sent in it: the funnel stays
+    # internally consistent for a card whose whole life is Books-only.
+    assert c["sent"]["count"] >= c["accepted"]["count"]
+
+    # A stamp outside the window contributes nothing.
+    july = (await async_client.get(STATS, params={"date_from": "2026-07-01", "date_to": "2026-07-31"})).json()
+    assert july["conversion"]["sent"] == {"count": 1, "total": 999.0}
+
+
+@pytest.mark.asyncio
 async def test_imported_decision_events_are_not_counted_in_the_import_period(async_client, db_session):
     """A quote imported already-decided records `quote.accepted` at the import
     moment for an acceptance that happened at some unknown past moment."""
@@ -288,6 +331,78 @@ async def test_inverted_range_is_422_and_absent_dates_are_allowed(async_client):
     r = await async_client.get(STATS)
     assert r.status_code == 200
     assert r.json()["date_from"] is None and r.json()["date_to"] is None
+
+
+@pytest.mark.asyncio
+async def test_span_wider_than_the_cap_is_422(async_client):
+    """T-002: the route bounds the SPAN, not just the ordering, so a caller
+    cannot ask for a range that would materialise millions of `daily` rows."""
+    date_from = date(2020, 1, 1)
+    date_to = date_from + timedelta(days=MAX_STATS_SPAN_DAYS)  # one day past the cap
+    r = await async_client.get(STATS, params={"date_from": date_from.isoformat(), "date_to": date_to.isoformat()})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_span_exactly_at_the_cap_is_still_200_with_the_full_daily_series(async_client):
+    date_from = date(2020, 1, 1)
+    date_to = date_from + timedelta(days=MAX_STATS_SPAN_DAYS - 1)  # inclusive: exactly the cap
+    r = await async_client.get(STATS, params={"date_from": date_from.isoformat(), "date_to": date_to.isoformat()})
+    assert r.status_code == 200
+    daily = r.json()["daily"]
+    assert len(daily) == MAX_STATS_SPAN_DAYS
+    assert daily[0]["day"] == date_from.isoformat()
+    assert daily[-1]["day"] == date_to.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_all_time_calendar_is_bounded_even_when_the_earliest_card_is_absurdly_old(async_client, db_session):
+    """The 'all time' preset sends no dates at all, so `first_day` is derived
+    from the earliest `project.created` moment — which an import can backdate
+    to whatever a Books quote_date says. That derived range must be bounded
+    the same way an explicit caller-supplied range is, without turning an
+    ordinary all-time request into a 422."""
+    p = await _create(async_client)
+    await _move_event(db_session, p, "project.created", "1900-01-01 00:00:00")
+
+    r = await async_client.get(STATS)
+    assert r.status_code == 200
+    daily = r.json()["daily"]
+    assert len(daily) == MAX_STATS_SPAN_DAYS
+    # Clamped to the most recent window, not the (absurd) actual first day.
+    assert date.fromisoformat(daily[0]["day"]) > date(1950, 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_dates_that_would_overflow_local_day_bounds_are_422_not_500(async_client):
+    """A date near `date.min`/`date.max`, combined with `tz_offset_minutes`,
+    overflows `datetime` inside `local_day_bounds` — even for a two-day span,
+    so the span cap alone does not cover it. The route rejects the date
+    itself before ever calling `local_day_bounds`."""
+    assert (await async_client.get(STATS, params={"date_from": "0001-01-01"})).status_code == 422
+    assert (
+        await async_client.get(STATS, params={"date_from": "0001-01-01", "date_to": "0001-01-02"})
+    ).status_code == 422
+    assert (
+        await async_client.get(STATS, params={"date_from": "5001-01-01", "date_to": "9999-12-31"})
+    ).status_code == 422
+    assert (
+        await async_client.get(STATS, params={"date_from": "0001-01-01", "tz_offset_minutes": 780})
+    ).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_date_to_alone_out_of_range_is_422(async_client):
+    """`date_to` can be rejected on its own, with no `date_from` at all, or
+    with a valid `date_from` — both must hit the `date_to` bound check itself,
+    not the sibling `date_from` check one branch earlier."""
+    r = await async_client.get(STATS, params={"date_to": "9999-12-31"})
+    assert r.status_code == 422
+    assert "date_to" in r.json()["detail"]
+
+    r = await async_client.get(STATS, params={"date_from": "2026-08-01", "date_to": "9999-12-31"})
+    assert r.status_code == 422
+    assert "date_to" in r.json()["detail"]
 
 
 def test_stats_route_is_gated_on_aito_read():
@@ -442,6 +557,63 @@ async def test_all_time_has_no_previous_and_spans_from_first_project(async_clien
     assert body["throughput"]["per_day"] is not None and body["throughput"]["per_day"] > 0
 
 
+@pytest.mark.asyncio
+async def test_all_time_headline_counts_and_per_day_match_the_clamped_daily_series(async_client, db_session):
+    """T-023: when a card older than MAX_STATS_SPAN_DAYS pushes `first_day`
+    back to the year 1900, `daily` is clamped to the most recent window (per
+    `test_all_time_calendar_is_bounded_even_when_the_earliest_card_is_absurdly_old`
+    above) — but before the fix, `throughput.created` and `per_day` still read
+    over the FULL unclamped span, so the Overview's headline count and rate
+    disagreed with the ActivityChart drawn right beside them. Both must now
+    describe the exact same window: the pre-cap card must vanish from the
+    headline count exactly as it already vanishes from the chart, and
+    `per_day` must divide by the chart's own day count, not the true span."""
+    old = await _create(async_client, description="ancient import")
+    await _move_event(db_session, old, "project.created", "1900-01-01 00:00:00")
+    await _create(async_client, description="recent card")  # born "now" via the real create call
+
+    r = await async_client.get(STATS)
+    assert r.status_code == 200
+    body = r.json()
+    daily = body["daily"]
+    throughput = body["throughput"]
+
+    assert len(daily) == MAX_STATS_SPAN_DAYS
+    # The ancient card is clamped out of the chart...
+    assert date.fromisoformat(daily[0]["day"]) > date(1950, 1, 1)
+    # ...and must be clamped out of the headline count read beside it too: only
+    # the recent card, still inside the clamped window, is counted.
+    assert throughput["created"] == 1
+    assert sum(d["created"] for d in daily) == throughput["created"]
+    # `per_day` must divide by the same MAX_STATS_SPAN_DAYS the chart spans,
+    # not by the true (~46000-day) distance back to 1900.
+    assert throughput["per_day"] == round(1 / MAX_STATS_SPAN_DAYS, 3)
+
+
+@pytest.mark.asyncio
+async def test_all_time_headline_counts_are_unchanged_when_history_is_inside_the_cap(async_client, db_session):
+    """The ordinary case — every real request today, since no board has five
+    years of history yet — must be completely unaffected: with `first_day`
+    already inside the cap the clamp never fires, so `daily`, the headline
+    count, and `per_day` describe the request's true (unclamped) span, same
+    as before this window was unified."""
+    a = await _create(async_client)
+    b = await _create(async_client)
+    await _move_event(db_session, a, "project.created", "2026-03-02 10:00:00")
+    await _move_event(db_session, b, "project.created", "2026-03-05 10:00:00")
+
+    r = await async_client.get(STATS)
+    body = r.json()
+    daily = body["daily"]
+    throughput = body["throughput"]
+
+    assert len(daily) < MAX_STATS_SPAN_DAYS
+    assert daily[0]["day"] == "2026-03-02"
+    assert throughput["created"] == 2
+    assert sum(d["created"] for d in daily) == throughput["created"]
+    assert throughput["per_day"] == round(2 / len(daily), 3)
+
+
 # ---------------------------------------------------------------------------
 # Sections: sales / time / money / clients
 # ---------------------------------------------------------------------------
@@ -513,17 +685,30 @@ async def test_size_bands_with_three_decisions_is_one_band(async_client, db_sess
 
 
 @pytest.mark.asyncio
-async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
+async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session, monkeypatch):
     from datetime import datetime, timedelta, timezone
 
-    # The endpoint bounds "today" with the request's tz offset, which defaults
-    # to UTC — so the fixture's due dates have to be UTC days too. Local days
-    # made this fail every evening west of Greenwich, where the UTC date has
-    # already rolled over and every age came out one day longer.
-    today = datetime.now(timezone.utc).date()
+    from backend.app.services import aito_stats
+
+    # compute_aito_stats reads "today" from exactly one clock call
+    # (datetime.now(timezone.utc), module-level). Racing that against a
+    # `today` computed independently in the fixture meant a UTC midnight
+    # landing between the two calls could disagree on the date -- so pin the
+    # same source the endpoint reads instead of reading the real clock twice.
+    frozen_now = datetime(2026, 3, 15, 12, 0, tzinfo=timezone.utc)
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now if tz is not None else frozen_now.replace(tzinfo=None)
+
+    monkeypatch.setattr(aito_stats, "datetime", _FrozenDatetime)
+    today = frozen_now.date()
     a = await _create(async_client)
     b = await _create(async_client)
     c = await _create(async_client)
+    d = await _create(async_client)
+    e = await _create(async_client)
     await _set(
         db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date=(today - timedelta(days=3)).isoformat()
     )
@@ -532,6 +717,14 @@ async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
     )
     await _set(
         db_session, c, quote_invoiced=1, invoice_balance=0, invoice_due_date=(today - timedelta(days=45)).isoformat()
+    )
+    # Due today (days == 0) and due tomorrow (days == -1) both fall outside
+    # every bucket in _OVERDUE_BUCKETS, which starts at ("1-7", 1, 7) -- a
+    # bill that isn't late yet isn't "overdue". They must not appear in any
+    # bucket and must not move oldest_days, even though they carry a balance.
+    await _set(db_session, d, quote_invoiced=1, invoice_balance=500, invoice_due_date=today.isoformat())
+    await _set(
+        db_session, e, quote_invoiced=1, invoice_balance=999, invoice_due_date=(today + timedelta(days=1)).isoformat()
     )
 
     r = await async_client.get(STATS)
@@ -545,23 +738,88 @@ async def test_overdue_buckets_and_oldest_as_of_today(async_client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_overdue_skips_an_unparsable_invoice_due_date_and_logs_it_once(async_client, db_session, caplog):
+    # invoice_due_date is an unvalidated string echoed from Books; "10/02/2026"
+    # is a real shape it has sent. date.fromisoformat rejects it, so the row
+    # must still be dropped from every bucket and from oldest_days exactly as
+    # before -- but the drop must now be diagnosable in the logs. Logged once
+    # per request rather than once per row: the statistics view refetches
+    # /aito/stats on every load and every timeframe change, so a per-row
+    # warning would repeat forever for one bad card.
+    a = await _create(async_client)
+    await _set(db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date="10/02/2026")
+
+    with caplog.at_level("WARNING", logger="backend.app.services.aito_stats"):
+        r = await async_client.get(STATS)
+    od = r.json()["overdue"]
+    assert [(x["bucket"], x["count"], x["balance"]) for x in od["buckets"]] == [
+        ("1-7", 0, 0),
+        ("8-30", 0, 0),
+        ("31+", 0, 0),
+    ]
+    assert od["oldest_days"] is None
+    warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert str(a) in warnings[0].message and "10/02/2026" in warnings[0].message
+
+
+@pytest.mark.asyncio
+async def test_overdue_names_every_bad_row_in_a_single_warning(async_client, db_session, caplog):
+    # Two malformed dates on one request must still produce exactly one log
+    # line naming both projects, not one line per row.
+    a = await _create(async_client)
+    b = await _create(async_client)
+    await _set(db_session, a, quote_invoiced=1, invoice_balance=100, invoice_due_date="10/02/2026")
+    await _set(db_session, b, quote_invoiced=1, invoice_balance=200, invoice_due_date="not-a-date")
+
+    with caplog.at_level("WARNING", logger="backend.app.services.aito_stats"):
+        r = await async_client.get(STATS)
+    od = r.json()["overdue"]
+    assert [(x["bucket"], x["count"], x["balance"]) for x in od["buckets"]] == [
+        ("1-7", 0, 0),
+        ("8-30", 0, 0),
+        ("31+", 0, 0),
+    ]
+    assert od["oldest_days"] is None
+    warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+    assert len(warnings) == 1
+    message = warnings[0].message
+    assert str(a) in message and "10/02/2026" in message
+    assert str(b) in message and "not-a-date" in message
+
+
+@pytest.mark.asyncio
 async def test_stage_time_per_completed_project_newest_first(async_client, db_session):
     a = await _create(async_client, description="Long one")
     b = await _create(async_client, description="Quick")
-    for pid, day in ((a, 1), (b, 5)):
+    c = await _create(async_client, description="Reopened into tracked stage")
+    for pid, day in ((a, 1), (b, 5), (c, 2)):
         await _move_event(db_session, pid, "project.created", f"2026-03-0{day} 10:00:00")
         await _set(db_session, pid, created_at=f"2026-03-0{day} 10:00:00")
     await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
     await _event(db_session, a, "stage.changed", "2026-03-06 10:00:00", changes=_stage("print", "done"))
     await _event(db_session, b, "stage.changed", "2026-03-07 10:00:00", changes=_stage("devis", "done"))
     await _event(db_session, b, "stage.changed", "2026-03-08 10:00:00", changes=_stage("done", "finish"))  # re-open
+    # c reaches done via "finish" (giving it a done_at), is re-opened into that
+    # same TRACKED stage, then moved again -- the only way to close a stay
+    # whose `ended` lands after `done_at`, which is what `_stage_time` must drop.
+    await _event(db_session, c, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "finish"))
+    await _event(db_session, c, "stage.changed", "2026-03-04 10:00:00", changes=_stage("finish", "done"))
+    await _event(db_session, c, "stage.changed", "2026-03-04 20:00:00", changes=_stage("done", "finish"))  # re-open
+    await _event(db_session, c, "stage.changed", "2026-03-06 10:00:00", changes=_stage("finish", "waiting"))
 
     r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
     rows = r.json()["stage_time"]
-    assert [x["project_id"] for x in rows] == [b, a]
+    assert [x["project_id"] for x in rows] == [b, a, c]
     long = next(x for x in rows if x["project_id"] == a)
     assert long["stages"]["devis"] == 2.0 and long["stages"]["print"] == 3.0 and long["stages"]["finish"] == 0.0
     assert long["description"] == "Long one"
+    reopened = next(x for x in rows if x["project_id"] == c)
+    # Only the stay closed by the "finish" -> "done" move (1 day) counts. The
+    # stay opened by the re-open and closed 1.58 days later by "finish" ->
+    # "waiting" ends after `done_at`, so it must not be added on top.
+    assert reopened["stages"]["devis"] == 1.0 and reopened["stages"]["finish"] == 1.0
+    assert reopened["stages"]["waiting"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -577,6 +835,36 @@ async def test_rework_counts_backward_moves_and_share_of_moved_cards(async_clien
 
     r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
     assert r.json()["rework"] == {"moves": 1, "cards": 1, "share": 0.5}
+
+
+@pytest.mark.asyncio
+async def test_rework_share_is_null_when_no_cards_moved_at_all(async_client, db_session):
+    """No `stage.changed` row exists in the period at all, so `moved` stays
+    empty and the share is undefined (`None`) — not the `0` a card that moved
+    without ever going backward would report (see the sibling test below)."""
+    await _create(async_client)
+    await _create(async_client)
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["rework"] == {"moves": 0, "cards": 0, "share": None}
+
+
+@pytest.mark.asyncio
+async def test_rework_share_is_zero_when_cards_moved_forward_only(async_client, db_session):
+    """Cards DID move in the period, but never backwards: `moves` and `cards`
+    are both `0`, same as the null case, but `share` is a real `0.0` because
+    `moved` is non-empty — proving `None` isn't simply what `moves == 0`
+    always produces."""
+    a = await _create(async_client)
+    b = await _create(async_client)
+    for pid in (a, b):
+        await _move_event(db_session, pid, "project.created", "2026-03-01 10:00:00")
+        await _set(db_session, pid, created_at="2026-03-01 10:00:00")
+    await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "print"))
+    await _event(db_session, b, "stage.changed", "2026-03-03 10:00:00", changes=_stage("devis", "waiting"))
+
+    r = await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})
+    assert r.json()["rework"] == {"moves": 0, "cards": 0, "share": 0.0}
 
 
 @pytest.mark.asyncio

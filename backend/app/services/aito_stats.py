@@ -7,12 +7,14 @@ docs/superpowers/specs/2026-09-05-aito-pipeline-widget-design.md
 """
 
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from statistics import fmean, median
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
@@ -43,6 +45,8 @@ from backend.app.schemas.aito import (
 from backend.app.services.aito_board_rules import COLUMN_ORDER, SERVICES, net_cost
 from backend.app.utils.dates import local_day_bounds
 
+logger = logging.getLogger(__name__)
+
 _SENT_KINDS = ("quote.sent", "quote.emailed")
 _STAGE_COLUMNS = tuple(column for column in COLUMN_ORDER if column != "done")
 _DAY_SECONDS = 86_400.0
@@ -52,17 +56,63 @@ _DAY_SECONDS = 86_400.0
 # rule-driven move would otherwise close a weeks-long fake stay in `devis`.
 _CREATION_MOVE_GRACE = timedelta(seconds=60)
 
+# Bounds for the calendar `/aito/stats` can materialise. `_daily()` emits one
+# AitoStatsDay row per day in [first_day, last_day]; a caller-chosen range —
+# or an "all time" request whose start is derived from the earliest
+# `project.created` moment, which an import can backdate to whatever a Books
+# quote_date says — must never be able to drive that loop past a sane size.
+# `compute_aito_stats` clamps `first_day` to this once and reuses the clamped
+# value for `_daily`, `days`/`per_day`, and the throughput window's lower
+# bound, so the daily series and the counts read beside it always describe
+# the same span. Five years is comfortably wider than the widest date-bounded
+# preset the frontend offers ("this-year") and than any realistic all-time
+# history for this product, while keeping row count, JSON size, and memory
+# small.
+MAX_STATS_SPAN_DAYS = 1827  # 5 * 365 + 2 leap days
+# Absolute floor/ceiling for a requested date, wide enough to cover any real
+# usage but far enough from `date.min`/`date.max` that combining it with the
+# widest allowed `tz_offset_minutes` (+/- 14h) in `local_day_bounds` can never
+# overflow `datetime`.
+MIN_STATS_DATE = date(2000, 1, 1)
+MAX_STATS_DATE = date(2999, 12, 31)
+
 
 def _in_range(at: datetime, start: datetime | None, end: datetime | None) -> bool:
     return (start is None or at >= start) and (end is None or at <= end)
 
 
-async def _active_projects(db: AsyncSession) -> dict[int, AitoProject]:
-    rows = (await db.execute(select(AitoProject).where(AitoProject.status == "active"))).scalars().all()
-    return {p.id: p for p in rows}
+# Every column this module actually reads off a project, in one place so the
+# narrowed `_active_projects` select and this list can't drift apart. Every
+# consumer below reads a `p.<attr>` (or `project.<attr>`/`projects[pid].<attr>`)
+# purely as a value — nothing mutates a project, adds it back to a session, or
+# relies on it being a real ORM instance — so a `Row` carrying just these
+# columns is a drop-in replacement for the full `AitoProject`.
+_PROJECT_COLUMNS = (
+    AitoProject.id,
+    AitoProject.board_column,
+    AitoProject.client_id,
+    AitoProject.client_name,
+    AitoProject.created_at,
+    AitoProject.description,
+    AitoProject.invoice_balance,
+    AitoProject.invoice_due_date,
+    AitoProject.quote_accepted_at,
+    AitoProject.quote_invoiced,
+    AitoProject.quote_sent_at,
+    AitoProject.quote_status,
+    AitoProject.quote_total,
+    AitoProject.shipping_island,
+    AitoProject.shipping_price,
+    AitoProject.tracking_token,
+)
 
 
-def _board(projects: dict[int, AitoProject]) -> list[AitoStatsStage]:
+async def _active_projects(db: AsyncSession) -> dict[int, Row]:
+    rows = (await db.execute(select(*_PROJECT_COLUMNS).where(AitoProject.status == "active"))).all()
+    return {row.id: row for row in rows}
+
+
+def _board(projects: dict[int, Row]) -> list[AitoStatsStage]:
     count: dict[str, int] = defaultdict(int)
     total: dict[str, float] = defaultdict(float)
     for p in projects.values():
@@ -128,7 +178,7 @@ async def _first_moments(
 
 
 def _bucket(
-    firsts: dict[int, datetime], projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
+    firsts: dict[int, datetime], projects: dict[int, Row], start: datetime | None, end: datetime | None
 ) -> AitoStatsBucket:
     hits = [pid for pid, at in firsts.items() if _in_range(at, start, end)]
     return AitoStatsBucket(count=len(hits), total=sum(projects[pid].quote_total or 0.0 for pid in hits))
@@ -144,15 +194,20 @@ class _Stay:
 @dataclass
 class _StageScan:
     """One ordered pass over every `stage.changed` row: the closed stays per
-    project and the moments a card moved BACKWARDS on the board. Three blocks
-    read it (days per stage, stage time per card, rework) so the scan runs once."""
+    project, the moments a card moved BACKWARDS on the board, and the first
+    REAL move into Done per project (creation-time placement excluded, same
+    as the other two; a card re-opened and closed again keeps its first
+    completion — a re-open is not a second delivery). Four blocks read it
+    (days per stage, stage time per card, rework, throughput/daily), so the
+    scan runs once."""
 
     stays: dict[int, list[_Stay]] = field(default_factory=lambda: defaultdict(list))
     backward: dict[int, list[datetime]] = field(default_factory=lambda: defaultdict(list))
+    done: dict[int, datetime] = field(default_factory=dict)
 
 
 async def _scan_stages(
-    db: AsyncSession, projects: dict[int, AitoProject], born: dict[int, datetime], end: datetime | None
+    db: AsyncSession, projects: dict[int, Row], born: dict[int, datetime], end: datetime | None
 ) -> _StageScan:
     scan = _StageScan()
     ids = list(projects)
@@ -186,6 +241,8 @@ async def _scan_stages(
             scan.stays[pid].append(_Stay(column=left, began=began, ended=at))
         if left in COLUMN_ORDER and to in COLUMN_ORDER and COLUMN_ORDER.index(to) < COLUMN_ORDER.index(left):
             scan.backward[pid].append(at)
+        if to == "done" and pid not in scan.done:
+            scan.done[pid] = at
     return scan
 
 
@@ -208,7 +265,7 @@ _STAGE_TIME_CAP = 30
 
 def _stage_time(
     scan: _StageScan,
-    projects: dict[int, AitoProject],
+    projects: dict[int, Row],
     done: dict[int, datetime],
     start: datetime | None,
     end: datetime | None,
@@ -270,22 +327,37 @@ def _bucket_name(days: int, buckets: tuple[tuple[str, int, int | None], ...]) ->
     return None
 
 
-def _quote_age(projects: dict[int, AitoProject], now: datetime) -> list[AitoStatsQuoteAge]:
+def _bucket_totals(
+    buckets: tuple[tuple[str, int, int | None], ...], hits: list[tuple[str, float]]
+) -> dict[str, tuple[int, float]]:
+    """Accumulate ``(bucket_name, amount)`` hits into a `{name: (count, total)}`
+    map covering every bucket, even ones no hit landed in. Callers resolve
+    their own bucket name (via `_bucket_name`) and decide what counts as a hit
+    at all — this only does the counting, so it stays free of the filtering
+    quirks and any extra per-row tracking each caller needs."""
+    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in buckets}
+    for name, amount in hits:
+        rows[name][0] += 1
+        rows[name][1] += amount
+    return {name: (int(c), t) for name, (c, t) in rows.items()}
+
+
+def _quote_age(projects: dict[int, Row], now: datetime) -> list[AitoStatsQuoteAge]:
     """Snapshot: sent, undecided quotes by whole days since sending."""
-    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _AGE_BUCKETS}
+    hits: list[tuple[str, float]] = []
     for p in projects.values():
         if p.quote_status != "sent" or p.quote_sent_at is None:
             continue
         name = _bucket_name(max(0, (now - p.quote_sent_at).days), _AGE_BUCKETS)
         if name is None:
             continue
-        rows[name][0] += 1
-        rows[name][1] += p.quote_total or 0.0
-    return [AitoStatsQuoteAge(bucket=name, count=int(c), total=t) for name, (c, t) in rows.items()]  # type: ignore[arg-type]
+        hits.append((name, p.quote_total or 0.0))
+    totals = _bucket_totals(_AGE_BUCKETS, hits)
+    return [AitoStatsQuoteAge(bucket=name, count=c, total=t) for name, (c, t) in totals.items()]
 
 
 def _size_bands(
-    projects: dict[int, AitoProject],
+    projects: dict[int, Row],
     accepted: dict[int, datetime],
     declined: dict[int, datetime],
     start: datetime | None,
@@ -327,25 +399,40 @@ def _size_bands(
     return bands
 
 
-def _overdue(projects: dict[int, AitoProject], today: date) -> AitoStatsOverdue:
-    rows: dict[str, list[float]] = {name: [0, 0.0] for name, _, _ in _OVERDUE_BUCKETS}
+def _overdue(projects: dict[int, Row], today: date) -> AitoStatsOverdue:
+    hits: list[tuple[str, float]] = []
     oldest: int | None = None
+    # Collected across the whole pass and logged as one line below rather than
+    # one `logger.warning` per row: `invoice_due_date` is an unvalidated string
+    # echoed from Books, and `/aito/stats` is fetched on every statistics-view
+    # load and every timeframe change, so a per-row warning would repeat that
+    # same line forever for a single bad card. One line per request that names
+    # every offending project scales with requests, not with requests x bad
+    # rows, while keeping the condition just as discoverable.
+    unparsable: list[tuple[int, str]] = []
     for p in projects.values():
         if not p.quote_invoiced or (p.invoice_balance or 0.0) <= 0 or not p.invoice_due_date:
             continue
         try:
             due = date.fromisoformat(p.invoice_due_date)
         except ValueError:
+            unparsable.append((p.id, p.invoice_due_date))
             continue
         days = (today - due).days
         name = _bucket_name(days, _OVERDUE_BUCKETS)
         if name is None:
             continue
         oldest = days if oldest is None else max(oldest, days)
-        rows[name][0] += 1
-        rows[name][1] += p.invoice_balance or 0.0
+        hits.append((name, p.invoice_balance or 0.0))
+    if unparsable:
+        logger.warning(
+            "Skipped %d project(s) with an unparsable invoice_due_date, excluded from overdue: %s",
+            len(unparsable),
+            ", ".join(f"{pid} ({raw!r})" for pid, raw in unparsable),
+        )
+    totals = _bucket_totals(_OVERDUE_BUCKETS, hits)
     return AitoStatsOverdue(
-        buckets=[AitoStatsOverdueBucket(bucket=name, count=int(c), balance=b) for name, (c, b) in rows.items()],  # type: ignore[arg-type]
+        buckets=[AitoStatsOverdueBucket(bucket=name, count=c, balance=b) for name, (c, b) in totals.items()],
         oldest_days=oldest,
     )
 
@@ -370,7 +457,7 @@ async def _services(
 
 
 def _clients(
-    projects: dict[int, AitoProject], born: dict[int, datetime], start: datetime | None, end: datetime | None
+    projects: dict[int, Row], born: dict[int, datetime], start: datetime | None, end: datetime | None
 ) -> AitoStatsClients:
     """A card is a returning client's when the same client_id has an active
     card created earlier. No client_id (a walk-in) always reads as new."""
@@ -410,7 +497,7 @@ def _arrivals(
 
 
 def _islands(
-    projects: dict[int, AitoProject], born: dict[int, datetime], start: datetime | None, end: datetime | None
+    projects: dict[int, Row], born: dict[int, datetime], start: datetime | None, end: datetime | None
 ) -> list[AitoStatsIsland]:
     agg: dict[str | None, list[float]] = {}
     for pid, at in born.items():
@@ -426,7 +513,7 @@ def _islands(
 
 
 async def _tracking(
-    db: AsyncSession, projects: dict[int, AitoProject], start: datetime | None, end: datetime | None
+    db: AsyncSession, projects: dict[int, Row], start: datetime | None, end: datetime | None
 ) -> AitoStatsTracking:
     cards_with_link = sum(1 for p in projects.values() if p.tracking_token)
     if not projects:
@@ -454,39 +541,8 @@ def _local_day(at: datetime, tz_offset_minutes: int) -> date:
     return (at + timedelta(minutes=tz_offset_minutes)).date()
 
 
-async def _done_moments(
-    db: AsyncSession, project_ids: list[int], born: dict[int, datetime], end: datetime | None
-) -> dict[int, datetime]:
-    """project_id -> first REAL move into Done.
-
-    The creation-time placement of an imported, already-invoiced quote is
-    skipped (same grace as ``_stage_days``), and a card re-opened and closed
-    again keeps its first completion: a re-open is not a second delivery.
-    """
-    if not project_ids:
-        return {}
-    stmt = select(AitoEvent.project_id, AitoEvent.occurred_at, AitoEvent.changes).where(
-        AitoEvent.kind == "stage.changed", AitoEvent.project_id.in_(project_ids)
-    )
-    if end is not None:
-        stmt = stmt.where(AitoEvent.occurred_at <= end)
-    stmt = stmt.order_by(AitoEvent.occurred_at, AitoEvent.id)
-    firsts: dict[int, datetime] = {}
-    for pid, at, changes in (await db.execute(stmt)).all():
-        if pid in firsts:
-            continue
-        if isinstance(changes, str):
-            changes = json.loads(changes)
-        if not changes or changes[0].get("to") != "done":
-            continue
-        if _is_creation_time(at, born.get(pid)):
-            continue
-        firsts[pid] = at
-    return firsts
-
-
 def _throughput(
-    projects: dict[int, AitoProject],
+    projects: dict[int, Row],
     born: dict[int, datetime],
     accepted: dict[int, datetime],
     done: dict[int, datetime],
@@ -529,6 +585,10 @@ def _daily(
 ) -> list[AitoStatsDay]:
     if first_day is None or last_day is None or last_day < first_day:
         return []
+    # `first_day` is already bounded to MAX_STATS_SPAN_DAYS by the caller —
+    # see `compute_aito_stats`, which clamps it once and reuses that same
+    # value for `days`/`per_day` and the throughput window so every figure
+    # on the page describes the same span this loop emits.
     counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
     for index, moments in enumerate((born, accepted, declined, done)):
         for at in moments.values():
@@ -569,8 +629,20 @@ async def compute_aito_stats(
             continue
         known = accepted.get(pid)
         accepted[pid] = stamped if known is None or stamped < known else known
-    done = await _done_moments(db, ids, born, end)
+    # A quote emailed from Books (aito_quote_status.adopt_quote_status) stamps
+    # quote_sent_at and records no event at all — only the app's own Email
+    # button records `quote.sent` — so a Books-sent quote would otherwise read
+    # as never sent. Same "earlier of the two" merge as accepted above, and
+    # the same `end` bound the event query already applies: a stamp past the
+    # window's end must not enter the map, exactly as that query excludes it.
+    for pid, project in projects.items():
+        stamped = project.quote_sent_at
+        if stamped is None or (end is not None and stamped > end):
+            continue
+        known = sent.get(pid)
+        sent[pid] = stamped if known is None or stamped < known else known
     scan = await _scan_stages(db, projects, born, end)
+    done = scan.done
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # The statistics view's calendar. A bounded request is its own calendar;
@@ -579,9 +651,32 @@ async def compute_aito_stats(
     earliest = min(born.values(), default=None)
     first_day = date_from if date_from is not None else (_local_day(earliest, tz_offset_minutes) if earliest else None)
     last_day = date_to if date_to is not None else (today if first_day is not None else None)
+    # Clamped once, here, rather than inside `_daily`: an "all time" request's
+    # `first_day` is derived from the earliest `project.created` moment, which
+    # an import can backdate by years, so it must be bounded before anything
+    # else is computed from it. Every figure the statistics view reads beside
+    # the daily chart — `days`/`per_day` and the throughput window's lower
+    # bound below — reuses this same clamped value, so the headline counts
+    # and the chart they sit next to always describe the same span. A
+    # caller-supplied `date_from`/`date_to` is already validated by the route
+    # to never exceed `MAX_STATS_SPAN_DAYS`, so this never fires for a
+    # bounded request; it only ever narrows the derived "all time" case.
+    if first_day is not None and last_day is not None and (last_day - first_day).days + 1 > MAX_STATS_SPAN_DAYS:
+        first_day = last_day - timedelta(days=MAX_STATS_SPAN_DAYS - 1)
     days = (last_day - first_day).days + 1 if first_day is not None and last_day is not None else None
+    # The throughput window's own lower bound, derived from the (now clamped)
+    # `first_day` rather than the raw `start`: on an all-time request `start`
+    # is None, so `throughput.created`/`accepted`/`done` would otherwise count
+    # every moment ever recorded, including the years the clamp above just
+    # dropped from the chart. For a bounded request this equals `start`
+    # exactly, since `first_day` is `date_from` there and the clamp never
+    # fires. Only the counts read beside the daily chart are bounded this way
+    # — the other widgets on the page (conversion, services, clients,
+    # arrivals, islands, invoicing...) are not compared against `daily` and
+    # keep reading the caller's own `start`/`end`.
+    throughput_start = local_day_bounds(first_day, None, tz_offset_minutes)[0] if first_day is not None else None
 
-    throughput = _throughput(projects, born, accepted, done, start, end, days)
+    throughput = _throughput(projects, born, accepted, done, throughput_start, end, days)
     previous = None
     if start is not None and end is not None and days:
         prev = _throughput(
