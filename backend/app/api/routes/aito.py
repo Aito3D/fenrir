@@ -28,6 +28,7 @@ from backend.app.models.user import User
 from backend.app.schemas.aito import (
     AitoClientEdit,
     AitoClientHistoryResponse,
+    AitoClientRatingResponse,
     AitoContactedUpdate,
     AitoDueDateUpdate,
     AitoEventPage,
@@ -75,6 +76,7 @@ from backend.app.schemas.aito import (
 from backend.app.services import aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
+from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_invoice_create import (
@@ -1065,6 +1067,22 @@ async def get_client_history(
     Declared ahead of the `/{project_id}` routes so `clients` is never parsed
     as an id."""
     return await compute_client_history(db, client_id, limit)
+
+
+@router.get("/clients/{client_id}/rating", response_model=AitoClientRatingResponse)
+async def get_client_rating(
+    client_id: str,
+    refresh: bool = Query(False, description="Re-read Books even if the cached rating is fresh"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The customer's payment rating for the drawer and the panel masthead.
+    Cached an hour per customer; degrades to the stale row or to
+    `unavailable` rather than failing when Books cannot answer. `aito:read`
+    like the invoice card, the other Aito read that reaches Books. Declared
+    ahead of the `/{project_id}` routes so `clients` is never parsed as an
+    id."""
+    return await read_client_rating(db, client_id, refresh=refresh)
 
 
 # The public tracking route: a 6-character code (services/aito_tracking.py)

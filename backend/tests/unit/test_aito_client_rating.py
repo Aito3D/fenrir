@@ -22,6 +22,7 @@ from backend.app.services.aito_client_rating import (
     read_client_rating,
 )
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.tests.unit.test_aito_contacted import _declared_permissions
 
 TODAY = date(2026, 9, 22)
 
@@ -327,3 +328,32 @@ async def test_cache_write_failure_still_returns_the_fresh_rating(db_session, mo
     body = await read_client_rating(db_session, "C1", now=NOW)
 
     assert (body.tier, body.stale, body.computed_at) == ("good", False, NOW)
+
+
+@pytest.mark.asyncio
+async def test_route_returns_the_rating_and_honours_refresh(async_client, monkeypatch):
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+
+    first = await async_client.get("/api/v1/aito/clients/C9/rating")
+    second = await async_client.get("/api/v1/aito/clients/C9/rating")
+    forced = await async_client.get("/api/v1/aito/clients/C9/rating?refresh=1")
+
+    assert first.status_code == 200, first.text
+    assert first.json()["tier"] == "good"
+    assert first.json()["stale"] is False
+    assert second.json()["computed_at"] == first.json()["computed_at"]
+    assert forced.status_code == 200
+    assert calls == ["C9", "C9"]
+
+
+@pytest.mark.asyncio
+async def test_route_never_502s_when_books_is_down(async_client, monkeypatch):
+    _fake_books(monkeypatch, ZohoUpstreamError("down"))
+    r = await async_client.get("/api/v1/aito/clients/C9/rating")
+    assert r.status_code == 200
+    assert r.json()["tier"] == "unavailable"
+
+
+def test_route_requires_aito_read():
+    assert _declared_permissions("get_client_rating") == ["aito:read"]
