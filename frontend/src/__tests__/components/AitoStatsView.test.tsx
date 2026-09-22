@@ -8,6 +8,24 @@ import { render } from '../utils';
 import { StatsView } from '../../components/aito/StatsView';
 import type { AitoStats } from '../../api/client';
 
+// ActivityChart's weekly fold has no other observable surface once there are
+// dozens of bars (no visible numbers, and the x-axis labels aren't guaranteed
+// to render as ticks) -- capturing the `data` actually handed to recharts'
+// ComposedChart lets the weekly-fold test assert the real per-week
+// created/accepted/done sums instead of just the "Activity per week" title.
+//
+// `composedDataSets` collects every *distinct* data array seen (re-renders
+// reuse the same array reference via useMemo, so settling on one value does
+// not grow this list) rather than overwriting a single field with whatever
+// rendered last. ActivityChart is the only ComposedChart in this tree today,
+// but if a second one is ever added, its data would show up as a second,
+// different array here -- the test asserts `toHaveLength(1)` before indexing
+// so a future second chart fails loudly instead of silently swapping in its
+// data under this chart's assertions.
+const chartCapture = vi.hoisted(() => ({
+  composedDataSets: [] as unknown[][],
+}));
+
 // jsdom has no layout, so Recharts' ResponsiveContainer measures 0×0 and
 // renders nothing. Pin a width and let the real chart machinery run.
 vi.mock('recharts', async (orig) => {
@@ -17,6 +35,13 @@ vi.mock('recharts', async (orig) => {
     ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
       <actual.ResponsiveContainer {...props} width={600} />
     ),
+    ComposedChart: (props: ComponentProps<typeof actual.ComposedChart>) => {
+      const data = props.data as unknown[];
+      if (!chartCapture.composedDataSets.includes(data)) {
+        chartCapture.composedDataSets.push(data);
+      }
+      return <actual.ComposedChart {...props} />;
+    },
   };
 });
 
@@ -70,6 +95,7 @@ describe('StatsView', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    chartCapture.composedDataSets = [];
   });
 
   it('opens on the Overview: its finding, the activity chart, the figures with deltas', async () => {
@@ -111,7 +137,22 @@ describe('StatsView', () => {
     const daily = Array.from({ length: 70 }, (_, i) => {
       const d = new Date(2026, 6, 1 + i); // 2026-07-01 is a Wednesday
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      return { day: key, created: i === 10 ? 5 : 0, accepted: 0, declined: 0, done: 0 };
+      // Days 1, 3, 4 (Jul 2, 4, 5) fall in the Monday-start week of 29 June;
+      // days 5, 8, 10 (Jul 6, 9, 11) fall in the very next week, starting
+      // Jul 6 (a Monday). A naive "chunk every 7 array elements from the
+      // start" grouping would instead lump index 5 in with indices 0-6 and
+      // split indices 8/10 into a separate chunk from index 5 -- only real
+      // calendar weeks put 1/3/4 together and 5/8/10 together. Each week
+      // also gives created/accepted/done different, non-zero sums so that
+      // swapping which series a day's count lands in (e.g. folding `created`
+      // into `accepted`) changes the asserted numbers, not just the total.
+      if (i === 1) return { day: key, created: 3, accepted: 0, declined: 0, done: 0 };
+      if (i === 3) return { day: key, created: 0, accepted: 2, declined: 0, done: 0 };
+      if (i === 4) return { day: key, created: 0, accepted: 0, declined: 0, done: 4 };
+      if (i === 5) return { day: key, created: 8, accepted: 0, declined: 0, done: 0 };
+      if (i === 8) return { day: key, created: 0, accepted: 7, declined: 0, done: 0 };
+      if (i === 10) return { day: key, created: 0, accepted: 0, declined: 0, done: 2 };
+      return { day: key, created: 0, accepted: 0, declined: 0, done: 0 };
     });
     serve(fixture({ daily }));
     render(view());
@@ -119,8 +160,25 @@ describe('StatsView', () => {
     expect(within(activity).getByText('Activity per week')).toBeInTheDocument();
     expect(within(activity).queryByText('7-day average of completed')).toBeNull();
     expect(activity.querySelectorAll('.recharts-line').length).toBe(0);
-    // 2026-07-11 falls in the Monday-start week of 6 July (en-US formatting).
+    // 2026-07-11 falls in the Monday-start week of 6 July (en-US formatting);
+    // that week's total (8 + 7 + 2 = 17) beats the week of 29 June's
+    // (3 + 2 + 4 = 9), so it is still the busiest week reported.
     expect(screen.getByTestId('aito-stats-finding')).toHaveTextContent('The busiest week was the week of July 6.');
+
+    // Exactly one ComposedChart rendered (ActivityChart is the only user of
+    // it) -- asserted before indexing so a future second chart fails this
+    // assertion loudly instead of silently pointing the rows below at the
+    // wrong chart's data.
+    expect(chartCapture.composedDataSets).toHaveLength(1);
+    const rows = chartCapture.composedDataSets[0] as { day: string; label: string; created: number; accepted: number; done: number }[];
+    const weekOfJune29 = rows.find((r) => r.label === 'Jun 29');
+    const weekOfJuly6 = rows.find((r) => r.label === 'Jul 6');
+    expect(weekOfJune29).toEqual({ day: '2026-06-29', label: 'Jun 29', created: 3, accepted: 2, done: 4 });
+    expect(weekOfJuly6).toEqual({ day: '2026-07-06', label: 'Jul 6', created: 8, accepted: 7, done: 2 });
+    // Every other week is untouched -- confirms the six seeded days landed in
+    // only their own two buckets rather than being smeared across weeks.
+    const otherWeeks = rows.filter((r) => r !== weekOfJune29 && r !== weekOfJuly6);
+    expect(otherWeeks.every((r) => r.created === 0 && r.accepted === 0 && r.done === 0)).toBe(true);
   });
 
   it('switches screens through the tabs and remembers the choice for the session', async () => {
