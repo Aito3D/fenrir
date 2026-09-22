@@ -204,6 +204,7 @@ export function trackingDefaultLanguage
 export function TrackingInvoice
 export function TrackingLanguageSelect
 export function TrackingLinkControl
+export function TrackingPaidRow
 export function TrackingPanel
 export function TrackingPayment
 export function TrackingPaymentMethods

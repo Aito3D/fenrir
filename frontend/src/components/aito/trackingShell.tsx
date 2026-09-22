@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import aito3dLogo from '../../assets/aito3d_logo.png';
@@ -36,6 +37,37 @@ export function CardSkeleton() {
     <div className="mt-[32px] space-y-[32px]" aria-hidden="true">
       <div className="h-[64px] rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse" />
       <div className="rounded-[12px] bg-aito-line/60 motion-safe:animate-pulse sm:min-h-[132px]" />
+    </div>
+  );
+}
+
+/** The quiet "paid" row TrackingPayment and TrackingInvoice both render:
+ *  a dot-and-title line plus a sub-line, no border, so paid never competes
+ *  with the state above it. Parameterised by dot colour and copy — each
+ *  caller keeps its own translation keys and dot source (a literal for the
+ *  online payment, a state-keyed lookup for invoices). Takes `data-testid`
+ *  / `data-state` as named-literal props (not composed here) so each call
+ *  site's own testid/state text stays a source-visible literal. */
+export function TrackingPaidRow({
+  'data-testid': testid,
+  'data-state': state,
+  dotClassName,
+  title,
+  sub,
+}: {
+  'data-testid': string;
+  'data-state': string;
+  dotClassName: string;
+  title: ReactNode;
+  sub: ReactNode;
+}) {
+  return (
+    <div data-testid={testid} data-state={state} className="text-[15px]">
+      <div className="flex items-center gap-[8px]">
+        <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${dotClassName}`} aria-hidden="true" />
+        <span className="font-semibold text-aito-ink">{title}</span>
+      </div>
+      <p className="mt-[4px] text-[13px] text-aito-muted">{sub}</p>
     </div>
   );
 }

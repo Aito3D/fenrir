@@ -19,6 +19,10 @@ type Failure = 'notFound' | 'tooMany' | 'error';
  *  failure already shows. */
 const CHECK_TIMEOUT_MS = 10_000;
 
+// The outer wrapper shared by every state of this page (loading branch
+// and main return): the same literal, not re-typed at each call site.
+const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink';
+
 /** Why a check failed, in the one word the status line needs. Only the two
  *  answers the route itself gives are named: an unknown code (404) and the
  *  rate limit (429). Everything else — a dead network, a timeout aborted by
@@ -129,7 +133,7 @@ export function AitoTrackEntryPage() {
   // ready-state mount, below).
   if (!ready) {
     return (
-      <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+      <div className={PAGE}>
         <div className={CARD}>
           <header className="text-center">
             <Logo className="mb-[20px]" />
@@ -142,7 +146,7 @@ export function AitoTrackEntryPage() {
 
   const status = statusKey(state, failure);
   return (
-    <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+    <div className={PAGE}>
       <div className={CARD}>
         <TrackingLanguageSelect />
         <header className="text-center">

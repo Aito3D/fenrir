@@ -28,6 +28,10 @@ const PARTS_SHOWN = 6;
 // Same deadline as the /t entry page's identical call (its CHECK_TIMEOUT_MS).
 const TRACK_TIMEOUT_MS = 10_000;
 
+// The outer wrapper shared by every state of this page (404 branch and
+// main return): the same literal, not re-typed at each call site.
+const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink';
+
 /** The client's public tracking page: standalone, no app chrome, always
  *  dark (Midnight Blue + cyan) whatever the operator's theme, in the
  *  client's language. The current state is the hero; the brand is a small
@@ -150,7 +154,7 @@ export function AitoTrackPage() {
 
   if (is404 && settled) {
     return (
-      <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+      <div className={PAGE}>
         <div className={CARD}>
           <TrackingLanguageSelect />
           {/* The same fade-and-rise contract as every other state of the
@@ -180,7 +184,7 @@ export function AitoTrackPage() {
   }
 
   return (
-    <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+    <div className={PAGE}>
       <div className="track-stage" data-open={panel.open ?? undefined} data-testid="track-stage">
         {/* Phones: the panel is a sheet and this dims the card behind it.
             Wide screens never show it. A tap on it closes the sheet. */}

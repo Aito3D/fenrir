@@ -13462,3 +13462,5 @@ marker is internal to `MoneyScreen`'s render body, and no export moved.
 Coverage: unaffected — this is a documentation-only repair against an
 already-landed, already-tested commit; no source file changed as part of
 writing this entry.
+
+- T-002 (iteration 1): re-baseline — additive internal export TrackingPaidRow in frontend/src/components/aito/trackingShell.tsx, user-sanctioned 2026-09-22
