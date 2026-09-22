@@ -1,0 +1,600 @@
+### exit: 0
+### stdout:
+{
+  "lookups": {
+    "_build_url_set": "https://aito3d.example/t/<TOKEN>",
+    "_mint": {
+      "alphabet_ok": true,
+      "length": 6,
+      "persisted": true,
+      "stable": true
+    },
+    "_url_set": "https://aito3d.example/t/<TOKEN>",
+    "_url_unset": null,
+    "_view_log": {
+      "1": 2,
+      "3": 1
+    },
+    "bad_letter_u": null,
+    "dead_link": {
+      "data": {
+        "column": "model",
+        "done_at": null,
+        "due_date": null,
+        "invoice": null,
+        "payment": null,
+        "reference": "DEV-000114",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-14T09:00:00"
+      },
+      "project_id": 14
+    },
+    "declined_quote": null,
+    "deposit_link_current_not_superseded": {
+      "data": {
+        "column": "model",
+        "done_at": null,
+        "due_date": null,
+        "invoice": null,
+        "payment": {
+          "deposit": false,
+          "state": "unpaid",
+          "url": "https://pay.example/13b"
+        },
+        "reference": "DEV-000113",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-14T09:00:00"
+      },
+      "project_id": 13
+    },
+    "devis_dormant": null,
+    "devis_exact": {
+      "data": {
+        "column": "devis",
+        "done_at": null,
+        "due_date": "2026-03-20",
+        "invoice": null,
+        "payment": null,
+        "reference": "DEV-000101",
+        "shipping": null,
+        "tasks": [
+          {
+            "quantity": 3,
+            "title": "Boîtier"
+          },
+          {
+            "quantity": null,
+            "title": "Pièce 2"
+          },
+          {
+            "quantity": null,
+            "title": "Support"
+          },
+          {
+            "quantity": null,
+            "title": "Capot"
+          },
+          {
+            "quantity": 12,
+            "title": "Vis"
+          },
+          {
+            "quantity": null,
+            "title": "Pièce 6"
+          }
+        ],
+        "updated_at": "2026-03-10T09:00:00"
+      },
+      "project_id": 1
+    },
+    "devis_hyphen_space": {
+      "data": {
+        "column": "devis",
+        "done_at": null,
+        "due_date": "2026-03-20",
+        "invoice": null,
+        "payment": null,
+        "reference": "DEV-000101",
+        "shipping": null,
+        "tasks": [
+          {
+            "quantity": 3,
+            "title": "Boîtier"
+          },
+          {
+            "quantity": null,
+            "title": "Pièce 2"
+          },
+          {
+            "quantity": null,
+            "title": "Support"
+          },
+          {
+            "quantity": null,
+            "title": "Capot"
+          },
+          {
+            "quantity": 12,
+            "title": "Vis"
+          },
+          {
+            "quantity": null,
+            "title": "Pièce 6"
+          }
+        ],
+        "updated_at": "2026-03-10T09:00:00"
+      },
+      "project_id": 1
+    },
+    "devis_lowercase": {
+      "data": {
+        "column": "devis",
+        "done_at": null,
+        "due_date": "2026-03-20",
+        "invoice": null,
+        "payment": null,
+        "reference": "DEV-000101",
+        "shipping": null,
+        "tasks": [
+          {
+            "quantity": 3,
+            "title": "Boîtier"
+          },
+          {
+            "quantity": null,
+            "title": "Pièce 2"
+          },
+          {
+            "quantity": null,
+            "title": "Support"
+          },
+          {
+            "quantity": null,
+            "title": "Capot"
+          },
+          {
+            "quantity": 12,
+            "title": "Vis"
+          },
+          {
+            "quantity": null,
+            "title": "Pièce 6"
+          }
+        ],
+        "updated_at": "2026-03-10T09:00:00"
+      },
+      "project_id": 1
+    },
+    "done_expired": null,
+    "done_no_stage_event_cold_labels": {
+      "data": {
+        "column": "done",
+        "done_at": null,
+        "due_date": null,
+        "invoice": null,
+        "payment": null,
+        "reference": null,
+        "shipping": {
+          "island": "atoll-x",
+          "lta": null,
+          "service": "weird"
+        },
+        "tasks": [],
+        "updated_at": "2026-03-09T10:00:00"
+      },
+      "project_id": 7
+    },
+    "done_shipped_lta": {
+      "data": {
+        "column": "done",
+        "done_at": "2026-03-01T10:00:00",
+        "due_date": null,
+        "invoice": "overdue",
+        "payment": null,
+        "reference": "DEV-000105",
+        "shipping": {
+          "island": "Moorea",
+          "lta": "AWB-123",
+          "service": "Fret aérien"
+        },
+        "tasks": [
+          {
+            "quantity": null,
+            "title": "Coque"
+          }
+        ],
+        "updated_at": "2026-03-03T10:00:00"
+      },
+      "project_id": 5
+    },
+    "empty": null,
+    "expired_quote": null,
+    "finish_paid": {
+      "data": {
+        "column": "finish",
+        "done_at": null,
+        "due_date": "2026-03-01",
+        "invoice": "paid",
+        "payment": {
+          "deposit": false,
+          "state": "paid",
+          "url": "https://pay.example/4"
+        },
+        "reference": "DEV-000104",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-13T09:00:00"
+      },
+      "project_id": 4
+    },
+    "legacy_token_folded_activity": {
+      "data": {
+        "column": "model",
+        "done_at": null,
+        "due_date": "2026-03-01",
+        "invoice": "unpaid",
+        "payment": null,
+        "reference": "DEV-000112",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-12T11:30:00"
+      },
+      "project_id": 12
+    },
+    "legacy_token_lowercased_is_another_token": null,
+    "link_never_created": {
+      "data": {
+        "column": "waiting",
+        "done_at": null,
+        "due_date": null,
+        "invoice": null,
+        "payment": null,
+        "reference": "DEV-000115",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-14T09:00:00"
+      },
+      "project_id": 15
+    },
+    "print_pending_link": {
+      "data": {
+        "column": "print",
+        "done_at": null,
+        "due_date": "2026-03-30",
+        "invoice": "unpaid",
+        "payment": {
+          "deposit": false,
+          "state": "unpaid",
+          "url": "https://pay.example/3"
+        },
+        "reference": "DEV-000103",
+        "shipping": null,
+        "tasks": [
+          {
+            "quantity": 2,
+            "title": "Pale"
+          }
+        ],
+        "updated_at": "2026-03-12T09:00:00"
+      },
+      "project_id": 3
+    },
+    "too_short": null,
+    "trashed": null,
+    "unknown": null,
+    "waiting_lookalikes": {
+      "data": {
+        "column": "waiting",
+        "done_at": null,
+        "due_date": null,
+        "invoice": "unpaid",
+        "payment": null,
+        "reference": "DEV-000102",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-14T10:00:00"
+      },
+      "project_id": 2
+    },
+    "waiting_unpaid_no_payment": {
+      "data": {
+        "column": "waiting",
+        "done_at": null,
+        "due_date": null,
+        "invoice": "unpaid",
+        "payment": null,
+        "reference": "DEV-000102",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-14T10:00:00"
+      },
+      "project_id": 2
+    }
+  },
+  "lookups_with_deposit": {
+    "deposit_link_current_not_superseded": {
+      "data": {
+        "column": "model",
+        "done_at": null,
+        "due_date": null,
+        "invoice": null,
+        "payment": {
+          "deposit": true,
+          "state": "unpaid",
+          "url": "https://pay.example/13b"
+        },
+        "reference": "DEV-000113",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-14T09:00:00"
+      },
+      "project_id": 13
+    },
+    "finish_paid": {
+      "data": {
+        "column": "finish",
+        "done_at": null,
+        "due_date": "2026-03-01",
+        "invoice": "paid",
+        "payment": {
+          "deposit": true,
+          "state": "paid",
+          "url": "https://pay.example/4"
+        },
+        "reference": "DEV-000104",
+        "shipping": null,
+        "tasks": [],
+        "updated_at": "2026-03-13T09:00:00"
+      },
+      "project_id": 4
+    },
+    "print_pending_link": {
+      "data": {
+        "column": "print",
+        "done_at": null,
+        "due_date": "2026-03-30",
+        "invoice": "unpaid",
+        "payment": {
+          "deposit": true,
+          "state": "unpaid",
+          "url": "https://pay.example/3"
+        },
+        "reference": "DEV-000103",
+        "shipping": null,
+        "tasks": [
+          {
+            "quantity": 2,
+            "title": "Pale"
+          }
+        ],
+        "updated_at": "2026-03-12T09:00:00"
+      },
+      "project_id": 3
+    }
+  },
+  "pure": {
+    "constants": {
+      "CLOSED_QUOTE_STATUSES": [
+        "declined",
+        "expired"
+      ],
+      "DORMANT_COLUMNS": [
+        "devis",
+        "waiting"
+      ],
+      "LEGACY_TOKEN_MIN_LENGTH": 20,
+      "NOTES_CODE_PREFIX": "Code de suivi : ",
+      "NOTES_PREFIX": "Suivi et paiement de votre projet : ",
+      "SMS_PREFIX": "\nSuivi et paiement : ",
+      "SMS_SIGNATURE": "Aito3D",
+      "SMS_SIGNATURE_SEP": "\n\n",
+      "TASK_FALLBACK": "Pièce {n}",
+      "TOKEN_ALPHABET": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+      "TOKEN_LENGTH": 6,
+      "TRACKING_TTL_AFTER_DONE_days": 30.0,
+      "TRACKING_TTL_DORMANT_days": 180.0,
+      "VIEW_DEDUP_WINDOW_s": 300.0,
+      "_INVOICE_STATE": {
+        "overdue": "overdue",
+        "paid": "paid",
+        "partially_paid": "unpaid",
+        "sent": "unpaid",
+        "unpaid": "unpaid"
+      },
+      "_LEGACY_NOTES_PREFIXES": [
+        "Suivez votre commande : ",
+        "Lien de suivi de votre projet : "
+      ],
+      "_SERVICE_COUNTS": [
+        [
+          "scan_cost",
+          "scan_quantity"
+        ],
+        [
+          "modelisation_cost",
+          "modelisation_quantity"
+        ],
+        [
+          "usinage_cost",
+          "usinage_quantity"
+        ],
+        [
+          "impression_cost",
+          "impression_quantity"
+        ]
+      ]
+    },
+    "invoice_state": {
+      "": null,
+      "None": null,
+      "draft": null,
+      "overdue": "overdue",
+      "paid": "paid",
+      "partially_paid": "unpaid",
+      "sent": "unpaid",
+      "unpaid": "unpaid",
+      "void": null
+    },
+    "is_expired": {
+      "devis/179d": false,
+      "devis/181d": true,
+      "devis/29d": false,
+      "devis/31d": false,
+      "devis/finished_29d_active_200d": true,
+      "devis/finished_31d_active_1d": false,
+      "devis/fresh": false,
+      "done/179d": true,
+      "done/181d": true,
+      "done/29d": false,
+      "done/31d": true,
+      "done/finished_29d_active_200d": false,
+      "done/finished_31d_active_1d": true,
+      "done/fresh": false,
+      "finish/179d": false,
+      "finish/181d": false,
+      "finish/29d": false,
+      "finish/31d": false,
+      "finish/finished_29d_active_200d": false,
+      "finish/finished_31d_active_1d": false,
+      "finish/fresh": false,
+      "model/179d": false,
+      "model/181d": false,
+      "model/29d": false,
+      "model/31d": false,
+      "model/finished_29d_active_200d": false,
+      "model/finished_31d_active_1d": false,
+      "model/fresh": false,
+      "print/179d": false,
+      "print/181d": false,
+      "print/29d": false,
+      "print/31d": false,
+      "print/finished_29d_active_200d": false,
+      "print/finished_31d_active_1d": false,
+      "print/fresh": false,
+      "scan/179d": false,
+      "scan/181d": false,
+      "scan/29d": false,
+      "scan/31d": false,
+      "scan/finished_29d_active_200d": false,
+      "scan/finished_31d_active_1d": false,
+      "scan/fresh": false,
+      "unknown/179d": false,
+      "unknown/181d": false,
+      "unknown/29d": false,
+      "unknown/31d": false,
+      "unknown/finished_29d_active_200d": false,
+      "unknown/finished_31d_active_1d": false,
+      "unknown/fresh": false,
+      "waiting/179d": false,
+      "waiting/181d": true,
+      "waiting/29d": false,
+      "waiting/31d": false,
+      "waiting/finished_29d_active_200d": true,
+      "waiting/finished_31d_active_1d": false,
+      "waiting/fresh": false
+    },
+    "main": {
+      "is_tracking_page": {
+        "": false,
+        "T": true,
+        "T/abc123": true,
+        "TRACK": true,
+        "api/v1/aito/track/x": false,
+        "settings": false,
+        "t": true,
+        "t/": true,
+        "t/ABC123": true,
+        "tr": false,
+        "track": true,
+        "track/ABC123": true,
+        "tracker": false,
+        "trackx/1": false
+      },
+      "public_api_prefixes_tracking": [
+        "/api/v1/aito/track/"
+      ],
+      "tracking_html_headers": {
+        "Cache-Control": "no-cache, must-revalidate",
+        "X-Robots-Tag": "noindex, nofollow"
+      }
+    },
+    "normalize_token": {
+      "": null,
+      " K7F 3XQ ": "K7F3XQ",
+      "K7F3X": null,
+      "K7F3X!": null,
+      "K7F3XQ": "K7F3XQ",
+      "K7F3XQ9": null,
+      "K7F3XU": null,
+      "KIF3XQ": "K1F3XQ",
+      "k7f-3xq": "K7F3XQ",
+      "k7f3xq": "K7F3XQ",
+      "k7f3xq\n": "K7F3XQ",
+      "kof3lq": "K0F31Q",
+      "lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4": "lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4",
+      "xxxxxxxxxxxxxxxxxxx": null,
+      "xxxxxxxxxxxxxxxxxxxx": "xxxxxxxxxxxxxxxxxxxx"
+    },
+    "route_limiter": {
+      "MAX_CALLS_PER_IP": 120,
+      "MAX_MISSES_PER_IP": 30,
+      "MAX_MISSES_PER_NET": 600,
+      "SWEEP_ABOVE": 1200,
+      "WINDOW_S": 60.0,
+      "net_key": {
+        "": "",
+        "1.2.3.4": "1.2.3.0/24",
+        "10.0.0.5": "10.0.0.0/24",
+        "2001:db8:1:2:3:4:5:6": "2001:db8:1:2::/64",
+        "203.0.113.200": "203.0.113.0/24",
+        "::1": "::/64",
+        "__no_ip_x": "__no_ip_x",
+        "testclient": "testclient"
+      }
+    },
+    "task_quantity": {
+      "labour_only": null,
+      "labour_plus_service": 5,
+      "no_services": null,
+      "one_service_qty_1": null,
+      "one_service_qty_4": 4,
+      "one_service_qty_none": null,
+      "two_services_differ": null,
+      "two_services_same": 4,
+      "unpriced_service_qty_ignored": 4,
+      "zero_cost_is_priced": 5
+    },
+    "tracking_notes": {
+      "legacy": "Suivi et paiement de votre projet : https://x.pf/t/lQ38LSKdM7M9yUTn-7dvl_03NqAXCZP1hlqvpvMNKT4",
+      "short": "Suivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123"
+    },
+    "tracking_url_for": {
+      "both": "https://x.pf/t/ABC123",
+      "empty_base": null,
+      "no_token": null
+    },
+    "with_tracking_notes": {
+      "already_current": "Signature du client (précédée de la mention « Bon pour accord »)\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "empty": "Suivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "legacy_2026_09_08": "Signature du client (précédée de la mention « Bon pour accord »)\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "legacy_2026_09_18": "Signature du client (précédée de la mention « Bon pour accord »)\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "none": "Suivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "operator_lines_kept_verbatim": "Signature du client (précédée de la mention « Bon pour accord »)\nMerci de votre confiance   \nPS: livraison vendredi\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "org_default": "Signature du client (précédée de la mention « Bon pour accord »)\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "org_with_trailing_spaces": "Signature du client (précédée de la mention « Bon pour accord »)\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123",
+      "regenerated_token": "Signature du client (précédée de la mention « Bon pour accord »)\n\nSuivi et paiement de votre projet : https://x.pf/t/ABC123\nCode de suivi : ABC123"
+    },
+    "with_tracking_sms": {
+      "empty": "\nSuivi et paiement : https://x.pf/t/ABC123",
+      "signature_mid_text": "Aito3D vous informe : prêt.\nSuivi et paiement : https://x.pf/t/ABC123",
+      "signed": "Bonjour Jean,\nVos pièces sont prêtes.\nSuivi et paiement : https://x.pf/t/ABC123\n\nAito3D",
+      "signed_trailing_ws": "Bonjour Jean,\nVos pièces sont prêtes.\nSuivi et paiement : https://x.pf/t/ABC123\n\nAito3D",
+      "unsigned": "Bonjour Jean, vos pièces sont prêtes.\nSuivi et paiement : https://x.pf/t/ABC123"
+    }
+  }
+}
+
+### stderr:
+

@@ -1,0 +1,419 @@
+### exit: 0
+### stdout:
+{
+  "fallbackLanguage": "fr",
+  "defaultLanguage": {
+    "stored_supported": null,
+    "stored_unsupported_nav_match": null,
+    "no_stored_exact": null,
+    "no_stored_base_match": null,
+    "no_stored_full_tag_only": null,
+    "no_stored_base_of_regional": "fr",
+    "no_stored_none_match": "fr",
+    "no_stored_empty": "fr",
+    "empty_string_stored": "fr"
+  },
+  "stageIndex": {
+    "devis": 0,
+    "waiting": 1,
+    "scan": 2,
+    "model": 3,
+    "print": 4,
+    "finish": 5,
+    "done": 6,
+    "unknown": -1
+  },
+  "stages": {
+    "shipped": [
+      {
+        "id": "devis",
+        "label": "aito.track.stages.devis"
+      },
+      {
+        "id": "waiting",
+        "label": "aito.track.stages.waiting"
+      },
+      {
+        "id": "scan",
+        "label": "aito.track.stages.scan"
+      },
+      {
+        "id": "model",
+        "label": "aito.track.stages.model"
+      },
+      {
+        "id": "print",
+        "label": "aito.track.stages.print"
+      },
+      {
+        "id": "finish",
+        "label": "aito.track.stages.finish"
+      },
+      {
+        "id": "done",
+        "label": "aito.track.stages.shipped"
+      }
+    ],
+    "collected": [
+      {
+        "id": "devis",
+        "label": "aito.track.stages.devis"
+      },
+      {
+        "id": "waiting",
+        "label": "aito.track.stages.waiting"
+      },
+      {
+        "id": "scan",
+        "label": "aito.track.stages.scan"
+      },
+      {
+        "id": "model",
+        "label": "aito.track.stages.model"
+      },
+      {
+        "id": "print",
+        "label": "aito.track.stages.print"
+      },
+      {
+        "id": "finish",
+        "label": "aito.track.stages.finish"
+      },
+      {
+        "id": "done",
+        "label": "aito.track.stages.pickedUp"
+      }
+    ]
+  },
+  "longDate": {
+    "fr": {
+      "day": "20 septembre 2026",
+      "timestamp": "20 septembre 2026",
+      "new_year_eve": "31 décembre 2026"
+    },
+    "en": {
+      "day": "September 20, 2026",
+      "timestamp": "September 20, 2026",
+      "new_year_eve": "December 31, 2026"
+    },
+    "de": {
+      "day": "20. September 2026",
+      "timestamp": "20. September 2026",
+      "new_year_eve": "31. Dezember 2026"
+    },
+    "ja": {
+      "day": "2026年9月20日",
+      "timestamp": "2026年9月20日",
+      "new_year_eve": "2026年12月31日"
+    }
+  },
+  "updatedAt": {
+    "today": {
+      "fr": "aito.track.updatedToday|{\"time\":\"09:42\"}",
+      "en": "aito.track.updatedToday|{\"time\":\"09:42 AM\"}"
+    },
+    "today_midnight": {
+      "fr": "aito.track.updatedToday|{\"time\":\"00:00\"}",
+      "en": "aito.track.updatedToday|{\"time\":\"12:00 AM\"}"
+    },
+    "yesterday": {
+      "fr": "aito.track.updatedYesterday|{\"time\":\"18:20\"}",
+      "en": "aito.track.updatedYesterday|{\"time\":\"06:20 PM\"}"
+    },
+    "yesterday_edge": {
+      "fr": "aito.track.updatedYesterday|{\"time\":\"23:59\"}",
+      "en": "aito.track.updatedYesterday|{\"time\":\"11:59 PM\"}"
+    },
+    "two_days_ago": {
+      "fr": "aito.track.updatedOn|{\"date\":\"13 mars\",\"time\":\"11:05\"}",
+      "en": "aito.track.updatedOn|{\"date\":\"March 13\",\"time\":\"11:05 AM\"}"
+    },
+    "last_year": {
+      "fr": "aito.track.updatedOn|{\"date\":\"31 décembre\",\"time\":\"23:59\"}",
+      "en": "aito.track.updatedOn|{\"date\":\"December 31\",\"time\":\"11:59 PM\"}"
+    }
+  },
+  "statusCopy": {
+    "devis": {
+      "title": "aito.track.status.devisTitle",
+      "sub": "aito.track.status.devisSub"
+    },
+    "waiting": {
+      "title": "aito.track.status.waitingTitle",
+      "sub": "aito.track.status.waitingSub"
+    },
+    "scan": {
+      "title": "aito.track.status.workingTitle",
+      "sub": "aito.track.status.workingSub"
+    },
+    "model": {
+      "title": "aito.track.status.workingTitle",
+      "sub": "aito.track.status.workingSub"
+    },
+    "print": {
+      "title": "aito.track.status.workingTitle",
+      "sub": "aito.track.status.workingSub"
+    },
+    "finish": {
+      "title": "aito.track.status.finishTitle",
+      "sub": "aito.track.status.finishSub"
+    },
+    "done": {
+      "title": "aito.track.status.doneTitle",
+      "sub": "aito.track.status.doneSub"
+    },
+    "unknown": {
+      "title": "aito.track.status.workingTitle",
+      "sub": "aito.track.status.workingSub"
+    },
+    "done_shipped": {
+      "title": "aito.track.status.shippedTitle",
+      "sub": "aito.track.status.shippedSub|{\"island\":\"Moorea\",\"service\":\"Fret aérien\"}"
+    },
+    "done_shipped_lta": {
+      "title": "aito.track.status.shippedTitle",
+      "sub": "aito.track.status.shippedSub|{\"island\":\"Moorea\",\"service\":\"Fret aérien\"} aito.track.status.shippedLta|{\"lta\":\"AWB-123\"}"
+    },
+    "done_picked_up": {
+      "title": "aito.track.status.pickedUpTitle",
+      "sub": "aito.track.status.pickedUpSub|{\"date\":\"1 mars 2026\"}"
+    },
+    "done_picked_up_en": {
+      "title": "aito.track.status.pickedUpTitle",
+      "sub": "aito.track.status.pickedUpSub|{\"date\":\"March 1, 2026\"}"
+    },
+    "done_shipped_and_dated": {
+      "title": "aito.track.status.shippedTitle",
+      "sub": "aito.track.status.shippedSub|{\"island\":\"Moorea\",\"service\":\"Fret aérien\"}"
+    }
+  },
+  "etaCopy": {
+    "devis/none": {
+      "kind": "none",
+      "text": ""
+    },
+    "devis/future": {
+      "kind": "date",
+      "text": "20 mars 2026"
+    },
+    "devis/today": {
+      "kind": "date",
+      "text": "15 mars 2026"
+    },
+    "devis/past": {
+      "kind": "updating",
+      "text": "aito.track.etaUpdating"
+    },
+    "waiting/none": {
+      "kind": "none",
+      "text": ""
+    },
+    "waiting/future": {
+      "kind": "date",
+      "text": "20 mars 2026"
+    },
+    "waiting/today": {
+      "kind": "date",
+      "text": "15 mars 2026"
+    },
+    "waiting/past": {
+      "kind": "updating",
+      "text": "aito.track.etaUpdating"
+    },
+    "scan/none": {
+      "kind": "soon",
+      "text": "aito.track.etaSoon"
+    },
+    "scan/future": {
+      "kind": "date",
+      "text": "20 mars 2026"
+    },
+    "scan/today": {
+      "kind": "date",
+      "text": "15 mars 2026"
+    },
+    "scan/past": {
+      "kind": "updating",
+      "text": "aito.track.etaUpdating"
+    },
+    "model/none": {
+      "kind": "soon",
+      "text": "aito.track.etaSoon"
+    },
+    "model/future": {
+      "kind": "date",
+      "text": "20 mars 2026"
+    },
+    "model/today": {
+      "kind": "date",
+      "text": "15 mars 2026"
+    },
+    "model/past": {
+      "kind": "updating",
+      "text": "aito.track.etaUpdating"
+    },
+    "print/none": {
+      "kind": "soon",
+      "text": "aito.track.etaSoon"
+    },
+    "print/future": {
+      "kind": "date",
+      "text": "20 mars 2026"
+    },
+    "print/today": {
+      "kind": "date",
+      "text": "15 mars 2026"
+    },
+    "print/past": {
+      "kind": "updating",
+      "text": "aito.track.etaUpdating"
+    },
+    "finish/none": {
+      "kind": "none",
+      "text": ""
+    },
+    "finish/future": {
+      "kind": "none",
+      "text": ""
+    },
+    "finish/today": {
+      "kind": "none",
+      "text": ""
+    },
+    "finish/past": {
+      "kind": "none",
+      "text": ""
+    },
+    "done/none": {
+      "kind": "none",
+      "text": ""
+    },
+    "done/future": {
+      "kind": "none",
+      "text": ""
+    },
+    "done/today": {
+      "kind": "none",
+      "text": ""
+    },
+    "done/past": {
+      "kind": "none",
+      "text": ""
+    },
+    "unknown/none": {
+      "kind": "none",
+      "text": ""
+    },
+    "unknown/future": {
+      "kind": "none",
+      "text": ""
+    },
+    "unknown/today": {
+      "kind": "none",
+      "text": ""
+    },
+    "unknown/past": {
+      "kind": "none",
+      "text": ""
+    }
+  },
+  "motion": {
+    "TRACK_MOTION": {
+      "start": 80,
+      "beat": 90,
+      "land": 60,
+      "state": 260,
+      "parts": 100,
+      "partStep": 50,
+      "invoice": 250,
+      "halo": 280,
+      "reveal": 40,
+      "footer": 400,
+      "footerAlone": 200,
+      "invalidTitle": 0,
+      "invalidBody": 60,
+      "invalidLink": 120
+    },
+    "ENTRY_MOTION": {
+      "title": 0,
+      "hint": 60,
+      "cells": 180,
+      "leaveAt": 760
+    },
+    "nodeDelay": [
+      [
+        0,
+        80,
+        -190
+      ],
+      [
+        1,
+        170,
+        -100
+      ],
+      [
+        2,
+        260,
+        -10
+      ],
+      [
+        6,
+        620,
+        350
+      ]
+    ],
+    "stateDelay": [
+      [
+        0,
+        340,
+        160
+      ],
+      [
+        3,
+        610,
+        430
+      ],
+      [
+        6,
+        880,
+        700
+      ]
+    ]
+  },
+  "code": {
+    "CODE_LENGTH": 6,
+    "normalize": {
+      "\"K7F3XQ\"": "K7F3XQ",
+      "\"k7f3xq\"": "K7F3XQ",
+      "\"k7f-3xq\"": "K7F3XQ",
+      "\" K7F 3XQ \"": "K7F3XQ",
+      "\"kof3lq\"": "K0F31Q",
+      "\"KIF3XQ\"": "K1F3XQ",
+      "\"K7F3X\"": "K7F3X",
+      "\"K7F3XQ9W\"": "K7F3XQ",
+      "\"K7F3XU\"": "K7F3X",
+      "\"K7F3X!\"": "K7F3X",
+      "\"\"": "",
+      "\"u-u-u\"": "",
+      "\"k7f3xq\\n123\"": "K7F3XQ",
+      "\"ilo\"": "110"
+    }
+  },
+  "shell": {
+    "BRAND": "Aito3D",
+    "CARD": "relative mx-auto w-[calc(100%-32px)] max-w-[620px] rounded-[12px] border border-aito-line bg-aito-card px-[24px] py-[24px] sm:w-auto sm:px-[32px] sm:py-[32px]",
+    "FOCUS": "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan",
+    "PRESS": "active:scale-[0.97] transition-[color,background-color,transform] duration-150",
+    "delayAt": [
+      {
+        "animationDelay": "0ms"
+      },
+      {
+        "animationDelay": "260ms"
+      }
+    ]
+  }
+}
+
+### stderr:
+

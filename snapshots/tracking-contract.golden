@@ -1,0 +1,146 @@
+### exit: 0
+### stdout:
+{
+  "models": {
+    "AitoTrackingLinkResponse": {
+      "properties": {
+        "quote_notes": "string[failed,updated] | null",
+        "tracking_url": "string | null"
+      },
+      "required": [
+        "tracking_url"
+      ]
+    },
+    "AitoTrackingPayment": {
+      "properties": {
+        "deposit": "boolean",
+        "state": "string[paid,unpaid]",
+        "url": "string | null"
+      },
+      "required": [
+        "deposit",
+        "state",
+        "url"
+      ]
+    },
+    "AitoTrackingResponse": {
+      "properties": {
+        "column": "string[devis,done,finish,model,print,scan,waiting]",
+        "done_at": "string(date-time) | null",
+        "due_date": "string(date) | null",
+        "invoice": "string[overdue,paid,unpaid] | null",
+        "payment": "AitoTrackingPayment | null",
+        "reference": "string | null",
+        "shipping": "AitoTrackingShipping | null",
+        "tasks": "array<AitoTrackingTask>",
+        "updated_at": "string(date-time)"
+      },
+      "required": [
+        "column",
+        "done_at",
+        "due_date",
+        "invoice",
+        "payment",
+        "reference",
+        "shipping",
+        "tasks",
+        "updated_at"
+      ]
+    },
+    "AitoTrackingShipping": {
+      "properties": {
+        "island": "string",
+        "lta": "string | null",
+        "service": "string"
+      },
+      "required": [
+        "island",
+        "lta",
+        "service"
+      ]
+    },
+    "AitoTrackingTask": {
+      "properties": {
+        "quantity": "integer | null",
+        "title": "string"
+      },
+      "required": [
+        "quantity",
+        "title"
+      ]
+    }
+  },
+  "operations": {
+    "GET /api/v1/aito/track/{token}": {
+      "operationId": "get_tracking_api_v1_aito_track__token__get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "responses": {
+        "200": "AitoTrackingResponse",
+        "422": "HTTPValidationError"
+      },
+      "security": null
+    },
+    "GET /api/v1/aito/{project_id}/tracking-link": {
+      "operationId": "get_tracking_link_api_v1_aito__project_id__tracking_link_get",
+      "parameters": [
+        {
+          "in": "header",
+          "name": "X-API-Key",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "path",
+          "name": "project_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "AitoTrackingLinkResponse",
+        "422": "HTTPValidationError"
+      },
+      "security": [
+        {
+          "HTTPBearer": []
+        }
+      ]
+    },
+    "POST /api/v1/aito/{project_id}/tracking-token": {
+      "operationId": "regenerate_tracking_token_api_v1_aito__project_id__tracking_token_post",
+      "parameters": [
+        {
+          "in": "header",
+          "name": "X-API-Key",
+          "required": false,
+          "type": "string | null"
+        },
+        {
+          "in": "path",
+          "name": "project_id",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "responses": {
+        "200": "AitoTrackingLinkResponse",
+        "422": "HTTPValidationError"
+      },
+      "security": [
+        {
+          "HTTPBearer": []
+        }
+      ]
+    }
+  }
+}
+
+### stderr:
+

@@ -1,0 +1,233 @@
+### exit: 0
+### stdout:
+{
+  "link_missing_card": {
+    "body": {
+      "detail": "Project not found"
+    },
+    "status": 404
+  },
+  "link_set": {
+    "body": {
+      "quote_notes": null,
+      "tracking_url": "https://aito3d.example/t/<TOKEN>"
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "link_unset": {
+    "body": {
+      "quote_notes": null,
+      "tracking_url": null
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "link_unset_minted_anyway": {
+    "length": 6,
+    "present": true
+  },
+  "public_bad_letter": {
+    "body": {
+      "detail": "Lien introuvable"
+    },
+    "status": 404
+  },
+  "public_head": {
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 405
+  },
+  "public_hit_after_reset_status": 200,
+  "public_hit_past_cap_status": 429,
+  "public_known_again_status": 200,
+  "public_known_hyphen_lowercase": {
+    "body": {
+      "column": "print",
+      "done_at": null,
+      "due_date": "2099-01-01",
+      "invoice": "unpaid",
+      "payment": null,
+      "reference": "DEV-000201",
+      "shipping": null,
+      "tasks": [
+        {
+          "quantity": 2,
+          "title": "Pale"
+        },
+        {
+          "quantity": null,
+          "title": "Pièce 2"
+        }
+      ]
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "public_minted_status": 200,
+  "public_miss_cap": {
+    "after_misses": 30,
+    "body": {
+      "detail": "Trop de tentatives"
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "retry-after": "60"
+    }
+  },
+  "public_new_token_after_regenerate_status": 200,
+  "public_no_token": {
+    "status": 404
+  },
+  "public_old_token_after_regenerate_status": 404,
+  "public_unknown": {
+    "body": {
+      "detail": "Lien introuvable"
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "status": 404
+  },
+  "regenerate": {
+    "body": {
+      "quote_notes": null,
+      "tracking_url": "https://aito3d.example/t/<TOKEN>"
+    },
+    "events": [
+      {
+        "actor_class": "user",
+        "changes": null,
+        "detail": {},
+        "kind": "tracking.regenerated"
+      }
+    ],
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "status": 200,
+    "token_changed": true
+  },
+  "regenerate_missing_card": {
+    "body": {
+      "detail": "Project not found"
+    },
+    "status": 404
+  },
+  "spa": {
+    "/T": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/T/k7f3xq": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/aito": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/settings": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/t": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/t/": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/t/K7F3XQ": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/tr": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/track": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/track/K7F3XQ": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow"
+      },
+      "is_html": true,
+      "status": 200
+    },
+    "/tracker": {
+      "headers": {
+        "cache-control": "no-cache, must-revalidate",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "is_html": true,
+      "status": 200
+    }
+  },
+  "view_log_rows_after_three_hits": [
+    1
+  ]
+}
+
+### stderr:
+

@@ -5609,6 +5609,19 @@
    },
    "security": true
   },
+  "GET /api/v1/zoho/contacts/{contact_id}": {
+   "operationId": "get_contact_api_v1_zoho_contacts__contact_id__get",
+   "params": [
+    "header:X-API-Key",
+    "path:contact_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ZohoContactDetail",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/zoho/estimates": {
    "operationId": "search_estimates_api_v1_zoho_estimates_get",
    "params": [
@@ -10844,6 +10857,21 @@
    },
    "security": true
   },
+  "PUT /api/v1/aito/{project_id}/client": {
+   "operationId": "edit_project_client_api_v1_aito__project_id__client_put",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoClientEdit"
+   },
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/archives/purge/settings": {
    "operationId": "update_archive_purge_settings_api_v1_archives_purge_settings_put",
    "params": [
@@ -11512,6 +11540,20 @@
   "AdminDisable2FARequest": {
    "properties": {
     "admin_password": "anyOf(string,null)"
+   },
+   "required": []
+  },
+  "AitoClientEdit": {
+   "properties": {
+    "client_social_handle": "anyOf(string,null)",
+    "client_social_network": "anyOf(string,null)",
+    "company_name": "string",
+    "email": "string",
+    "expected_version": "anyOf(integer,null)",
+    "first_name": "string",
+    "last_name": "string",
+    "phone": "string",
+    "phone_field": "string"
    },
    "required": []
   },
@@ -12435,6 +12477,9 @@
     "impression_quantity": "anyOf(integer,null)",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
+    "maindoeuvre_cost": "anyOf(number,null)",
+    "maindoeuvre_description": "anyOf(string,null)",
+    "maindoeuvre_done": "boolean",
     "modelisation_cost": "anyOf(number,null)",
     "modelisation_description": "anyOf(string,null)",
     "modelisation_discount_pct": "anyOf(number,null)",
@@ -12476,6 +12521,9 @@
     "impression_quantity": "anyOf(integer,null)",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
+    "maindoeuvre_cost": "anyOf(number,null)",
+    "maindoeuvre_description": "anyOf(string,null)",
+    "maindoeuvre_done": "boolean",
     "modelisation_cost": "anyOf(number,null)",
     "modelisation_description": "anyOf(string,null)",
     "modelisation_discount_pct": "anyOf(number,null)",
@@ -12527,6 +12575,9 @@
     "impression_quantity": "anyOf(integer,null)",
     "impression_time_min": "anyOf(integer,null)",
     "impression_weight_g": "anyOf(number,null)",
+    "maindoeuvre_cost": "anyOf(number,null)",
+    "maindoeuvre_description": "anyOf(string,null)",
+    "maindoeuvre_done": "boolean",
     "modelisation_cost": "anyOf(number,null)",
     "modelisation_description": "anyOf(string,null)",
     "modelisation_discount_pct": "anyOf(number,null)",
@@ -20098,6 +20149,30 @@
     "phone": "string"
    },
    "required": []
+  },
+  "ZohoContactDetail": {
+   "properties": {
+    "company_name": "string",
+    "customer_sub_type": "string",
+    "email": "string",
+    "first_name": "string",
+    "id": "string",
+    "last_name": "string",
+    "mobile": "string",
+    "name": "string",
+    "phone": "string"
+   },
+   "required": [
+    "company_name",
+    "customer_sub_type",
+    "email",
+    "first_name",
+    "id",
+    "last_name",
+    "mobile",
+    "name",
+    "phone"
+   ]
   },
   "ZohoContactPatch": {
    "properties": {
