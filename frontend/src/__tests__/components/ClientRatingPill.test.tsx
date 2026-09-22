@@ -57,8 +57,8 @@ describe('ClientRatingPill', () => {
   });
 
   it('marks a stale rating and says why in the tooltip', () => {
-    render(<ClientRatingPill rating={{ ...base, stale: true }} />);
-    const pill = screen.getByText(/Good/).closest('[data-tier]');
+    const { container } = render(<ClientRatingPill rating={{ ...base, stale: true }} />);
+    const pill = container.querySelector('[data-tier]');
     expect(pill).toHaveAttribute('data-stale', 'true');
     expect(pill).toHaveTextContent(/Good · 12m ago/);
     expect(screen.getByRole('tooltip')).toHaveTextContent(/Books unreachable/);
@@ -67,5 +67,17 @@ describe('ClientRatingPill', () => {
   it('announces the tier and the reason to assistive tech', () => {
     render(<ClientRatingPill rating={base} />);
     expect(screen.getByLabelText(/Client rating: Good\. 12 of 12 invoices paid on time/)).toBeInTheDocument();
+  });
+
+  it('omits the checked time when the rating was never computed', () => {
+    render(<ClientRatingPill rating={{ ...base, tier: 'new', reason: 'new', computed_at: null }} />);
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent(/No settled invoice yet/);
+    expect(tooltip).not.toHaveTextContent(/checked/);
+  });
+
+  it('exposes the tier word through the tooltip as well', () => {
+    render(<ClientRatingPill rating={base} />);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/^Good — 12 of 12 invoices paid on time/);
   });
 });

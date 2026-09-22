@@ -85,7 +85,11 @@ export function ClientRatingPill({
 
   const label = t(`aito.rating.${rating.tier}`);
   const ago = formatRelativeTime(rating.computed_at, 'system', t);
-  const tip = [rating.stale ? t('aito.rating.stale') : null, reason, t('aito.rating.checked', { ago })]
+  const tip = [
+    rating.stale ? t('aito.rating.stale') : null,
+    `${label} — ${reason}`,
+    rating.computed_at ? t('aito.rating.checked', { ago }) : null,
+  ]
     .filter(Boolean)
     .join(' · ');
   const style = {
@@ -100,6 +104,7 @@ export function ClientRatingPill({
       <span
         data-tier={rating.tier}
         data-stale={rating.stale ? 'true' : undefined}
+        role="img"
         aria-label={t('aito.rating.ariaLabel', { tier: label, reason })}
         style={style}
         className={`inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] text-xs font-semibold leading-none tracking-[0.01em] ${
