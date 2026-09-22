@@ -19,6 +19,12 @@ type Failure = 'notFound' | 'tooMany' | 'error';
  *  failure already shows. */
 const CHECK_TIMEOUT_MS = 10_000;
 
+// The locale chunk fetch behind `ready` below has the same failure mode as
+// a hung check — a stalled connection that never errors — so it gets the
+// same deadline: past this, i18next's bundled English strings stand in
+// rather than leave the entry door stuck on a skeleton with no way in.
+const I18N_SETTLE_TIMEOUT_MS = 10_000;
+
 // The outer wrapper shared by every state of this page (loading branch
 // and main return): the same literal, not re-typed at each call site.
 const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink';
@@ -95,6 +101,14 @@ export function AitoTrackEntryPage() {
     },
     [],
   );
+  // A stalled locale chunk must not leave the front door stuck on a
+  // skeleton forever: once this fires, the page proceeds with i18next's
+  // bundled English strings even though `ready` never went true.
+  const [i18nTimedOut, setI18nTimedOut] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setI18nTimedOut(true), I18N_SETTLE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const check = async (value: string) => {
     const seq = ++sequence.current;
@@ -131,7 +145,7 @@ export function AitoTrackEntryPage() {
   // with a skeleton standing in for the code row: no text (nothing is
   // translated yet) and no motion (ENTRY_MOTION plays only from the
   // ready-state mount, below).
-  if (!ready) {
+  if (!ready && !i18nTimedOut) {
     return (
       <div className={PAGE}>
         <div className={CARD}>

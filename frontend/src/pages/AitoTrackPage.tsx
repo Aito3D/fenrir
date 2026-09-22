@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -27,6 +27,13 @@ const PARTS_SHOWN = 6;
 // fall into the same retryable error state a network failure already shows.
 // Same deadline as the /t entry page's identical call (its CHECK_TIMEOUT_MS).
 const TRACK_TIMEOUT_MS = 10_000;
+
+// The locale chunk fetch behind `ready` (see `settled` below) has the same
+// failure mode as a hung tracking request — a stalled connection that never
+// errors, not a fast one that fails — so it gets the same deadline. Past
+// this, i18next's bundled English strings stand in rather than leave a
+// client staring at a skeleton for data that has already arrived.
+const I18N_SETTLE_TIMEOUT_MS = 10_000;
 
 // The outer wrapper shared by every state of this page (404 branch and
 // main return): the same literal, not re-typed at each call site.
@@ -77,7 +84,16 @@ export function AitoTrackPage() {
   // mounted — react-i18next re-renders it in place when the chunk lands.
   const everReady = useRef(false);
   if (ready) everReady.current = true;
-  const settled = everReady.current;
+  // A stalled locale chunk (the flaky mobile link TRACK_TIMEOUT_MS already
+  // guards against) must not hide data that has already landed forever:
+  // once this fires, `settled` goes true even if `ready` never does, and it
+  // never un-settles — same one-way latch as `everReady` itself.
+  const [i18nTimedOut, setI18nTimedOut] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setI18nTimedOut(true), I18N_SETTLE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const settled = everReady.current || i18nTimedOut;
   // The choreography plays on the FIRST data only. React Query refetches on
   // window focus once the 30 s stale time has passed; replaying the rail on
   // every tab switch would be the over-animation this page must avoid. A

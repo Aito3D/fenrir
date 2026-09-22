@@ -220,7 +220,7 @@
         "payment": {
           "deposit": false,
           "state": "paid",
-          "url": "https://pay.example/4"
+          "url": null
         },
         "reference": "DEV-000104",
         "shipping": null,
@@ -341,7 +341,7 @@
         "payment": {
           "deposit": true,
           "state": "paid",
-          "url": "https://pay.example/4"
+          "url": null
         },
         "reference": "DEV-000104",
         "shipping": null,
