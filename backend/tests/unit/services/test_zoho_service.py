@@ -117,6 +117,8 @@ async def test_search_contacts_maps_fields_and_retries_401_once(async_client, db
             "phone": "",
             "mobile": "+33 6 12 34 56 78",
             "email": "hi@acme.fr",
+            "first_name": "",
+            "last_name": "",
         }
     ]
 
@@ -321,6 +323,8 @@ async def test_create_contact_person_path(async_client, db_session):
         "phone": "",
         "mobile": "+689-87123456",
         "email": "jp@example.pf",
+        "first_name": "",
+        "last_name": "",
     }
     assert seen["body"]["contact_name"] == "Jean-Pierre DUPONT"
     assert seen["body"]["contact_type"] == "customer"

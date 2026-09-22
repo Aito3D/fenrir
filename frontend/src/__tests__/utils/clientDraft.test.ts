@@ -14,6 +14,7 @@ import {
   defaultClientDraft,
   isSocialNetwork,
   normaliseClientDraft,
+  splitDisplayName,
 } from '../../utils/clientDraft';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from '../../utils/countryCodes';
 
@@ -359,5 +360,26 @@ describe('social network on the draft', () => {
     const repaired = normaliseClientDraft(draft as never);
     expect(repaired.socialNetwork).toBeNull();
     expect(repaired.socialHandle).toBe('');
+  });
+});
+
+describe('splitDisplayName', () => {
+  it('takes the trailing run of upper-case words as the last name', () => {
+    expect(splitDisplayName('Jean-Pierre LE ROUX')).toEqual({ firstName: 'Jean-Pierre', lastName: 'LE ROUX' });
+    expect(splitDisplayName('Jean DUPONT')).toEqual({ firstName: 'Jean', lastName: 'DUPONT' });
+  });
+
+  it('splits a name that never went through the house format on its last space', () => {
+    expect(splitDisplayName('jean dupont')).toEqual({ firstName: 'jean', lastName: 'dupont' });
+    expect(splitDisplayName('Marie Claire Dupont')).toEqual({ firstName: 'Marie Claire', lastName: 'Dupont' });
+  });
+
+  it('never swallows the whole name into the last name', () => {
+    expect(splitDisplayName('ACME SARL')).toEqual({ firstName: 'ACME', lastName: 'SARL' });
+  });
+
+  it('handles a single word and an empty name', () => {
+    expect(splitDisplayName('Cher')).toEqual({ firstName: 'Cher', lastName: '' });
+    expect(splitDisplayName('  ')).toEqual({ firstName: '', lastName: '' });
   });
 });

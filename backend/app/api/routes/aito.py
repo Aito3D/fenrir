@@ -26,6 +26,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoClientEdit,
     AitoClientHistoryResponse,
     AitoContactedUpdate,
     AitoDueDateUpdate,
@@ -121,6 +122,7 @@ from backend.app.services.zoho import (
     ZohoNotFound,
     ZohoRequestRejected,
     ZohoUpstreamError,
+    normalize_display_name,
     zoho_service,
 )
 from backend.app.utils.http import build_content_disposition
@@ -3280,6 +3282,125 @@ async def update_project(
     # actually change something need the rest of the board to hear about it).
     if changes or shipping is not None:
         await _broadcast_changed("update", project.id, _actor(current_user))
+    await db.refresh(project)
+    return await _project_response(db, project)
+
+
+@router.put("/{project_id}/client", response_model=AitoProjectResponse)
+async def edit_project_client(
+    project_id: int,
+    payload: AitoClientEdit,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Edit the contact behind a card: name, phone and email, written to
+    Zoho Books FIRST and to the board only once Books has accepted them.
+
+    Its own route rather than more fields on `update_project`, for three
+    reasons that route cannot absorb:
+
+    - Ordering. Books is the record; the card is a snapshot of it. A PATCH
+      that wrote the card and then tried Books would leave the two disagreeing
+      on every Zoho outage. Here a Books failure returns before any row is
+      touched — the version claim below deliberately sits AFTER the Books
+      calls so a refused rename leaves no phantom claim either.
+    - Fan-out. One contact sits on however many open cards; every active one
+      is rewritten so the board never shows two names for one client. Only
+      the edited card is version-guarded — the others bump but were never the
+      base of this session's draft.
+    - No quote push. Books derives a quote's customer name from the contact
+      itself, so nothing is queued (`_mark_pending_if_ours` is NOT called):
+      a push on a locked quote could only end in a sync error.
+
+    The walk-in default contact is shared by every passing customer and Books
+    refuses edits to it (routes/zoho.py's patch_contact), so those cards take
+    a card-only edit — the operator is told so in the editor.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    if payload.expected_version is not None and payload.expected_version != (project.version or 0):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+        )
+
+    is_company = bool(project.client_is_company)
+    company = payload.company_name.strip()
+    first, last = payload.first_name.strip(), payload.last_name.strip()
+    if is_company and not company:
+        raise HTTPException(status_code=422, detail="company_name is required for a company client")
+    if not is_company and not (first and last):
+        raise HTTPException(status_code=422, detail="first_name and last_name are required for a person client")
+
+    phone = payload.phone.strip()
+    email = payload.email.strip()
+    if not (phone or email or (project.client_social_handle or "").strip()):
+        raise HTTPException(status_code=400, detail="Client must have a phone, an email or a social handle")
+
+    default_id, _default_name = await zoho_service.get_default_contact(db)
+    # A real Books contact, as opposed to the shared walk-in bucket (or a
+    # legacy card with no contact at all): only these are pushed to Zoho, and
+    # only these fan out — every passing customer shares the walk-in id, so
+    # rewriting its siblings would rename every counter sale after this one
+    # person.
+    is_zoho_contact = bool(project.client_id) and project.client_id != default_id
+    if is_zoho_contact:
+        try:
+            name = await zoho_service.update_contact(
+                db,
+                project.client_id,
+                company_name=company if is_company else None,
+                first_name=None if is_company else first,
+                last_name=None if is_company else last,
+                email=email,
+                phone=phone,
+                phone_field=payload.phone_field,
+            )
+        except ZohoNotConfiguredError:
+            raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+        except ZohoRequestRejected as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        except ZohoUpstreamError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+    else:
+        name = company if is_company else normalize_display_name(first, last)
+
+    if payload.expected_version is not None and not await _claim_expected_version(
+        db, project, payload.expected_version
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+        )
+
+    snapshot = {"client_name": name, "client_phone": phone or None, "client_email": email or None}
+    targets = [project]
+    if is_zoho_contact:
+        siblings = (
+            await db.execute(
+                select(AitoProject).where(
+                    AitoProject.client_id == project.client_id,
+                    AitoProject.status == "active",
+                    AitoProject.id != project.id,
+                )
+            )
+        ).scalars()
+        targets.extend(siblings)
+    for target in targets:
+        changes = diff_fields(target, snapshot)
+        for key, value in snapshot.items():
+            setattr(target, key, value)
+        await record(
+            db,
+            target.id,
+            "project.updated",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=target.id,
+            changes=changes,
+        )
+    await db.commit()
+    await _broadcast_changed("update", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project)
 

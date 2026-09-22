@@ -125,6 +125,22 @@ export function titleCaseSegments(value: string): string {
 }
 
 /** House convention for person contacts: 'Jean-Pierre DUPONT'. */
+/** The inverse of `formatDisplayName`, for prefilling a person editor from a
+ *  card's display-name snapshot when Zoho cannot be read. The house format
+ *  upper-cases the whole last name ("Jean-Pierre LE ROUX"), so the trailing
+ *  run of all-caps words is the last name; a name that never went through the
+ *  house format splits on its last space instead. */
+export function splitDisplayName(name: string): { firstName: string; lastName: string } {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return { firstName: words[0] ?? '', lastName: '' };
+  let cut = words.length;
+  while (cut > 1 && words[cut - 1] === words[cut - 1].toLocaleUpperCase('fr') && /\p{L}/u.test(words[cut - 1])) {
+    cut -= 1;
+  }
+  if (cut === words.length) cut = words.length - 1;
+  return { firstName: words.slice(0, cut).join(' '), lastName: words.slice(cut).join(' ') };
+}
+
 export function formatDisplayName(firstName: string, lastName: string): string {
   return `${titleCaseSegments(firstName)} ${lastName.trim().toLocaleUpperCase('fr')}`.trim();
 }

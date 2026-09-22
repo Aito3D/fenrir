@@ -26,6 +26,7 @@ import {
 } from './quoteStatus';
 import { deriveQuoteSync } from './quoteSync';
 import { ShippingCard } from './ShippingCard';
+import { ClientEditor } from './ClientEditor';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { stagesWithWork } from './services';
@@ -50,7 +51,7 @@ import { isFinished } from '../../utils/aitoBoard';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
-import { applyClientSocial, applyDescription, applySyncState } from '../../utils/aitoOptimistic';
+import { applyClientSocial, applyDescription, applySyncState, replaceProject } from '../../utils/aitoOptimistic';
 import { formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
 import type { SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
@@ -268,6 +269,10 @@ function PanelHeader({
   onSaveSocial,
   onCancelSocial,
   socialSaving,
+  editingClient,
+  onOpenClientEdit,
+  onClientSaved,
+  onCancelClientEdit,
   canUpdate,
   onUnaccepted,
 }: {
@@ -303,6 +308,13 @@ function PanelHeader({
   onSaveSocial: () => void;
   onCancelSocial: () => void;
   socialSaving: boolean;
+  /** The client editor's open flag and its three exits live in the panel
+   *  body, like the social editor's: the header only renders the pencil and
+   *  the editor, the body owns the cache write a save has to make. */
+  editingClient: boolean;
+  onOpenClientEdit: () => void;
+  onClientSaved: (updated: AitoProject) => void;
+  onCancelClientEdit: () => void;
   /** Gates FlagControl — PATCH /{project_id}/flag enforces AITO_UPDATE. See
    *  ProjectDetailPanelProps' own doc. */
   canUpdate: boolean;
@@ -483,7 +495,7 @@ function PanelHeader({
             for assistive tech instead: an icon alone would make the company/
             person split visible to sighted users only, and the heading's
             accessible name is what a screen reader announces on open. */}
-        <h2 className="text-[1.35rem] leading-tight font-semibold tracking-[-0.01em] text-white flex items-center gap-2 min-w-0">
+        <h2 className="group/client text-[1.35rem] leading-tight font-semibold tracking-[-0.01em] text-white flex items-center gap-2 min-w-0">
           {/* strokeWidth 2.5 rather than lucide's default 2, so the glyph's
               stems match the semibold weight of the name beside it — at the
               default the icon reads as a lighter, unrelated mark. */}
@@ -504,10 +516,30 @@ function PanelHeader({
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
           <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+          {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
+              never removed from the tree: a keyboard user tabs onto it and
+              focus-visible brings it up. Gated on `canUpdate` because the
+              route it opens (PUT /{id}/client) is; hidden while the editor
+              is open because the editor replaces what it would edit. The
+              social handle keeps its own pencil below — it is card-only and
+              never part of the Zoho contact this one edits. */}
+          {canUpdate && !editingClient && (
+            <button
+              type="button"
+              onClick={onOpenClientEdit}
+              aria-label={t('aito.clientEdit')}
+              title={t('aito.clientEdit')}
+              className={`flex-shrink-0 rounded-md p-1 text-bambu-gray opacity-0 transition-opacity group-hover/client:opacity-100 focus-visible:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
         </h2>
+        {editingClient && <ClientEditor project={project} onSaved={onClientSaved} onCancel={onCancelClientEdit} />}
         {/* mt-2.5 and medium weight: at mt-1 the contacts crowded the title,
             and at regular weight they receded into the band rather than
             reading as the two things you copy out of this header. */}
+        {!editingClient && (
         <div className="flex items-center gap-4 mt-2.5 text-[.82rem] font-medium">
           {project.client_phone && (
             <CopyableValue
@@ -565,6 +597,7 @@ function PanelHeader({
             </span>
           )}
         </div>
+        )}
         {/* animate-rise: same arrival treatment `SocialInput` gives its own
             handle field and `ShippingCard` gives its edit form — the editor
             appears in response to the pencil click just above it. */}
@@ -888,6 +921,21 @@ export function ProjectDetailPanel({
   );
 
   const [editingSocial, setEditingSocial] = useState(false);
+
+  // The client editor owns its own draft, fetch and mutation (see
+  // ClientEditor); the panel only owns the open flag and what a save does to
+  // the board. The response is written into the cache like every other
+  // panel write, then the board is REFETCHED as well — the server rewrote
+  // every active card on the same contact, and only a refetch brings those
+  // siblings in. Not an optimistic write: the server is Zoho-first, so
+  // nothing is true until it answers.
+  const [editingClient, setEditingClient] = useState(false);
+  const onClientSaved = (updated: AitoProject) => {
+    queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, updated));
+    void queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+    void queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+    setEditingClient(false);
+  };
   const [socialDraft, setSocialDraft] = useState<{ network: SocialNetwork | null; handle: string }>({
     network: null,
     handle: '',
@@ -1179,6 +1227,13 @@ export function ProjectDetailPanel({
           onSaveSocial={saveSocial}
           onCancelSocial={() => setEditingSocial(false)}
           socialSaving={socialMutation.isPending}
+          editingClient={editingClient}
+          onOpenClientEdit={() => {
+            setEditingSocial(false);
+            setEditingClient(true);
+          }}
+          onClientSaved={onClientSaved}
+          onCancelClientEdit={() => setEditingClient(false)}
           canUpdate={canUpdate}
           onUnaccepted={onClose}
         />
