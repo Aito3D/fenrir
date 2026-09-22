@@ -17,11 +17,11 @@ approved it.
 ```
 
 ## Route decorators in routes/aito.py
-```regen: grep -nE "^@router\.(get|post|put|delete)\(\"[^\"]*track[^\"]*\"" backend/app/api/routes/aito.py```
+```regen: grep -E "^@router\.(get|post|put|delete)\(\"[^\"]*track[^\"]*\"" backend/app/api/routes/aito.py```
 ```
-1248:@router.get("/track/{token}", response_model=AitoTrackingResponse)
-3615:@router.get("/{project_id}/tracking-link", response_model=AitoTrackingLinkResponse)
-3631:@router.post("/{project_id}/tracking-token", response_model=AitoTrackingLinkResponse)
+@router.get("/track/{token}", response_model=AitoTrackingResponse)
+@router.get("/{project_id}/tracking-link", response_model=AitoTrackingLinkResponse)
+@router.post("/{project_id}/tracking-token", response_model=AitoTrackingLinkResponse)
 ```
 
 ## aito_tracking.py — public functions
@@ -50,48 +50,48 @@ def with_tracking_sms(message: str, url: str) -> str:
 ```
 
 ## aito_tracking.py — private helpers and constants (order and names; the module map)
-```regen: grep -nE "^(def|class|async def) _[a-zA-Z]|^_[A-Z_]+ = |^[A-Z_]+ = " backend/app/services/aito_tracking.py | sed "s/:.*def /: def /; s/ = .*/ =/" | sort -t: -k1 -n```
+```regen: grep -nE "^(def|class|async def) _[a-zA-Z]|^_[A-Z_]+ = |^[A-Z_]+ = " backend/app/services/aito_tracking.py | sed "s/:.*def /: def /; s/ = .*/ =/" | sort -t: -k1 -n | cut -d: -f2- | sed "s/^ *//"```
 ```
-33:TOKEN_ALPHABET =
-34:TOKEN_LENGTH =
-37:LEGACY_TOKEN_MIN_LENGTH =
-38:_TOKEN_ALIASES =
-39:TRACKING_TTL_AFTER_DONE =
-45:TRACKING_TTL_DORMANT =
-46:DORMANT_COLUMNS =
-50:CLOSED_QUOTE_STATUSES =
-54:NOTES_PREFIX =
-55:NOTES_CODE_PREFIX =
-59:_LEGACY_NOTES_PREFIXES =
-60:SMS_PREFIX =
-61:SMS_SIGNATURE =
-64:SMS_SIGNATURE_SEP =
-233:TASK_FALLBACK =
-235:_INVOICE_STATE =
-272:_SERVICE_COUNTS =
-312:VIEW_DEDUP_WINDOW =
+TOKEN_ALPHABET =
+TOKEN_LENGTH =
+LEGACY_TOKEN_MIN_LENGTH =
+_TOKEN_ALIASES =
+TRACKING_TTL_AFTER_DONE =
+TRACKING_TTL_DORMANT =
+DORMANT_COLUMNS =
+CLOSED_QUOTE_STATUSES =
+NOTES_PREFIX =
+NOTES_CODE_PREFIX =
+_LEGACY_NOTES_PREFIXES =
+SMS_PREFIX =
+SMS_SIGNATURE =
+SMS_SIGNATURE_SEP =
+TASK_FALLBACK =
+_INVOICE_STATE =
+_SERVICE_COUNTS =
+VIEW_DEDUP_WINDOW =
 ```
 
 ## routes/aito.py — tracking rate limiter and label helpers
-```regen: grep -nE "^(def|async def) _?(track|peer_is_private|release_miss|reset_track|shipping_names|island_labels|external_url)[a-zA-Z_]*\(|^_TRACK_RATE_[A-Z_]+ = |^_track_rate_[a-z_]+: " backend/app/api/routes/aito.py | sed "s/ = .*/ =/; s/: dict.*/:/" | sort -t: -k1 -n```
+```regen: grep -nE "^(def|async def) _?(track|peer_is_private|release_miss|reset_track|shipping_names|island_labels|external_url)[a-zA-Z_]*\(|^_TRACK_RATE_[A-Z_]+ = |^_track_rate_[a-z_]+: " backend/app/api/routes/aito.py | sed "s/ = .*/ =/; s/: dict.*/:/" | sort -t: -k1 -n | cut -d: -f2- | sed "s/^ *//"```
 ```
-369:async def _shipping_names(db: AsyncSession) -> dict[str, str]:
-388:async def _island_labels(db: AsyncSession) -> dict[str, str]:
-396:async def _external_url(db: AsyncSession) -> str:
-1113:_TRACK_RATE_WINDOW_S =
-1114:_TRACK_RATE_MAX_MISSES_PER_IP =
-1115:_TRACK_RATE_MAX_MISSES_PER_NET =
-1116:_TRACK_RATE_MAX_CALLS_PER_IP =
-1119:_TRACK_RATE_SWEEP_ABOVE =
-1120:_track_rate_ip_calls:
-1121:_track_rate_ip_misses:
-1122:_track_rate_net_misses:
-1125:def _reset_track_rate_limits() -> None:
-1132:def _track_rate_net_key(host: str) -> str:
-1148:def _peer_is_private(request: Request) -> bool:
-1165:def _track_rate_limited(request: Request) -> tuple[str, float] | None:
-1229:def _release_miss(buckets:
-1242:def _track_rate_hit(host: str, stamp: float) -> None:
+async def _shipping_names(db: AsyncSession) -> dict[str, str]:
+async def _island_labels(db: AsyncSession) -> dict[str, str]:
+async def _external_url(db: AsyncSession) -> str:
+_TRACK_RATE_WINDOW_S =
+_TRACK_RATE_MAX_MISSES_PER_IP =
+_TRACK_RATE_MAX_MISSES_PER_NET =
+_TRACK_RATE_MAX_CALLS_PER_IP =
+_TRACK_RATE_SWEEP_ABOVE =
+_track_rate_ip_calls:
+_track_rate_ip_misses:
+_track_rate_net_misses:
+def _reset_track_rate_limits() -> None:
+def _track_rate_net_key(host: str) -> str:
+def _peer_is_private(request: Request) -> bool:
+def _track_rate_limited(request: Request) -> tuple[str, float] | None:
+def _release_miss(buckets:
+def _track_rate_hit(host: str, stamp: float) -> None:
 ```
 
 ## Response models
@@ -145,11 +145,11 @@ print(json.dumps({n: {f: str(x.annotation) for f, x in sorted(m.model_fields.ite
 ```
 
 ## main.py — tracking page serve
-```regen: grep -nE "^def _is_tracking_page|^_TRACKING_HTML_HEADERS = |\"/api/v1/aito/track/\"" backend/app/main.py```
+```regen: grep -E "^def _is_tracking_page|^_TRACKING_HTML_HEADERS = |\"/api/v1/aito/track/\"" backend/app/main.py```
 ```
-9729:    "/api/v1/aito/track/",
-10246:_TRACKING_HTML_HEADERS = {**_HTML_CACHE_HEADERS, "X-Robots-Tag": "noindex, nofollow"}
-10249:def _is_tracking_page(full_path: str) -> bool:
+    "/api/v1/aito/track/",
+_TRACKING_HTML_HEADERS = {**_HTML_CACHE_HEADERS, "X-Robots-Tag": "noindex, nofollow"}
+def _is_tracking_page(full_path: str) -> bool:
 ```
 
 ## aito_tracking_views table
@@ -164,13 +164,13 @@ Index("ix_aito_tracking_views_project_id"
 ```
 
 ## Migrations touching the feature (core/database.py)
-```regen: grep -nE "tracking_token|aito_tracking_views" backend/app/core/database.py | sed "s/^\([0-9]*\):\s*/\1: /" | cut -c1-140```
+```regen: grep -E "tracking_token|aito_tracking_views" backend/app/core/database.py | cut -c1-140```
 ```
-5723:     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN tracking_token VARCHAR(64)")
-5725:         conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_aito_projects_tracking_token ON aito_projects(tracking_token)"
-5732:         "CREATE TABLE IF NOT EXISTS aito_tracking_views ("
-5738:         conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_viewed_at ON aito_tracking_views(viewed_at)"
-5741:         conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_project_id ON aito_tracking_views(project_id)"
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN tracking_token VARCHAR(64)")
+        conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_aito_projects_tracking_token ON aito_projects(tracking_token)"
+        "CREATE TABLE IF NOT EXISTS aito_tracking_views ("
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_viewed_at ON aito_tracking_views(viewed_at)"
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_project_id ON aito_tracking_views(project_id)"
 ```
 
 ## Frontend exports — tracking pages, components, hooks, utils
@@ -221,15 +221,15 @@ export type TrackingPanelId
 ```
 
 ## App.tsx — tracking routes
-```regen: grep -nE "AitoTrack|/t/|/track" frontend/src/App.tsx | sed "s/^\([0-9]*\):\s*/\1: /"```
+```regen: grep -E "AitoTrack|/t/|/track" frontend/src/App.tsx```
 ```
-67: const AitoTrackPage = lazyWithReload(() => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage })));
-68: const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPage').then(m => ({ default: m.AitoTrackEntryPage })));
-235:           `/t/` is what the backend emits (short, for QR codes and quote PDFs); `/track/` stays so the
-237:       <Route path="/t" element={<AitoTrackEntryPage />} />
-238:       <Route path="/track" element={<AitoTrackEntryPage />} />
-239:       <Route path="/t/:token" element={<AitoTrackPage />} />
-240:       <Route path="/track/:token" element={<AitoTrackPage />} />
+const AitoTrackPage = lazyWithReload(() => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage })));
+const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPage').then(m => ({ default: m.AitoTrackEntryPage })));
+          `/t/` is what the backend emits (short, for QR codes and quote PDFs); `/track/` stays so the
+      <Route path="/t" element={<AitoTrackEntryPage />} />
+      <Route path="/track" element={<AitoTrackEntryPage />} />
+      <Route path="/t/:token" element={<AitoTrackPage />} />
+      <Route path="/track/:token" element={<AitoTrackPage />} />
 ```
 
 ## API client — tracking types and methods

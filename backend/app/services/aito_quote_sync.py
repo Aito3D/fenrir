@@ -18,6 +18,7 @@ Phase 2 poller.
 """
 
 import asyncio
+import contextlib
 import logging
 import math
 import time
@@ -2387,6 +2388,18 @@ async def run_sync_loop() -> None:
                     await purge_tracking_views(db)
                 except Exception as exc:
                     logger.warning("Tracking-view purge failed: %s", exc)
+                    # A failed purge commit (e.g. "database is locked") leaves
+                    # this session poisoned, exactly like the terminal
+                    # failures `_rollback_after_terminal_failure` documents --
+                    # the very next statement on it, `reconcile_payment_links`
+                    # below, would otherwise raise its own unrelated
+                    # `InvalidRequestError` and mask the lock that actually
+                    # caused this. Nothing from this tick's purge was meant to
+                    # survive its own failed commit anyway, so an
+                    # unconditional rollback costs nothing on the (common)
+                    # non-poisoned path.
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
                 # Payment links: gated on Heimdall, not Books — a link can
                 # be polled with Books down. Its own try/except like the
                 # purge: one failed pass costs this tick, never the loop.

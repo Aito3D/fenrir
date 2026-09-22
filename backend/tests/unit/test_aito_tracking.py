@@ -656,21 +656,58 @@ async def test_public_route_direct_install_per_ip_miss_cap_is_unchanged(async_cl
 
 
 @pytest.mark.asyncio
-async def test_public_route_collapsed_bucket_still_bounded_by_the_calls_cap(async_client, monkeypatch):
-    """The per-IP miss cap is suspended on a collapsed bucket, but the
-    per-IP CALLS cap — keyed on the same collapsed address — still trips."""
+async def test_public_route_collapsed_bucket_no_longer_bounded_by_the_calls_cap(async_client, monkeypatch):
+    """T-017: on a collapsed bucket (unconfigured proxy) the per-IP CALLS
+    cap used to stay in force even though T-087 already suspended the
+    per-IP MISS cap there, so it silently became a 120/min site-wide
+    ceiling — 5x tighter than the 600-miss per-net budget the collapse
+    path is meant to rely on instead. It is now suspended alongside the
+    miss cap: many more than the old (here lowered) calls cap succeed,
+    and only the per-net miss budget still bounds the bucket."""
     from backend.app.api.routes import aito as aito_routes, auth as auth_routes
 
     clock = _Clock()
     monkeypatch.setattr(aito_routes, "time", clock)
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
     monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_IP", 3)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 5)
     aito_routes._reset_track_rate_limits()
-    for _ in range(3):
+    # Five misses — already past the old 3-call cap — all still answered.
+    for _ in range(5):
         r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
         assert r.status_code == 404
+    # The per-net miss budget, not the (suspended) calls cap, is what trips.
     r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.6"})
     assert r.status_code == 429
+    aito_routes._reset_track_rate_limits()
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_never_429s_past_the_old_calls_cap_on_hits(
+    async_client, db_session, monkeypatch
+):
+    """T-017: a private peer behind an unconfigured proxy (collapsed
+    bucket) making more than 120 real-code hits inside one window must
+    never see a 429 — the per-IP CALLS cap is suspended there just like
+    the per-IP miss cap already was, and a hit releases the per-net
+    reservation it made at arrival (`_track_rate_hit`), so it never
+    accumulates against that budget either."""
+    from httpx import ASGITransport, AsyncClient
+
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+    from backend.app.main import app
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    aito_routes._reset_track_rate_limits()
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    transport = ASGITransport(app=app, client=("10.0.0.5", 5555))
+    async with AsyncClient(transport=transport, base_url="http://test") as private_client:
+        for _ in range(aito_routes._TRACK_RATE_MAX_CALLS_PER_IP + 10):
+            r = await private_client.get(TRACK + token, headers={"X-Forwarded-For": "203.0.113.5"})
+            assert r.status_code == 200
     aito_routes._reset_track_rate_limits()
 
 
@@ -978,6 +1015,60 @@ def test_public_route_reserves_the_miss_at_arrival_and_releases_it_on_a_hit(monk
     aito_routes._track_rate_hit(*stamps[0])
     assert aito_routes._track_rate_limited(request) is not None
     assert aito_routes._track_rate_limited(request) is None
+    aito_routes._reset_track_rate_limits()
+
+
+# ── T-012: a no-peer host must fail closed to a real, cappable bucket ────────
+
+
+def test_no_peer_requests_share_one_bucket_and_trip_the_miss_cap(monkeypatch):
+    """`_get_client_ip` mints a fresh, per-request-unique `__no_ip_...`
+    placeholder when `request.client` is None (a unix-socket bind has no
+    peer). Left uncollapsed, every such request would land in its own
+    empty, uncapped bucket and no cap could ever be reached. Two requests
+    with no peer at all must share one bucket instead, so the cap can
+    trip."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 3)
+    aito_routes._reset_track_rate_limits()
+    # A fresh request each time (as a real connection would be), but every
+    # one of them has no TCP peer.
+    request = SimpleNamespace(client=None, headers={})
+    stamps = [aito_routes._track_rate_limited(request) for _ in range(3)]
+    assert all(stamps)
+    # All three collapsed onto the same shared key, not one each.
+    assert {host for host, _ in stamps} == {"__no_ip__"}
+    assert aito_routes._track_rate_limited(request) is None
+    aito_routes._reset_track_rate_limits()
+
+
+def test_unparseable_host_collapses_onto_the_same_shared_bucket(monkeypatch):
+    """A host string that isn't a real peer address either — e.g. a test
+    client's literal "testclient" — collapses onto the same `"__no_ip__"`
+    sentinel as a genuinely missing peer, so the two share one budget
+    rather than each getting fail-closed to its own unbounded bucket."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = _Clock()
+    monkeypatch.setattr(aito_routes, "time", clock)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 2)
+    aito_routes._reset_track_rate_limits()
+    no_peer_request = SimpleNamespace(client=None, headers={})
+    named_request = SimpleNamespace(client=SimpleNamespace(host="testclient"), headers={})
+    admitted1 = aito_routes._track_rate_limited(no_peer_request)
+    admitted2 = aito_routes._track_rate_limited(named_request)
+    assert admitted1 is not None and admitted2 is not None
+    assert admitted1[0] == admitted2[0] == "__no_ip__"
+    # The shared bucket is now full for either kind of request.
+    assert aito_routes._track_rate_limited(no_peer_request) is None
+    assert aito_routes._track_rate_limited(named_request) is None
     aito_routes._reset_track_rate_limits()
 
 

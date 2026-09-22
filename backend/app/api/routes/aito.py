@@ -1091,22 +1091,24 @@ async def get_client_history(
 # The per-IP caps assume the address they are keyed on is one visitor.
 # Behind a reverse proxy with TRUSTED_PROXY_IPS unset (the default), every
 # visitor's `_get_client_ip` resolves to the proxy's own address, and the
-# per-IP MISS cap would silently become a second, much tighter, site-wide
-# cap. `_track_rate_limited` detects that case (TRUSTED_PROXY_IPS empty but
-# an X-Forwarded-For header present) and suspends the per-IP miss cap for
-# it, presuming the peer is an unconfigured proxy; the per-net miss cap and
-# the per-IP CALLS cap — both still keyed on the proxy's one address — are
-# the bound instead. On a collapsed bucket the "network" IS the proxy's own
-# /24 or /48, so the per-net budget is once again a single site-wide budget
-# for that install, same as before T-122. T-121: that presumption alone is
-# spoofable on a DIRECT
-# install — any client could add its own X-Forwarded-For header to lift its
-# own ceiling from the 30-miss cap to the 120-call cap — so the collapse
-# additionally requires the direct TCP peer to look like a proxy: loopback
-# or an RFC-1918/private address (see `_peer_is_private`). A public peer's
-# X-Forwarded-For is ignored for this purpose. The remaining trade-off: a
-# reverse proxy that itself sits on a public IP still needs TRUSTED_PROXY_IPS
-# configured, or its visitors share the tighter per-IP miss cap.
+# per-IP MISS and CALLS caps would each silently become their own much
+# tighter site-wide cap — 120/min for CALLS, 5x tighter than the 600-miss
+# per-net budget the collapse path is meant to rely on instead.
+# `_track_rate_limited` detects that case (TRUSTED_PROXY_IPS empty but an
+# X-Forwarded-For header present) and suspends BOTH per-IP caps for it
+# (T-017), presuming the peer is an unconfigured proxy; the per-net miss
+# cap — still keyed on the proxy's one address — is the bound instead. On
+# a collapsed bucket the "network" IS the proxy's own /24 or /48, so that
+# budget is once again a single site-wide one for that install, same as
+# before T-122. T-121: that presumption alone is spoofable on a DIRECT
+# install — any client could add its own X-Forwarded-For header to lift
+# its own ceiling from the 30-miss cap all the way to the 600-miss-per-net
+# budget — so the collapse additionally requires the direct TCP peer to
+# look like a proxy: loopback or an RFC-1918/private address (see
+# `_peer_is_private`). A public peer's X-Forwarded-For is ignored for this
+# purpose. The remaining trade-off: a reverse proxy that itself sits on a
+# public IP still needs TRUSTED_PROXY_IPS configured, or its visitors
+# share the tighter per-IP miss cap.
 #
 # In-process state, so it assumes the single uvicorn worker the Dockerfile
 # starts: `--workers N` would multiply every cap by N.
@@ -1133,10 +1135,10 @@ def _track_rate_net_key(host: str) -> str:
     """The source network a miss is budgeted against (T-122): IPv4 hosts
     collapse to their /24, IPv6 hosts to their /48, so a flood spread over
     many addresses on one network still shares one budget. A host that does
-    not parse as an IP — the `__no_ip_...` placeholder `_get_client_ip`
-    mints when there is no peer, or some other unrecognisable string — gets
-    its own key equal to the raw host: fail closed, one bucket per source
-    rather than one shared by everything unparseable."""
+    not parse as an IP gets its own key equal to the raw host: fail closed,
+    one bucket per unparseable string. T-012: `_track_rate_limited` no
+    longer hands this a per-request-unique `__no_ip_...` placeholder for
+    the no-peer case — it collapses that onto one shared sentinel first."""
     try:
         addr = ipaddress.ip_address(host)
     except ValueError:
@@ -1181,18 +1183,22 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     When TRUSTED_PROXY_IPS is unset and the request still carries an
     X-Forwarded-For header, `_get_client_ip` cannot unwrap it and every
     visitor collapses onto the proxy's one address — see the module-level
-    comment above the caps. That case suspends the per-IP MISS cap alone
-    (no reservation is made for it either), but only when the direct peer
-    is also plausibly the unconfigured proxy itself — loopback or private,
-    per `_peer_is_private` (T-121) — since otherwise any public-internet
-    client could set its own X-Forwarded-For to buy the same suspension.
-    The per-IP CALLS cap and the per-net miss cap, both keyed on that same
+    comment above the caps. That case suspends BOTH the per-IP MISS and
+    CALLS caps (T-017; no reservation is made for either), but only when
+    the direct peer is also plausibly the unconfigured proxy itself —
+    loopback or private, per `_peer_is_private` (T-121) — since otherwise
+    any public-internet client could set its own X-Forwarded-For to buy
+    the same suspension. The per-net miss cap, keyed on that same
     collapsed address (T-122: on a collapsed bucket the "network" is the
     proxy's own /24 or /48, so this is once again a single site-wide
-    budget), still apply exactly as they do for a direct, unproxied
-    install."""
+    budget), is the only bound left — the same budget that already limits
+    every other network's traffic too."""
     now = time.monotonic()
     host = _get_client_ip(request)
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        host = "__no_ip__"  # no real peer, or unparseable — one shared, cappable bucket (T-012)
     net = _track_rate_net_key(host)
     collapsed = (
         not auth_routes._TRUSTED_PROXY_IPS
@@ -1211,13 +1217,13 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     misses = live(_track_rate_ip_misses.get(host, ()))
     net_misses = live(_track_rate_net_misses.get(net, ()))
     if (
-        len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP
+        (not collapsed and len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP)
         or (not collapsed and len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP)
         or len(net_misses) >= _TRACK_RATE_MAX_MISSES_PER_NET
     ):
         return None
-    calls.append(now)
     if not collapsed:
+        calls.append(now)
         misses.append(now)
     net_misses.append(now)
     _track_rate_ip_calls[host] = calls

@@ -2960,6 +2960,78 @@ async def test_run_sync_loop_survives_a_failing_wake_drain(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
+async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_payment_links(monkeypatch, caplog):
+    """T-016: ``purge_tracking_views`` ends in its own ``db.commit()``
+    (aito_tracking.py) -- a failed commit (e.g. SQLite "database is locked")
+    leaves the shared per-tick session poisoned, and the very next block in
+    the same tick is ``reconcile_payment_links`` on that same ``db``. Without
+    a rollback in the purge's ``except``, that poisoned session would raise
+    its own unrelated ``InvalidRequestError`` there instead of ever running
+    the reconcile -- and would mask the lock that actually caused the purge
+    to fail. Prove the fix: when purge raises, the tick still rolls the
+    session back AND still calls ``reconcile_payment_links`` on it.
+
+    Driven against the loop's own collaborators, like the two failing-tick
+    tests above it, rather than a real database -- this is about which
+    collaborators get called on which session, not persistence.
+    """
+    import asyncio
+    import contextlib as _contextlib
+
+    from backend.app.services import aito_invoice_poll, aito_payment_links, aito_quote_sync
+
+    class FakeDB:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+    fake_db = FakeDB()
+
+    @_contextlib.asynccontextmanager
+    async def fake_session():
+        yield fake_db
+
+    reconcile_called_with: list[object] = []
+    reconcile_done = asyncio.Event()
+
+    async def fake_purge_tracking_views(db):
+        raise RuntimeError("database is locked")
+
+    async def fake_reconcile_payment_links(db):
+        reconcile_called_with.append(db)
+        reconcile_done.set()
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    # Long interval: only one periodic tick should fire during this test.
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _always(0))
+    monkeypatch.setattr(aito_invoice_poll, "poll_invoices", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", fake_purge_tracking_views)
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", fake_reconcile_payment_links)
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("WARNING"):
+            await asyncio.wait_for(reconcile_done.wait(), timeout=10)
+        assert "Tracking-view purge failed" in caplog.text
+        # The reconcile ran on the SAME (now-rolled-back) session, not a
+        # fresh one -- proving the rollback happened in place rather than by
+        # abandoning the poisoned session.
+        assert reconcile_called_with == [fake_db]
+        assert fake_db.rollback_calls == 1
+    finally:
+        loop_task.cancel()
+        with _contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
 async def test_sync_interval_falls_back_to_three_hundred_seconds(db_session):
     from backend.app.services.aito_quote_sync import sync_interval_seconds
 

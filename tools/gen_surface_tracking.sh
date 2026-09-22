@@ -8,20 +8,20 @@ cd "$(dirname "$0")/.." || exit 1
 
 R1='./venv/bin/python3 -c "from backend.app.main import app; [print(r.path, sorted(r.methods)) for r in sorted(app.routes, key=lambda r: r.path) if hasattr(r, \"methods\") and (\"track\" in r.path)]" 2>/dev/null'
 R2='grep -hE "^(def|class|async def) [a-zA-Z]" backend/app/services/aito_tracking.py | sort'
-R3='grep -nE "^(def|class|async def) _[a-zA-Z]|^_[A-Z_]+ = |^[A-Z_]+ = " backend/app/services/aito_tracking.py | sed "s/:.*def /: def /; s/ = .*/ =/" | sort -t: -k1 -n'
-R4='grep -nE "^(def|async def) _?(track|peer_is_private|release_miss|reset_track|shipping_names|island_labels|external_url)[a-zA-Z_]*\(|^_TRACK_RATE_[A-Z_]+ = |^_track_rate_[a-z_]+: " backend/app/api/routes/aito.py | sed "s/ = .*/ =/; s/: dict.*/:/" | sort -t: -k1 -n'
-R5='grep -nE "^@router\.(get|post|put|delete)\(\"[^\"]*track[^\"]*\"" backend/app/api/routes/aito.py'
+R3='grep -nE "^(def|class|async def) _[a-zA-Z]|^_[A-Z_]+ = |^[A-Z_]+ = " backend/app/services/aito_tracking.py | sed "s/:.*def /: def /; s/ = .*/ =/" | sort -t: -k1 -n | cut -d: -f2- | sed "s/^ *//"'
+R4='grep -nE "^(def|async def) _?(track|peer_is_private|release_miss|reset_track|shipping_names|island_labels|external_url)[a-zA-Z_]*\(|^_TRACK_RATE_[A-Z_]+ = |^_track_rate_[a-z_]+: " backend/app/api/routes/aito.py | sed "s/ = .*/ =/; s/: dict.*/:/" | sort -t: -k1 -n | cut -d: -f2- | sed "s/^ *//"'
+R5='grep -E "^@router\.(get|post|put|delete)\(\"[^\"]*track[^\"]*\"" backend/app/api/routes/aito.py'
 R6='grep -hoE "^class AitoTracking[A-Za-z0-9_]*" backend/app/schemas/aito.py | sort'
 R7='./venv/bin/python3 -c "
 import json
 from backend.app.schemas import aito as s
 models = {n: getattr(s, n) for n in dir(s) if n.startswith(\"AitoTracking\")}
 print(json.dumps({n: {f: str(x.annotation) for f, x in sorted(m.model_fields.items())} for n, m in sorted(models.items())}, indent=1))" 2>/dev/null'
-R8='grep -nE "^def _is_tracking_page|^_TRACKING_HTML_HEADERS = |\"/api/v1/aito/track/\"" backend/app/main.py'
+R8='grep -E "^def _is_tracking_page|^_TRACKING_HTML_HEADERS = |\"/api/v1/aito/track/\"" backend/app/main.py'
 R9='grep -oE "^class AitoTrackingView|^    [a-z_]+: Mapped\[[^]]*\]|Index\(\"[^\"]*\"" backend/app/models/aito_tracking_view.py'
-R10='grep -nE "tracking_token|aito_tracking_views" backend/app/core/database.py | sed "s/^\([0-9]*\):\s*/\1: /" | cut -c1-140'
+R10='grep -E "tracking_token|aito_tracking_views" backend/app/core/database.py | cut -c1-140'
 R11='grep -rhoE "^export (default function|function|const|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/pages/AitoTrackPage.tsx frontend/src/pages/AitoTrackEntryPage.tsx frontend/src/components/aito/TrackCollapse.tsx frontend/src/components/aito/TrackingCodeInput.tsx frontend/src/components/aito/TrackingInvoice.tsx frontend/src/components/aito/TrackingLanguageSelect.tsx frontend/src/components/aito/TrackingLinkControl.tsx frontend/src/components/aito/TrackingPanel.tsx frontend/src/components/aito/TrackingPayment.tsx frontend/src/components/aito/TrackingPaymentMethods.tsx frontend/src/components/aito/TrackingRail.tsx frontend/src/components/aito/TrackingShopPanel.tsx frontend/src/components/aito/trackingShell.tsx frontend/src/hooks/useTrackingLanguage.ts frontend/src/hooks/useTrackingPanel.ts frontend/src/utils/aitoTracking.ts frontend/src/utils/trackingCode.ts frontend/src/utils/trackingShell.ts | sort'
-R12='grep -nE "AitoTrack|/t/|/track" frontend/src/App.tsx | sed "s/^\([0-9]*\):\s*/\1: /"'
+R12='grep -E "AitoTrack|/t/|/track" frontend/src/App.tsx'
 R13='grep -ohE "AitoTracking[A-Za-z0-9_]*|getAitoTracking[A-Za-z]*|regenerateAitoTrackingToken|tracking_configured" frontend/src/api/client.ts | sort -u'
 R14='grep -rhoE "aito\.track(ing)?[a-zA-Z0-9_.]*" frontend/src/pages/AitoTrackPage.tsx frontend/src/pages/AitoTrackEntryPage.tsx frontend/src/components/aito/Track*.tsx frontend/src/components/aito/trackingShell.tsx frontend/src/utils/aitoTracking.ts frontend/src/hooks/useTrackingLanguage.ts | sort -u'
 R15='grep -oE "^\.(animate-track|code-|track-)[A-Za-z0-9_-]*|^@keyframes (track|code)[A-Za-z0-9_-]*" frontend/src/index.css | sort -u'
