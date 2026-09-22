@@ -13,11 +13,14 @@ from sqlalchemy import select
 from backend.app.models.aito_client_rating import AitoClientRating
 from backend.app.schemas.aito import AitoClientRatingResponse
 from backend.app.services.aito_client_rating import (
+    CACHE_TTL,
     GRACE_DAYS,
     ON_TIME_SLACK_DAYS,
     ClientRating,
     rate_invoices,
+    read_client_rating,
 )
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 TODAY = date(2026, 9, 22)
 
@@ -207,3 +210,105 @@ def test_response_schema_defaults_to_unavailable_shape():
         "computed_at": None,
         "stale": False,
     }
+
+
+NOW = datetime(2026, 9, 22, 12, 0, 0)
+
+
+def _fake_books(monkeypatch, rows: list[dict] | Exception, calls: list[str] | None = None):
+    async def fake_list(db, customer_id):
+        if calls is not None:
+            calls.append(customer_id)
+        if isinstance(rows, Exception):
+            raise rows
+        return list(rows)
+
+    monkeypatch.setattr(zoho_service, "list_customer_invoices", fake_list)
+
+
+@pytest.mark.asyncio
+async def test_cache_miss_reads_books_scores_and_writes_the_row(db_session, monkeypatch):
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, body.reason, body.settled_count, body.stale) == ("good", "punctual", 4, False)
+    assert body.computed_at == NOW
+    assert calls == ["C1"]
+    row = (await db_session.execute(select(AitoClientRating))).scalar_one()
+    assert (row.customer_id, row.tier, row.computed_at) == ("C1", "good", NOW)
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_inside_the_ttl_skips_books(db_session, monkeypatch):
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+    await read_client_rating(db_session, "C1", now=NOW)
+
+    later = await read_client_rating(db_session, "C1", now=NOW + CACHE_TTL - timedelta(seconds=1))
+
+    assert later.tier == "good"
+    assert later.computed_at == NOW
+    assert calls == ["C1"]
+
+
+@pytest.mark.asyncio
+async def test_ttl_expiry_recomputes_and_refresh_forces_it(db_session, monkeypatch):
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+    await read_client_rating(db_session, "C1", now=NOW)
+
+    expired = await read_client_rating(db_session, "C1", now=NOW + CACHE_TTL)
+    forced = await read_client_rating(db_session, "C1", refresh=True, now=NOW + CACHE_TTL + timedelta(minutes=1))
+
+    assert expired.computed_at == NOW + CACHE_TTL
+    assert forced.computed_at == NOW + CACHE_TTL + timedelta(minutes=1)
+    assert calls == ["C1", "C1", "C1"]
+
+
+@pytest.mark.asyncio
+async def test_books_failure_with_a_cached_row_returns_it_stale(db_session, monkeypatch):
+    _fake_books(monkeypatch, _paid(4))
+    await read_client_rating(db_session, "C1", now=NOW)
+    _fake_books(monkeypatch, ZohoUpstreamError("boom"))
+
+    body = await read_client_rating(db_session, "C1", now=NOW + CACHE_TTL)
+
+    assert (body.tier, body.stale, body.computed_at) == ("good", True, NOW)
+
+
+@pytest.mark.asyncio
+async def test_books_failure_without_a_cached_row_is_unavailable(db_session, monkeypatch):
+    _fake_books(monkeypatch, ZohoUpstreamError("boom"))
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, body.reason, body.stale, body.computed_at) == ("unavailable", None, False, None)
+    assert (await db_session.execute(select(AitoClientRating))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_does_not_raise(db_session, monkeypatch):
+    _fake_books(monkeypatch, ZohoRateLimited("throttled", retry_after=30))
+    body = await read_client_rating(db_session, "C1", now=NOW)
+    assert body.tier == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_default_contact_and_empty_id_are_new_and_never_read_books(db_session, monkeypatch):
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+
+    async def default_contact(db):
+        return ("WALKIN", "Client de passage")
+
+    monkeypatch.setattr(zoho_service, "get_default_contact", default_contact)
+
+    walk_in = await read_client_rating(db_session, "WALKIN", now=NOW)
+    empty = await read_client_rating(db_session, "", now=NOW)
+    none = await read_client_rating(db_session, None, now=NOW)
+
+    assert [b.tier for b in (walk_in, empty, none)] == ["new", "new", "new"]
+    assert calls == []
+    assert (await db_session.execute(select(AitoClientRating))).first() is None

@@ -26,8 +26,17 @@ Why the rules are what they are
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.models.aito_client_rating import AitoClientRating
+from backend.app.schemas.aito import AitoClientRatingResponse
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
+
+logger = logging.getLogger(__name__)
 
 # Overdue days before an open invoice forces `bad`, whatever the history.
 GRACE_DAYS = 7
@@ -159,3 +168,74 @@ def rate_invoices(rows: list[dict], today: date) -> ClientRating:
     if settled >= GOOD_MIN_SETTLED and ratio >= GOOD_MIN_ON_TIME_RATIO and past_due == 0:
         return _make("good", "punctual")
     return _make("medium", "mixed")
+
+
+def _response(row: AitoClientRating, *, stale: bool) -> AitoClientRatingResponse:
+    return AitoClientRatingResponse(
+        tier=row.tier,
+        reason=row.reason,
+        settled_count=row.settled_count,
+        on_time_count=row.on_time_count,
+        overdue_count=row.overdue_count,
+        past_due_count=row.past_due_count,
+        worst_overdue_days=row.worst_overdue_days,
+        worst_overdue_number=row.worst_overdue_number,
+        computed_at=row.computed_at,
+        stale=stale,
+    )
+
+
+_NEW = AitoClientRatingResponse(tier="new", reason="new", computed_at=None, stale=False)
+_UNAVAILABLE = AitoClientRatingResponse(tier="unavailable", reason=None, computed_at=None, stale=False)
+
+
+async def read_client_rating(
+    db: AsyncSession,
+    customer_id: str | None,
+    *,
+    refresh: bool = False,
+    now: datetime | None = None,
+) -> AitoClientRatingResponse:
+    """The customer's rating: cached when fresh, recomputed from Books
+    otherwise, degraded rather than raised when Books cannot answer.
+
+    Never raises to the route. This decorates a name; a 502 over it would
+    take the panel down for a pill. A 429 is logged and treated like any
+    other read failure — there is no retry loop here, the next open of the
+    panel is the retry.
+
+    ``now`` is injectable for the tests; production passes nothing.
+    """
+    if not customer_id:
+        return _NEW
+    default_id, _name = await zoho_service.get_default_contact(db)
+    if customer_id == default_id:
+        # The walk-in contact's invoices belong to everyone — no verdict.
+        return _NEW
+
+    moment = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    cached = await db.get(AitoClientRating, customer_id)
+    if cached is not None and not refresh and moment - cached.computed_at < CACHE_TTL:
+        return _response(cached, stale=False)
+
+    try:
+        rows = await zoho_service.list_customer_invoices(db, customer_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError, ZohoRateLimited) as e:
+        logger.warning("Aito: could not read customer %s's invoices for the rating: %s", customer_id, e)
+        return _response(cached, stale=True) if cached is not None else _UNAVAILABLE
+
+    rating = rate_invoices(rows, moment.date())
+    if cached is None:
+        cached = AitoClientRating(customer_id=customer_id)
+        db.add(cached)
+    cached.tier = rating.tier
+    cached.reason = rating.reason
+    cached.settled_count = rating.settled_count
+    cached.on_time_count = rating.on_time_count
+    cached.overdue_count = rating.overdue_count
+    cached.past_due_count = rating.past_due_count
+    cached.worst_overdue_days = rating.worst_overdue_days
+    cached.worst_overdue_number = rating.worst_overdue_number
+    cached.computed_at = moment
+    await db.commit()
+    return _response(cached, stale=False)
