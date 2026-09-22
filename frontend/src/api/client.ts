@@ -4324,6 +4324,27 @@ export interface AitoClientHistory {
   latest_social: { network: string; handle: string } | null;
 }
 
+export type AitoClientRatingTier = 'good' | 'medium' | 'bad' | 'new' | 'unavailable';
+export type AitoClientRatingReason = 'overdue' | 'chronic' | 'new' | 'punctual' | 'mixed';
+
+/** A customer's payment rating — see routes/aito.py:get_client_rating and
+ *  docs/superpowers/specs/2026-09-22-aito-client-rating-design.md.
+ *  `unavailable` means Books could not be read and nothing was cached: the
+ *  pill stays hidden. `stale` means the figures are the cached ones because
+ *  Books could not be read just now. */
+export interface AitoClientRating {
+  tier: AitoClientRatingTier;
+  reason: AitoClientRatingReason | null;
+  settled_count: number;
+  on_time_count: number;
+  overdue_count: number;
+  past_due_count: number;
+  worst_overdue_days: number;
+  worst_overdue_number: string | null;
+  computed_at: string | null;
+  stale: boolean;
+}
+
 export type AitoTrackingInvoice = 'paid' | 'unpaid' | 'overdue';
 
 /** One part line. `quantity` is null unless every priced service on the
@@ -8344,6 +8365,10 @@ export const api = {
   },
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
+  getAitoClientRating: (clientId: string, refresh = false) =>
+    request<AitoClientRating>(
+      `/aito/clients/${encodeURIComponent(clientId)}/rating${refresh ? '?refresh=1' : ''}`,
+    ),
   /** The public tracking page's payload — see routes/aito.py:get_tracking.
    *  No auth: the token in the URL is the credential. An optional signal
    *  lets a caller (the /t entry page) abort a hung check on a timeout. */
