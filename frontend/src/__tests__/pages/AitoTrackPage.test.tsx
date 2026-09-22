@@ -39,6 +39,17 @@ const FIXTURE: AitoTracking = {
   invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
 };
 
+// FIXTURE.due_date is a fixed calendar day, and etaCopy() (aitoTracking.ts)
+// reads it against the live clock — correctly, in production: a due date in
+// the past must read as "being updated", not sit there stale. That means a
+// literal system clock would eventually run past 2026-09-20 and flip these
+// two assertions from "a real formatted date" to "updating" out from under
+// us. Pin the clock to a day before the fixture's due date instead of
+// touching etaCopy or the fixture — real timers everywhere else in the file
+// (advancing them here would need `shouldAdvanceTime` for userEvent/RTL's
+// own polling to keep working, same as the hung-request test below).
+const FIXED_TODAY = new Date('2026-09-10T12:00:00Z');
+
 function mockTrack(body: AitoTracking | null) {
   server.use(
     http.get('/api/v1/aito/track/:token', () =>
@@ -60,33 +71,39 @@ describe('AitoTrackPage', () => {
   });
 
   it('renders the logo, reference, rail, hero state with the date and update line, and the parts', async () => {
-    mockTrack(FIXTURE);
-    renderAt('tok');
-    expect(await screen.findByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
-    expect(screen.getByText('Nous préparons actuellement vos pièces.')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Aito3D' })).toBeInTheDocument();
-    expect(screen.getByText('Devis n° EST-000142')).toBeInTheDocument();
-    const state = screen.getByTestId('track-state');
-    expect(within(state).getByText('Disponibilité estimée')).toBeInTheDocument();
-    expect(within(state).getByText('20 septembre 2026')).toBeInTheDocument();
-    expect(within(state).getByText(/^Mis à jour le 3 septembre à \d{2}:\d{2}$/)).toBeInTheDocument();
-    expect(screen.getByText('Support GoPro')).toBeInTheDocument();
-    expect(screen.getByText('Pièce 2')).toBeInTheDocument();
-    expect(screen.getByText('×2')).toBeInTheDocument();
-    expect(screen.getByTestId('track-stage-print')).toHaveAttribute('aria-current', 'step');
-    expect(screen.getByTestId('track-stage-devis')).toHaveAttribute('data-state', 'done');
-    expect(screen.getByTestId('track-stage-finish')).toHaveAttribute('data-state', 'todo');
-    expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Récupérée');
-    expect(screen.getByText('Étape 5 sur 7')).toBeInTheDocument();
-    expect(screen.getByTestId('track-stage-scan')).toHaveTextContent('Scan 3D');
-    expect(document.title).toBe('Suivi de commande · Aito 3D');
-    expect(document.documentElement.lang).toBe('fr');
-    expect(document.title).toBe('Suivi de commande · Aito 3D');
-    // Contact lives in the footer only — once on the card, not under the
-    // logo. (The shop panel beside the card repeats it as a contact row.)
-    const card = screen.getByTestId('track-footer').closest('.track-card')!;
-    expect(within(card as HTMLElement).getAllByText(/contact@aito3d\.fr/)).toHaveLength(1);
-    expect(screen.queryByTestId('track-invoice')).not.toBeInTheDocument();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(FIXED_TODAY);
+    try {
+      mockTrack(FIXTURE);
+      renderAt('tok');
+      expect(await screen.findByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
+      expect(screen.getByText('Nous préparons actuellement vos pièces.')).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: 'Aito3D' })).toBeInTheDocument();
+      expect(screen.getByText('Devis n° EST-000142')).toBeInTheDocument();
+      const state = screen.getByTestId('track-state');
+      expect(within(state).getByText('Disponibilité estimée')).toBeInTheDocument();
+      expect(within(state).getByText('20 septembre 2026')).toBeInTheDocument();
+      expect(within(state).getByText(/^Mis à jour le 3 septembre à \d{2}:\d{2}$/)).toBeInTheDocument();
+      expect(screen.getByText('Support GoPro')).toBeInTheDocument();
+      expect(screen.getByText('Pièce 2')).toBeInTheDocument();
+      expect(screen.getByText('×2')).toBeInTheDocument();
+      expect(screen.getByTestId('track-stage-print')).toHaveAttribute('aria-current', 'step');
+      expect(screen.getByTestId('track-stage-devis')).toHaveAttribute('data-state', 'done');
+      expect(screen.getByTestId('track-stage-finish')).toHaveAttribute('data-state', 'todo');
+      expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Récupérée');
+      expect(screen.getByText('Étape 5 sur 7')).toBeInTheDocument();
+      expect(screen.getByTestId('track-stage-scan')).toHaveTextContent('Scan 3D');
+      expect(document.title).toBe('Suivi de commande · Aito 3D');
+      expect(document.documentElement.lang).toBe('fr');
+      expect(document.title).toBe('Suivi de commande · Aito 3D');
+      // Contact lives in the footer only — once on the card, not under the
+      // logo. (The shop panel beside the card repeats it as a contact row.)
+      const card = screen.getByTestId('track-footer').closest('.track-card')!;
+      expect(within(card as HTMLElement).getAllByText(/contact@aito3d\.fr/)).toHaveLength(1);
+      expect(screen.queryByTestId('track-invoice')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('omits the reference line and the date when absent', async () => {
@@ -489,21 +506,27 @@ describe('AitoTrackPage first-load choreography', () => {
 
 describe('AitoTrackPage language', () => {
   it('offers every app language in the pill and re-renders in place on a switch', async () => {
-    mockTrack(FIXTURE);
-    renderAt('lang');
-    await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
-    const select = screen.getByTestId('track-language') as HTMLSelectElement;
-    expect(select.value).toBe('fr');
-    expect(select.options.length).toBe(14);
-    expect(screen.getByRole('option', { name: 'Deutsch' })).toBeInTheDocument();
-    await userEvent.selectOptions(select, 'en');
-    expect(await screen.findByRole('heading', { level: 2, name: 'In production' })).toBeInTheDocument();
-    expect(screen.getByText('Quote no. EST-000142')).toBeInTheDocument();
-    expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Collected');
-    expect(screen.getByText('September 20, 2026')).toBeInTheDocument();
-    expect(document.title).toBe('Order tracking · Aito 3D');
-    // Same nodes, no replay: the entrance classes are still the first ones.
-    expect(screen.getByTestId('track-content')).toHaveAttribute('data-entrance', 'true');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(FIXED_TODAY);
+    try {
+      mockTrack(FIXTURE);
+      renderAt('lang');
+      await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
+      const select = screen.getByTestId('track-language') as HTMLSelectElement;
+      expect(select.value).toBe('fr');
+      expect(select.options.length).toBe(14);
+      expect(screen.getByRole('option', { name: 'Deutsch' })).toBeInTheDocument();
+      await userEvent.selectOptions(select, 'en');
+      expect(await screen.findByRole('heading', { level: 2, name: 'In production' })).toBeInTheDocument();
+      expect(screen.getByText('Quote no. EST-000142')).toBeInTheDocument();
+      expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Collected');
+      expect(screen.getByText('September 20, 2026')).toBeInTheDocument();
+      expect(document.title).toBe('Order tracking · Aito 3D');
+      // Same nodes, no replay: the entrance classes are still the first ones.
+      expect(screen.getByTestId('track-content')).toHaveAttribute('data-entrance', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('falls back to French when the browser asks for nothing the app ships', async () => {
