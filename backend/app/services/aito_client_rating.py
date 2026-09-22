@@ -30,6 +30,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_client_rating import AitoClientRating
@@ -185,6 +186,21 @@ def _response(row: AitoClientRating, *, stale: bool) -> AitoClientRatingResponse
     )
 
 
+def _response_from_rating(rating: ClientRating, computed_at: datetime) -> AitoClientRatingResponse:
+    return AitoClientRatingResponse(
+        tier=rating.tier,
+        reason=rating.reason,
+        settled_count=rating.settled_count,
+        on_time_count=rating.on_time_count,
+        overdue_count=rating.overdue_count,
+        past_due_count=rating.past_due_count,
+        worst_overdue_days=rating.worst_overdue_days,
+        worst_overdue_number=rating.worst_overdue_number,
+        computed_at=computed_at,
+        stale=False,
+    )
+
+
 _NEW = AitoClientRatingResponse(tier="new", reason="new", computed_at=None, stale=False)
 _UNAVAILABLE = AitoClientRatingResponse(tier="unavailable", reason=None, computed_at=None, stale=False)
 
@@ -237,5 +253,14 @@ async def read_client_rating(
     cached.worst_overdue_days = rating.worst_overdue_days
     cached.worst_overdue_number = rating.worst_overdue_number
     cached.computed_at = moment
-    await db.commit()
-    return _response(cached, stale=False)
+    try:
+        await db.commit()
+    except SQLAlchemyError as e:
+        await db.rollback()
+        logger.warning("Aito: could not cache customer %s's rating: %s", customer_id, e)
+        # The rating itself is correct; only the cache write was lost. Build
+        # the response from `rating`, not `cached` — after a rollback the
+        # ORM row's attributes are expired and reading them raises
+        # MissingGreenlet.
+        return _response_from_rating(rating, moment)
+    return _response_from_rating(rating, moment)

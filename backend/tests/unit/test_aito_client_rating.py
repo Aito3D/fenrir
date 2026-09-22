@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from backend.app.models.aito_client_rating import AitoClientRating
 from backend.app.schemas.aito import AitoClientRatingResponse
@@ -312,3 +313,17 @@ async def test_default_contact_and_empty_id_are_new_and_never_read_books(db_sess
     assert [b.tier for b in (walk_in, empty, none)] == ["new", "new", "new"]
     assert calls == []
     assert (await db_session.execute(select(AitoClientRating))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_cache_write_failure_still_returns_the_fresh_rating(db_session, monkeypatch):
+    _fake_books(monkeypatch, _paid(4))
+
+    async def failing_commit():
+        raise OperationalError("db is locked", None, Exception("locked"))
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, body.stale, body.computed_at) == ("good", False, NOW)
