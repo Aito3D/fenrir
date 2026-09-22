@@ -369,6 +369,8 @@ export default {
       ariaLabel: '客戶評級：{{tier}}。{{reason}}',
       overdue_one: '{{count}} 張發票逾期 · 最長 {{days}} 天，{{number}}',
       overdue_other: '{{count}} 張發票逾期 · 最長 {{days}} 天，{{number}}',
+      overdueNoNumber_one: '{{count}} 張發票逾期 · 最長 {{days}} 天',
+      overdueNoNumber_other: '{{count}} 張發票逾期 · 最長 {{days}} 天',
       chronic: '經常延遲付款 · {{settled}} 張中 {{onTime}} 張準時付款',
       punctual: '{{settled}} 張發票中 {{onTime}} 張準時付款',
       mixed: '{{settled}} 張中 {{onTime}} 張準時付款',

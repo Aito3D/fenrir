@@ -34,11 +34,16 @@ function useReasonText(rating: AitoClientRating): string {
   const { t } = useTranslation();
   switch (rating.reason) {
     case 'overdue':
-      return t('aito.rating.overdue', {
-        count: rating.overdue_count,
-        days: rating.worst_overdue_days,
-        number: rating.worst_overdue_number ?? '',
-      });
+      return rating.worst_overdue_number
+        ? t('aito.rating.overdue', {
+            count: rating.overdue_count,
+            days: rating.worst_overdue_days,
+            number: rating.worst_overdue_number,
+          })
+        : t('aito.rating.overdueNoNumber', {
+            count: rating.overdue_count,
+            days: rating.worst_overdue_days,
+          });
     case 'chronic':
       return t('aito.rating.chronic', { onTime: rating.on_time_count, settled: rating.settled_count });
     case 'punctual':

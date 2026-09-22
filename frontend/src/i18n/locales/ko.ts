@@ -369,6 +369,8 @@ export default {
       ariaLabel: '고객 평가: {{tier}}. {{reason}}',
       overdue_one: '{{count}}건 연체 · 최장 {{days}}일, {{number}}',
       overdue_other: '{{count}}건 연체 · 최장 {{days}}일, {{number}}',
+      overdueNoNumber_one: '{{count}}건 연체 · 최장 {{days}}일',
+      overdueNoNumber_other: '{{count}}건 연체 · 최장 {{days}}일',
       chronic: '자주 늦게 결제 · {{settled}}건 중 {{onTime}}건 기한 내 결제',
       punctual: '{{settled}}건 중 {{onTime}}건 기한 내 결제',
       mixed: '{{settled}}건 중 {{onTime}}건 기한 내',

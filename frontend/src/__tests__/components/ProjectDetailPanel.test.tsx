@@ -3613,8 +3613,15 @@ describe('client rating on the masthead', () => {
   it('shows the pill after the client name, inside the heading', async () => {
     server.use(http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(ratingBody('bad', 'overdue'))));
     renderPanel();
-    const pill = await screen.findByText('Bad');
-    expect(pill.closest('h2')).toHaveTextContent(/ACME SARL/);
+    const pillText = await screen.findByText('Bad');
+    const heading = pillText.closest('h2');
+    expect(heading).toHaveTextContent(/ACME SARL/);
+    const pill = pillText.closest('[data-tier]');
+    expect(pill).not.toBeNull();
+    expect(heading!.querySelectorAll('[data-tier]')).toHaveLength(1);
+    // The pill sits inside the Tooltip's wrapper span; the name is the
+    // wrapper's previous sibling in the heading, not the pill's own.
+    expect(pill!.parentElement?.previousElementSibling?.textContent).toBe('ACME SARL');
   });
 
   it('hides a new client on the masthead', async () => {

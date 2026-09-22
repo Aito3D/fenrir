@@ -369,6 +369,8 @@ export default {
       ariaLabel: 'Avaliação do cliente: {{tier}}. {{reason}}',
       overdue_one: '{{count}} fatura vencida · pior {{days}} dias, {{number}}',
       overdue_other: '{{count}} faturas vencidas · pior {{days}} dias, {{number}}',
+      overdueNoNumber_one: '{{count}} fatura vencida · pior {{days}} dias',
+      overdueNoNumber_other: '{{count}} faturas vencidas · pior {{days}} dias',
       chronic: 'Costuma pagar atrasado · {{onTime}} de {{settled}} pagas em dia',
       punctual: '{{onTime}} de {{settled}} faturas pagas em dia',
       mixed: '{{onTime}} de {{settled}} pagas em dia',

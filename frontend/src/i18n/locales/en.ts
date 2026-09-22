@@ -372,6 +372,8 @@ export default {
       ariaLabel: 'Client rating: {{tier}}. {{reason}}',
       overdue_one: '{{count}} invoice overdue · worst {{days}} days, {{number}}',
       overdue_other: '{{count}} invoices overdue · worst {{days}} days, {{number}}',
+      overdueNoNumber_one: '{{count}} invoice overdue · worst {{days}} days',
+      overdueNoNumber_other: '{{count}} invoices overdue · worst {{days}} days',
       chronic: 'Usually pays late · {{onTime}} of {{settled}} paid on time',
       punctual: '{{onTime}} of {{settled}} invoices paid on time',
       mixed: '{{onTime}} of {{settled}} paid on time',

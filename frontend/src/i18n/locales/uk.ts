@@ -370,6 +370,8 @@ export default {
       ariaLabel: "Рейтинг клієнта: {{tier}}. {{reason}}",
       overdue_one: "{{count}} рахунок прострочено · найгірший {{days}} дн., {{number}}",
       overdue_other: "{{count}} рахунків прострочено · найгірший {{days}} дн., {{number}}",
+      overdueNoNumber_one: "{{count}} рахунок прострочено · найгірший {{days}} дн.",
+      overdueNoNumber_other: "{{count}} рахунків прострочено · найгірший {{days}} дн.",
       chronic: "Зазвичай платить із запізненням · {{onTime}} з {{settled}} оплачено вчасно",
       punctual: "{{onTime}} з {{settled}} рахунків оплачено вчасно",
       mixed: "{{onTime}} з {{settled}} оплачено вчасно",

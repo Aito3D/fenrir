@@ -369,6 +369,8 @@ export default {
       ariaLabel: 'Рейтинг клиента: {{tier}}. {{reason}}',
       overdue_one: '{{count}} счёт просрочен · худший {{days}} дн., {{number}}',
       overdue_other: '{{count}} счетов просрочено · худший {{days}} дн., {{number}}',
+      overdueNoNumber_one: '{{count}} счёт просрочен · худший {{days}} дн.',
+      overdueNoNumber_other: '{{count}} счетов просрочено · худший {{days}} дн.',
       chronic: 'Обычно платит с опозданием · {{onTime}} из {{settled}} оплачены вовремя',
       punctual: '{{onTime}} из {{settled}} счетов оплачены вовремя',
       mixed: '{{onTime}} из {{settled}} оплачены вовремя',

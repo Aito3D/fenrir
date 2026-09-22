@@ -369,6 +369,8 @@ export default {
       ariaLabel: '顧客評価: {{tier}}。{{reason}}',
       overdue_one: '{{count}} 件の請求書が期限超過 · 最長 {{days}} 日、{{number}}',
       overdue_other: '{{count}} 件の請求書が期限超過 · 最長 {{days}} 日、{{number}}',
+      overdueNoNumber_one: '{{count}} 件の請求書が期限超過 · 最長 {{days}} 日',
+      overdueNoNumber_other: '{{count}} 件の請求書が期限超過 · 最長 {{days}} 日',
       chronic: '支払いが遅れがち · {{settled}} 件中 {{onTime}} 件が期日内',
       punctual: '{{settled}} 件中 {{onTime}} 件の請求書が期日内に支払済み',
       mixed: '{{settled}} 件中 {{onTime}} 件が期日内',

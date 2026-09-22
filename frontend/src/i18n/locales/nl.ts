@@ -8207,6 +8207,8 @@ export default {
       ariaLabel: 'Klantbeoordeling: {{tier}}. {{reason}}',
       overdue_one: '{{count}} factuur achterstallig · ergste {{days}} dagen, {{number}}',
       overdue_other: '{{count}} facturen achterstallig · ergste {{days}} dagen, {{number}}',
+      overdueNoNumber_one: '{{count}} factuur achterstallig · ergste {{days}} dagen',
+      overdueNoNumber_other: '{{count}} facturen achterstallig · ergste {{days}} dagen',
       chronic: 'Betaalt meestal te laat · {{onTime}} van {{settled}} op tijd betaald',
       punctual: '{{onTime}} van {{settled}} facturen op tijd betaald',
       mixed: '{{onTime}} van {{settled}} op tijd betaald',

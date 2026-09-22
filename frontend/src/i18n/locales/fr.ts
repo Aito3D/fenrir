@@ -369,6 +369,8 @@ export default {
       ariaLabel: 'Note client : {{tier}}. {{reason}}',
       overdue_one: '{{count}} facture en retard · pire {{days}} jours, {{number}}',
       overdue_other: '{{count}} factures en retard · pire {{days}} jours, {{number}}',
+      overdueNoNumber_one: '{{count}} facture en retard · pire {{days}} jours',
+      overdueNoNumber_other: '{{count}} factures en retard · pire {{days}} jours',
       chronic: 'Paie souvent en retard · {{onTime}} sur {{settled}} payées à temps',
       punctual: '{{onTime}} factures sur {{settled}} payées à temps',
       mixed: '{{onTime}} sur {{settled}} payées à temps',

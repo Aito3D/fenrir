@@ -369,6 +369,8 @@ export default {
       ariaLabel: 'Müşteri puanı: {{tier}}. {{reason}}',
       overdue_one: '{{count}} fatura gecikmiş · en kötüsü {{days}} gün, {{number}}',
       overdue_other: '{{count}} fatura gecikmiş · en kötüsü {{days}} gün, {{number}}',
+      overdueNoNumber_one: '{{count}} fatura gecikmiş · en kötüsü {{days}} gün',
+      overdueNoNumber_other: '{{count}} fatura gecikmiş · en kötüsü {{days}} gün',
       chronic: 'Genellikle geç öder · {{settled}} faturadan {{onTime}} tanesi zamanında ödendi',
       punctual: '{{settled}} faturadan {{onTime}} tanesi zamanında ödendi',
       mixed: '{{settled}} faturadan {{onTime}} tanesi zamanında',

@@ -369,6 +369,8 @@ export default {
       ariaLabel: 'Kundenbewertung: {{tier}}. {{reason}}',
       overdue_one: '{{count}} Rechnung überfällig · schlimmste {{days}} Tage, {{number}}',
       overdue_other: '{{count}} Rechnungen überfällig · schlimmste {{days}} Tage, {{number}}',
+      overdueNoNumber_one: '{{count}} Rechnung überfällig · schlimmste {{days}} Tage',
+      overdueNoNumber_other: '{{count}} Rechnungen überfällig · schlimmste {{days}} Tage',
       chronic: 'Zahlt meist zu spät · {{onTime}} von {{settled}} pünktlich bezahlt',
       punctual: '{{onTime}} von {{settled}} Rechnungen pünktlich bezahlt',
       mixed: '{{onTime}} von {{settled}} pünktlich bezahlt',

@@ -47,6 +47,35 @@ describe('ClientRatingPill', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent(/checked 12m ago/);
   });
 
+  it('explains a single overdue invoice in the singular', () => {
+    render(
+      <ClientRatingPill
+        rating={{ ...base, tier: 'bad', reason: 'overdue', overdue_count: 1, worst_overdue_days: 23, worst_overdue_number: 'FA-26-4321' }}
+      />,
+    );
+    expect(screen.getByRole('tooltip')).toHaveTextContent('1 invoice overdue · worst 23 days, FA-26-4321');
+  });
+
+  it('drops the dangling comma when no invoice number is known', () => {
+    render(
+      <ClientRatingPill
+        rating={{
+          ...base,
+          tier: 'bad',
+          reason: 'overdue',
+          overdue_count: 2,
+          worst_overdue_days: 23,
+          worst_overdue_number: null,
+          computed_at: null,
+        }}
+      />,
+    );
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip.textContent).toContain('worst 23 days');
+    expect(tooltip.textContent?.trim().endsWith(', ')).toBe(false);
+    expect(tooltip.textContent?.trim().endsWith(',')).toBe(false);
+  });
+
   it('explains punctual, chronic and mixed with the counts', () => {
     const { rerender } = render(<ClientRatingPill rating={base} />);
     expect(screen.getByRole('tooltip')).toHaveTextContent('12 of 12 invoices paid on time');
