@@ -209,6 +209,33 @@ describe('StatsView period screens', () => {
     expect(screen.getByTestId('aito-stats-win-rate')).toHaveTextContent('Not enough decided quotes yet');
   });
 
+  it('Sales: says so plainly when the declines are not concentrated in the top band', async () => {
+    await open(
+      'Sales',
+      fixture({
+        conversion: {
+          sent: { count: 6, total: 6000 },
+          accepted: { count: 2, total: 3000 },
+          declined: { count: 4, total: 2200 },
+          acceptance_rate: 0.33,
+        },
+        // The most declines (3) sit in the FIRST band, not the last -- unlike
+        // the "big lost tickets" test above, the tie-break's
+        // `top.declined === mostDeclined` must fail here even though the top
+        // band's own decline count (1) is still > 0.
+        size_bands: [
+          { min: 500, max: 1000, accepted: 0, declined: 3, rate: 0 },
+          { min: 1000, max: 5000, accepted: 2, declined: 1, rate: 0.67 },
+        ],
+      }),
+    );
+    const finding = screen.getByTestId('aito-stats-finding');
+    // count: 4 exercises the `salesLost_other` plural form (declined.count !== 1).
+    expect(finding).toHaveTextContent('4 quotes were lost, worth');
+    expect(finding).toHaveTextContent('2 200'); // money(2200), the interpolated {{total}}
+    expect(finding).not.toHaveTextContent(/The ones you lose are the big ones/);
+  });
+
   it('Time: the finding names the slow stage and the rework, the bars are longest first', async () => {
     await open('Time');
     const finding = screen.getByTestId('aito-stats-finding');
@@ -334,8 +361,33 @@ describe('StatsView period screens', () => {
     expect(islands[1]).toHaveTextContent('Pickup');
   });
 
+  it('Clients: a real but empty period reads clientsNone and still sends the block, not the Empty state', async () => {
+    // `clients` is PRESENT (unlike the "backend predates this block" case
+    // below, which omits it entirely) but both counts are zero -- a real
+    // period where nobody came, as opposed to an older backend that never
+    // sent the block at all.
+    await open('Clients', fixture({ clients: { new: 0, returning: 0, new_total: 0, returning_total: 0 } }));
+    const finding = screen.getByTestId('aito-stats-finding');
+    expect(finding).toHaveTextContent('No new clients in this period.');
+    expect(finding).not.toHaveTextContent('1 new client and 1 returning.');
+
+    const clientsPanel = screen.getByTestId('aito-stats-clients');
+    expect(clientsPanel).not.toHaveTextContent('Nothing happened in this period');
+    expect(clientsPanel).toHaveTextContent('New clients');
+    expect(clientsPanel).toHaveTextContent('Returning clients');
+  });
+
   it('degrades block by block on a backend that predates these blocks', async () => {
-    const { quote_age: _q, size_bands: _s, stage_time: _t, services: _sv, islands: _i, arrivals: _a, ...older } = fixture();
+    const {
+      quote_age: _q,
+      size_bands: _s,
+      stage_time: _t,
+      services: _sv,
+      islands: _i,
+      arrivals: _a,
+      clients: _c,
+      ...older
+    } = fixture();
     const user = await open('Sales', older as AitoStats);
     expect(screen.getByTestId('aito-stats-win-rate')).toHaveTextContent('Not enough decided quotes yet');
     expect(screen.getByTestId('aito-stats-quote-age')).toHaveTextContent('0');
@@ -348,7 +400,9 @@ describe('StatsView period screens', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Clients' }));
     expect(within(screen.getByTestId('aito-stats-arrivals')).getByText('Nothing happened in this period')).toBeInTheDocument();
-    // Blocks that still have data keep rendering.
-    expect(screen.getByTestId('aito-stats-clients')).toHaveTextContent('Returning clients');
+    // `clients` is also omitted by this backend -- distinct from the
+    // present-but-zero case covered above, this reads the Empty state, not
+    // "0 new clients".
+    expect(within(screen.getByTestId('aito-stats-clients')).getByText('Nothing happened in this period')).toBeInTheDocument();
   });
 });
