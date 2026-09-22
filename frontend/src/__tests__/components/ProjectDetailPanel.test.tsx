@@ -557,6 +557,107 @@ describe('ProjectDetailPanel social handle', () => {
   });
 });
 
+describe('ProjectDetailPanel client edit', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const zohoUp = () =>
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: 'walkin', default_contact_name: 'x' }),
+      ),
+      http.get('/api/v1/zoho/contacts/:id', () =>
+        HttpResponse.json({
+          id: 'z1',
+          name: 'ACME SARL',
+          company_name: 'ACME SARL',
+          customer_sub_type: 'business',
+          phone: '',
+          mobile: '+689-87123456',
+          email: 'hi@acme.pf',
+          first_name: '',
+          last_name: '',
+        }),
+      ),
+    );
+
+  it('offers an edit affordance beside the client name that opens the client editor', async () => {
+    zohoUp();
+    const user = userEvent.setup();
+    show();
+    const button = screen.getByRole('button', { name: /edit the client/i });
+    // Revealed on hover of the name, never hidden from the keyboard: the
+    // affordance is in the tree at all times and only its opacity moves.
+    expect(button.className).toMatch(/group-hover/);
+    await user.click(button);
+    expect(await screen.findByLabelText(/company name/i)).toHaveValue('ACME SARL');
+    // The read-only contact row yields to the editor rather than sitting
+    // beside it as a stale copy.
+    expect(screen.queryByRole('button', { name: /edit the social network/i })).not.toBeInTheDocument();
+  });
+
+  it('hides the affordance from a reader who may not edit the card', () => {
+    rtlRender(
+      <QueryClientProvider client={new QueryClient()}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <ProjectDetailPanel canCreate={false} canUpdate={false} canDelete={false} project={project} onClose={vi.fn()} onDelete={vi.fn()} />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole('button', { name: /edit the client/i })).not.toBeInTheDocument();
+  });
+
+  it('writes the saved card into the board cache, closes the editor and refetches the board for the fan-out', async () => {
+    zohoUp();
+    const boardGets = { n: 0 };
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardGets.n += 1;
+        return HttpResponse.json([project]);
+      }),
+      http.put('/api/v1/aito/12/client', () =>
+        HttpResponse.json({ ...project, client_name: 'ACME Pacific', client_email: 'new@acme.pf', version: 2 }),
+      ),
+    );
+    const user = userEvent.setup();
+    const { rerender } = rtlRender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <BoardHost showPanel />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(boardGets.n).toBe(1));
+    await user.click(screen.getByRole('button', { name: /edit the client/i }));
+    const company = await screen.findByLabelText(/company name/i);
+    await waitFor(() => expect(company).toHaveValue('ACME SARL'));
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument());
+    // Sibling cards on the same contact were rewritten server-side; only a
+    // refetch can bring them in.
+    await waitFor(() => expect(boardGets.n).toBe(2));
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <BoardHost showPanel />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+  });
+});
+
 describe('ProjectDetailPanel tasks', () => {
   it('fetches and renders the project\'s tasks on open', async () => {
     show();

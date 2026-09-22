@@ -192,6 +192,11 @@ def _map_contact(contact: dict) -> dict:
         "phone": contact.get("phone", ""),
         "mobile": contact.get("mobile", ""),
         "email": contact.get("email", ""),
+        # Mirrors of the primary contact person, so the panel's client editor
+        # can prefill first/last name from the record Books actually holds
+        # rather than guess a split from the card's display-name snapshot.
+        "first_name": contact.get("first_name", ""),
+        "last_name": contact.get("last_name", ""),
     }
 
 
@@ -1175,18 +1180,26 @@ class ZohoService:
         email: str | None,
         phone: str | None,
         phone_field: str,
+        first_name: str | None = None,
+        last_name: str | None = None,
     ) -> None:
-        """Write email/phone to the contact's primary person.
+        """Write email/phone (and, for a person contact, the name) to the
+        contact's primary person.
 
-        The contact-level ``email``/``phone``/``mobile`` fields are read-only
-        mirrors of the primary contact person, so writes must target the person.
-        A contact with no persons at all gets one created.
+        The contact-level ``email``/``phone``/``mobile``/``first_name``/
+        ``last_name`` fields are read-only mirrors of the primary contact
+        person, so writes must target the person. A contact with no persons
+        at all gets one created.
         """
         contact = (await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {})
         persons = contact.get("contact_persons") or []
         primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
 
         fields: dict = {}
+        if first_name is not None:
+            fields["first_name"] = first_name
+        if last_name is not None:
+            fields["last_name"] = last_name
         if email is not None:
             fields["email"] = email
         if phone is not None:
@@ -1211,6 +1224,54 @@ class ZohoService:
                     **fields,
                 },
             )
+
+    async def update_contact(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        company_name: str | None,
+        first_name: str | None,
+        last_name: str | None,
+        email: str,
+        phone: str,
+        phone_field: str,
+    ) -> str:
+        """Rename a Books customer and rewrite its primary person's coordinates.
+
+        ``company_name`` set means a business contact: the contact name IS the
+        company and the person keeps its own name. Otherwise ``first_name``/
+        ``last_name`` name a person contact and land on both the contact
+        (house-cased display name) and its primary person. Returns the display
+        name Books was given, which is what the Aito card snapshots.
+
+        Two Books calls plus the person read: the contact-level name is a
+        contact write, the coordinates are a person write (see
+        ``update_contact_person``). The name goes first so a rejected rename
+        (duplicate name is Books' usual complaint) leaves the coordinates
+        untouched too.
+        """
+        company = (company_name or "").strip()
+        if company:
+            display_name = company
+            payload: dict = {"contact_name": company, "company_name": company}
+            person_first = person_last = None
+        else:
+            display_name = normalize_display_name(first_name or "", last_name or "")
+            payload = {"contact_name": display_name}
+            person_first = _title_case_segments(first_name or "")
+            person_last = (last_name or "").strip().upper()
+        await self._request(db, "PUT", f"/contacts/{_seg(contact_id)}", json=payload)
+        await self.update_contact_person(
+            db,
+            contact_id,
+            email=email.strip(),
+            phone=phone.strip(),
+            phone_field=phone_field,
+            first_name=person_first,
+            last_name=person_last,
+        )
+        return display_name
 
     async def get_default_contact(self, db: AsyncSession) -> tuple[str, str]:
         """The contact preselected in the Aito modal. Read from settings, never

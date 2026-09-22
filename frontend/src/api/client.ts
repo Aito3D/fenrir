@@ -4803,6 +4803,27 @@ export interface ZohoContact {
   email: string;
 }
 
+/** One contact read by id (GET /zoho/contacts/{id}) — the live Books record
+ *  the card panel's client editor prefills from. Its own type so the search
+ *  list's `ZohoContact` (and every fixture built for it) keeps its shape. */
+export interface ZohoContactDetail extends ZohoContact {
+  first_name: string;
+  last_name: string;
+}
+
+/** Body of PUT /aito/{id}/client. Which name fields apply is the CARD's
+ *  choice (`client_is_company`), not the caller's: a company card sends
+ *  `company_name`, a person card `first_name` + `last_name`. */
+export interface AitoClientEdit {
+  company_name?: string;
+  first_name?: string;
+  last_name?: string;
+  email: string;
+  phone: string;
+  phone_field: 'phone' | 'mobile';
+  expected_version?: number;
+}
+
 export interface ZohoStatus {
   configured: boolean;
   /** null when the caller did not ask for a reachability probe. */
@@ -8282,6 +8303,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  /** Edit the Zoho contact behind a card — name, phone, email. Books is
+   *  written first and every active card on the same contact is rewritten
+   *  after; the response is the edited card. See routes/aito.py:
+   *  edit_project_client for why this is not a PATCH field. */
+  editAitoClient: (id: number, data: AitoClientEdit) =>
+    request<AitoProject>(`/aito/${id}/client`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   /** Its own endpoint, not a field on `updateAitoProject`: the generic PATCH
    *  queues a Zoho quote push for every edit, and the flag is a workshop fact
    *  Zoho has no field for. See routes/aito.py:set_project_flag. */
@@ -8359,6 +8389,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  getZohoContact: (id: string) => request<ZohoContactDetail>(`/zoho/contacts/${encodeURIComponent(id)}`),
   updateZohoContact: (
     id: string,
     data: { email?: string; phone?: string; phone_field?: 'phone' | 'mobile' },

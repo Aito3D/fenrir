@@ -16,7 +16,13 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.user import User
 from backend.app.schemas.aito import AitoTaskCreate
 from backend.app.services.aito_quote_import import build_preview
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRequestRejected, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRequestRejected,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,15 @@ class ZohoContact(BaseModel):
     phone: str
     mobile: str
     email: str
+
+
+class ZohoContactDetail(ZohoContact):
+    """One contact read by id — what the card panel's client editor prefills
+    from. Its own model rather than two more fields on `ZohoContact` so the
+    search list (and every fixture built for it) keeps its shape."""
+
+    first_name: str
+    last_name: str
 
 
 @router.get("/status", response_model=ZohoStatus)
@@ -157,6 +172,25 @@ class ZohoContactCreate(BaseModel):
         if not self.company_name.strip() and not (self.first_name.strip() and self.last_name.strip()):
             raise ValueError("Provide a company name, or both a first and last name")
         return self
+
+
+@router.get("/contacts/{contact_id}", response_model=ZohoContactDetail)
+async def get_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """The live Books record behind a card's client, for the panel's editor.
+    Gated like the edit it feeds (aito:update), not like the search
+    (aito:create): this is "may edit a card", not "may create one"."""
+    try:
+        return await zoho_service.get_contact(db, contact_id)
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoNotFound:
+        raise HTTPException(status_code=404, detail="Contact not found in Zoho Books") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @router.post("/contacts", response_model=ZohoContact, status_code=201)

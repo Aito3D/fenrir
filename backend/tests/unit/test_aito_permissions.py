@@ -93,6 +93,7 @@ WRITE_ROUTES = [
     ("import_legacy_projects", "post", "/api/v1/aito/import", {"projects": []}),
     ("move_project", "patch", f"/api/v1/aito/{_MISSING_ID}/move", {"column": "devis", "position": 0}),
     ("update_project", "patch", f"/api/v1/aito/{_MISSING_ID}", {}),
+    ("edit_project_client", "put", f"/api/v1/aito/{_MISSING_ID}/client", {"first_name": "A", "last_name": "B"}),
     ("set_project_flag", "patch", f"/api/v1/aito/{_MISSING_ID}/flag", {"flag": "urgent"}),
     ("set_project_contacted", "patch", f"/api/v1/aito/{_MISSING_ID}/contacted", {"contacted": True}),
     ("generate_pickup_message", "post", f"/api/v1/aito/{_MISSING_ID}/pickup-message", None),
@@ -106,7 +107,7 @@ WRITE_ROUTES = [
     ("refresh_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/refresh", None),
 ]
 
-assert len(WRITE_ROUTES) == 25, "WRITE_ROUTES must cover exactly the 25 gated write routes aito.py declares"
+assert len(WRITE_ROUTES) == 26, "WRITE_ROUTES must cover exactly the 26 gated write routes aito.py declares"
 
 
 @pytest.mark.asyncio
