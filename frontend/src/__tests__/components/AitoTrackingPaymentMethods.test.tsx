@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import i18n from '../../i18n';
 import { TrackingPaymentMethods } from '../../components/aito/TrackingPaymentMethods';
@@ -106,6 +106,47 @@ describe('TrackingPaymentMethods', () => {
     expect(first).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('tweens the pane wrap height between two real sizes, then clears the inline height once the transition ends', async () => {
+    render(<TrackingPaymentMethods open reference="EST-000142" />);
+    const wrap = pane().parentElement as HTMLElement;
+
+    // jsdom always reports 0 for offsetHeight/scrollHeight, which makes
+    // `to === from` (0 === 0) true on every real click — stub both to
+    // distinct, non-zero values so the tween body actually runs: the
+    // "before" pane's offsetHeight (read synchronously by `select`, before
+    // the method switches) and the "after" pane's scrollHeight (read by the
+    // layout effect once the new pane has rendered).
+    Object.defineProperty(wrap, 'offsetHeight', { get: () => 120, configurable: true });
+    Object.defineProperty(wrap, 'scrollHeight', { get: () => 200, configurable: true });
+    const heightSets = vi.spyOn(wrap.style, 'height', 'set');
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Magasin' }));
+
+    // Two synchronous writes: the captured "from" height first (so the pane
+    // starts the transition at its old size), then the "to" height (so the
+    // CSS transition animates towards it).
+    expect(heightSets.mock.calls.map((c) => c[0])).toEqual(['120px', '200px']);
+    expect(wrap.style.height).toBe('200px');
+
+    fireEvent(wrap, new Event('transitionend'));
+    expect(wrap.style.height).toBe('');
+
+    heightSets.mockRestore();
+  });
+
+  it('does not tween the pane height when the before/after sizes are equal (jsdom default)', async () => {
+    render(<TrackingPaymentMethods open reference="EST-000142" />);
+    const wrap = pane().parentElement as HTMLElement;
+    const heightSets = vi.spyOn(wrap.style, 'height', 'set');
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Magasin' }));
+
+    expect(heightSets).not.toHaveBeenCalled();
+    expect(wrap.style.height).toBe('');
+
+    heightSets.mockRestore();
+  });
+
   it('keeps the reference row, uncopyable, when the quote number is unknown', () => {
     render(<TrackingPaymentMethods open reference={null} />);
     expect(within(pane()).getByText('Motif du virement')).toBeInTheDocument();
@@ -144,6 +185,31 @@ describe('TrackingPaymentMethods', () => {
 
     // The confirmation fades on its own after the hold.
     await waitFor(() => expect(screen.queryByText('Copié')).not.toBeInTheDocument(), { timeout: 3000 });
+  });
+
+  it('shows no confirmation when the clipboard write fails and the execCommand fallback also fails', async () => {
+    (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('blocked'));
+    // Simulates the execCommand fallback also failing (e.g. Firefox on a
+    // plain-HTTP LAN origin), so copyTextToClipboard resolves to false —
+    // mirrors AitoTrackingLinkControl.test.tsx's clipboard-failure case.
+    const originalExecCommand = document.execCommand;
+    document.execCommand = vi.fn().mockReturnValue(false);
+
+    render(<TrackingPaymentMethods open reference="EST-000142" />);
+    const iban = screen.getByRole('button', { name: "Copier l'IBAN" });
+    await userEvent.click(iban);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(AITO3D_BANK.iban);
+    // Wait for the whole fallback chain (rejected writeText, then the
+    // execCommand fallback) to settle before asserting nothing changed.
+    await waitFor(() => expect(document.execCommand).toHaveBeenCalledWith('copy'));
+    // No confirmation anywhere: neither the row's own text nor the live
+    // region that screen readers pick up.
+    expect(iban).not.toHaveTextContent('Copié');
+    expect(iban).not.toHaveAttribute('data-copied');
+    expect(screen.queryByText('Copié')).not.toBeInTheDocument();
+
+    document.execCommand = originalExecCommand;
   });
 });
 
