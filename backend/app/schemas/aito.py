@@ -505,19 +505,27 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
 AitoFlag = Literal["urgent", "sav", "pause"]
 
 
-class AitoClientEdit(BaseModel):
+class AitoClientEdit(AitoClientSocialInput):
     """Body of PUT /aito/{id}/client — edit the attached Zoho contact.
 
     Which name fields apply is decided by the CARD (`client_is_company`), not
     the body: a company card takes `company_name`, a person card takes
     `first_name` + `last_name`. The route enforces that split because the
-    schema cannot see the card. Every field is a full value, never a patch —
-    the editor always shows all of them, so "absent" has no meaning here.
+    schema cannot see the card. Every name/phone/email field is a full value,
+    never a patch — the editor always shows all of them, so "absent" has no
+    meaning there.
+
+    The social pair (inherited) is the one exception: it is CARD-ONLY — Books
+    has no field for it — and it is written only when the body mentions it,
+    with the same pair rule `AitoProjectUpdate` applies. The contact sheet
+    always sends it; a caller that only knows the Books fields may leave it
+    out and the card's own handle stays as it was.
 
     Phone/email accept the same shapes `AitoProjectUpdate` does — Books stores
     human-typed numbers too — and an empty string clears the value. Whether
-    the card stays reachable afterwards (phone, email or the card's own social
-    handle) is the route's check, against the merged row."""
+    the card stays reachable afterwards (phone, email or the social handle
+    as it will be after this edit) is the route's check, against the merged
+    row."""
 
     company_name: str = Field(default="", max_length=200)
     first_name: str = Field(default="", max_length=100)

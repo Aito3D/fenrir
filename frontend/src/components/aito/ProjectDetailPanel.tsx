@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Lock, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { DuplicateProjectButton } from './DuplicateProjectButton';
@@ -18,7 +18,7 @@ import { QuoteStatusActions } from './QuoteStatusActions';
 import { PanelTabs } from './PanelTabs';
 import { PresenceBanner } from './PresenceBanner';
 import { panelTabId, panelTabPanelId } from './panelTabIds';
-import { SOCIAL_ICONS, SOCIAL_LABEL_KEYS, SocialInput } from './SocialInput';
+import { SOCIAL_ICONS, SOCIAL_LABEL_KEYS } from './SocialInput';
 import {
   quoteStatusText,
   quoteStatusTone,
@@ -51,9 +51,8 @@ import { isFinished } from '../../utils/aitoBoard';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
-import { applyClientSocial, applyDescription, applySyncState, replaceProject } from '../../utils/aitoOptimistic';
+import { applyDescription, applySyncState, replaceProject } from '../../utils/aitoOptimistic';
 import { formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
-import type { SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
@@ -262,17 +261,9 @@ function PanelHeader({
   quotedTotal,
   stepsDone,
   stepsTotal,
-  editingSocial,
-  socialDraft,
-  onSocialDraftChange,
-  onOpenSocialEdit,
-  onSaveSocial,
-  onCancelSocial,
-  socialSaving,
   editingClient,
-  onOpenClientEdit,
-  onClientSaved,
-  onCancelClientEdit,
+  onToggleClientEdit,
+  clientEditButtonRef,
   canUpdate,
   onUnaccepted,
 }: {
@@ -297,24 +288,14 @@ function PanelHeader({
    *  visibly disagree with itself until the next board refresh. */
   stepsDone: number;
   stepsTotal: number;
-  /** The social-edit state lives in the panel body (beside `updateMutation`,
-   *  its sibling mutation), not here — `PanelHeader` only renders the affordance
-   *  the contact row needs, the same split every other panel-body mutation
-   *  already keeps from its display components. */
-  editingSocial: boolean;
-  socialDraft: { network: SocialNetwork | null; handle: string };
-  onSocialDraftChange: (next: { network: SocialNetwork | null; handle: string }) => void;
-  onOpenSocialEdit: () => void;
-  onSaveSocial: () => void;
-  onCancelSocial: () => void;
-  socialSaving: boolean;
-  /** The client editor's open flag and its three exits live in the panel
-   *  body, like the social editor's: the header only renders the pencil and
-   *  the editor, the body owns the cache write a save has to make. */
+  /** The contact sheet's open flag lives in the panel body, which also
+   *  renders the sheet (under this header, in its own anchor — see
+   *  ClientEditor's doc for why it cannot be a child of the band). The header
+   *  only renders the pencil, which toggles it, and lends the sheet the
+   *  pencil's ref so a press on it is never mistaken for an outside press. */
   editingClient: boolean;
-  onOpenClientEdit: () => void;
-  onClientSaved: (updated: AitoProject) => void;
-  onCancelClientEdit: () => void;
+  onToggleClientEdit: () => void;
+  clientEditButtonRef: React.RefObject<HTMLButtonElement | null>;
   /** Gates FlagControl — PATCH /{project_id}/flag enforces AITO_UPDATE. See
    *  ProjectDetailPanelProps' own doc. */
   canUpdate: boolean;
@@ -519,27 +500,31 @@ function PanelHeader({
           {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
               never removed from the tree: a keyboard user tabs onto it and
               focus-visible brings it up. Gated on `canUpdate` because the
-              route it opens (PUT /{id}/client) is; hidden while the editor
-              is open because the editor replaces what it would edit. The
-              social handle keeps its own pencil below — it is card-only and
-              never part of the Zoho contact this one edits. */}
-          {canUpdate && !editingClient && (
+              route it opens (PUT /{id}/client) is. The ONE edit affordance
+              for the whole contact — name, phone, email and the card's social
+              channel all live on the sheet it toggles — so while the sheet is
+              open the pencil stays up and lit, as the thing that closes it. */}
+          {canUpdate && (
             <button
+              ref={clientEditButtonRef}
               type="button"
-              onClick={onOpenClientEdit}
+              onClick={onToggleClientEdit}
               aria-label={t('aito.clientEdit')}
+              aria-expanded={editingClient}
               title={t('aito.clientEdit')}
-              className={`flex-shrink-0 rounded-md p-1 text-bambu-gray opacity-0 transition-opacity group-hover/client:opacity-100 focus-visible:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+              className={`flex-shrink-0 rounded-md p-1 transition-opacity focus-visible:opacity-100 ${focusRingCls} ${
+                editingClient
+                  ? 'bg-bambu-green/15 text-bambu-green-light opacity-100'
+                  : 'text-bambu-gray opacity-0 group-hover/client:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white'
+              }`}
             >
               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
         </h2>
-        {editingClient && <ClientEditor project={project} onSaved={onClientSaved} onCancel={onCancelClientEdit} />}
         {/* mt-2.5 and medium weight: at mt-1 the contacts crowded the title,
             and at regular weight they receded into the band rather than
             reading as the two things you copy out of this header. */}
-        {!editingClient && (
         <div className="flex items-center gap-4 mt-2.5 text-[.82rem] font-medium">
           {project.client_phone && (
             <CopyableValue
@@ -556,73 +541,16 @@ function PanelHeader({
               "non-empty" and nothing more, so a pasted URL or a name with
               spaces is a legal value and a generated profile link would often
               go nowhere. The network is the label, so the value stands alone.
-              Hidden while `editingSocial` — the editor below already carries
-              the same information, and showing both at once reads as a
-              lingering stale copy of what the form is about to replace.
-              The affordance button itself is NOT gated on having a handle —
-              unlike phone/email (read-only, no affordance at all), the social
-              handle is card-only, so clearing it here has nothing else in the
-              product to restore it from. Gating the button the way the value
-              is gated would turn "save blank" into a one-way door: the row
-              would vanish with no way back in. Pencil vs Plus is the only
-              thing that changes between "correct a typo" and "set one for the
-              first time" — both open the same editor. */}
-          {!editingSocial && (
-            <span className="inline-flex items-center gap-1">
-              {socialNetwork !== null && project.client_social_handle && (
-                <CopyableValue
-                  value={project.client_social_handle}
-                  label={t(SOCIAL_LABEL_KEYS[socialNetwork])}
-                  icon={SOCIAL_ICONS[socialNetwork]}
-                />
-              )}
-              {/* `client_phone`/`client_email` are read-only in this panel —
-                  see their own doc — so this is the one edit affordance in the
-                  whole contact row, and it exists only because a typo (or a
-                  client who only had a phone or email when the card was made)
-                  would otherwise be permanent. */}
-              <button
-                type="button"
-                onClick={onOpenSocialEdit}
-                aria-label={t('aito.socialEdit')}
-                title={t('aito.socialEdit')}
-                className={`rounded-md p-1 text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
-              >
-                {socialNetwork !== null && project.client_social_handle ? (
-                  <Pencil className="h-3 w-3" aria-hidden="true" />
-                ) : (
-                  <Plus className="h-3 w-3" aria-hidden="true" />
-                )}
-              </button>
-            </span>
+              Edited on the contact sheet with the rest of the contact, so no
+              affordance of its own here. */}
+          {socialNetwork !== null && project.client_social_handle && (
+            <CopyableValue
+              value={project.client_social_handle}
+              label={t(SOCIAL_LABEL_KEYS[socialNetwork])}
+              icon={SOCIAL_ICONS[socialNetwork]}
+            />
           )}
         </div>
-        )}
-        {/* animate-rise: same arrival treatment `SocialInput` gives its own
-            handle field and `ShippingCard` gives its edit form — the editor
-            appears in response to the pencil click just above it. */}
-        {editingSocial && (
-          <div className="animate-rise mt-3 max-w-sm rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
-            <SocialInput idPrefix="panel-header" network={socialDraft.network} handle={socialDraft.handle} onChange={onSocialDraftChange} />
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={onCancelSocial}
-                className={`rounded-md px-2.5 py-1 text-sm text-bambu-gray transition-colors hover:text-white ${focusRingCls}`}
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={onSaveSocial}
-                disabled={socialSaving}
-                className={`rounded-md border border-bambu-green/40 px-2.5 py-1 text-sm text-bambu-green transition-colors hover:bg-bambu-green/10 disabled:opacity-50 ${focusRingCls}`}
-              >
-                {t('common.save')}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Hidden below md: the header is one flex row and the client name has
@@ -911,80 +839,29 @@ export function ProjectDetailPanel({
     onError: () => showToast(t('aito.syncError'), 'error'),
   });
 
-  // Its own mutation rather than a third branch of `updateMutation.transform`:
-  // that transform switches on "is this a description edit or a sync retry",
-  // and a social edit is neither. Same shape as ShippingCard's — optimistic
-  // transform, PATCH response into the cache, events invalidated because the
-  // server records a project.updated for this write like any other.
-  const socialMutation = useProjectPatchMutation(project, (previous, patch: AitoProjectUpdate) =>
-    applyClientSocial(previous, project.id, patch),
-  );
-
-  const [editingSocial, setEditingSocial] = useState(false);
-
-  // The client editor owns its own draft, fetch and mutation (see
-  // ClientEditor); the panel only owns the open flag and what a save does to
-  // the board. The response is written into the cache like every other
-  // panel write, then the board is REFETCHED as well — the server rewrote
-  // every active card on the same contact, and only a refetch brings those
+  // The contact sheet owns its own draft, fetch and mutation (see
+  // ClientEditor); the panel owns the open flag, where the sheet is rendered
+  // (under the header, in its own anchor), and what a save does to the
+  // board. The response is written into the cache like every other panel
+  // write, then the board is REFETCHED as well — the server rewrote every
+  // active card on the same contact, and only a refetch brings those
   // siblings in. Not an optimistic write: the server is Zoho-first, so
   // nothing is true until it answers.
   const [editingClient, setEditingClient] = useState(false);
+  const clientEditButtonRef = useRef<HTMLButtonElement>(null);
+  // Focus goes back to the pencil on every close — a save, a cancel, Escape
+  // or an outside press — because the sheet took it from there. Programmatic
+  // focus after a mouse close shows no ring (focus-visible), so a pointer
+  // user sees nothing move.
+  const closeClientEdit = useCallback(() => {
+    setEditingClient(false);
+    clientEditButtonRef.current?.focus();
+  }, []);
   const onClientSaved = (updated: AitoProject) => {
     queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, updated));
     void queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
     void queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    setEditingClient(false);
-  };
-  const [socialDraft, setSocialDraft] = useState<{ network: SocialNetwork | null; handle: string }>({
-    network: null,
-    handle: '',
-  });
-
-  // The version this edit session is BASED ON, captured once when the editor
-  // opens rather than re-read at save time — see useProjectPatchMutation's
-  // doc for why. `project.version` at save time may already reflect a peer's
-  // concurrent write (the board refetches on their `aito_changed` WS event),
-  // and this session's draft was never rebased on that write. Cleared to
-  // `undefined` on a failed save (falls back to the pre-existing
-  // latestProjectVersion behaviour) so a retry within the same still-open
-  // session — the editor stays open on any error, not just a conflict — does
-  // not keep re-fighting this session's now-stale capture forever.
-  const socialEditVersionRef = useRef<number | undefined>(undefined);
-
-  const openSocialEdit = () => {
-    socialEditVersionRef.current = project.version;
-    setSocialDraft({
-      network: isSocialNetwork(project.client_social_network) ? project.client_social_network : null,
-      handle: project.client_social_handle ?? '',
-    });
-    setEditingSocial(true);
-  };
-
-  const saveSocial = () => {
-    const handle = socialDraft.handle.trim();
-    // Closed in `onSuccess`, not here — same discipline as ShippingCard's own
-    // `save`. Closing before the mutation settles would unmount the editor
-    // (and its `socialDraft`) in the same render as the click, so a failed
-    // save had nothing left on screen to show the retry toast against, and
-    // whatever the user typed was gone rather than sitting in the field for
-    // a second attempt.
-    markExternalWrite();
-    socialMutation.mutate(
-      {
-        // Blank handle clears the pair, matching the server's own rule — a
-        // network pointing at nothing is not a state either side keeps.
-        client_social_network: handle ? socialDraft.network : null,
-        client_social_handle: handle || null,
-        expected_version: socialEditVersionRef.current,
-      },
-      {
-        onSuccess: () => setEditingSocial(false),
-        onError: () => {
-          socialEditVersionRef.current = undefined;
-        },
-      },
-    );
+    closeClientEdit();
   };
 
   // At most once per panel, whichever of the two arbitration branches gets
@@ -1220,23 +1097,27 @@ export function ProjectDetailPanel({
           quotedTotal={quotedTotal}
           stepsDone={stepsDone}
           stepsTotal={stepsTotal}
-          editingSocial={editingSocial}
-          socialDraft={socialDraft}
-          onSocialDraftChange={setSocialDraft}
-          onOpenSocialEdit={openSocialEdit}
-          onSaveSocial={saveSocial}
-          onCancelSocial={() => setEditingSocial(false)}
-          socialSaving={socialMutation.isPending}
           editingClient={editingClient}
-          onOpenClientEdit={() => {
-            setEditingSocial(false);
-            setEditingClient(true);
-          }}
-          onClientSaved={onClientSaved}
-          onCancelClientEdit={() => setEditingClient(false)}
+          onToggleClientEdit={() => (editingClient ? closeClientEdit() : setEditingClient(true))}
+          clientEditButtonRef={clientEditButtonRef}
           canUpdate={canUpdate}
           onUnaccepted={onClose}
         />
+        {/* The contact sheet's anchor: zero height, right under the band,
+            stacked BELOW it (z-1 against the header's z-2) so the sheet slides
+            out from beneath the masthead and takes its cast shadow. Rendered
+            here rather than inside the header because a child of the band
+            would paint over it — see ClientEditor's own doc. */}
+        <div className="relative z-[1] h-0">
+          {editingClient && (
+            <ClientEditor
+              project={project}
+              onSaved={onClientSaved}
+              onCancel={closeClientEdit}
+              triggerRef={clientEditButtonRef}
+            />
+          )}
+        </div>
 
         {/* Who else has this project open right now. Filtered to exclude
             ourselves — otherwise every panel would greet its own operator.
