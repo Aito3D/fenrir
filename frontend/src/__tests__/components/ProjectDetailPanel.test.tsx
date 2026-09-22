@@ -3588,3 +3588,58 @@ describe('ProjectDetailPanel description clamp', () => {
     expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
   });
 });
+
+describe('client rating on the masthead', () => {
+  const ratingBody = (tier: string, reason: string | null) => ({
+    tier, reason,
+    settled_count: 8, on_time_count: 8, overdue_count: 0, past_due_count: 0,
+    worst_overdue_days: 0, worst_overdue_number: null,
+    computed_at: new Date().toISOString(), stale: false,
+  });
+
+  const renderPanel = (p = project) =>
+    rtlRender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <ProjectDetailPanel canCreate canUpdate canDelete project={p} onClose={vi.fn()} onDelete={vi.fn()} />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+  it('shows the pill after the client name, inside the heading', async () => {
+    server.use(http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(ratingBody('bad', 'overdue'))));
+    renderPanel();
+    const pill = await screen.findByText('Bad');
+    expect(pill.closest('h2')).toHaveTextContent(/ACME SARL/);
+  });
+
+  it('hides a new client on the masthead', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json(ratingBody('new', 'new'));
+      }),
+    );
+    renderPanel();
+    await waitFor(() => expect(seen).toEqual(['z1']));
+    expect(screen.queryByText('New')).not.toBeInTheDocument();
+  });
+
+  it('asks nothing for a legacy card with no client id', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json(ratingBody('good', 'punctual'));
+      }),
+    );
+    renderPanel({ ...project, client_id: null });
+    await screen.findByRole('heading', { level: 2 });
+    expect(seen).toEqual([]);
+  });
+});

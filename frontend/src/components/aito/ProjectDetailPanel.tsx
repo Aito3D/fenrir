@@ -27,6 +27,8 @@ import {
 import { deriveQuoteSync } from './quoteSync';
 import { ShippingCard } from './ShippingCard';
 import { ClientEditor } from './ClientEditor';
+import { useClientRating } from './useClientRating';
+import { ClientRatingPill } from './ClientRatingPill';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { stagesWithWork } from './services';
@@ -305,6 +307,9 @@ function PanelHeader({
   onUnaccepted: () => void;
 }) {
   const { t } = useTranslation();
+  // Empty id disables the query: a legacy card with no client has no rating
+  // to ask for.
+  const rating = useClientRating(project.client_id ?? '');
   // Same query key ShippingCard and the create drawer use, so this shares
   // their cache rather than issuing its own request for a table that rarely
   // changes. Only needed for the LABEL — the pill itself gates on
@@ -497,6 +502,11 @@ function PanelHeader({
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
           <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+          {/* Hidden for `new`: a walk-in has no verdict, and the band must
+              not grow a grey pill on every first-timer. The drawer shows
+              it. `align="end"` because the pill sits at the right edge of
+              the name column, where a centred tooltip would clip. */}
+          <ClientRatingPill rating={rating.data} hideNew align="end" />
           {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
               never removed from the tree: a keyboard user tabs onto it and
               focus-visible brings it up. Gated on `canUpdate` because the
