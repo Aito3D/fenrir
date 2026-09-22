@@ -5,10 +5,13 @@ The scorer is pure (rows + today in, dataclass out), so every tier rule and
 every edge is a table row here with no Zoho, no clock and no database.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
+from backend.app.models.aito_client_rating import AitoClientRating
+from backend.app.schemas.aito import AitoClientRatingResponse
 from backend.app.services.aito_client_rating import (
     GRACE_DAYS,
     ON_TIME_SLACK_DAYS,
@@ -167,3 +170,40 @@ def test_unparseable_dates_never_raise():
         _inv(issued=TODAY, due=TODAY, paid_on=TODAY) | {"date": "garbage", "due_date": "??", "last_payment_date": "x"}
     ]
     assert rate_invoices(rows, TODAY).tier == "medium"
+
+
+@pytest.mark.asyncio
+async def test_cache_row_round_trips(db_session):
+    db_session.add(
+        AitoClientRating(
+            customer_id="C1",
+            tier="good",
+            reason="punctual",
+            settled_count=5,
+            on_time_count=5,
+            overdue_count=0,
+            past_due_count=0,
+            worst_overdue_days=0,
+            worst_overdue_number=None,
+            computed_at=datetime(2026, 9, 22, 10, 0, 0),
+        )
+    )
+    await db_session.commit()
+    row = (await db_session.execute(select(AitoClientRating))).scalar_one()
+    assert (row.customer_id, row.tier, row.settled_count) == ("C1", "good", 5)
+
+
+def test_response_schema_defaults_to_unavailable_shape():
+    body = AitoClientRatingResponse(tier="unavailable", reason=None, computed_at=None, stale=False)
+    assert body.model_dump() == {
+        "tier": "unavailable",
+        "reason": None,
+        "settled_count": 0,
+        "on_time_count": 0,
+        "overdue_count": 0,
+        "past_due_count": 0,
+        "worst_overdue_days": 0,
+        "worst_overdue_number": None,
+        "computed_at": None,
+        "stale": False,
+    }

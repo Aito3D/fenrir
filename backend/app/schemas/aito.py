@@ -1261,6 +1261,29 @@ class AitoClientHistoryResponse(BaseModel):
     latest_social: AitoClientHistorySocial | None
 
 
+class AitoClientRatingResponse(BaseModel):
+    """A customer's payment rating for the drawer and the panel masthead —
+    see docs/superpowers/specs/2026-09-22-aito-client-rating-design.md.
+
+    Structured fields rather than a sentence, so the frontend phrases the
+    tooltip in the viewer's language. ``unavailable`` is a response-only
+    tier: Books could not be read and nothing was cached, so the pill stays
+    hidden. ``stale`` means the figures come from the cache because Books
+    could not be read just now.
+    """
+
+    tier: Literal["good", "medium", "bad", "new", "unavailable"]
+    reason: Literal["overdue", "chronic", "new", "punctual", "mixed"] | None
+    settled_count: int = 0
+    on_time_count: int = 0
+    overdue_count: int = 0
+    past_due_count: int = 0
+    worst_overdue_days: int = 0
+    worst_overdue_number: str | None = None
+    computed_at: datetime | None
+    stale: bool
+
+
 class AitoTrackingShipping(BaseModel):
     island: str
     service: str

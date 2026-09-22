@@ -1,3 +1,4 @@
+from backend.app.models.aito_client_rating import AitoClientRating
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
@@ -51,6 +52,7 @@ from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 
 __all__ = [
+    "AitoClientRating",
     "AitoEvent",
     "AitoPaymentLink",
     "AitoProject",

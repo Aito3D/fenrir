@@ -294,6 +294,7 @@ async def test_engine():
     # Import all models to register them
     from backend.app.models import (
         active_print_session,  # noqa: F401
+        aito_client_rating,  # noqa: F401
         aito_project,  # noqa: F401
         aito_task,  # noqa: F401
         ams_history,

@@ -286,6 +286,7 @@ async def init_db():
     from backend.app.models import (  # noqa: F401
         active_print_session,
         active_print_spoolman,
+        aito_client_rating,
         aito_event,
         aito_payment_link,
         aito_project,
@@ -5748,6 +5749,23 @@ async def run_migrations(conn):
     # Migration: the customer's unspent deposits, customer-wide (2026-09-15).
     # See models/aito_project.py customer_credit_total.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN customer_credit_total FLOAT")
+    # Migration: per-customer payment rating cache (2026-09-22). See
+    # models/aito_client_rating.py. A new table, so IF NOT EXISTS is the
+    # whole migration — create_all also makes it on a fresh database.
+    await _safe_execute(
+        conn,
+        "CREATE TABLE IF NOT EXISTS aito_client_ratings ("
+        " customer_id VARCHAR(50) PRIMARY KEY,"
+        " tier VARCHAR(10) NOT NULL,"
+        " reason VARCHAR(20) NOT NULL,"
+        " settled_count INTEGER NOT NULL DEFAULT 0,"
+        " on_time_count INTEGER NOT NULL DEFAULT 0,"
+        " overdue_count INTEGER NOT NULL DEFAULT 0,"
+        " past_due_count INTEGER NOT NULL DEFAULT 0,"
+        " worst_overdue_days INTEGER NOT NULL DEFAULT 0,"
+        " worst_overdue_number VARCHAR(50),"
+        " computed_at DATETIME NOT NULL)",
+    )
     await _safe_execute(
         conn,
         "CREATE TABLE IF NOT EXISTS aito_payment_links ("
