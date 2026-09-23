@@ -265,6 +265,16 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setDraft({ ...draft, socialNetwork: latestSocial.network, socialHandle: latestSocial.handle });
   }, [draft, latestSocial]);
 
+  // The person the drawer pre-selects for a returning company: the newest
+  // card's person once the history has answered (or failed), `undefined`
+  // while it is still in flight so the picker waits — see its own doc.
+  const preferredPersonId: string | null | undefined =
+    historyClientId === ''
+      ? null
+      : historyQuery.isSuccess || historyQuery.isError
+        ? (historyQuery.data?.latest_contact_person_id ?? null)
+        : undefined;
+
   // Escape and a backdrop click are both "dismiss the thing on top": while the
   // create-client sub-form is showing that means stepping back to the client
   // section (same as its Back button), never discarding whatever the user
@@ -612,6 +622,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                     shipping={shipping}
                     onShippingChange={setShipping}
                     onReuseTasks={reuseTasks}
+                    preferredPersonId={preferredPersonId}
                   />
                   <div className="mt-3">
                     <label htmlFor="new-project-due-date" className={labelCls}>

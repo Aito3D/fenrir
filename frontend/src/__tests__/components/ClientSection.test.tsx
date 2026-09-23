@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -6,6 +7,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ClientSection } from '../../components/aito/ClientSection';
 import { defaultClientDraft, draftFromContact } from '../../utils/clientDraft';
+import type { ClientDraft } from '../../utils/clientDraft';
 import type { AitoShippingService } from '../../api/client';
 
 const DEFAULT_ID = '66407000001237340';
@@ -45,6 +47,9 @@ beforeEach(() => {
     http.get('/api/v1/aito/shipping/services', () =>
       HttpResponse.json({ services: SHIPPING_SERVICES, catalogue_resolved: true }),
     ),
+    // Default: no persons, so the pre-existing `acme` (company) tests keep
+    // seeing the plain phone/email inputs, not the picker.
+    http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([])),
   );
 });
 
@@ -59,6 +64,7 @@ const renderSection = (value = defaultClientDraft(DEFAULT_ID, DEFAULT_NAME), onC
       shipping={null}
       onShippingChange={vi.fn()}
       onReuseTasks={vi.fn()}
+      preferredPersonId={null}
     />,
   );
   return onChange;
@@ -94,6 +100,7 @@ describe('ClientSection', () => {
         shipping={null}
         onShippingChange={vi.fn()}
         onReuseTasks={vi.fn()}
+        preferredPersonId={null}
       />,
     );
     await user.type(screen.getByLabelText(/^phone/i), '9');
@@ -110,6 +117,7 @@ describe('ClientSection', () => {
         shipping={null}
         onShippingChange={vi.fn()}
         onReuseTasks={vi.fn()}
+        preferredPersonId={null}
       />,
     );
     await user.click(screen.getByRole('button', { name: /revert phone/i }));
@@ -135,6 +143,7 @@ describe('ClientSection', () => {
         shipping={null}
         onShippingChange={vi.fn()}
         onReuseTasks={vi.fn()}
+        preferredPersonId={null}
       />
     );
     const user = userEvent.setup();
@@ -168,6 +177,7 @@ describe('ClientSection', () => {
         shipping={null}
         onShippingChange={vi.fn()}
         onReuseTasks={vi.fn()}
+        preferredPersonId={null}
       />
     );
     const user = userEvent.setup();
@@ -250,6 +260,7 @@ describe('ClientSection', () => {
           rerender(section());
         }}
         onReuseTasks={vi.fn()}
+        preferredPersonId={null}
       />
     );
     const user = userEvent.setup();
@@ -334,5 +345,105 @@ describe('client rating in the drawer', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue(DEFAULT_NAME));
     expect(seen).toEqual([]);
     expect(screen.queryByText('Good')).not.toBeInTheDocument();
+  });
+});
+
+const VAEKEHU = {
+  contact_person_id: 'cp1', first_name: 'Vaekehu', last_name: 'VARNEY', name: 'Vaekehu VARNEY',
+  email: 'vaekehu@snp.pf', phone: '', mobile: '+689-40549958', is_primary: true,
+};
+const MOANA = {
+  contact_person_id: 'cp2', first_name: 'Moana', last_name: 'TERIIPAIA', name: 'Moana TERIIPAIA',
+  email: '', phone: '+689-87221043', mobile: '', is_primary: false,
+};
+
+/** Controlled harness: feeds every onChange back in, like the drawer does. */
+function Harness({ initial, preferred = null }: { initial: ClientDraft; preferred?: string | null | undefined }) {
+  const [draft, setDraft] = useState(initial);
+  return (
+    <ClientSection
+      value={draft}
+      onChange={setDraft}
+      onCreateNew={vi.fn()}
+      defaultContactId={DEFAULT_ID}
+      defaultContactName={DEFAULT_NAME}
+      shipping={null}
+      onShippingChange={vi.fn()}
+      onReuseTasks={vi.fn()}
+      preferredPersonId={preferred}
+    />
+  );
+}
+
+describe('ClientSection — company contacts', () => {
+  beforeEach(() => {
+    server.use(http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([VAEKEHU, MOANA])));
+  });
+
+  it('swaps the social chooser for the contact list and hides the plain inputs', async () => {
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    await screen.findByRole('radio', { name: 'Vaekehu VARNEY' });
+    expect(screen.queryByText(/social network/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^phone/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /use a different phone/i })).toBeInTheDocument();
+  });
+
+  it('keeps the social chooser for an individual', async () => {
+    const person = { ...acme, customer_sub_type: 'individual' };
+    render(<Harness initial={draftFromContact(person, DEFAULT_ID)} />);
+    expect(await screen.findByText(/social network/i)).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: /contacts/i })).not.toBeInTheDocument();
+  });
+
+  it('auto-selects the primary and copies its coordinates', async () => {
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    const primary = await screen.findByRole('radio', { name: 'Vaekehu VARNEY' });
+    await waitFor(() => expect(primary).toBeChecked());
+    await userEvent.click(screen.getByRole('button', { name: /use a different phone/i }));
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('40549958');
+    expect(screen.getByLabelText(/^email/i)).toHaveValue('vaekehu@snp.pf');
+  });
+
+  it('prefers the recalled person over the primary', async () => {
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} preferred="cp2" />);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());
+  });
+
+  it('switching person re-prefills untouched fields and keeps a typed one', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    await user.click(screen.getByRole('button', { name: /use a different phone/i }));
+    await user.clear(screen.getByLabelText(/^email/i));
+    await user.type(screen.getByLabelText(/^email/i), 'me@snp.pf');
+
+    await user.click(screen.getByRole('radio', { name: 'Moana TERIIPAIA' }));
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('87221043');
+    expect(screen.getByLabelText(/^email/i)).toHaveValue('me@snp.pf');
+  });
+
+  it('revert returns to the selected person, not the account', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    await user.click(screen.getByRole('button', { name: /use a different phone/i }));
+    await user.type(screen.getByLabelText(/^phone/i), '9');
+    await user.click(screen.getByRole('button', { name: /revert phone/i }));
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('40549958');
+  });
+
+  it('an account with no persons shows the add row and the plain inputs', async () => {
+    server.use(http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([])));
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    expect(await screen.findByRole('button', { name: /add contact/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('89645864');
+    expect(screen.queryByRole('button', { name: /use a different phone/i })).not.toBeInTheDocument();
+  });
+
+  it('falls back to the plain inputs with a notice when the list cannot be read', async () => {
+    server.use(http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json({ detail: 'x' }, { status: 502 })));
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    expect(await screen.findByText(/could not read the contacts/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('89645864');
   });
 });

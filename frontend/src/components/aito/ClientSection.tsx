@@ -1,18 +1,26 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plane, RotateCcw } from 'lucide-react';
+import { ChevronRight, Plane, RotateCcw } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoTask, ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { ClientHistory } from './ClientHistory';
+import { ContactPersonPicker } from './ContactPersonPicker';
 import { useClientRating } from './useClientRating';
 import { ClientRatingPill } from './ClientRatingPill';
 import { PhoneInput } from './PhoneInput';
 import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
 import { ShippingFields } from './ShippingFields';
-import { visibleClientDraftErrors, defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
+import {
+  visibleClientDraftErrors,
+  applyContactPerson,
+  defaultClientDraft,
+  draftFromContact,
+  parsePhone,
+} from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
 import { emptyShippingDraft } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
@@ -29,6 +37,10 @@ export interface ClientSectionProps {
   onShippingChange: (next: ShippingDraft | null) => void;
   /** Reuse from the recall block: the drawer appends these as fresh rows. */
   onReuseTasks: (tasks: AitoTask[]) => void;
+  /** For the company branch: the person to pre-select (recalled from the
+   *  client's latest card). `undefined` while the recall is still loading,
+   *  so the picker waits rather than picking the primary too early. */
+  preferredPersonId: string | null | undefined;
 }
 
 /** The client half of the Aito new-project form: who the client is, the phone
@@ -48,6 +60,7 @@ export function ClientSection({
   shipping,
   onShippingChange,
   onReuseTasks,
+  preferredPersonId,
 }: ClientSectionProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -66,6 +79,22 @@ export function ClientSection({
   // Empty id for the walk-in default: the hook disables itself, and the
   // backend would answer `new` for it anyway.
   const rating = useClientRating(value.isDefault ? '' : value.id);
+
+  // Company branch bookkeeping, keyed by client id so a client switch resets
+  // it: whether Books listed anybody (hides the plain inputs behind the
+  // override), whether the list could not be read (notice + plain inputs),
+  // and whether the operator opened the override.
+  const [personsState, setPersonsState] = useState<{ id: string; has: boolean | null; failed: boolean }>({
+    id: value.id, has: null, failed: false,
+  });
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  useEffect(() => {
+    setPersonsState({ id: value.id, has: null, failed: false });
+    setOverrideOpen(false);
+  }, [value.id]);
+  const companyBranch = value.isCompany && !value.isDefault;
+  const listed = companyBranch && personsState.id === value.id && personsState.has === true;
+  const listFailed = companyBranch && personsState.id === value.id && personsState.failed;
 
   if (statusQuery.data?.configured === false) {
     return (
@@ -111,19 +140,11 @@ export function ClientSection({
       visible ? 'opacity-100' : 'opacity-0 pointer-events-none'
     }`;
 
-  return (
-    <div className="space-y-3">
-      <ClientCombobox
-        clientName={value.name}
-        onSelect={selectContact}
-        onCreateNew={onCreateNew}
-        onReset={() => onChange(defaultClientDraft(defaultContactId, defaultContactName))}
-        showReset={value.id !== defaultContactId}
-        trailing={<ClientRatingPill rating={rating.data} />}
-      />
-
-      <ClientHistory clientId={value.id} isDefault={value.isDefault} onReuse={onReuseTasks} />
-
+  // Extracted so the company branch can wrap it in the collapsed override
+  // disclosure below instead of rendering it inline — same fields, same
+  // handlers, just a different place in the tree.
+  const contactInputs = (
+    <>
       <div>
         <label htmlFor="aito-client-phone" className={labelCls}>
           {t('aito.clientPhone')}
@@ -203,17 +224,69 @@ export function ClientSection({
         </div>
         <FieldError messageKey={errors.email} />
       </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-3">
+      <ClientCombobox
+        clientName={value.name}
+        onSelect={selectContact}
+        onCreateNew={onCreateNew}
+        onReset={() => onChange(defaultClientDraft(defaultContactId, defaultContactName))}
+        showReset={value.id !== defaultContactId}
+        trailing={<ClientRatingPill rating={rating.data} />}
+      />
+
+      <ClientHistory clientId={value.id} isDefault={value.isDefault} onReuse={onReuseTasks} />
+
+      {companyBranch && (
+        <ContactPersonPicker
+          contactId={value.id}
+          value={value.contactPersonId}
+          preferredId={preferredPersonId}
+          onSelect={(person) => onChange(applyContactPerson(value, person))}
+          onLoaded={(has) => setPersonsState({ id: value.id, has, failed: false })}
+          onUnavailable={() => setPersonsState({ id: value.id, has: false, failed: true })}
+          variant="drawer"
+        />
+      )}
+      {listFailed && <p className="text-xs text-status-warning">{t('aito.contactsUnavailable')}</p>}
+
+      {listed ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setOverrideOpen((o) => !o)}
+            aria-expanded={overrideOpen}
+            className={`flex items-center gap-1 text-xs font-semibold text-sky-400 hover:underline ${focusRingCls}`}
+          >
+            <ChevronRight className={`h-3.5 w-3.5 transition-transform ${overrideOpen ? 'rotate-90' : ''}`} aria-hidden="true" />
+            {t('aito.contactOverrideToggle')}
+          </button>
+          {overrideOpen && (
+            <div className="mt-2 space-y-3 rounded-lg border border-bambu-dark-tertiary p-3">
+              <p className="text-xs text-bambu-gray">{t('aito.contactOverrideHint')}</p>
+              {contactInputs}
+            </div>
+          )}
+        </div>
+      ) : (
+        contactInputs
+      )}
 
       {/* No revert button beside this one, unlike phone and email: those two
           are written back to Zoho and their reset returns them to the STORED
           value. This field has no stored value to return to — picking the
           selected network again clears it, which is the whole undo it needs. */}
-      <SocialInput
-        idPrefix="aito-client"
-        network={value.socialNetwork}
-        handle={value.socialHandle}
-        onChange={(next) => onChange({ ...value, socialNetwork: next.network, socialHandle: next.handle })}
-      />
+      {!companyBranch && (
+        <SocialInput
+          idPrefix="aito-client"
+          network={value.socialNetwork}
+          handle={value.socialHandle}
+          onChange={(next) => onChange({ ...value, socialNetwork: next.network, socialHandle: next.handle })}
+        />
+      )}
 
       <div className="border-t border-bambu-dark-tertiary pt-3 mt-3">
         {shipping === null ? (
