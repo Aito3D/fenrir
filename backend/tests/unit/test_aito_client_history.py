@@ -81,7 +81,7 @@ async def test_trash_and_other_clients_are_excluded_done_is_included(async_clien
 async def test_unknown_client_is_an_empty_200(async_client):
     r = await async_client.get(_url("nobody"))
     assert r.status_code == 200
-    assert r.json() == {"cards": [], "latest_social": None}
+    assert r.json() == {"cards": [], "latest_social": None, "latest_contact_person_id": None}
 
 
 @pytest.mark.asyncio
@@ -97,7 +97,7 @@ async def test_default_contact_returns_nothing_even_with_cards(async_client, db_
     )
 
     body = (await async_client.get(_url(default_id))).json()
-    assert body == {"cards": [], "latest_social": None}
+    assert body == {"cards": [], "latest_social": None, "latest_contact_person_id": None}
 
 
 @pytest.mark.asyncio
@@ -112,6 +112,39 @@ async def test_total_and_task_order_match_the_board(async_client):
     assert [t["id"] for t in card["tasks"]] == [t1, t2]
     assert card["tasks"][0]["title"] == "first"
     assert card["tasks"][1]["modelisation_cost"] == 2500.0
+
+
+@pytest.mark.asyncio
+async def test_latest_contact_person_comes_from_newest_card_with_one_beyond_limit(async_client, db_session):
+    with_person = await _create(
+        async_client,
+        description="old, with person",
+        client_is_company=True,
+        client_contact_person_id="cp-old",
+        client_contact_name="Vaekehu VARNEY",
+    )
+    await _set(db_session, with_person, created_at="2026-07-01 10:00:00")
+    newest_with = await _create(
+        async_client,
+        description="newer, with person",
+        client_is_company=True,
+        client_contact_person_id="cp-new",
+        client_contact_name="Moana TERIIPAIA",
+    )
+    await _set(db_session, newest_with, created_at="2026-08-01 10:00:00")
+    for i in range(5):
+        pid = await _create(async_client, description=f"recent no person {i}", client_is_company=True)
+        await _set(db_session, pid, created_at=f"2026-09-0{i + 1} 10:00:00")
+
+    body = (await async_client.get(_url("zA"))).json()
+    assert len(body["cards"]) == 5
+    assert body["latest_contact_person_id"] == "cp-new"
+
+
+@pytest.mark.asyncio
+async def test_latest_contact_person_is_null_when_no_card_has_one(async_client):
+    await _create(async_client, description="plain")
+    assert (await async_client.get(_url("zA"))).json()["latest_contact_person_id"] is None
 
 
 @pytest.mark.asyncio

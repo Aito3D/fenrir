@@ -1275,6 +1275,9 @@ class AitoClientHistoryResponse(BaseModel):
     # bounded by `limit`: Zoho never stores the handle, so this is the only
     # place the drawer can recover it from.
     latest_social: AitoClientHistorySocial | None
+    # The chosen contact person of the newest active card that has one, NOT
+    # bounded by `limit`: what the drawer pre-selects for a returning company.
+    latest_contact_person_id: str | None
 
 
 class AitoClientRatingResponse(BaseModel):
