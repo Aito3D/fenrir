@@ -514,14 +514,20 @@ function PanelHeader({
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
           {onOpenHistory ? (
-            // HoldButton's own outer wrapper is a plain, `overflow: visible`
-            // div with no `min-w-0` (the `className` prop lands on the inner
-            // button, not it), so as a direct flex child its automatic
-            // minimum size is the name's full min-content width. Without this
-            // shrinkable span between it and the h2, a long name pushes the
-            // rating pill, History button and pencil out of the clipped panel
-            // instead of truncating.
-            <span className="flex min-w-0">
+            // HoldButton's wrapper div has no min-width:0, and an
+            // inline-flex button never shrinks below its own min-content —
+            // so the name needs a BLOCK, `min-w-0` span between it and the
+            // h2, plus `max-w-full` on the button to actually cap it (a
+            // block child takes the span's width instead of forcing
+            // min-content, and the width cap is what makes the inner
+            // `truncate` span shrink). The negative margin sits on the span,
+            // not the button, so the max-width cap is not eaten by it.
+            // Measured in a headless-Chrome layout harness on 2026-09-23:
+            // `span.flex` (no truncation), `w-full` on the button (clips a
+            // short name via the negative margins) and `max-w-full` together
+            // with `-mx-1 px-1` on the button (also clips a short name) all
+            // fail.
+            <span className="block min-w-0 -mx-1">
               {/* The name itself is the hold target (spec: hold 0.5 s).
                   `label` is the client name so the heading still announces
                   the client, and the hint carries the instruction.
@@ -538,7 +544,7 @@ function PanelHeader({
                 barClassName="bg-bambu-green/20"
                 pressEffect="none"
                 hintPlacement="bottom"
-                className="min-w-0 -mx-1 px-1 text-left"
+                className="min-w-0 max-w-full px-1 text-left"
               >
                 <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
               </HoldButton>

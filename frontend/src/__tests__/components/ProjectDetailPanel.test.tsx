@@ -3747,6 +3747,26 @@ describe('client history from the masthead', () => {
     expect(await screen.findByRole('dialog', { name: 'Client history' })).toBeInTheDocument();
   });
 
+  it('pins the name-truncation class chain (jsdom has no layout, so this is the only guard against a wrapper regression)', async () => {
+    server.use(status(), history());
+    renderWith();
+    const name = await screen.findByRole('button', { name: 'ACME SARL' });
+    // A block, min-w-0 span between HoldButton and the h2 plus max-w-full on
+    // the button is what makes a long name truncate instead of pushing the
+    // rating pill, History button and pencil out of the clipped panel — see
+    // the WHY comment above the span in ProjectDetailPanel.tsx. jsdom does
+    // not lay anything out, so a class regression here would pass every
+    // other test in this file; this test exists only to pin the chain.
+    expect(name.className).toContain('max-w-full');
+    expect(name.className).toContain('min-w-0');
+    const wrapper = name.parentElement!.parentElement!;
+    expect(wrapper.tagName).toBe('SPAN');
+    expect(wrapper.className).toContain('block');
+    expect(wrapper.className).toContain('min-w-0');
+    expect(wrapper.className).toContain('-mx-1');
+    expect(within(name).getByText('ACME SARL')).toHaveClass('truncate');
+  });
+
   it('opens the history from the History button beside the pencil', async () => {
     server.use(status(), history());
     renderWith();

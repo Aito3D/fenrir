@@ -2244,10 +2244,10 @@ describe('client history swap', () => {
   it('a timeline row swaps the expanded card to that project, freshly mounted', async () => {
     // `project` (module-level, top of file) is missing many required
     // `AitoProject` fields — every other use of it goes through
-    // `HttpResponse.json`, which is untyped. `renderPage` takes
-    // `AitoProject[]`, so it is run through `makeProject` here first to
-    // backfill the rest; `makeProject(project)` keeps id 12, the description
-    // and the client fields the assertions below key off.
+    // `HttpResponse.json`, which is untyped. `makeProject` backfills the
+    // rest so the fixture below is an honestly typed, full `AitoProject`;
+    // `makeProject(project)` keeps id 12, the description and the client
+    // fields the assertions below key off.
     const cardOne = makeProject(project);
     const other = { ...cardOne, id: 33, client_name: 'ACME SARL', description: 'Pièce de tambour', column: 'done' as const };
     server.use(
