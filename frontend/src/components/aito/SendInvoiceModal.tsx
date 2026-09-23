@@ -33,10 +33,14 @@ export function SendInvoiceModal({
    *  document whose number the operator never saw. The server still owns the
    *  candidate set; this only says which of them. */
   invoiceId,
+  contactPersonId = null,
   onClose,
 }: {
   projectId: number;
   invoiceId: string;
+  /** The card's contact person, when it has one: preferred over Books'
+   *  default recipient. Null on person cards and older company cards. */
+  contactPersonId?: string | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -66,11 +70,18 @@ export function SendInvoiceModal({
     retry: false,
   });
 
-  // Seed the selection once the prefill lands. Guarded on `to` still being
-  // empty so a refetch cannot silently reset a choice already made.
+  // Seed the selection once the prefill lands. The card's contact person
+  // wins when Books lists them; otherwise Books' own default. Guarded on
+  // `to` still being empty so a refetch cannot silently reset a choice
+  // already made.
   useEffect(() => {
-    if (data?.default_email && !to) setTo(data.default_email);
-  }, [data, to]);
+    if (!data || to) return;
+    const own = contactPersonId
+      ? data.recipients.find((r) => r.contact_person_id === contactPersonId)
+      : undefined;
+    const seed = own?.email || data.default_email;
+    if (seed) setTo(seed);
+  }, [data, to, contactPersonId]);
 
   const recipients = data?.recipients ?? [];
 
