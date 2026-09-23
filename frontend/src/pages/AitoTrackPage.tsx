@@ -296,7 +296,7 @@ export function AitoTrackPage() {
                   <div className={`mt-[32px] ${entrance ? 'animate-rise' : ''}`} style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}>
                     {/* The invoice, when there is one, is the truer story; the
                         online payment link speaks only before it exists. */}
-                    {data.invoice ? <TrackingInvoice state={data.invoice} terms={payTrigger} /> : <TrackingPayment payment={data.payment!} terms={payTrigger} />}
+                    {data.invoice ? <TrackingInvoice state={data.invoice} terms={payTrigger} /> : <TrackingPayment payment={data.payment!} accepted={data.accepted} terms={payTrigger} />}
                   </div>
                 )}
               </div>
