@@ -13474,3 +13474,4 @@ writing this entry.
 - T-024 (iteration 6): user-approved behavior change 2026-09-22 — the quote sync commits a freshly minted tracking token before calling Books (both push paths), so SQLite's write lock is no longer held across the HTTP round trip; a card that already has a token keeps its single per-project commit.
 - T-019 (iteration 6): re-baseline — additive internal export PAGE in frontend/src/utils/trackingShell.ts, user-sanctioned 2026-09-22
 - T-020 (iteration 6): re-baseline — additive internal export I18N_SETTLE_TIMEOUT_MS in frontend/src/utils/trackingShell.ts, user-sanctioned 2026-09-22
+- T-021 (iteration 7): re-baseline — additive internal export TERMS_BUTTON in frontend/src/utils/trackingShell.ts, user-sanctioned 2026-09-22

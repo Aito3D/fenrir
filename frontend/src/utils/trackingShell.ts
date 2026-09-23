@@ -20,6 +20,16 @@ export const PRESS = 'active:scale-[0.97] transition-[color,background-color,tra
 
 export const delayAt = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` });
 
+// The terms-toggle button's static classes — everything but the
+// `terms.open` tail, which stays at each call site. Same base shape as the
+// tracking pages' other pill buttons (see TrackingPayment's local `button`)
+// with the outlined cyan treatment layered on; TrackingPayment and
+// TrackingInvoice both render this exact button, so it is typed once here
+// rather than twice in a different token order.
+const TERMS_BUTTON_BASE =
+  `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
+export const TERMS_BUTTON = `${TERMS_BUTTON_BASE} border text-aito-cyan hover:bg-aito-cyan/10 active:bg-aito-cyan/15`;
+
 // The outer wrapper shared by every state of both tracking pages (each
 // page's loading/404 branch and its main return): the same literal, not
 // re-typed at each call site.

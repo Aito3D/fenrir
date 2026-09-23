@@ -800,4 +800,22 @@ describe('AitoTrackPage — side panels', () => {
     expect(shopPanel()).toBeInTheDocument();
     expect(shopButton()).toBeInTheDocument();
   });
+
+  // T-025: the operator marking the invoice paid while the client has the
+  // pay panel open (and has left the tab) must not leave the stage stuck
+  // shifted with a scrim over an unmounted panel and no way back but Escape.
+  it('a refetch that clears the invoice while the pay panel is open closes the panel instead of leaving the stage stuck open', async () => {
+    let invoice: AitoTracking['invoice'] = 'unpaid';
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...UNPAID, invoice })));
+    const { queryClient } = renderAt('cleared');
+    await screen.findByTestId('track-invoice');
+    await userEvent.click(termsButton());
+    expect(stage()).toHaveAttribute('data-open', 'pay');
+    expect(payPanel()).toHaveAttribute('data-state', 'open');
+    // The operator marks it paid elsewhere; the client's tab refetches.
+    invoice = 'paid';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'cleared'] });
+    await waitFor(() => expect(screen.queryByTestId('track-panel-pay')).not.toBeInTheDocument());
+    expect(stage()).not.toHaveAttribute('data-open');
+  });
 });

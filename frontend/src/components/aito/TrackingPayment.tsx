@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingPayment } from '../../api/client';
-import { FOCUS } from '../../utils/trackingShell';
+import { FOCUS, TERMS_BUTTON } from '../../utils/trackingShell';
 import { TrackingPaidRow } from './trackingShell';
 
 /** What a card needs to drive one of the page's side panels: whether it is
@@ -57,7 +57,7 @@ export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayme
           aria-expanded={terms.open}
           aria-controls={terms.controls}
           onClick={(e) => terms.toggle(e.currentTarget)}
-          className={`${button} border text-aito-cyan hover:bg-aito-cyan/10 active:bg-aito-cyan/15 ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
+          className={`${TERMS_BUTTON} ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
         >
           {t('aito.track.paymentTermsToggle')}
         </button>

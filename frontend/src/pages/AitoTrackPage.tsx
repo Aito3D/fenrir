@@ -152,6 +152,17 @@ export function AitoTrackPage() {
   const hasTerms = showContent && (data.invoice !== null ? data.invoice !== 'paid' : data.payment?.state === 'unpaid' && !!data.payment.url);
   const payTrigger = { open: panel.open === 'pay', controls: 'track-panel-pay', toggle: (from: HTMLElement) => panel.toggle('pay', from) };
   const shopTrigger = { open: panel.open === 'shop', controls: 'track-panel-shop', toggle: (from: HTMLElement) => panel.toggle('shop', from) };
+  // A refetch (e.g. the operator marking the invoice paid while the client
+  // is away) can flip hasTerms false while the payment panel is still open:
+  // its trigger unmounts along with it, so close() must drive the panel
+  // shut itself rather than wait for a button that is no longer there.
+  useEffect(() => {
+    if (!hasTerms && panel.open === 'pay') panel.close();
+    // panel.open and panel.close are the only fields read here; depending
+    // on the whole `panel` object (a fresh literal every render) would
+    // re-run this every render for no reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasTerms, panel.open, panel.close]);
   const retry = () => {
     setRetrying(true);
     void query.refetch().finally(() => setRetrying(false));

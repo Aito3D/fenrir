@@ -185,6 +185,7 @@ export const FOCUS
 export const I18N_SETTLE_TIMEOUT_MS
 export const PAGE
 export const PRESS
+export const TERMS_BUTTON
 export const TRACK_MOTION
 export const TRACKING_FALLBACK_LANGUAGE
 export const trackNodeDelay
