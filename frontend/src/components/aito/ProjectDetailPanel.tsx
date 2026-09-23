@@ -54,7 +54,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState, replaceProject } from '../../utils/aitoOptimistic';
-import { formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
+import { contactNameStandsOut, formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
@@ -539,7 +539,7 @@ function PanelHeader({
           {/* The contact person as a peer of phone and email — the masthead
               never grows a second line (standing rule); a fourth fact joins
               the row. Plain text: a name is not something you copy out. */}
-          {project.client_is_company && project.client_contact_name && (
+          {contactNameStandsOut(project.client_name, project.client_contact_name) && (
             <span data-testid="panel-client-contact" className="flex min-w-0 items-center gap-1.5 text-white">
               <User className="h-3.5 w-3.5 flex-shrink-0 text-bambu-gray" strokeWidth={2.5} aria-hidden="true" />
               <span className="truncate">{project.client_contact_name}</span>

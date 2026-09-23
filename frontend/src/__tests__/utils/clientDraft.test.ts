@@ -16,6 +16,7 @@ import {
   normaliseClientDraft,
   splitDisplayName,
   applyContactPerson,
+  contactNameStandsOut,
   contactPersonPhone,
 } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
@@ -444,5 +445,28 @@ describe('normaliseClientDraft (contact person)', () => {
     const fixed = normaliseClientDraft(legacy as unknown as ClientDraft);
     expect(fixed.contactPersonId).toBeNull();
     expect(fixed.contactName).toBe('');
+  });
+});
+
+describe('contactNameStandsOut', () => {
+  it("is true for a company's employee", () => {
+    expect(contactNameStandsOut('SNP', 'Vaekehu VARNEY')).toBe(true);
+  });
+
+  it('is false for an individual who is their own contact, whatever the word order or case', () => {
+    expect(contactNameStandsOut('Jean DUPONT', 'Jean DUPONT')).toBe(false);
+    expect(contactNameStandsOut('DUPONT Jean', 'Jean DUPONT')).toBe(false);
+    expect(contactNameStandsOut('Jean Dupont', 'Jean DUPONT')).toBe(false);
+    expect(contactNameStandsOut('Jean-Pierre DUPONT', 'Jean Pierre DUPONT')).toBe(false);
+  });
+
+  it("is true for a relative an individual named", () => {
+    expect(contactNameStandsOut('Jean DUPONT', 'Marie DUPONT')).toBe(true);
+  });
+
+  it('is false without a person, whatever the client', () => {
+    expect(contactNameStandsOut('SNP', null)).toBe(false);
+    expect(contactNameStandsOut('SNP', '  ')).toBe(false);
+    expect(contactNameStandsOut(null, undefined)).toBe(false);
   });
 });

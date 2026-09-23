@@ -388,11 +388,22 @@ describe('ClientSection — company contacts', () => {
     expect(screen.getByRole('button', { name: /use a different phone/i })).toBeInTheDocument();
   });
 
-  it('keeps the social chooser for an individual', async () => {
+  it('an individual gets the contact list too and keeps the social chooser', async () => {
+    // An individual is a Books contact with persons like any other (themselves
+    // first); the social handle stays because for them it is a real channel.
     const person = { ...acme, customer_sub_type: 'individual' };
     render(<Harness initial={draftFromContact(person, DEFAULT_ID)} />);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    expect(screen.getByText(/social network/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^phone/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /use a different phone/i })).toBeInTheDocument();
+  });
+
+  it('the walk-in default client has no contact list', async () => {
+    render(<Harness initial={defaultClientDraft(DEFAULT_ID, DEFAULT_NAME)} />);
     expect(await screen.findByText(/social network/i)).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: /contacts/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^phone/i)).toBeInTheDocument();
   });
 
   it('auto-selects the primary and copies its coordinates', async () => {

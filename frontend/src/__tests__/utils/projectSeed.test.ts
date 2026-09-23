@@ -108,6 +108,18 @@ describe('seedFromProject', () => {
     expect(client.original).toMatchObject({ phone: '+689-87123456', email: 'jp@example.pf' });
   });
 
+  it('seeds the contact person from an individual card too', () => {
+    const seeded = seedFromProject({
+      project: { ...project, client_contact_person_id: 'cp2', client_contact_name: 'Marie DUPONT' } as AitoProject,
+      tasks: [],
+      services,
+      defaultContactId: 'walk-in',
+    });
+    expect(seeded.client?.isCompany).toBe(false);
+    expect(seeded.client?.contactPersonId).toBe('cp2');
+    expect(seeded.client?.contactName).toBe('Marie DUPONT');
+  });
+
   it('seeds the contact person from a company card', () => {
     const seeded = seedFromProject({
       project: {

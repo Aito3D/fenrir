@@ -458,6 +458,20 @@ describe('ProjectDetailPanel client fields', () => {
     show({ client_is_company: true, client_contact_person_id: null, client_contact_name: null });
     expect(screen.queryByTestId('panel-client-contact')).not.toBeInTheDocument();
   });
+
+  it("shows an individual's named relative, never the individual themselves", () => {
+    show({
+      client_is_company: false, client_name: 'Jean DUPONT',
+      client_contact_person_id: 'cp2', client_contact_name: 'Marie DUPONT',
+    });
+    expect(screen.getByTestId('panel-client-contact')).toHaveTextContent('Marie DUPONT');
+    cleanup();
+    show({
+      client_is_company: false, client_name: 'Jean DUPONT',
+      client_contact_person_id: 'cp1', client_contact_name: 'Jean DUPONT',
+    });
+    expect(screen.queryByTestId('panel-client-contact')).not.toBeInTheDocument();
+  });
 });
 
 describe('ProjectDetailPanel social handle', () => {

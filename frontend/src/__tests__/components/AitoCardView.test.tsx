@@ -674,8 +674,19 @@ describe('hybrid card anatomy', () => {
     expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('Vaekehu VARNEY');
   });
 
-  it('shows no contact line on a person card or a company without one', () => {
-    renderCard({ client_is_company: false, client_contact_name: 'Ghost', client_contact_person_id: 'cp1' });
+  it('shows the relative an individual named, not an individual who is their own contact', () => {
+    renderCard({
+      client_is_company: false, client_name: 'Jean DUPONT',
+      client_contact_name: 'Marie DUPONT', client_contact_person_id: 'cp2',
+    });
+    expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('Marie DUPONT');
+  });
+
+  it('shows no contact line when the person is the client themselves, or without a person', () => {
+    renderCard({
+      client_is_company: false, client_name: 'DUPONT Jean',
+      client_contact_name: 'Jean DUPONT', client_contact_person_id: 'cp1',
+    });
     expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
     renderCard({ client_is_company: true, client_contact_name: null, client_contact_person_id: null });
     expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();

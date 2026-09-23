@@ -37,9 +37,9 @@ export interface ClientSectionProps {
   onShippingChange: (next: ShippingDraft | null) => void;
   /** Reuse from the recall block: the drawer appends these as fresh rows. */
   onReuseTasks: (tasks: AitoTask[]) => void;
-  /** For the company branch: the person to pre-select (recalled from the
-   *  client's latest card). `undefined` while the recall is still loading,
-   *  so the picker waits rather than picking the primary too early. */
+  /** The person to pre-select (recalled from the client's latest card).
+   *  `undefined` while the recall is still loading, so the picker waits
+   *  rather than picking the primary too early. */
   preferredPersonId: string | null | undefined;
 }
 
@@ -80,7 +80,7 @@ export function ClientSection({
   // backend would answer `new` for it anyway.
   const rating = useClientRating(value.isDefault ? '' : value.id);
 
-  // Company branch bookkeeping, keyed by client id so a client switch resets
+  // Contact-person bookkeeping, keyed by client id so a client switch resets
   // it: whether Books listed anybody (hides the plain inputs behind the
   // override), whether the list could not be read (notice + plain inputs),
   // and whether the operator opened the override.
@@ -92,9 +92,12 @@ export function ClientSection({
     setPersonsState({ id: value.id, has: null, failed: false });
     setOverrideOpen(false);
   }, [value.id]);
-  const companyBranch = value.isCompany && !value.isDefault;
-  const listed = companyBranch && personsState.id === value.id && personsState.has === true;
-  const listFailed = companyBranch && personsState.id === value.id && personsState.failed;
+  // Every Books client has contact persons — a company its employees, an
+  // individual themselves (Books' primary person) plus whoever they named.
+  // Only the shared walk-in bucket has none.
+  const personsBranch = !value.isDefault;
+  const listed = personsBranch && personsState.id === value.id && personsState.has === true;
+  const listFailed = personsBranch && personsState.id === value.id && personsState.failed;
 
   if (statusQuery.data?.configured === false) {
     return (
@@ -140,9 +143,9 @@ export function ClientSection({
       visible ? 'opacity-100' : 'opacity-0 pointer-events-none'
     }`;
 
-  // Extracted so the company branch can wrap it in the collapsed override
-  // disclosure below instead of rendering it inline — same fields, same
-  // handlers, just a different place in the tree.
+  // Extracted so a client with listed persons can wrap it in the collapsed
+  // override disclosure below instead of rendering it inline — same fields,
+  // same handlers, just a different place in the tree.
   const contactInputs = (
     <>
       <div>
@@ -240,7 +243,7 @@ export function ClientSection({
 
       <ClientHistory clientId={value.id} isDefault={value.isDefault} onReuse={onReuseTasks} />
 
-      {companyBranch && (
+      {personsBranch && (
         <ContactPersonPicker
           contactId={value.id}
           value={value.contactPersonId}
@@ -278,8 +281,11 @@ export function ClientSection({
       {/* No revert button beside this one, unlike phone and email: those two
           are written back to Zoho and their reset returns them to the STORED
           value. This field has no stored value to return to — picking the
-          selected network again clears it, which is the whole undo it needs. */}
-      {!companyBranch && (
+          selected network again clears it, which is the whole undo it needs.
+          A company never has one — its people are the contact list above —
+          but for an individual the handle is a real channel, so the list and
+          the chooser sit side by side. */}
+      {!value.isCompany && (
         <SocialInput
           idPrefix="aito-client"
           network={value.socialNetwork}

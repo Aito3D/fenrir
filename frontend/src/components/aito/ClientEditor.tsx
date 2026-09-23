@@ -52,8 +52,9 @@ interface Draft {
   /** Card-only, so always from the card — never from the Books record. */
   socialNetwork: SocialNetwork | null;
   socialHandle: string;
-  /** Company cards only: the picked Books contact person. Null on a person
-   *  card, and null on a company card until one is picked. */
+  /** The picked Books contact person — a company's employee, or for an
+   *  individual themselves or someone they named. Null until one is picked
+   *  and on walk-in cards. */
   contactPersonId: string | null;
   contactName: string;
 }
@@ -77,8 +78,8 @@ function draftFromProject(project: AitoProject): Draft {
     email: project.client_email ?? '',
     phoneField: 'mobile',
     ...socialFromProject(project),
-    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
-    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
+    contactPersonId: project.client_contact_person_id ?? null,
+    contactName: project.client_contact_name ?? '',
   };
 }
 
@@ -96,8 +97,8 @@ function draftFromContact(contact: ZohoContactDetail, project: AitoProject): Dra
     email: contact.email,
     phoneField,
     ...socialFromProject(project),
-    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
-    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
+    contactPersonId: project.client_contact_person_id ?? null,
+    contactName: project.client_contact_name ?? '',
   };
 }
 
@@ -319,12 +320,12 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     setError(null);
     const body: AitoClientEdit = {
       ...(isCompany
-        ? {
-            company_name: draft.companyName.trim(),
-            client_contact_person_id: draft.contactPersonId,
-            client_contact_name: draft.contactName || null,
-          }
+        ? { company_name: draft.companyName.trim() }
         : { first_name: draft.firstName.trim(), last_name: draft.lastName.trim() }),
+      // Always sent, like the social pair: on an individual the server still
+      // renames Books' primary person and only routes the coordinates here.
+      client_contact_person_id: draft.contactPersonId,
+      client_contact_name: draft.contactName || null,
       email: draft.email.trim(),
       phone: formatPhone(phone),
       phone_field: draft.phoneField,
@@ -386,37 +387,52 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           )}
         </>
       ) : (
-        <div className="grid grid-cols-2 gap-2.5">
-          <div>
-            <label htmlFor="panel-client-first-name" className={fieldLabelCls}>
-              {t('aito.firstName')}
-            </label>
-            <input
-              ref={firstFieldRef}
-              id="panel-client-first-name"
-              type="text"
-              autoComplete="new-password"
-              value={draft.firstName}
-              onChange={(e) => update({ firstName: e.target.value })}
-              onBlur={(e) => update({ firstName: titleCaseSegments(e.target.value) })}
-              className={fieldCls}
-            />
+        <>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label htmlFor="panel-client-first-name" className={fieldLabelCls}>
+                {t('aito.firstName')}
+              </label>
+              <input
+                ref={firstFieldRef}
+                id="panel-client-first-name"
+                type="text"
+                autoComplete="new-password"
+                value={draft.firstName}
+                onChange={(e) => update({ firstName: e.target.value })}
+                onBlur={(e) => update({ firstName: titleCaseSegments(e.target.value) })}
+                className={fieldCls}
+              />
+            </div>
+            <div>
+              <label htmlFor="panel-client-last-name" className={fieldLabelCls}>
+                {t('aito.lastName')}
+              </label>
+              <input
+                id="panel-client-last-name"
+                type="text"
+                autoComplete="new-password"
+                value={draft.lastName}
+                onChange={(e) => update({ lastName: e.target.value })}
+                onBlur={(e) => update({ lastName: e.target.value.trim().toLocaleUpperCase('fr') })}
+                className={fieldCls}
+              />
+            </div>
           </div>
-          <div>
-            <label htmlFor="panel-client-last-name" className={fieldLabelCls}>
-              {t('aito.lastName')}
-            </label>
-            <input
-              id="panel-client-last-name"
-              type="text"
-              autoComplete="new-password"
-              value={draft.lastName}
-              onChange={(e) => update({ lastName: e.target.value })}
-              onBlur={(e) => update({ lastName: e.target.value.trim().toLocaleUpperCase('fr') })}
-              className={fieldCls}
+          {/* An individual has persons too: themselves (Books' primary,
+              whose name the two fields above edit) and anyone they named.
+              Picking one routes the phone and email below to that person;
+              the name fields never follow the pick. */}
+          {!isWalkIn && (
+            <ContactPersonPicker
+              contactId={project.client_id as string}
+              value={draft.contactPersonId}
+              preferredId={null}
+              onSelect={selectPerson}
+              variant="sheet"
             />
-          </div>
-        </div>
+          )}
+        </>
       )}
       {!hasName && <p className="text-xs text-bambu-gray">{t('aito.clientNameRequired')}</p>}
 
@@ -505,7 +521,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           {!isWalkIn && (
             <>
               <Cloud className="h-3 w-3 flex-shrink-0 text-bambu-green-light" aria-hidden="true" />
-              {isCompany && draft.contactPersonId ? t('aito.clientEditFanOutPerson') : t('aito.clientEditFanOut')}
+              {draft.contactPersonId ? t('aito.clientEditFanOutPerson') : t('aito.clientEditFanOut')}
             </>
           )}
         </span>

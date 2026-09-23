@@ -287,6 +287,18 @@ export function contactPersonPhone(person: { phone: string; mobile: string }): s
   return person.mobile || person.phone || '';
 }
 
+/** Whether a card's contact person is worth a line of its own: a company's
+ *  employee always is; an individual who is their own contact (Books' primary
+ *  person carries the client's name) is not — "Jean DUPONT · Jean DUPONT"
+ *  says nothing. Compared as word sets, case-folded, because Books display
+ *  names are not always "First LAST" ("DUPONT Jean" is the same person). */
+export function contactNameStandsOut(clientName: string | null | undefined, contactName: string | null | undefined): boolean {
+  const contact = (contactName ?? '').trim();
+  if (!contact) return false;
+  const words = (s: string) => s.toLocaleLowerCase().split(/[\s-]+/).filter(Boolean).sort().join(' ');
+  return words(contact) !== words(clientName ?? '');
+}
+
 /** Pick the person to select when nothing is: the caller's preference if it
  *  is still on the account, else Books' primary, else the first row. Lives
  *  here rather than in `ContactPersonPicker` because `react-refresh/only-

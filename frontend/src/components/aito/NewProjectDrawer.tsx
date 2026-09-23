@@ -26,6 +26,7 @@ import {
   formatPhone,
   isSocialNetwork,
   visibleClientDraftErrors,
+  contactNameStandsOut,
 } from '../../utils/clientDraft';
 import type { ClientDraft, SocialNetwork } from '../../utils/clientDraft';
 import { tasksMissingMaindoeuvreDescription } from '../../utils/maindoeuvreValidation';
@@ -732,7 +733,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 summaryState={summaryState}
                 clientAccountName={
                   draft
-                    ? draft.isCompany && draft.contactName
+                    ? contactNameStandsOut(draft.name, draft.contactName)
                       ? `${draft.name} · ${draft.contactName}`
                       : draft.name
                     : t('aito.noClient')

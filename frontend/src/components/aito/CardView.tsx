@@ -4,6 +4,7 @@ import { AlertTriangle, Building2, CreditCard, Eye, GripVertical, Lock, User } f
 import { DueDateBadge } from './DueDateBadge';
 import { TaskMiniRows, TaskStepsSummary } from './TaskMiniRows';
 import type { AitoFlag, AitoProject } from '../../api/client';
+import { contactNameStandsOut } from '../../utils/clientDraft';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAitoViewers } from '../../hooks/useAitoPresence';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
@@ -394,11 +395,13 @@ export function CardView({
           )}
         </div>
 
-        {/* Who at the company: one muted line under the name. Only when the
-            card is a company AND has a person — a person card's name IS the
-            person, and an older company card simply has none. Indented past
-            the icon so it reads as a sub-line of the name, not a new row. */}
-        {project.client_is_company && project.client_contact_name && (
+        {/* Who at the client: one muted line under the name. Only when the
+            person adds something — a company's employee, or the relative an
+            individual named — never when the person IS the client (an
+            individual who is their own contact), and an older card simply has
+            none. Indented past the icon so it reads as a sub-line of the
+            name, not a new row. */}
+        {contactNameStandsOut(project.client_name, project.client_contact_name) && (
           <p
             data-testid="aito-card-contact"
             className="truncate px-3 pl-[2.1rem] text-xs text-bambu-gray"

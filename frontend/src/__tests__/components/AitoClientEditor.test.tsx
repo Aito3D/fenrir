@@ -157,6 +157,9 @@ describe('ClientEditor', () => {
       phone_field: 'mobile',
       client_social_network: null,
       client_social_handle: null,
+      // Always sent, null on a card that never picked a person.
+      client_contact_person_id: null,
+      client_contact_name: null,
       expected_version: 3,
     });
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ client_name: 'Jean-Pierre DUPONT', version: 4 }));
@@ -377,6 +380,14 @@ const VAEKEHU = {
   contact_person_id: 'cp1', first_name: 'Vaekehu', last_name: 'VARNEY', name: 'Vaekehu VARNEY',
   email: 'vaekehu@snp.pf', phone: '', mobile: '+689-40549958', is_primary: true,
 };
+const JEAN_SELF = {
+  contact_person_id: 'cp1', first_name: 'Jean', last_name: 'DUPONT', name: 'Jean DUPONT',
+  email: 'zoho@example.pf', phone: '', mobile: '+689-87000009', is_primary: true,
+};
+const MARIE = {
+  contact_person_id: 'cp2', first_name: 'Marie', last_name: 'DUPONT', name: 'Marie DUPONT',
+  email: 'marie@example.pf', phone: '', mobile: '+689-87000010', is_primary: false,
+};
 const MOANA = {
   contact_person_id: 'cp2', first_name: 'Moana', last_name: 'TERIIPAIA', name: 'Moana TERIIPAIA',
   email: 'moana@snp.pf', phone: '+689-87221043', mobile: '', is_primary: false,
@@ -450,9 +461,40 @@ describe('ClientEditor — company contact persons', () => {
     expect(await screen.findByText(i18n.t('aito.contactGone'))).toBeInTheDocument();
   });
 
-  it('a person card has no contact list', async () => {
+  it('an individual card lists its persons under the name fields and sends the picked one', async () => {
     mockZoho();
-    show();
+    server.use(http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([JEAN_SELF, MARIE])));
+    let body: unknown = null;
+    server.use(
+      http.put('/api/v1/aito/:id/client', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ...project, version: 4 });
+      }),
+    );
+    const user = userEvent.setup();
+    const { onSaved } = show();
+    await waitFor(() => expect(firstName()).toHaveValue('Jean'));
+    // Books' primary is the client themselves; nothing on the card yet, so
+    // the primary is what the sheet pre-selects.
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Jean DUPONT' })).toBeChecked());
+    await user.click(screen.getByRole('radio', { name: 'Marie DUPONT' }));
+    expect(phone()).toHaveValue('87000010');
+    expect(email()).toHaveValue('marie@example.pf');
+    // The name fields never follow the pick: they are the client's own name.
+    expect(firstName()).toHaveValue('Jean');
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(body).toMatchObject({
+      first_name: 'Jean', last_name: 'DUPONT',
+      client_contact_person_id: 'cp2', client_contact_name: 'Marie DUPONT',
+      phone: '+689-87000010', email: 'marie@example.pf',
+    });
+    expect(body).not.toHaveProperty('company_name');
+  });
+
+  it('a walk-in card has no contact list', async () => {
+    mockZoho();
+    show({ client_id: WALK_IN });
     await waitFor(() => expect(firstName()).toHaveValue('Jean'));
     // Scoped by name: the sheet always carries a `radiogroup` for the social
     // network segment, so an unscoped query would also match that one.

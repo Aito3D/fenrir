@@ -53,6 +53,14 @@ const SNP = {
   mobile: '+689-40549958',
   email: 'vaekehu@snp.pf',
 };
+const JP_SELF = {
+  contact_person_id: 'cpjp', first_name: 'Jean-Pierre', last_name: 'DUPONT', name: 'Jean-Pierre DUPONT',
+  email: 'jp@example.pf', phone: '', mobile: '87123456', is_primary: true,
+};
+const MARIE = {
+  contact_person_id: 'cpm', first_name: 'Marie', last_name: 'DUPONT', name: 'Marie DUPONT',
+  email: '', phone: '', mobile: '+689-87000010', is_primary: false,
+};
 const VAEKEHU = {
   contact_person_id: 'cp1', first_name: 'Vaekehu', last_name: 'VARNEY', name: 'Vaekehu VARNEY',
   email: 'vaekehu@snp.pf', phone: '', mobile: '+689-40549958', is_primary: true,
@@ -1307,6 +1315,23 @@ describe('company contact persons', () => {
       null,
       null,
     );
+  });
+
+  it('an individual lists their persons beside the social chooser; the checklist names a relative only', async () => {
+    const user = userEvent.setup();
+    await renderDrawer();
+    mockHistory({ cards: [], latest_social: null, latest_contact_person_id: null });
+    server.use(http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([JP_SELF, MARIE])));
+    await openClientSection();
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Jean-Pierre DUPONT' })).toBeChecked());
+    expect(screen.getByText(/social network/i)).toBeInTheDocument();
+    // Their own name is not repeated after the account name.
+    expect(checklistLine(/Client account — Jean-Pierre DUPONT$/)).toHaveAttribute('data-state', 'ok');
+
+    await user.click(screen.getByRole('radio', { name: 'Marie DUPONT' }));
+    expect(checklistLine(/Client account — Jean-Pierre DUPONT · Marie DUPONT/)).toHaveAttribute('data-state', 'ok');
+    expect(checklistLine(/Client reachable — \+689-87000010/)).toHaveAttribute('data-state', 'ok');
   });
 
   it('recalls the person from the latest past card', async () => {

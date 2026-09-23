@@ -59,8 +59,8 @@ function clientFromProject(project: AitoProject, defaultContactId: string): Clie
     // The handle only exists alongside a network, the same pairing rule the
     // server enforces and `normaliseClientDraft` repairs.
     socialHandle: network ? (project.client_social_handle ?? '') : '',
-    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
-    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
+    contactPersonId: project.client_contact_person_id ?? null,
+    contactName: project.client_contact_name ?? '',
     touched: { phone: false, email: false },
     blurred: { phone: false, email: false },
     original: { phone, email, phoneField: 'mobile' },
