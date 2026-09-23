@@ -3730,15 +3730,20 @@ describe('client history from the masthead', () => {
     renderWith();
     // The name becomes a hold button once the walk-in id is known.
     const name = await screen.findByRole('button', { name: 'ACME SARL' });
-    vi.useFakeTimers();
-    fireEvent.pointerDown(name);
-    act(() => vi.advanceTimersByTime(200));
-    fireEvent.pointerUp(name);
-    act(() => vi.advanceTimersByTime(500));
-    expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull();
-    fireEvent.pointerDown(name);
-    act(() => vi.advanceTimersByTime(500));
-    vi.useRealTimers();
+    // Fake timers must be torn down even if an assertion below throws — see
+    // the same rationale near line 864.
+    try {
+      vi.useFakeTimers();
+      fireEvent.pointerDown(name);
+      act(() => vi.advanceTimersByTime(200));
+      fireEvent.pointerUp(name);
+      act(() => vi.advanceTimersByTime(500));
+      expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull();
+      fireEvent.pointerDown(name);
+      act(() => vi.advanceTimersByTime(500));
+    } finally {
+      vi.useRealTimers();
+    }
     expect(await screen.findByRole('dialog', { name: 'Client history' })).toBeInTheDocument();
   });
 

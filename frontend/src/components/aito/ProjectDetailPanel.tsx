@@ -514,25 +514,35 @@ function PanelHeader({
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
           {onOpenHistory ? (
-            // The name itself is the hold target (spec: hold 0.5 s). `label`
-            // is the client name so the heading still announces the client,
-            // and the hint carries the instruction. `progress="bar"` fills the
-            // name green from the left; `pressEffect="none"` because the band
-            // must not grow. Hint below: the panel root is overflow-hidden
-            // and this is its first row.
-            <HoldButton
-              onHold={() => onOpenHistory()}
-              durationMs={500}
-              label={project.client_name ?? t('aito.noClient')}
-              hint={t('aito.clientHistoryHint')}
-              progress="bar"
-              barClassName="bg-bambu-green/20"
-              pressEffect="none"
-              hintPlacement="bottom"
-              className="min-w-0 -mx-1 px-1 text-left"
-            >
-              <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
-            </HoldButton>
+            // HoldButton's own outer wrapper is a plain, `overflow: visible`
+            // div with no `min-w-0` (the `className` prop lands on the inner
+            // button, not it), so as a direct flex child its automatic
+            // minimum size is the name's full min-content width. Without this
+            // shrinkable span between it and the h2, a long name pushes the
+            // rating pill, History button and pencil out of the clipped panel
+            // instead of truncating.
+            <span className="flex min-w-0">
+              {/* The name itself is the hold target (spec: hold 0.5 s).
+                  `label` is the client name so the heading still announces
+                  the client, and the hint carries the instruction.
+                  `progress="bar"` fills the name green from the left;
+                  `pressEffect="none"` because the band must not grow. Hint
+                  below: the panel root is overflow-hidden and this is its
+                  first row. */}
+              <HoldButton
+                onHold={() => onOpenHistory()}
+                durationMs={500}
+                label={project.client_name ?? t('aito.noClient')}
+                hint={t('aito.clientHistoryHint')}
+                progress="bar"
+                barClassName="bg-bambu-green/20"
+                pressEffect="none"
+                hintPlacement="bottom"
+                className="min-w-0 -mx-1 px-1 text-left"
+              >
+                <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+              </HoldButton>
+            </span>
           ) : (
             <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
           )}
@@ -545,13 +555,6 @@ function PanelHeader({
               top and left edges. Below the pill is the contacts row, inside
               the band, with the whole band width to the right. */}
           <ClientRatingPill rating={rating.data} hideNew align="start" side="bottom" />
-          {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
-              never removed from the tree: a keyboard user tabs onto it and
-              focus-visible brings it up. Gated on `canUpdate` because the
-              route it opens (PUT /{id}/client) is. The ONE edit affordance
-              for the whole contact — name, phone, email and the card's social
-              channel all live on the sheet it toggles — so while the sheet is
-              open the pencil stays up and lit, as the thing that closes it. */}
           {/* The gesture's discoverable twin: revealed with the pencil,
               reachable by keyboard, same dialog. Before the pencil so the
               pencil keeps its place at the end of the row. */}
@@ -566,6 +569,13 @@ function PanelHeader({
               <History className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
+          {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
+              never removed from the tree: a keyboard user tabs onto it and
+              focus-visible brings it up. Gated on `canUpdate` because the
+              route it opens (PUT /{id}/client) is. The ONE edit affordance
+              for the whole contact — name, phone, email and the card's social
+              channel all live on the sheet it toggles — so while the sheet is
+              open the pencil stays up and lit, as the thing that closes it. */}
           {canUpdate && (
             <button
               ref={clientEditButtonRef}
@@ -923,20 +933,6 @@ export function ProjectDetailPanel({
   // active card on the same contact, and only a refetch brings those
   // siblings in. Not an optimistic write: the server is Zoho-first, so
   // nothing is true until it answers.
-  // The history dialog. Its affordances exist only for a client that can
-  // have a history — the same walk-in rule ClientEditor applies, from the
-  // same cached status query. Unknown until the status resolves: no
-  // affordance rather than a hold that opens an empty list.
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
-  });
-  const defaultContactId = statusQuery.data?.default_contact_id;
-  const canShowHistory =
-    project.client_id !== null && defaultContactId !== undefined && project.client_id !== defaultContactId;
-
   const [editingClient, setEditingClient] = useState(false);
   // True from a close request until the sheet's exit has played. The blur,
   // the inert body and the lit pencil all key on `sheetOpen` (open AND not
@@ -976,6 +972,24 @@ export function ProjectDetailPanel({
     void queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     closeClientEdit();
   };
+
+  // The history dialog. Its affordances exist only for a client that can
+  // have a history — the same walk-in rule ClientEditor applies, from the
+  // same cached status query. Unknown until the status resolves: no
+  // affordance rather than a hold that opens an empty list.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const statusQuery = useQuery({
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
+    staleTime: 60_000,
+    // A legacy card with no client id has nothing to look up — same
+    // discipline as `useClientRating`, which disables itself for an empty id
+    // rather than asking the endpoint about a client that does not exist.
+    enabled: project.client_id !== null,
+  });
+  const defaultContactId = statusQuery.data?.default_contact_id;
+  const canShowHistory =
+    project.client_id !== null && defaultContactId !== undefined && project.client_id !== defaultContactId;
 
   // At most once per panel, whichever of the two arbitration branches gets
   // there first. Fire-and-forget by design: the card is already closed, the
