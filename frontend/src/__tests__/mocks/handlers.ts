@@ -640,6 +640,11 @@ export const handlers = [
   // issue an unhandled request. Empty by default — the block renders nothing;
   // tests about the block override this with server.use().
   http.get('/api/v1/aito/clients/:clientId/history', () => HttpResponse.json({ cards: [], latest_social: null, latest_contact_person_id: null })),
+  // Same reasoning: ContactPersonPicker fires as soon as a company contact is
+  // attached (drawer or sheet), so any test exercising that path without its
+  // own persons fixture would otherwise issue an unhandled request. Empty by
+  // default; tests about the picker override this with server.use().
+  http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([])),
   http.get('/api/v1/aito/clients/:clientId/rating', () =>
     HttpResponse.json({
       tier: 'unavailable', reason: null,

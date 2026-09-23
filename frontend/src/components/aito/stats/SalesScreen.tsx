@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoStats } from '../../../api/client';
 import { DecisionsChart } from './DecisionsChart';
-import { DECLINED, SERIES } from './palette';
+import { DECISION } from './palette';
 import { Facts, Finding, HBars, Panel, Split } from './primitives';
 import { useStatsFormat } from './useStatsFormat';
 
@@ -84,8 +84,8 @@ export function SalesScreen({ data }: { data: AitoStats }) {
                     label: `${money(band.min)} – ${money(band.max)}`,
                     scale: busiest > 0 ? n / busiest : 0,
                     segments: [
-                      { weight: band.accepted, color: SERIES.accepted, segment: 'accepted' },
-                      { weight: band.declined, color: DECLINED, segment: 'declined' },
+                      { weight: band.accepted, color: DECISION.accepted, segment: 'accepted' },
+                      { weight: band.declined, color: DECISION.declined, segment: 'declined' },
                     ],
                     value: (
                       <>

@@ -76,7 +76,7 @@ async def test_paid_link_is_paid_and_deposit_reflects_the_setting(db_session):
     await set_setting(db_session, "aito_deposit_pct", "30")
     await db_session.commit()
     payment = (await _track(db_session)).payment
-    assert payment.model_dump() == {"state": "paid", "url": "https://osb/pay/L1", "deposit": True}
+    assert payment.model_dump() == {"state": "paid", "url": None, "deposit": True}
 
 
 @pytest.mark.asyncio
@@ -112,3 +112,15 @@ async def test_a_paid_link_shows_whatever_the_quote_status(db_session):
     p = await _project(db_session, quote_status="sent")
     await _link(db_session, p.id, status="paid")
     assert (await _track(db_session)).payment.state == "paid"
+
+
+@pytest.mark.asyncio
+async def test_a_paid_link_never_exposes_the_checkout_url(db_session):
+    # The schema documents `url` as the unpaid-only field, and the page
+    # never renders it once state is "paid" — a settled order must not
+    # leak the Heimdall checkout link to anyone reading the JSON.
+    p = await _project(db_session)
+    await _link(db_session, p.id, status="paid")
+    payment = (await _track(db_session)).payment
+    assert payment.state == "paid"
+    assert payment.url is None

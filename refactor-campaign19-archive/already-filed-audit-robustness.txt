@@ -1,0 +1,7 @@
+backend/app/services/aito_quote_sync.py | error-handling | purge_tracking_views failure in run_sync_loop leaves the tick's session un-rolled-back
+backend/app/api/routes/aito.py | rate-limiting | _track_rate_limited's per-IP CALLS cap becomes a 120/min site-wide cap behind an unconfigured proxy
+frontend/src/pages/AitoTrackPage.tsx | partial-failure | the i18n `settled` gate has no deadline, so a stalled locale chunk hides data that already arrived
+backend/app/services/aito_quote_sync.py | concurrency | notes_with_tracking mints the tracking token inside the open transaction, holding SQLite's write lock across the Books round trip
+frontend/src/pages/AitoTrackPage.tsx | state-desync | AitoTrackPage leaves panel.open === 'pay' when a refetch removes the payment panel
+frontend/src/components/aito/TrackingPaymentMethods.tsx | error-handling | copy() in TrackingPaymentMethods swallows a failed clipboard write and shows nothing
+frontend/src/App.tsx | error-handling | the public tracking routes have no client-facing error boundary and fall through to the developer UI Crash screen

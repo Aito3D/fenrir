@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "mistralai/mistral-small"
-# Pinned, not a setting: see the module docstring. Every proofread call uses it.
+# Pinned, not a setting: see the module docstring. Every proofread call tries
+# it first; see proofread_text for the one case it gives way.
 PROOFREAD_MODEL = "mistralai/mistral-small-2603"
 # Longest field we will pay to correct. Matches AitoProofreadRequest.text's own
 # cap — the API rejects anything longer before it reaches this module.
@@ -75,7 +76,37 @@ class OpenRouterNotConfiguredError(Exception):
 
 
 class OpenRouterUpstreamError(Exception):
-    """OpenRouter reachable but the call failed."""
+    """OpenRouter reachable but the call failed.
+
+    `status_code` is the HTTP status OpenRouter answered with, or None when
+    the failure happened before an answer (transport) or after a 200 (bad
+    payload, empty or truncated content). Callers use it to tell a refusal
+    of one MODEL (429 throttled, 403/404 not allowed for this key) from a
+    failure any model would share.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# HTTP statuses that mean "not with THIS model": OpenRouter throttles per
+# model (429) and a key can be limited to a model allowlist (403/404). Any of
+# these on the pinned proofread model is worth one retry with the configured
+# one; a 500 or a transport failure is not.
+_MODEL_SPECIFIC_STATUSES = frozenset({403, 404, 429})
+
+
+def _error_message(response: httpx.Response) -> str:
+    """OpenRouter's own explanation of a non-200, or "" when there is none.
+
+    Dropped on the floor until the proofread field silently failed for weeks
+    with nothing but "OpenRouter returned 429" to go on."""
+    try:
+        message = response.json()["error"]["message"]
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return ""
+    return str(message).strip() if message else ""
 
 
 def _task_lines(tasks: list[dict]) -> list[str]:
@@ -168,7 +199,11 @@ async def _chat(
     except httpx.HTTPError as e:
         raise OpenRouterUpstreamError(f"OpenRouter request failed: {e}") from e
     if response.status_code != 200:
-        raise OpenRouterUpstreamError(f"OpenRouter returned {response.status_code}")
+        detail = _error_message(response)
+        raise OpenRouterUpstreamError(
+            f"OpenRouter returned {response.status_code}" + (f": {detail}" if detail else ""),
+            status_code=response.status_code,
+        )
     try:
         choice = response.json()["choices"][0]
         content = choice["message"]["content"].strip()
@@ -278,6 +313,13 @@ async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
     because the caller swaps the answer straight into the field the user just
     left, and anything beyond a fix is words they did not write ending up on a
     quote. Raises the two module errors; never returns "".
+
+    Tries PROOFREAD_MODEL first. When OpenRouter refuses that model
+    specifically (throttled, or not allowed for this key) the same request
+    goes once more to the configured `openrouter_model` — the one the summary
+    and the pickup SMS already use, so it is known to be reachable — and the
+    returned model names which one answered. Without a configured model that
+    differs from the pin there is nothing to fall back to.
     """
     api_key = await _api_key(db)
     # Bounded twice over: the request schema caps this at PROOFREAD_MAX_CHARS,
@@ -285,21 +327,29 @@ async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
     # more room than the question plus a little slack for added accents and
     # punctuation.
     source = text.strip()[:PROOFREAD_MAX_CHARS]
-    corrected = await _chat(
-        api_key,
-        PROOFREAD_MODEL,
-        _PROOFREAD_SYSTEM_PROMPT,
-        source,
-        # Tokens, sized from a CHARACTER count, so this has to assume a
-        # worst-case (i.e. token-dense) ratio rather than a typical one:
-        # French prose heavy in accents, digits and references can tokenise
-        # under 2 chars/token, so len(source)//2 was not enough headroom and
-        # a long, dense field would come back truncated. 1.5 chars/token is
-        # conservative for French; PROOFREAD_MAX_CHARS already bounds the
-        # worst case, so no further cap is needed here.
-        max_tokens=int(len(source) / 1.5) + 120,
-        raise_on_truncation=True,
-    )
+    # Tokens, sized from a CHARACTER count, so this has to assume a worst-case
+    # (i.e. token-dense) ratio rather than a typical one: French prose heavy
+    # in accents, digits and references can tokenise under 2 chars/token, so
+    # len(source)//2 was not enough headroom and a long, dense field would
+    # come back truncated. 1.5 chars/token is conservative for French;
+    # PROOFREAD_MAX_CHARS already bounds the worst case, so no further cap is
+    # needed here.
+    max_tokens = int(len(source) / 1.5) + 120
+
+    async def correct(model: str) -> str:
+        return await _chat(
+            api_key, model, _PROOFREAD_SYSTEM_PROMPT, source, max_tokens=max_tokens, raise_on_truncation=True
+        )
+
+    model = PROOFREAD_MODEL
+    try:
+        corrected = await correct(model)
+    except OpenRouterUpstreamError as e:
+        fallback = (await _setting(db, "openrouter_model")).strip()
+        if e.status_code not in _MODEL_SPECIFIC_STATUSES or not fallback or fallback == PROOFREAD_MODEL:
+            raise
+        model = fallback
+        corrected = await correct(model)
     unquoted = _unquote(corrected, source)
     # A reply that is exactly a quote pair (`""`, `«  »`) passes _unquote's
     # len>=2 check and strips to "". That is not an upstream failure — the
@@ -309,4 +359,4 @@ async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
     # blank field before this is ever called), so falling back to it is the
     # same outcome as "nothing needed correcting": the caller sees its own
     # text unchanged, exactly as if the model had echoed it back.
-    return unquoted or source, PROOFREAD_MODEL
+    return unquoted or source, model

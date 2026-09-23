@@ -143,6 +143,10 @@ describe('StatsView period screens', () => {
     expect(win[0].querySelectorAll('[data-segment="declined"]')).toHaveLength(0);
     expect(win[1]).toHaveTextContent('50%');
     expect(win[1].querySelectorAll('[data-segment]')).toHaveLength(2);
+    // Decisions are a yes/no, painted in the DECISION pair (pastel green / deeper
+    // red), not the three-moment SERIES hue the Activity chart uses for "accepted".
+    expect((win[1].querySelector('[data-segment="accepted"]') as HTMLElement).style.backgroundColor).toBe('rgb(143, 212, 168)');
+    expect((win[1].querySelector('[data-segment="declined"]') as HTMLElement).style.backgroundColor).toBe('rgb(212, 112, 111)');
     expect(screen.getByTestId('aito-stats-decisions').querySelectorAll('.recharts-bar').length).toBe(2);
   });
 

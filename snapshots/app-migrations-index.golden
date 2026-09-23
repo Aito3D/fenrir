@@ -220,36 +220,37 @@
    218	# Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
    219	# Migration: per-line percent discount on the Impression3D service
    220	# Migration: per-service quantity and percent discount on the other three
-   221	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
-   222	# Migration: invoiced flag on Aito projects (2026-08-03).
-   223	# Migration: urgent flag on Aito projects (2026-08-04).
-   224	# Migration: content-fields revision counter for optimistic concurrency
-   225	# Migration: three-state board flag on Aito projects (2026-08-06).
-   226	# Migration: the comment mirror's fetch policy needs to know when it last
-   227	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
-   228	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
-   229	# Migration: an optional social-network handle on an Aito card, standing in
-   230	# Migration: the Finish column's "client has been told to collect" mark.
-   231	# Migration: promised delivery date (2026-09-04). Nullable, so no
-   232	# Migration: the rush surcharge was removed (2026-09-07). Drop the columns
-   233	# Migration: public tracking link token (2026-09-06). Nullable, minted on
-   234	# Migration: tracking page view log (2026-09-06). A row is a card and a
-   235	# Migration: payment-link ledger + the two project facts it reads
-   236	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
-   237	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   238	# Migration: per-file print progress inside a project (#1897).
-   239	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   240	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   241	# Migration: variant grouping for library files (#671 / #2570). The
-   242	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   243	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   244	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   245	# Migration: storage location sensor alerts (#2824), own column rather than
-   246	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
-   247	# Migration: back the one-binding-per-(location, entity) rule with a unique
-   248	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   249	# Migration: drop the AMS slot markers an older Fenrir wrote into
-   250	# Migration: whether Books has been directly observed to agree with an
+   221	# Migration: the Main d'œuvre service (2026-09-20). Three additive
+   222	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
+   223	# Migration: invoiced flag on Aito projects (2026-08-03).
+   224	# Migration: urgent flag on Aito projects (2026-08-04).
+   225	# Migration: content-fields revision counter for optimistic concurrency
+   226	# Migration: three-state board flag on Aito projects (2026-08-06).
+   227	# Migration: the comment mirror's fetch policy needs to know when it last
+   228	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
+   229	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
+   230	# Migration: an optional social-network handle on an Aito card, standing in
+   231	# Migration: the Finish column's "client has been told to collect" mark.
+   232	# Migration: promised delivery date (2026-09-04). Nullable, so no
+   233	# Migration: the rush surcharge was removed (2026-09-07). Drop the columns
+   234	# Migration: public tracking link token (2026-09-06). Nullable, minted on
+   235	# Migration: tracking page view log (2026-09-06). A row is a card and a
+   236	# Migration: payment-link ledger + the two project facts it reads
+   237	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
+   238	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   239	# Migration: per-file print progress inside a project (#1897).
+   240	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   241	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   242	# Migration: variant grouping for library files (#671 / #2570). The
+   243	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   244	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   245	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   246	# Migration: storage location sensor alerts (#2824), own column rather than
+   247	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+   248	# Migration: back the one-binding-per-(location, entity) rule with a unique
+   249	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   250	# Migration: drop the AMS slot markers an older Fenrir wrote into
+   251	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 

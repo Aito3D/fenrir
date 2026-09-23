@@ -9,7 +9,7 @@ import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { ENTRY_MOTION, TRACK_MOTION } from '../utils/aitoTracking';
 import { prefersReducedMotion } from '../utils/motion';
 import { CODE_LENGTH, type CodeState } from '../utils/trackingCode';
-import { CARD, delayAt } from '../utils/trackingShell';
+import { CARD, I18N_SETTLE_TIMEOUT_MS, PAGE, delayAt } from '../utils/trackingShell';
 
 type Failure = 'notFound' | 'tooMany' | 'error';
 
@@ -91,6 +91,14 @@ export function AitoTrackEntryPage() {
     },
     [],
   );
+  // A stalled locale chunk must not leave the front door stuck on a
+  // skeleton forever: once this fires, the page proceeds with i18next's
+  // bundled English strings even though `ready` never went true.
+  const [i18nTimedOut, setI18nTimedOut] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setI18nTimedOut(true), I18N_SETTLE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const check = async (value: string) => {
     const seq = ++sequence.current;
@@ -127,9 +135,9 @@ export function AitoTrackEntryPage() {
   // with a skeleton standing in for the code row: no text (nothing is
   // translated yet) and no motion (ENTRY_MOTION plays only from the
   // ready-state mount, below).
-  if (!ready) {
+  if (!ready && !i18nTimedOut) {
     return (
-      <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+      <div className={PAGE}>
         <div className={CARD}>
           <header className="text-center">
             <Logo className="mb-[20px]" />
@@ -142,7 +150,7 @@ export function AitoTrackEntryPage() {
 
   const status = statusKey(state, failure);
   return (
-    <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+    <div className={PAGE}>
       <div className={CARD}>
         <TrackingLanguageSelect />
         <header className="text-center">

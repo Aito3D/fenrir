@@ -47,6 +47,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
   const { t } = useTranslation();
   const [method, setMethod] = useState<Method>('transfer');
   const [copied, setCopied] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
   useEffect(
     () => () => {
@@ -56,8 +57,15 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
   );
 
   const copy = async (key: string, value: string) => {
-    if (!(await copyTextToClipboard(value))) return;
+    const ok = await copyTextToClipboard(value);
     if (timer.current !== null) window.clearTimeout(timer.current);
+    if (!ok) {
+      setCopied(null);
+      setCopyFailed(key);
+      timer.current = window.setTimeout(() => setCopyFailed(null), COPIED_HOLD_MS);
+      return;
+    }
+    setCopyFailed(null);
     setCopied(key);
     timer.current = window.setTimeout(() => setCopied(null), COPIED_HOLD_MS);
   };
@@ -131,7 +139,17 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
   };
 
   const fact = (key: string, label: string, value: string, copyLabel: string, lead = false) => (
-    <Fact key={key} label={label} value={value} lead={lead} copyLabel={copyLabel} copied={copied === key} onCopy={() => void copy(key, value)} />
+    <Fact
+      key={key}
+      label={label}
+      value={value}
+      lead={lead}
+      copyLabel={copyLabel}
+      copied={copied === key}
+      failed={copyFailed === key}
+      failedHint={t('aito.track.paymentMethods.copyFailed')}
+      onCopy={() => void copy(key, value)}
+    />
   );
   const referenceRow = (label: string) =>
     reference
@@ -222,7 +240,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
 
       <p className="mx-[4px] mt-[10px] text-[12.5px]">{hint}</p>
       <span className="sr-only" aria-live="polite">
-        {copied ? t('aito.track.paymentMethods.copied') : ''}
+        {copied ? t('aito.track.paymentMethods.copied') : copyFailed ? t('aito.track.paymentMethods.copyFailed') : ''}
       </span>
     </div>
   );
@@ -249,7 +267,25 @@ const CHECK_ICON = (
  *  line only when the PANE is wide enough (a container query, not the
  *  viewport: the 360 px side panel on a desktop stacks them, a tablet's
  *  full-width sheet does not). */
-function Fact({ label, value, lead = false, copyLabel, copied = false, onCopy }: { label: string; value: string; lead?: boolean; copyLabel?: string; copied?: boolean; onCopy?: () => void }) {
+function Fact({
+  label,
+  value,
+  lead = false,
+  copyLabel,
+  copied = false,
+  failed = false,
+  failedHint,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  lead?: boolean;
+  copyLabel?: string;
+  copied?: boolean;
+  failed?: boolean;
+  failedHint?: string;
+  onCopy?: () => void;
+}) {
   const { t } = useTranslation();
   const layout = `flex w-full items-center gap-[10px] border-t border-aito-line py-[7px] pr-[10px] pl-[14px] first:border-t-0 ${lead ? 'py-[12px] min-[1120px]:py-[9px]' : 'min-h-[44px] min-[1120px]:min-h-[40px]'}`;
   const body = (
@@ -268,12 +304,16 @@ function Fact({ label, value, lead = false, copyLabel, copied = false, onCopy }:
       className={`group ${layout} rounded-[8px] text-left transition-colors duration-150 hover:bg-white/[0.03] active:bg-white/[0.05] data-copied:animate-track-copied ${FOCUS} focus-visible:-outline-offset-2`}
     >
       {body}
-      <span
-        className={`inline-flex h-[28px] min-w-[28px] shrink-0 items-center justify-center gap-[6px] rounded-[6px] px-[6px] text-[12px] font-semibold transition-colors duration-150 ${copied ? 'text-emerald-400' : 'text-aito-muted group-hover:text-aito-cyan group-focus-visible:text-aito-cyan'}`}
-      >
-        {copied ? CHECK_ICON : COPY_ICON}
-        {copied && <span>{t('aito.track.paymentMethods.copied')}</span>}
-      </span>
+      {failed ? (
+        <span className="shrink-0 text-[12px] font-semibold text-amber-400">{failedHint}</span>
+      ) : (
+        <span
+          className={`inline-flex h-[28px] min-w-[28px] shrink-0 items-center justify-center gap-[6px] rounded-[6px] px-[6px] text-[12px] font-semibold transition-colors duration-150 ${copied ? 'text-emerald-400' : 'text-aito-muted group-hover:text-aito-cyan group-focus-visible:text-aito-cyan'}`}
+        >
+          {copied ? CHECK_ICON : COPY_ICON}
+          {copied && <span>{t('aito.track.paymentMethods.copied')}</span>}
+        </span>
+      )}
     </button>
   );
 }

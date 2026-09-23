@@ -4,6 +4,7 @@ import {
   formatPhone,
   formatPhoneDisplay,
   titleCaseSegments,
+  upperCaseName,
   formatDisplayName,
   validateEmail,
   validatePhone,
@@ -111,6 +112,12 @@ describe('titleCaseSegments', () => {
     ['', ''],
   ])('%s -> %s', (input, expected) => {
     expect(titleCaseSegments(input)).toBe(expected);
+  });
+});
+
+describe('upperCaseName', () => {
+  it('trims and upper-cases with accents surviving', () => {
+    expect(upperCaseName('  léa  ')).toBe('LÉA');
   });
 });
 

@@ -335,6 +335,15 @@ async def create_contact_person(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
+    """Add a new person to a Books company contact, for the drawer's and
+    contact sheet's "Add contact" form. Gated like `list_contact_persons`
+    (aito:create), not `patch_contact` (aito:update): naming who at the
+    company the card is for is a create-time decision, not an edit to an
+    existing card.
+
+    The walk-in contact is shared by every passing customer, so a new person
+    on it would belong to no one in particular — same refusal as
+    `patch_contact`."""
     default_id, _name = await zoho_service.get_default_contact(db)
     if contact_id == default_id:
         # Same refusal as patch_contact: the walk-in bucket is everyone's.

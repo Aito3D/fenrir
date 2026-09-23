@@ -155,3 +155,24 @@ describe('EVENT_LABEL_KEY', () => {
     expect(EVENT_LABEL_KEY['invoice.deposit_applied']).toBe('aito.history.invoiceDepositApplied');
   });
 });
+
+describe('project.client.changed', () => {
+  it('has a label key', () => {
+    expect(EVENT_LABEL_KEY['project.client.changed']).toBe('aito.history.clientChanged');
+  });
+
+  it('shows the old and new customer names', () => {
+    expect(
+      detailText('project.client.changed', {
+        from_id: 'C1',
+        from_name: 'Client',
+        to_id: 'C2',
+        to_name: 'Nouveau Client',
+      }),
+    ).toBe('Client → Nouveau Client');
+  });
+
+  it('returns null when neither name is known', () => {
+    expect(detailText('project.client.changed', { from_id: 'C1', to_id: 'C2' })).toBeNull();
+  });
+});

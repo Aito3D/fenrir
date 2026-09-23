@@ -425,6 +425,20 @@ describe('ClientEditor — company contact persons', () => {
     });
   });
 
+  it("prefills phone and email from the CARD's stored person, not the contact-level mirror of the primary", async () => {
+    mockCompany();
+    // The contact-level mirror (SNP_CONTACT.mobile/email) is Vaekehu's — the
+    // primary — but this card has Moana (cp2) stored. The sheet must show
+    // Moana's OWN coordinates from the persons list (phone +689-87221043,
+    // email moana@snp.pf), never Vaekehu's mirrored ones.
+    show({ ...SNP_PROJECT, client_contact_person_id: 'cp2', client_contact_name: 'Moana TERIIPAIA', client_phone: '+689-87221043', client_email: '' });
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());
+    // The one-shot swap (mirror → the stored person's own coordinates) lands
+    // a tick after the persons list resolves — after the radio, not with it.
+    await waitFor(() => expect(phone()).toHaveValue('87221043'));
+    expect(email()).toHaveValue('moana@snp.pf');
+  });
+
   it('switching person re-prefills phone and email unless edited', async () => {
     mockCompany();
     let body: unknown = null;
@@ -474,9 +488,12 @@ describe('ClientEditor — company contact persons', () => {
     const user = userEvent.setup();
     const { onSaved } = show();
     await waitFor(() => expect(firstName()).toHaveValue('Jean'));
-    // Books' primary is the client themselves; nothing on the card yet, so
-    // the primary is what the sheet pre-selects.
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Jean DUPONT' })).toBeChecked());
+    // Books' primary is the client themselves, but nothing is stored on the
+    // card yet, so the sheet lists the persons with NONE checked — auto-picking
+    // the primary would silently narrow this card's fan-out (see the picker's
+    // `autoSelect` note). The operator picks explicitly.
+    const jean = await screen.findByRole('radio', { name: 'Jean DUPONT' });
+    expect(jean).not.toBeChecked();
     await user.click(screen.getByRole('radio', { name: 'Marie DUPONT' }));
     expect(phone()).toHaveValue('87000010');
     expect(email()).toHaveValue('marie@example.pf');
@@ -499,5 +516,27 @@ describe('ClientEditor — company contact persons', () => {
     // Scoped by name: the sheet always carries a `radiogroup` for the social
     // network segment, so an unscoped query would also match that one.
     expect(screen.queryByRole('radiogroup', { name: i18n.t('aito.contactsLabel') })).not.toBeInTheDocument();
+  });
+
+  it('a legacy person-less company card opens with no radio checked and never auto-assigns the primary', async () => {
+    mockCompany();
+    let body: unknown = null;
+    server.use(
+      http.put('/api/v1/aito/:id/client', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ...project, ...SNP_PROJECT, client_contact_person_id: null, client_contact_name: null, version: 4 });
+      }),
+    );
+    const user = userEvent.setup();
+    show({ ...SNP_PROJECT, client_contact_person_id: null, client_contact_name: null });
+    // Radios render (the list loaded) but none is checked — the sheet must
+    // NOT auto-pick Books' primary (Vaekehu) for a card stored with no person.
+    await screen.findByRole('radio', { name: 'Vaekehu VARNEY' });
+    expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true);
+    // Coordinates still prefill from the contact-level Zoho mirror.
+    expect(phone()).toHaveValue('40549958');
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ client_contact_person_id: null, client_contact_name: null });
   });
 });

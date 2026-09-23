@@ -15,6 +15,7 @@ import {
   formatPhone,
   maskVisibleErrors,
   titleCaseSegments,
+  upperCaseName,
   validateEmail,
   validatePhone,
 } from '../../utils/clientDraft';
@@ -143,7 +144,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
               value={lastName}
               disabled={hasCompany}
               onChange={(e) => setLastName(e.target.value)}
-              onBlur={(e) => setLastName(e.target.value.trim().toLocaleUpperCase('fr'))}
+              onBlur={(e) => setLastName(upperCaseName(e.target.value))}
               className={`${inputCls} disabled:opacity-40`}
             />
           </div>

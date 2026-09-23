@@ -1,0 +1,9 @@
+frontend/src/components/aito/TrackingShopPanel.tsx | information-disclosure | Google Maps iframe in TrackingShopPanel downgrades the referrer policy and leaks the tracking code to google.com
+backend/app/api/routes/aito.py | rate-limiting | _track_rate_net_key buckets IPv6 sources per /64, so the per-network miss budget multiplies for any attacker holding a routed prefix
+backend/app/api/routes/aito.py | rate-limiting | _track_rate_net_key's `__no_ip_` fallback is per-request unique, so the tracking rate limiter is inert when request.client is None
+backend/app/api/routes/aito.py | denial-of-service | _track_rate_limited's bucket sweep only drops fully-aged keys and costs O(n) on every request
+backend/app/services/aito_tracking.py | information-disclosure | payment_state ships the Heimdall checkout URL on a PAID link, contrary to AitoTrackingPayment's own contract
+backend/app/services/aito_tracking.py | token-lifetime | is_expired gives no expiry clock to the five production columns, so a card parked in scan/model/print/finish keeps a live code forever
+backend/app/api/routes/aito.py | denial-of-service | _track_rate_limited leaves hits completely unbounded on a collapsed bucket
+backend/app/api/routes/aito.py | rate-limiting | _peer_is_private infers proxy trust from a private TCP peer, which Docker bridge networking gives every internet visitor
+backend/app/api/routes/aito.py | denial-of-service | the shared "__no_ip__" bucket makes the per-IP caps site-wide when no request has a peer address

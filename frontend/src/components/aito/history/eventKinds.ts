@@ -44,6 +44,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.pause.cleared': 'aito.history.projectPauseCleared',
   'project.due.set': 'aito.history.projectDueSet',
   'project.due.cleared': 'aito.history.projectDueCleared',
+  'project.client.changed': 'aito.history.clientChanged',
   'project.sms.sent': 'aito.history.smsSent',
   'tracking.regenerated': 'aito.history.trackingRegenerated',
   'payment_link.created': 'aito.history.paymentLinkCreated',
@@ -139,6 +140,14 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
       parts.push(`${formatValue(detail.previous_expires_on)} → ${formatValue(detail.expires_on)}`);
     }
     return parts.length ? parts.join(' · ') : null;
+  }
+
+  if (kind === 'project.client.changed') {
+    // Who it was and who it is now — the ids are for the record, the names
+    // are what the operator recognises.
+    const from = typeof detail.from_name === 'string' && detail.from_name ? detail.from_name : null;
+    const to = typeof detail.to_name === 'string' && detail.to_name ? detail.to_name : null;
+    return from || to ? `${formatValue(from)} → ${formatValue(to)}` : null;
   }
 
   if (kind === 'invoice.detected') {

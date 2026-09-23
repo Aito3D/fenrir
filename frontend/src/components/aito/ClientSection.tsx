@@ -262,13 +262,14 @@ export function ClientSection({
             type="button"
             onClick={() => setOverrideOpen((o) => !o)}
             aria-expanded={overrideOpen}
+            aria-controls="aito-client-override"
             className={`flex items-center gap-1 text-xs font-semibold text-sky-400 hover:underline ${focusRingCls}`}
           >
             <ChevronRight className={`h-3.5 w-3.5 transition-transform ${overrideOpen ? 'rotate-90' : ''}`} aria-hidden="true" />
             {t('aito.contactOverrideToggle')}
           </button>
           {overrideOpen && (
-            <div className="mt-2 space-y-3 rounded-lg border border-bambu-dark-tertiary p-3">
+            <div id="aito-client-override" className="mt-2 space-y-3 rounded-lg border border-bambu-dark-tertiary p-3">
               <p className="text-xs text-bambu-gray">{t('aito.contactOverrideHint')}</p>
               {contactInputs}
             </div>

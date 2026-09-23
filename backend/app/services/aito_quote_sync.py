@@ -18,6 +18,7 @@ Phase 2 poller.
 """
 
 import asyncio
+import contextlib
 import logging
 import math
 import time
@@ -48,6 +49,7 @@ from backend.app.services.aito_quote_export import (
     enabled_services,
     missing_maindoeuvre_description,
 )
+from backend.app.services.aito_quote_import import client_snapshot
 from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
@@ -70,8 +72,27 @@ async def notes_with_tracking(db: AsyncSession, project: AitoProject, existing: 
     with this card's tracking block under it — or None when there is nothing
     to write: no public URL configured (build_tracking_url), or the notes
     already carry exactly this block. Never the block alone: that would
-    replace the org default printed beside the totals."""
+    replace the org default printed beside the totals.
+
+    Both call sites (the create and update paths) evaluate this argument
+    right before their own ``update_estimate_notes``/``update_estimate_lines``
+    Books round trip. ``build_tracking_url`` mints a token via
+    ``ensure_tracking_token`` for a card that has none, and that mint only
+    flushes — it does not commit, so the caller's session stayed in a write
+    transaction across the HTTP call that followed (T-024), the same failure
+    mode ``regenerate_tracking_token`` already documents and fixes by
+    committing before it talks to Books. So: when the mint here actually
+    produced a NEW token for this card, commit it right now, before
+    returning control to the caller's Books call — the same ordering. A card
+    that already had a token mints nothing and gets no extra commit, so its
+    per-project transaction boundary (one commit, in run_sync_once) is
+    unchanged. Nothing else pending on `project` is expected to ride along:
+    both call sites invoke this before making any other mutation to
+    `project` in their own function body."""
+    had_token = project.tracking_token is not None
     url = await build_tracking_url(db, project)
+    if not had_token and project.tracking_token is not None:
+        await db.commit()
     if not url:
         return None
     merged = with_tracking_notes(existing, url, project.tracking_token or "")
@@ -1263,6 +1284,78 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     )
 
 
+async def _follow_customer(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
+    """Move the card to the customer the estimate now names, when they differ.
+
+    Books is the record for WHO a quote belongs to: the board can only pick a
+    contact at creation (the panel's contact sheet edits the contact's own
+    details, it never swaps to another one), so a disagreement here always
+    means the quote was re-assigned in Zoho. Runs on the read the sweep
+    already pays for, so the common case — same customer — costs nothing and
+    touches no versioned field.
+
+    On a change, the five client fields are re-snapshotted from the new
+    contact exactly as import does it. A contact read that fails degrades the
+    same way import degrades: id and name from the estimate itself, no phone,
+    email or company flag — the invoice poll, invoice list, rating and
+    history all key on ``client_id``, so the card must follow even when the
+    contact is unreachable, and the details land on a later tick's edit.
+
+    Two card-only facts describe the OLD person and are cleared with it: the
+    social handle pair (Books has no field it could have come from) and the
+    contacted stamp (the new client was never told the job is ready, so the
+    follow-up rules must re-arm). Recorded on the card's history as a system
+    event; the cleared stamp gets its own ``project.contacted.cleared`` with
+    ``cause: zoho`` beside the rule move's ``cause: rule``.
+
+    This IS a write to VERSIONED_FIELDS, on purpose: an operator mid-edit on
+    that panel gets a 409 on save, which is right — their draft was based on
+    the wrong client.
+    """
+    remote_id = str(estimate.get("customer_id") or "")
+    if not remote_id or remote_id == (project.client_id or ""):
+        return
+    try:
+        contact = await zoho_service.get_contact(db, remote_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError):
+        logger.warning(
+            "Aito: estimate %s moved to customer %s but the contact could not be read; adopting id and name only",
+            project.quote_id,
+            remote_id,
+            exc_info=True,
+        )
+        contact = None
+    snapshot = client_snapshot(estimate, contact)
+    from_id, from_name = project.client_id, project.client_name
+    project.client_id = snapshot["id"]
+    project.client_name = snapshot["name"]
+    project.client_phone = snapshot["phone"]
+    project.client_email = snapshot["email"]
+    project.client_is_company = snapshot["is_company"]
+    project.client_social_network = None
+    project.client_social_handle = None
+    await record(
+        db,
+        project.id,
+        "project.client.changed",
+        actor_class="system",
+        subject_type="project",
+        subject_id=project.id,
+        detail={"from_id": from_id, "from_name": from_name, "to_id": snapshot["id"], "to_name": snapshot["name"]},
+    )
+    if project.client_contacted_at is not None:
+        project.client_contacted_at = None
+        await record(
+            db,
+            project.id,
+            "project.contacted.cleared",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"cause": "zoho"},
+        )
+
+
 async def _rollback_after_terminal_failure(db: AsyncSession) -> None:
     """Undo any half-flushed writes from the failure just caught, before a
     terminal branch below writes its own state or calls ``record()`` --
@@ -1517,6 +1610,7 @@ async def sync_project(
                 await _lock_project(db, project, project_id, invoiced=True, clear_block=True, reset_failures=True)
                 return
             await reconcile_quote_status(db, project, estimate)
+            await _follow_customer(db, project, estimate)
 
             # The estimate's own total, adopted from the read the reconcile
             # above already paid for. Before this, `quote_total` was written
@@ -2387,6 +2481,18 @@ async def run_sync_loop() -> None:
                     await purge_tracking_views(db)
                 except Exception as exc:
                     logger.warning("Tracking-view purge failed: %s", exc)
+                    # A failed purge commit (e.g. "database is locked") leaves
+                    # this session poisoned, exactly like the terminal
+                    # failures `_rollback_after_terminal_failure` documents --
+                    # the very next statement on it, `reconcile_payment_links`
+                    # below, would otherwise raise its own unrelated
+                    # `InvalidRequestError` and mask the lock that actually
+                    # caused this. Nothing from this tick's purge was meant to
+                    # survive its own failed commit anyway, so an
+                    # unconditional rollback costs nothing on the (common)
+                    # non-poisoned path.
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
                 # Payment links: gated on Heimdall, not Books — a link can
                 # be polled with Books down. Its own try/except like the
                 # purge: one failed pass costs this tick, never the loop.

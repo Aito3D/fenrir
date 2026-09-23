@@ -129,7 +129,14 @@ export function titleCaseSegments(value: string): string {
     .join('');
 }
 
-/** House convention for person contacts: 'Jean-Pierre DUPONT'. */
+/** House convention for person contacts: 'Jean-Pierre DUPONT' — the last name
+ *  is upper-cased, not title-cased. `'fr'` (not the default locale) so
+ *  accented capitals survive ('Léa' -> 'LÉA', not 'LéA'). Shared by every
+ *  last-name blur handler so they can't drift from each other. */
+export function upperCaseName(value: string): string {
+  return value.trim().toLocaleUpperCase('fr');
+}
+
 /** The inverse of `formatDisplayName`, for prefilling a person editor from a
  *  card's display-name snapshot when Zoho cannot be read. The house format
  *  upper-cases the whole last name ("Jean-Pierre LE ROUX"), so the trailing

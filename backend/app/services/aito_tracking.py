@@ -251,7 +251,9 @@ async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingP
     is accepted (the client pays what they validated, never a quote still
     under discussion — the operator hands the link out by hand before that);
     paid -> paid whatever the quote says (money wins, and the acceptance
-    lands a tick later); a dead or absent link -> None."""
+    lands a tick later), and the checkout URL is dropped once paid — the
+    page never renders it for a settled order, so there is nothing to gain
+    by shipping it; a dead or absent link -> None."""
     from backend.app.services.aito_payment_links import current_link, deposit_pct
 
     row = await current_link(db, project.id)
@@ -259,8 +261,9 @@ async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingP
         return None
     if row.status == "pending" and project.quote_status != "accepted":
         return None
+    paid = row.status == "paid"
     return AitoTrackingPayment(
-        state="paid" if row.status == "paid" else "unpaid", url=row.url, deposit=(await deposit_pct(db)) > 0
+        state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=(await deposit_pct(db)) > 0
     )
 
 

@@ -1,0 +1,10 @@
+frontend/src/components/aito/TrackingPanel.tsx | coverage-gap | useSheetDrag() — the phone bottom-sheet drag-to-dismiss gesture has no test at all
+frontend/src/pages/AitoTrackEntryPage.tsx | vacuous-or-missing-test | check()'s stale-response sequence guard is untested on both the success and the error branch
+frontend/src/components/aito/TrackingPaymentMethods.tsx | coverage-gap | The pane's height-tween effect never runs its animate body in this suite — untested on any real layout
+frontend/src/components/aito/TrackingPaymentMethods.tsx | coverage-gap | copy()'s clipboard-failure early return is untested — a failed copy of the IBAN/reference could silently show no feedback and no test would catch a regression that shows 'Copied' anyway
+frontend/src/components/aito/TrackingPayment.tsx | coverage-gap | The deposit-vs-full-amount wording is only ever tested for one deposit value per payment state — the other two combinations are unverified
+frontend/src/components/aito/TrackingLanguageSelect.tsx | coverage-gap | The pill's language-name fallback for an unresolved/unsupported current language is untested
+frontend/src/components/aito/TrackingPanel.tsx | coverage-gap | useSheetDrag()'s pointer-history clamp (`s.history.length > 6`) and its zero-elapsed-time velocity fallback are never exercised, even by the round-1 drag test suite
+backend/app/services/aito_tracking.py | coverage-gap | mint_unique_token()'s collision-retry loop has never actually retried in any test
+frontend/src/pages/AitoTrackEntryPage.tsx | coverage-gap | the entry page's I18N_SETTLE_TIMEOUT_MS proceed-anyway deadline has no test, unlike its twin on AitoTrackPage
+backend/app/api/routes/aito.py | coverage-gap | _release_miss()'s already-swept-bucket guard (`if bucket is None: return`) is never exercised

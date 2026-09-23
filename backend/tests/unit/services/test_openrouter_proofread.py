@@ -55,7 +55,8 @@ def chat_payload(content: str) -> dict:
 @pytest.fixture
 def configured():
     """Settings with an OpenRouter key, and an `openrouter_model` that must be
-    IGNORED — proofreading pins its own model."""
+    IGNORED while the pinned model answers — it is only the fallback for a
+    pinned model OpenRouter refuses (see the throttling tests below)."""
 
     async def get_setting(db, key):
         return {"openrouter_api_key": "sk-test", "openrouter_model": "some/other-model"}.get(key)
@@ -194,3 +195,101 @@ async def test_max_tokens_is_sized_conservatively_for_a_long_source(configured):
     with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
         await proofread_text(None, source)
     assert sent[0]["max_tokens"] > len(source) // 2 + 120
+
+
+# --- Throttled pinned model: fall back to the configured one ---------------
+
+
+def build_sequenced_client(responses):
+    """Like build_client, but each POST pops the next (status_code, payload)
+    pair, so one test can script "the pinned model is throttled, the
+    configured one answers"."""
+    sent: list[dict] = []
+    queue = list(responses)
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            sent.append(json)
+            status_code, payload = queue.pop(0)
+            return FakeResponse(status_code, payload)
+
+    return FakeClient, sent
+
+
+RATE_LIMITED = (429, {"error": {"message": "Rate limit exceeded for this model", "code": 429}})
+
+
+@pytest.mark.asyncio
+async def test_falls_back_to_the_configured_model_when_the_pinned_one_is_throttled(configured):
+    client, sent = build_sequenced_client([RATE_LIMITED, (200, chat_payload("Usinage d'une petite pièce"))])
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, model = await proofread_text(None, "usinage dúne petite peice")
+    assert corrected == "Usinage d'une petite pièce"
+    assert model == "some/other-model"
+    assert [req["model"] for req in sent] == [PROOFREAD_MODEL, "some/other-model"]
+    # Same correction request, only the model differs.
+    assert sent[1]["messages"] == sent[0]["messages"]
+    assert sent[1]["max_tokens"] == sent[0]["max_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_that_is_throttled_too_is_an_upstream_error(configured):
+    client, sent = build_sequenced_client([RATE_LIMITED, RATE_LIMITED])
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
+    assert len(sent) == 2
+
+
+@pytest.mark.parametrize("configured_model", [None, "", PROOFREAD_MODEL])
+@pytest.mark.asyncio
+async def test_no_fallback_without_a_different_configured_model(configured_model):
+    async def get_setting(db, key):
+        return {"openrouter_api_key": "sk-test", "openrouter_model": configured_model}.get(key)
+
+    client, sent = build_sequenced_client([RATE_LIMITED, (200, chat_payload("never asked"))])
+    with (
+        patch("backend.app.api.routes.settings.get_setting", get_setting),
+        patch("backend.app.services.openrouter.httpx.AsyncClient", client),
+        pytest.raises(OpenRouterUpstreamError),
+    ):
+        await proofread_text(None, "capot")
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_transport_failure_on_the_pinned_model_does_not_retry(configured):
+    """Only a model-specific refusal earns a second call: a network failure
+    would hit the fallback exactly the same way."""
+    client, _ = build_client(raises=httpx.ConnectError("no route"))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
+
+
+@pytest.mark.asyncio
+async def test_upstream_error_carries_status_and_openrouter_message(configured):
+    client, _ = build_sequenced_client([RATE_LIMITED, RATE_LIMITED])
+    with (
+        patch("backend.app.services.openrouter.httpx.AsyncClient", client),
+        pytest.raises(OpenRouterUpstreamError) as info,
+    ):
+        await proofread_text(None, "capot")
+    assert info.value.status_code == 429
+    assert "429" in str(info.value)
+    assert "Rate limit exceeded for this model" in str(info.value)

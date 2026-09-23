@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import i18n from '../../i18n';
 import { screen, within, waitFor, render as rtlRender } from '@testing-library/react';
@@ -8,6 +9,36 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackPage } from '../../pages/AitoTrackPage';
 import type { AitoTracking } from '../../api/client';
+
+// `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
+// instant in this suite — copied from AitoTrackEntryPage.test.tsx's same
+// override, which explains why: the fr chunk this file forces via
+// `beforeAll` below is fully loaded before any test runs. Pin it to exercise
+// the "locale chunk never settles" case (T-018) deterministically.
+let readyOverride: boolean | null = null;
+const readyOverrideListeners = new Set<() => void>();
+function setReadyOverride(value: boolean | null) {
+  readyOverride = value;
+  readyOverrideListeners.forEach((listener) => listener());
+}
+vi.mock('../../hooks/useTrackingLanguage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../hooks/useTrackingLanguage')>();
+  return {
+    ...actual,
+    useTrackingLanguage: (...args: Parameters<typeof actual.useTrackingLanguage>) => {
+      const real = actual.useTrackingLanguage(...args);
+      const [, forceRender] = useState(0);
+      useEffect(() => {
+        const listener = () => forceRender((n) => n + 1);
+        readyOverrideListeners.add(listener);
+        return () => {
+          readyOverrideListeners.delete(listener);
+        };
+      }, []);
+      return readyOverride === null ? real : { ...real, ready: readyOverride };
+    },
+  };
+});
 
 // Copied from StreamOverlayPage.test.tsx's renderOverlayPage: a standalone
 // page needs no ThemeProvider/AuthProvider/ToastProvider — it's public and
@@ -57,6 +88,7 @@ function mockTrack(body: AitoTracking | null) {
 // shop's language, so pin it for the file (jsdom's navigator is en-US).
 beforeAll(() => i18n.changeLanguage('fr'));
 afterAll(() => i18n.changeLanguage('en'));
+afterEach(() => setReadyOverride(null));
 
 describe('AitoTrackPage', () => {
   const originalTitle = document.title;
@@ -297,6 +329,39 @@ describe('AitoTrackPage', () => {
       await waitFor(() => expect(screen.getByTestId('track-error')).toBeInTheDocument());
       expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
       expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // T-018: the i18n `ready` flag guarding `settled` has the same failure
+  // mode as the hung request above — a stalled locale chunk that never
+  // errors — but no deadline used to exist for it, so it hid data that had
+  // already landed in the query cache behind a skeleton forever. It now
+  // gets the same 10 s deadline as the request itself.
+  it('settles past the i18n deadline even if the locale chunk never becomes ready, revealing data already in hand', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      setReadyOverride(false);
+      mockTrack(FIXTURE);
+      renderAt('stalled-i18n');
+      // The tracking data lands almost immediately, but `ready` never does:
+      // still the skeleton, not the content, well inside the deadline.
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(screen.queryByTestId('track-content')).not.toBeInTheDocument();
+      // CardSkeleton's two blocks are the only elements sharing this exact
+      // class (the rail's own pulsing dot, present once content renders,
+      // does not), so it stays a reliable "skeleton is up" probe even after
+      // the content (which also pulses) has appeared.
+      expect(document.querySelector('.bg-aito-line\\/60')).not.toBeNull();
+      // Cross the deadline: `settled` flips true on its own even though
+      // `ready` is still pinned false, and the already-landed data appears
+      // — no error, no Réessayer, because the request itself succeeded.
+      await vi.advanceTimersByTimeAsync(1_001);
+      await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
+      expect(screen.getByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
+      expect(screen.queryByTestId('track-error')).not.toBeInTheDocument();
+      expect(document.querySelector('.bg-aito-line\\/60')).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -582,7 +647,29 @@ describe('AitoTrackPage — online payment', () => {
     const card = await screen.findByTestId('track-payment');
     expect(card).toHaveAttribute('data-state', 'paid');
     expect(within(card).getByText('Acompte reçu')).toBeInTheDocument();
+    expect(within(card).queryByText('Paiement reçu')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Payer en ligne' })).not.toBeInTheDocument();
+  });
+
+  it('paid: the plain paid-in-full wording when it was not a deposit', async () => {
+    mockTrack({ ...FIXTURE, payment: { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'paid');
+    expect(within(card).getByText('Paiement reçu')).toBeInTheDocument();
+    expect(within(card).queryByText('Acompte reçu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Payer en ligne' })).not.toBeInTheDocument();
+  });
+
+  it('unpaid: the deposit sub-line when it was a deposit invoice', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'unpaid');
+    expect(
+      within(card).getByText('Un acompte confirme votre commande — réglez en ligne, par virement ou en boutique.'),
+    ).toBeInTheDocument();
+    expect(within(card).queryByText('Réglez en ligne, par virement ou en boutique.')).not.toBeInTheDocument();
   });
 
   it('an invoice outranks the payment link', async () => {
@@ -647,6 +734,9 @@ describe('AitoTrackPage — side panels', () => {
     // The map is a third-party frame: not fetched until someone asks for it.
     const map = within(shopPanel()).getByTitle("Plan d'accès au magasin");
     expect(map).not.toHaveAttribute('src');
+    // The map is a keyless embed, but the page URL carries the tracking code:
+    // never send it to google.com as a Referer.
+    expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(shopButton()).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(shopButton());
     expect(stage()).toHaveAttribute('data-open', 'shop');
@@ -709,5 +799,23 @@ describe('AitoTrackPage — side panels', () => {
     expect(screen.queryByTestId('track-panel-pay')).not.toBeInTheDocument();
     expect(shopPanel()).toBeInTheDocument();
     expect(shopButton()).toBeInTheDocument();
+  });
+
+  // T-025: the operator marking the invoice paid while the client has the
+  // pay panel open (and has left the tab) must not leave the stage stuck
+  // shifted with a scrim over an unmounted panel and no way back but Escape.
+  it('a refetch that clears the invoice while the pay panel is open closes the panel instead of leaving the stage stuck open', async () => {
+    let invoice: AitoTracking['invoice'] = 'unpaid';
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...UNPAID, invoice })));
+    const { queryClient } = renderAt('cleared');
+    await screen.findByTestId('track-invoice');
+    await userEvent.click(termsButton());
+    expect(stage()).toHaveAttribute('data-open', 'pay');
+    expect(payPanel()).toHaveAttribute('data-state', 'open');
+    // The operator marks it paid elsewhere; the client's tab refetches.
+    invoice = 'paid';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'cleared'] });
+    await waitFor(() => expect(screen.queryByTestId('track-panel-pay')).not.toBeInTheDocument());
+    expect(stage()).not.toHaveAttribute('data-open');
   });
 });

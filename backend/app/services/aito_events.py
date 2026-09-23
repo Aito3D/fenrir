@@ -82,6 +82,11 @@ KINDS: dict[str, str] = {
     # nobody mentioned. The cleared row carries {"cause": "rule"} when the
     # board retracted it because work reappeared, and no cause when a person
     # took it back by hand.
+    # The quote was re-assigned to another customer in Zoho Books and the
+    # sweep moved the card with it (aito_quote_sync._follow_customer). Story:
+    # "whose job is this" changing is as visible as the quote being accepted.
+    # detail = {from_id, from_name, to_id, to_name}.
+    "project.client.changed": "story",
     "project.contacted.set": "story",
     "project.contacted.cleared": "story",
     # The pickup SMS was handed to the user's phone (Pushcut accepted the

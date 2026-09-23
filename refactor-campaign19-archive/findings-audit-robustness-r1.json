@@ -1,0 +1,24 @@
+{"findings": [
+  {"severity": "medium", "category": "error-handling",
+   "file": "backend/app/services/aito_quote_sync.py", "line": 2386,
+   "title": "purge_tracking_views failure in run_sync_loop leaves the tick's session un-rolled-back",
+   "evidence": "`try:\\n    await purge_tracking_views(db)\\nexcept Exception as exc:\\n    logger.warning(\"Tracking-view purge failed: %s\", exc)` — the handler logs but never rolls back, and `purge_tracking_views` ends in `await db.commit()` (services/aito_tracking.py:343). A commit that fails (SQLite \"database is locked\" against the request path / MQTT writers — the cascade #1112 documents) poisons the session: I confirmed with SQLAlchemy 2.0 + aiosqlite that the next statement on that session raises `InvalidRequestError: This session is in 'prepared' state; no further SQL can be emitted within this transaction`. The very next block on the same `db` is `await reconcile_payment_links(db)` (line 2396), so a failed purge silently costs that tick's whole payment-link reconcile, and its own `logger.exception(\"Payment-link reconcile failed\")` reports the session error instead of the lock that actually caused it.",
+   "fix": "call `await db.rollback()` inside the purge's except handler (contextlib.suppress around it), before the payment-link block runs",
+   "behavior_change": false},
+
+  {"severity": "medium", "category": "rate-limiting",
+   "file": "backend/app/api/routes/aito.py", "line": 1214,
+   "title": "_track_rate_limited's per-IP CALLS cap becomes a 120/min site-wide cap behind an unconfigured proxy",
+   "evidence": "`len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP` is checked unconditionally, while the line below it (`or (not collapsed and len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP)`) suspends only the MISS cap for the collapsed-proxy case. With TRUSTED_PROXY_IPS unset (the documented default for an nginx-in-front install), `_get_client_ip` returns the proxy's own address for every visitor, so `_TRACK_RATE_MAX_CALLS_PER_IP = 120` is 120 requests per minute for the entire install — 5x tighter than the 600-miss per-net budget the collapse path was widened to rely on. A quote/SMS batch that lands a dozen clients on their pages at once (each load is one call, plus a refetch every time the phone's browser regains focus past the 30 s stale time) exhausts it, and every remaining client — holding a valid code printed on their own quote — gets `429 {\"detail\": \"Trop de tentatives\"}` and the page's \"please wait\" copy for the rest of the minute.",
+   "fix": "in the `collapsed` branch, scale or suspend the per-IP calls cap the same way the per-IP miss cap is suspended, leaving the per-net miss budget as the bound",
+   "behavior_change": true,
+   "behavior_change_note": "an install behind an unconfigured reverse proxy stops returning 429 to clients once it passes 120 tracking requests a minute, so the public page's site-wide request ceiling rises."},
+
+  {"severity": "medium", "category": "partial-failure",
+   "file": "frontend/src/pages/AitoTrackPage.tsx", "line": 76,
+   "title": "the i18n `settled` gate has no deadline, so a stalled locale chunk hides data that already arrived",
+   "evidence": "`if (ready) everReady.current = true;\\nconst settled = everReady.current;` gates every rendered state — `{(query.isPending || !settled) && !query.isError && !retrying && <CardSkeleton />}` (line 198) and `const showContent = data !== undefined && copy !== null && settled` (line 134). A client with `navigator.language = fr-PF` (the page's primary audience) renders first with `ready === false` while the lazily imported `fr` chunk is fetched; that dynamic import has no timeout and no fallback, so a request that stalls rather than fails — the flaky mobile link the sibling `TRACK_TIMEOUT_MS = 10_000` comment was written for — leaves the client staring at a pulsing skeleton indefinitely, with no error, no Réessayer button and no way forward, even though the tracking data itself has already landed in the query cache.",
+   "fix": "start a deadline alongside the language effect and force `settled` true when it expires (i18next falls back to the bundled English strings), the same shape as the query's TRACK_TIMEOUT_MS",
+   "behavior_change": true,
+   "behavior_change_note": "a client whose locale bundle is slow past the deadline now sees the page in English instead of a skeleton that waits for the translation."}
+]}

@@ -3,6 +3,7 @@
 import contextlib
 import ipaddress
 import logging
+import os
 import re
 import time
 from collections.abc import Iterable
@@ -1097,7 +1098,7 @@ async def get_client_rating(
 # their own page. T-122: the miss budget used to be ONE bucket shared by
 # every visitor on the internet, so a single flooding source could trip it
 # and 429 every other client too; it is now keyed per source network
-# (IPv4 /24, IPv6 /64) so a flood from one network cannot exhaust the
+# (IPv4 /24, IPv6 /48) so a flood from one network cannot exhaust the
 # budget of clients on other networks — at the cost of a busy /24 now being
 # able to exhaust its own (still 600-wide) budget sooner than the old
 # shared one. Hits are not free either: a generous per-address ceiling on
@@ -1111,22 +1112,48 @@ async def get_client_rating(
 # The per-IP caps assume the address they are keyed on is one visitor.
 # Behind a reverse proxy with TRUSTED_PROXY_IPS unset (the default), every
 # visitor's `_get_client_ip` resolves to the proxy's own address, and the
-# per-IP MISS cap would silently become a second, much tighter, site-wide
-# cap. `_track_rate_limited` detects that case (TRUSTED_PROXY_IPS empty but
-# an X-Forwarded-For header present) and suspends the per-IP miss cap for
-# it, presuming the peer is an unconfigured proxy; the per-net miss cap and
-# the per-IP CALLS cap — both still keyed on the proxy's one address — are
-# the bound instead. On a collapsed bucket the "network" IS the proxy's own
-# /24 or /64, so the per-net budget is once again a single site-wide budget
-# for that install, same as before T-122. T-121: that presumption alone is
-# spoofable on a DIRECT
-# install — any client could add its own X-Forwarded-For header to lift its
-# own ceiling from the 30-miss cap to the 120-call cap — so the collapse
-# additionally requires the direct TCP peer to look like a proxy: loopback
-# or an RFC-1918/private address (see `_peer_is_private`). A public peer's
-# X-Forwarded-For is ignored for this purpose. The remaining trade-off: a
-# reverse proxy that itself sits on a public IP still needs TRUSTED_PROXY_IPS
-# configured, or its visitors share the tighter per-IP miss cap.
+# per-IP MISS and CALLS caps would each silently become their own much
+# tighter site-wide cap — 120/min for CALLS, 5x tighter than the 600-miss
+# per-net budget the collapse path is meant to rely on instead.
+# `_track_rate_limited` detects that case (TRUSTED_PROXY_IPS empty but an
+# X-Forwarded-For header present) and CAN suspend BOTH per-IP caps for it
+# (T-017); the per-net miss cap — still keyed on the proxy's one address —
+# is the bound instead. On a collapsed bucket the "network" IS the proxy's
+# own /24 or /48, so that budget is once again a single site-wide one for
+# that install, same as before T-122. T-028: the suspended per-IP CALLS
+# cap means hits alone never trip the per-net MISS budget either — so a
+# per-net CALLS ceiling (_TRACK_RATE_MAX_CALLS_PER_NET, generous and
+# whole-shop-sized) is recorded on the same collapsed key for every
+# admitted call, hit or miss, and is never released; it is the backstop
+# on a collapsed bucket's hits.
+#
+# T-121/T-029: that collapse used to be inferred from the direct TCP
+# peer's address looking like an unconfigured proxy (loopback or an
+# RFC-1918/private address, via a now-removed `_peer_is_private` helper).
+# That inference does not hold behind Docker's bridge networking (the
+# default on macOS/Windows, and anything published through docker-proxy):
+# the peer the app sees there is the bridge gateway, a private address,
+# for EVERY external visitor — so any internet client could add its own
+# X-Forwarded-For header and buy the same suspension the peer check was
+# meant to gate. The collapse is instead an explicit operator opt-in:
+# either TRUSTED_PROXY_IPS is configured — in which case `_get_client_ip`
+# already unwraps X-Forwarded-For itself and hosts never collapse — or the
+# dedicated AITO_TRACK_COLLAPSED_PROXY=1 env var is set, for an
+# unconfigured proxy whose operator has confirmed the direct peer really
+# is that proxy. A containerised or otherwise proxied install MUST set
+# one of the two, preferably TRUSTED_PROXY_IPS: unset, every visitor
+# behind it shares the tighter per-IP caps instead.
+#
+# T-030: the "__no_ip__" sentinel (see `_track_rate_limited` below) is
+# treated as a collapsed bucket too, for the same reason as the proxy case
+# above — it is already ONE shared key for every peerless or unparseable
+# request on the install, so leaving the per-IP caps active on it would
+# turn a single visitor's budget into the whole site's (30 misses or 120
+# calls a minute for every unix-socket-bound install with no real TCP
+# peer). The per-net miss budget and the per-net calls ceiling, both keyed
+# on that same shared sentinel, bound it instead — same as any other
+# collapsed bucket. Unlike the proxy case, this one needs no opt-in: an
+# empty/unparseable host is unconditionally one shared bucket already.
 #
 # In-process state, so it assumes the single uvicorn worker the Dockerfile
 # starts: `--workers N` would multiply every cap by N.
@@ -1134,12 +1161,29 @@ _TRACK_RATE_WINDOW_S = 60.0
 _TRACK_RATE_MAX_MISSES_PER_IP = 30
 _TRACK_RATE_MAX_MISSES_PER_NET = 600
 _TRACK_RATE_MAX_CALLS_PER_IP = 120
+# Whole-shop-sized ceiling on ALL admitted calls per network (T-028): unlike
+# the per-net MISS budget above, this one is never released by a hit — it
+# exists so a collapsed bucket (every visitor behind an unconfigured proxy
+# sharing one net key) cannot rack up unbounded free hits once its misses
+# stop growing. 10x the old per-IP CALLS cap, generous enough for a whole
+# shop's real traffic.
+_TRACK_RATE_MAX_CALLS_PER_NET = 1200
+# T-029: explicit operator opt-in for the "unconfigured reverse proxy"
+# collapse (see the module comment above) when TRUSTED_PROXY_IPS itself is
+# not set. Off by default — a direct install, or one that has not
+# confirmed its peer really is its own proxy, keeps the per-IP caps.
+_TRACK_RATE_COLLAPSED_PROXY = os.environ.get("AITO_TRACK_COLLAPSED_PROXY", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 # More host keys than this and the stale ones are swept: only addresses that
 # called inside the window can be live.
 _TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_MISSES_PER_NET
 _track_rate_ip_calls: dict[str, list[float]] = {}
 _track_rate_ip_misses: dict[str, list[float]] = {}
 _track_rate_net_misses: dict[str, list[float]] = {}
+_track_rate_net_calls: dict[str, list[float]] = {}
 
 
 def _reset_track_rate_limits() -> None:
@@ -1147,39 +1191,23 @@ def _reset_track_rate_limits() -> None:
     _track_rate_ip_calls.clear()
     _track_rate_ip_misses.clear()
     _track_rate_net_misses.clear()
+    _track_rate_net_calls.clear()
 
 
 def _track_rate_net_key(host: str) -> str:
     """The source network a miss is budgeted against (T-122): IPv4 hosts
-    collapse to their /24, IPv6 hosts to their /64, so a flood spread over
+    collapse to their /24, IPv6 hosts to their /48, so a flood spread over
     many addresses on one network still shares one budget. A host that does
-    not parse as an IP — the `__no_ip_...` placeholder `_get_client_ip`
-    mints when there is no peer, or some other unrecognisable string — gets
-    its own key equal to the raw host: fail closed, one bucket per source
-    rather than one shared by everything unparseable."""
+    not parse as an IP gets its own key equal to the raw host: fail closed,
+    one bucket per unparseable string. T-012: `_track_rate_limited` no
+    longer hands this a per-request-unique `__no_ip_...` placeholder for
+    the no-peer case — it collapses that onto one shared sentinel first."""
     try:
         addr = ipaddress.ip_address(host)
     except ValueError:
         return host
-    prefix = 24 if addr.version == 4 else 64
+    prefix = 24 if addr.version == 4 else 48
     return str(ipaddress.ip_network(f"{host}/{prefix}", strict=False))
-
-
-def _peer_is_private(request: Request) -> bool:
-    """True when the direct TCP peer looks like an unconfigured reverse
-    proxy: loopback, or an RFC-1918/private address (T-121). Used only to
-    decide whether an X-Forwarded-For header is plausibly trustworthy
-    enough to suspend the per-IP miss cap — a public-internet peer's own
-    X-Forwarded-For never does. A peer that fails to parse (no
-    `request.client`, or a host string that isn't a real IP, e.g. a unit
-    test's placeholder client name) counts as NOT private: fail closed."""
-    if request.client is None:
-        return False
-    try:
-        addr = ipaddress.ip_address(request.client.host)
-    except ValueError:
-        return False
-    return addr.is_loopback or addr.is_private
 
 
 def _track_rate_limited(request: Request) -> tuple[str, float] | None:
@@ -1201,48 +1229,65 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     When TRUSTED_PROXY_IPS is unset and the request still carries an
     X-Forwarded-For header, `_get_client_ip` cannot unwrap it and every
     visitor collapses onto the proxy's one address — see the module-level
-    comment above the caps. That case suspends the per-IP MISS cap alone
-    (no reservation is made for it either), but only when the direct peer
-    is also plausibly the unconfigured proxy itself — loopback or private,
-    per `_peer_is_private` (T-121) — since otherwise any public-internet
-    client could set its own X-Forwarded-For to buy the same suspension.
-    The per-IP CALLS cap and the per-net miss cap, both keyed on that same
-    collapsed address (T-122: on a collapsed bucket the "network" is the
-    proxy's own /24 or /64, so this is once again a single site-wide
-    budget), still apply exactly as they do for a direct, unproxied
-    install."""
+    comment above the caps. That case CAN suspend BOTH the per-IP MISS and
+    CALLS caps (T-017; no reservation is made for either), but only when
+    the operator has explicitly opted in via _TRACK_RATE_COLLAPSED_PROXY
+    (T-029: no longer inferred from the direct TCP peer's address looking
+    private — Docker bridge networking makes that true for every internet
+    visitor too, which made the inference spoofable by anyone able to set
+    their own X-Forwarded-For). A host with no real TCP peer at all, or
+    one that fails to parse — the shared `__no_ip__` sentinel below —
+    collapses unconditionally, no opt-in needed (T-030): it is already one
+    shared key across the whole install, so leaving the per-IP caps active
+    on it would make a single visitor's budget the entire site's. What
+    bounds a collapsed bucket is then the per-net MISS cap, keyed on that
+    same collapsed address (T-122: on a collapsed bucket the "network" is
+    the proxy's own /24 or /48 — or, for `__no_ip__`, that literal string
+    — so this is once again a single site-wide budget) — the same budget
+    that already limits every other network's traffic too — AND, since
+    T-028, the per-net CALLS cap recorded on that same key for every
+    admitted call, hit or miss, and never released: hits used to be
+    entirely free on a collapsed bucket once misses stopped growing."""
     now = time.monotonic()
     host = _get_client_ip(request)
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        host = "__no_ip__"  # no real peer, or unparseable — one shared, cappable bucket (T-012)
     net = _track_rate_net_key(host)
-    collapsed = (
-        not auth_routes._TRUSTED_PROXY_IPS
+    collapsed = host == "__no_ip__" or (
+        _TRACK_RATE_COLLAPSED_PROXY
+        and not auth_routes._TRUSTED_PROXY_IPS
         and bool(request.headers.get("X-Forwarded-For"))
-        and _peer_is_private(request)
     )
 
     def live(calls: Iterable[float]) -> list[float]:
         return [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]
 
-    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses, _track_rate_net_misses):
+    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses, _track_rate_net_misses, _track_rate_net_calls):
         if len(bucket) > _TRACK_RATE_SWEEP_ABOVE:
             for stale in [h for h, calls in bucket.items() if not live(calls)]:
                 del bucket[stale]
     calls = live(_track_rate_ip_calls.get(host, ()))
     misses = live(_track_rate_ip_misses.get(host, ()))
     net_misses = live(_track_rate_net_misses.get(net, ()))
+    net_calls = live(_track_rate_net_calls.get(net, ()))
     if (
-        len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP
+        (not collapsed and len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP)
         or (not collapsed and len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP)
         or len(net_misses) >= _TRACK_RATE_MAX_MISSES_PER_NET
+        or len(net_calls) >= _TRACK_RATE_MAX_CALLS_PER_NET
     ):
         return None
-    calls.append(now)
     if not collapsed:
+        calls.append(now)
         misses.append(now)
     net_misses.append(now)
+    net_calls.append(now)
     _track_rate_ip_calls[host] = calls
     _track_rate_ip_misses[host] = misses
     _track_rate_net_misses[net] = net_misses
+    _track_rate_net_calls[net] = net_calls
     return host, now
 
 
@@ -1644,6 +1689,9 @@ async def proofread_field(
     except OpenRouterNotConfiguredError:
         raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
     except OpenRouterUpstreamError as e:
+        # The field swallows this on purpose (the user's own text simply
+        # stands), so the server log is the only place the reason survives.
+        logger.warning("Aito proofread failed upstream: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoProofreadResponse(text=corrected, model=model)
 
@@ -3417,11 +3465,21 @@ async def edit_project_client(
             )
         except ZohoNotConfiguredError:
             raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-        except ZohoNotFound:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "contact_person_gone", "message": "This contact person no longer exists in Zoho Books"},
-            ) from None
+        except ZohoNotFound as e:
+            # A 404 here means Books rejected the request; that's only ever
+            # a stale contact_person_id (deleted between page-load and save).
+            # A person card and a card-less company edit never send one, so
+            # for those the 404 is some other kind of "not found" upstream —
+            # surfaced as the pre-existing 502, not the person-specific 409.
+            if target_person_id is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "contact_person_gone",
+                        "message": "This contact person no longer exists in Zoho Books",
+                    },
+                ) from None
+            raise HTTPException(status_code=502, detail=str(e)) from e
         except ZohoRequestRejected as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         except ZohoUpstreamError as e:

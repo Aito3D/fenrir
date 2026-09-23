@@ -1341,6 +1341,23 @@ describe('company contact persons', () => {
     await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());
   });
 
+  it('a person with neither coordinate leaves the client unreachable and the override reveals plain inputs', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+    mockHistory({ cards: [], latest_social: null, latest_contact_person_id: null });
+    await openCompanySection([{ ...VAEKEHU, email: '', mobile: '', phone: '' }, MOANA]);
+    // Vaekehu is still the primary, so she is still auto-picked — she simply
+    // has no phone or email to be reached on.
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    // Same "click disabled Create to reveal the miss state" pattern the
+    // plain-client checklist test above uses.
+    await user.click(createButton());
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(checklistLine(/Client reachable|needs a phone/i)).toHaveAttribute('data-state', 'miss');
+    await user.click(screen.getByRole('button', { name: /use a different phone/i }));
+    expect(screen.getByLabelText(/^phone/i)).toBeInTheDocument();
+  });
+
   it('an override typed behind the disclosure wins in the draft', async () => {
     const user = userEvent.setup();
     const { onCreate } = await renderDrawer();
