@@ -215,6 +215,25 @@ def _map_email_recipient(contact: dict) -> dict:
     }
 
 
+def _map_contact_person(person: dict) -> dict:
+    """One Books ``contact_persons`` row -> the shape the Aito contact picker
+    lists. ``name`` is house-cased like every other person name in Aito;
+    the raw first/last are kept so a sheet can prefill an edit form. Every
+    string is ``""`` rather than None: Books omits empty fields."""
+    first = person.get("first_name") or ""
+    last = person.get("last_name") or ""
+    return {
+        "contact_person_id": person.get("contact_person_id") or "",
+        "first_name": first,
+        "last_name": last,
+        "name": normalize_display_name(first, last),
+        "email": person.get("email") or "",
+        "phone": person.get("phone") or "",
+        "mobile": person.get("mobile") or "",
+        "is_primary": bool(person.get("is_primary_contact")),
+    }
+
+
 def _map_estimate_summary(estimate: dict) -> dict:
     """Zoho estimate -> the flat row the Aito quote picker lists."""
     return {
@@ -851,6 +870,43 @@ class ZohoService:
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         return _map_contact((await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {}))
 
+    async def _contact_persons_raw(self, db: AsyncSession, contact_id: str) -> list[dict]:
+        """The contact's ``contact_persons`` array as Books sends it. One GET
+        — the same read ``get_contact`` makes, whose mapper drops this array."""
+        contact = (await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {})
+        return list(contact.get("contact_persons") or [])
+
+    async def list_contact_persons(self, db: AsyncSession, contact_id: str) -> list[dict]:
+        return [_map_contact_person(p) for p in await self._contact_persons_raw(db, contact_id)]
+
+    async def create_contact_person(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        first_name: str,
+        last_name: str,
+        email: str,
+        phone: str,
+    ) -> dict:
+        """Add a person to an existing Books customer. The number lands in
+        ``mobile`` like ``create_contact`` does; the new person is primary
+        only when the account had none, so adding a colleague never demotes
+        the person Books already mirrors at contact level."""
+        existing = await self._contact_persons_raw(db, contact_id)
+        payload: dict = {
+            "contact_id": contact_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "is_primary_contact": not existing,
+        }
+        if email.strip():
+            payload["email"] = email.strip()
+        if phone.strip():
+            payload["mobile"] = phone.strip()
+        body = await self._request(db, "POST", "/contacts/contactpersons", json=payload)
+        return _map_contact_person(body.get("contact_person") or {})
+
     async def _books_app_base(self, db: AsyncSession) -> str:
         """`https://books.<region>/app/<org>` for this org, no fragment.
 
@@ -1251,6 +1307,7 @@ class ZohoService:
         phone_field: str,
         first_name: str | None = None,
         last_name: str | None = None,
+        contact_person_id: str | None = None,
     ) -> None:
         """Write email/phone (and, for a person contact, the name) to the
         contact's primary person.
@@ -1258,11 +1315,18 @@ class ZohoService:
         The contact-level ``email``/``phone``/``mobile``/``first_name``/
         ``last_name`` fields are read-only mirrors of the primary contact
         person, so writes must target the person. A contact with no persons
-        at all gets one created.
+        at all gets one created. A ``contact_person_id`` targets that person
+        instead of the primary and raises ``ZohoNotFound`` when the account
+        no longer has it.
         """
         contact = (await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {})
         persons = contact.get("contact_persons") or []
-        primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
+        if contact_person_id is not None:
+            primary = next((p for p in persons if p.get("contact_person_id") == contact_person_id), None)
+            if primary is None:
+                raise ZohoNotFound(f"Contact person {contact_person_id} not found on contact {contact_id}")
+        else:
+            primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
 
         fields: dict = {}
         if first_name is not None:
@@ -1305,6 +1369,7 @@ class ZohoService:
         email: str,
         phone: str,
         phone_field: str,
+        contact_person_id: str | None = None,
     ) -> str:
         """Rename a Books customer and rewrite its primary person's coordinates.
 
@@ -1339,6 +1404,7 @@ class ZohoService:
             phone_field=phone_field,
             first_name=person_first,
             last_name=person_last,
+            contact_person_id=contact_person_id,
         )
         return display_name
 
