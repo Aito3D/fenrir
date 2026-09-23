@@ -60,7 +60,7 @@ const HISTORY: AitoClientHistory = {
       total: 18500,
       tasks: [makeTask({ id: 1, title: 'Bracket', scan_cost: 1000 }), makeTask({ id: 2, title: null, modelisation_cost: 500 })],
     },
-    { id: 41, created_at: '2026-07-02T09:14:00', column: 'print', total: 0, tasks: [] },
+    { id: 41, created_at: '2026-07-02T09:14:00', column: 'print', total: 0, quote_number: null, quote_status: null, description: 'Job', tasks: [] },
   ],
   latest_social: null,
   latest_contact_person_id: null,

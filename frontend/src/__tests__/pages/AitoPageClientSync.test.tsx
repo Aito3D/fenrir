@@ -150,7 +150,9 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
 
     await openDrawer(user);
 
-    const phoneInput = screen.getByLabelText(/^phone$/i);
+    // The plain inputs land once the contact-persons list has answered (the
+    // drawer hides them while it loads), so wait for them rather than grab.
+    const phoneInput = await screen.findByLabelText(/^phone$/i);
     await user.clear(phoneInput);
     await user.type(phoneInput, '612345678');
     await user.tab();
@@ -300,7 +302,9 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await user.type(combobox, 'Jean');
     await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));
 
-    const phoneInput = screen.getByLabelText(/^phone$/i);
+    // The plain inputs land once the contact-persons list has answered (the
+    // drawer hides them while it loads), so wait for them rather than grab.
+    const phoneInput = await screen.findByLabelText(/^phone$/i);
     await user.clear(phoneInput);
     await user.type(phoneInput, '612345678');
     await user.tab();
@@ -425,7 +429,9 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await user.type(combobox, 'Jean');
     await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));
 
-    const phoneInput = screen.getByLabelText(/^phone$/i);
+    // The plain inputs land once the contact-persons list has answered (the
+    // drawer hides them while it loads), so wait for them rather than grab.
+    const phoneInput = await screen.findByLabelText(/^phone$/i);
     await user.clear(phoneInput);
     await user.type(phoneInput, '612345678');
     await user.tab();

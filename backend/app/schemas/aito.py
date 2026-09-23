@@ -1263,6 +1263,11 @@ class AitoClientHistoryCard(BaseModel):
     column: AitoColumn
     # TaskSummary.total over the card's tasks — the number the board card shows.
     total: float
+    # What the timeline dialog identifies a row by (spec 2026-09-23). A
+    # hand-made card has no quote: None, never "".
+    quote_number: str | None
+    quote_status: str | None
+    description: str
     tasks: list[AitoTaskResponse]
 
 

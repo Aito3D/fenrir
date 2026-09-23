@@ -3654,6 +3654,20 @@ describe('client rating on the masthead', () => {
     expect(screen.queryByText('Bad')).not.toBeInTheDocument();
   });
 
+  it('hangs the ring tooltip BELOW the glyph, growing rightward, so the panel root cannot clip it', async () => {
+    // The panel root is `overflow-hidden` (load-bearing) and the ring sits
+    // on the masthead's first row at its left edge: a bubble above it lost
+    // its top, and one growing leftward lost its left half.
+    server.use(http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(ratingBody('bad', 'overdue'))));
+    renderPanel();
+    const ring = await screen.findByRole('img', { name: /^Client rating: Bad\./ });
+    const tip = ring.parentElement!.querySelector('[role="tooltip"]')!;
+    expect(tip.className).toContain('top-full');
+    expect(tip.className).toContain('left-0');
+    expect(tip.className).not.toContain('bottom-full');
+    expect(tip.className).not.toContain('right-0');
+  });
+
   it('hides a new client on the masthead', async () => {
     const seen: string[] = [];
     server.use(
@@ -3678,5 +3692,136 @@ describe('client rating on the masthead', () => {
     renderPanel({ ...project, client_id: null });
     await screen.findByRole('heading', { level: 2 });
     expect(seen).toEqual([]);
+  });
+});
+
+describe('client history from the masthead', () => {
+  const WALK_IN = 'walkin-0';
+  const status = (defaultContactId = WALK_IN) =>
+    http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({ configured: true, reachable: null, default_contact_id: defaultContactId, default_contact_name: 'Client de passage' }),
+    );
+  const history = () =>
+    http.get('/api/v1/aito/clients/:clientId/history', () =>
+      HttpResponse.json({
+        cards: [
+          { id: 12, created_at: '2026-09-07T10:00:00', column: 'devis', total: 0, quote_number: null, quote_status: null, description: 'Support de caméra', tasks: [] },
+          { id: 33, created_at: '2026-07-30T10:00:00', column: 'done', total: 40500, quote_number: 'DEV26-2483', quote_status: 'accepted', description: 'Pièce de tambour', tasks: [] },
+        ],
+        latest_social: null,
+        latest_contact_person_id: null,
+      }),
+    );
+
+  // `onClose` is captured (not the inline `vi.fn()` this used to pass) so the
+  // Escape test below can assert the panel's own close never fires — the
+  // whole point of finding #1's fix.
+  const renderWith = (p = project, onOpenCard?: (id: number) => void, onClose = vi.fn()) => ({
+    onClose,
+    ...rtlRender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <ProjectDetailPanel canCreate canUpdate canDelete project={p} onClose={onClose} onDelete={vi.fn()} onOpenCard={onOpenCard} />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    ),
+  });
+
+  it('opens the history when the name is held for 500ms, not on a shorter press', async () => {
+    server.use(status(), history());
+    renderWith();
+    // The name becomes a hold button once the walk-in id is known.
+    const name = await screen.findByRole('button', { name: 'ACME SARL' });
+    // Fake timers must be torn down even if an assertion below throws — see
+    // the same rationale near line 864.
+    try {
+      vi.useFakeTimers();
+      fireEvent.pointerDown(name);
+      act(() => vi.advanceTimersByTime(200));
+      fireEvent.pointerUp(name);
+      act(() => vi.advanceTimersByTime(500));
+      expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull();
+      fireEvent.pointerDown(name);
+      act(() => vi.advanceTimersByTime(500));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await screen.findByRole('dialog', { name: 'Client history' })).toBeInTheDocument();
+  });
+
+  it('pins the name-truncation class chain (jsdom has no layout, so this is the only guard against a wrapper regression)', async () => {
+    server.use(status(), history());
+    renderWith();
+    const name = await screen.findByRole('button', { name: 'ACME SARL' });
+    // A block, min-w-0 span between HoldButton and the h2 plus max-w-full on
+    // the button is what makes a long name truncate instead of pushing the
+    // rating pill, History button and pencil out of the clipped panel — see
+    // the WHY comment above the span in ProjectDetailPanel.tsx. jsdom does
+    // not lay anything out, so a class regression here would pass every
+    // other test in this file; this test exists only to pin the chain.
+    expect(name.className).toContain('max-w-full');
+    expect(name.className).toContain('min-w-0');
+    const wrapper = name.parentElement!.parentElement!;
+    expect(wrapper.tagName).toBe('SPAN');
+    expect(wrapper.className).toContain('block');
+    expect(wrapper.className).toContain('min-w-0');
+    expect(wrapper.className).toContain('-mx-1');
+    expect(within(name).getByText('ACME SARL')).toHaveClass('truncate');
+  });
+
+  it('opens the history from the History button beside the pencil', async () => {
+    server.use(status(), history());
+    renderWith();
+    fireEvent.click(await screen.findByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    expect(await within(dialog).findAllByTestId('client-history-row')).toHaveLength(2);
+  });
+
+  it('offers no history on a walk-in card, on a card without a client, or before the status resolves', async () => {
+    server.use(status('z1'));
+    renderWith();
+    await screen.findByRole('heading', { level: 2 });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Client history' })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'ACME SARL' })).toBeNull();
+    cleanup();
+
+    server.use(status());
+    renderWith({ ...project, client_id: null });
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByRole('button', { name: 'Client history' })).toBeNull();
+    cleanup();
+
+    server.use(http.get('/api/v1/zoho/status', async () => { await new Promise(() => {}); return HttpResponse.json({}); }));
+    renderWith();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByRole('button', { name: 'Client history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'ACME SARL' })).toBeNull();
+  });
+
+  it('choosing a row closes the dialog and hands the id to onOpenCard', async () => {
+    server.use(status(), history());
+    const onOpenCard = vi.fn();
+    renderWith(project, onOpenCard);
+    fireEvent.click(await screen.findByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    const rows = await within(dialog).findAllByTestId('client-history-row');
+    expect(rows[0]).toHaveAttribute('aria-current', 'true');
+    fireEvent.click(within(rows[1]).getByRole('button'));
+    expect(onOpenCard).toHaveBeenCalledWith(33);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
+  });
+
+  it('Escape on the history dialog closes only the dialog, not the panel behind it', async () => {
+    server.use(status(), history());
+    const { onClose } = renderWith();
+    fireEvent.click(await screen.findByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

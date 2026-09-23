@@ -8,6 +8,7 @@ export function Tooltip({
   content,
   children,
   align = 'center',
+  side = 'top',
 }: {
   content: string;
   children: ReactNode;
@@ -17,9 +18,17 @@ export function Tooltip({
    *  clipping column (TaskRow's pencil/remove pair inside the panel's
    *  scrolling task column), where a centred bubble loses its right half to
    *  `overflow` before the viewport shift below ever sees it. `start` is the
-   *  mirror, for a trigger at the LEFT edge of its column (the masthead's
-   *  client glyph). */
-  align?: 'start' | 'center' | 'end';
+   *  mirror: the bubble's left edge on the trigger's, growing rightward, for
+   *  a trigger near the LEFT edge of a clipping container (the masthead's
+   *  rating pill). */
+  align?: 'center' | 'end' | 'start';
+  /** Which side of the trigger the bubble sits on. `top` (default) hangs it
+   *  above. `bottom` for a trigger on the first row of a clipped container:
+   *  the project panel's root is `overflow-hidden` (load-bearing), so a
+   *  bubble above its masthead is cut off entirely — HoldButton's
+   *  `hintPlacement="bottom"` exists for the same reason. The viewport shift
+   *  below corrects horizontally only; it never sees an ancestor's overflow. */
+  side?: 'top' | 'bottom';
 }) {
   const id = useId();
   const tipRef = useRef<HTMLSpanElement>(null);
@@ -40,6 +49,14 @@ export function Tooltip({
   };
   const reset = () => setShift(0);
 
+  // The settle-in travels from the trigger outward, so the resting offset
+  // starts on the trigger's side: 3px down when hanging above, 3px up when
+  // sitting below.
+  const restY = side === 'bottom' ? '-3px' : '3px';
+  const translateX = align === 'center' ? `translateX(calc(-50% + ${shift}px))` : `translateX(${shift}px)`;
+  const alignCls = align === 'end' ? 'right-0' : align === 'start' ? 'left-0' : 'left-1/2';
+  const sideCls = side === 'bottom' ? 'top-full mt-1.5' : 'bottom-full mb-1.5';
+
   return (
     <span
       // A NAMED group: `group-hover` alone would also match any ancestor
@@ -58,13 +75,8 @@ export function Tooltip({
         role="tooltip"
         id={id}
         ref={tipRef}
-        style={{
-          transform:
-            align === 'center'
-              ? `translateX(calc(-50% + ${shift}px)) translateY(var(--tip-y, 3px))`
-              : `translateX(${shift}px) translateY(var(--tip-y, 3px))`,
-        }}
-        className={`pointer-events-none absolute bottom-full ${align === 'end' ? 'right-0' : align === 'start' ? 'left-0' : 'left-1/2'} z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tip:opacity-100 group-hover/tip:[--tip-y:0px] group-focus-visible/tip:opacity-100 group-focus-visible/tip:[--tip-y:0px] motion-reduce:transition-opacity`}
+        style={{ transform: `${translateX} translateY(var(--tip-y, ${restY}))` }}
+        className={`pointer-events-none absolute ${sideCls} ${alignCls} z-50 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tip:opacity-100 group-hover/tip:[--tip-y:0px] group-focus-visible/tip:opacity-100 group-focus-visible/tip:[--tip-y:0px] motion-reduce:transition-opacity`}
       >
         {content}
       </span>

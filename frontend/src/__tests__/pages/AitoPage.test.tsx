@@ -2239,3 +2239,54 @@ describe('print backlog badge', () => {
   });
 
 });
+
+describe('client history swap', () => {
+  it('a timeline row swaps the expanded card to that project, freshly mounted', async () => {
+    // `project` (module-level, top of file) is missing many required
+    // `AitoProject` fields — every other use of it goes through
+    // `HttpResponse.json`, which is untyped. `makeProject` backfills the
+    // rest so the fixture below is an honestly typed, full `AitoProject`;
+    // `makeProject(project)` keeps id 12, the description and the client
+    // fields the assertions below key off.
+    const cardOne = makeProject(project);
+    const other = { ...cardOne, id: 33, client_name: 'ACME SARL', description: 'Pièce de tambour', column: 'done' as const };
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: 'walkin-0', default_contact_name: 'x' }),
+      ),
+      http.get('/api/v1/aito/clients/:clientId/history', () =>
+        HttpResponse.json({
+          cards: [
+            { id: 12, created_at: '2026-09-07T10:00:00', column: 'devis', total: 0, quote_number: null, quote_status: null, description: project.description, tasks: [] },
+            { id: 33, created_at: '2026-07-30T10:00:00', column: 'done', total: 40500, quote_number: 'DEV26-2483', quote_status: 'accepted', description: 'Pièce de tambour', tasks: [] },
+          ],
+          latest_social: null,
+          latest_contact_person_id: null,
+        }),
+      ),
+      // The contact sheet (opened below to make the remount observable) reads
+      // this on the fresh card; it is not in scope for this test, so it falls
+      // back to the card's own fields — see AitoClientEditor.test.tsx.
+      http.get('/api/v1/zoho/contacts/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 502 })),
+    );
+    renderPage([cardOne, other]);
+    const user = userEvent.setup();
+    // Open card #12 the way the board does: its transparent expand button is
+    // labelled with the description.
+    await user.click(await screen.findByRole('button', { name: project.description }));
+    const panel = await screen.findByRole('dialog', { name: 'ACME SARL' });
+    // Open the contact sheet so the remount is observable: B must mount with it closed.
+    await user.click(within(panel).getByRole('button', { name: 'Edit the client' }));
+    expect(within(panel).getByRole('button', { name: 'Edit the client' })).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(within(panel).getByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    const rows = await within(dialog).findAllByTestId('client-history-row');
+    await user.click(within(rows[1]).getByRole('button'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
+    const swapped = await screen.findByRole('dialog', { name: 'ACME SARL' });
+    expect(swapped).toHaveTextContent('Pièce de tambour');
+    expect(within(swapped).getByRole('button', { name: 'Edit the client' })).toHaveAttribute('aria-expanded', 'false');
+  });
+});

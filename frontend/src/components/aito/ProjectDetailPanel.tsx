@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { DuplicateProjectButton } from './DuplicateProjectButton';
@@ -29,6 +29,8 @@ import { ShippingCard } from './ShippingCard';
 import { ClientEditor } from './ClientEditor';
 import { useClientRating } from './useClientRating';
 import { ClientRatingRing } from './ClientRatingPill';
+import { ClientHistoryModal } from './ClientHistoryModal';
+import { HoldButton } from './HoldButton';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { stagesWithWork } from './services';
@@ -92,6 +94,10 @@ interface ProjectDetailPanelProps {
    *  drawer to open — the action then does not appear. Also gated on
    *  `canCreate`: the create it leads to enforces Permission.AITO_CREATE. */
   onDuplicate?: () => void;
+  /** The history dialog's row action: the page swaps the expanded card to
+   *  this id (a plain `setExpandedId`, no morph — the panel already holds the
+   *  shared view-transition name). Absent → rows are inert. */
+  onOpenCard?: (id: number) => void;
 }
 
 // 'leaving' is the last 150ms of 'saved': the acknowledgement faded in, so
@@ -268,6 +274,7 @@ function PanelHeader({
   clientEditButtonRef,
   canUpdate,
   onUnaccepted,
+  onOpenHistory,
 }: {
   project: AitoProject;
   currency: string;
@@ -305,6 +312,11 @@ function PanelHeader({
    *  the settle bounce — the panel passes its own `onClose`, which is what
    *  lets the person watch the card land back in Waiting. */
   onUnaccepted: () => void;
+  /** Opens the client history dialog; null when this card has no client
+   *  that can have one (walk-in, no client id, or the walk-in id not yet
+   *  known) — then the name is the plain span it always was and no History
+   *  button renders. Not gated on canUpdate: reading needs aito:read only. */
+  onOpenHistory: (() => void) | null;
 }) {
   const { t } = useTranslation();
   // Empty id disables the query: a legacy card with no client has no rating
@@ -490,8 +502,10 @@ function PanelHeader({
               status and the flag already own the pill row above. Hidden
               for `new`: a walk-in has no verdict. The drawer shows that
               word. `align="start"`: the glyph is at the column's left edge,
-              where a centred tooltip would hang off the panel. */}
-          <ClientRatingRing rating={rating.data} align="start">
+              where a centred tooltip would hang off the panel. `side="bottom"`:
+              the glyph is on the first row of the panel's `overflow-hidden`
+              root, so a bubble hanging above it was cut off at the top. */}
+          <ClientRatingRing rating={rating.data} align="start" side="bottom">
             {project.client_is_company ? (
               <Building2
                 className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
@@ -509,7 +523,59 @@ function PanelHeader({
           <span className="sr-only">
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
-          <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+          {onOpenHistory ? (
+            // HoldButton's wrapper div has no min-width:0, and an
+            // inline-flex button never shrinks below its own min-content —
+            // so the name needs a BLOCK, `min-w-0` span between it and the
+            // h2, plus `max-w-full` on the button to actually cap it (a
+            // block child takes the span's width instead of forcing
+            // min-content, and the width cap is what makes the inner
+            // `truncate` span shrink). The negative margin sits on the span,
+            // not the button, so the max-width cap is not eaten by it.
+            // Measured in a headless-Chrome layout harness on 2026-09-23:
+            // `span.flex` (no truncation), `w-full` on the button (clips a
+            // short name via the negative margins) and `max-w-full` together
+            // with `-mx-1 px-1` on the button (also clips a short name) all
+            // fail.
+            <span className="block min-w-0 -mx-1">
+              {/* The name itself is the hold target (spec: hold 0.5 s).
+                  `label` is the client name so the heading still announces
+                  the client, and the hint carries the instruction.
+                  `progress="bar"` fills the name green from the left;
+                  `pressEffect="none"` because the band must not grow. Hint
+                  below: the panel root is overflow-hidden and this is its
+                  first row. */}
+              <HoldButton
+                onHold={() => onOpenHistory()}
+                durationMs={500}
+                label={project.client_name ?? t('aito.noClient')}
+                hint={t('aito.clientHistoryHint')}
+                progress="bar"
+                barClassName="bg-bambu-green/20"
+                pressEffect="none"
+                hintPlacement="bottom"
+                className="min-w-0 max-w-full px-1 text-left"
+              >
+                <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+              </HoldButton>
+            </span>
+          ) : (
+            <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+          )}
+          {/* The gesture's discoverable twin: revealed with the pencil,
+              reachable by keyboard, same dialog. Before the pencil so the
+              pencil keeps its place at the end of the row. */}
+          {onOpenHistory && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              aria-label={t('aito.clientHistory')}
+              title={t('aito.clientHistory')}
+              className={`flex-shrink-0 rounded-md p-1 text-bambu-gray opacity-0 transition-[opacity,background-color,color] duration-150 group-hover/client:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white focus-visible:opacity-100 ${focusRingCls}`}
+            >
+              <History className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
           {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
               never removed from the tree: a keyboard user tabs onto it and
               focus-visible brings it up. Gated on `canUpdate` because the
@@ -789,6 +855,7 @@ export function ProjectDetailPanel({
   canUpdate,
   canDelete,
   onDuplicate,
+  onOpenCard,
 }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -912,6 +979,24 @@ export function ProjectDetailPanel({
     void queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     closeClientEdit();
   };
+
+  // The history dialog. Its affordances exist only for a client that can
+  // have a history — the same walk-in rule ClientEditor applies, from the
+  // same cached status query. Unknown until the status resolves: no
+  // affordance rather than a hold that opens an empty list.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const statusQuery = useQuery({
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
+    staleTime: 60_000,
+    // A legacy card with no client id has nothing to look up — same
+    // discipline as `useClientRating`, which disables itself for an empty id
+    // rather than asking the endpoint about a client that does not exist.
+    enabled: project.client_id !== null,
+  });
+  const defaultContactId = statusQuery.data?.default_contact_id;
+  const canShowHistory =
+    project.client_id !== null && defaultContactId !== undefined && project.client_id !== defaultContactId;
 
   // At most once per panel, whichever of the two arbitration branches gets
   // there first. Fire-and-forget by design: the card is already closed, the
@@ -1151,6 +1236,7 @@ export function ProjectDetailPanel({
           clientEditButtonRef={clientEditButtonRef}
           canUpdate={canUpdate}
           onUnaccepted={onClose}
+          onOpenHistory={canShowHistory ? () => setHistoryOpen(true) : null}
         />
         {/* The contact sheet's anchor: zero height, right under the band,
             stacked BELOW it (z-1 against the header's z-2) so the sheet slides
@@ -1168,6 +1254,23 @@ export function ProjectDetailPanel({
             />
           )}
         </div>
+        {historyOpen && (
+          <ClientHistoryModal
+            project={project}
+            onClose={() => setHistoryOpen(false)}
+            onOpenCard={
+              onOpenCard
+                ? (id) => {
+                    // Close first: the swap remounts the panel anyway, but a
+                    // caller that keeps the same id (a no-op swap) must not be
+                    // left with the dialog open.
+                    setHistoryOpen(false);
+                    onOpenCard(id);
+                  }
+                : undefined
+            }
+          />
+        )}
 
         {/* Who else has this project open right now. Filtered to exclude
             ourselves — otherwise every panel would greet its own operator.

@@ -117,6 +117,9 @@ const JP_HISTORY: AitoClientHistory = {
       created_at: '2026-08-12T09:14:00',
       column: 'done',
       total: 3000,
+      quote_number: null,
+      quote_status: null,
+      description: 'Job',
       tasks: [
         historyTask({ id: 900, title: 'Bracket', scan_cost: 1000 }),
         historyTask({ id: 901, title: 'Lid', modelisation_cost: 2000, scan_done: false, modelisation_done: true }),

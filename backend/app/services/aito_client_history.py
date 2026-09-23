@@ -1,4 +1,4 @@
-"""A client's past cards for the new-project drawer's recall block.
+"""A client's past cards, for the drawer's recall block and the panel's timeline dialog.
 
 Three read-only queries: the newest active cards for the contact id, their
 tasks, and a one-row lookup of the latest social pair. Trashed cards are
@@ -93,6 +93,9 @@ async def compute_client_history(db: AsyncSession, client_id: str, limit: int) -
                 created_at=c.created_at,
                 column=c.board_column,
                 total=summarise(tasks.get(c.id, ())).total,
+                quote_number=c.quote_number,
+                quote_status=c.quote_status,
+                description=c.description,
                 tasks=[AitoTaskResponse.model_validate(t, from_attributes=True) for t in tasks.get(c.id, ())],
             )
             for c in cards

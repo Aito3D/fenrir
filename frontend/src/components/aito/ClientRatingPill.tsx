@@ -97,10 +97,13 @@ function useRatingText(rating: AitoClientRating | undefined) {
 export function ClientRatingPill({
   rating,
   align = 'center',
+  side = 'top',
   className = '',
 }: {
   rating: AitoClientRating | undefined;
+  /** Straight through to Tooltip — see its doc for when each is right. */
   align?: 'start' | 'center' | 'end';
+  side?: 'top' | 'bottom';
   className?: string;
 }) {
   const { label, ago, tip, ariaLabel } = useRatingText(rating);
@@ -123,7 +126,7 @@ export function ClientRatingPill({
     // mere re-render, since @starting-style fires only on first paint.
     <span data-testid="client-rating-unfold" className={`aito-unfold-x flex-shrink-0 ${className}`}>
       <span>
-        <Tooltip content={tip} align={align}>
+        <Tooltip content={tip} align={align} side={side}>
           <span
             data-tier={rating.tier}
             data-stale={rating.stale ? 'true' : undefined}
@@ -168,17 +171,22 @@ export function ClientRatingRing({
   rating,
   children,
   align = 'start',
+  side = 'top',
 }: {
   rating: AitoClientRating | undefined;
   children: ReactNode;
   align?: 'start' | 'center' | 'end';
+  /** Straight through to Tooltip. The masthead passes `bottom`: the ring sits
+   *  on the first row of the panel's `overflow-hidden` root, where a bubble
+   *  hanging above it is cut off entirely. */
+  side?: 'top' | 'bottom';
 }) {
   const { tip, ariaLabel } = useRatingText(rating);
   if (!rating || rating.tier === 'unavailable' || rating.tier === 'new') return <>{children}</>;
 
   const style = { '--c': TIER_COLOR[rating.tier] } as CSSProperties;
   return (
-    <Tooltip content={tip} align={align}>
+    <Tooltip content={tip} align={align} side={side}>
       <span
         data-tier={rating.tier}
         data-stale={rating.stale ? 'true' : undefined}
