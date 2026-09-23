@@ -4313,6 +4313,11 @@ export interface AitoClientHistoryCard {
   created_at: string;
   column: AitoColumnId;
   total: number;
+  /** What the panel's history timeline identifies a row by. A hand-made
+   *  card has no quote: null, never ''. */
+  quote_number: string | null;
+  quote_status: string | null;
+  description: string;
   tasks: AitoTask[];
 }
 
