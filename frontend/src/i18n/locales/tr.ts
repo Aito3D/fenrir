@@ -699,6 +699,7 @@ export default {
       projectPauseCleared: 'Duraklatma kaldırıldı',
       projectDueSet: 'söz verilen tarihi belirledi',
       projectDueCleared: 'söz verilen tarihi kaldırdı',
+      clientChanged: "Müşteri Zoho Books'ta değiştirildi",
       smsSent: 'Teslim SMS’i telefona gönderildi',
       trackingRegenerated: 'takip bağlantısını yeniden oluşturdu',
       paymentLinkCreated: 'Ödeme bağlantısı oluşturuldu',

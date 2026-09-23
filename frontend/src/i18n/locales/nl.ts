@@ -8537,6 +8537,7 @@ export default {
       projectPauseCleared: 'Pauze opgeheven',
       projectDueSet: 'heeft de beloofde datum ingesteld',
       projectDueCleared: 'heeft de beloofde datum verwijderd',
+      clientChanged: 'Klant gewijzigd in Zoho Books',
       smsSent: 'Ophaal-sms verstuurd naar de telefoon',
       trackingRegenerated: 'heeft de volglink opnieuw gegenereerd',
       paymentLinkCreated: 'Betaallink aangemaakt',

@@ -700,6 +700,7 @@ export default {
       projectPauseCleared: "Призупинення знято",
       projectDueSet: "встановив обіцяну дату",
       projectDueCleared: "видалив обіцяну дату",
+      clientChanged: 'Клієнта змінено в Zoho Books',
       smsSent: 'SMS про готовність надіслано на телефон',
       trackingRegenerated: 'перегенерував посилання відстеження',
       paymentLinkCreated: 'Посилання на оплату створено',

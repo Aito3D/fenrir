@@ -699,6 +699,7 @@ export default {
       projectPauseCleared: '일시 중지 해제됨',
       projectDueSet: '약속 날짜를 설정했습니다',
       projectDueCleared: '약속 날짜를 삭제했습니다',
+      clientChanged: 'Zoho Books에서 고객이 변경되었습니다',
       smsSent: '픽업 SMS를 휴대폰으로 보냄',
       trackingRegenerated: '추적 링크를 재생성했습니다',
       paymentLinkCreated: '결제 링크 생성됨',

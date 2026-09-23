@@ -5,7 +5,7 @@ import type { AitoStatsDay } from '../../../api/client';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import { CHART_TOOLTIP_STYLE } from '../../stats/chartTheme';
 import { parseLocalDateKey } from '../../../utils/date';
-import { AXIS, DECLINED, GRID, SERIES } from './palette';
+import { AXIS, DECISION, GRID } from './palette';
 import { Empty, Legend, LegendList, Panel } from './primitives';
 import { WEEKLY_ABOVE_DAYS, WEEKLY_ABOVE_DAYS_NARROW, weekKey, weekStart } from './weeklyFold';
 
@@ -44,8 +44,8 @@ export function DecisionsChart({ daily }: { daily: AitoStatsDay[] }) {
       title={weekly ? t('aito.stats.decisionsPerWeek') : t('aito.stats.decisionsPerDay')}
       action={
         <LegendList>
-          <Legend color={SERIES.accepted}>{t('aito.stats.accepted')}</Legend>
-          <Legend color={DECLINED}>{t('aito.stats.declined')}</Legend>
+          <Legend color={DECISION.accepted}>{t('aito.stats.accepted')}</Legend>
+          <Legend color={DECISION.declined}>{t('aito.stats.declined')}</Legend>
         </LegendList>
       }
     >
@@ -70,8 +70,8 @@ export function DecisionsChart({ daily }: { daily: AitoStatsDay[] }) {
                 key === 'accepted' ? t('aito.stats.accepted') : t('aito.stats.declined'),
               ]}
             />
-            <Bar dataKey="accepted" stackId="d" fill={SERIES.accepted} maxBarSize={22} isAnimationActive={false} />
-            <Bar dataKey="declined" stackId="d" fill={DECLINED} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+            <Bar dataKey="accepted" stackId="d" fill={DECISION.accepted} maxBarSize={22} isAnimationActive={false} />
+            <Bar dataKey="declined" stackId="d" fill={DECISION.declined} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       ) : (

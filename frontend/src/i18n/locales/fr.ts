@@ -699,6 +699,7 @@ export default {
       projectPauseCleared: 'Pause retirée',
       projectDueSet: 'a fixé la date promise',
       projectDueCleared: 'a retiré la date promise',
+      clientChanged: 'Client modifié dans Zoho Books',
       smsSent: 'SMS de retrait envoyé vers le téléphone',
       trackingRegenerated: 'a régénéré le lien de suivi',
       paymentLinkCreated: 'Lien de paiement créé',

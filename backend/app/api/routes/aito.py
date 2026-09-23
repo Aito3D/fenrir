@@ -1640,6 +1640,9 @@ async def proofread_field(
     except OpenRouterNotConfiguredError:
         raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
     except OpenRouterUpstreamError as e:
+        # The field swallows this on purpose (the user's own text simply
+        # stands), so the server log is the only place the reason survives.
+        logger.warning("Aito proofread failed upstream: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoProofreadResponse(text=corrected, model=model)
 

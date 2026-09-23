@@ -690,7 +690,7 @@ def _build_task(group: list[ParsedLine]) -> dict:
     return task
 
 
-def _client_snapshot(estimate: dict, contact: dict | None) -> dict:
+def client_snapshot(estimate: dict, contact: dict | None) -> dict:
     """The client fields an Aito card stores.
 
     Degrades to the estimate's own customer when the contact could not be
@@ -744,7 +744,7 @@ def build_preview(
             "url": quote_url,
             "salesperson": (estimate.get("salesperson_name") or "").strip()[:_SALESPERSON_MAX] or None,
         },
-        "client": _client_snapshot(estimate, contact),
+        "client": client_snapshot(estimate, contact),
         "suggested_description": "\n".join(titles) or number,
         "tasks": tasks,
         "skipped_lines": skipped,
