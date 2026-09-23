@@ -491,3 +491,142 @@ async def test_get_zoho_contact_maps_errors(async_client):
     assert (await async_client.get("/api/v1/zoho/contacts/z1")).status_code == 404
     zoho_service.transport = _books(lambda request: httpx.Response(500, text="boom"))
     assert (await async_client.get("/api/v1/zoho/contacts/z1")).status_code == 502
+
+
+# ------------------------------------------------------- contact persons
+
+SNP = {
+    "contact_id": "zSNP",
+    "contact_name": "SNP",
+    "customer_sub_type": "business",
+    "company_name": "SNP",
+    "contact_persons": [
+        {"contact_person_id": "cp1", "first_name": "Vaekehu", "last_name": "VARNEY", "is_primary_contact": True},
+        {"contact_person_id": "cp2", "first_name": "Moana", "last_name": "TERIIPAIA"},
+    ],
+}
+
+COMPANY = {
+    "client_id": "zSNP",
+    "client_name": "SNP",
+    "client_is_company": True,
+    "client_contact_person_id": "cp1",
+    "client_contact_name": "Vaekehu VARNEY",
+}
+
+
+@pytest.mark.asyncio
+async def test_company_edit_writes_to_the_selected_person(async_client):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen, contact=SNP)
+    project = await _create(async_client, **COMPANY)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client",
+        json={
+            "company_name": "SNP",
+            "client_contact_person_id": "cp2",
+            "client_contact_name": "Moana TERIIPAIA",
+            "email": "moana@snp.pf",
+            "phone": "+689-87221043",
+            "phone_field": "mobile",
+            "expected_version": project["version"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["client_contact_person_id"] == "cp2"
+    assert body["client_contact_name"] == "Moana TERIIPAIA"
+    assert body["client_phone"] == "+689-87221043"
+    person_put = next((p, b) for m, p, b in seen if m == "PUT" and "/contactpersons/" in p)
+    assert person_put == ("/books/v3/contacts/contactpersons/cp2", {"email": "moana@snp.pf", "mobile": "+689-87221043"})
+
+
+@pytest.mark.asyncio
+async def test_company_edit_without_person_keys_keeps_the_card_person(async_client):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen, contact=SNP)
+    project = await _create(async_client, **COMPANY)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client",
+        json={"company_name": "SNP", "email": "v2@snp.pf", "phone": "", "phone_field": "mobile"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["client_contact_person_id"] == "cp1"
+    person_put = next(p for m, p, _b in seen if m == "PUT" and "/contactpersons/" in p)
+    assert person_put == "/books/v3/contacts/contactpersons/cp1"
+
+
+@pytest.mark.asyncio
+async def test_company_edit_with_a_gone_person_is_409(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([], contact=SNP)
+    project = await _create(async_client, **COMPANY)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client",
+        json={
+            "company_name": "SNP",
+            "client_contact_person_id": "gone",
+            "client_contact_name": "Ghost",
+            "email": "g@snp.pf",
+            "phone": "",
+            "phone_field": "mobile",
+        },
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "contact_person_gone"
+    assert (await _read(async_client, project["id"]))["client_contact_person_id"] == "cp1"
+
+
+@pytest.mark.asyncio
+async def test_fan_out_reaches_only_siblings_with_the_same_person(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([], contact=SNP)
+    edited = await _create(async_client, **COMPANY)
+    same_person = await _create(async_client, **COMPANY, description="same person")
+    other_person = await _create(
+        async_client, **{**COMPANY, "client_contact_person_id": "cp2", "client_contact_name": "Moana TERIIPAIA"}
+    )
+    no_person = await _create(
+        async_client, **{**COMPANY, "client_contact_person_id": None, "client_contact_name": None}
+    )
+
+    r = await async_client.put(
+        f"/api/v1/aito/{edited['id']}/client",
+        json={"company_name": "SNP", "email": "new@snp.pf", "phone": "+689-40000000", "phone_field": "mobile"},
+    )
+    assert r.status_code == 200, r.text
+
+    assert (await _read(async_client, same_person["id"]))["client_email"] == "new@snp.pf"
+    assert (await _read(async_client, other_person["id"]))["client_email"] == "jean@example.pf"
+    assert (await _read(async_client, no_person["id"]))["client_email"] == "jean@example.pf"
+    # The company name is contact-level and still reaches every sibling.
+    assert (await _read(async_client, other_person["id"]))["client_name"] == "SNP"
+
+
+@pytest.mark.asyncio
+async def test_switching_person_does_not_fan_out(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([], contact=SNP)
+    edited = await _create(async_client, **COMPANY)
+    sibling = await _create(async_client, **COMPANY, description="sibling")
+
+    r = await async_client.put(
+        f"/api/v1/aito/{edited['id']}/client",
+        json={
+            "company_name": "SNP",
+            "client_contact_person_id": "cp2",
+            "client_contact_name": "Moana TERIIPAIA",
+            "email": "moana@snp.pf",
+            "phone": "",
+            "phone_field": "mobile",
+        },
+    )
+    assert r.status_code == 200, r.text
+    row = await _read(async_client, sibling["id"])
+    assert row["client_contact_person_id"] == "cp1"
+    assert row["client_email"] == "jean@example.pf"

@@ -3392,6 +3392,19 @@ async def edit_project_client(
     if not (phone or email or (social_handle or "").strip()):
         raise HTTPException(status_code=400, detail="Client must have a phone, an email or a social handle")
 
+    # Company cards only: which person the coordinates are written to. When
+    # the body names one it is the card's new person; otherwise the card's
+    # current one. A person card has none and writes to Books' primary.
+    person_mentioned = is_company and bool(
+        {"client_contact_person_id", "client_contact_name"} & payload.model_fields_set
+    )
+    target_person_id = (
+        (payload.client_contact_person_id if person_mentioned else project.client_contact_person_id)
+        if is_company
+        else None
+    )
+    target_person_name = payload.client_contact_name if person_mentioned else project.client_contact_name
+
     default_id, _default_name = await zoho_service.get_default_contact(db)
     # A real Books contact, as opposed to the shared walk-in bucket (or a
     # legacy card with no contact at all): only these are pushed to Zoho, and
@@ -3410,9 +3423,15 @@ async def edit_project_client(
                 email=email,
                 phone=phone,
                 phone_field=payload.phone_field,
+                contact_person_id=target_person_id,
             )
         except ZohoNotConfiguredError:
             raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+        except ZohoNotFound:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "contact_person_gone", "message": "This contact person no longer exists in Zoho Books"},
+            ) from None
         except ZohoRequestRejected as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         except ZohoUpstreamError as e:
@@ -3428,7 +3447,6 @@ async def edit_project_client(
             detail={"code": "version_conflict", "message": "Project was updated by someone else"},
         )
 
-    snapshot = {"client_name": name, "client_phone": phone or None, "client_email": email or None}
     # Never fanned out: the handle is this card's channel, not the contact's —
     # Books does not hold it, so a sibling card has no record to agree with.
     social_changes: list[dict] = []
@@ -3440,23 +3458,42 @@ async def edit_project_client(
         social_changes = diff_fields(project, social_patch)
         for key, value in social_patch.items():
             setattr(project, key, value)
-    targets = [project]
+    person_changes: list[dict] = []
+    if person_mentioned:
+        person_patch = {
+            "client_contact_person_id": target_person_id,
+            "client_contact_name": target_person_name,
+        }
+        person_changes = diff_fields(project, person_patch)
+        for key, value in person_patch.items():
+            setattr(project, key, value)
+    # The company name is contact-level and reaches every active sibling of
+    # the client; the coordinates are person-level and reach only siblings
+    # whose contact person matches the one this edit targets (both `None`
+    # counts as a match — a person-less sibling agrees with a person-less
+    # edit).
+    name_snapshot = {"client_name": name}
+    coords_snapshot = {"client_phone": phone or None, "client_email": email or None}
+    all_siblings: list[AitoProject] = []
     if is_zoho_contact:
-        siblings = (
-            await db.execute(
-                select(AitoProject).where(
-                    AitoProject.client_id == project.client_id,
-                    AitoProject.status == "active",
-                    AitoProject.id != project.id,
+        all_siblings = list(
+            (
+                await db.execute(
+                    select(AitoProject).where(
+                        AitoProject.client_id == project.client_id,
+                        AitoProject.status == "active",
+                        AitoProject.id != project.id,
+                    )
                 )
-            )
-        ).scalars()
-        targets.extend(siblings)
-    for target in targets:
-        changes = diff_fields(target, snapshot)
+            ).scalars()
+        )
+    for target in [project, *all_siblings]:
+        same_person = target is project or target.client_contact_person_id == target_person_id
+        patch = {**name_snapshot, **(coords_snapshot if same_person else {})}
+        changes = diff_fields(target, patch)
         if target is project:
-            changes = social_changes + changes
-        for key, value in snapshot.items():
+            changes = social_changes + person_changes + changes
+        for key, value in patch.items():
             setattr(target, key, value)
         await record(
             db,

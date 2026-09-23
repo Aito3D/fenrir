@@ -551,6 +551,11 @@ class AitoClientEdit(AitoClientSocialInput):
     # already carried so the operator's edit lands where the old number was.
     phone_field: Literal["phone", "mobile"] = "mobile"
     expected_version: int | None = None
+    # The chosen contact person, company cards only and only when MENTIONED:
+    # absent, the card's own person stays and receives the coordinates. Sent
+    # together by the contact sheet, like the social pair.
+    client_contact_person_id: str | None = Field(default=None, max_length=50)
+    client_contact_name: str | None = Field(default=None, max_length=200)
 
     @field_validator("email")
     @classmethod
