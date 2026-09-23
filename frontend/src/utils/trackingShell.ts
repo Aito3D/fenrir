@@ -19,3 +19,16 @@ export const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visibl
 export const PRESS = 'active:scale-[0.97] transition-[color,background-color,transform] duration-150';
 
 export const delayAt = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` });
+
+// The outer wrapper shared by every state of both tracking pages (each
+// page's loading/404 branch and its main return): the same literal, not
+// re-typed at each call site.
+export const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink';
+
+// The locale chunk fetch behind each page's `ready` gate has the same
+// failure mode as a hung tracking request or a hung code check — a
+// stalled connection that never errors — so both pages give it the same
+// deadline: past this, i18next's bundled English strings stand in rather
+// than leave a client staring at a skeleton for data that has already
+// arrived.
+export const I18N_SETTLE_TIMEOUT_MS = 10_000;

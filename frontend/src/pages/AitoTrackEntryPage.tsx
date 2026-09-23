@@ -9,7 +9,7 @@ import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { ENTRY_MOTION, TRACK_MOTION } from '../utils/aitoTracking';
 import { prefersReducedMotion } from '../utils/motion';
 import { CODE_LENGTH, type CodeState } from '../utils/trackingCode';
-import { CARD, delayAt } from '../utils/trackingShell';
+import { CARD, I18N_SETTLE_TIMEOUT_MS, PAGE, delayAt } from '../utils/trackingShell';
 
 type Failure = 'notFound' | 'tooMany' | 'error';
 
@@ -18,16 +18,6 @@ type Failure = 'notFound' | 'tooMany' | 'error';
  *  this long, abort and fall into the same retryable error state a network
  *  failure already shows. */
 const CHECK_TIMEOUT_MS = 10_000;
-
-// The locale chunk fetch behind `ready` below has the same failure mode as
-// a hung check — a stalled connection that never errors — so it gets the
-// same deadline: past this, i18next's bundled English strings stand in
-// rather than leave the entry door stuck on a skeleton with no way in.
-const I18N_SETTLE_TIMEOUT_MS = 10_000;
-
-// The outer wrapper shared by every state of this page (loading branch
-// and main return): the same literal, not re-typed at each call site.
-const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink';
 
 /** Why a check failed, in the one word the status line needs. Only the two
  *  answers the route itself gives are named: an unknown code (404) and the

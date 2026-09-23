@@ -13,7 +13,7 @@ import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
 import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
-import { CARD, FOCUS, PRESS, delayAt } from '../utils/trackingShell';
+import { CARD, FOCUS, I18N_SETTLE_TIMEOUT_MS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
 import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
 
@@ -27,17 +27,6 @@ const PARTS_SHOWN = 6;
 // fall into the same retryable error state a network failure already shows.
 // Same deadline as the /t entry page's identical call (its CHECK_TIMEOUT_MS).
 const TRACK_TIMEOUT_MS = 10_000;
-
-// The locale chunk fetch behind `ready` (see `settled` below) has the same
-// failure mode as a hung tracking request — a stalled connection that never
-// errors, not a fast one that fails — so it gets the same deadline. Past
-// this, i18next's bundled English strings stand in rather than leave a
-// client staring at a skeleton for data that has already arrived.
-const I18N_SETTLE_TIMEOUT_MS = 10_000;
-
-// The outer wrapper shared by every state of this page (404 branch and
-// main return): the same literal, not re-typed at each call site.
-const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink';
 
 /** The client's public tracking page: standalone, no app chrome, always
  *  dark (Midnight Blue + cyan) whatever the operator's theme, in the

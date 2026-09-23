@@ -704,17 +704,23 @@ async def test_commit_failure_for_middle_project_does_not_abort_the_last_one(db_
     )
     zoho_service.invalidate_token()
 
-    # Fail exactly the second of the three per-project commits (the middle
-    # project's). Counting calls rather than inspecting project state avoids
-    # touching an already-expired instance after the rollback below, which
-    # would itself raise trying to lazily reload outside a greenlet context.
+    # Fail exactly the middle project's own per-project commit at the end of
+    # its run_sync_once iteration. T-024: each brand-new project (no
+    # tracking_token yet) now spends TWO commits, not one -- an early one
+    # inside notes_with_tracking for the freshly minted token, then the
+    # loop's usual end-of-iteration commit -- so the call to fail here is the
+    # middle project's SECOND (its own commit #4 overall: first project
+    # spends #1-#2, middle's token mint is #3, middle's own commit is #4).
+    # Counting calls rather than inspecting project state avoids touching an
+    # already-expired instance after the rollback below, which would itself
+    # raise trying to lazily reload outside a greenlet context.
     original_commit = db_session.commit
     commit_calls = 0
 
     async def flaky_commit():
         nonlocal commit_calls
         commit_calls += 1
-        if commit_calls == 2:
+        if commit_calls == 4:
             raise RuntimeError("simulated commit failure")
         await original_commit()
 
@@ -916,6 +922,179 @@ async def test_a_successful_push_with_no_concurrent_edit_still_settles_idle(db_s
     assert project.quote_sync_state == "idle"
     assert project.quote_sync_failures == 0
     assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_update_path_commits_a_freshly_minted_tracking_token_before_the_books_call(
+    db_session, test_engine, monkeypatch
+):
+    """T-024. ``_update_quote`` used to evaluate
+    ``notes=await notes_with_tracking(...)`` as the argument to
+    ``update_estimate_lines`` itself: for a card whose ``tracking_token`` was
+    still NULL, that mint only flushed (``ensure_tracking_token``), leaving
+    the session's write transaction open for the whole PUT round trip. The
+    fix commits the freshly minted token, right inside ``notes_with_tracking``,
+    before returning control to that PUT call.
+
+    Driven the same way the race tests above prove ordering: a real SECOND
+    session reads the row from inside a patched ``update_estimate_lines`` --
+    the exact point a slow PUT would still be in flight in real life. A
+    non-null token read there is only possible if the mint was already
+    committed (a flush alone is invisible outside its own session)."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    assert project.tracking_token is None
+    await _configure_zoho(db_session)
+
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    seen_token: list[str | None] = []
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items, notes=None):
+        async with maker() as read_db:
+            row = await read_db.get(AitoProject, project.id)
+            seen_token.append(row.tracking_token)
+        return await real_update_estimate_lines(db, quote_id, line_items, notes=notes)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "expiry_date": "2026-08-13",
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    assert seen_token and seen_token[0] is not None
+    await db_session.refresh(project)
+    assert project.tracking_token == seen_token[0]
+
+
+@pytest.mark.asyncio
+async def test_update_path_with_an_existing_token_takes_no_extra_commit(db_session, monkeypatch):
+    """A card that already carries a token mints nothing, so
+    ``notes_with_tracking`` must not add a commit before the Books call --
+    the existing per-project transaction boundary (one commit, in
+    ``run_sync_once``) stays exactly as it was before T-024."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.tracking_token = "K7F3XQ"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    commit_count = 0
+    real_commit = db_session.commit
+
+    async def counting_commit(*args, **kwargs):
+        nonlocal commit_count
+        commit_count += 1
+        return await real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(db_session, "commit", counting_commit)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "expiry_date": "2026-08-13",
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    # Exactly the one commit run_sync_once's own per-project loop already
+    # made before this fix; no extra commit was inserted for an existing
+    # token.
+    assert commit_count == 1
+    await db_session.refresh(project)
+    assert project.tracking_token == "K7F3XQ"
+
+
+@pytest.mark.asyncio
+async def test_update_path_keeps_the_committed_tracking_token_when_books_then_fails(db_session, monkeypatch):
+    """The token commit happens before the Books call, so a subsequent
+    failure of that same call (sync_project never raises -- it catches and
+    records the error) must not roll the mint back. Without the fix, the
+    mint would still be sitting flushed-not-committed on the session when
+    the failing call raised, and would be lost the moment sync_project's own
+    error handling rolled that back.
+
+    ``quote_sync_failures`` is pre-set one short of ``SYNC_FAILURE_LIMIT`` so
+    this single failure escalates the project to 'error' -- the branch that
+    calls ``_rollback_after_terminal_failure`` -- exercising the strongest
+    version of "Books then fails" this module has."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    assert project.tracking_token is None
+    project.quote_sync_failures = SYNC_FAILURE_LIMIT - 1
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(
+                200,
+                json={
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "expiry_date": "2026-08-13",
+                        "line_items": [],
+                    }
+                },
+            )
+        if request.method == "PUT" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(500, json={"message": "Books is down"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.tracking_token is not None
 
 
 @pytest.mark.asyncio

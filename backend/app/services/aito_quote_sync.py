@@ -71,8 +71,27 @@ async def notes_with_tracking(db: AsyncSession, project: AitoProject, existing: 
     with this card's tracking block under it — or None when there is nothing
     to write: no public URL configured (build_tracking_url), or the notes
     already carry exactly this block. Never the block alone: that would
-    replace the org default printed beside the totals."""
+    replace the org default printed beside the totals.
+
+    Both call sites (the create and update paths) evaluate this argument
+    right before their own ``update_estimate_notes``/``update_estimate_lines``
+    Books round trip. ``build_tracking_url`` mints a token via
+    ``ensure_tracking_token`` for a card that has none, and that mint only
+    flushes — it does not commit, so the caller's session stayed in a write
+    transaction across the HTTP call that followed (T-024), the same failure
+    mode ``regenerate_tracking_token`` already documents and fixes by
+    committing before it talks to Books. So: when the mint here actually
+    produced a NEW token for this card, commit it right now, before
+    returning control to the caller's Books call — the same ordering. A card
+    that already had a token mints nothing and gets no extra commit, so its
+    per-project transaction boundary (one commit, in run_sync_once) is
+    unchanged. Nothing else pending on `project` is expected to ride along:
+    both call sites invoke this before making any other mutation to
+    `project` in their own function body."""
+    had_token = project.tracking_token is not None
     url = await build_tracking_url(db, project)
+    if not had_token and project.tracking_token is not None:
+        await db.commit()
     if not url:
         return None
     merged = with_tracking_notes(existing, url, project.tracking_token or "")
