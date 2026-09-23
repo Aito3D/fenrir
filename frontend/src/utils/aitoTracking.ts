@@ -69,11 +69,20 @@ export function updatedAt(isoUtc: string, t: TFunction, lng: string, now: Date =
  *  the Air Tahiti freight counter. */
 export function statusCopy(data: AitoTracking, t: TFunction, lng: string): { title: string; sub: string } {
   const pair = (key: string) => ({ title: t(`aito.track.status.${key}Title`), sub: t(`aito.track.status.${key}Sub`) });
+  // A live link the client can still act on. Same ranking as the page's
+  // payment block: an invoice, when there is one, outranks the link.
+  const payable = data.invoice === null && data.payment?.state === 'unpaid' && !!data.payment.url;
   switch (data.column) {
     case 'devis':
-      return pair('devis');
+      // Paying is how the client validates the quote (2026-09-22): with a
+      // link under this card, "you will receive it by email" would contradict
+      // the pay button below.
+      return payable && !data.accepted ? { title: t('aito.track.status.devisTitle'), sub: t('aito.track.status.devisPaySub') } : pair('devis');
     case 'waiting':
-      return pair('waiting');
+      // Accepted (a payment, a covering retainer, or the operator's click) but
+      // the card not yet moved: "waiting for your approval" would sit above
+      // "Acompte reçu".
+      return data.accepted ? pair('accepted') : pair('waiting');
     case 'finish':
       return pair('finish');
     case 'done':

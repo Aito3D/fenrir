@@ -265,7 +265,9 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
         "reference",
         "updated_at",
         "payment",
+        "accepted",
     }
+    assert body["accepted"] is False
     assert body["updated_at"]  # project.updated_at, naive UTC ISO string
     assert body["column"] == "print"
     assert body["tasks"] == [{"title": "Support GoPro", "quantity": None}, {"title": "Pièce 2", "quantity": None}]

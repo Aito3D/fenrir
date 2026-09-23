@@ -4373,6 +4373,9 @@ export interface AitoTracking {
   payment: AitoTrackingPayment | null;
   reference: string | null;
   updated_at: string;
+  /** True once the quote is accepted. Before that, a live payment link is how
+   *  the client validates it, and the page words the payment card that way. */
+  accepted: boolean;
 }
 
 export interface AitoTrackingLink {

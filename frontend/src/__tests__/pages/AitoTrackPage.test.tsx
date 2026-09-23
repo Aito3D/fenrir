@@ -73,7 +73,7 @@ const FIXTURE: AitoTracking = {
   // 2026-09-20 and broke CI at midnight on the 21st, on a commit that had
   // nothing to do with it. A date here must outlive the repo, not the sprint.
   due_date: '2099-09-20', shipping: null, done_at: null,
-  invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
+  invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00', accepted: false,
 };
 
 function mockTrack(body: AitoTracking | null) {
@@ -611,7 +611,7 @@ describe('AitoTrackPage — online payment', () => {
   beforeEach(() => i18n.changeLanguage('fr'));
 
   it('unpaid: a "Projet non réglé" card with a Pay online link in a new tab', async () => {
-    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    mockTrack({ ...FIXTURE, column: 'devis', accepted: true, payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
     renderAt('tok');
     const card = await screen.findByTestId('track-payment');
     expect(card).toHaveAttribute('data-state', 'unpaid');
@@ -662,7 +662,7 @@ describe('AitoTrackPage — online payment', () => {
   });
 
   it('unpaid: the deposit sub-line when it was a deposit invoice', async () => {
-    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    mockTrack({ ...FIXTURE, column: 'devis', accepted: true, payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
     renderAt('tok');
     const card = await screen.findByTestId('track-payment');
     expect(card).toHaveAttribute('data-state', 'unpaid');
@@ -677,6 +677,39 @@ describe('AitoTrackPage — online payment', () => {
     renderAt('tok');
     expect(await screen.findByTestId('track-invoice')).toBeInTheDocument();
     expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
+  });
+
+  it('unpaid before acceptance: the card asks the client to validate the quote by paying', async () => {
+    mockTrack({ ...FIXTURE, column: 'waiting', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'unpaid');
+    expect(within(card).getByText('Validez votre devis')).toBeInTheDocument();
+    expect(within(card).getByText('Le règlement en ligne vaut acceptation du devis.')).toBeInTheDocument();
+    expect(within(card).queryByText('Projet non réglé')).not.toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: 'Payer en ligne' })).toHaveAttribute('href', 'https://secure.osb.pf/pay/abc');
+    expect(within(card).getByRole('button', { name: 'Voir les modalités' })).toBeInTheDocument();
+    // The state card still says "waiting for your approval" — the link is the answer.
+    expect(screen.getByRole('heading', { level: 2, name: 'En attente de votre accord' })).toBeInTheDocument();
+  });
+
+  it('unpaid deposit before acceptance: the deposit validates the quote', async () => {
+    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(within(card).getByText('Validez votre devis')).toBeInTheDocument();
+    expect(within(card).getByText('Un acompte valide votre devis et lance la fabrication.')).toBeInTheDocument();
+    // And the Devis state card no longer promises an e-mail.
+    expect(screen.getByRole('heading', { level: 2, name: 'Devis en préparation' })).toBeInTheDocument();
+    expect(screen.getByText('Vous pouvez déjà le valider en réglant en ligne ci-dessous.')).toBeInTheDocument();
+  });
+
+  it('accepted in the Accord column: "Devis validé" above the paid line', async () => {
+    mockTrack({ ...FIXTURE, column: 'waiting', accepted: true, payment: { state: 'paid', url: null, deposit: true } });
+    renderAt('tok');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Devis validé' })).toBeInTheDocument();
+    expect(screen.getByText('Nous planifions la fabrication.')).toBeInTheDocument();
+    expect(within(screen.getByTestId('track-payment')).getByText('Acompte reçu')).toBeInTheDocument();
   });
 
   it('unpaid with no link yet renders nothing', async () => {

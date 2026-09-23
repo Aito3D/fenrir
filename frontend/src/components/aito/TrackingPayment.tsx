@@ -18,8 +18,10 @@ export interface PanelTrigger {
  *  read as the same kind of thing — and both open the page's payment panel
  *  (`terms`) from their terms button. The page never shows both: an invoice,
  *  when there is one, is the truer story and wins. The pay link opens in a
- *  new tab so the tracking page stays open behind OSB's checkout. */
-export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayment; terms: PanelTrigger }) {
+ *  new tab so the tracking page stays open behind OSB's checkout. Before the
+ *  quote is accepted the card speaks in the validate voice — paying IS the
+ *  client's acceptance (2026-09-22); after, the plain unpaid wording. */
+export function TrackingPayment({ payment, accepted, terms }: { payment: AitoTrackingPayment; accepted: boolean; terms: PanelTrigger }) {
   const { t } = useTranslation();
 
   if (payment.state === 'paid') {
@@ -45,8 +47,14 @@ export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayme
         <span className="flex min-w-0 flex-1 items-center gap-[8px]">
           <span className="h-[8px] w-[8px] shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold text-aito-ink">{t('aito.track.payment.unpaidTitle')}</span>
-            <span className="block text-[13px] text-aito-muted">{t(payment.deposit ? 'aito.track.payment.unpaidDepositSub' : 'aito.track.payment.unpaidSub')}</span>
+            <span className="block font-semibold text-aito-ink">{t(accepted ? 'aito.track.payment.unpaidTitle' : 'aito.track.payment.validateTitle')}</span>
+            <span className="block text-[13px] text-aito-muted">
+              {t(
+                accepted
+                  ? payment.deposit ? 'aito.track.payment.unpaidDepositSub' : 'aito.track.payment.unpaidSub'
+                  : payment.deposit ? 'aito.track.payment.validateDepositSub' : 'aito.track.payment.validateSub',
+              )}
+            </span>
           </span>
         </span>
         <a href={payment.url} target="_blank" rel="noopener noreferrer" className={`${button} bg-aito-cyan text-aito-midnight hover:brightness-110`}>
