@@ -1,0 +1,32 @@
+{"findings": [
+  {"severity": "high", "category": "concurrency",
+   "file": "backend/app/services/aito_quote_sync.py", "line": 1238,
+   "title": "notes_with_tracking mints the tracking token inside the open transaction, holding SQLite's write lock across the Books round trip",
+   "evidence": "`updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items, notes=await notes_with_tracking(db, project, estimate.get(\"notes\")))` — the argument is evaluated first, and for a card whose tracking_token is still NULL it runs ensure_tracking_token's `UPDATE aito_projects ... WHERE tracking_token IS NULL` + `await db.flush()` (aito_tracking.py:175-188) with no commit. That flush upgrades the worker session to a RESERVED write transaction, which is then held for the whole update_estimate_lines HTTP call (zoho.py:289 `httpx.AsyncClient(timeout=10.0)`, plus the 401-retry-once path) and until run_sync_once's per-project commit. SQLite allows one writer, so for those seconds every other writer — MQTT status, a board PATCH, log_view on the public tracking route — blocks and then fails once PRAGMA busy_timeout=15000 expires: a 500 'database is locked' on unrelated requests whenever Books is slow during a new card's first push. regenerate_tracking_token's own docstring records this exact failure ('the first settings read inside the Zoho client would autoflush it and hold SQLite's write lock for up to two request timeouts ... unrelated writers (MQTT status, the sync worker) failed with \"database is locked\"'), and the same shape exists on the create path at line 637.",
+   "fix": "mint and commit the token before the Books call — resolve the URL/notes in a step that ends with a commit (the order regenerate_tracking_token already uses) and pass the resulting string into update_estimate_lines / update_estimate_notes, so no write transaction is open across the HTTP round trip",
+   "behavior_change": true,
+   "behavior_change_note": "ORCHESTRATOR HOLD (auditor filed it as neutral): the fix inserts a commit into the quote-sync worker's per-project transaction before the Books HTTP call, so a freshly minted tracking token (and any other change pending on that session at that point) is committed even when the Books push then fails — the same order regenerate_tracking_token already uses, but a change to the sync loop's transaction boundary."},
+
+  {"severity": "medium", "category": "state-desync",
+   "file": "frontend/src/pages/AitoTrackPage.tsx", "line": 310,
+   "title": "AitoTrackPage leaves panel.open === 'pay' when a refetch removes the payment panel",
+   "evidence": "`const hasTerms = showContent && (data.invoice !== null ? data.invoice !== 'paid' : ...)` gates `{hasTerms && (<TrackingPanel id=\"track-panel-pay\" ...>)}`, but nothing resets `panel.open`. A client opens the payment terms panel, leaves the tab, the operator marks the invoice paid in Books; on return React Query refetches (staleTime 30 s, refetchOnWindowFocus), data.invoice becomes 'paid', hasTerms flips false and the panel plus its trigger button unmount while useTrackingPanel still holds open='pay'. `.track-stage[data-open='pay']` (index.css:2701) keeps the card translated ~200 px off-centre with nothing beside it, and under the 1119 px sheet breakpoint `.track-stage[data-open] .track-scrim` (index.css:2798) keeps a full-screen opaque scrim with pointer-events:auto over the page and no sheet behind it. On desktop the scrim is inert, so the only way back to a centred page is the Escape key — the close button went with the panel.",
+   "fix": "drive the open panel off what is still rendered: clear `panel.open` (or call panel.close()) in an effect when hasTerms goes false while open === 'pay'",
+   "behavior_change": false},
+
+  {"severity": "medium", "category": "error-handling",
+   "file": "frontend/src/components/aito/TrackingPaymentMethods.tsx", "line": 59,
+   "title": "copy() in TrackingPaymentMethods swallows a failed clipboard write and shows nothing",
+   "evidence": "`const copy = async (key: string, value: string) => { if (!(await copyTextToClipboard(value))) return; ... }` — copyTextToClipboard returns false when navigator.clipboard rejects and the execCommand fallback also fails (a WebView or locked-down mobile browser). The row then does nothing at all: no check, no 'copié', no message. The client taps IBAN or the transfer reference, believes it is on the clipboard, switches to their banking app and pastes whatever was there before — a wrong IBAN or a missing quote reference on a real transfer. The operator-side twin (TrackingLinkControl) already toasts on the same false; this public row is the one that silently lies.",
+   "fix": "surface the refusal — render the value as selectable text or set an error state in the status line when copyTextToClipboard returns false",
+   "behavior_change": true,
+   "behavior_change_note": "a client whose browser refuses the clipboard write now sees a failure message (or a selectable value) where the row previously appeared to do nothing"},
+
+  {"severity": "medium", "category": "error-handling",
+   "file": "frontend/src/App.tsx", "line": 239,
+   "title": "the public tracking routes have no client-facing error boundary and fall through to the developer UI Crash screen",
+   "evidence": "`<Route path=\"/t/:token\" element={<AitoTrackPage />} />` sits under the single app-wide ErrorBoundary (App.tsx:84-115), whose render is `<h1>UI Crash</h1>` plus `<pre>{this.state.error.message}</pre>` and `<pre>{this.state.error.stack}</pre>`. lazyWithReload retries a failed chunk import exactly once (guarded by CHUNK_RELOAD_KEY in sessionStorage); a second failure — a redeploy that replaced the hashed chunks while the service worker still serves the old index.html, or a flaky mobile link during the reload — rethrows, and the paying client who followed the link printed on their quote gets a red monospace JavaScript stack trace. That is the one outcome AitoTrackPage's own contract rules out: 'never a stack trace, a raw API message or the login screen'.",
+   "fix": "wrap the four /t and /track routes in their own boundary that renders the tracking card's error state (logo + translated message + retry) instead of inheriting the developer crash screen",
+   "behavior_change": true,
+   "behavior_change_note": "a crash on the tracking routes would render a branded retry card instead of the current stack-trace page, so the raw error text stops being visible to whoever hits it"}
+]}

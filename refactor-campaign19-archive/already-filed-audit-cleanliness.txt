@@ -1,0 +1,8 @@
+frontend/src/pages/AitoTrackPage.tsx | duplication | The public-page outer wrapper div is hand-copied 4 times across the two tracking pages
+frontend/src/components/aito/TrackingPayment.tsx | duplication | TrackingPayment and TrackingInvoice duplicate the same 'paid' markup and the same terms-toggle button classes
+frontend/src/pages/AitoTrackPage.tsx | duplication | The panel ids 'track-panel-pay' / 'track-panel-shop' are hand-typed in multiple places instead of derived from TrackingPanelId
+frontend/src/pages/AitoTrackPage.tsx | duplication | PAGE wrapper-class local is duplicated verbatim in AitoTrackPage and AitoTrackEntryPage
+frontend/src/pages/AitoTrackPage.tsx | duplication | I18N_SETTLE_TIMEOUT_MS is a duplicated local (identical value) in both tracking pages
+frontend/src/components/aito/TrackingPayment.tsx | duplication | Terms-toggle button class string is duplicated between TrackingPayment and TrackingInvoice, only token order differs
+backend/tests/unit/test_aito_tracking.py | duplication | The rate-limit clock/reset boilerplate is retyped in ~17 test functions instead of a shared fixture
+frontend/src/__tests__/pages/AitoTrackPage.test.tsx | duplication | The readyOverride/useTrackingLanguage mock scaffold is copy-pasted between the two tracking-page test files

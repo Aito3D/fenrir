@@ -1,112 +1,88 @@
-# FINAL_REPORT.md — refactor-loop campaign 16 (the settings feature)
+# FINAL_REPORT.md — refactor-loop campaign 19 (the client tracking page)
 
-Campaign 16 · worktree `../fenrir-refactor-c16` · branch `auto-refactor-loop-c16` · BASE `refactor-base-c16` (a7edcbf47, cut from main 911c08b25 on 2026-09-14)
-Scope: backend settings route/schema/model, SettingsPage.tsx and its 15 settings panels + SecurityStatusCard, settingsSearch.ts, and their tests (see BASELINE.md for the exact boundary and the upstream-vs-fork ownership caution).
-Parameters: TRIAGE P3 · MAX_ITER 8 · MAX_ROUNDS 3 · BATCH 3 · MODE auto · COMMIT_STYLE grouped · MERGE_CADENCE at-exit.
+Campaign 19 · worktree `../bambuddy-refactor` · branch `auto-refactor-loop` · BASE `refactor-base` (c72a6b4c6, cut from main e1628a72a on 2026-09-22)
+Scope: the client tracking page, front and back end — pages/AitoTrackPage + AitoTrackEntryPage, the 11 Track* components and trackingShell, the two tracking hooks and three utils, the tracking routes in App.tsx and client.ts, services/aito_tracking.py, models/aito_tracking_view.py, the /track route + rate limiter + tracking-link/token routes in routes/aito.py, notes_with_tracking in aito_quote_sync.py, the AitoTracking* schemas, main.py's tracking serve path, the aito.track.* keys. The login page was NOT in scope this time (see BASELINE.md for the exact boundary).
+Parameters: TRIAGE P3 · MAX_ITER 8 → 12 (raised by the user at the round-2 sweep) · MAX_ROUNDS 3 · BATCH 3 · MODE auto · COMMIT_STYLE grouped · MERGE_CADENCE at-exit.
 
 ## Run summary
-- Iterations run: 8 (every one verified PASS by the blind verifier; two needed a second pass after an in-iteration revert)
-- Survey rounds completed: 2 of 3
-- Commits on the branch after squashing: 8 iteration commits + the setup commit (+ this report); tags: loop16-1 loop16-2 loop16-3 loop16-4 loop16-5 loop16-6 loop16-7 loop16-8
-- Why the loop ended: **MAX_ITER** (iteration 9 would have exceeded the cap of 8). Round 2 was productive (11 workable tasks), so the campaign did not converge; 5 of those tasks are left OPEN.
-- User-approved behavior changes this campaign: **none** (no BASELINE-CHANGELOG.md entry was added). The user was not available during the run, so every behavior-change finding was held — see the list below.
 
-## What landed (all verified behavior-neutral)
-8f6dab85d refactor(loop16-8): T-238, T-241, T-243 — streamed Postgres export, its end-to-end test, camera/go2rtc branch tests
-a7030015b refactor(loop16-7): T-239, T-246 — reset endpoint and OIDCProviderSettings mutation tests
-ee794b397 refactor(loop16-6): T-219 characterize ColorCatalogSettings update/delete/sync/import/export handlers
-6bee2c296 refactor(loop16-5): T-214, T-215, T-218 — virtual-printer PUT validations, gcode_snippets validator, SpoolCatalogSettings handlers
-c08ae87db refactor(loop16-4): T-202, T-213 — log swallowed reconfiguration failures, Spoolman switch-on tests
-c6542015d refactor(loop16-3): T-195, T-201, T-217 — backup temp-file cleanup, shared input class, LDAPSettings tests
-98e35edf4 refactor(loop16-2): T-211, T-212, T-216 — characterize the restore guards and the EmailSettings panel
-9653a9033 refactor(loop16-1): T-209, T-210 — characterize the settings lock-out guard and the restore success path
+- Iterations run: 10 (every one verified PASS by the blind verifier at first pass; no reverts)
+- Survey rounds completed: 2 of 3 — the user asked to finish after iteration 10, so round 3 was not run
+- Commits on the branch: 10 squashed iteration commits + the setup commit (+ this report); tags loop-1 … loop-10
+- Why the loop ended: **user request** ("finish the refactor" after loop-10) with the plan exhausted — 29 of 30 tasks DONE, 1 declined, 0 OPEN. Neither MAX_ITER (12) nor MAX_ROUNDS (3) was reached, and the campaign did not formally converge (no dry round was surveyed).
 
-Production changes (3): swallowed MQTT/camera/go2rtc reconfiguration failures now log a warning (T-202); the on-demand backup's temp ZIP is unlinked when the build fails (T-201); the PostgreSQL backup export streams in 1000-row partitions instead of loading each table twice (T-238). One cleanliness change: a shared `settingsInputCls` constant replaces 15 identical class literals in the three fork-owned panels (T-195).
-Everything else is characterization tests: restore success path, ZipSlip guard, staging contract, restore 500 fallback pending, local-login lock-out guard, Spoolman switch-on, legacy virtual-printer PUT validations, gcode_snippets validator, reset endpoint, camera/go2rtc branches, Postgres export; EmailSettings, LDAPSettings, SpoolCatalogSettings, ColorCatalogSettings, OIDCProviderSettings panels.
-Two worked fixes were FAILED by the verifier as unsanctioned behavior changes and reverted in-iteration (T-200 scheduler restart after a failed restore; T-206 SpoolmanSettings refetch guard); both are now held for approval.
+## User-approved behavior changes this campaign (BASELINE-CHANGELOG.md, all dated 2026-09-22)
 
-## What each resurvey round found
-- Round 1 (setup): 26 findings — cleanliness 2, robustness 10, security 3, tests 11 → 24 filed (19 workable, 5 blocked), 2 triaged.
-- Round 2: 30 findings — cleanliness 6, robustness 9, security 4, tests 11 → 26 filed (11 workable after orchestrator holds and duplicate retirements, 15 blocked incl. holds), 4 triaged.
+Security / rate limiter (routes/aito.py):
+- T-011 IPv6 sources keyed per /48 instead of /64 (golden `tracking-backend` re-recorded, two net_key rows)
+- T-012 no-peer / unparseable hosts collapse onto one shared `__no_ip__` bucket (fail closed)
+- T-017 the per-IP CALLS cap is suspended on a collapsed bucket, like the miss cap
+- T-028 new per-net calls ceiling `_TRACK_RATE_MAX_CALLS_PER_NET = 1200/min`, recorded for every admitted call
+- T-030 the `__no_ip__` bucket counts as collapsed (bounded per net, not per IP)
+- T-029 a collapsed bucket now requires the explicit opt-in `AITO_TRACK_COLLAPSED_PROXY=1` (or `TRUSTED_PROXY_IPS`); the spoofable `_peer_is_private` heuristic and its tests were removed. **Deployment note for the operator:** a containerised or proxied install should set `TRUSTED_PROXY_IPS`; no project doc mentions either variable today — worth adding to the deployment docs.
+- T-010 the shop-panel map iframe sends `referrerPolicy="no-referrer"` (the tracking code no longer reaches google.com). **Please confirm in a real browser that the keyless embed still renders.**
+- T-014 `payment_state` returns `url=None` once a link is paid (golden re-recorded for the two paid-link rows)
 
-## Findings by auditor (plan.py stats, campaign 16 only)
+Robustness / UX:
+- T-018 both tracking pages get a 10 s i18n settle deadline (`I18N_SETTLE_TIMEOUT_MS`) — a stalled locale chunk shows the page in the fallback language instead of an endless skeleton
+- T-024 the quote sync commits a freshly minted tracking token BEFORE the Books call (both push paths) so SQLite's write lock is not held across the HTTP round trip. The verifier noted the boundary is slightly wider than the entry says: for a token-less legacy card restored from trash whose Books update then fails, the restore-branch writes of `_reconcile_status` now persist too.
+- T-026 the payment rows show a translated "copy failed" hint (new key `aito.track.paymentMethods.copyFailed` in 14 locales; goldens `tracking-i18n` + `fe-i18n-parity` re-recorded)
+- T-027 the four /t and /track routes are wrapped in `TrackingErrorBoundary`, which renders the tracking card's own error state with a retry instead of the app-wide "UI Crash" stack trace (golden `fe-router` re-recorded for the four element lines). Side effect: App.tsx now imports components/aito/trackingShell eagerly, moving that small module into the main chunk.
+
+Sanctioned re-baselines (not behavior changes):
+- T-002 `TrackingPaidRow`, T-019 `PAGE`, T-020 `I18N_SETTLE_TIMEOUT_MS`, T-021 `TERMS_BUTTON` — additive internal exports under the user's "additions only in Frontend exports" rule
+- iteration 4: `tools/gen_surface_tracking.sh` no longer pins grep line numbers (T-012's insertion had shifted every later number with nothing named changed); SURFACE.md regenerated
+
+Declined: T-015 (expiry clock for cards parked in production/finish columns) — the user chose to keep those links live indefinitely.
+
+## What landed, by iteration (all verified behavior-neutral or user-approved)
+
+- loop-1 70ffd7c82: T-001 PAGE constant per page · T-002 TrackingPaidRow extraction (byte-identical markup) · T-004 useSheetDrag characterisation (TrackingPanel.tsx 66.66% → 95.55% stmts)
+- loop-2 c906bb245: T-005 entry-page stale-check guard + same-code onChange guard · T-006 payment-methods height tween driven with stubbed layout · T-007 clipboard-failure early return
+- loop-3 4e3cc14fb: T-008 deposit vs full wording (branches 80% → 100%) · T-010 map Referer · T-011 IPv6 /48
+- loop-4 5cda19ed2: T-012 `__no_ip__` bucket · T-016 run_sync_loop rolls back after a failed purge_tracking_views · T-017 collapsed calls cap · SURFACE generator re-baseline
+- loop-5 14a8bc7b2: T-018 settle deadline · T-014 url=None on paid
+- loop-6 643c2c5ca: T-024 token committed before Books · T-019/T-020 hoists
+- loop-7 9125914b2: T-021 TERMS_BUTTON · T-022 `track_rate_clock` fixture + `_exhaust_ip_misses` helper (test_aito_tracking.py 1258 → 1221 lines, 54 tests unchanged) · T-025 the pay panel closes when a refetch removes it
+- loop-8 c1b19e54d: T-026 copy-failed hint · T-027 tracking error boundary · T-028 per-net calls ceiling
+- loop-9 313a3ee28: T-030 `__no_ip__` collapsed · T-029 explicit proxy opt-in · T-031 sheet-drag 6-sample window tests
+- loop-10 d017d633c: T-032 mint_unique_token retry/give-up · T-034 `_release_miss` guards · T-033 entry-page settle deadline test
+
+Net diff vs BASE: 41 files, +2082 / −360. Production code (backend/app + frontend/src minus tests): 26 files, +389 / −103. Tests: 8 files, +1507 / −155 (the deletions are the replaced limiter boilerplate, the removed `_peer_is_private` tests and re-pinned expectations, all sanctioned).
+
+## What each survey round found
+
+- Round 1 (setup, 2026-09-22): 17 findings — security 6, robustness 3, cleanliness 3, tests 6 → 15 filed (10 workable + 5 held for approval), 3 triaged. Approvals: 6 approved (T-010, T-011, T-012, T-014, T-017, T-018), 1 denied (T-015).
+- Round 2 (after iteration 5): 16 findings — security 3, robustness 4, cleanliness 5, tests 4 → 15 filed (9 workable + 6 held), 1 triaged. All 6 held findings approved (T-024, T-026, T-027, T-028, T-029, T-030); MAX_ITER raised 8 → 12.
+- Round 3: not run (user request).
+
+## Findings by auditor (plan.py stats, campaign 19 only)
+
 | auditor | filed | DONE | BLOCKED | WONTFIX-AUTO | OPEN |
 |---|---|---|---|---|---|
-| audit-security | 7 | 0 | 6 | 1 | 0 |
-| audit-robustness | 18 | 3 | 14 | 1 | 0 |
-| audit-cleanliness | 4 | 1 | 3 | 0 | 0 |
-| audit-tests | 21 | 15 | 0 | 1 | 5 |
+| audit-security | 8 | 7 | 0 | 1 (T-015 declined) | 0 |
+| audit-robustness | 7 | 7 | 0 | 0 | 0 |
+| audit-cleanliness | 6 | 6 | 0 | 0 | 0 |
+| audit-tests | 9 | 9 | 0 | 0 | 0 |
 
 ## Triaged
-6 findings were diverted to TRIAGE.md this campaign (cleanliness 4: T-194 T-222 T-224 T-225; robustness 1: T-208; tests 1: T-242). TRIAGE.md currently holds 31 entries — the other 25 are carried over from campaigns 14/15. Each has full evidence; promote one with `python tools/plan.py promote <id> --iteration N` (the flag is required).
+
+4 findings were diverted to TRIAGE.md this campaign (all P3): cleanliness 2 (T-003 panel-id literals not derived from TrackingPanelId; T-023 the readyOverride mock scaffold copied between the two page test files), tests 1 (T-009 the language pill's fallback for an unsupported current language is untested), security 1 (T-013 the limiter's bucket sweep only drops fully-aged keys and costs O(n) per request — partly superseded by T-028's ceiling). TRIAGE.md carries each with full evidence; it is archived in `refactor-campaign19-archive/TRIAGE.md`. To work one in a future campaign: `python tools/plan.py promote <id> --iteration N` (the flag is required).
 
 ## Quality gates
-- Coverage (whole tree, line %): backend 73% → 73% (Miss 18268 → 18161, 107 fewer missed lines); frontend 61.81% → 62.77% (Stmts 60.94→61.86, Branch 56.29→56.88, Funcs 52.4→53.37).
-- Tests: backend 13379 → 13424 passed (0 failed); frontend 6151 → 6200 passed (0 failed). known-broken: 0 → 0.
-- Golden probes: 15/15 matching at every verification (5 settings-specific probes added at setup: schema dump, HTTP end-to-end API sequence, search index, page DOM/i18n/api contract, English settings copy). SURFACE.md: unchanged.
-- Net diff vs BASE: 16 files, 2717 insertions, 40 deletions (deletions are import-line rewrites, one hoisted test mock, and the three production hunks above; no test deleted or weakened — verified each iteration).
+
+- Coverage (scope-only, statements): frontend 93.27% (527/565) → 98.35% (597/607); backend (aito_tracking.py + aito_tracking_view.py) 99.38% (160/161) → 99.38% (161/162). Coverage config and the scope include lists untouched since BASE.
+- Tests: backend 15143 → 15149 passed (0 failed, 1 skipped); frontend 6891 → 6917 passed (0 failed). known-broken: 0 → 0. Per-verifier flakes fired only from the documented known_flaky list and passed alone.
+- Golden probes: 15/15 matching at every verification (5 tracking probes added at setup: service-level compute_tracking over 15 seeded cards, wire contract, HTTP end-to-end, frontend pure logic, i18n structure; 10 app-wide guards inherited). Four sanctioned re-records: tracking-backend (T-011, T-014), fe-router (T-027), tracking-i18n + fe-i18n-parity (T-026).
+- SURFACE.md: additions only (4 exports, 2 limiter names, 1 translation key, 1 testid, the App.tsx route lines, the T-027 export) and one removal (`_peer_is_private`, T-029), each covered by a changelog entry; regenerated byte-identical at every verification.
+- Static gates: ruff, eslint, tsc -b, i18n parity clean at every verification (7651 → 7665 keys per locale after the client-edit feature and T-026).
 
 ## Left for humans
-### OPEN (5, all test-only, ran out of iteration budget)
-- T-244 restore_backup()'s generic `except Exception` catch-all (the 500 fallback) is never triggered by a test
-- T-245 update_virtual_printer_settings(): ValueError/Exception translation around virtual_printer_manager.configure() has no test
-- T-247 SpoolmanSettings' auto-save debounce and mutation success/error toasts (including the differentiated 503/400 AMS-sync error branch) are untested
-- T-248 GitHubBackupSettings' download-backup and restore-from-file flows have no test
-- T-249 TwoFactorSettings' email-OTP enable/disable, OIDC-unlink mutations, and the SMTP-specific error message are untested — only TOTP flows are covered
 
-### BLOCKED — needs user approval (23)
-Each is a real defect whose fix changes observable behavior. Decide per id; on approval run `python tools/plan.py set-status <id> OPEN --iteration N --reason "user-approved behavior change"` and re-enter the loop (the worker must add a BASELINE-CHANGELOG.md entry, re-record affected goldens, and mark the commit "(user-approved behavior change)"). T-199 is the P0: one PATCH with a null numeric field breaks every settings read until reset.
-- **T-199 [P0]** update_settings() stores an explicit JSON null as the string "None", permanently breaking every settings read — `backend/app/api/routes/settings.py` (audit-robustness)
-  user-visible change: A client that sends null for a numeric setting will get a 400 (or a silently ignored field) instead of a 200, and installs that already hold a "None" row will start returning the default value for that field rather than erroring.
-- **T-196 [P1]** update_settings() lock-out refusal misses a JSON null for local_login_enabled — `backend/app/api/routes/settings.py` (audit-security)
-  user-visible change: PUT/PATCH /api/v1/settings/ with local_login_enabled explicitly set to null currently returns 200 and disables local login; it would start returning HTTP 400 unless an enabled OIDC provider exists and the caller has an OIDC link.
-- **T-197 [P1]** _SENSITIVE_FIELDS_FOR_API_KEY omits obico_ml_token — `backend/app/api/routes/settings.py` (audit-security)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-200 [P1]** restore_backup() leaves the print scheduler and plug/digest loops permanently stopped when the restore fails — `backend/app/api/routes/settings.py` (audit-robustness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-220 [P1]** ZohoSettings' settings-seed useEffect lacks the seededRef guard its siblings AiSettings/HeimdallSettings use, so a save on either neighbor blanks in-progress Zoho edits — `frontend/src/components/ZohoSettings.tsx` (audit-cleanliness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-226 [P1]** reset_settings() deletes the auth_enabled/setup_completed rows, disabling authentication app-wide — `backend/app/api/routes/settings.py` (audit-security)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-227 [P1]** _build_settings_response() only scrubs credentials for API-key callers, so any settings:read user gets mqtt_password/ha_token/prometheus_token in cleartext — `backend/app/api/routes/settings.py` (audit-security)
-  user-visible change: users in the Operators/Viewers groups will see the MQTT password, HA token, Prometheus token and virtual-printer access code as empty fields on the Settings page instead of their real values.
-- **T-230 [P1]** debounced auto-save effect in SettingsPage retries a rejected PUT forever with no cap or backoff — `frontend/src/pages/SettingsPage.tsx` (audit-robustness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-231 [P1]** docker_compose_dir and pipeline_max_copies are edited by updateSetting but omitted from the auto-save payload — `frontend/src/pages/SettingsPage.tsx` (audit-robustness)
-  user-visible change: these two settings would start persisting to the server, so the compose directory survives a reload and the pipeline copy limit an operator sees becomes the one the admin typed.
-- **T-198 [P2]** update_virtual_printer_settings() takes access_code as a query parameter — `backend/app/api/routes/settings.py` (audit-security)
-  user-visible change: any existing script or integration that calls PUT /api/v1/settings/virtual-printer?access_code=... would stop taking effect and must send a JSON body instead.
-- **T-203 [P2]** update_virtual_printer_settings() commits settings before configure(), so a configure failure leaves stored state diverged from runtime — `backend/app/api/routes/settings.py` (audit-robustness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-204 [P2]** importBackup() ignores response.ok and returns FastAPI's error shape as if it were a result — `frontend/src/api/client.ts` (audit-robustness)
-  user-visible change: A failed restore that currently shows a blank error box will start showing the server's explanation (and go through the catch path), and non-JSON error bodies will produce a status-based message instead of a JSON parse error.
-- **T-205 [P2]** exportBackup() buffers the entire backup ZIP in browser memory as a Blob — `frontend/src/api/client.ts` (audit-robustness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-206 [P2]** SpoolmanSettings init effect overwrites in-progress input whenever its own autosave refetches — `frontend/src/components/SpoolmanSettings.tsx` (audit-robustness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-207 [P2]** FailureDetectionSettings saveMutation has no onError, so a failed save is completely silent — `frontend/src/components/FailureDetectionSettings.tsx` (audit-robustness)
-  user-visible change: Users will now see an error toast when a failure-detection setting fails to save, where the failure is currently invisible.
-- **T-221 [P2]** clampInt() and AiSettings' clampDays() implement the same 'validate a day/percent field before save' rule with different, undocumented semantics — `frontend/src/components/HeimdallSettings.tsx` (audit-cleanliness)
-  user-visible change: Unifying the two functions will change the on-save behavior for out-of-range keystrokes in whichever panel currently uses the other semantics (e.g. typing 400 into a Heimdall day field currently saves 365; under clampDays-style semantics it would instead be discarded and revert to the previously saved value).
-- **T-223 [P2]** zoho/openrouter/pushcut/heimdall secrets listed in _SENSITIVE_FIELDS_FOR_API_KEY are already unconditionally blanked, making their entries there a no-op — `backend/app/api/routes/settings.py` (audit-cleanliness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-233 [P2]** saveArchivePurgeSettings() and saveTrashSettings() PUT on every keystroke from a stale cache snapshot — `frontend/src/pages/SettingsPage.tsx` (audit-robustness)
-  user-visible change: the retention-age fields would save when the user finishes typing instead of on each keystroke, so the per-keystroke 'settings saved' toasts disappear.
-- **T-234 [P2]** debounced auto-save cleanup in SettingsPage drops a pending save when the page unmounts — `frontend/src/pages/SettingsPage.tsx` (audit-robustness)
-  user-visible change: a setting changed immediately before navigating away would now be persisted instead of discarded.
-- **T-235 [P2]** ExternalLinksSettings deleteMutation has no onError, so a failed link delete is invisible — `frontend/src/components/ExternalLinksSettings.tsx` (audit-robustness)
-  user-visible change: a failed sidebar-link deletion would now show an error toast where nothing appeared before.
-- **T-236 [P2]** deleteLocalBackupMutation has no onError, leaving the confirm dialog stuck on failure — `frontend/src/components/GitHubBackupSettings.tsx` (audit-robustness)
-  user-visible change: a failed scheduled-backup deletion would now close the dialog and show an error toast instead of leaving the dialog open silently.
-- **T-237 [P2]** handleImport() issues one unbounded, uncancellable POST per catalog entry — `frontend/src/components/ColorCatalogSettings.tsx` (audit-robustness)
-  user-visible change: (no auditor fragment — orchestrator hold; see BASELINE.md for the observable difference)
-- **T-229 [P3]** create_backup_zip() writes the output_path archive with default umask permissions — `backend/app/api/routes/settings.py` (audit-security)
-  user-visible change: scheduled local backup files stop being readable by other OS users/groups on the backup volume, so any external job that copies them under a different account will start failing with permission denied.
+- OPEN: none. BLOCKED: none.
+- WONTFIX-AUTO: T-015 (production-column tracking TTL) — declined by the user.
+- Follow-ups outside the loop's remit: verify the map embed renders under `no-referrer` (T-010); document `TRUSTED_PROXY_IPS` / `AITO_TRACK_COLLAPSED_PROXY` for containerised installs (T-029); consider whether T-024's wider commit boundary on the trash-restore corner case matters; the 4 TRIAGE leads above.
 
-### WONTFIX-AUTO (3)
-- T-232 ZohoSettings init effect re-seeds every field on each ['settings'] refetch, discarding in-progress input — duplicate of T-220 (ZohoSettings seededRef guard, BLOCKED pending approval)
-- T-240 update_spoolman_settings(): switching Spoolman OFF never has its SpoolmanSlotAssignment-clearing branch (elif was_enabled and not now_enabled) tested — already covered: test_switch_to_internal_mode_clears_spoolman_slot_assignments drives the elif body (coverage arcs 668->669->671->672->673); round-2 finding was wrong
-- T-228 update_settings() stores a JSON null as the literal "None", permanently 500-ing GET /settings and /ui-preferences for numeric fields — duplicate of T-199 (same null->"None" write bug, BLOCKED pending approval)
+## Preserved state
 
-## Operational notes for the next campaign
-See BASELINE.md "RUNTIME NOTES": subagents that end their turn waiting for a background job must be resumed; macOS has no `setsid`; run one backend worker at a time (shared backend/.coverage.* files); frontend coverage runs must use a scratchpad reportsDirectory. Auditors under-flag behavior changes — judge every production "fix" before dispatch. Round-2 audit-tests filed one already-covered branch (T-240); round-1 audit-security wrongly reported node_modules absent.
+`refactor-campaign19-archive/` (committed with this report) holds PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, the eight `findings-audit-*-r{1,2}.json` files and the per-auditor `already-filed-audit-*.txt` lists — the whole of the loop's untracked memory, so removing the worktree loses nothing.
