@@ -130,6 +130,30 @@ describe('SendQuoteModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('preselects the card’s contact person over the default address', async () => {
+    vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue(CONTENT);
+    render(
+      <SendQuoteModal
+        project={{ ...project, client_contact_person_id: 'cp-2' } as unknown as AitoProject}
+        onClose={() => {}}
+      />,
+    );
+    const select = await screen.findByLabelText(/recipient/i);
+    await waitFor(() => expect(select).toHaveValue('compta@example.pf'));
+  });
+
+  it('falls back to the default when the person is not a recipient', async () => {
+    vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue(CONTENT);
+    render(
+      <SendQuoteModal
+        project={{ ...project, client_contact_person_id: 'cp-9' } as unknown as AitoProject}
+        onClose={() => {}}
+      />,
+    );
+    const select = await screen.findByLabelText(/recipient/i);
+    await waitFor(() => expect(select).toHaveValue('contact@example.pf'));
+  });
+
   it('renders the body in a locked-down frame, never in the page', async () => {
     // The body is Books' HTML. It is upstream content on a template we do
     // not control, so it must never become live markup in the app document.

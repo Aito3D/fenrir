@@ -44,6 +44,24 @@ const JEAN_PIERRE = {
   email: 'jp@example.pf',
 };
 
+const SNP = {
+  id: 'zSNP',
+  name: 'Societe de Navigation Polynesienne (SNP)',
+  company_name: 'SNP',
+  customer_sub_type: 'business',
+  phone: '',
+  mobile: '+689-40549958',
+  email: 'vaekehu@snp.pf',
+};
+const VAEKEHU = {
+  contact_person_id: 'cp1', first_name: 'Vaekehu', last_name: 'VARNEY', name: 'Vaekehu VARNEY',
+  email: 'vaekehu@snp.pf', phone: '', mobile: '+689-40549958', is_primary: true,
+};
+const MOANA = {
+  contact_person_id: 'cp2', first_name: 'Moana', last_name: 'TERIIPAIA', name: 'Moana TERIIPAIA',
+  email: '', phone: '+689-87221043', mobile: '', is_primary: false,
+};
+
 function historyTask(overrides: Partial<AitoTask>): AitoTask {
   return {
     id: 900,
@@ -98,6 +116,7 @@ const JP_HISTORY: AitoClientHistory = {
     },
   ],
   latest_social: { network: 'instagram', handle: 'jp.dupont' },
+  latest_contact_person_id: null,
 };
 
 function mockHistory(body: AitoClientHistory) {
@@ -196,6 +215,7 @@ beforeEach(() => {
       }),
     ),
     http.get('/api/v1/zoho/contacts', () => HttpResponse.json([])),
+    http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([])),
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
     http.get('/api/v1/calculator/printers/', () => HttpResponse.json(mockPrinters)),
     http.get('/api/v1/calculator/defaults', () => HttpResponse.json(mockDefaults)),
@@ -246,6 +266,20 @@ async function openClientSection() {
   await userEvent.clear(combobox);
   await userEvent.type(combobox, 'Jean');
   await userEvent.click(await screen.findByText('Jean-Pierre DUPONT'));
+}
+
+/** Opens the Client section, searches for SNP and picks it — a company
+ *  client, so its persons list drives the contact-person radios. */
+async function openCompanySection(persons = [VAEKEHU, MOANA]) {
+  server.use(
+    http.get('/api/v1/zoho/contacts', () => HttpResponse.json([SNP])),
+    http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json(persons)),
+  );
+  await userEvent.click(clientHeader());
+  const combobox = await screen.findByRole('combobox', { name: /client/i });
+  await userEvent.clear(combobox);
+  await userEvent.type(combobox, 'Soc');
+  await userEvent.click(await screen.findByText('Societe de Navigation Polynesienne (SNP)'));
 }
 
 /** Prices the seeded task at 10 000 — the round number the receipt/total
@@ -1100,12 +1134,15 @@ describe('repeat-client recall', () => {
   const SECOND_HISTORY: AitoClientHistory = {
     cards: [],
     latest_social: { network: 'whatsapp', handle: '87654321' },
+    latest_contact_person_id: null,
   };
 
   function mockHistoryPerClient(byId: Record<string, AitoClientHistory>) {
     server.use(
       http.get('/api/v1/aito/clients/:clientId/history', ({ params }) =>
-        HttpResponse.json(byId[params.clientId as string] ?? { cards: [], latest_social: null }),
+        HttpResponse.json(
+          byId[params.clientId as string] ?? { cards: [], latest_social: null, latest_contact_person_id: null },
+        ),
       ),
     );
   }
@@ -1240,5 +1277,80 @@ describe('repeat-client recall', () => {
     await userEvent.click(createButton());
 
     expect(onCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('company contact persons', () => {
+  it('names the person on the checklist and hands it to onCreate', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+    mockHistory({ cards: [], latest_social: null, latest_contact_person_id: null });
+    await fillOneTask();
+    await openCompanySection();
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    expect(checklistLine(/Client account — .*SNP.*· Vaekehu VARNEY/)).toHaveAttribute('data-state', 'ok');
+    expect(checklistLine(/Client reachable — \+689-40549958/)).toHaveAttribute('data-state', 'ok');
+
+    await user.click(screen.getByRole('radio', { name: 'Moana TERIIPAIA' }));
+    expect(checklistLine(/Client reachable — \+689-87221043/)).toHaveAttribute('data-state', 'ok');
+
+    await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
+    await user.click(createButton());
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        isCompany: true, contactPersonId: 'cp2', contactName: 'Moana TERIIPAIA', email: '',
+        countryCode: '+689', nationalNumber: '87221043',
+      }),
+      expect.any(Array),
+      null,
+      null,
+    );
+  });
+
+  it('recalls the person from the latest past card', async () => {
+    await renderDrawer();
+    mockHistory({ cards: [], latest_social: null, latest_contact_person_id: 'cp2' });
+    await openCompanySection();
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());
+  });
+
+  it('a person with neither coordinate leaves the client unreachable and the override reveals plain inputs', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+    mockHistory({ cards: [], latest_social: null, latest_contact_person_id: null });
+    await openCompanySection([{ ...VAEKEHU, email: '', mobile: '', phone: '' }, MOANA]);
+    // Vaekehu is still the primary, so she is still auto-picked — she simply
+    // has no phone or email to be reached on.
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    // Same "click disabled Create to reveal the miss state" pattern the
+    // plain-client checklist test above uses.
+    await user.click(createButton());
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(checklistLine(/Client reachable|needs a phone/i)).toHaveAttribute('data-state', 'miss');
+    await user.click(screen.getByRole('button', { name: /use a different phone/i }));
+    expect(screen.getByLabelText(/^phone/i)).toBeInTheDocument();
+  });
+
+  it('an override typed behind the disclosure wins in the draft', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+    mockHistory({ cards: [], latest_social: null, latest_contact_person_id: null });
+    await fillOneTask();
+    await openCompanySection();
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    await user.click(screen.getByRole('button', { name: /use a different phone/i }));
+    await user.clear(screen.getByLabelText(/^email/i));
+    await user.type(screen.getByLabelText(/^email/i), 'direct@snp.pf');
+    await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
+    await user.click(createButton());
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ contactPersonId: 'cp1', email: 'direct@snp.pf' }),
+      expect.any(Array),
+      null,
+      null,
+    );
   });
 });

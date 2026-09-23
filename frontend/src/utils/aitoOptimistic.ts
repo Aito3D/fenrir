@@ -377,6 +377,8 @@ export function placeholderProject(fields: {
   client_email: string | null;
   client_social_network?: string | null;
   client_social_handle?: string | null;
+  client_contact_person_id?: string | null;
+  client_contact_name?: string | null;
   client_is_company: boolean | null;
   quote_number?: string | null;
   quote_total?: number | null;
@@ -400,6 +402,8 @@ export function placeholderProject(fields: {
     client_email: fields.client_email,
     client_social_network: fields.client_social_network ?? null,
     client_social_handle: fields.client_social_handle ?? null,
+    client_contact_person_id: fields.client_contact_person_id ?? null,
+    client_contact_name: fields.client_contact_name ?? null,
     client_is_company: fields.client_is_company,
     quote_id: null,
     quote_number: fields.quote_number ?? null,

@@ -31,6 +31,8 @@ const project: AitoProject = {
   client_is_company: true,
   client_social_network: null,
   client_social_handle: null,
+  client_contact_person_id: null,
+  client_contact_name: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,
@@ -442,6 +444,19 @@ describe('ProjectDetailPanel client fields', () => {
     // accessible name (which embeds the address) instead.
     show({ client_email: null });
     expect(screen.queryByRole('button', { name: /hi@acme\.pf/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the contact person as a peer stat on the masthead row', () => {
+    show({ client_is_company: true, client_contact_person_id: 'cp1', client_contact_name: 'Vaekehu VARNEY' });
+    const stat = screen.getByTestId('panel-client-contact');
+    expect(stat).toHaveTextContent('Vaekehu VARNEY');
+    // Same row as phone/email: the masthead never grows a line.
+    expect(stat.parentElement).toContainElement(screen.getByRole('button', { name: /phone/i }));
+  });
+
+  it('shows no contact stat without a person', () => {
+    show({ client_is_company: true, client_contact_person_id: null, client_contact_name: null });
+    expect(screen.queryByTestId('panel-client-contact')).not.toBeInTheDocument();
   });
 });
 

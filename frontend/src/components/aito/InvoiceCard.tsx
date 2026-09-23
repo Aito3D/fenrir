@@ -152,7 +152,13 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
         />
         {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
             same call site pattern, as SendQuoteButton in the quote rows. */}
-        {canUpdate && <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} />}
+        {canUpdate && (
+          <SendInvoiceButton
+            projectId={project.id}
+            invoiceId={invoice.id}
+            contactPersonId={project.client_contact_person_id}
+          />
+        )}
       </div>
     </div>
   );

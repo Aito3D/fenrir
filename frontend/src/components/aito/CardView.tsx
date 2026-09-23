@@ -394,6 +394,19 @@ export function CardView({
           )}
         </div>
 
+        {/* Who at the company: one muted line under the name. Only when the
+            card is a company AND has a person — a person card's name IS the
+            person, and an older company card simply has none. Indented past
+            the icon so it reads as a sub-line of the name, not a new row. */}
+        {project.client_is_company && project.client_contact_name && (
+          <p
+            data-testid="aito-card-contact"
+            className="truncate px-3 pl-[2.1rem] text-xs text-bambu-gray"
+          >
+            {project.client_contact_name}
+          </p>
+        )}
+
         {/* One click region: the body and the footer. The handler is on
             this wrapper rather than on a <button> wrapping everything, because
             the footer holds the parent's injected action buttons and a <button>

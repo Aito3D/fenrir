@@ -13,7 +13,7 @@ function project(overrides: Partial<AitoProject> & { id: number }): AitoProject 
   return {
     description: 'Job', column: 'print', position: 0, status: 'active',
     client_id: 'z1', client_name: 'ACME', client_phone: '+689 87 00 00 01', client_email: null, client_is_company: null,
-    client_social_network: null, client_social_handle: null,
+    client_social_network: null, client_social_handle: null, client_contact_person_id: null, client_contact_name: null,
     quote_id: null, quote_number: null, quote_date: null, quote_total: 1000, quote_url: null, quote_salesperson: null,
     quote_status: 'accepted', quote_accepted_at: '2026-08-01T10:00:00', quote_sent_at: '2026-07-30T10:00:00',
     invoice_status: null, invoice_balance: null, invoice_due_date: null, invoice_checked_at: null,

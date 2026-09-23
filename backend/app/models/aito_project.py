@@ -37,6 +37,14 @@ class AitoProject(Base):
     # rather than by a DB constraint, so a legacy row cannot fail to load.
     client_social_network: Mapped[str | None] = mapped_column(String(20), nullable=True)
     client_social_handle: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # The Zoho contact PERSON a company card is for. Card-only snapshot: the id
+    # names Books' contactpersons record, the name is the display name at pick
+    # time so a later rename in Books never rewrites a card. Both NULL on
+    # person cards and on company cards made before this existed. The person's
+    # phone/email still land in client_phone/client_email above — reachability
+    # never looks here.
+    client_contact_person_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    client_contact_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Public tracking link token (services/aito_tracking.py). Minted lazily
     # the first time a link is needed; Regenerate replaces it. NOT in
     # VERSIONED_FIELDS: rotating a link is not an edit the panel conflicts on.
@@ -277,6 +285,8 @@ VERSIONED_FIELDS: frozenset[str] = frozenset(
         "client_is_company",
         "client_social_network",
         "client_social_handle",
+        "client_contact_person_id",
+        "client_contact_name",
         "shipping_island",
         "shipping_service",
         "shipping_first_name",

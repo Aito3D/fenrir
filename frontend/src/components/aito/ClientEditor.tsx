@@ -4,20 +4,23 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AtSign, Building2, Cloud, User } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
-import type { AitoClientEdit, AitoProject, ZohoContactDetail } from '../../api/client';
+import type { AitoClientEdit, AitoProject, ZohoContactDetail, ZohoContactPerson } from '../../api/client';
 import { PhoneInput } from './PhoneInput';
 import { FieldError } from './FieldError';
 import { SocialSegment } from './SocialInput';
+import { ContactPersonPicker, CONTACT_PERSONS_KEY } from './ContactPersonPicker';
 import { eyebrowCls } from './panelTypography';
 import { focusRingCls, inputCls, inputErrorCls } from '../formStyles';
 import {
   DEFAULT_COUNTRY_CODE,
+  contactPersonPhone,
   formatPhone,
   isSocialNetwork,
   maskVisibleErrors,
   parsePhone,
   splitDisplayName,
   titleCaseSegments,
+  upperCaseName,
   validateEmail,
   validatePhone,
 } from '../../utils/clientDraft';
@@ -50,6 +53,10 @@ interface Draft {
   /** Card-only, so always from the card — never from the Books record. */
   socialNetwork: SocialNetwork | null;
   socialHandle: string;
+  /** Company cards only: the picked Books contact person. Null on a person
+   *  card, and null on a company card until one is picked. */
+  contactPersonId: string | null;
+  contactName: string;
 }
 
 function socialFromProject(project: AitoProject): Pick<Draft, 'socialNetwork' | 'socialHandle'> {
@@ -71,6 +78,28 @@ function draftFromProject(project: AitoProject): Draft {
     email: project.client_email ?? '',
     phoneField: 'mobile',
     ...socialFromProject(project),
+    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
+    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
+  };
+}
+
+/** Shared by `selectPerson` (an explicit pick) and the one-shot prefill
+ *  effect (the card's ALREADY-stored person, applied on open): copies a
+ *  person's own coordinates into every field the operator has NOT typed in
+ *  this session (`editedFlags`) — a correction typed here survives. Module-
+ *  level, like `draftFromProject`/`draftFromContact`, so it takes no
+ *  dependency on component state and needs no hook dependency entry. */
+function applyPersonToDraft(prev: Draft, person: ZohoContactPerson, editedFlags: { phone: boolean; email: boolean }): Draft {
+  const raw = contactPersonPhone(person);
+  const parsed = parsePhone(raw);
+  return {
+    ...prev,
+    contactPersonId: person.contact_person_id,
+    contactName: person.name,
+    countryCode: editedFlags.phone ? prev.countryCode : parsed.countryCode || DEFAULT_COUNTRY_CODE,
+    nationalNumber: editedFlags.phone ? prev.nationalNumber : parsed.nationalNumber,
+    email: editedFlags.email ? prev.email : person.email,
+    phoneField: person.mobile ? 'mobile' : person.phone ? 'phone' : 'mobile',
   };
 }
 
@@ -88,6 +117,8 @@ function draftFromContact(contact: ZohoContactDetail, project: AitoProject): Dra
     email: contact.email,
     phoneField,
     ...socialFromProject(project),
+    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
+    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
   };
 }
 
@@ -159,9 +190,24 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     staleTime: 0,
     retry: false,
   });
+  // Same query key `ContactPersonPicker` uses for this contact, so React
+  // Query dedupes the two reads into one request — this is only to learn
+  // the STORED person's own coordinates (see the one-shot effect below);
+  // the picker still owns rendering the list and the add-person flow.
+  const personsQuery = useQuery({
+    queryKey: [CONTACT_PERSONS_KEY, project.client_id],
+    queryFn: () => api.listZohoContactPersons(project.client_id as string),
+    enabled: isCompany && !isWalkIn && !!project.client_id,
+    staleTime: 60_000,
+    retry: false,
+  });
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [blurred, setBlurred] = useState({ phone: false, email: false });
+  // Tracks whether the operator has typed into phone/email THIS session —
+  // switching the contact person re-prefills a field only while it is still
+  // untouched, so a correction typed here survives a later person switch.
+  const [edited, setEdited] = useState({ phone: false, email: false });
   const [error, setError] = useState<string | null>(null);
   // The version this edit is BASED ON, captured once on open — see
   // useProjectPatchMutation's doc for why it is not re-read at save time.
@@ -209,9 +255,43 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     onSuccess: (updated) => onSaved(updated),
     onError: (e: unknown) => {
       if (e instanceof ApiError && e.code === 'version_conflict') setError(t('aito.editConflict'));
+      else if (e instanceof ApiError && e.code === 'contact_person_gone') setError(t('aito.contactGone'));
       else setError(e instanceof Error && e.message ? e.message : t('aito.clientEditFailed'));
     },
   });
+
+  // Picking a person re-prefills phone/email from THEIR Books record, unless
+  // the operator has already typed into that field this session (`edited`) —
+  // a correction typed here must survive a later switch, the same rule the
+  // Zoho-vs-snapshot prefill above follows for the initial load.
+  const selectPerson = (person: ZohoContactPerson) => {
+    setDraft((prev) => (prev ? applyPersonToDraft(prev, person, edited) : prev));
+  };
+
+  // The initial prefill (draftFromProject/draftFromContact) can only borrow
+  // the CONTACT-level mobile/email, which Books mirrors from the contact's
+  // PRIMARY person — not necessarily the person this card actually has
+  // stored. Once the persons list is in and it contains that stored person,
+  // swap the mirror for their own coordinates, once, the same one-shot
+  // discipline the Zoho-vs-snapshot prefill above uses: never re-run on a
+  // later refetch, and leave the mirror alone if the stored person is gone
+  // from the list (a 409 on save is what surfaces that, not this effect).
+  const personPrefilledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (draft === null || !draft.contactPersonId) return;
+    if (!personsQuery.isSuccess) return;
+    if (personPrefilledRef.current === project.client_id) return;
+    const match = personsQuery.data.find((p) => p.contact_person_id === draft.contactPersonId);
+    // Mark this contact as resolved whether or not the stored person was in
+    // THIS load of the list — a match applies once, below, and a miss stays
+    // a miss (a 409 on save is what surfaces a truly gone person, not this
+    // effect). Without setting the ref on a miss, a later refetch that
+    // happens to newly contain the stored person would apply it out of
+    // nowhere, well after the operator may have already started typing.
+    personPrefilledRef.current = project.client_id;
+    if (!match) return;
+    setDraft((prev) => (prev ? applyPersonToDraft(prev, match, edited) : prev));
+  }, [draft, personsQuery.isSuccess, personsQuery.data, project.client_id, edited]);
 
   // Escape closes the sheet, not the panel behind it: the panel's own
   // window-level Escape listener (useDismissableDialog) would otherwise fire
@@ -282,7 +362,11 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     setError(null);
     const body: AitoClientEdit = {
       ...(isCompany
-        ? { company_name: draft.companyName.trim() }
+        ? {
+            company_name: draft.companyName.trim(),
+            client_contact_person_id: draft.contactPersonId,
+            client_contact_name: draft.contactName || null,
+          }
         : { first_name: draft.firstName.trim(), last_name: draft.lastName.trim() }),
       email: draft.email.trim(),
       phone: formatPhone(phone),
@@ -319,20 +403,39 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
       )}
 
       {isCompany ? (
-        <div>
-          <label htmlFor="panel-client-company" className={fieldLabelCls}>
-            {t('aito.companyName')}
-          </label>
-          <input
-            ref={firstFieldRef}
-            id="panel-client-company"
-            type="text"
-            autoComplete="new-password"
-            value={draft.companyName}
-            onChange={(e) => update({ companyName: e.target.value })}
-            className={fieldCls}
-          />
-        </div>
+        <>
+          <div>
+            <label htmlFor="panel-client-company" className={fieldLabelCls}>
+              {t('aito.companyName')}
+            </label>
+            <input
+              ref={firstFieldRef}
+              id="panel-client-company"
+              type="text"
+              autoComplete="new-password"
+              value={draft.companyName}
+              onChange={(e) => update({ companyName: e.target.value })}
+              className={fieldCls}
+            />
+          </div>
+          {!isWalkIn && (
+            <ContactPersonPicker
+              contactId={project.client_id as string}
+              value={draft.contactPersonId}
+              preferredId={null}
+              onSelect={selectPerson}
+              variant="sheet"
+              // A card stored with no person (a legacy card, or one the
+              // operator deliberately left person-less) must open the sheet
+              // with none picked — auto-selecting Books' primary here would
+              // silently narrow the coordinate fan-out (edit_project_client)
+              // to just that primary's own siblings the next time this card
+              // is saved. Manual picking still works; only the auto-pick is
+              // off.
+              autoSelect={false}
+            />
+          )}
+        </>
       ) : (
         <div className="grid grid-cols-2 gap-2.5">
           <div>
@@ -360,7 +463,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
               autoComplete="new-password"
               value={draft.lastName}
               onChange={(e) => update({ lastName: e.target.value })}
-              onBlur={(e) => update({ lastName: e.target.value.trim().toLocaleUpperCase('fr') })}
+              onBlur={(e) => update({ lastName: upperCaseName(e.target.value) })}
               className={fieldCls}
             />
           </div>
@@ -380,6 +483,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
           onChange={(next, changed) => {
             update({ countryCode: next.countryCode, nationalNumber: next.nationalNumber });
+            setEdited((v) => ({ ...v, phone: true }));
             if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
           }}
         />
@@ -395,7 +499,10 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           type="email"
           autoComplete="new-password"
           value={draft.email}
-          onChange={(e) => update({ email: e.target.value })}
+          onChange={(e) => {
+            update({ email: e.target.value });
+            setEdited((v) => ({ ...v, email: true }));
+          }}
           onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
           placeholder={t('aito.emailPlaceholder')}
           aria-invalid={visibleErrors.email !== null ? true : undefined}
@@ -449,7 +556,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           {!isWalkIn && (
             <>
               <Cloud className="h-3 w-3 flex-shrink-0 text-bambu-green-light" aria-hidden="true" />
-              {t('aito.clientEditFanOut')}
+              {isCompany && draft.contactPersonId ? t('aito.clientEditFanOutPerson') : t('aito.clientEditFanOut')}
             </>
           )}
         </span>

@@ -23,6 +23,8 @@ const project: AitoProject = {
   client_is_company: false,
   client_social_network: null,
   client_social_handle: null,
+  client_contact_person_id: null,
+  client_contact_name: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,
@@ -359,5 +361,137 @@ describe('ClientEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.cancel') }));
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+const SNP_PROJECT: Partial<AitoProject> = {
+  client_id: 'zSNP', client_name: 'SNP', client_is_company: true,
+  client_phone: '+689-40549958', client_email: 'vaekehu@snp.pf',
+  client_contact_person_id: 'cp1', client_contact_name: 'Vaekehu VARNEY',
+};
+const SNP_CONTACT = {
+  id: 'zSNP', name: 'SNP', company_name: 'SNP', customer_sub_type: 'business',
+  phone: '', mobile: '+689-40549958', email: 'vaekehu@snp.pf', first_name: 'Vaekehu', last_name: 'VARNEY',
+};
+const VAEKEHU = {
+  contact_person_id: 'cp1', first_name: 'Vaekehu', last_name: 'VARNEY', name: 'Vaekehu VARNEY',
+  email: 'vaekehu@snp.pf', phone: '', mobile: '+689-40549958', is_primary: true,
+};
+const MOANA = {
+  contact_person_id: 'cp2', first_name: 'Moana', last_name: 'TERIIPAIA', name: 'Moana TERIIPAIA',
+  email: 'moana@snp.pf', phone: '+689-87221043', mobile: '', is_primary: false,
+};
+
+function mockCompany() {
+  server.use(
+    http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({ configured: true, reachable: null, default_contact_id: WALK_IN, default_contact_name: 'Client de passage' }),
+    ),
+    http.get('/api/v1/zoho/contacts/:id', () => HttpResponse.json(SNP_CONTACT)),
+    http.get('/api/v1/zoho/contacts/:id/persons', () => HttpResponse.json([VAEKEHU, MOANA])),
+  );
+}
+
+describe('ClientEditor — company contact persons', () => {
+  it('lists the persons with the card person checked and sends it back unchanged', async () => {
+    mockCompany();
+    let body: unknown = null;
+    server.use(
+      http.put('/api/v1/aito/:id/client', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ...project, ...SNP_PROJECT, version: 4 });
+      }),
+    );
+    const user = userEvent.setup();
+    const { onSaved } = show(SNP_PROJECT);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    expect(screen.getByText(/every open card for this contact person/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(body).toMatchObject({
+      company_name: 'SNP', client_contact_person_id: 'cp1', client_contact_name: 'Vaekehu VARNEY',
+      phone: '+689-40549958', email: 'vaekehu@snp.pf', expected_version: 3,
+    });
+  });
+
+  it("prefills phone and email from the CARD's stored person, not the contact-level mirror of the primary", async () => {
+    mockCompany();
+    // The contact-level mirror (SNP_CONTACT.mobile/email) is Vaekehu's — the
+    // primary — but this card has Moana (cp2) stored. The sheet must show
+    // Moana's OWN coordinates from the persons list (phone +689-87221043,
+    // email moana@snp.pf), never Vaekehu's mirrored ones.
+    show({ ...SNP_PROJECT, client_contact_person_id: 'cp2', client_contact_name: 'Moana TERIIPAIA', client_phone: '+689-87221043', client_email: '' });
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());
+    // The one-shot swap (mirror → the stored person's own coordinates) lands
+    // a tick after the persons list resolves — after the radio, not with it.
+    await waitFor(() => expect(phone()).toHaveValue('87221043'));
+    expect(email()).toHaveValue('moana@snp.pf');
+  });
+
+  it('switching person re-prefills phone and email unless edited', async () => {
+    mockCompany();
+    let body: unknown = null;
+    server.use(
+      http.put('/api/v1/aito/:id/client', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ...project, ...SNP_PROJECT, version: 4 });
+      }),
+    );
+    const user = userEvent.setup();
+    show(SNP_PROJECT);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    await user.clear(email());
+    await user.type(email(), 'typed@snp.pf');
+    await user.click(screen.getByRole('radio', { name: 'Moana TERIIPAIA' }));
+    expect(phone()).toHaveValue('87221043');
+    expect(email()).toHaveValue('typed@snp.pf');
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ client_contact_person_id: 'cp2', client_contact_name: 'Moana TERIIPAIA', phone: '+689-87221043', email: 'typed@snp.pf' });
+  });
+
+  it('shows the gone-person message on a 409 contact_person_gone', async () => {
+    mockCompany();
+    server.use(
+      http.put('/api/v1/aito/:id/client', () =>
+        HttpResponse.json({ detail: { code: 'contact_person_gone', message: 'gone' } }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+    show(SNP_PROJECT);
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Vaekehu VARNEY' })).toBeChecked());
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    expect(await screen.findByText(i18n.t('aito.contactGone'))).toBeInTheDocument();
+  });
+
+  it('a person card has no contact list', async () => {
+    mockZoho();
+    show();
+    await waitFor(() => expect(firstName()).toHaveValue('Jean'));
+    // Scoped by name: the sheet always carries a `radiogroup` for the social
+    // network segment, so an unscoped query would also match that one.
+    expect(screen.queryByRole('radiogroup', { name: i18n.t('aito.contactsLabel') })).not.toBeInTheDocument();
+  });
+
+  it('a legacy person-less company card opens with no radio checked and never auto-assigns the primary', async () => {
+    mockCompany();
+    let body: unknown = null;
+    server.use(
+      http.put('/api/v1/aito/:id/client', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ...project, ...SNP_PROJECT, client_contact_person_id: null, client_contact_name: null, version: 4 });
+      }),
+    );
+    const user = userEvent.setup();
+    show({ ...SNP_PROJECT, client_contact_person_id: null, client_contact_name: null });
+    // Radios render (the list loaded) but none is checked — the sheet must
+    // NOT auto-pick Books' primary (Vaekehu) for a card stored with no person.
+    await screen.findByRole('radio', { name: 'Vaekehu VARNEY' });
+    expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true);
+    // Coordinates still prefill from the contact-level Zoho mirror.
+    expect(phone()).toHaveValue('40549958');
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ client_contact_person_id: null, client_contact_name: null });
   });
 });

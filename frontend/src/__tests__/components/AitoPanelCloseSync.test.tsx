@@ -27,6 +27,8 @@ const project: AitoProject = {
   client_is_company: true,
   client_social_network: null,
   client_social_handle: null,
+  client_contact_person_id: null,
+  client_contact_name: null,
   quote_id: 'E1',
   quote_number: 'DEV26-1',
   quote_date: null,

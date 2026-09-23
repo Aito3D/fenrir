@@ -20,7 +20,7 @@ from backend.app.schemas.aito import (
 from backend.app.services.aito_board_rules import summarise
 from backend.app.services.zoho import zoho_service
 
-_EMPTY = AitoClientHistoryResponse(cards=[], latest_social=None)
+_EMPTY = AitoClientHistoryResponse(cards=[], latest_social=None, latest_contact_person_id=None)
 
 
 async def _cards(db: AsyncSession, client_id: str, limit: int) -> list[AitoProject]:
@@ -63,6 +63,22 @@ async def _latest_social(db: AsyncSession, client_id: str) -> AitoClientHistoryS
     return AitoClientHistorySocial(network=row[0], handle=row[1])
 
 
+async def _latest_contact_person_id(db: AsyncSession, client_id: str) -> str | None:
+    # Same shape as `_latest_social`: its own scan, beyond `limit`.
+    stmt = (
+        select(AitoProject.client_contact_person_id)
+        .where(
+            AitoProject.status == "active",
+            AitoProject.client_id == client_id,
+            AitoProject.client_contact_person_id.is_not(None),
+        )
+        .order_by(AitoProject.created_at.desc(), AitoProject.id.desc())
+        .limit(1)
+    )
+    row = (await db.execute(stmt)).first()
+    return None if row is None else row[0]
+
+
 async def compute_client_history(db: AsyncSession, client_id: str, limit: int) -> AitoClientHistoryResponse:
     default_id, _name = await zoho_service.get_default_contact(db)
     if client_id == default_id:
@@ -82,4 +98,5 @@ async def compute_client_history(db: AsyncSession, client_id: str, limit: int) -
             for c in cards
         ],
         latest_social=await _latest_social(db, client_id),
+        latest_contact_person_id=await _latest_contact_person_id(db, client_id),
     )

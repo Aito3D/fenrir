@@ -174,6 +174,52 @@ class ZohoContactCreate(BaseModel):
         return self
 
 
+class ZohoContactPerson(BaseModel):
+    """One person on a Books customer — what the Aito contact picker lists.
+    Mirrors `ZohoContactPerson` in frontend/src/api/client.ts."""
+
+    contact_person_id: str
+    first_name: str
+    last_name: str
+    name: str
+    email: str
+    phone: str
+    mobile: str
+    is_primary: bool
+
+
+class ZohoContactPersonCreate(BaseModel):
+    """Body of POST /contacts/{id}/persons. First name required; phone or
+    email required — a person nobody can reach is not worth a Books row.
+    House casing is applied here so no caller can bypass what the picker's
+    form promises."""
+
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(default="", max_length=100)
+    email: str = Field(default="", max_length=200)
+    phone: str = Field(default="", max_length=50)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _check_email(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return _check_phone(value)
+
+    @model_validator(mode="after")
+    def normalize_and_require_a_channel(self):
+        self.first_name = _title_case_segments(self.first_name)
+        self.last_name = self.last_name.strip().upper()
+        if not self.first_name.strip():
+            raise ValueError("first_name is required")
+        if not (self.email or self.phone):
+            raise ValueError("A phone number or an email is required")
+        return self
+
+
 @router.get("/contacts/{contact_id}", response_model=ZohoContactDetail)
 async def get_contact(
     contact_id: str,
@@ -254,6 +300,68 @@ async def patch_contact(
         )
     except ZohoNotConfiguredError:
         raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/contacts/{contact_id}/persons", response_model=list[ZohoContactPerson])
+async def list_contact_persons(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    """The people on a Books customer, for the drawer's company branch. Gated
+    like the search (aito:create), not like `get_contact` (aito:update): a
+    create-only user must be able to say WHO at the company the card is for.
+    The walk-in contact is never a company, so it answers empty without a
+    Books call — the same short-circuit the client history takes."""
+    default_id, _name = await zoho_service.get_default_contact(db)
+    if contact_id == default_id:
+        return []
+    try:
+        return await zoho_service.list_contact_persons(db, contact_id)
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoNotFound:
+        raise HTTPException(status_code=404, detail="Contact not found in Zoho Books") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.post("/contacts/{contact_id}/persons", response_model=ZohoContactPerson, status_code=201)
+async def create_contact_person(
+    contact_id: str,
+    payload: ZohoContactPersonCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    """Add a new person to a Books company contact, for the drawer's and
+    contact sheet's "Add contact" form. Gated like `list_contact_persons`
+    (aito:create), not `patch_contact` (aito:update): naming who at the
+    company the card is for is a create-time decision, not an edit to an
+    existing card.
+
+    The walk-in contact is shared by every passing customer, so a new person
+    on it would belong to no one in particular — same refusal as
+    `patch_contact`."""
+    default_id, _name = await zoho_service.get_default_contact(db)
+    if contact_id == default_id:
+        # Same refusal as patch_contact: the walk-in bucket is everyone's.
+        raise HTTPException(status_code=400, detail="The default client cannot be modified")
+    try:
+        return await zoho_service.create_contact_person(
+            db,
+            contact_id,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            email=payload.email,
+            phone=payload.phone,
+        )
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoRequestRejected as e:
+        # Zoho's own validation message (duplicate email, …) — actionable inline.
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except ZohoUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

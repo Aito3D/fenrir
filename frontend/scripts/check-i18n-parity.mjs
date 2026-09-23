@@ -256,6 +256,7 @@ const FR_COGNATES = [
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
+  'Contacts',  // aito.contactsLabel — same word in French
 ];
 
 // Italian cognates.

@@ -1,4 +1,4 @@
-import type { ZohoContact } from '../api/client';
+import type { ZohoContact, ZohoContactPerson } from '../api/client';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from './countryCodes';
 
 export interface ParsedPhone {
@@ -41,6 +41,11 @@ export interface ClientDraft {
    *  Null network means no channel; the two always move together. */
   socialNetwork: SocialNetwork | null;
   socialHandle: string;
+  /** The Zoho contact person a COMPANY draft is for. Card-only, like the
+   *  social pair: never written to the contact. `null` until the picker
+   *  chooses one (and always null for individuals and the walk-in default). */
+  contactPersonId: string | null;
+  contactName: string;
   touched: { phone: boolean; email: boolean };
   /** Has the field been left once? Gates error *visibility* only — reusing
    *  `touched` would flash the error from the first keystroke. */
@@ -124,7 +129,14 @@ export function titleCaseSegments(value: string): string {
     .join('');
 }
 
-/** House convention for person contacts: 'Jean-Pierre DUPONT'. */
+/** House convention for person contacts: 'Jean-Pierre DUPONT' — the last name
+ *  is upper-cased, not title-cased. `'fr'` (not the default locale) so
+ *  accented capitals survive ('Léa' -> 'LÉA', not 'LéA'). Shared by every
+ *  last-name blur handler so they can't drift from each other. */
+export function upperCaseName(value: string): string {
+  return value.trim().toLocaleUpperCase('fr');
+}
+
 /** The inverse of `formatDisplayName`, for prefilling a person editor from a
  *  card's display-name snapshot when Zoho cannot be read. The house format
  *  upper-cases the whole last name ("Jean-Pierre LE ROUX"), so the trailing
@@ -224,6 +236,8 @@ export function draftFromContact(contact: ZohoContact, defaultContactId: string)
     // so there is nothing to seed from a contact the user just picked.
     socialNetwork: null,
     socialHandle: '',
+    contactPersonId: null,
+    contactName: '',
     touched: { phone: false, email: false },
     blurred: { phone: false, email: false },
     original: { phone: raw, email: contact.email ?? '', phoneField },
@@ -246,6 +260,8 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
     // No stored social channel to seed — see draftFromContact.
     socialNetwork: null,
     socialHandle: '',
+    contactPersonId: null,
+    contactName: '',
     touched: { phone: false, email: false },
     blurred: { phone: false, email: false },
     original: { phone: '', email: '', phoneField: 'mobile' },
@@ -267,6 +283,48 @@ export function normaliseClientDraft(draft: ClientDraft): ClientDraft {
     ...draft,
     socialNetwork,
     socialHandle: socialNetwork && typeof draft.socialHandle === 'string' ? draft.socialHandle : '',
+    contactPersonId: typeof draft.contactPersonId === 'string' ? draft.contactPersonId : null,
+    contactName: typeof draft.contactName === 'string' ? draft.contactName : '',
+  };
+}
+
+/** The number a contact person is reached on: Books' `mobile` first (what
+ *  create/edit write to), else `phone`. */
+export function contactPersonPhone(person: { phone: string; mobile: string }): string {
+  return person.mobile || person.phone || '';
+}
+
+/** Pick the person to select when nothing is: the caller's preference if it
+ *  is still on the account, else Books' primary, else the first row. Lives
+ *  here rather than in `ContactPersonPicker` because `react-refresh/only-
+ *  export-components` rejects a plain function exported alongside a
+ *  component. */
+export function pickDefaultPerson(persons: ZohoContactPerson[], preferredId: string | null): ZohoContactPerson | null {
+  if (persons.length === 0) return null;
+  return (
+    (preferredId && persons.find((p) => p.contact_person_id === preferredId)) ||
+    persons.find((p) => p.is_primary) ||
+    persons[0]
+  );
+}
+
+/** Make `person` the draft's contact: record it, and copy its coordinates
+ *  into every field the operator has NOT typed in. `touched` survives so a
+ *  hand-typed override outlives a switch of person; `original` moves to the
+ *  person so the revert arrows point back at THEIR values. */
+export function applyContactPerson(draft: ClientDraft, person: ZohoContactPerson): ClientDraft {
+  const raw = contactPersonPhone(person);
+  const parsed = parsePhone(raw);
+  const phoneField: 'phone' | 'mobile' = person.mobile ? 'mobile' : person.phone ? 'phone' : 'mobile';
+  return {
+    ...draft,
+    contactPersonId: person.contact_person_id,
+    contactName: person.name,
+    countryCode: draft.touched.phone ? draft.countryCode : parsed.countryCode,
+    nationalNumber: draft.touched.phone ? draft.nationalNumber : parsed.nationalNumber,
+    email: draft.touched.email ? draft.email : person.email,
+    blurred: { phone: false, email: false },
+    original: { phone: raw, email: person.email, phoneField },
   };
 }
 

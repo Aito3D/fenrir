@@ -22,6 +22,8 @@ const project: AitoProject = {
   client_is_company: null,
   client_social_network: null,
   client_social_handle: null,
+  client_contact_person_id: null,
+  client_contact_name: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,
@@ -665,6 +667,18 @@ describe('hybrid card anatomy', () => {
     // A surviving stamp is ignored while the quote is not accepted.
     const unaccepted = elapsedFor({ created_at: twentyDaysAgo, quote_status: 'sent', quote_accepted_at: oneDayAgo });
     expect(unaccepted.className).toContain('text-orange-500');
+  });
+
+  it('shows the contact person under a company name', () => {
+    renderCard({ client_is_company: true, client_contact_name: 'Vaekehu VARNEY', client_contact_person_id: 'cp1' });
+    expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('Vaekehu VARNEY');
+  });
+
+  it('shows no contact line on a person card or a company without one', () => {
+    renderCard({ client_is_company: false, client_contact_name: 'Ghost', client_contact_person_id: 'cp1' });
+    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+    renderCard({ client_is_company: true, client_contact_name: null, client_contact_person_id: null });
+    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
   });
 });
 
