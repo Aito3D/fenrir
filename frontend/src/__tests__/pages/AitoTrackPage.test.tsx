@@ -73,7 +73,7 @@ const FIXTURE: AitoTracking = {
   // 2026-09-20 and broke CI at midnight on the 21st, on a commit that had
   // nothing to do with it. A date here must outlive the repo, not the sprint.
   due_date: '2099-09-20', shipping: null, done_at: null,
-  invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00',
+  invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00', accepted: false,
 };
 
 function mockTrack(body: AitoTracking | null) {

@@ -5,7 +5,7 @@ import type { AitoTracking } from '../../api/client';
 import type { TFunction } from 'i18next';
 
 const base: AitoTracking = {
-  column: 'print', tasks: [], due_date: null, shipping: null, done_at: null, invoice: null, payment: null, reference: null, updated_at: '2026-09-06T19:42:00',
+  column: 'print', tasks: [], due_date: null, shipping: null, done_at: null, invoice: null, payment: null, reference: null, updated_at: '2026-09-06T19:42:00', accepted: false,
 };
 
 let fr: TFunction;
