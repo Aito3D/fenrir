@@ -231,3 +231,115 @@ async def test_update_contact_passes_the_person_through(async_client, db_session
     assert name == "SNP"
     paths = [p for m, p, _b in seen if m == "PUT"]
     assert paths == ["/books/v3/contacts/zSNP", "/books/v3/contacts/contactpersons/cp2"]
+
+
+# ------------------------------------------------------------------ routes
+
+WALK_IN = "66407000001237340"
+
+
+@pytest.mark.asyncio
+async def test_list_route_maps_persons(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording([])
+    r = await async_client.get("/api/v1/zoho/contacts/zSNP/persons")
+    assert r.status_code == 200, r.text
+    assert r.json() == [
+        {
+            "contact_person_id": "cp1",
+            "first_name": "vaekehu",
+            "last_name": "varney",
+            "name": "Vaekehu VARNEY",
+            "email": "vaekehu@snp.pf",
+            "phone": "",
+            "mobile": "+689-40549958",
+            "is_primary": True,
+        },
+        {
+            "contact_person_id": "cp2",
+            "first_name": "Moana",
+            "last_name": "TERIIPAIA",
+            "name": "Moana TERIIPAIA",
+            "email": "",
+            "phone": "+689-87221043",
+            "mobile": "",
+            "is_primary": False,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_route_walk_in_is_empty_without_a_books_call(async_client):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording(seen)
+    r = await async_client.get(f"/api/v1/zoho/contacts/{WALK_IN}/persons")
+    assert r.status_code == 200
+    assert r.json() == []
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_list_route_error_mapping(async_client):
+    r = await async_client.get("/api/v1/zoho/contacts/zSNP/persons")
+    assert r.status_code == 409  # not configured
+    await _configure(async_client)
+    zoho_service.transport = _books(lambda request: httpx.Response(404, json={"message": "nope"}))
+    assert (await async_client.get("/api/v1/zoho/contacts/zSNP/persons")).status_code == 404
+    zoho_service.transport = _books(lambda request: httpx.Response(500, text="boom"))
+    assert (await async_client.get("/api/v1/zoho/contacts/zSNP/persons")).status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_create_route_normalises_and_returns_the_person(async_client):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording(seen)
+    r = await async_client.post(
+        "/api/v1/zoho/contacts/zSNP/persons",
+        json={"first_name": "hina", "last_name": "lo", "phone": "+689-87000000"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["contact_person_id"] == "cp9"
+    assert r.json()["name"] == "Hina LO"
+    post = next(b for m, p, b in seen if m == "POST")
+    assert post["first_name"] == "Hina"
+    assert post["last_name"] == "LO"
+    assert post["mobile"] == "+689-87000000"
+
+
+@pytest.mark.asyncio
+async def test_create_route_validation(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording([])
+    url = "/api/v1/zoho/contacts/zSNP/persons"
+    assert (await async_client.post(url, json={"first_name": "", "email": "a@b.pf"})).status_code == 422
+    assert (await async_client.post(url, json={"first_name": "Hina"})).status_code == 422  # no phone, no email
+    assert (await async_client.post(url, json={"first_name": "Hina", "email": "nope"})).status_code == 422
+    assert (await async_client.post(url, json={"first_name": "Hina", "phone": "87000000"})).status_code == 422
+    assert (await async_client.post(url, json={"first_name": "Hina", "email": "h@x.pf"})).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_create_route_refuses_walk_in(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording([])
+    r = await async_client.post(
+        f"/api/v1/zoho/contacts/{WALK_IN}/persons", json={"first_name": "Hina", "email": "h@x.pf"}
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_route_maps_zoho_rejection_to_409_with_its_message(async_client):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"contact": SNP})
+        return httpx.Response(400, json={"code": 1038, "message": "Email already in use"})
+
+    zoho_service.transport = _books(handler)
+    r = await async_client.post("/api/v1/zoho/contacts/zSNP/persons", json={"first_name": "Hina", "email": "h@x.pf"})
+    assert r.status_code == 409
+    assert "Email already in use" in r.json()["detail"]
