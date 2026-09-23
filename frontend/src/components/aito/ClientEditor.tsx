@@ -20,6 +20,7 @@ import {
   parsePhone,
   splitDisplayName,
   titleCaseSegments,
+  upperCaseName,
   validateEmail,
   validatePhone,
 } from '../../utils/clientDraft';
@@ -281,8 +282,14 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     if (!personsQuery.isSuccess) return;
     if (personPrefilledRef.current === project.client_id) return;
     const match = personsQuery.data.find((p) => p.contact_person_id === draft.contactPersonId);
-    if (!match) return;
+    // Mark this contact as resolved whether or not the stored person was in
+    // THIS load of the list — a match applies once, below, and a miss stays
+    // a miss (a 409 on save is what surfaces a truly gone person, not this
+    // effect). Without setting the ref on a miss, a later refetch that
+    // happens to newly contain the stored person would apply it out of
+    // nowhere, well after the operator may have already started typing.
     personPrefilledRef.current = project.client_id;
+    if (!match) return;
     setDraft((prev) => (prev ? applyPersonToDraft(prev, match, edited) : prev));
   }, [draft, personsQuery.isSuccess, personsQuery.data, project.client_id, edited]);
 
@@ -418,6 +425,14 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
               preferredId={null}
               onSelect={selectPerson}
               variant="sheet"
+              // A card stored with no person (a legacy card, or one the
+              // operator deliberately left person-less) must open the sheet
+              // with none picked — auto-selecting Books' primary here would
+              // silently narrow the coordinate fan-out (edit_project_client)
+              // to just that primary's own siblings the next time this card
+              // is saved. Manual picking still works; only the auto-pick is
+              // off.
+              autoSelect={false}
             />
           )}
         </>
@@ -448,7 +463,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
               autoComplete="new-password"
               value={draft.lastName}
               onChange={(e) => update({ lastName: e.target.value })}
-              onBlur={(e) => update({ lastName: e.target.value.trim().toLocaleUpperCase('fr') })}
+              onBlur={(e) => update({ lastName: upperCaseName(e.target.value) })}
               className={fieldCls}
             />
           </div>

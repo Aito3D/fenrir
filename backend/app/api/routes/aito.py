@@ -3398,12 +3398,17 @@ async def edit_project_client(
     person_mentioned = is_company and bool(
         {"client_contact_person_id", "client_contact_name"} & payload.model_fields_set
     )
+    # These two are caller-atomic by convention: both must carry the same
+    # `if is_company else None` guard, since a person card has neither a
+    # Books person nor a card-level person name.
     target_person_id = (
         (payload.client_contact_person_id if person_mentioned else project.client_contact_person_id)
         if is_company
         else None
     )
-    target_person_name = payload.client_contact_name if person_mentioned else project.client_contact_name
+    target_person_name = (
+        (payload.client_contact_name if person_mentioned else project.client_contact_name) if is_company else None
+    )
 
     default_id, _default_name = await zoho_service.get_default_contact(db)
     # A real Books contact, as opposed to the shared walk-in bucket (or a
@@ -3427,11 +3432,21 @@ async def edit_project_client(
             )
         except ZohoNotConfiguredError:
             raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-        except ZohoNotFound:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "contact_person_gone", "message": "This contact person no longer exists in Zoho Books"},
-            ) from None
+        except ZohoNotFound as e:
+            # A 404 here means Books rejected the request; that's only ever
+            # a stale contact_person_id (deleted between page-load and save).
+            # A person card and a card-less company edit never send one, so
+            # for those the 404 is some other kind of "not found" upstream —
+            # surfaced as the pre-existing 502, not the person-specific 409.
+            if target_person_id is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "contact_person_gone",
+                        "message": "This contact person no longer exists in Zoho Books",
+                    },
+                ) from None
+            raise HTTPException(status_code=502, detail=str(e)) from e
         except ZohoRequestRejected as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         except ZohoUpstreamError as e:

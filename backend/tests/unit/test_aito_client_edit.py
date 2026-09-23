@@ -630,3 +630,94 @@ async def test_switching_person_does_not_fan_out(async_client):
     row = await _read(async_client, sibling["id"])
     assert row["client_contact_person_id"] == "cp1"
     assert row["client_email"] == "jean@example.pf"
+
+
+@pytest.mark.asyncio
+async def test_legacy_company_card_never_auto_assigns_the_primary(async_client):
+    """A company card stored with no person (client_contact_person_id=None) must
+    stay person-less on an edit that never mentions the person keys — the
+    frontend contact sheet no longer auto-selects the primary for it either
+    (ContactPersonPicker's `autoSelect` prop). Its fan-out must still reach the
+    other person-less siblings (`None == None` counts as a match), and the
+    Books coordinate write still targets the primary — a person-less card has
+    no person of its own to write to."""
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen, contact=SNP)
+    legacy = await _create(async_client, **{**COMPANY, "client_contact_person_id": None, "client_contact_name": None})
+    sibling_no_person = await _create(
+        async_client,
+        **{**COMPANY, "client_contact_person_id": None, "client_contact_name": None},
+        description="sibling, no person",
+    )
+    sibling_with_person = await _create(async_client, **COMPANY, description="sibling, cp1")
+
+    r = await async_client.put(
+        f"/api/v1/aito/{legacy['id']}/client",
+        json={
+            "company_name": "SNP",
+            "client_contact_person_id": None,
+            "client_contact_name": None,
+            "email": "new@snp.pf",
+            "phone": "+689-40000000",
+            "phone_field": "mobile",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["client_contact_person_id"] is None
+    assert body["client_contact_name"] is None
+    assert body["client_email"] == "new@snp.pf"
+
+    # Fan-out reaches the other person-less sibling but not the cp1 one.
+    assert (await _read(async_client, sibling_no_person["id"]))["client_email"] == "new@snp.pf"
+    assert (await _read(async_client, sibling_with_person["id"]))["client_email"] == "jean@example.pf"
+
+    # The Books coordinate write, with no person named, targets the primary.
+    person_put = next(p for m, p, _b in seen if m == "PUT" and "/contactpersons/" in p)
+    assert person_put == "/books/v3/contacts/contactpersons/cp1"
+
+
+@pytest.mark.asyncio
+async def test_contact_not_found_on_a_person_card_is_502_not_contact_person_gone(async_client):
+    """A 404 from the contact-level PUT (a deleted Books contact) is only ever
+    a stale contact_person_id on a COMPANY edit that named one. A person card
+    never sends a contact_person_id, so the same 404 here means something else
+    entirely upstream — it must fall back to the pre-existing 502, not the
+    person-specific 409 `contact_person_gone`, which would be a dead end."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT" and request.url.path == "/books/v3/contacts/z1":
+            return httpx.Response(404, json={"message": "The contact does not exist"})
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "contact": {
+                        "contact_id": "z1",
+                        "contact_name": "Jean DUPONT",
+                        "customer_sub_type": "individual",
+                        "first_name": "Jean",
+                        "last_name": "DUPONT",
+                        "email": "jean@example.pf",
+                        "mobile": "+689-87000001",
+                        "phone": "",
+                        "contact_persons": [{"contact_person_id": "cp1", "is_primary_contact": True}],
+                    }
+                },
+            )
+        return httpx.Response(200, json={})
+
+    zoho_service.transport = _books(handler)
+    project = await _create(async_client)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client", json={**PERSON_EDIT, "expected_version": project["version"]}
+    )
+    assert r.status_code == 502
+    assert r.json()["detail"]
+
+    row = await _read(async_client, project["id"])
+    assert row["client_name"] == "Jean DUPONT"
+    assert row["version"] == project["version"]

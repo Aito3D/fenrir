@@ -16,6 +16,7 @@ import {
   maskVisibleErrors,
   pickDefaultPerson,
   titleCaseSegments,
+  upperCaseName,
   validateEmail,
   validatePhone,
 } from '../../utils/clientDraft';
@@ -33,6 +34,13 @@ export interface ContactPersonPickerProps {
   /** Fired when the list cannot be read; the parent falls back to plain inputs. */
   onUnavailable?: () => void;
   variant: 'drawer' | 'sheet';
+  /** Default true. The contact sheet passes false: a card that was saved
+   *  with no person (a legacy card, or one the operator deliberately left
+   *  person-less) must stay person-less on open — auto-picking Books'
+   *  primary for it would silently narrow the coordinate fan-out to just
+   *  that person's other siblings. The drawer (a brand-new card) keeps the
+   *  default, since there is no prior person-less state to preserve. */
+  autoSelect?: boolean;
 }
 
 export const CONTACT_PERSONS_KEY = 'zoho-contact-persons';
@@ -48,6 +56,7 @@ export function ContactPersonPicker({
   onLoaded,
   onUnavailable,
   variant,
+  autoSelect = true,
 }: ContactPersonPickerProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -75,13 +84,13 @@ export function ContactPersonPicker({
   // Auto-select once, when the list is in and the preference is known.
   const autoSelectedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (value !== null || preferredId === undefined || !query.isSuccess) return;
+    if (!autoSelect || value !== null || preferredId === undefined || !query.isSuccess) return;
     if (autoSelectedFor.current === contactId) return;
     const pick = pickDefaultPerson(query.data, preferredId);
     if (!pick) return;
     autoSelectedFor.current = contactId;
     onSelect(pick);
-  }, [value, preferredId, query.isSuccess, query.data, contactId, onSelect]);
+  }, [autoSelect, value, preferredId, query.isSuccess, query.data, contactId, onSelect]);
 
   const [adding, setAdding] = useState(false);
 
@@ -103,55 +112,57 @@ export function ContactPersonPicker({
         {t('aito.contactsLabel')}
         {!compact && <span className="ml-1.5 font-normal normal-case text-bambu-gray">— {t('aito.contactsHint')}</span>}
       </span>
-      <div
-        role="radiogroup"
-        aria-label={t('aito.contactsLabel')}
-        className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark overflow-hidden"
-      >
-        {persons.map((person) => {
-          const number = contactPersonPhone(person);
-          return (
-            <label key={person.contact_person_id} className={rowCls}>
-              <input
-                type="radio"
-                name={`contact-person-${contactId}`}
-                value={person.contact_person_id}
-                checked={value === person.contact_person_id}
-                onChange={() => onSelect(person)}
-                aria-label={person.name}
-                className="accent-bambu-green"
-              />
-              {/* Sheet variant: the name is the primary information, so it
-                  keeps its own room (shrink-0, capped at 45%) and the
-                  coordinates truncate instead — the drawer variant keeps its
-                  original balance (name flexes, coordinates shrink). */}
-              <span
-                className={
-                  compact
-                    ? 'max-w-[45%] shrink-0 truncate text-sm font-semibold text-white'
-                    : 'min-w-0 flex-1 truncate text-sm font-semibold text-white'
-                }
-              >
-                {person.name}
-              </span>
-              <span
-                className={
-                  compact
-                    ? 'flex min-w-0 flex-1 items-center justify-end gap-2 text-xs text-bambu-gray'
-                    : 'flex min-w-0 shrink items-center gap-2 text-xs text-bambu-gray'
-                }
-              >
-                {number && <span className="truncate">{formatPhoneDisplay(number)}</span>}
-                {person.email && <span className="truncate">{person.email}</span>}
-              </span>
-              {person.is_primary && (
-                <span className="rounded-full bg-bambu-dark-tertiary px-1.5 py-px text-[.65rem] uppercase tracking-wider text-bambu-gray">
-                  {t('aito.contactPrimary')}
+      <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark overflow-hidden">
+        {/* Only the radio rows belong to the group — the add button and its
+            form are actions beside the list, not selectable options within
+            it, so they sit as siblings of the radiogroup rather than inside
+            it. The outer div keeps the shared border/rounding. */}
+        <div role="radiogroup" aria-label={t('aito.contactsLabel')}>
+          {persons.map((person) => {
+            const number = contactPersonPhone(person);
+            return (
+              <label key={person.contact_person_id} className={rowCls}>
+                <input
+                  type="radio"
+                  name={`contact-person-${contactId}`}
+                  value={person.contact_person_id}
+                  checked={value === person.contact_person_id}
+                  onChange={() => onSelect(person)}
+                  aria-label={person.name}
+                  className="accent-bambu-green"
+                />
+                {/* Sheet variant: the name is the primary information, so it
+                    keeps its own room (shrink-0, capped at 45%) and the
+                    coordinates truncate instead — the drawer variant keeps its
+                    original balance (name flexes, coordinates shrink). */}
+                <span
+                  className={
+                    compact
+                      ? 'max-w-[45%] shrink-0 truncate text-sm font-semibold text-white'
+                      : 'min-w-0 flex-1 truncate text-sm font-semibold text-white'
+                  }
+                >
+                  {person.name}
                 </span>
-              )}
-            </label>
-          );
-        })}
+                <span
+                  className={
+                    compact
+                      ? 'flex min-w-0 flex-1 items-center justify-end gap-2 text-xs text-bambu-gray'
+                      : 'flex min-w-0 shrink items-center gap-2 text-xs text-bambu-gray'
+                  }
+                >
+                  {number && <span className="truncate">{formatPhoneDisplay(number)}</span>}
+                  {person.email && <span className="truncate">{person.email}</span>}
+                </span>
+                {person.is_primary && (
+                  <span className="rounded-full bg-bambu-dark-tertiary px-1.5 py-px text-[.65rem] uppercase tracking-wider text-bambu-gray">
+                    {t('aito.contactPrimary')}
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
         {adding ? (
           <AddContactForm
             contactId={contactId}
@@ -260,7 +271,10 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             type="text"
             autoComplete="new-password"
             value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
+            onChange={(e) => {
+              setFirstName(e.target.value);
+              setError(null);
+            }}
             onBlur={(e) => setFirstName(titleCaseSegments(e.target.value))}
             className={inputCls}
           />
@@ -274,8 +288,11 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             type="text"
             autoComplete="new-password"
             value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            onBlur={(e) => setLastName(e.target.value.trim().toLocaleUpperCase('fr'))}
+            onChange={(e) => {
+              setLastName(e.target.value);
+              setError(null);
+            }}
+            onBlur={(e) => setLastName(upperCaseName(e.target.value))}
             className={inputCls}
           />
         </div>
@@ -294,6 +311,7 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             onChange={(next, changed) => {
               setCountryCode(next.countryCode);
               setNationalNumber(next.nationalNumber);
+              setError(null);
               if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
             }}
           />
@@ -308,7 +326,10 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             type="email"
             autoComplete="new-password"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError(null);
+            }}
             onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
             placeholder={t('aito.emailPlaceholder')}
             aria-invalid={visible.email !== null ? true : undefined}

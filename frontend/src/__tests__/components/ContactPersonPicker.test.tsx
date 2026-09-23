@@ -80,6 +80,14 @@ describe('ContactPersonPicker', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it('never auto-selects when autoSelect is false, even with a value and a preference', async () => {
+    const { onSelect } = show({ value: null, preferredId: null, autoSelect: false });
+    await screen.findAllByRole('radio');
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('radiogroup', { name: /contact/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('radio').some((r) => (r as HTMLInputElement).checked)).toBe(false);
+  });
+
   it('reports whether the account has persons, and unavailability', async () => {
     const a = show({ value: 'cp1' });
     await waitFor(() => expect(a.onLoaded).toHaveBeenCalledWith(true));

@@ -472,4 +472,26 @@ describe('ClientEditor — company contact persons', () => {
     // network segment, so an unscoped query would also match that one.
     expect(screen.queryByRole('radiogroup', { name: i18n.t('aito.contactsLabel') })).not.toBeInTheDocument();
   });
+
+  it('a legacy person-less company card opens with no radio checked and never auto-assigns the primary', async () => {
+    mockCompany();
+    let body: unknown = null;
+    server.use(
+      http.put('/api/v1/aito/:id/client', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ...project, ...SNP_PROJECT, client_contact_person_id: null, client_contact_name: null, version: 4 });
+      }),
+    );
+    const user = userEvent.setup();
+    show({ ...SNP_PROJECT, client_contact_person_id: null, client_contact_name: null });
+    // Radios render (the list loaded) but none is checked — the sheet must
+    // NOT auto-pick Books' primary (Vaekehu) for a card stored with no person.
+    await screen.findByRole('radio', { name: 'Vaekehu VARNEY' });
+    expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true);
+    // Coordinates still prefill from the contact-level Zoho mirror.
+    expect(phone()).toHaveValue('40549958');
+    await user.click(screen.getByRole('button', { name: i18n.t('common.save') }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ client_contact_person_id: null, client_contact_name: null });
+  });
 });
