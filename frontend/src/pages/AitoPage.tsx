@@ -375,6 +375,8 @@ export function AitoPage() {
         client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
         client_social_handle: draft.socialHandle.trim() || null,
         client_is_company: draft.isCompany,
+        client_contact_person_id: draft.isCompany ? draft.contactPersonId : null,
+        client_contact_name: draft.isCompany && draft.contactName ? draft.contactName : null,
         due_date: dueDate,
         // No quote_status: a manual create posts none (see the mutationFn
         // above), so it defaults to null — the same "waits for Accept" state

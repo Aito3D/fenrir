@@ -22,6 +22,7 @@ import { api } from '../../api/client';
 import type { AitoProject, ZohoQuotePreview, ZohoQuoteShipping } from '../../api/client';
 import { flashRevert } from '../../hooks/useRevertFlash';
 import { defaultClientDraft } from '../../utils/clientDraft';
+import type { ClientDraft } from '../../utils/clientDraft';
 
 // `flashRevert` is imported as a direct binding by useOptimisticBoardMutation,
 // so vi.spyOn on the module namespace would patch an object nobody reads.
@@ -288,6 +289,104 @@ describe('createMutation — promised date', () => {
 
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ due_date: '2026-09-20' }));
+  });
+});
+
+describe('createMutation — contact person', () => {
+  beforeEach(() => __resetBoardSync());
+
+  it('sends the contact person on create for a company draft', async () => {
+    const spy = vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 99 } as AitoProject);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], []);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+    const draft: ClientDraft = {
+      ...defaultClientDraft('walk-in', 'Client de passage'),
+      id: 'zSNP',
+      name: 'SNP',
+      isDefault: false,
+      isCompany: true,
+      countryCode: '+689',
+      nationalNumber: '40549958',
+      email: 'v@snp.pf',
+      contactPersonId: 'cp1',
+      contactName: 'Vaekehu VARNEY',
+    };
+    const placeholder = placeholderProject({
+      description: 'x',
+      client_id: 'zSNP',
+      client_name: 'SNP',
+      client_phone: null,
+      client_email: null,
+      client_is_company: true,
+      tasks: [],
+    });
+    act(() => {
+      result.current.createMutation.mutate({
+        description: 'x',
+        draft,
+        tasks: [],
+        shipping: null,
+        dueDate: null,
+        placeholder,
+      });
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0]).toMatchObject({ client_contact_person_id: 'cp1', client_contact_name: 'Vaekehu VARNEY' });
+  });
+
+  it('never sends a contact person for a person draft', async () => {
+    const spy = vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 99 } as AitoProject);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], []);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+    const draft: ClientDraft = {
+      ...defaultClientDraft('walk-in', 'Client de passage'),
+      id: 'zJP',
+      name: 'Jean-Pierre DUPONT',
+      isDefault: false,
+      isCompany: false,
+      countryCode: '+689',
+      nationalNumber: '87123456',
+      email: 'jp@example.pf',
+      contactPersonId: 'cp1',
+      contactName: 'Stale VALUE',
+    };
+    const placeholder = placeholderProject({
+      description: 'x',
+      client_id: 'zJP',
+      client_name: 'Jean-Pierre DUPONT',
+      client_phone: null,
+      client_email: null,
+      client_is_company: false,
+      tasks: [],
+    });
+    act(() => {
+      result.current.createMutation.mutate({
+        description: 'x',
+        draft,
+        tasks: [],
+        shipping: null,
+        dueDate: null,
+        placeholder,
+      });
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0]).toMatchObject({ client_contact_person_id: null, client_contact_name: null });
   });
 });
 

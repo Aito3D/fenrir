@@ -15,8 +15,12 @@ import {
   isSocialNetwork,
   normaliseClientDraft,
   splitDisplayName,
+  applyContactPerson,
+  contactPersonPhone,
 } from '../../utils/clientDraft';
+import type { ClientDraft } from '../../utils/clientDraft';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from '../../utils/countryCodes';
+import type { ZohoContactPerson } from '../../api/client';
 
 describe('countryCodes', () => {
   it('has unique dial codes and covers the codes present in the org data', () => {
@@ -300,6 +304,8 @@ describe('defaultClientDraft', () => {
       email: '',
       socialNetwork: null,
       socialHandle: '',
+      contactPersonId: null,
+      contactName: '',
       touched: { phone: false, email: false },
       blurred: { phone: false, email: false },
       original: { phone: '', email: '', phoneField: 'mobile' },
@@ -381,5 +387,62 @@ describe('splitDisplayName', () => {
   it('handles a single word and an empty name', () => {
     expect(splitDisplayName('Cher')).toEqual({ firstName: 'Cher', lastName: '' });
     expect(splitDisplayName('  ')).toEqual({ firstName: '', lastName: '' });
+  });
+});
+
+const acme = {
+  id: 'z1', name: 'ACME SARL', company_name: 'ACME',
+  customer_sub_type: 'business', phone: '', mobile: '89645864', email: 'hi@acme.pf',
+};
+
+const moana: ZohoContactPerson = {
+  contact_person_id: 'cp2', first_name: 'Moana', last_name: 'TERIIPAIA', name: 'Moana TERIIPAIA',
+  email: 'moana@acme.pf', phone: '+689-87221043', mobile: '', is_primary: false,
+};
+
+describe('contactPersonPhone', () => {
+  it('prefers mobile, then phone', () => {
+    expect(contactPersonPhone({ mobile: '+689-1', phone: '+689-2' })).toBe('+689-1');
+    expect(contactPersonPhone({ mobile: '', phone: '+689-2' })).toBe('+689-2');
+    expect(contactPersonPhone({ mobile: '', phone: '' })).toBe('');
+  });
+});
+
+describe('applyContactPerson', () => {
+  it('copies the person into untouched fields and records it', () => {
+    const next = applyContactPerson(draftFromContact(acme, 'walk-in'), moana);
+    expect(next.contactPersonId).toBe('cp2');
+    expect(next.contactName).toBe('Moana TERIIPAIA');
+    expect(next.countryCode).toBe('+689');
+    expect(next.nationalNumber).toBe('87221043');
+    expect(next.email).toBe('moana@acme.pf');
+    expect(next.original).toEqual({ phone: '+689-87221043', email: 'moana@acme.pf', phoneField: 'phone' });
+    expect(next.blurred).toEqual({ phone: false, email: false });
+  });
+
+  it('leaves a touched field alone but still records the person', () => {
+    const typed = { ...draftFromContact(acme, 'walk-in'), email: 'typed@x.pf', touched: { phone: false, email: true } };
+    const next = applyContactPerson(typed, moana);
+    expect(next.email).toBe('typed@x.pf');
+    expect(next.touched.email).toBe(true);
+    expect(next.nationalNumber).toBe('87221043');
+    expect(next.contactPersonId).toBe('cp2');
+  });
+
+  it('a person with no number clears the phone', () => {
+    const next = applyContactPerson(draftFromContact(acme, 'walk-in'), { ...moana, phone: '', mobile: '' });
+    expect(next.nationalNumber).toBe('');
+    expect(next.original.phone).toBe('');
+  });
+});
+
+describe('normaliseClientDraft (contact person)', () => {
+  it('fills the person keys on a blob written before they existed', () => {
+    const legacy = draftFromContact(acme, 'walk-in') as Record<string, unknown>;
+    delete legacy.contactPersonId;
+    delete legacy.contactName;
+    const fixed = normaliseClientDraft(legacy as unknown as ClientDraft);
+    expect(fixed.contactPersonId).toBeNull();
+    expect(fixed.contactName).toBe('');
   });
 });

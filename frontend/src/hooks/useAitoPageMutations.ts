@@ -101,6 +101,10 @@ export function useAitoPageMutations() {
         // and a network with no handle clears the pair.
         client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
         client_social_handle: draft.socialHandle.trim() || null,
+        // Company cards only — the server clears it otherwise, but sending
+        // null keeps the wire honest about what the draft meant.
+        client_contact_person_id: draft.isCompany ? draft.contactPersonId : null,
+        client_contact_name: draft.isCompany && draft.contactName ? draft.contactName : null,
         due_date: dueDate,
         tasks: tasks.map(taskDraftToTaskCreate),
         ...(shipping ? shippingPayload(shipping) : {}),
