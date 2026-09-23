@@ -694,10 +694,17 @@ export function AitoPage() {
 
       {expandedProject && (
         <ProjectDetailPanel
+          // Keyed on the project so a history-row swap is a fresh mount:
+          // draft state, tabs and the contact sheet never bleed from one
+          // project into the next.
+          key={expandedProject.id}
           project={expandedProject}
           canCreate={canCreate}
           canUpdate={canUpdate}
           canDelete={canDelete}
+          // A plain swap, not `openCard`: the panel already holds the shared
+          // view-transition name, and the morph would claim it twice.
+          onOpenCard={(id) => setExpandedId(id)}
           // Asked here rather than remembered, because `expandedId` is still
           // non-null at this moment: the map is still frozen and can still
           // answer. A card with a flight waiting gets the panel's own exit —
