@@ -1,7 +1,13 @@
-# Aito: company clients — contact persons in the drawer and on the card
+# Aito: contact persons in the drawer and on the card
+
+> **Scope change, same day:** first built for company clients only; approved
+> later on 2026-09-22 to cover **every Zoho client** (individuals too). The
+> sections below read "company" where the original design said so; the
+> "Individuals" section at the end states what differs for a person client.
+> The walk-in default client stays excluded.
 
 **Date:** 2026-09-22
-**Status:** approved in brainstorm, awaiting spec review
+**Status:** approved; extended to individuals (2026-09-22)
 
 ## Problem
 
@@ -31,7 +37,7 @@ mapped to `ClientDraft.isCompany` and the `client_is_company` column):
    company cards; phone/email edits write to the *selected* person in Zoho.
 6. The **quote and invoice email pickers** pre-select the card's person.
 
-Individuals and the walk-in default client are unchanged.
+The walk-in default client is unchanged. Individuals: see the closing section.
 
 ## Decisions taken
 
@@ -288,4 +294,24 @@ fixture):
 - Editing or deleting existing contact persons.
 - Changing which person is primary in Zoho.
 - Backfilling persons onto existing company cards.
-- Contact persons for individuals or the walk-in default client.
+- Contact persons for the walk-in default client.
+
+## Individuals (extension of 2026-09-22)
+
+Every Books contact carries `contact_persons`; an individual's own name is
+its **primary** person. So a person client gets the same picker, add form,
+stored person, masthead stat and email-picker default as a company, with
+these differences:
+
+| Area | Company | Individual |
+|---|---|---|
+| Drawer | picker replaces the social chooser | picker sits under the name; the **social chooser stays** (it is a real channel for individuals) |
+| Phone/email | behind the "use a different phone / email" disclosure | same |
+| Card line / masthead stat | always when a person is set | only when the person's name **differs from the client name** — a client who is their own contact gains no extra line |
+| Contact sheet | company name → picker → phone/email | first/last name → picker → phone/email |
+| Client edit write | company name to the contact, coordinates to the picked person | **first/last name to Books' primary person** (that is the client), coordinates to the picked person; two person writes when they differ, name first |
+| Create/PATCH | the person is kept | the person is kept — the "cleared when not a company" rule is gone |
+
+Fan-out per person, history's `latest_contact_person_id` and the persons
+routes already work for any card; the walk-in client still answers `[]`
+and refuses creation.
