@@ -4,14 +4,16 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AtSign, Building2, Cloud, User } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
-import type { AitoClientEdit, AitoProject, ZohoContactDetail } from '../../api/client';
+import type { AitoClientEdit, AitoProject, ZohoContactDetail, ZohoContactPerson } from '../../api/client';
 import { PhoneInput } from './PhoneInput';
 import { FieldError } from './FieldError';
 import { SocialSegment } from './SocialInput';
+import { ContactPersonPicker } from './ContactPersonPicker';
 import { eyebrowCls } from './panelTypography';
 import { focusRingCls, inputCls, inputErrorCls } from '../formStyles';
 import {
   DEFAULT_COUNTRY_CODE,
+  contactPersonPhone,
   formatPhone,
   isSocialNetwork,
   maskVisibleErrors,
@@ -50,6 +52,10 @@ interface Draft {
   /** Card-only, so always from the card — never from the Books record. */
   socialNetwork: SocialNetwork | null;
   socialHandle: string;
+  /** Company cards only: the picked Books contact person. Null on a person
+   *  card, and null on a company card until one is picked. */
+  contactPersonId: string | null;
+  contactName: string;
 }
 
 function socialFromProject(project: AitoProject): Pick<Draft, 'socialNetwork' | 'socialHandle'> {
@@ -71,6 +77,8 @@ function draftFromProject(project: AitoProject): Draft {
     email: project.client_email ?? '',
     phoneField: 'mobile',
     ...socialFromProject(project),
+    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
+    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
   };
 }
 
@@ -88,6 +96,8 @@ function draftFromContact(contact: ZohoContactDetail, project: AitoProject): Dra
     email: contact.email,
     phoneField,
     ...socialFromProject(project),
+    contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
+    contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
   };
 }
 
@@ -162,6 +172,10 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [blurred, setBlurred] = useState({ phone: false, email: false });
+  // Tracks whether the operator has typed into phone/email THIS session —
+  // switching the contact person re-prefills a field only while it is still
+  // untouched, so a correction typed here survives a later person switch.
+  const [edited, setEdited] = useState({ phone: false, email: false });
   const [error, setError] = useState<string | null>(null);
   // The version this edit is BASED ON, captured once on open — see
   // useProjectPatchMutation's doc for why it is not re-read at save time.
@@ -209,9 +223,32 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     onSuccess: (updated) => onSaved(updated),
     onError: (e: unknown) => {
       if (e instanceof ApiError && e.code === 'version_conflict') setError(t('aito.editConflict'));
+      else if (e instanceof ApiError && e.code === 'contact_person_gone') setError(t('aito.contactGone'));
       else setError(e instanceof Error && e.message ? e.message : t('aito.clientEditFailed'));
     },
   });
+
+  // Picking a person re-prefills phone/email from THEIR Books record, unless
+  // the operator has already typed into that field this session (`edited`) —
+  // a correction typed here must survive a later switch, the same rule the
+  // Zoho-vs-snapshot prefill above follows for the initial load.
+  const selectPerson = (person: ZohoContactPerson) => {
+    const raw = contactPersonPhone(person);
+    const parsed = parsePhone(raw);
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            contactPersonId: person.contact_person_id,
+            contactName: person.name,
+            countryCode: edited.phone ? prev.countryCode : parsed.countryCode || DEFAULT_COUNTRY_CODE,
+            nationalNumber: edited.phone ? prev.nationalNumber : parsed.nationalNumber,
+            email: edited.email ? prev.email : person.email,
+            phoneField: person.mobile ? 'mobile' : person.phone ? 'phone' : 'mobile',
+          }
+        : prev,
+    );
+  };
 
   // Escape closes the sheet, not the panel behind it: the panel's own
   // window-level Escape listener (useDismissableDialog) would otherwise fire
@@ -282,7 +319,11 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     setError(null);
     const body: AitoClientEdit = {
       ...(isCompany
-        ? { company_name: draft.companyName.trim() }
+        ? {
+            company_name: draft.companyName.trim(),
+            client_contact_person_id: draft.contactPersonId,
+            client_contact_name: draft.contactName || null,
+          }
         : { first_name: draft.firstName.trim(), last_name: draft.lastName.trim() }),
       email: draft.email.trim(),
       phone: formatPhone(phone),
@@ -319,20 +360,31 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
       )}
 
       {isCompany ? (
-        <div>
-          <label htmlFor="panel-client-company" className={fieldLabelCls}>
-            {t('aito.companyName')}
-          </label>
-          <input
-            ref={firstFieldRef}
-            id="panel-client-company"
-            type="text"
-            autoComplete="new-password"
-            value={draft.companyName}
-            onChange={(e) => update({ companyName: e.target.value })}
-            className={fieldCls}
-          />
-        </div>
+        <>
+          <div>
+            <label htmlFor="panel-client-company" className={fieldLabelCls}>
+              {t('aito.companyName')}
+            </label>
+            <input
+              ref={firstFieldRef}
+              id="panel-client-company"
+              type="text"
+              autoComplete="new-password"
+              value={draft.companyName}
+              onChange={(e) => update({ companyName: e.target.value })}
+              className={fieldCls}
+            />
+          </div>
+          {!isWalkIn && (
+            <ContactPersonPicker
+              contactId={project.client_id as string}
+              value={draft.contactPersonId}
+              preferredId={null}
+              onSelect={selectPerson}
+              variant="sheet"
+            />
+          )}
+        </>
       ) : (
         <div className="grid grid-cols-2 gap-2.5">
           <div>
@@ -380,6 +432,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
           onChange={(next, changed) => {
             update({ countryCode: next.countryCode, nationalNumber: next.nationalNumber });
+            setEdited((v) => ({ ...v, phone: true }));
             if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
           }}
         />
@@ -395,7 +448,10 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           type="email"
           autoComplete="new-password"
           value={draft.email}
-          onChange={(e) => update({ email: e.target.value })}
+          onChange={(e) => {
+            update({ email: e.target.value });
+            setEdited((v) => ({ ...v, email: true }));
+          }}
           onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
           placeholder={t('aito.emailPlaceholder')}
           aria-invalid={visibleErrors.email !== null ? true : undefined}
@@ -449,7 +505,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           {!isWalkIn && (
             <>
               <Cloud className="h-3 w-3 flex-shrink-0 text-bambu-green-light" aria-hidden="true" />
-              {t('aito.clientEditFanOut')}
+              {isCompany && draft.contactPersonId ? t('aito.clientEditFanOutPerson') : t('aito.clientEditFanOut')}
             </>
           )}
         </span>
