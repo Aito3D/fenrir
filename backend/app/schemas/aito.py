@@ -1347,6 +1347,10 @@ class AitoTrackingResponse(BaseModel):
     # The online payment link, or None when the project has no live one.
     # The page ranks the invoice above this — an invoice is the truer story.
     payment: AitoTrackingPayment | None
+    # Whether the quote is accepted. Before that a live link is the way the
+    # client validates it, and the page words the payment card accordingly;
+    # after, an Accord-column card reads "Devis validé" rather than "waiting".
+    accepted: bool
 
 
 class AitoTrackingLinkResponse(BaseModel):

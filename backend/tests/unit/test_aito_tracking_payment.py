@@ -1,7 +1,7 @@
 """The public page's payment block: derived from the ledger row, never from
 Heimdall; invoice precedence is the page's, the payload carries both. A
-pending link is offered only once the quote is accepted — the client pays
-what they have validated, never a quote still under discussion."""
+pending link is offered from the moment it exists — paying is how the
+client validates the quote (2026-09-22)."""
 
 from datetime import datetime
 
@@ -98,11 +98,22 @@ async def test_a_superseded_paid_row_does_not_leak_past_a_pending_one(db_session
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["draft", "sent", "viewed", None])
-async def test_a_pending_link_is_hidden_until_the_quote_is_accepted(db_session, status):
+@pytest.mark.parametrize("status", ["draft", "sent", "viewed", "accepted", None])
+async def test_a_pending_link_is_offered_whatever_the_quote_status(db_session, status):
+    # 2026-09-22: paying IS how a client validates the quote, so the link is
+    # offered from the moment it exists — a draft included. The reconciler
+    # never mints one for a declined/expired/invoiced quote (wanted_link).
     p = await _project(db_session, quote_status=status)
     await _link(db_session, p.id)
-    assert (await _track(db_session)).payment is None
+    payment = (await _track(db_session)).payment
+    assert payment.model_dump() == {"state": "unpaid", "url": "https://osb/pay/L1", "deposit": False}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "accepted"), [("draft", False), ("sent", False), ("accepted", True), (None, False)])
+async def test_accepted_mirrors_the_quote_status(db_session, status, accepted):
+    await _project(db_session, quote_status=status)
+    assert (await _track(db_session)).accepted is accepted
 
 
 @pytest.mark.asyncio
