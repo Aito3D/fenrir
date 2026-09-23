@@ -504,9 +504,13 @@ function PanelHeader({
           <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
           {/* Hidden for `new`: a walk-in has no verdict, and the band must
               not grow a grey pill on every first-timer. The drawer shows
-              it. `align="end"` because the pill sits at the right edge of
-              the name column, where a centred tooltip would clip. */}
-          <ClientRatingPill rating={rating.data} hideNew align="end" />
+              it. The tooltip sits BELOW the pill and grows rightward: the
+              panel root is `overflow-hidden` and the pill is on the
+              masthead's first row, so a bubble above it — and, after a
+              short name, one growing leftward — was cut off at the panel's
+              top and left edges. Below the pill is the contacts row, inside
+              the band, with the whole band width to the right. */}
+          <ClientRatingPill rating={rating.data} hideNew align="start" side="bottom" />
           {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
               never removed from the tree: a keyboard user tabs onto it and
               focus-visible brings it up. Gated on `canUpdate` because the

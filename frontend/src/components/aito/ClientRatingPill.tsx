@@ -74,11 +74,14 @@ export function ClientRatingPill({
   rating,
   hideNew = false,
   align = 'center',
+  side = 'top',
   className = '',
 }: {
   rating: AitoClientRating | undefined;
   hideNew?: boolean;
-  align?: 'center' | 'end';
+  /** Straight through to Tooltip — see its doc for when each is right. */
+  align?: 'center' | 'end' | 'start';
+  side?: 'top' | 'bottom';
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -105,7 +108,7 @@ export function ClientRatingPill({
   } as CSSProperties;
 
   return (
-    <Tooltip content={tip} align={align}>
+    <Tooltip content={tip} align={align} side={side}>
       <span
         data-tier={rating.tier}
         data-stale={rating.stale ? 'true' : undefined}

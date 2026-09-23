@@ -3653,6 +3653,20 @@ describe('client rating on the masthead', () => {
     expect(pill!.parentElement?.previousElementSibling?.textContent).toBe('ACME SARL');
   });
 
+  it('hangs the pill tooltip BELOW the pill, growing rightward, so the panel root cannot clip it', async () => {
+    // The panel root is `overflow-hidden` (load-bearing) and the pill sits
+    // on the masthead's first row near its left edge: a bubble above it,
+    // growing leftward (`align="end"`), lost its top AND its left half.
+    server.use(http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(ratingBody('bad', 'overdue'))));
+    renderPanel();
+    const pill = (await screen.findByText('Bad')).closest('[data-tier]')!;
+    const tip = pill.parentElement!.querySelector('[role="tooltip"]')!;
+    expect(tip.className).toContain('top-full');
+    expect(tip.className).toContain('left-0');
+    expect(tip.className).not.toContain('bottom-full');
+    expect(tip.className).not.toContain('right-0');
+  });
+
   it('hides a new client on the masthead', async () => {
     const seen: string[] = [];
     server.use(

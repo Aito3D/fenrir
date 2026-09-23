@@ -26,6 +26,47 @@ describe('Tooltip', () => {
     expect(tip.className).not.toContain('left-1/2');
     expect(tip.style.transform).not.toContain('-50%');
   });
+
+  it('hangs from its left edge when align="start", growing rightward', () => {
+    render(
+      <Tooltip content="Why not" align="start">
+        <button type="button">Go</button>
+      </Tooltip>,
+    );
+    const tip = screen.getByRole('tooltip');
+    expect(tip.className).toContain('left-0');
+    expect(tip.className).not.toContain('left-1/2');
+    expect(tip.className).not.toContain('right-0');
+    expect(tip.style.transform).not.toContain('-50%');
+  });
+
+  it('sits BELOW its trigger when side="bottom", for triggers at the top of a clipped container', () => {
+    // The panel root is overflow-hidden and the masthead's rating pill sits
+    // on its first row: a bubble above the pill is cut off entirely.
+    render(
+      <Tooltip content="Why not" side="bottom">
+        <button type="button">Go</button>
+      </Tooltip>,
+    );
+    const tip = screen.getByRole('tooltip');
+    expect(tip.className).toContain('top-full');
+    expect(tip.className).toContain('mt-1.5');
+    expect(tip.className).not.toContain('bottom-full');
+    // The settle-in travels from the trigger outward: below the trigger it
+    // starts 3px HIGHER (closer to it), not lower.
+    expect(tip.style.transform).toContain('var(--tip-y, -3px)');
+  });
+
+  it('keeps hanging above by default', () => {
+    render(
+      <Tooltip content="Why not">
+        <button type="button">Go</button>
+      </Tooltip>,
+    );
+    const tip = screen.getByRole('tooltip');
+    expect(tip.className).toContain('bottom-full');
+    expect(tip.style.transform).toContain('var(--tip-y, 3px)');
+  });
 });
 
 describe('Tooltip inside an outer group', () => {
