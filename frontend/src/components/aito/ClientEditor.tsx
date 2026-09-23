@@ -8,7 +8,7 @@ import type { AitoClientEdit, AitoProject, ZohoContactDetail, ZohoContactPerson 
 import { PhoneInput } from './PhoneInput';
 import { FieldError } from './FieldError';
 import { SocialSegment } from './SocialInput';
-import { ContactPersonPicker } from './ContactPersonPicker';
+import { ContactPersonPicker, CONTACT_PERSONS_KEY } from './ContactPersonPicker';
 import { eyebrowCls } from './panelTypography';
 import { focusRingCls, inputCls, inputErrorCls } from '../formStyles';
 import {
@@ -79,6 +79,26 @@ function draftFromProject(project: AitoProject): Draft {
     ...socialFromProject(project),
     contactPersonId: project.client_is_company ? (project.client_contact_person_id ?? null) : null,
     contactName: project.client_is_company ? (project.client_contact_name ?? '') : '',
+  };
+}
+
+/** Shared by `selectPerson` (an explicit pick) and the one-shot prefill
+ *  effect (the card's ALREADY-stored person, applied on open): copies a
+ *  person's own coordinates into every field the operator has NOT typed in
+ *  this session (`editedFlags`) — a correction typed here survives. Module-
+ *  level, like `draftFromProject`/`draftFromContact`, so it takes no
+ *  dependency on component state and needs no hook dependency entry. */
+function applyPersonToDraft(prev: Draft, person: ZohoContactPerson, editedFlags: { phone: boolean; email: boolean }): Draft {
+  const raw = contactPersonPhone(person);
+  const parsed = parsePhone(raw);
+  return {
+    ...prev,
+    contactPersonId: person.contact_person_id,
+    contactName: person.name,
+    countryCode: editedFlags.phone ? prev.countryCode : parsed.countryCode || DEFAULT_COUNTRY_CODE,
+    nationalNumber: editedFlags.phone ? prev.nationalNumber : parsed.nationalNumber,
+    email: editedFlags.email ? prev.email : person.email,
+    phoneField: person.mobile ? 'mobile' : person.phone ? 'phone' : 'mobile',
   };
 }
 
@@ -169,6 +189,17 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     staleTime: 0,
     retry: false,
   });
+  // Same query key `ContactPersonPicker` uses for this contact, so React
+  // Query dedupes the two reads into one request — this is only to learn
+  // the STORED person's own coordinates (see the one-shot effect below);
+  // the picker still owns rendering the list and the add-person flow.
+  const personsQuery = useQuery({
+    queryKey: [CONTACT_PERSONS_KEY, project.client_id],
+    queryFn: () => api.listZohoContactPersons(project.client_id as string),
+    enabled: isCompany && !isWalkIn && !!project.client_id,
+    staleTime: 60_000,
+    retry: false,
+  });
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [blurred, setBlurred] = useState({ phone: false, email: false });
@@ -233,22 +264,27 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
   // a correction typed here must survive a later switch, the same rule the
   // Zoho-vs-snapshot prefill above follows for the initial load.
   const selectPerson = (person: ZohoContactPerson) => {
-    const raw = contactPersonPhone(person);
-    const parsed = parsePhone(raw);
-    setDraft((prev) =>
-      prev
-        ? {
-            ...prev,
-            contactPersonId: person.contact_person_id,
-            contactName: person.name,
-            countryCode: edited.phone ? prev.countryCode : parsed.countryCode || DEFAULT_COUNTRY_CODE,
-            nationalNumber: edited.phone ? prev.nationalNumber : parsed.nationalNumber,
-            email: edited.email ? prev.email : person.email,
-            phoneField: person.mobile ? 'mobile' : person.phone ? 'phone' : 'mobile',
-          }
-        : prev,
-    );
+    setDraft((prev) => (prev ? applyPersonToDraft(prev, person, edited) : prev));
   };
+
+  // The initial prefill (draftFromProject/draftFromContact) can only borrow
+  // the CONTACT-level mobile/email, which Books mirrors from the contact's
+  // PRIMARY person — not necessarily the person this card actually has
+  // stored. Once the persons list is in and it contains that stored person,
+  // swap the mirror for their own coordinates, once, the same one-shot
+  // discipline the Zoho-vs-snapshot prefill above uses: never re-run on a
+  // later refetch, and leave the mirror alone if the stored person is gone
+  // from the list (a 409 on save is what surfaces that, not this effect).
+  const personPrefilledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (draft === null || !draft.contactPersonId) return;
+    if (!personsQuery.isSuccess) return;
+    if (personPrefilledRef.current === project.client_id) return;
+    const match = personsQuery.data.find((p) => p.contact_person_id === draft.contactPersonId);
+    if (!match) return;
+    personPrefilledRef.current = project.client_id;
+    setDraft((prev) => (prev ? applyPersonToDraft(prev, match, edited) : prev));
+  }, [draft, personsQuery.isSuccess, personsQuery.data, project.client_id, edited]);
 
   // Escape closes the sheet, not the panel behind it: the panel's own
   // window-level Escape listener (useDismissableDialog) would otherwise fire

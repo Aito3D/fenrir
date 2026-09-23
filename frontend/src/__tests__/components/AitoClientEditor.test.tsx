@@ -414,6 +414,20 @@ describe('ClientEditor — company contact persons', () => {
     });
   });
 
+  it("prefills phone and email from the CARD's stored person, not the contact-level mirror of the primary", async () => {
+    mockCompany();
+    // The contact-level mirror (SNP_CONTACT.mobile/email) is Vaekehu's — the
+    // primary — but this card has Moana (cp2) stored. The sheet must show
+    // Moana's OWN coordinates from the persons list (phone +689-87221043,
+    // email moana@snp.pf), never Vaekehu's mirrored ones.
+    show({ ...SNP_PROJECT, client_contact_person_id: 'cp2', client_contact_name: 'Moana TERIIPAIA', client_phone: '+689-87221043', client_email: '' });
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());
+    // The one-shot swap (mirror → the stored person's own coordinates) lands
+    // a tick after the persons list resolves — after the radio, not with it.
+    await waitFor(() => expect(phone()).toHaveValue('87221043'));
+    expect(email()).toHaveValue('moana@snp.pf');
+  });
+
   it('switching person re-prefills phone and email unless edited', async () => {
     mockCompany();
     let body: unknown = null;

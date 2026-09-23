@@ -121,8 +121,26 @@ export function ContactPersonPicker({
                 aria-label={person.name}
                 className="accent-bambu-green"
               />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">{person.name}</span>
-              <span className="flex min-w-0 shrink items-center gap-2 text-xs text-bambu-gray">
+              {/* Sheet variant: the name is the primary information, so it
+                  keeps its own room (shrink-0, capped at 45%) and the
+                  coordinates truncate instead — the drawer variant keeps its
+                  original balance (name flexes, coordinates shrink). */}
+              <span
+                className={
+                  compact
+                    ? 'max-w-[45%] shrink-0 truncate text-sm font-semibold text-white'
+                    : 'min-w-0 flex-1 truncate text-sm font-semibold text-white'
+                }
+              >
+                {person.name}
+              </span>
+              <span
+                className={
+                  compact
+                    ? 'flex min-w-0 flex-1 items-center justify-end gap-2 text-xs text-bambu-gray'
+                    : 'flex min-w-0 shrink items-center gap-2 text-xs text-bambu-gray'
+                }
+              >
                 {number && <span className="truncate">{formatPhoneDisplay(number)}</span>}
                 {person.email && <span className="truncate">{person.email}</span>}
               </span>
