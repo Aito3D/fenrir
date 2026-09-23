@@ -351,9 +351,12 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));
 
     // OTHER_CONTACT already carries a phone, so the client is reachable
-    // without touching it — only the email is edited here.
-    await user.clear(screen.getByLabelText(/^email/i));
-    await user.type(screen.getByLabelText(/^email/i), 'jean.new@example.pf');
+    // without touching it — only the email is edited here. Like the phone
+    // input in the sibling test, it only lands once the contact-persons
+    // list has answered (the drawer hides the plain inputs while it loads).
+    const emailInput = await screen.findByLabelText(/^email/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'jean.new@example.pf');
     await user.tab();
     await waitForSummary();
 
