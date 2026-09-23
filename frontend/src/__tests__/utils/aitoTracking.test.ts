@@ -59,6 +59,22 @@ describe('aitoTracking', () => {
     expect(statusCopy({ ...base, column: 'done' }, fr, 'fr')).toEqual({ title: 'Terminée', sub: 'Merci pour votre confiance !' });
   });
 
+  it('devis with a payable link invites the client to validate by paying; accepted or invoiced, the plain line', () => {
+    const link = { state: 'unpaid' as const, url: 'https://osb/pay/1', deposit: false };
+    expect(statusCopy({ ...base, column: 'devis', payment: link }, fr, 'fr')).toEqual({
+      title: 'Devis en préparation',
+      sub: 'Vous pouvez déjà le valider en réglant en ligne ci-dessous.',
+    });
+    expect(statusCopy({ ...base, column: 'devis', payment: link, accepted: true }, fr, 'fr').sub).toBe("Vous le recevrez par e-mail dès qu'il est prêt.");
+    expect(statusCopy({ ...base, column: 'devis', payment: link, invoice: 'unpaid' }, fr, 'fr').sub).toBe("Vous le recevrez par e-mail dès qu'il est prêt.");
+    expect(statusCopy({ ...base, column: 'devis', payment: { ...link, url: null } }, fr, 'fr').sub).toBe("Vous le recevrez par e-mail dès qu'il est prêt.");
+  });
+
+  it('waiting reads "Devis validé" once the quote is accepted', () => {
+    expect(statusCopy({ ...base, column: 'waiting', accepted: true }, fr, 'fr')).toEqual({ title: 'Devis validé', sub: 'Nous planifions la fabrication.' });
+    expect(statusCopy({ ...base, column: 'waiting', accepted: false }, fr, 'fr').title).toBe('En attente de votre accord');
+  });
+
   describe('etaCopy', () => {
     const today = new Date('2026-09-10T20:00:00Z');
     const at = (column: AitoTracking['column'], due_date: string | null): AitoTracking => ({ ...base, column, due_date });
