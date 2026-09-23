@@ -402,6 +402,7 @@ export default {
       newTip: "Оплачених рахунків ще немає",
       checked: "перевірено {{ago}}",
       stale: "Books недоступний — останній відомий рейтинг",
+      companyTerms: "оцінено як компанію",
     },
     tasksReused_one: "{{count}} завдання додано",
     tasksReused_other: "{{count}} завдань додано",

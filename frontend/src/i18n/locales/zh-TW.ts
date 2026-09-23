@@ -401,6 +401,7 @@ export default {
       newTip: '尚無已結清的發票',
       checked: '{{ago}} 檢查',
       stale: 'Books 無法連線 — 最近一次已知評級',
+      companyTerms: '按企業評級',
     },
     tasksReused_one: '已新增 {{count}} 個任務',
     tasksReused_other: '已新增 {{count}} 個任務',

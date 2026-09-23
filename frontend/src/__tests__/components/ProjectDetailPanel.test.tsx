@@ -3622,7 +3622,7 @@ describe('client rating on the masthead', () => {
   const ratingBody = (tier: string, reason: string | null) => ({
     tier, reason,
     settled_count: 8, on_time_count: 8, overdue_count: 0, past_due_count: 0,
-    worst_overdue_days: 0, worst_overdue_number: null,
+    worst_overdue_days: 0, worst_overdue_number: null, is_company: false,
     computed_at: new Date().toISOString(), stale: false,
   });
 

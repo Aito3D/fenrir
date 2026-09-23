@@ -24,6 +24,7 @@ const EMPTY: AitoClientRating = {
   past_due_count: 0,
   worst_overdue_days: 0,
   worst_overdue_number: null,
+  is_company: false,
   computed_at: null,
   stale: false,
 };
@@ -93,6 +94,10 @@ export function ClientRatingPill({
   const tip = [
     rating.stale ? t('aito.rating.stale') : null,
     `${label} — ${reason}`,
+    // A company is held to looser timing (a fortnight late is still on
+    // time), so a reader comparing figures across clients is told which
+    // profile scored these.
+    rating.is_company ? t('aito.rating.companyTerms') : null,
     rating.computed_at ? t('aito.rating.checked', { ago }) : null,
   ]
     .filter(Boolean)

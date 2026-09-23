@@ -7,7 +7,7 @@ import type { AitoClientRating } from '../../api/client';
 const base: AitoClientRating = {
   tier: 'good', reason: 'punctual',
   settled_count: 12, on_time_count: 12, overdue_count: 0, past_due_count: 0,
-  worst_overdue_days: 0, worst_overdue_number: null,
+  worst_overdue_days: 0, worst_overdue_number: null, is_company: false,
   computed_at: new Date(Date.now() - 12 * 60_000).toISOString(), stale: false,
 };
 
@@ -47,6 +47,13 @@ describe('ClientRatingPill', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent(/checked 12m ago/);
   });
 
+  it('says when the company profile scored the figures, and only then', () => {
+    const { rerender } = render(<ClientRatingPill rating={{ ...base, is_company: true }} />);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Good — 12 of 12 invoices paid on time · rated as a company · checked');
+    rerender(<ClientRatingPill rating={{ ...base, is_company: false }} />);
+    expect(screen.getByRole('tooltip')).not.toHaveTextContent(/rated as a company/);
+  });
+
   it('explains a single overdue invoice in the singular', () => {
     render(
       <ClientRatingPill
@@ -66,6 +73,7 @@ describe('ClientRatingPill', () => {
           overdue_count: 2,
           worst_overdue_days: 23,
           worst_overdue_number: null,
+          is_company: false,
           computed_at: null,
         }}
       />,

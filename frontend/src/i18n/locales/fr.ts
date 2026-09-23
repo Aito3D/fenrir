@@ -401,6 +401,7 @@ export default {
       newTip: 'Aucune facture réglée pour l’instant',
       checked: 'vérifié {{ago}}',
       stale: 'Books injoignable — dernière note connue',
+      companyTerms: 'noté comme entreprise',
     },
     tasksReused_one: '{{count}} tâche ajoutée',
     tasksReused_other: '{{count}} tâches ajoutées',

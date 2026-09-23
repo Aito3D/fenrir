@@ -401,6 +401,7 @@ export default {
       newTip: 'Henüz ödenmiş fatura yok',
       checked: '{{ago}} kontrol edildi',
       stale: 'Books erişilemiyor — bilinen son puan',
+      companyTerms: 'şirket olarak puanlandı',
     },
     tasksReused_one: '{{count}} görev eklendi',
     tasksReused_other: '{{count}} görev eklendi',
