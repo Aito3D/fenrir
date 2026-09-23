@@ -1040,6 +1040,8 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "client_is_company": None,
         "client_social_network": None,
         "client_social_handle": None,
+        "client_contact_person_id": None,
+        "client_contact_name": None,
         "quote_id": None,
         "quote_number": None,
         "quote_date": None,

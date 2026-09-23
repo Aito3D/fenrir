@@ -454,6 +454,8 @@ def _to_response(
         client_is_company=p.client_is_company,
         client_social_network=p.client_social_network,
         client_social_handle=p.client_social_handle,
+        client_contact_person_id=p.client_contact_person_id,
+        client_contact_name=p.client_contact_name,
         quote_id=p.quote_id,
         quote_number=p.quote_number,
         quote_date=p.quote_date,
@@ -1431,6 +1433,8 @@ async def create_project(
         client_is_company=payload.client_is_company,
         client_social_network=payload.client_social_network,
         client_social_handle=payload.client_social_handle,
+        client_contact_person_id=payload.client_contact_person_id,
+        client_contact_name=payload.client_contact_name,
         quote_id=payload.quote_id,
         quote_number=payload.quote_number,
         quote_date=payload.quote_date,
@@ -3274,9 +3278,17 @@ async def update_project(
         "client_is_company",
         "client_social_network",
         "client_social_handle",
+        "client_contact_person_id",
+        "client_contact_name",
     ):
         if key in fields:
             setattr(project, key, fields[key])
+    # A person belongs to a company card only: flipping the card to a person
+    # (or a PATCH that never was a company) drops it, mirroring the create
+    # schema's own rule.
+    if not project.client_is_company:
+        project.client_contact_person_id = None
+        project.client_contact_name = None
     # Captured before the mark: it is unconditional and idempotent, so
     # checking the post-mark state alone would fire sync.queued on every edit
     # to an already-pending project, not just the transition into it. The

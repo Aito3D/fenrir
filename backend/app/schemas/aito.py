@@ -296,6 +296,11 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
+    # The chosen contact person, company cards only (see the model). Cleared
+    # below when the card is not a company so a person card can never carry
+    # one by accident.
+    client_contact_person_id: str | None = Field(default=None, max_length=50)
+    client_contact_name: str | None = Field(default=None, max_length=200)
     # Books estimate ids are opaque alphanumerics. The charset matters: this value
     # is interpolated into the Books URL path, and httpx normalises dot segments,
     # so an unconstrained id can walk out of /books/v3 onto any Zoho endpoint with
@@ -359,6 +364,13 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     @classmethod
     def _validate_client_phone(cls, value: str | None) -> str | None:
         return value if value is None else _check_phone(value)
+
+    @model_validator(mode="after")
+    def _person_only_on_company_cards(self):
+        if self.client_is_company is not True:
+            self.client_contact_person_id = None
+            self.client_contact_name = None
+        return self
 
     @field_validator("quote_status", mode="before")
     @classmethod
@@ -474,6 +486,8 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
+    client_contact_person_id: str | None = Field(default=None, max_length=50)
+    client_contact_name: str | None = Field(default=None, max_length=200)
     # The air waybill number, on the PATCH schema only: it never exists at
     # create time, and it is validated against the MERGED row (a card must
     # already carry a shipment) in update_project rather than here.
@@ -625,6 +639,8 @@ class AitoProjectResponse(BaseModel):
     client_is_company: bool | None
     client_social_network: str | None
     client_social_handle: str | None
+    client_contact_person_id: str | None
+    client_contact_name: str | None
     quote_id: str | None
     quote_number: str | None
     quote_date: str | None
