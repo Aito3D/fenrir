@@ -83,6 +83,7 @@ _TRACK_RATE_MAX_MISSES_PER_IP =
 _TRACK_RATE_MAX_MISSES_PER_NET =
 _TRACK_RATE_MAX_CALLS_PER_IP =
 _TRACK_RATE_MAX_CALLS_PER_NET =
+_TRACK_RATE_COLLAPSED_PROXY =
 _TRACK_RATE_SWEEP_ABOVE =
 _track_rate_ip_calls:
 _track_rate_ip_misses:
@@ -90,7 +91,6 @@ _track_rate_net_misses:
 _track_rate_net_calls:
 def _reset_track_rate_limits() -> None:
 def _track_rate_net_key(host: str) -> str:
-def _peer_is_private(request: Request) -> bool:
 def _track_rate_limited(request: Request) -> tuple[str, float] | None:
 def _release_miss(buckets:
 def _track_rate_hit(host: str, stamp: float) -> None:

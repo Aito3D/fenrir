@@ -201,4 +201,104 @@ describe('useSheetDrag (TrackingPanel bottom-sheet drag)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(panel.style.transform).toBe('');
   });
+
+  it('two pointermoves that land in the same millisecond fall back to zero velocity: no dismissal', () => {
+    mockMatchMedia({ sheet: true, reduced: false });
+    const { panel, header, onClose } = renderPanel();
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(header, { clientY: 0, pointerId: 1 }); // history[0] = (0, t=0)
+    // No `advanceTimersByTime` call between these two moves, so the frozen
+    // fake clock reports the same millisecond for both samples: `t1 > t0`
+    // is false and velocity falls back to 0 regardless of displacement.
+    fireEvent.pointerMove(header, { clientY: 5, pointerId: 1 }); // (5, t=0)
+    fireEvent.pointerMove(header, { clientY: 10, pointerId: 1 }); // (10, t=0) -> t1 === t0
+    fireEvent.pointerUp(header, { clientY: 10, pointerId: 1 }); // 10px < 45% of 400px (180px)
+    vi.useRealTimers();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(panel.style.transform).toBe('');
+    expect(panel.style.transition).toBe('');
+    expect(panel.style.getPropertyValue('--track-sheet-progress')).toBe('');
+  });
+
+  it('an 8-move drag keeps only the last 6 samples: an early fast flick that settles down does not dismiss', () => {
+    mockMatchMedia({ sheet: true, reduced: false });
+    const { panel, header, onClose } = renderPanel();
+
+    vi.useFakeTimers();
+    // `history` starts as [pointerdown] and each move pushes one entry,
+    // shifting the oldest out once length exceeds 6. With 8 moves after
+    // pointerdown (9 pushes total), the surviving window at release is
+    // moves 3..8 — the pointerdown sample and the first two moves are
+    // gone by the time velocity is computed.
+    fireEvent.pointerDown(header, { clientY: 0, pointerId: 1 }); // history[0] = (0, t=0)
+    // Moves 1-2: a fast early flick (20 px/ms, then 10 px/ms) that gets
+    // shifted out before release.
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 100, pointerId: 1 }); // (100, t=5)
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 150, pointerId: 1 }); // (150, t=10)
+    // Moves 3-8: the finger nearly stops. This is the window still in
+    // `history` at release.
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 160, pointerId: 1 }); // (160, t=110) -> retained window starts here
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 165, pointerId: 1 }); // (165, t=210)
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 168, pointerId: 1 }); // (168, t=310)
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 170, pointerId: 1 }); // (170, t=410)
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 171, pointerId: 1 }); // (171, t=510)
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 172, pointerId: 1 }); // (172, t=610) -> retained window ends here
+    // Retained history: [(160,110),(165,210),(168,310),(170,410),(171,510),(172,610)].
+    // velocity = (172-160)/(610-110) = 12/500 = 0.024 px/ms, far under the
+    // 0.45 px/ms threshold. Final dy = 172px < 180px (45% of the stubbed
+    // 400px height), so distance doesn't dismiss either — even though the
+    // dropped early samples (0->150 in 10ms, ~15 px/ms average) would have
+    // read as a flick had they still counted.
+    fireEvent.pointerUp(header, { clientY: 172, pointerId: 1 });
+    vi.useRealTimers();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(panel.style.transform).toBe('');
+  });
+
+  it('an 8-move drag keeps only the last 6 samples: a late fast flick after a slow start dismisses', () => {
+    mockMatchMedia({ sheet: true, reduced: false });
+    const { panel, header, onClose } = renderPanel();
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(header, { clientY: 0, pointerId: 1 }); // history[0] = (0, t=0)
+    // Moves 1-2: slow — get shifted out before release.
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 2, pointerId: 1 }); // (2, t=100)
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 4, pointerId: 1 }); // (4, t=200)
+    // Move 3: still slow, but this is where the retained window starts.
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerMove(header, { clientY: 6, pointerId: 1 }); // (6, t=300) -> retained window starts here
+    // Moves 4-8: a fast flick (20px every 5ms = 4 px/ms).
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 26, pointerId: 1 }); // (26, t=305)
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 46, pointerId: 1 }); // (46, t=310)
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 66, pointerId: 1 }); // (66, t=315)
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 86, pointerId: 1 }); // (86, t=320)
+    vi.advanceTimersByTime(5);
+    fireEvent.pointerMove(header, { clientY: 106, pointerId: 1 }); // (106, t=325) -> retained window ends here
+    // Retained history: [(6,300),(26,305),(46,310),(66,315),(86,320),(106,325)].
+    // velocity = (106-6)/(325-300) = 100/25 = 4 px/ms, well past the 0.45
+    // px/ms threshold. Final dy = 106px, still under the 180px (45%)
+    // distance threshold, so this dismisses on velocity alone.
+    fireEvent.pointerUp(header, { clientY: 106, pointerId: 1 });
+    vi.useRealTimers();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(panel.style.transform).toBe('');
+  });
 });

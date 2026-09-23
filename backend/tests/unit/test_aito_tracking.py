@@ -636,14 +636,16 @@ async def test_public_route_rate_limit_unwraps_a_trusted_proxy_and_forgets_idle_
 async def test_public_route_collapsed_bucket_falls_back_to_the_global_miss_cap(
     async_client, db_session, track_rate_clock, monkeypatch
 ):
-    """TRUSTED_PROXY_IPS unset but X-Forwarded-For present: _get_client_ip
-    cannot unwrap it, so every one of these "visitors" collapses onto the
-    same peer address. T-087: without the fallback the 31st miss would 429
-    on the (now site-wide) 30-miss per-IP cap; with it, only the much
-    larger global cap governs, and a real code still resolves."""
+    """TRUSTED_PROXY_IPS unset but X-Forwarded-For present, with the T-029
+    opt-in set: _get_client_ip cannot unwrap the header, so every one of
+    these "visitors" collapses onto the same peer address. T-087: without
+    the fallback the 31st miss would 429 on the (now site-wide) 30-miss
+    per-IP cap; with it, only the much larger global cap governs, and a
+    real code still resolves."""
     from backend.app.api.routes import aito as aito_routes, auth as auth_routes
 
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_COLLAPSED_PROXY", True)
     for i in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
         r = await async_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
         assert r.status_code == 404
@@ -670,16 +672,18 @@ async def test_public_route_direct_install_per_ip_miss_cap_is_unchanged(async_cl
 async def test_public_route_collapsed_bucket_no_longer_bounded_by_the_calls_cap(
     async_client, track_rate_clock, monkeypatch
 ):
-    """T-017: on a collapsed bucket (unconfigured proxy) the per-IP CALLS
-    cap used to stay in force even though T-087 already suspended the
-    per-IP MISS cap there, so it silently became a 120/min site-wide
-    ceiling — 5x tighter than the 600-miss per-net budget the collapse
-    path is meant to rely on instead. It is now suspended alongside the
-    miss cap: many more than the old (here lowered) calls cap succeed,
-    and only the per-net miss budget still bounds the bucket."""
+    """T-017: on a collapsed bucket (opted-in unconfigured proxy, T-029)
+    the per-IP CALLS cap used to stay in force even though T-087 already
+    suspended the per-IP MISS cap there, so it silently became a 120/min
+    site-wide ceiling — 5x tighter than the 600-miss per-net budget the
+    collapse path is meant to rely on instead. It is now suspended
+    alongside the miss cap: many more than the old (here lowered) calls
+    cap succeed, and only the per-net miss budget still bounds the
+    bucket."""
     from backend.app.api.routes import aito as aito_routes, auth as auth_routes
 
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_COLLAPSED_PROXY", True)
     monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_IP", 3)
     monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 5)
     # Five misses — already past the old 3-call cap — all still answered.
@@ -695,10 +699,10 @@ async def test_public_route_collapsed_bucket_no_longer_bounded_by_the_calls_cap(
 async def test_public_route_collapsed_bucket_never_429s_past_the_old_calls_cap_on_hits(
     async_client, db_session, track_rate_clock, monkeypatch
 ):
-    """T-017: a private peer behind an unconfigured proxy (collapsed
-    bucket) making more than 120 real-code hits inside one window must
-    never see a 429 — the per-IP CALLS cap is suspended there just like
-    the per-IP miss cap already was, and a hit releases the per-net
+    """T-017: an opted-in unconfigured proxy (T-029: _TRACK_RATE_COLLAPSED_PROXY,
+    collapsed bucket) making more than 120 real-code hits inside one window
+    must never see a 429 — the per-IP CALLS cap is suspended there just
+    like the per-IP miss cap already was, and a hit releases the per-net
     reservation it made at arrival (`_track_rate_hit`), so it never
     accumulates against that budget either."""
     from httpx import ASGITransport, AsyncClient
@@ -707,6 +711,7 @@ async def test_public_route_collapsed_bucket_never_429s_past_the_old_calls_cap_o
     from backend.app.main import app
 
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_COLLAPSED_PROXY", True)
     pid = await _create(async_client)
     token = await _token(async_client, db_session, pid)
     transport = ASGITransport(app=app, client=("10.0.0.5", 5555))
@@ -723,17 +728,19 @@ async def test_public_route_collapsed_bucket_never_429s_past_the_old_calls_cap_o
 async def test_public_route_collapsed_bucket_net_calls_cap_trips_on_hits(
     async_client, db_session, track_rate_clock, monkeypatch
 ):
-    """T-028: on a collapsed bucket the per-net MISS budget never grows from
-    hits (a hit releases its miss reservation, per `_track_rate_hit`), but
-    the per-net CALLS ceiling counts every admitted call — hit or miss —
-    and is never released. Enough real-code lookups alone must eventually
-    trip it, unlike before T-028 where hits there were entirely free."""
+    """T-028: on an opted-in collapsed bucket (T-029) the per-net MISS
+    budget never grows from hits (a hit releases its miss reservation, per
+    `_track_rate_hit`), but the per-net CALLS ceiling counts every
+    admitted call — hit or miss — and is never released. Enough real-code
+    lookups alone must eventually trip it, unlike before T-028 where hits
+    there were entirely free."""
     from httpx import ASGITransport, AsyncClient
 
     from backend.app.api.routes import aito as aito_routes, auth as auth_routes
     from backend.app.main import app
 
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_COLLAPSED_PROXY", True)
     monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_NET", 5)
     pid = await _create(async_client)
     token = await _token(async_client, db_session, pid)
@@ -813,13 +820,21 @@ async def test_public_route_collapsed_bucket_still_bounded_by_the_global_cap(
     assert r.status_code == 429
 
 
+# ── T-029: collapsing an unconfigured proxy needs an explicit opt-in,
+# never inferred from the direct peer's address alone (Docker bridge
+# networking makes that address private for every internet visitor too,
+# so the old inference was spoofable by anyone able to set their own
+# X-Forwarded-For). `_peer_is_private` is gone; these three replace the
+# peer-based tests and its own parametrized table above. ──────────────────
+
+
 @pytest.mark.asyncio
-async def test_public_route_collapsed_bucket_requires_a_private_peer(async_client, track_rate_clock, monkeypatch):
-    """T-121: a public-internet peer's own X-Forwarded-For must not suspend
-    the per-IP miss cap — only a peer that plausibly IS the unconfigured
-    proxy (loopback/RFC-1918) may. Without the peer check, a direct install
-    could raise its own ceiling from the 30-miss cap to the 120-call cap for
-    free by sending itself an X-Forwarded-For header."""
+async def test_public_route_public_peer_with_xff_and_no_opt_in_is_not_collapsed(
+    async_client, track_rate_clock, monkeypatch
+):
+    """Baseline: a public-internet peer's own X-Forwarded-For must not
+    suspend the per-IP miss cap when the T-029 opt-in is unset (the
+    default) — the 31st miss on that bucket still 429s."""
     from httpx import ASGITransport, AsyncClient
 
     from backend.app.api.routes import auth as auth_routes
@@ -837,59 +852,50 @@ async def test_public_route_collapsed_bucket_requires_a_private_peer(async_clien
 
 
 @pytest.mark.asyncio
-async def test_public_route_collapsed_bucket_also_accepts_an_rfc1918_peer(async_client, track_rate_clock, monkeypatch):
-    """The peer check is not loopback-only: an unconfigured proxy on a LAN
-    (an RFC-1918 direct peer) collapses the bucket exactly like one on
-    127.0.0.1 does in the tests above."""
+async def test_public_route_private_peer_with_xff_and_no_opt_in_is_not_collapsed_either(
+    async_client, track_rate_clock, monkeypatch
+):
+    """T-029 fix: a private/RFC-1918 direct peer (what every visitor looks
+    like behind Docker's bridge networking) must NOT suspend the per-IP
+    miss cap on its own either — only the explicit
+    _TRACK_RATE_COLLAPSED_PROXY opt-in may. Before this fix such a peer
+    alone collapsed the bucket, so any internet client behind a bridge
+    network could add its own X-Forwarded-For and buy the higher budget
+    for free; the 31st miss on that bucket still 429s now."""
+    from httpx import ASGITransport, AsyncClient
+
+    from backend.app.api.routes import auth as auth_routes
+    from backend.app.main import app
+
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    transport = ASGITransport(app=app, client=("10.0.0.5", 5555))
+    async with AsyncClient(transport=transport, base_url="http://test") as private_client:
+        await _exhaust_ip_misses(private_client, headers={"X-Forwarded-For": "203.0.113.5"})
+        r = await private_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_proxy_opt_in_collapses_regardless_of_peer(
+    async_client, track_rate_clock, monkeypatch
+):
+    """With the T-029 opt-in set, the bucket collapses even behind a
+    PUBLIC direct peer — it is the operator's explicit flag that decides
+    now, not any property of the peer's address — and the per-IP miss cap
+    is suspended: many more than that cap succeed, bounded by the
+    (here lowered) per-net miss budget instead."""
     from httpx import ASGITransport, AsyncClient
 
     from backend.app.api.routes import aito as aito_routes, auth as auth_routes
     from backend.app.main import app
 
     monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
-    transport = ASGITransport(app=app, client=("10.0.0.5", 5555))
-    async with AsyncClient(transport=transport, base_url="http://test") as private_client:
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_COLLAPSED_PROXY", True)
+    transport = ASGITransport(app=app, client=("1.2.3.4", 5555))
+    async with AsyncClient(transport=transport, base_url="http://test") as public_client:
         for i in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
-            r = await private_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
+            r = await public_client.get("/api/v1/aito/track/ZZZZZZ", headers={"X-Forwarded-For": f"203.0.113.{i}"})
             assert r.status_code == 404
-
-
-@pytest.mark.parametrize(
-    ("host", "expected"),
-    [
-        ("127.0.0.1", True),  # loopback
-        ("10.0.0.5", True),  # RFC-1918
-        ("172.16.0.1", True),  # RFC-1918
-        ("192.168.1.1", True),  # RFC-1918
-        ("8.8.8.8", False),  # public
-        ("93.184.216.34", False),  # public
-        ("::1", True),  # IPv6 loopback
-        ("fd00::1", True),  # IPv6 ULA (private)
-        ("2001:4860:4860::8888", False),  # IPv6 public
-        ("testclient", False),  # unparseable (e.g. a test double) — fail closed
-    ],
-)
-def test_peer_is_private_classifies_loopback_and_private_addresses(host, expected):
-    """Unit-tests `_peer_is_private` directly (T-121). Deliberately avoids
-    203.0.113.0/24 and 2001:db8::/32 (used elsewhere in this file as
-    placeholder "public" visitor addresses): Python's
-    `ipaddress.*.is_private` is True for those documentation/reserved
-    ranges too, so they are not useful public-vs-private fixtures here."""
-    from types import SimpleNamespace
-
-    from backend.app.api.routes import aito as aito_routes
-
-    request = SimpleNamespace(client=SimpleNamespace(host=host))
-    assert aito_routes._peer_is_private(request) is expected
-
-
-def test_peer_is_private_fails_closed_with_no_client():
-    from types import SimpleNamespace
-
-    from backend.app.api.routes import aito as aito_routes
-
-    request = SimpleNamespace(client=None)
-    assert aito_routes._peer_is_private(request) is False
 
 
 @pytest.mark.asyncio
@@ -1087,18 +1093,21 @@ def test_public_route_reserves_the_miss_at_arrival_and_releases_it_on_a_hit(trac
 # ── T-012: a no-peer host must fail closed to a real, cappable bucket ────────
 
 
-def test_no_peer_requests_share_one_bucket_and_trip_the_miss_cap(track_rate_clock, monkeypatch):
+def test_no_peer_requests_share_one_bucket_and_trip_the_net_miss_cap(track_rate_clock, monkeypatch):
     """`_get_client_ip` mints a fresh, per-request-unique `__no_ip_...`
     placeholder when `request.client` is None (a unix-socket bind has no
     peer). Left uncollapsed, every such request would land in its own
     empty, uncapped bucket and no cap could ever be reached. Two requests
-    with no peer at all must share one bucket instead, so the cap can
-    trip."""
+    with no peer at all must share one bucket instead, so a cap can trip —
+    T-030: the shared `__no_ip__` bucket is itself collapsed, so the
+    per-IP miss cap is suspended for it and it is the per-net miss budget
+    that trips instead (otherwise the one shared bucket would silently be
+    the whole install's 30-miss cap, not just this one visitor's)."""
     from types import SimpleNamespace
 
     from backend.app.api.routes import aito as aito_routes
 
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 3)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 3)
     # A fresh request each time (as a real connection would be), but every
     # one of them has no TCP peer.
     request = SimpleNamespace(client=None, headers={})
@@ -1113,12 +1122,14 @@ def test_unparseable_host_collapses_onto_the_same_shared_bucket(track_rate_clock
     """A host string that isn't a real peer address either — e.g. a test
     client's literal "testclient" — collapses onto the same `"__no_ip__"`
     sentinel as a genuinely missing peer, so the two share one budget
-    rather than each getting fail-closed to its own unbounded bucket."""
+    rather than each getting fail-closed to its own unbounded bucket.
+    T-030: that shared bucket is itself collapsed, so it is the per-net
+    miss budget that fills, not the per-IP one."""
     from types import SimpleNamespace
 
     from backend.app.api.routes import aito as aito_routes
 
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 2)
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_NET", 2)
     no_peer_request = SimpleNamespace(client=None, headers={})
     named_request = SimpleNamespace(client=SimpleNamespace(host="testclient"), headers={})
     admitted1 = aito_routes._track_rate_limited(no_peer_request)
