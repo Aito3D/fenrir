@@ -128,13 +128,20 @@ class _UploadRecorder:
     Each call sleeps, so genuinely concurrent uploads have overlapping
     lifetimes. ``peak`` is the high-water mark of simultaneous in-flight
     uploads — the number the pool cap turns on.
+
+    ``hold`` makes completion deterministic: an upload stays in flight until the
+    test sets the event. Tests that tick the scheduler again *while* an upload is
+    in flight need this — on a loaded CI runner a single tick can outlast the
+    sleep, the upload's done-callback frees its pool slot mid-tick, and the tick
+    refills the slot itself (a real flake in ``test_freed_slot_is_refilled...``).
     """
 
-    def __init__(self, *, fail_for_ip: str | None = None):
+    def __init__(self, *, fail_for_ip: str | None = None, hold: asyncio.Event | None = None):
         self.in_flight = 0
         self.peak = 0
         self.order: list[str] = []
         self.fail_for_ip = fail_for_ip
+        self.hold = hold
 
     async def __call__(self, ip_address, access_code, local_path, remote_path, **kwargs):
         self.in_flight += 1
@@ -142,6 +149,8 @@ class _UploadRecorder:
         self.order.append(ip_address)
         try:
             await asyncio.sleep(UPLOAD_SECONDS)
+            if self.hold is not None:
+                await self.hold.wait()
             if self.fail_for_ip is not None and ip_address == self.fail_for_ip:
                 raise OSError(f"simulated FTP failure for {ip_address}")
             return True
@@ -298,7 +307,8 @@ async def test_freed_slot_is_refilled_on_the_next_tick(farm):
     finishes, the next tick fills the freed slot with printer B.
     """
     ctx = await farm(2, max_concurrent=1)
-    upload = _UploadRecorder()
+    release = asyncio.Event()
+    upload = _UploadRecorder(hold=release)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         # Tick 1: one slot, one launch. Don't drain — A is now "in flight".
@@ -310,6 +320,7 @@ async def test_freed_slot_is_refilled_on_the_next_tick(farm):
         assert len(scheduler._inflight) == 1, "a full pool must not launch a second upload"
 
         # A completes, freeing the slot.
+        release.set()
         await _drain(scheduler)
         assert not scheduler._inflight
 
@@ -331,7 +342,8 @@ async def test_inflight_item_and_printer_are_excluded_from_reselection(farm):
     exclusion, not the DB status.
     """
     ctx = await farm(1, max_concurrent=4)
-    upload = _UploadRecorder()
+    release = asyncio.Event()
+    upload = _UploadRecorder(hold=release)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         await scheduler.check_queue()
@@ -343,6 +355,7 @@ async def test_inflight_item_and_printer_are_excluded_from_reselection(farm):
         await scheduler.check_queue()
         assert set(scheduler._inflight) == inflight_before, "an in-flight item was re-selected"
 
+        release.set()
         await _drain(scheduler)
 
     assert await _statuses(ctx) == ["printing"]
@@ -360,7 +373,8 @@ async def test_inflight_printer_is_kept_out_of_auto_drying(farm):
     """
     ctx = await farm(1, max_concurrent=4)
     printer_id = ctx.printer_ids[0]
-    upload = _UploadRecorder()
+    release = asyncio.Event()
+    upload = _UploadRecorder(hold=release)
 
     async with _scheduler_ctx(ctx, upload) as scheduler:
         await scheduler.check_queue()  # launch the only item; now in flight
@@ -374,6 +388,7 @@ async def test_inflight_printer_is_kept_out_of_auto_drying(farm):
         busy_arg = scheduler._check_auto_drying.await_args.args[2]
         assert printer_id in busy_arg, "the in-flight printer must be excluded from auto-drying"
 
+        release.set()
         await _drain(scheduler)
 
 
