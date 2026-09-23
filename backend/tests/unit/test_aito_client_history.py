@@ -58,7 +58,7 @@ async def test_limit_is_honoured_and_validated(async_client):
     assert len((await async_client.get(_url("zA"))).json()["cards"]) == 5
     assert len((await async_client.get(_url("zA", limit=2))).json()["cards"]) == 2
     assert (await async_client.get(_url("zA", limit=0))).status_code == 422
-    assert (await async_client.get(_url("zA", limit=21))).status_code == 422
+    assert (await async_client.get(_url("zA", limit=201))).status_code == 422
 
 
 @pytest.mark.asyncio
@@ -188,3 +188,29 @@ async def test_latest_social_ignores_trashed_cards_and_is_null_without_a_pair(as
 
 def test_history_is_gated_on_aito_read():
     assert _declared_permissions("get_client_history") == ["aito:read"]
+
+
+@pytest.mark.asyncio
+async def test_cards_carry_quote_number_status_and_description(async_client, db_session):
+    """The timeline dialog identifies a row by its quote and says what it was
+    for; a hand-made card has no quote and must say so with None, not ''."""
+    quoted = await _create(async_client, description="Pièce carrosserie")
+    await _set(db_session, quoted, quote_number="DEV26-2656", quote_status="declined")
+    manual = await _create(async_client, description="Bague entretoise")
+
+    cards = (await async_client.get(_url("zA"))).json()["cards"]
+    by_id = {c["id"]: c for c in cards}
+    assert by_id[quoted]["quote_number"] == "DEV26-2656"
+    assert by_id[quoted]["quote_status"] == "declined"
+    assert by_id[quoted]["description"] == "Pièce carrosserie"
+    assert by_id[manual]["quote_number"] is None
+    assert by_id[manual]["quote_status"] is None
+    assert by_id[manual]["description"] == "Bague entretoise"
+
+
+@pytest.mark.asyncio
+async def test_limit_ceiling_is_200(async_client):
+    # The timeline asks for every card a client ever had; 200 is more than
+    # any client of the shop has, 201 is a typo.
+    assert (await async_client.get(_url("zA", limit=200))).status_code == 200
+    assert (await async_client.get(_url("zA", limit=201))).status_code == 422

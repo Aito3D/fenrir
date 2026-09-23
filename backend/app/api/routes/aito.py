@@ -1059,14 +1059,15 @@ async def get_aito_stats(
 @router.get("/clients/{client_id}/history", response_model=AitoClientHistoryResponse)
 async def get_client_history(
     client_id: str,
-    limit: int = Query(5, ge=1, le=20, description="Newest cards to return"),
+    limit: int = Query(5, ge=1, le=200, description="Newest cards to return"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The drawer's repeat-client recall: a client's newest active cards with
     their tasks, and the latest social pair (Zoho never stores the handle).
     Unknown ids and the walk-in default contact return an empty list — the
-    drawer asks for every non-default contact, and most have no history.
+    drawer asks for every non-default contact, and most have no history. The
+    panel's history timeline asks for 200 — every card the client ever had.
     Declared ahead of the `/{project_id}` routes so `clients` is never parsed
     as an id."""
     return await compute_client_history(db, client_id, limit)
