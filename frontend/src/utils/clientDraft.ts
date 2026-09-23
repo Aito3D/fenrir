@@ -287,6 +287,20 @@ export function contactPersonPhone(person: { phone: string; mobile: string }): s
   return person.mobile || person.phone || '';
 }
 
+/** Pick the person to select when nothing is: the caller's preference if it
+ *  is still on the account, else Books' primary, else the first row. Lives
+ *  here rather than in `ContactPersonPicker` because `react-refresh/only-
+ *  export-components` rejects a plain function exported alongside a
+ *  component. */
+export function pickDefaultPerson(persons: ZohoContactPerson[], preferredId: string | null): ZohoContactPerson | null {
+  if (persons.length === 0) return null;
+  return (
+    (preferredId && persons.find((p) => p.contact_person_id === preferredId)) ||
+    persons.find((p) => p.is_primary) ||
+    persons[0]
+  );
+}
+
 /** Make `person` the draft's contact: record it, and copy its coordinates
  *  into every field the operator has NOT typed in. `touched` survives so a
  *  hand-typed override outlives a switch of person; `original` moves to the
