@@ -107,6 +107,20 @@ describe('SendInvoiceModal', () => {
     ).toBeInTheDocument();
   });
 
+  it('preselects the card’s contact person over the default address', async () => {
+    vi.spyOn(api, 'getAitoInvoiceEmail').mockResolvedValue(CONTENT);
+    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" contactPersonId="cp-2" onClose={() => {}} />);
+    const select = await screen.findByLabelText(/recipient/i);
+    await waitFor(() => expect(select).toHaveValue('compta@example.pf'));
+  });
+
+  it('falls back to the default when the person is not a recipient', async () => {
+    vi.spyOn(api, 'getAitoInvoiceEmail').mockResolvedValue(CONTENT);
+    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" contactPersonId="cp-9" onClose={() => {}} />);
+    const select = await screen.findByLabelText(/recipient/i);
+    await waitFor(() => expect(select).toHaveValue('contact@example.pf'));
+  });
+
   it('reports a prefill failure instead of an empty form', async () => {
     vi.spyOn(api, 'getAitoInvoiceEmail').mockRejectedValue(new Error('502'));
     render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={() => {}} />);

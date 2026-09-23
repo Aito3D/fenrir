@@ -25,9 +25,13 @@ import { SendInvoiceModal } from './SendInvoiceModal';
 export function SendInvoiceButton({
   projectId,
   invoiceId,
+  contactPersonId = null,
 }: {
   projectId: number;
   invoiceId: string;
+  /** The card's contact person, when it has one: preferred over Books'
+   *  default recipient. Null on person cards and older company cards. */
+  contactPersonId?: string | null;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -44,7 +48,12 @@ export function SendInvoiceButton({
         <Mail className="w-3.5 h-3.5" />
       </button>
       {open && (
-        <SendInvoiceModal projectId={projectId} invoiceId={invoiceId} onClose={() => setOpen(false)} />
+        <SendInvoiceModal
+          projectId={projectId}
+          invoiceId={invoiceId}
+          contactPersonId={contactPersonId}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );
