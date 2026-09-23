@@ -373,4 +373,31 @@ describe('AitoTrackEntryPage', () => {
     expect(screen.getByTestId('track-code')).toBeInTheDocument();
     expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
   });
+
+  // T-018's twin on this page: the same stalled-locale-chunk deadline
+  // (I18N_SETTLE_TIMEOUT_MS, shared via utils/trackingShell) guards the
+  // front door too, but had no test pinning it — see AitoTrackPage.test.tsx's
+  // 'settles past the i18n deadline' case just above for the sibling.
+  it('settles past the i18n deadline and shows the code entry even though the locale chunk never becomes ready', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      setReadyOverride(false);
+      renderEntry();
+      expect(screen.getByAltText('Aito3D')).toBeInTheDocument();
+      // Comfortably inside the deadline: still the skeleton, no code entry.
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
+      expect(screen.queryByTestId('track-code')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+      // Cross the deadline: `i18nTimedOut` flips true on its own even
+      // though `ready` is still pinned false, and the code entry appears.
+      await vi.advanceTimersByTimeAsync(1_001);
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Suivre ma commande' })).toBeInTheDocument());
+      expect(screen.getByTestId('track-code')).toBeInTheDocument();
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+    }
+  });
 });

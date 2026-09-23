@@ -13,6 +13,7 @@ from backend.app.services.aito_tracking import (
     ensure_tracking_token,
     log_view,
     mint_token,
+    mint_unique_token,
     normalize_token,
     purge_tracking_views,
     tracking_url,
@@ -111,6 +112,57 @@ async def test_ensure_token_race_loser_returns_winners_token(async_client, db_se
     assert won == "tokenA"
     assert project.tracking_token == "tokenA"
     assert (await _project(db_session, pid)).tracking_token == "tokenA"
+
+
+@pytest.mark.asyncio
+async def test_mint_unique_token_retries_past_a_collision(async_client, db_session, monkeypatch):
+    """T-032: every existing test mints against an empty tracking_token
+    column, so the retry body (a second lap of the `for` loop) never ran.
+    Force a first candidate that collides — with a TRASHED card's token,
+    proving the uniqueness lookup does not filter on status — and confirm
+    the loop draws again and returns the fresh candidate, not the taken
+    one."""
+    taken_pid = await _create(async_client, description="trashed")
+    await _set(db_session, taken_pid, status="deleted", tracking_token="TAKEN1")
+
+    from backend.app.services import aito_tracking as svc
+
+    candidates = ["TAKEN1", "FRESH2"]
+    calls: list[str] = []
+
+    def fake_mint_token():
+        calls.append(candidates[len(calls)])
+        return calls[-1]
+
+    monkeypatch.setattr(svc, "mint_token", fake_mint_token)
+
+    token = await mint_unique_token(db_session)
+
+    assert token == "FRESH2"
+    assert calls == ["TAKEN1", "FRESH2"]  # collided once, then a single fresh draw won — no third
+
+
+@pytest.mark.asyncio
+async def test_mint_unique_token_gives_up_after_ten_collisions(async_client, db_session, monkeypatch):
+    """Every candidate collides with the same taken card: after 10 draws the
+    loop raises instead of looping forever or handing out a duplicate."""
+    taken_pid = await _create(async_client)
+    await _set(db_session, taken_pid, tracking_token="TAKEN1")
+
+    from backend.app.services import aito_tracking as svc
+
+    calls: list[str] = []
+
+    def fake_mint_token():
+        calls.append("TAKEN1")
+        return "TAKEN1"
+
+    monkeypatch.setattr(svc, "mint_token", fake_mint_token)
+
+    with pytest.raises(RuntimeError, match="could not mint a unique tracking token"):
+        await mint_unique_token(db_session)
+
+    assert len(calls) == 10  # the loop's own bound is exercised, not an infinite retry
 
 
 @pytest.mark.asyncio
@@ -1088,6 +1140,61 @@ def test_public_route_reserves_the_miss_at_arrival_and_releases_it_on_a_hit(trac
     aito_routes._track_rate_hit(*stamps[0])
     assert aito_routes._track_rate_limited(request) is not None
     assert aito_routes._track_rate_limited(request) is None
+
+
+def test_release_miss_tolerates_a_key_with_nothing_reserved(track_rate_clock):
+    """The guard `_release_miss` opens with, exercised directly: a key that
+    was never reserved (or was already released) must be a no-op, not a
+    dict-access error."""
+    from backend.app.api.routes import aito as aito_routes
+
+    aito_routes._release_miss({}, "never-reserved", 1.0)  # must not raise
+
+
+def test_release_miss_tolerates_a_bucket_the_sweep_deleted_first(track_rate_clock, monkeypatch):
+    """T-034: a release runs after this request's own lookup, so between
+    its reservation and its release another arrival CAN sweep this host's
+    whole bucket away first — once the window has lapsed and a dict has
+    grown past `_TRACK_RATE_SWEEP_ABOVE`, `_track_rate_limited` drops every
+    host whose stamps are all stale before it appends its own. Reproduce
+    that ordering for real, via the sweep itself, not by clearing the dict
+    by hand: reserve host A, then host B on a different /24 so both the
+    per-IP and per-net miss dicts hold two keys each (past the patched
+    threshold of 1), let the window lapse, then let a third arrival's own
+    sweep delete A's (and B's) entries before A's request gets around to
+    releasing what it reserved."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    clock = track_rate_clock
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_SWEEP_ABOVE", 1)
+    req_a = SimpleNamespace(client=SimpleNamespace(host="203.0.113.51"), headers={})
+    req_b = SimpleNamespace(client=SimpleNamespace(host="198.51.100.9"), headers={})
+    admitted_a = aito_routes._track_rate_limited(req_a)
+    admitted_b = aito_routes._track_rate_limited(req_b)
+    assert admitted_a is not None and admitted_b is not None
+    host_a, stamp_a = admitted_a
+    # Two hosts on two distinct /24s: both the per-IP and the per-net miss
+    # dicts now hold 2 keys each, past the (patched) sweep threshold of 1.
+    assert len(aito_routes._track_rate_ip_misses) == 2
+    assert len(aito_routes._track_rate_net_misses) == 2
+
+    clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
+    req_c = SimpleNamespace(client=SimpleNamespace(host="8.8.8.8"), headers={})
+    assert aito_routes._track_rate_limited(req_c) is not None  # its own sweep runs first
+    # A's (and B's) reservations are gone, swept as stale before C's own
+    # fresh stamp was ever recorded.
+    assert host_a not in aito_routes._track_rate_ip_misses
+    assert "203.0.113.0/24" not in aito_routes._track_rate_net_misses
+
+    # A's request now finishes and releases what it reserved. Without the
+    # `if bucket is None: return` guard this raises — a KeyError off `del`,
+    # or an AttributeError off a None bucket.
+    aito_routes._track_rate_hit(host_a, stamp_a)
+
+    # And the limiter is left usable, not corrupted, for the next arrival.
+    assert aito_routes._track_rate_limited(req_a) is not None
 
 
 # ── T-012: a no-peer host must fail closed to a real, cappable bucket ────────
