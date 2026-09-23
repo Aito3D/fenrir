@@ -3693,3 +3693,94 @@ describe('client rating on the masthead', () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe('client history from the masthead', () => {
+  const WALK_IN = 'walkin-0';
+  const status = (defaultContactId = WALK_IN) =>
+    http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({ configured: true, reachable: null, default_contact_id: defaultContactId, default_contact_name: 'Client de passage' }),
+    );
+  const history = () =>
+    http.get('/api/v1/aito/clients/:clientId/history', () =>
+      HttpResponse.json({
+        cards: [
+          { id: 12, created_at: '2026-09-07T10:00:00', column: 'devis', total: 0, quote_number: null, quote_status: null, description: 'Support de caméra', tasks: [] },
+          { id: 33, created_at: '2026-07-30T10:00:00', column: 'done', total: 40500, quote_number: 'DEV26-2483', quote_status: 'accepted', description: 'Pièce de tambour', tasks: [] },
+        ],
+        latest_social: null,
+        latest_contact_person_id: null,
+      }),
+    );
+
+  const renderWith = (p = project, onOpenCard?: (id: number) => void) =>
+    rtlRender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <ProjectDetailPanel canCreate canUpdate canDelete project={p} onClose={vi.fn()} onDelete={vi.fn()} onOpenCard={onOpenCard} />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+  it('opens the history when the name is held for 500ms, not on a shorter press', async () => {
+    server.use(status(), history());
+    renderWith();
+    // The name becomes a hold button once the walk-in id is known.
+    const name = await screen.findByRole('button', { name: 'ACME SARL' });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(name);
+    act(() => vi.advanceTimersByTime(200));
+    fireEvent.pointerUp(name);
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull();
+    fireEvent.pointerDown(name);
+    act(() => vi.advanceTimersByTime(500));
+    vi.useRealTimers();
+    expect(await screen.findByRole('dialog', { name: 'Client history' })).toBeInTheDocument();
+  });
+
+  it('opens the history from the History button beside the pencil', async () => {
+    server.use(status(), history());
+    renderWith();
+    fireEvent.click(await screen.findByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    expect(await within(dialog).findAllByTestId('client-history-row')).toHaveLength(2);
+  });
+
+  it('offers no history on a walk-in card, on a card without a client, or before the status resolves', async () => {
+    server.use(status('z1'));
+    renderWith();
+    await screen.findByRole('heading', { level: 2 });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Client history' })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'ACME SARL' })).toBeNull();
+    cleanup();
+
+    server.use(status());
+    renderWith({ ...project, client_id: null });
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByRole('button', { name: 'Client history' })).toBeNull();
+    cleanup();
+
+    server.use(http.get('/api/v1/zoho/status', async () => { await new Promise(() => {}); return HttpResponse.json({}); }));
+    renderWith();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByRole('button', { name: 'Client history' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'ACME SARL' })).toBeNull();
+  });
+
+  it('choosing a row closes the dialog and hands the id to onOpenCard', async () => {
+    server.use(status(), history());
+    const onOpenCard = vi.fn();
+    renderWith(project, onOpenCard);
+    fireEvent.click(await screen.findByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    const rows = await within(dialog).findAllByTestId('client-history-row');
+    expect(rows[0]).toHaveAttribute('aria-current', 'true');
+    fireEvent.click(within(rows[1]).getByRole('button'));
+    expect(onOpenCard).toHaveBeenCalledWith(33);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
+  });
+});
