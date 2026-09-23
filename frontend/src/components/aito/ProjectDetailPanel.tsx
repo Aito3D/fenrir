@@ -536,6 +536,15 @@ function PanelHeader({
             and at regular weight they receded into the band rather than
             reading as the two things you copy out of this header. */}
         <div className="flex items-center gap-4 mt-2.5 text-[.82rem] font-medium">
+          {/* The contact person as a peer of phone and email — the masthead
+              never grows a second line (standing rule); a fourth fact joins
+              the row. Plain text: a name is not something you copy out. */}
+          {project.client_is_company && project.client_contact_name && (
+            <span data-testid="panel-client-contact" className="flex min-w-0 items-center gap-1.5 text-white">
+              <User className="h-3.5 w-3.5 flex-shrink-0 text-bambu-gray" strokeWidth={2.5} aria-hidden="true" />
+              <span className="truncate">{project.client_contact_name}</span>
+            </span>
+          )}
           {project.client_phone && (
             <CopyableValue
               value={project.client_phone}
