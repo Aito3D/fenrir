@@ -3283,12 +3283,6 @@ async def update_project(
     ):
         if key in fields:
             setattr(project, key, fields[key])
-    # A person belongs to a company card only: flipping the card to a person
-    # (or a PATCH that never was a company) drops it, mirroring the create
-    # schema's own rule.
-    if not project.client_is_company:
-        project.client_contact_person_id = None
-        project.client_contact_name = None
     # Captured before the mark: it is unconditional and idempotent, so
     # checking the post-mark state alone would fire sync.queued on every edit
     # to an already-pending project, not just the transition into it. The
@@ -3392,17 +3386,13 @@ async def edit_project_client(
     if not (phone or email or (social_handle or "").strip()):
         raise HTTPException(status_code=400, detail="Client must have a phone, an email or a social handle")
 
-    # Company cards only: which person the coordinates are written to. When
-    # the body names one it is the card's new person; otherwise the card's
-    # current one. A person card has none and writes to Books' primary.
-    person_mentioned = is_company and bool(
-        {"client_contact_person_id", "client_contact_name"} & payload.model_fields_set
-    )
-    target_person_id = (
-        (payload.client_contact_person_id if person_mentioned else project.client_contact_person_id)
-        if is_company
-        else None
-    )
+    # Which Books person the coordinates are written to, on any card kind:
+    # when the body names one it is the card's new person; otherwise the
+    # card's current one; a card with none writes to Books' primary. An
+    # individual's first/last name always lands on the primary person (that
+    # IS the client in Books) — see update_contact_person for the split.
+    person_mentioned = bool({"client_contact_person_id", "client_contact_name"} & payload.model_fields_set)
+    target_person_id = payload.client_contact_person_id if person_mentioned else project.client_contact_person_id
     target_person_name = payload.client_contact_name if person_mentioned else project.client_contact_name
 
     default_id, _default_name = await zoho_service.get_default_contact(db)

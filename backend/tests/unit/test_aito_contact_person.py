@@ -1,4 +1,4 @@
-"""The chosen Zoho contact person on a company card: create, PATCH, response."""
+"""The chosen Zoho contact person on a card, company or individual: create, PATCH, response."""
 
 import pytest
 
@@ -27,12 +27,14 @@ async def test_create_stores_person_on_a_company_card(async_client):
 
 
 @pytest.mark.asyncio
-async def test_create_clears_person_on_a_person_card(async_client):
+async def test_create_stores_person_on_an_individual_card(async_client):
+    # An individual in Books has contact persons too (its own name is the
+    # primary one), so the card keeps whichever person was picked.
     body = await _create(
-        async_client, client_is_company=False, client_contact_person_id="cp1", client_contact_name="Vaekehu VARNEY"
+        async_client, client_is_company=False, client_contact_person_id="cp2", client_contact_name="Marie DUPONT"
     )
-    assert body["client_contact_person_id"] is None
-    assert body["client_contact_name"] is None
+    assert body["client_contact_person_id"] == "cp2"
+    assert body["client_contact_name"] == "Marie DUPONT"
 
 
 @pytest.mark.asyncio
@@ -69,12 +71,12 @@ async def test_patch_sets_and_clears_person(async_client):
 
 
 @pytest.mark.asyncio
-async def test_patch_to_a_person_card_drops_the_person(async_client):
+async def test_patch_flipping_the_card_kind_keeps_the_person(async_client):
     project = await _create(async_client, client_contact_person_id="cp1", client_contact_name="Vaekehu VARNEY")
     r = await async_client.patch(f"/api/v1/aito/{project['id']}", json={"client_is_company": False})
     assert r.status_code == 200, r.text
-    assert r.json()["client_contact_person_id"] is None
-    assert r.json()["client_contact_name"] is None
+    assert r.json()["client_contact_person_id"] == "cp1"
+    assert r.json()["client_contact_name"] == "Vaekehu VARNEY"
 
 
 @pytest.mark.asyncio

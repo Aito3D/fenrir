@@ -296,9 +296,9 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
-    # The chosen contact person, company cards only (see the model). Cleared
-    # below when the card is not a company so a person card can never carry
-    # one by accident.
+    # The chosen contact person, on any card kind (see the model). The walk-in
+    # client has none, but that is the persons routes' rule, not this schema's:
+    # a card is free to carry whatever id the drawer picked.
     client_contact_person_id: str | None = Field(default=None, max_length=50)
     client_contact_name: str | None = Field(default=None, max_length=200)
     # Books estimate ids are opaque alphanumerics. The charset matters: this value
@@ -364,13 +364,6 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     @classmethod
     def _validate_client_phone(cls, value: str | None) -> str | None:
         return value if value is None else _check_phone(value)
-
-    @model_validator(mode="after")
-    def _person_only_on_company_cards(self):
-        if self.client_is_company is not True:
-            self.client_contact_person_id = None
-            self.client_contact_name = None
-        return self
 
     @field_validator("quote_status", mode="before")
     @classmethod
@@ -551,9 +544,11 @@ class AitoClientEdit(AitoClientSocialInput):
     # already carried so the operator's edit lands where the old number was.
     phone_field: Literal["phone", "mobile"] = "mobile"
     expected_version: int | None = None
-    # The chosen contact person, company cards only and only when MENTIONED:
+    # The chosen contact person, on any card kind and only when MENTIONED:
     # absent, the card's own person stays and receives the coordinates. Sent
-    # together by the contact sheet, like the social pair.
+    # together by the contact sheet, like the social pair. On a person card
+    # the first/last name still goes to Books' primary person (the client),
+    # never to the picked one.
     client_contact_person_id: str | None = Field(default=None, max_length=50)
     client_contact_name: str | None = Field(default=None, max_length=200)
 

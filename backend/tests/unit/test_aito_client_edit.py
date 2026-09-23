@@ -630,3 +630,88 @@ async def test_switching_person_does_not_fan_out(async_client):
     row = await _read(async_client, sibling["id"])
     assert row["client_contact_person_id"] == "cp1"
     assert row["client_email"] == "jean@example.pf"
+
+
+# ------------------------------------------------- individuals with a person
+
+JEAN_WITH_SISTER = {
+    "contact_id": "z1",
+    "contact_name": "Jean DUPONT",
+    "customer_sub_type": "individual",
+    "first_name": "Jean",
+    "last_name": "DUPONT",
+    "email": "jean@example.pf",
+    "mobile": "+689-87000001",
+    "phone": "",
+    "contact_persons": [
+        {"contact_person_id": "cp1", "first_name": "Jean", "last_name": "DUPONT", "is_primary_contact": True},
+        {"contact_person_id": "cp2", "first_name": "Marie", "last_name": "DUPONT", "email": "marie@example.pf"},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_individual_edit_writes_name_to_primary_and_coordinates_to_the_picked_person(async_client):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen, contact=JEAN_WITH_SISTER)
+    project = await _create(async_client)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client",
+        json={
+            **PERSON_EDIT,
+            "client_contact_person_id": "cp2",
+            "client_contact_name": "Marie DUPONT",
+            "email": "marie@example.pf",
+            "phone": "+689-87000003",
+            "expected_version": project["version"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["client_name"] == "Jean-Pierre DUPONT"
+    assert body["client_contact_person_id"] == "cp2"
+    assert body["client_contact_name"] == "Marie DUPONT"
+    assert body["client_phone"] == "+689-87000003"
+    assert body["client_email"] == "marie@example.pf"
+
+    person_puts = [(p, b) for m, p, b in seen if m == "PUT" and "/contactpersons/" in p]
+    assert person_puts == [
+        ("/books/v3/contacts/contactpersons/cp1", {"first_name": "Jean-Pierre", "last_name": "DUPONT"}),
+        ("/books/v3/contacts/contactpersons/cp2", {"email": "marie@example.pf", "mobile": "+689-87000003"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_individual_edit_without_person_keys_keeps_the_card_person(async_client):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen, contact=JEAN_WITH_SISTER)
+    project = await _create(async_client, client_contact_person_id="cp2", client_contact_name="Marie DUPONT")
+
+    r = await async_client.put(f"/api/v1/aito/{project['id']}/client", json=PERSON_EDIT)
+    assert r.status_code == 200, r.text
+    assert r.json()["client_contact_person_id"] == "cp2"
+    coords_put = next(p for m, p, b in seen if m == "PUT" and "/contactpersons/" in p and "email" in b)
+    assert coords_put == "/books/v3/contacts/contactpersons/cp2"
+
+
+@pytest.mark.asyncio
+async def test_individual_fan_out_reaches_only_siblings_with_the_same_person(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([], contact=JEAN_WITH_SISTER)
+    edited = await _create(async_client, client_contact_person_id="cp2", client_contact_name="Marie DUPONT")
+    same_person = await _create(
+        async_client, description="same", client_contact_person_id="cp2", client_contact_name="Marie DUPONT"
+    )
+    primary_only = await _create(async_client, description="primary")
+
+    r = await async_client.put(f"/api/v1/aito/{edited['id']}/client", json=PERSON_EDIT)
+    assert r.status_code == 200, r.text
+
+    assert (await _read(async_client, same_person["id"]))["client_email"] == "jp@example.pf"
+    row = await _read(async_client, primary_only["id"])
+    assert row["client_email"] == "jean@example.pf"
+    # The name is contact-level and still reaches every sibling.
+    assert row["client_name"] == "Jean-Pierre DUPONT"

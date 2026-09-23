@@ -5749,8 +5749,9 @@ async def run_migrations(conn):
     # Migration: the customer's unspent deposits, customer-wide (2026-09-15).
     # See models/aito_project.py customer_credit_total.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN customer_credit_total FLOAT")
-    # Migration: the chosen Zoho contact person on company cards (2026-09-22).
-    # Two nullable columns, no backfill: an existing company card simply has
+    # Migration: the chosen Zoho contact person on a card (2026-09-22; first
+    # company cards only, opened to every client the same day).
+    # Two nullable columns, no backfill: an existing card simply has
     # no person, which the UI reads as "not chosen yet".
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_contact_person_id VARCHAR(50)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_contact_name VARCHAR(200)")

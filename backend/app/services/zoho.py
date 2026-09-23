@@ -1309,38 +1309,56 @@ class ZohoService:
         last_name: str | None = None,
         contact_person_id: str | None = None,
     ) -> None:
-        """Write email/phone (and, for a person contact, the name) to the
-        contact's primary person.
+        """Write email/phone to a contact person and, for a person contact,
+        the name to its primary person.
 
         The contact-level ``email``/``phone``/``mobile``/``first_name``/
         ``last_name`` fields are read-only mirrors of the primary contact
-        person, so writes must target the person. A contact with no persons
+        person, so writes must target a person. A contact with no persons
         at all gets one created. A ``contact_person_id`` targets that person
-        instead of the primary and raises ``ZohoNotFound`` when the account
-        no longer has it.
+        for the coordinates instead of the primary and raises ``ZohoNotFound``
+        when the account no longer has it. The name never follows the target:
+        an individual's name IS its primary person in Books, so a card that
+        picked another person (a spouse, a colleague) still renames the
+        client, not that person — one read, then one write per person
+        touched.
         """
         contact = (await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {})
         persons = contact.get("contact_persons") or []
+        primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
         if contact_person_id is not None:
-            primary = next((p for p in persons if p.get("contact_person_id") == contact_person_id), None)
-            if primary is None:
+            target = next((p for p in persons if p.get("contact_person_id") == contact_person_id), None)
+            if target is None:
                 raise ZohoNotFound(f"Contact person {contact_person_id} not found on contact {contact_id}")
         else:
-            primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
+            target = primary
 
-        fields: dict = {}
+        name_fields: dict = {}
         if first_name is not None:
-            fields["first_name"] = first_name
+            name_fields["first_name"] = first_name
         if last_name is not None:
-            fields["last_name"] = last_name
+            name_fields["last_name"] = last_name
+        coord_fields: dict = {}
         if email is not None:
-            fields["email"] = email
+            coord_fields["email"] = email
         if phone is not None:
-            fields[phone_field] = phone
+            coord_fields[phone_field] = phone
+        fields = {**name_fields, **coord_fields}
         if not fields:
             return
 
-        if primary:
+        if primary and target is not primary:
+            # Name first, mirroring update_contact: a refused rename leaves
+            # the picked person's coordinates untouched.
+            if name_fields:
+                await self._request(
+                    db, "PUT", f"/contacts/contactpersons/{_seg(primary['contact_person_id'])}", json=name_fields
+                )
+            if coord_fields:
+                await self._request(
+                    db, "PUT", f"/contacts/contactpersons/{_seg(target['contact_person_id'])}", json=coord_fields
+                )
+        elif primary:
             await self._request(
                 db, "PUT", f"/contacts/contactpersons/{_seg(primary['contact_person_id'])}", json=fields
             )

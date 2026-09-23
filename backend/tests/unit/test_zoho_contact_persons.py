@@ -210,6 +210,71 @@ async def test_update_contact_person_unknown_id_raises_not_found(async_client, d
     assert not any(m == "PUT" for m, _p, _b in seen)
 
 
+JEAN = {
+    "contact_id": "z1",
+    "contact_name": "Jean DUPONT",
+    "customer_sub_type": "individual",
+    "contact_persons": [
+        {"contact_person_id": "cp1", "first_name": "Jean", "last_name": "DUPONT", "is_primary_contact": True},
+        {"contact_person_id": "cp2", "first_name": "Marie", "last_name": "DUPONT", "email": "marie@example.pf"},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_update_contact_person_splits_name_to_primary_and_coordinates_to_target(async_client, db_session):
+    """An individual's first/last name IS the primary person in Books; a card
+    that picked another person still edits the client's name, so the name
+    lands on the primary and only the coordinates on the picked person."""
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording(seen, contact=JEAN)
+
+    await zoho_service.update_contact_person(
+        db_session,
+        "z1",
+        email="marie2@example.pf",
+        phone="+689-87000009",
+        phone_field="mobile",
+        first_name="Jean-Pierre",
+        last_name="DUPONT",
+        contact_person_id="cp2",
+    )
+
+    puts = [(p, b) for m, p, b in seen if m == "PUT"]
+    assert puts == [
+        ("/books/v3/contacts/contactpersons/cp1", {"first_name": "Jean-Pierre", "last_name": "DUPONT"}),
+        ("/books/v3/contacts/contactpersons/cp2", {"email": "marie2@example.pf", "mobile": "+689-87000009"}),
+    ]
+    assert sum(m == "GET" for m, _p, _b in seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_update_contact_person_targeting_the_primary_is_one_write(async_client, db_session):
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording(seen, contact=JEAN)
+
+    await zoho_service.update_contact_person(
+        db_session,
+        "z1",
+        email="jean2@example.pf",
+        phone=None,
+        phone_field="mobile",
+        first_name="Jean",
+        last_name="DUPONT",
+        contact_person_id="cp1",
+    )
+
+    puts = [(p, b) for m, p, b in seen if m == "PUT"]
+    assert puts == [
+        (
+            "/books/v3/contacts/contactpersons/cp1",
+            {"first_name": "Jean", "last_name": "DUPONT", "email": "jean2@example.pf"},
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_update_contact_passes_the_person_through(async_client, db_session):
     await _configure(async_client)
