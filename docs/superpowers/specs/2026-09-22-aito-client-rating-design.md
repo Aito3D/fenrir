@@ -1,7 +1,8 @@
 # Aito: client rating — "is this customer good for the money?"
 
-**Date:** 2026-09-22
-**Status:** approved in brainstorm, awaiting spec review
+**Date:** 2026-09-22 — amended 2026-09-23 (company profile, record-weighted override)
+**Status:** shipped 2026-09-22; the 2026-09-23 amendment below supersedes the
+flat overdue override and adds the company profile
 
 ## Problem
 
@@ -25,7 +26,8 @@ masthead. A tooltip explains the tier.
 |---|---|
 | Source of truth | Zoho Books, customer-wide: every invoice for the contact, including bills raised by hand and pre-Fenrir history |
 | What "late" means | Against the invoice's **due date**, so agreed payment terms are respected |
-| A currently overdue invoice | **Overrides to bad after a 7-day grace**, whatever the history |
+| A currently overdue invoice | Counts as `overdue` after the profile's grace; **`bad` only when severe or when the record is too thin or weak to buffer it**, else `medium` (amended 2026-09-23 — was a flat override to `bad`) |
+| Companies | Scored on **their own profile**: a company is the more willing payer and the slower one (approval, payment run), so its timing thresholds are looser and it reaches `good` on fewer invoices (added 2026-09-23) |
 | When a rating first appears | After the **first settled invoice**, or at once on overdue debt |
 | Chronic lateness with no live debt | **Bad**, not medium |
 | Partial payments | An invoice with a balance is open until the balance is zero |
@@ -60,39 +62,68 @@ customer-payments verification of 2026-09-15). If list rows do not carry it,
 the fallback is `last_modified_time` of a paid invoice, which Books stamps
 when the payment is recorded; the spec's rules do not change.
 
+### Profiles (amended 2026-09-23)
+
+The customer's Books contact decides the profile: `customer_sub_type ==
+"business"` is a company, anything else an individual. Read with the
+invoices at recompute time (one extra Books call per customer per hour) and
+remembered on the cache row; when that read fails the last known flag is
+kept, and an unseen customer is scored as an individual, the stricter
+profile.
+
+| Threshold (`RatingProfile`) | Individual | Company | Meaning |
+|---|---|---|---|
+| `on_time_slack_days` | 3 | 14 | A settled invoice paid this many days after due still counts as on time (bank delay, late bookkeeping — for a company, the approval-and-payment-run cycle) |
+| `grace_days` | 7 | 21 | Overdue days before an open invoice counts as `overdue` rather than merely past due |
+| `good_min_settled` | 3 | 2 | Settled invoices needed before `good` is reachable |
+| `severe_overdue_days` | 45 | 60 | Overdue days past which an open invoice forces `bad` whatever the record |
+
 ### Constants
 
 | Name | Value | Meaning |
 |---|---|---|
-| `GRACE_DAYS` | 7 | Overdue days before an open invoice forces `bad` |
-| `ON_TIME_SLACK_DAYS` | 3 | A settled invoice paid this many days after due still counts as on time (bank delay, late bookkeeping) |
-| `GOOD_MIN_SETTLED` | 3 | Settled invoices needed before `good` is reachable |
-| `GOOD_MIN_ON_TIME_RATIO` | 0.9 | Share of settled invoices on time for `good` |
-| `CHRONIC_MAX_ON_TIME_RATIO` | 0.5 | At or below this share, with `GOOD_MIN_SETTLED` or more settled, the tier is `bad` |
+| `GOOD_MIN_ON_TIME_RATIO` | 0.9 | Share of settled invoices on time for `good` — and the share that makes a record strong enough to buffer a mild overdue invoice |
+| `CHRONIC_MIN_SETTLED` | 3 | Settled invoices needed before `chronic` can be called, either profile |
+| `CHRONIC_MAX_ON_TIME_RATIO` | 0.5 | At or below this share, with `CHRONIC_MIN_SETTLED` or more settled, the tier is `bad` |
 | `HISTORY_MONTHS` | 24 | Window of invoice dates considered |
 | `CACHE_TTL` | 1 hour | Age at which a cached row is recomputed on read |
+
+`GRACE_DAYS`, `ON_TIME_SLACK_DAYS` and `GOOD_MIN_SETTLED` remain exported as
+the individual profile's figures.
 
 All live in the service module as named constants, not settings. Nothing
 suggests the shop will tune them per install, and a setting is a promise to
 keep honouring.
 
-### Tier rules, evaluated top down
+### Tier rules, evaluated top down (amended 2026-09-23)
 
-1. **`bad`** — any open invoice with overdue days `> GRACE_DAYS`.
-   Reason: `overdue`, with the count of such invoices, the worst overdue
-   days and that invoice's number.
-2. **`bad`** — settled count `>= GOOD_MIN_SETTLED` and on-time ratio
+A **strong record** means settled count `>= good_min_settled` and on-time
+ratio `>= GOOD_MIN_ON_TIME_RATIO`. An open invoice is **overdue** when its
+overdue days exceed the profile's `grace_days`, and **past due** when they
+are between 1 and the grace.
+
+1. **`bad`** — any overdue invoice more than `severe_overdue_days` past due,
+   whatever the record. Reason: `overdue`, with the count of overdue
+   invoices, the worst overdue days and that invoice's number.
+2. **`bad`** — any overdue invoice and the record is NOT strong. Reason:
+   `overdue`, same fields. Ten invoices paid on time and one a fortnight
+   overdue is a good customer having a slow month; two invoices paid on
+   time and one a fortnight overdue is not yet anything, so the debt
+   decides.
+3. **`medium`** — any overdue invoice, buffered by a strong record. Reason:
+   `overdue`, same fields — the tooltip still names the debt.
+4. **`bad`** — settled count `>= CHRONIC_MIN_SETTLED` and on-time ratio
    `<= CHRONIC_MAX_ON_TIME_RATIO`. Reason: `chronic`, with on-time and
    settled counts.
-3. **`new`** — settled count is 0. Reason: `new`.
-4. **`good`** — settled count `>= GOOD_MIN_SETTLED`, on-time ratio
-   `>= GOOD_MIN_ON_TIME_RATIO`, and **no** open invoice with overdue days
-   `> 0`. Reason: `punctual`, with on-time and settled counts.
-5. **`medium`** — everything else. Reason: `mixed`, with on-time and settled
-   counts, plus the count of open invoices past due (inside the grace) when
-   that is what kept the tier down.
+5. **`new`** — settled count is 0. Reason: `new`.
+6. **`good`** — a strong record and **no** open invoice past due at all.
+   Reason: `punctual`, with on-time and settled counts.
+7. **`medium`** — everything else. Reason: `mixed`, with on-time and settled
+   counts, plus the count of open invoices past due when that is what kept
+   the tier down.
 
-"On time" for a settled invoice means lateness `<= ON_TIME_SLACK_DAYS`.
+"On time" for a settled invoice means lateness `<= on_time_slack_days` of
+the profile.
 
 Worked examples, all with today = 2026-09-22:
 
@@ -100,13 +131,22 @@ Worked examples, all with today = 2026-09-22:
 |---|---|
 | 20 invoices paid early, one open invoice issued 10 days ago, due in 20 days | `good` — the open invoice is inside its terms |
 | Same, but the open invoice is 3 days past due | `medium` — inside the grace, so history decides, but `good` requires nothing past due |
-| Same, but 9 days past due | `bad` (`overdue`) |
+| Same, but 9 days past due | `medium` (`overdue`) — overdue, but twenty on time buffer it |
+| 10 invoices paid on time, one open 12 days past due | `medium` (`overdue`) — the case that motivated the amendment |
+| Same, but 50 days past due | `bad` (`overdue`) — severe, the record no longer matters |
+| 2 invoices paid on time, one open 12 days past due | `bad` (`overdue`) — too thin a record to buffer |
+| 7 on time, 3 paid 20 days late, one open 12 days past due | `bad` (`overdue`) — 70 % is too weak a record to buffer |
+| **Company**, 2 invoices paid on time | `good` — enough volume for a company |
+| **Company**, 5 invoices each paid 10 days late | `good` — inside the company slack; an individual would be `bad` (`chronic`) |
+| **Company**, 20 paid on time, one open 15 days past due | `medium` (`mixed`) — inside the company grace; an individual's would be `overdue` |
+| **Company**, 10 paid on time, one open 60 days past due | `medium` (`overdue`) — the company severe line is 60; at 61 it is `bad` |
+| **Company**, 2 invoices paid 20 days late | `medium` — `chronic` needs 3 settled for a company too |
 | 1 invoice, paid on time | `medium` — rated, but not enough volume for `good` |
 | 5 invoices, 2 paid on time, 3 paid 20 days late, nothing open | `bad` (`chronic`) |
 | 5 invoices, 4 on time, 1 late, nothing open | `medium` (80 % < 90 %) |
 | 0 settled, 1 open invoice 2 days past due | `new` |
 | 0 settled, 1 open invoice 30 days past due | `bad` (`overdue`) |
-| 3 paid invoices, one 92 % paid and 12 days past due | `bad` — a balance is a balance |
+| 3 paid invoices, one 92 % paid and 12 days past due | `medium` (`overdue`) — a balance is a balance, and three on time buffer it; with 2 paid it is `bad` |
 
 ## Backend
 
@@ -152,6 +192,7 @@ Two layers:
 | `past_due_count` | Integer NOT NULL | open invoices past due, inside the grace |
 | `worst_overdue_days` | Integer NOT NULL default 0 | |
 | `worst_overdue_number` | String(50) NULL | invoice number |
+| `is_company` | Boolean NOT NULL default 0 | scored under the company profile (added 2026-09-23 as an ALTER migration) |
 | `computed_at` | DateTime NOT NULL | naive UTC |
 
 New model `backend/app/models/aito_client_rating.py`, registered in the
@@ -174,9 +215,14 @@ reason: 'overdue' | 'chronic' | 'new' | 'punctual' | 'mixed' | null
 settled_count, on_time_count, overdue_count, past_due_count: int
 worst_overdue_days: int
 worst_overdue_number: str | null
+is_company: bool
 computed_at: datetime | null
 stale: bool
 ```
+
+`is_company` is echoed so the tooltip can append "rated as a company": a
+company reading `good` with invoices paid a fortnight late needs the
+explanation when the figures are compared across clients.
 
 Structured fields, not a sentence, so the frontend builds the tooltip in
 the viewer's language.
@@ -265,13 +311,20 @@ Labels: EN Good / Medium / Bad / New, FR Bon / Moyen / Mauvais / Nouveau.
   over `rate_invoices` covering every row of the worked examples above,
   the grace edge (7 vs 8 days), the on-time slack edge (3 vs 4 days),
   void/draft exclusion, the 24-month window edge, a paid invoice missing
-  `last_payment_date`, and a partially paid invoice.
+  `last_payment_date`, and a partially paid invoice. The 2026-09-23 table
+  adds the severe edge (45/46, company 60/61), the thin and weak records
+  that get no buffer, the 90 % record that just does, and the company
+  slack (14/15), grace (21/22), `good`-at-two and `chronic`-needs-three
+  edges.
 - Reader tests with `zoho_service` monkeypatched **on the instance** (the
   project's memory notes the class-vs-instance landmine): cache miss
   computes and writes, cache hit within TTL skips Books, TTL expiry
   recomputes, `refresh=1` forces, Books failure with a cached row returns
   `stale=True`, Books failure without one returns `unavailable`, default
-  contact short-circuits, 429 does not raise.
+  contact short-circuits, 429 does not raise; the contact read selects
+  the company profile and is cached with the row, and a failed contact
+  read keeps the cached flag (or scores an unseen customer as an
+  individual) rather than dropping the rating.
 - Route test: permission gate (static closure read, per the memory note),
   path registered ahead of `/{project_id}`, API-key classification.
 

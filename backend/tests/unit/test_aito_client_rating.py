@@ -66,7 +66,7 @@ def _open(*, past_due: int, number: str = "FA-OPEN", balance: float = 500.0) -> 
 
 
 def test_no_history_at_all_is_new():
-    assert rate_invoices([], TODAY) == ClientRating("new", "new", 0, 0, 0, 0, 0, None)
+    assert rate_invoices([], TODAY) == ClientRating("new", "new", 0, 0, 0, 0, 0, None, False)
 
 
 @pytest.mark.parametrize(
@@ -76,8 +76,8 @@ def test_no_history_at_all_is_new():
         (_paid(20) + [_open(past_due=-20)], "good", "punctual"),
         # same, 3 days past due: inside the grace, history decides, but not good
         (_paid(20) + [_open(past_due=3)], "medium", "mixed"),
-        # same, 9 days past due: override
-        (_paid(20) + [_open(past_due=9)], "bad", "overdue"),
+        # same, 9 days past due: overdue, but a strong record buffers it to medium
+        (_paid(20) + [_open(past_due=9)], "medium", "overdue"),
         # one invoice paid on time: rated, not enough volume for good
         (_paid(1), "medium", "mixed"),
         # 5 settled, 2 on time, 3 paid 20 days late, nothing open: chronic
@@ -88,8 +88,11 @@ def test_no_history_at_all_is_new():
         ([_open(past_due=2)], "new", "new"),
         # 0 settled, 1 open 30 days past due: bad
         ([_open(past_due=30)], "bad", "overdue"),
-        # 3 paid, one 92 % paid and 12 days past due: a balance is a balance
-        (_paid(3) + [_open(past_due=12, balance=80.0)], "bad", "overdue"),
+        # 3 paid, one 92 % paid and 12 days past due: a balance is a balance,
+        # and 3 on time is a strong enough record to buffer it
+        (_paid(3) + [_open(past_due=12, balance=80.0)], "medium", "overdue"),
+        # 2 paid, same open balance: too thin a record to buffer anything
+        (_paid(2) + [_open(past_due=12, balance=80.0)], "bad", "overdue"),
     ],
     ids=[
         "regular-open-inside-terms",
@@ -101,6 +104,7 @@ def test_no_history_at_all_is_new():
         "new-inside-grace",
         "new-past-grace",
         "partial-past-grace",
+        "partial-past-grace-thin",
     ],
 )
 def test_worked_examples_from_the_spec(rows, tier, reason):
@@ -108,17 +112,109 @@ def test_worked_examples_from_the_spec(rows, tier, reason):
     assert (rating.tier, rating.reason) == (tier, reason)
 
 
+LATE = date(2026, 6, 1)
+
+
+@pytest.mark.parametrize(
+    ("rows", "is_company", "tier", "reason"),
+    [
+        # --- the override is weighted by the record (rework of 2026-09-23) ---
+        # 10 paid on time + one 12 days overdue: the user's case — not bad
+        (_paid(10) + [_open(past_due=12)], False, "medium", "overdue"),
+        # same open invoice, but 50 days: severe, whatever the record
+        (_paid(10) + [_open(past_due=50)], False, "bad", "overdue"),
+        # the severe edge for an individual: 45 is buffered, 46 is not
+        (_paid(10) + [_open(past_due=45)], False, "medium", "overdue"),
+        (_paid(10) + [_open(past_due=46)], False, "bad", "overdue"),
+        # 2 paid + 12 days overdue: too thin a record to buffer
+        (_paid(2) + [_open(past_due=12)], False, "bad", "overdue"),
+        # 7 on time + 3 late (70 %) + 12 days overdue: too weak a record to buffer
+        (_paid(7) + _paid(3, late_by=20, start=LATE) + [_open(past_due=12)], False, "bad", "overdue"),
+        # 9 on time + 1 late (90 %) + 12 days overdue: just strong enough
+        (_paid(9) + _paid(1, late_by=20, start=LATE) + [_open(past_due=12)], False, "medium", "overdue"),
+        # --- the company profile ---
+        # 2 paid on time: enough volume for a company, not for an individual
+        (_paid(2), True, "good", "punctual"),
+        (_paid(2), False, "medium", "mixed"),
+        # 5 paid 10 days late: process lag for a company, chronic for a person
+        (_paid(5, late_by=10), True, "good", "punctual"),
+        (_paid(5, late_by=10), False, "bad", "chronic"),
+        # the company slack edge: 14 days is on time, 15 is late
+        (_paid(5, late_by=14), True, "good", "punctual"),
+        (_paid(5, late_by=15), True, "bad", "chronic"),
+        # 20 paid + one 15 days past due: inside the company grace (past due,
+        # not overdue) — an individual's grace ended a week ago
+        (_paid(20) + [_open(past_due=15)], True, "medium", "mixed"),
+        (_paid(20) + [_open(past_due=15)], False, "medium", "overdue"),
+        # the company grace edge: 21 is past due, 22 is overdue
+        (_paid(20) + [_open(past_due=21)], True, "medium", "mixed"),
+        (_paid(20) + [_open(past_due=22)], True, "medium", "overdue"),
+        # the company severe edge: 60 is buffered, 61 is not
+        (_paid(10) + [_open(past_due=60)], True, "medium", "overdue"),
+        (_paid(10) + [_open(past_due=61)], True, "bad", "overdue"),
+        # chronic still needs 3 settled for a company: 2 late is mixed
+        (_paid(2, late_by=20), True, "medium", "mixed"),
+        (_paid(3, late_by=20), True, "bad", "chronic"),
+        # a company with nothing settled is still new
+        ([_open(past_due=2)], True, "new", "new"),
+    ],
+    ids=[
+        "buffered-mild-overdue",
+        "severe-overdue",
+        "severe-edge-45-buffered",
+        "severe-edge-46-bad",
+        "thin-record-not-buffered",
+        "weak-record-not-buffered",
+        "ninety-percent-buffered",
+        "company-good-at-two",
+        "individual-medium-at-two",
+        "company-ten-days-late-is-fine",
+        "individual-ten-days-late-is-chronic",
+        "company-slack-edge-14",
+        "company-slack-edge-15",
+        "company-grace-15-past-due",
+        "individual-grace-15-overdue",
+        "company-grace-edge-21",
+        "company-grace-edge-22",
+        "company-severe-edge-60",
+        "company-severe-edge-61",
+        "company-chronic-needs-three",
+        "company-chronic-at-three",
+        "company-nothing-settled-is-new",
+    ],
+)
+def test_profile_and_record_weighted_examples(rows, is_company, tier, reason):
+    rating = rate_invoices(rows, TODAY, is_company=is_company)
+    assert (rating.tier, rating.reason, rating.is_company) == (tier, reason, is_company)
+
+
+def test_buffered_overdue_still_reports_the_worst_invoice():
+    rating = rate_invoices(_paid(10) + [_open(past_due=12, number="FA-LATE")], TODAY)
+    assert (rating.tier, rating.overdue_count, rating.worst_overdue_days, rating.worst_overdue_number) == (
+        "medium",
+        1,
+        12,
+        "FA-LATE",
+    )
+
+
 def test_overdue_reason_carries_the_worst_invoice():
     rows = _paid(3) + [_open(past_due=10, number="FA-A"), _open(past_due=23, number="FA-B")]
     rating = rate_invoices(rows, TODAY)
-    assert rating.tier == "bad"
+    # Three on time buffer two mild overdues to medium; the reason stays.
+    assert (rating.tier, rating.reason) == ("medium", "overdue")
     assert rating.overdue_count == 2
     assert (rating.worst_overdue_days, rating.worst_overdue_number) == (23, "FA-B")
 
 
 def test_grace_edge_seven_days_is_inside_eight_is_out():
-    assert rate_invoices(_paid(3) + [_open(past_due=GRACE_DAYS)], TODAY).tier == "medium"
-    assert rate_invoices(_paid(3) + [_open(past_due=GRACE_DAYS + 1)], TODAY).tier == "bad"
+    inside = rate_invoices(_paid(3) + [_open(past_due=GRACE_DAYS)], TODAY)
+    outside = rate_invoices(_paid(3) + [_open(past_due=GRACE_DAYS + 1)], TODAY)
+    assert (inside.reason, inside.past_due_count, inside.overdue_count) == ("mixed", 1, 0)
+    assert (outside.reason, outside.past_due_count, outside.overdue_count) == ("overdue", 0, 1)
+    # With no record to buffer it, the same edge decides the tier outright.
+    assert rate_invoices([_open(past_due=GRACE_DAYS)], TODAY).tier == "new"
+    assert rate_invoices([_open(past_due=GRACE_DAYS + 1)], TODAY).tier == "bad"
 
 
 def test_past_due_inside_the_grace_is_counted_for_the_tooltip():
@@ -247,6 +343,7 @@ def test_response_schema_defaults_to_unavailable_shape():
         "past_due_count": 0,
         "worst_overdue_days": 0,
         "worst_overdue_number": None,
+        "is_company": False,
         "computed_at": None,
         "stale": False,
     }
@@ -255,7 +352,17 @@ def test_response_schema_defaults_to_unavailable_shape():
 NOW = datetime(2026, 9, 22, 12, 0, 0)
 
 
-def _fake_books(monkeypatch, rows: list[dict] | Exception, calls: list[str] | None = None):
+def _fake_books(
+    monkeypatch,
+    rows: list[dict] | Exception,
+    calls: list[str] | None = None,
+    *,
+    contact: dict | Exception | None = None,
+    contact_calls: list[str] | None = None,
+):
+    """Books answers ``rows`` to the invoice list and ``contact`` to the
+    contact read (default: an individual). Either may be an exception."""
+
     async def fake_list(db, customer_id):
         if calls is not None:
             calls.append(customer_id)
@@ -263,7 +370,56 @@ def _fake_books(monkeypatch, rows: list[dict] | Exception, calls: list[str] | No
             raise rows
         return list(rows)
 
+    async def fake_contact(db, contact_id):
+        if contact_calls is not None:
+            contact_calls.append(contact_id)
+        if isinstance(contact, Exception):
+            raise contact
+        return dict(contact or {"customer_sub_type": "individual"})
+
     monkeypatch.setattr(zoho_service, "list_customer_invoices", fake_list)
+    monkeypatch.setattr(zoho_service, "get_contact", fake_contact)
+
+
+COMPANY = {"customer_sub_type": "business"}
+
+
+@pytest.mark.asyncio
+async def test_contact_type_selects_the_company_profile_and_is_cached(db_session, monkeypatch):
+    contact_calls: list[str] = []
+    _fake_books(monkeypatch, _paid(2), contact=COMPANY, contact_calls=contact_calls)
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+    cached = await read_client_rating(db_session, "C1", now=NOW + timedelta(minutes=5))
+
+    # Two settled is `good` only under the company profile.
+    assert (body.tier, body.is_company, body.stale) == ("good", True, False)
+    assert (cached.tier, cached.is_company, cached.computed_at) == ("good", True, NOW)
+    assert contact_calls == ["C1"]
+    row = (await db_session.execute(select(AitoClientRating))).scalar_one()
+    assert row.is_company is True
+
+
+@pytest.mark.asyncio
+async def test_contact_read_failure_falls_back_to_the_individual_profile(db_session, monkeypatch):
+    _fake_books(monkeypatch, _paid(2), contact=ZohoUpstreamError("boom"))
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, body.is_company, body.stale) == ("medium", False, False)
+    row = (await db_session.execute(select(AitoClientRating))).scalar_one()
+    assert row.is_company is False
+
+
+@pytest.mark.asyncio
+async def test_contact_read_failure_keeps_the_cached_company_flag(db_session, monkeypatch):
+    _fake_books(monkeypatch, _paid(2), contact=COMPANY)
+    await read_client_rating(db_session, "C1", now=NOW)
+    _fake_books(monkeypatch, _paid(2), contact=ZohoUpstreamError("boom"))
+
+    body = await read_client_rating(db_session, "C1", now=NOW + CACHE_TTL)
+
+    assert (body.tier, body.is_company, body.computed_at) == ("good", True, NOW + CACHE_TTL)
 
 
 @pytest.mark.asyncio

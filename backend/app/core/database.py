@@ -5772,6 +5772,9 @@ async def run_migrations(conn):
         " worst_overdue_number VARCHAR(50),"
         " computed_at DATETIME NOT NULL)",
     )
+    # Migration: the rating rework of 2026-09-23 scores companies on their
+    # own profile and remembers which one the cached row was scored under.
+    await _safe_execute(conn, "ALTER TABLE aito_client_ratings ADD COLUMN is_company BOOLEAN NOT NULL DEFAULT 0")
     await _safe_execute(
         conn,
         "CREATE TABLE IF NOT EXISTS aito_payment_links ("

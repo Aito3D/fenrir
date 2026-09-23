@@ -1299,6 +1299,10 @@ class AitoClientRatingResponse(BaseModel):
     past_due_count: int = 0
     worst_overdue_days: int = 0
     worst_overdue_number: str | None = None
+    # Scored under the company profile (looser timing, `good` on fewer
+    # invoices) — the tooltip says so, since a fortnight late reading
+    # `good` needs the explanation.
+    is_company: bool = False
     computed_at: datetime | None
     stale: bool
 
