@@ -4349,6 +4349,9 @@ export interface AitoClientRating {
   past_due_count: number;
   worst_overdue_days: number;
   worst_overdue_number: string | null;
+  /** Scored under the company profile: looser timing, `good` on fewer
+   *  invoices. The tooltip says so. */
+  is_company: boolean;
   computed_at: string | null;
   stale: boolean;
 }

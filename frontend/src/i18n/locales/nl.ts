@@ -8249,6 +8249,7 @@ export default {
       newTip: 'Nog geen voldane factuur',
       checked: 'gecontroleerd {{ago}}',
       stale: 'Books onbereikbaar — laatst bekende beoordeling',
+      companyTerms: 'beoordeeld als bedrijf',
     },
     tasksReused_one: '{{count}} taak toegevoegd',
     tasksReused_other: '{{count}} taken toegevoegd',

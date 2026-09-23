@@ -414,6 +414,7 @@ export default {
       newTip: 'No settled invoice yet',
       checked: 'checked {{ago}}',
       stale: 'Books unreachable — last known rating',
+      companyTerms: 'rated as a company',
     },
     tasksReused_one: '{{count}} task added',
     tasksReused_other: '{{count}} tasks added',

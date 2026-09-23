@@ -411,6 +411,7 @@ export default {
       newTip: 'Aún sin facturas liquidadas',
       checked: 'comprobado {{ago}}',
       stale: 'Books no disponible — última valoración conocida',
+      companyTerms: 'valorado como empresa',
     },
     tasksReused_one: '{{count}} tarea añadida',
     tasksReused_other: '{{count}} tareas añadidas',

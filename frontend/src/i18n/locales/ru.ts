@@ -411,6 +411,7 @@ export default {
       newTip: 'Оплаченных счетов пока нет',
       checked: 'проверено {{ago}}',
       stale: 'Books недоступен — последний известный рейтинг',
+      companyTerms: 'оценка как компании',
     },
     tasksReused_one: '{{count}} задача добавлена',
     tasksReused_other: '{{count}} задач добавлено',

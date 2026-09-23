@@ -411,6 +411,7 @@ export default {
       newTip: 'Noch keine beglichene Rechnung',
       checked: 'geprüft {{ago}}',
       stale: 'Books nicht erreichbar — letzte bekannte Bewertung',
+      companyTerms: 'als Unternehmen bewertet',
     },
     tasksReused_one: '{{count}} Aufgabe hinzugefügt',
     tasksReused_other: '{{count}} Aufgaben hinzugefügt',

@@ -411,6 +411,7 @@ export default {
       newTip: '아직 결제 완료된 청구서가 없습니다',
       checked: '{{ago}} 확인',
       stale: 'Books에 연결할 수 없음 — 마지막으로 확인된 평가',
+      companyTerms: '기업으로 평가됨',
     },
     tasksReused_one: '작업 {{count}}개 추가됨',
     tasksReused_other: '작업 {{count}}개 추가됨',

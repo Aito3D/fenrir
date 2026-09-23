@@ -9,7 +9,7 @@ never deleted, so a customer gone from Books keeps a harmless stale row.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -27,5 +27,7 @@ class AitoClientRating(Base):
     past_due_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     worst_overdue_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     worst_overdue_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Scored under the company profile (Books `customer_sub_type` = business).
+    is_company: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     # Naive UTC, like every other Aito timestamp.
     computed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

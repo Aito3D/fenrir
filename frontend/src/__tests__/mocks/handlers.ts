@@ -649,7 +649,7 @@ export const handlers = [
     HttpResponse.json({
       tier: 'unavailable', reason: null,
       settled_count: 0, on_time_count: 0, overdue_count: 0, past_due_count: 0,
-      worst_overdue_days: 0, worst_overdue_number: null,
+      worst_overdue_days: 0, worst_overdue_number: null, is_company: false,
       computed_at: null, stale: false,
     }),
   ),

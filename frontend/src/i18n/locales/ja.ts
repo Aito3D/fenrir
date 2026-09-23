@@ -411,6 +411,7 @@ export default {
       newTip: '支払済みの請求書はまだありません',
       checked: '{{ago}} に確認',
       stale: 'Books に接続できません — 最後に確認した評価',
+      companyTerms: '法人として評価',
     },
     tasksReused_one: '{{count}} 件のタスクを追加しました',
     tasksReused_other: '{{count}} 件のタスクを追加しました',

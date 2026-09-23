@@ -411,6 +411,7 @@ export default {
       newTip: 'Nessuna fattura saldata finora',
       checked: 'verificato {{ago}}',
       stale: 'Books non raggiungibile — ultima valutazione nota',
+      companyTerms: 'valutato come azienda',
     },
     tasksReused_one: '{{count}} attività aggiunta',
     tasksReused_other: '{{count}} attività aggiunte',

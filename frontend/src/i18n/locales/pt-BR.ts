@@ -411,6 +411,7 @@ export default {
       newTip: 'Nenhuma fatura quitada ainda',
       checked: 'verificado {{ago}}',
       stale: 'Books inacessível — última avaliação conhecida',
+      companyTerms: 'avaliado como empresa',
     },
     tasksReused_one: '{{count}} tarefa adicionada',
     tasksReused_other: '{{count}} tarefas adicionadas',
