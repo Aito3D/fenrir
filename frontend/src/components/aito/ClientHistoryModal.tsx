@@ -44,6 +44,13 @@ export function ClientHistoryModal({
   const currency = useCurrency();
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, { animationMs: MODAL_OUT_MS });
   const clientId = project.client_id ?? '';
+  // A clientless card is a real, expected state (the header falls back to
+  // t('aito.noClient') below) — the query is disabled for it, not failed or
+  // loading. TanStack Query v5 leaves a disabled query's status at 'pending'
+  // forever, so `history.isPending`/`isSuccess` alone cannot distinguish
+  // "still fetching" from "nothing to fetch"; every read of them below folds
+  // `clientId === ''` in to keep the loading/empty branches honest.
+  const hasClient = clientId !== '';
 
   // Its own key (the limit is part of it): the drawer's recall block caches
   // the same route under ['aito-client-history', id] with limit 5, and a
@@ -51,7 +58,7 @@ export function ClientHistoryModal({
   const history = useQuery({
     queryKey: ['aito-client-history', clientId, CLIENT_TIMELINE_LIMIT],
     queryFn: () => api.getAitoClientHistory(clientId, CLIENT_TIMELINE_LIMIT),
-    enabled: clientId !== '',
+    enabled: hasClient,
     staleTime: 60_000,
     retry: false,
   });
@@ -81,7 +88,7 @@ export function ClientHistoryModal({
         role="dialog"
         aria-modal="true"
         aria-label={t('aito.clientHistory')}
-        aria-busy={history.isPending ? 'true' : undefined}
+        aria-busy={history.isPending && hasClient ? 'true' : undefined}
         data-testid="client-history-modal"
         tabIndex={-1}
         className={`w-full max-w-[600px] max-h-[88vh] flex flex-col focus:outline-none ${
@@ -120,7 +127,7 @@ export function ClientHistoryModal({
           </header>
 
           <div className="overflow-y-auto flex-1 min-h-0 px-5 pt-2 pb-5">
-            {history.isPending && (
+            {history.isPending && hasClient && (
               <div className="flex items-center gap-2 py-8 text-sm text-bambu-gray">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 {t('common.loading')}
@@ -134,7 +141,7 @@ export function ClientHistoryModal({
                 </Button>
               </div>
             )}
-            {history.isSuccess && cards.length === 0 && (
+            {(history.isSuccess || !hasClient) && cards.length === 0 && (
               <p className="py-8 text-sm text-bambu-gray">{t('aito.clientHistoryEmpty')}</p>
             )}
             {cards.length > 0 && (

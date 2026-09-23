@@ -128,6 +128,18 @@ describe('ClientHistoryModal', () => {
     expect(screen.getByTestId('client-history-modal')).not.toHaveAttribute('aria-busy', 'true');
   });
 
+  it('treats a clientless card as the empty state, not a stuck spinner', async () => {
+    // A disabled query (no client id) sits at status 'pending' forever in
+    // TanStack Query v5 — it never resolves to 'success'. The dialog must
+    // still land on the empty state rather than spin indefinitely, and it
+    // must never make the request at all.
+    const seen = mockHistory({ cards });
+    render(<ClientHistoryModal project={{ ...project, client_id: null }} onClose={vi.fn()} />);
+    expect(await screen.findByText('No projects for this client yet.')).toBeInTheDocument();
+    expect(screen.getByTestId('client-history-modal')).not.toHaveAttribute('aria-busy', 'true');
+    expect(seen).toEqual([]);
+  });
+
   it('shows the error state and retries', async () => {
     let calls = 0;
     server.use(
