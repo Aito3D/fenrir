@@ -16,7 +16,9 @@ export const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visibl
 // Press feedback for the page's few buttons: a 3 % squeeze, under the
 // vestibular threshold so it stays on under reduced motion. Tailwind v4's
 // `hover:` is already gated on (hover: hover), so a tap never sticks.
-export const PRESS = 'active:scale-[0.97] transition-[color,background-color,transform] duration-150';
+// `filter` too: the filled cyan buttons brighten on hover (`hover:brightness-110`),
+// and a filter outside the list snaps while colour and scale ease.
+export const PRESS = 'active:scale-[0.97] transition-[color,background-color,transform,filter] duration-150';
 
 export const delayAt = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` });
 

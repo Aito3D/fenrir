@@ -11,14 +11,23 @@ const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid:
  *  only, and a sub-line, so it never competes with the state above it.
  *  Unpaid/overdue are a bordered secondary card with an outlined button
  *  that opens the page's payment panel (`terms`), so the line is an action
- *  and not a dead end. */
-export function TrackingInvoice({ state, terms }: { state: AitoTrackingInvoice; terms: PanelTrigger }) {
+ *  and not a dead end. `flipped`: this state arrived by a refetch while the
+ *  page was open — the paid row pops its dot (the page rises the block). */
+export function TrackingInvoice({
+  state,
+  terms,
+  flipped = false,
+}: {
+  state: AitoTrackingInvoice;
+  terms: PanelTrigger;
+  flipped?: boolean;
+}) {
   const { t } = useTranslation();
   const title = t(`aito.track.invoice.${state}Title`);
   const sub = t(`aito.track.invoice.${state}Sub`);
 
   if (state === 'paid') {
-    return <TrackingPaidRow data-testid="track-invoice" data-state={state} dotClassName={DOT[state]} title={title} sub={sub} />;
+    return <TrackingPaidRow data-testid="track-invoice" data-state={state} dotClassName={DOT[state]} title={title} sub={sub} pop={flipped} />;
   }
 
   return (

@@ -2,6 +2,8 @@
 
 Date: 2026-09-22. Amends §7.3 of `2026-09-12-aito-heimdall-payment-links-design.md` (the 2026-09-14 "only once accepted" decision is reversed).
 
+> **Amended 2026-09-23 — partial rollback.** The link is offered only once the quote has **left the Devis column**: `quote_status` in `sent`, `viewed` (the client opened a sent quote — it only ever arrives from Books) or `accepted`. A draft, or a card with no Books quote, hides a pending link again: the quote is not finalised, its total can still move. The gate lives in `aito_tracking.PAYABLE_QUOTE_STATUSES`. Everything else below stands — the `accepted` flag, the "Validez votre devis" voice on a sent quote, and "Devis validé" in Accord — except the Devis state-card sub-line `devisPaySub`, which became unreachable and was removed with its 13 translations. Neither the "from the moment it exists" nor the "only once accepted" gate is what the operator wants: paying validates a *sent* quote.
+
 ## Goal
 
 A client can validate a quote by paying it online from the public tracking page, from the moment the quote exists in Zoho Books — draft included, before it is sent. Payment already accepts the quote (`aito_payment_links._became_paid` → `accept_quote(source="payment_link")`, which marks a draft sent in Books before accepting it); this change only makes the link visible and words the page so paying reads as validating.

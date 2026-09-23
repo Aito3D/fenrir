@@ -195,7 +195,11 @@ export function FlagControl({ project }: { project: AitoProject }) {
       } ${bumping ? 'motion-safe:animate-hold-bounce' : ''}`}
     >
       <span
-        className={`overflow-hidden transition-[max-width,opacity] duration-[260ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
+        // `flex`, same reason as the segments below: the resting chip's
+        // button is inline-flex, and inside a blockified span it would sit on
+        // the panel's line box and hold the unflagged chip 2px taller than
+        // the pills beside it.
+        className={`flex overflow-hidden transition-[max-width,opacity] duration-[260ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
           restShown ? 'max-w-[9rem] opacity-100' : 'max-w-0 opacity-0'
         }`}
       >
@@ -230,7 +234,13 @@ export function FlagControl({ project }: { project: AitoProject }) {
             // open — a divider beside nothing is just a stray line, and
             // index-based (not "is this the last kind") is what still draws
             // correctly as segments are added.
-            className={`overflow-hidden transition-[max-width,opacity] duration-[260ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
+            // `[&>div]:flex`: HoldButton's own outer wrapper is a plain block
+            // div, and an inline-flex button inside a block sits on that
+            // block's line box — the panel's 14.4px / 21.6px strut, not the
+            // 11px pill's — so the segment came out 2px taller than the
+            // Accepted and destination pills beside it (23.95 vs 22.09).
+            // Flex on the wrapper drops the strut; the button IS the height.
+            className={`flex overflow-hidden transition-[max-width,opacity] duration-[260ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none [&>div]:flex ${
               index > 0 && open ? 'border-l border-bambu-dark-tertiary' : ''
             } ${shown ? 'max-w-[9rem] opacity-100' : 'max-w-0 opacity-0'}`}
           >

@@ -28,7 +28,7 @@ import { deriveQuoteSync } from './quoteSync';
 import { ShippingCard } from './ShippingCard';
 import { ClientEditor } from './ClientEditor';
 import { useClientRating } from './useClientRating';
-import { ClientRatingPill } from './ClientRatingPill';
+import { ClientRatingRing } from './ClientRatingPill';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { stagesWithWork } from './services';
@@ -485,28 +485,31 @@ function PanelHeader({
           {/* strokeWidth 2.5 rather than lucide's default 2, so the glyph's
               stems match the semibold weight of the name beside it — at the
               default the icon reads as a lighter, unrelated mark. */}
-          {project.client_is_company ? (
-            <Building2
-              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          ) : (
-            <User
-              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          )}
+          {/* The payment rating rings this glyph (colour on the client's own
+              mark) rather than adding a third pill to the band — the quote
+              status and the flag already own the pill row above. Hidden
+              for `new`: a walk-in has no verdict. The drawer shows that
+              word. `align="start"`: the glyph is at the column's left edge,
+              where a centred tooltip would hang off the panel. */}
+          <ClientRatingRing rating={rating.data} align="start">
+            {project.client_is_company ? (
+              <Building2
+                className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
+                strokeWidth={2.5}
+                aria-hidden="true"
+              />
+            ) : (
+              <User
+                className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
+                strokeWidth={2.5}
+                aria-hidden="true"
+              />
+            )}
+          </ClientRatingRing>
           <span className="sr-only">
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
           <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
-          {/* Hidden for `new`: a walk-in has no verdict, and the band must
-              not grow a grey pill on every first-timer. The drawer shows
-              it. `align="end"` because the pill sits at the right edge of
-              the name column, where a centred tooltip would clip. */}
-          <ClientRatingPill rating={rating.data} hideNew align="end" />
           {/* Revealed by hovering the name (DeleteHoldButton's own pattern),
               never removed from the tree: a keyboard user tabs onto it and
               focus-visible brings it up. Gated on `canUpdate` because the

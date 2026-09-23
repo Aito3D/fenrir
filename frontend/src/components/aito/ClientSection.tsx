@@ -98,6 +98,14 @@ export function ClientSection({
   const personsBranch = !value.isDefault;
   const listed = personsBranch && personsState.id === value.id && personsState.has === true;
   const listFailed = personsBranch && personsState.id === value.id && personsState.failed;
+  // Still reading the list: the picker's skeleton stands in for it, and the
+  // plain inputs stay out of the way. Before, they showed prefilled during
+  // the wait and then vanished the moment the list landed — two reflows for
+  // one arrival. Now the section settles once, on what Books said: the list
+  // (and the override toggle) when it named someone, the inputs when it did
+  // not. The default walk-in client never reads a list, so it keeps them
+  // from the first frame.
+  const personsPending = personsBranch && personsState.id === value.id && personsState.has === null && !personsState.failed;
 
   if (statusQuery.data?.configured === false) {
     return (
@@ -275,8 +283,11 @@ export function ClientSection({
             </div>
           )}
         </div>
-      ) : (
-        contactInputs
+      ) : personsPending ? null : (
+        // Rises on arrival like the list it stands in for. Its own
+        // `space-y-3`: the wrapper takes the two fields out of the section's
+        // flow, so it has to keep them apart itself.
+        <div className="animate-rise space-y-3">{contactInputs}</div>
       )}
 
       {/* No revert button beside this one, unlike phone and email: those two

@@ -322,7 +322,6 @@ export default {
         devisSub: 'Lo riceverà via e-mail non appena sarà pronto.',
         waitingTitle: 'In attesa della sua approvazione',
         waitingSub: 'Ci dica se approva il preventivo e avvieremo la produzione.',
-        devisPaySub: 'Può già approvarlo pagando online qui sotto.',
         acceptedTitle: 'Preventivo approvato',
         acceptedSub: 'Stiamo pianificando la produzione.',
         workingTitle: 'In produzione',

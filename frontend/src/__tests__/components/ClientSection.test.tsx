@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse, delay } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ClientSection } from '../../components/aito/ClientSection';
@@ -78,9 +78,11 @@ describe('ClientSection', () => {
     expect(screen.getByLabelText(/^email/i)).toHaveValue('');
   });
 
-  it('does not mark an untouched parsed phone as dirty', () => {
+  it('does not mark an untouched parsed phone as dirty', async () => {
     renderSection(draftFromContact(acme, DEFAULT_ID));
-    expect(screen.getByLabelText(/^phone/i)).toHaveValue('89645864');
+    // `findBy`: a real client's plain inputs wait for the persons list
+    // (empty here) — see "keeps the plain inputs out of the way" below.
+    expect(await screen.findByLabelText(/^phone/i)).toHaveValue('89645864');
     expect(screen.getByRole('button', { name: /revert phone/i })).toHaveClass('opacity-0');
   });
 
@@ -103,7 +105,7 @@ describe('ClientSection', () => {
         preferredPersonId={null}
       />,
     );
-    await user.type(screen.getByLabelText(/^phone/i), '9');
+    await user.type(await screen.findByLabelText(/^phone/i), '9');
     expect(onChange).toHaveBeenCalled();
     expect(draft.touched.phone).toBe(true);
 
@@ -183,7 +185,7 @@ describe('ClientSection', () => {
     const user = userEvent.setup();
     const { rerender } = render(section(draft));
 
-    const phoneInput = screen.getByLabelText(/^phone/i);
+    const phoneInput = await screen.findByLabelText(/^phone/i);
     await user.clear(phoneInput);
     await user.type(phoneInput, '1-2');
     await user.tab();
@@ -225,7 +227,7 @@ describe('ClientSection', () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     renderSection(draftFromContact(acme, DEFAULT_ID), onChange);
-    const countryInput = screen.getByRole('combobox', { name: /country code/i });
+    const countryInput = await screen.findByRole('combobox', { name: /country code/i });
     await user.click(countryInput);
     await user.type(countryInput, 'France');
     expect(onChange).not.toHaveBeenCalled();
@@ -397,6 +399,25 @@ describe('ClientSection — company contacts', () => {
     expect(screen.getByText(/social network/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/^phone/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /use a different phone/i })).toBeInTheDocument();
+  });
+
+  it('keeps the plain inputs out of the way while the contact list is being read', async () => {
+    // One arrival, one reflow: the skeleton stands in for the list, and the
+    // section settles on what Books said — the list and the override toggle
+    // when it named someone, the plain inputs (rising in) when it did not.
+    server.use(
+      http.get('/api/v1/zoho/contacts/:id/persons', async () => {
+        await delay(80);
+        return HttpResponse.json([]);
+      }),
+    );
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    expect(screen.getByTestId('contact-persons-skeleton')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^phone/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /use a different phone/i })).not.toBeInTheDocument();
+    const phone = await screen.findByLabelText(/^phone/i);
+    expect(screen.queryByTestId('contact-persons-skeleton')).not.toBeInTheDocument();
+    expect(phone.closest('.animate-rise')).not.toBeNull();
   });
 
   it('the walk-in default client has no contact list', async () => {

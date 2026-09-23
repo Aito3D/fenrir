@@ -322,7 +322,6 @@ export default {
         devisSub: '準備でき次第メールでお送りします。',
         waitingTitle: 'ご承認をお待ちしています',
         waitingSub: '見積をご承認いただければ製作を開始します。',
-        devisPaySub: '下記からオンラインでお支払いいただくと、すぐにご承認いただけます。',
         acceptedTitle: '見積が承認されました',
         acceptedSub: '製作の予定を組んでいます。',
         workingTitle: '製作中',

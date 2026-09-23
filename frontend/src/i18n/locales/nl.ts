@@ -8156,7 +8156,6 @@ export default {
         devisSub: 'Je ontvangt hem per e-mail zodra hij klaar is.',
         waitingTitle: 'In afwachting van je akkoord',
         waitingSub: 'Laat ons weten of je akkoord gaat met de offerte, en we starten de productie.',
-        devisPaySub: 'Je kunt hem nu al goedkeuren door hieronder online te betalen.',
         acceptedTitle: 'Offerte goedgekeurd',
         acceptedSub: 'We plannen de productie in.',
         workingTitle: 'In productie',

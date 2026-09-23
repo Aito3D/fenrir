@@ -20,8 +20,20 @@ export interface PanelTrigger {
  *  when there is one, is the truer story and wins. The pay link opens in a
  *  new tab so the tracking page stays open behind OSB's checkout. Before the
  *  quote is accepted the card speaks in the validate voice — paying IS the
- *  client's acceptance (2026-09-22); after, the plain unpaid wording. */
-export function TrackingPayment({ payment, accepted, terms }: { payment: AitoTrackingPayment; accepted: boolean; terms: PanelTrigger }) {
+ *  client's acceptance (2026-09-22); after, the plain unpaid wording.
+ *  `flipped`: this state arrived by a refetch while the page was open (the
+ *  page rises the card; the paid row also pops its dot). */
+export function TrackingPayment({
+  payment,
+  accepted,
+  terms,
+  flipped = false,
+}: {
+  payment: AitoTrackingPayment;
+  accepted: boolean;
+  terms: PanelTrigger;
+  flipped?: boolean;
+}) {
   const { t } = useTranslation();
 
   if (payment.state === 'paid') {
@@ -30,6 +42,7 @@ export function TrackingPayment({ payment, accepted, terms }: { payment: AitoTra
         data-testid="track-payment"
         data-state="paid"
         dotClassName="bg-green-500"
+        pop={flipped}
         title={t(payment.deposit ? 'aito.track.payment.depositPaidTitle' : 'aito.track.payment.paidTitle')}
         sub={t('aito.track.payment.paidSub')}
       />
@@ -40,7 +53,7 @@ export function TrackingPayment({ payment, accepted, terms }: { payment: AitoTra
   // this card is actionable without one (§7.3 branch 4: otherwise, nothing).
   if (!payment.url) return null;
 
-  const button = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
+  const button = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform,filter] duration-150 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
   return (
     <div data-testid="track-payment" data-state="unpaid">
       <div className="flex flex-wrap items-center gap-[16px] rounded-[12px] border border-aito-line px-[16px] py-[16px] text-[15px]">

@@ -98,15 +98,27 @@ async def test_a_superseded_paid_row_does_not_leak_past_a_pending_one(db_session
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["draft", "sent", "viewed", "accepted", None])
-async def test_a_pending_link_is_offered_whatever_the_quote_status(db_session, status):
-    # 2026-09-22: paying IS how a client validates the quote, so the link is
-    # offered from the moment it exists — a draft included. The reconciler
-    # never mints one for a declined/expired/invoiced quote (wanted_link).
+@pytest.mark.parametrize("status", ["sent", "viewed", "accepted"])
+async def test_a_pending_link_is_offered_once_the_quote_has_left_devis(db_session, status):
+    # 2026-09-23: paying IS how a client validates the quote, but only a quote
+    # the operator has finalised and sent is worth validating — sent, viewed
+    # (the client opened a sent quote) or accepted. The reconciler never mints
+    # one for a declined/expired/invoiced quote (wanted_link).
     p = await _project(db_session, quote_status=status)
     await _link(db_session, p.id)
     payment = (await _track(db_session)).payment
     assert payment.model_dump() == {"state": "unpaid", "url": "https://osb/pay/L1", "deposit": False}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", None])
+async def test_a_pending_link_is_hidden_while_the_quote_sits_in_devis(db_session, status):
+    # A draft (or a card with no Books quote yet) is still being written: its
+    # total can move, so the page must not invite the client to pay it. The
+    # 2026-09-22 "offered from the moment it exists" reading was rolled back.
+    p = await _project(db_session, quote_status=status)
+    await _link(db_session, p.id)
+    assert (await _track(db_session)).payment is None
 
 
 @pytest.mark.asyncio

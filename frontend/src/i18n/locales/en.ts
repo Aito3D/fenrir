@@ -325,7 +325,6 @@ export default {
         devisSub: 'You will receive it by email as soon as it is ready.',
         waitingTitle: 'Waiting for your approval',
         waitingSub: 'Let us know if you approve the quote, and we will start production.',
-        devisPaySub: 'You can already approve it by paying online below.',
         acceptedTitle: 'Quote approved',
         acceptedSub: 'We are scheduling production.',
         workingTitle: 'In production',

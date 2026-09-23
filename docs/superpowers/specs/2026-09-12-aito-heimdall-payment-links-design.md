@@ -250,7 +250,7 @@ The masthead never grows a row (memory `aito-panel-header-height`); everything g
 - Tracking (`AitoTrackPage`): precedence
   1. `invoice != null` → today's `TrackingInvoice`, unchanged;
   2. `payment.state == 'paid'` → the quiet paid style; title *Acompte reçu* when `aito_deposit_pct > 0` (the tracking payload carries a `deposit: bool` so the page needs no setting), else *Paiement reçu*;
-  3. `payment.state == 'unpaid'` and `url` → the bordered card: *Projet non réglé* + **Payer en ligne** (`<a target="_blank" rel="noopener noreferrer">`), the payment-terms toggle beside it. The payload only carries a pending link once `quote_status == 'accepted'` (decided 2026-09-14): the client pays what they validated; before that the operator hands the link out from the panel — **reversed 2026-09-22**, see `2026-09-22-aito-tracking-pay-before-acceptance-design.md`: the link is offered from the moment it exists and paying validates the quote;
+  3. `payment.state == 'unpaid'` and `url` → the bordered card: *Projet non réglé* + **Payer en ligne** (`<a target="_blank" rel="noopener noreferrer">`), the payment-terms toggle beside it. The payload only carries a pending link once `quote_status == 'accepted'` (decided 2026-09-14): the client pays what they validated; before that the operator hands the link out from the panel — **reversed 2026-09-22**, see `2026-09-22-aito-tracking-pay-before-acceptance-design.md`: the link is offered from the moment it exists and paying validates the quote; **narrowed 2026-09-23** (same amendment file): only once the quote has left Devis (`sent`/`viewed`/`accepted`), never for a draft;
   4. otherwise nothing.
   The page never calls Heimdall. 13-locale copy.
 

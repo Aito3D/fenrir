@@ -322,7 +322,6 @@ export default {
         devisSub: "Vous le recevrez par e-mail dès qu'il est prêt.",
         waitingTitle: 'En attente de votre accord',
         waitingSub: 'Dites-nous si vous validez le devis, et nous lançons la fabrication.',
-        devisPaySub: 'Vous pouvez déjà le valider en réglant en ligne ci-dessous.',
         acceptedTitle: 'Devis validé',
         acceptedSub: 'Nous planifions la fabrication.',
         workingTitle: 'En fabrication',

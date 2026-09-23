@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { screen } from '@testing-library/react';
 import { render } from '../utils';
-import { ClientRatingPill } from '../../components/aito/ClientRatingPill';
+import { ClientRatingPill, ClientRatingRing } from '../../components/aito/ClientRatingPill';
 import type { AitoClientRating } from '../../api/client';
 
 const base: AitoClientRating = {
@@ -30,12 +30,6 @@ describe('ClientRatingPill', () => {
     expect(pill).toHaveAttribute('data-tier', tier);
   });
 
-  it('hides the new tier when asked, and only that one', () => {
-    const { container, rerender } = render(<ClientRatingPill rating={{ ...base, tier: 'new', reason: 'new' }} hideNew />);
-    expect(container.querySelector('[data-tier]')).toBeNull();
-    rerender(<ClientRatingPill rating={{ ...base, tier: 'medium', reason: 'mixed' }} hideNew />);
-    expect(container.querySelector('[data-tier="medium"]')).not.toBeNull();
-  });
 
   it('explains an overdue rating with the count, the worst delay and its number', () => {
     render(
@@ -113,8 +107,54 @@ describe('ClientRatingPill', () => {
     expect(tooltip).not.toHaveTextContent(/checked/);
   });
 
+  it('unfolds its width on arrival, with the tooltip inside the clip', () => {
+    // The pill lands seconds after the client beside a flexing input, so it
+    // opens from a zero-width grid track (`.aito-unfold-x`, index.css) rather
+    // than jumping the input narrower. The role=img pill and its tooltip
+    // wrapper sit inside the track's single item.
+    render(<ClientRatingPill rating={base} className="ml-1" />);
+    const unfold = screen.getByTestId('client-rating-unfold');
+    expect(unfold).toHaveClass('aito-unfold-x', 'ml-1');
+    expect(unfold.children).toHaveLength(1);
+    expect(unfold.firstElementChild).toContainElement(screen.getByRole('img'));
+  });
+
   it('exposes the tier word through the tooltip as well', () => {
     render(<ClientRatingPill rating={base} />);
     expect(screen.getByRole('tooltip')).toHaveTextContent(/^Good — 12 of 12 invoices paid on time/);
+  });
+});
+
+describe('ClientRatingRing', () => {
+  const glyph = <svg data-testid="glyph" aria-hidden="true" />;
+
+  it('passes the glyph through untouched while loading, when Books had nothing to say, and for a new client', () => {
+    const { container, rerender } = render(<ClientRatingRing rating={undefined}>{glyph}</ClientRatingRing>);
+    expect(screen.getByTestId('glyph')).toBeInTheDocument();
+    expect(container.querySelector('[data-tier]')).toBeNull();
+    rerender(<ClientRatingRing rating={{ ...base, tier: 'unavailable', reason: null }}>{glyph}</ClientRatingRing>);
+    expect(container.querySelector('[data-tier]')).toBeNull();
+    rerender(<ClientRatingRing rating={{ ...base, tier: 'new', reason: 'new' }}>{glyph}</ClientRatingRing>);
+    expect(container.querySelector('[data-tier]')).toBeNull();
+    expect(screen.queryByText('New')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it.each(['good', 'medium', 'bad'] as const)('rings the glyph for a %s client and names the tier for assistive tech', (tier) => {
+    const { container } = render(<ClientRatingRing rating={{ ...base, tier }}>{glyph}</ClientRatingRing>);
+    const ring = container.querySelector('[data-tier]');
+    expect(ring).toHaveAttribute('data-tier', tier);
+    expect(ring).toContainElement(screen.getByTestId('glyph'));
+    expect(ring).toHaveAttribute('role', 'img');
+    expect(ring).toHaveAccessibleName(/^Client rating: (Good|Medium|Bad)\. 12 of 12 invoices paid on time/);
+    // No visible word — the tier is colour on the ring, text in the tooltip.
+    expect(ring).toHaveTextContent('');
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/^(Good|Medium|Bad) — 12 of 12 invoices paid on time · checked 12m ago$/);
+  });
+
+  it('dims a stale ring and says why in the tooltip', () => {
+    const { container } = render(<ClientRatingRing rating={{ ...base, stale: true }}>{glyph}</ClientRatingRing>);
+    expect(container.querySelector('[data-tier]')).toHaveAttribute('data-stale', 'true');
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/Books unreachable — last known rating · Good — /);
   });
 });

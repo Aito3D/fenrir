@@ -58,19 +58,23 @@ export function TrackingShopPanel({ open, onClose, titleRef }: { open: boolean; 
   return (
     <TrackingPanel id="track-panel-shop" testId="track-panel-shop" side="left" open={open} title={t('aito.track.shop.title')} subtitle={t('aito.track.shop.sub')} titleRef={titleRef} onClose={onClose}>
       <PanelReveal i={0}>
-        <div className="track-map relative mt-[18px] h-[200px] overflow-hidden rounded-[10px] border border-aito-line bg-[#0e141b] min-[1120px]:h-[230px]">
-          {!mapReady && (
-            <span className="absolute inset-0 flex items-center justify-center text-[12.5px] text-aito-muted" aria-hidden="true">
-              {t('aito.track.shop.mapLoading')}
-            </span>
-          )}
+        <div
+          className="track-map relative mt-[18px] h-[200px] overflow-hidden rounded-[10px] border border-aito-line bg-[#0e141b] min-[1120px]:h-[230px]"
+          data-ready={mapReady || undefined}
+          data-testid="track-map"
+        >
+          {/* Stays mounted: it dissolves under the arriving tiles
+              (index.css `.track-map-placeholder`) instead of vanishing the
+              frame the fade starts, which left the box empty for a beat. */}
+          <span className="track-map-placeholder absolute inset-0 flex items-center justify-center text-[12.5px] text-aito-muted" aria-hidden="true">
+            {t('aito.track.shop.mapLoading')}
+          </span>
           <iframe
             title={t('aito.track.shop.mapTitle')}
             src={mapSrc ?? undefined}
             loading="lazy"
             referrerPolicy="no-referrer"
             allowFullScreen
-            data-ready={mapReady || undefined}
             onLoad={() => {
               if (mapSrc) setMapReady(true);
             }}

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoClientRating, AitoClientRatingTier } from '../../api/client';
 import { Tooltip } from '../Tooltip';
@@ -60,48 +60,52 @@ function useReasonText(rating: AitoClientRating): string {
   }
 }
 
-/** The client's payment rating as a dot-and-word pill.
+/** Everything the pill and the ring say about a rating, in the viewer's
+ *  language: the tier word, the one-line reason, the tooltip that joins
+ *  them (with the stale warning and the checked-time), and the aria-label.
+ *  One place so the two shapes can never disagree about what they mean.
+ *  Hooks run for every render — callers early-return AFTER calling this. */
+function useRatingText(rating: AitoClientRating | undefined) {
+  const { t } = useTranslation();
+  const safe = rating ?? { ...EMPTY, tier: 'unavailable' as const };
+  const reason = useReasonText(safe);
+  const label = safe.tier === 'unavailable' ? '' : t(`aito.rating.${safe.tier}`);
+  const ago = formatRelativeTime(safe.computed_at, 'system', t);
+  const tip = [
+    safe.stale ? t('aito.rating.stale') : null,
+    `${label} — ${reason}`,
+    // A company is held to looser timing (a fortnight late is still on
+    // time), so a reader comparing figures across clients is told which
+    // profile scored these.
+    safe.is_company ? t('aito.rating.companyTerms') : null,
+    safe.computed_at ? t('aito.rating.checked', { ago }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return { label, reason, ago, tip, ariaLabel: t('aito.rating.ariaLabel', { tier: label, reason }) };
+}
+
+/** The client's payment rating as a dot-and-word pill — the DRAWER's shape,
+ *  where "New" is a useful word while a deposit is being decided.
  *
- *  Renders NOTHING while the rating is loading, when Books had nothing to
- *  say (`unavailable`), or for a `new` client when `hideNew` is set — the
- *  masthead hides it (a walk-in has no verdict and the band must not grow
- *  noise), the drawer shows it (there, "first-timer" is useful while a
- *  deposit is being decided). Appearing late is fine: the pill is a
- *  trailing sibling of the name, never a placeholder that resizes.
+ *  Renders NOTHING while the rating is loading or when Books had nothing to
+ *  say (`unavailable`). Appearing late is fine: the pill is a trailing
+ *  sibling of the name, never a placeholder that resizes.
  *
  *  A stale rating (Books unreachable, cached figures) fades and appends its
  *  age so nobody reads a three-hour-old "Good" as current. */
 export function ClientRatingPill({
   rating,
-  hideNew = false,
   align = 'center',
   className = '',
 }: {
   rating: AitoClientRating | undefined;
-  hideNew?: boolean;
-  align?: 'center' | 'end';
+  align?: 'start' | 'center' | 'end';
   className?: string;
 }) {
-  const { t } = useTranslation();
-  // Hooks above the early returns: the reason text is computed for every
-  // render and simply unused when nothing is drawn.
-  const reason = useReasonText(rating ?? { ...EMPTY, tier: 'unavailable' });
+  const { label, ago, tip, ariaLabel } = useRatingText(rating);
   if (!rating || rating.tier === 'unavailable') return null;
-  if (rating.tier === 'new' && hideNew) return null;
 
-  const label = t(`aito.rating.${rating.tier}`);
-  const ago = formatRelativeTime(rating.computed_at, 'system', t);
-  const tip = [
-    rating.stale ? t('aito.rating.stale') : null,
-    `${label} — ${reason}`,
-    // A company is held to looser timing (a fortnight late is still on
-    // time), so a reader comparing figures across clients is told which
-    // profile scored these.
-    rating.is_company ? t('aito.rating.companyTerms') : null,
-    rating.computed_at ? t('aito.rating.checked', { ago }) : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
   const style = {
     '--c': TIER_COLOR[rating.tier],
     color: 'var(--c)',
@@ -110,23 +114,92 @@ export function ClientRatingPill({
   } as CSSProperties;
 
   return (
+    // The pill arrives late (Books answers seconds after the client is
+    // picked) beside an input that flexes to fill the row, so it unfolds its
+    // width rather than landing at full size: `.aito-unfold-x` opens the
+    // track from zero and the input narrows with it. It remounts on every
+    // client switch (the rating is `undefined` while the new one loads, and
+    // this returns null), so the entrance replays each time — and never on a
+    // mere re-render, since @starting-style fires only on first paint.
+    <span data-testid="client-rating-unfold" className={`aito-unfold-x flex-shrink-0 ${className}`}>
+      <span>
+        <Tooltip content={tip} align={align}>
+          <span
+            data-tier={rating.tier}
+            data-stale={rating.stale ? 'true' : undefined}
+            role="img"
+            aria-label={ariaLabel}
+            style={style}
+            className={`inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] text-xs font-semibold leading-none tracking-[0.01em] ${
+              rating.stale ? 'opacity-55' : ''
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className="h-[7px] w-[7px] rounded-full"
+              style={{ backgroundColor: 'var(--c)', boxShadow: '0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent)' }}
+            />
+            {rating.stale ? `${label} · ${ago}` : label}
+          </span>
+        </Tooltip>
+      </span>
+    </span>
+  );
+}
+
+/** The client's payment rating as a ring around the client glyph — the
+ *  MASTHEAD's shape. The band already carries the quote status and the
+ *  board flag as pills one row up; a third pill on the name line read as
+ *  a repeat of that row, so here the tier is colour on the client's own
+ *  mark, like a presence ring, and the word lives in the tooltip and the
+ *  accessible name. Zero width and zero height: the ring is drawn OUTSIDE
+ *  the glyph's box (`-inset-[5px]`, absolute), so the name line — and the
+ *  band, which must never grow a row — measure exactly as they did.
+ *
+ *  `children` is the glyph (`User` / `Building2`), rendered untouched —
+ *  without any wrapper — while the rating is loading, `unavailable`, or
+ *  `new` (a walk-in has no verdict and the band must not ring every
+ *  first-timer). The drawer's pill shows that word instead.
+ *
+ *  Arrival is animated (see `.animate-aito-rating-ring` in index.css): the
+ *  rating is its own fetch and lands a beat after the panel, and a ring
+ *  that simply appears at full size reads as a flash. */
+export function ClientRatingRing({
+  rating,
+  children,
+  align = 'start',
+}: {
+  rating: AitoClientRating | undefined;
+  children: ReactNode;
+  align?: 'start' | 'center' | 'end';
+}) {
+  const { tip, ariaLabel } = useRatingText(rating);
+  if (!rating || rating.tier === 'unavailable' || rating.tier === 'new') return <>{children}</>;
+
+  const style = { '--c': TIER_COLOR[rating.tier] } as CSSProperties;
+  return (
     <Tooltip content={tip} align={align}>
       <span
         data-tier={rating.tier}
         data-stale={rating.stale ? 'true' : undefined}
         role="img"
-        aria-label={t('aito.rating.ariaLabel', { tier: label, reason })}
+        aria-label={ariaLabel}
         style={style}
-        className={`inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] text-xs font-semibold leading-none tracking-[0.01em] ${
-          rating.stale ? 'opacity-55' : ''
-        } ${className}`}
+        className="relative inline-flex flex-shrink-0 items-center justify-center"
       >
+        {children}
+        {/* The halo goes first so the ring paints over its spread. */}
         <span
           aria-hidden="true"
-          className="h-[7px] w-[7px] rounded-full"
-          style={{ backgroundColor: 'var(--c)', boxShadow: '0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent)' }}
+          className="animate-aito-rating-halo pointer-events-none absolute -inset-[5px] rounded-full opacity-0"
         />
-        {rating.stale ? `${label} · ${ago}` : label}
+        {/* Stale dims through the border colour, not `opacity`: the arrival
+            animation's fill state owns opacity and would win. */}
+        <span
+          aria-hidden="true"
+          className="animate-aito-rating-ring pointer-events-none absolute -inset-[5px] rounded-full border-2"
+          style={{ borderColor: rating.stale ? 'color-mix(in srgb, var(--c) 55%, transparent)' : 'var(--c)' }}
+        />
       </span>
     </Tooltip>
   );

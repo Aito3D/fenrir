@@ -322,7 +322,6 @@ export default {
         devisSub: '準備好後將透過電子郵件寄給您。',
         waitingTitle: '等待您的確認',
         waitingSub: '請告知是否接受報價，我們隨即開始製作。',
-        devisPaySub: '您現在就可以在下方線上付款以接受報價。',
         acceptedTitle: '報價已接受',
         acceptedSub: '我們正在安排製作。',
         workingTitle: '製作中',

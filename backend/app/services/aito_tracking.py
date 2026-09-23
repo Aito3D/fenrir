@@ -48,6 +48,12 @@ DORMANT_COLUMNS = frozenset({"devis", "waiting"})
 # park a declined quote in Done, which the page would otherwise read as
 # "collected" — on the link printed on the very quote the client declined.
 CLOSED_QUOTE_STATUSES = frozenset({"declined", "expired"})
+# The quote statuses whose card sits past the Devis column — the operator has
+# finalised and sent the quote (viewed = the client opened a sent one), or it
+# is accepted. Only then does the page offer a pending payment link; a draft
+# or a card with no Books quote (NULL) keeps it hidden. Expired is past Devis
+# too but compute_tracking has already 404'd it by the time this is read.
+PAYABLE_QUOTE_STATUSES = frozenset({"sent", "viewed", "accepted"})
 # "Suivi et paiement": the page is also where the client pays (card link,
 # transfer details or in-shop terms), and a link sold as tracking alone was
 # being ignored by clients who only wanted to pay.
@@ -247,16 +253,21 @@ def invoice_state(status: str | None) -> str | None:
 
 async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingPayment | None:
     """Read off the ledger only — the public page must never trigger a
-    Heimdall call. Pending -> unpaid with the URL, whatever the quote says
-    (2026-09-22: paying is how the client validates the quote, so the link is
-    offered from the moment it exists; the reconciler never mints one for a
-    closed or invoiced quote); paid -> paid, and the checkout URL is dropped
-    once paid — the page never renders it for a settled order, so there is
-    nothing to gain by shipping it; a dead or absent link -> None."""
+    Heimdall call. Pending -> unpaid with the URL, but only once the quote
+    has left the Devis column (sent, viewed or accepted — paying is how the
+    client validates it, and a draft is still being written, so its total
+    can move; 2026-09-23, rolling back the 2026-09-22 "from the moment it
+    exists" reading. The reconciler never mints a link for a closed or
+    invoiced quote); paid -> paid whatever the quote says (money wins), and
+    the checkout URL is dropped once paid — the page never renders it for a
+    settled order, so there is nothing to gain by shipping it; a dead or
+    absent link -> None."""
     from backend.app.services.aito_payment_links import current_link, deposit_pct
 
     row = await current_link(db, project.id)
     if row is None or row.heimdall_id is None or row.status not in ("pending", "paid"):
+        return None
+    if row.status == "pending" and project.quote_status not in PAYABLE_QUOTE_STATUSES:
         return None
     paid = row.status == "paid"
     return AitoTrackingPayment(

@@ -59,15 +59,16 @@ describe('aitoTracking', () => {
     expect(statusCopy({ ...base, column: 'done' }, fr, 'fr')).toEqual({ title: 'Terminée', sub: 'Merci pour votre confiance !' });
   });
 
-  it('devis with a payable link invites the client to validate by paying; accepted or invoiced, the plain line', () => {
+  it('devis keeps the plain "by e-mail" line even if a payment link slipped through', () => {
+    // The backend never ships a pending link for a draft (2026-09-23), so the
+    // state card has no pay-to-validate variant any more — a stale payload
+    // must not resurrect one.
     const link = { state: 'unpaid' as const, url: 'https://osb/pay/1', deposit: false };
     expect(statusCopy({ ...base, column: 'devis', payment: link }, fr, 'fr')).toEqual({
       title: 'Devis en préparation',
-      sub: 'Vous pouvez déjà le valider en réglant en ligne ci-dessous.',
+      sub: "Vous le recevrez par e-mail dès qu'il est prêt.",
     });
     expect(statusCopy({ ...base, column: 'devis', payment: link, accepted: true }, fr, 'fr').sub).toBe("Vous le recevrez par e-mail dès qu'il est prêt.");
-    expect(statusCopy({ ...base, column: 'devis', payment: link, invoice: 'unpaid' }, fr, 'fr').sub).toBe("Vous le recevrez par e-mail dès qu'il est prêt.");
-    expect(statusCopy({ ...base, column: 'devis', payment: { ...link, url: null } }, fr, 'fr').sub).toBe("Vous le recevrez par e-mail dès qu'il est prêt.");
   });
 
   it('waiting reads "Devis validé" once the quote is accepted', () => {

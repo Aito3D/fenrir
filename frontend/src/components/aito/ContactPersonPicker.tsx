@@ -95,33 +95,61 @@ export function ContactPersonPicker({
   const [adding, setAdding] = useState(false);
 
   const compact = variant === 'sheet';
-  const rowCls = `flex items-center gap-2.5 px-3 ${compact ? 'py-1.5' : 'py-2'} cursor-pointer border-t border-bambu-dark-tertiary first:border-t-0 has-[:checked]:bg-bambu-green/10 hover:bg-bambu-dark-tertiary/60`;
+  const rowPad = compact ? 'py-1.5' : 'py-2';
+  const rowCls = `flex items-center gap-2.5 px-3 ${rowPad} cursor-pointer border-t border-bambu-dark-tertiary first:border-t-0 has-[:checked]:bg-bambu-green/10 hover:bg-bambu-dark-tertiary/60`;
 
-  if (query.isPending) {
-    return (
-      <p className="text-xs text-bambu-gray" role="status">
-        {t('aito.contactsLoading')}
-      </p>
-    );
-  }
   if (query.isError) return null;
 
+  // Books answers seconds after the client is picked, and the list is the
+  // tallest thing in the section. So the wait is drawn in the list's own
+  // shape — label, bordered box, two ghost rows, the status line where the
+  // add button will be — and the rows fade in over it when they arrive,
+  // each a beat after the last (the motion system's 50ms child stagger,
+  // trimmed to 40 for rows this short). What moves underneath is then only
+  // the difference between two ghost rows and the real count, not a whole
+  // box landing on a one-line notice. A cached list (same client re-picked
+  // within a minute) never passes through this branch at all.
+  const pending = query.isPending;
+
   return (
-    <div>
+    <div data-testid={pending ? 'contact-persons-skeleton' : undefined} aria-busy={pending || undefined}>
       <span className={compact ? `${eyebrowCls} mb-1 block font-medium text-bambu-gray` : labelCls}>
         {t('aito.contactsLabel')}
         {!compact && <span className="ml-1.5 font-normal normal-case text-bambu-gray">— {t('aito.contactsHint')}</span>}
       </span>
       <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark overflow-hidden">
+        {pending ? (
+          <>
+            {[0, 1].map((i) => (
+              <div
+                key={i}
+                aria-hidden="true"
+                className={`flex items-center gap-2.5 px-3 ${rowPad} border-t border-bambu-dark-tertiary first:border-t-0 motion-safe:animate-pulse`}
+              >
+                <span className="h-[13px] w-[13px] flex-shrink-0 rounded-full border border-bambu-dark-tertiary" />
+                <span className="h-3 rounded bg-bambu-dark-tertiary" style={{ width: i === 0 ? '38%' : '30%' }} />
+                <span className="ml-auto h-2.5 w-[22%] rounded bg-bambu-dark-tertiary/60" />
+              </div>
+            ))}
+            <p role="status" className="border-t border-bambu-dark-tertiary py-2 text-center text-xs text-bambu-gray">
+              {t('aito.contactsLoading')}
+            </p>
+          </>
+        ) : (
+          <>
         {/* Only the radio rows belong to the group — the add button and its
             form are actions beside the list, not selectable options within
             it, so they sit as siblings of the radiogroup rather than inside
             it. The outer div keeps the shared border/rounding. */}
         <div role="radiogroup" aria-label={t('aito.contactsLabel')}>
-          {persons.map((person) => {
+          {persons.map((person, index) => {
             const number = contactPersonPhone(person);
             return (
-              <label key={person.contact_person_id} className={rowCls}>
+              <label
+                key={person.contact_person_id}
+                className={`${rowCls} animate-rise`}
+                style={{ animationDelay: `${index * 40}ms` }}
+              >
                 <input
                   type="radio"
                   name={`contact-person-${contactId}`}
@@ -181,11 +209,15 @@ export function ContactPersonPicker({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className={`flex w-full items-center justify-center gap-1.5 border-t border-bambu-dark-tertiary py-2 text-sm font-semibold text-bambu-green-light hover:bg-bambu-dark-tertiary/60 ${persons.length === 0 ? 'border-t-0' : ''} ${focusRingCls}`}
+            // Last in the cascade: one stagger slot after the final row.
+            style={{ animationDelay: `${persons.length * 40}ms` }}
+            className={`animate-rise flex w-full items-center justify-center gap-1.5 border-t border-bambu-dark-tertiary py-2 text-sm font-semibold text-bambu-green-light hover:bg-bambu-dark-tertiary/60 ${persons.length === 0 ? 'border-t-0' : ''} ${focusRingCls}`}
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             {t('aito.contactAdd')}
           </button>
+        )}
+          </>
         )}
       </div>
     </div>

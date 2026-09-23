@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
 import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
+import { prefersReducedMotion } from '../utils/motion';
 import { CARD, FOCUS, I18N_SETTLE_TIMEOUT_MS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
 import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
@@ -110,6 +111,55 @@ export function AitoTrackPage() {
     }
   }
   const advance = entrance ? null : advanceRef.current;
+  // The payment's own chapter: a refetch that flips the invoice or the
+  // online payment — the client pays in the OSB tab and comes back (window
+  // focus refetches), or the operator marks an invoice paid while the tab
+  // is open. The block below the parts is keyed on this, so it remounts and
+  // rises again, the paid row pops its dot, and the block's height tweens
+  // from the bordered card to the quiet row so the footer glides instead of
+  // jumping. Same render-time ref gate as `advance`, for the same reasons:
+  // a refetch that changes nothing keeps the same key and nothing replays.
+  // The old block's height is read here, at render, because the ref still
+  // points at the OLD element until React commits the remount.
+  const payKey = data ? (data.invoice ?? data.payment?.state ?? null) : null;
+  const lastPayKey = useRef<typeof payKey | undefined>(undefined);
+  const flipSeq = useRef(0);
+  const flipFrom = useRef<number | null>(null);
+  const payWrap = useRef<HTMLDivElement>(null);
+  if (data && settled) {
+    if (lastPayKey.current === undefined) lastPayKey.current = payKey;
+    else if (lastPayKey.current !== payKey) {
+      lastPayKey.current = payKey;
+      flipSeq.current += 1;
+      flipFrom.current = prefersReducedMotion() ? null : (payWrap.current?.offsetHeight ?? null);
+    }
+  }
+  const flip = flipSeq.current;
+  const flipped = !entrance && flip > 0;
+  useLayoutEffect(() => {
+    const wrap = payWrap.current;
+    const from = flipFrom.current;
+    flipFrom.current = null;
+    if (!wrap || from === null) return;
+    const to = wrap.offsetHeight;
+    if (to === from) return;
+    wrap.style.overflow = 'hidden';
+    wrap.style.height = `${from}px`;
+    void wrap.offsetWidth;
+    wrap.style.height = `${to}px`;
+    const clear = () => {
+      wrap.style.height = '';
+      wrap.style.overflow = '';
+      wrap.removeEventListener('transitionend', onEnd);
+    };
+    // Only the wrapper's own height: a child's colour transition bubbles a
+    // transitionend too, and must not cut the tween short.
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === wrap && e.propertyName === 'height') clear();
+    };
+    wrap.addEventListener('transitionend', onEnd);
+    return clear;
+  }, [flip]);
   const copy = data ? statusCopy(data, t, lng) : null;
   const eta = data ? etaCopy(data, t, lng) : null;
   const preOrder = data?.column === 'devis' || data?.column === 'waiting';
@@ -217,11 +267,13 @@ export function AitoTrackPage() {
           <main>
             {(query.isPending || !settled) && !query.isError && !retrying && <CardSkeleton />}
             {showError && (
-              <div className="mt-[32px] text-center">
-                {/* Keyed on the failure, so a retry that fails again re-delivers
-                    the same words with a fade instead of leaving them frozen —
-                    the client must see that their tap was heard. */}
-                <p key={query.errorUpdatedAt} className="animate-track-fade text-[15px] text-aito-muted" data-testid="track-error">
+              /* The message and its button fade in as one block — the button
+                 popping beside a fading line read as two objects. Keyed on the
+                 failure, so a retry that fails again re-delivers the same
+                 words with a fade instead of leaving them frozen — the client
+                 must see that their tap was heard. */
+              <div key={query.errorUpdatedAt} className="animate-track-fade mt-[32px] text-center" data-testid="track-error-block">
+                <p className="text-[15px] text-aito-muted" data-testid="track-error">
                   {t(is429 ? 'aito.track.codeTooMany' : 'aito.track.error')}
                 </p>
                 <button
@@ -293,10 +345,20 @@ export function AitoTrackPage() {
                   )}
                 </section>
                 {(data.invoice || data.payment) && (
-                  <div className={`mt-[32px] ${entrance ? 'animate-rise' : ''}`} style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}>
+                  <div
+                    key={flip}
+                    ref={payWrap}
+                    data-testid="track-payment-block"
+                    className={`track-flip-wrap mt-[32px] ${entrance || flipped ? 'animate-rise' : ''}`}
+                    style={entrance ? delayAt(stateAt + TRACK_MOTION.invoice) : undefined}
+                  >
                     {/* The invoice, when there is one, is the truer story; the
                         online payment link speaks only before it exists. */}
-                    {data.invoice ? <TrackingInvoice state={data.invoice} terms={payTrigger} /> : <TrackingPayment payment={data.payment!} accepted={data.accepted} terms={payTrigger} />}
+                    {data.invoice ? (
+                      <TrackingInvoice state={data.invoice} terms={payTrigger} flipped={flipped} />
+                    ) : (
+                      <TrackingPayment payment={data.payment!} accepted={data.accepted} terms={payTrigger} flipped={flipped} />
+                    )}
                   </div>
                 )}
               </div>

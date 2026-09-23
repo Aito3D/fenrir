@@ -69,15 +69,12 @@ export function updatedAt(isoUtc: string, t: TFunction, lng: string, now: Date =
  *  the Air Tahiti freight counter. */
 export function statusCopy(data: AitoTracking, t: TFunction, lng: string): { title: string; sub: string } {
   const pair = (key: string) => ({ title: t(`aito.track.status.${key}Title`), sub: t(`aito.track.status.${key}Sub`) });
-  // A live link the client can still act on. Same ranking as the page's
-  // payment block: an invoice, when there is one, outranks the link.
-  const payable = data.invoice === null && data.payment?.state === 'unpaid' && !!data.payment.url;
   switch (data.column) {
     case 'devis':
-      // Paying is how the client validates the quote (2026-09-22): with a
-      // link under this card, "you will receive it by email" would contradict
-      // the pay button below.
-      return payable && !data.accepted ? { title: t('aito.track.status.devisTitle'), sub: t('aito.track.status.devisPaySub') } : pair('devis');
+      // The backend hides a pending payment link while the quote is a draft
+      // (aito_tracking.PAYABLE_QUOTE_STATUSES, 2026-09-23), so this card never
+      // sits above a pay button: the plain "you will receive it by e-mail".
+      return pair('devis');
     case 'waiting':
       // Accepted (a payment, a covering retainer, or the operator's click) but
       // the card not yet moved: "waiting for your approval" would sit above
@@ -134,6 +131,7 @@ export const TRACK_MOTION = {
   parts: 100, // the parts list starts this much after the state card
   partStep: 50, // …and cascades at this step (capped at 7 steps)
   invoice: 250, // the invoice rises this much after the state card
+  flipDot: 80, // a payment flipped to paid while the page was open: the dot pops this much after its row rises
   halo: 280, // the done halo fires this much after the state card
   reveal: 40, // "Voir les n pièces": step between revealed parts
   footer: 400, // the footer drops in this much after the state card

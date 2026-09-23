@@ -4,6 +4,7 @@ import { MapPin } from 'lucide-react';
 import aito3dLogo from '../../assets/aito3d_logo.png';
 import { SHOP_MAIL_HREF, SHOP_TEL_HREF } from '../../utils/aitoShop';
 import { BRAND, CARD, FOCUS, PAGE, PRESS, delayAt } from '../../utils/trackingShell';
+import { TRACK_MOTION } from '../../utils/aitoTracking';
 import { AITO3D_SENDER } from '../../utils/shippingLabel';
 import type { PanelTrigger } from './TrackingPayment';
 
@@ -47,24 +48,34 @@ export function CardSkeleton() {
  *  caller keeps its own translation keys and dot source (a literal for the
  *  online payment, a state-keyed lookup for invoices). Takes `data-testid`
  *  / `data-state` as named-literal props (not composed here) so each call
- *  site's own testid/state text stays a source-visible literal. */
+ *  site's own testid/state text stays a source-visible literal.
+ *  `pop`: the row arrived by a refetch that flipped the state to paid while
+ *  the page was open — the dot pops in one beat after the row rises, so the
+ *  moment the client came back for reads as a moment. */
 export function TrackingPaidRow({
   'data-testid': testid,
   'data-state': state,
   dotClassName,
   title,
   sub,
+  pop = false,
 }: {
   'data-testid': string;
   'data-state': string;
   dotClassName: string;
   title: ReactNode;
   sub: ReactNode;
+  pop?: boolean;
 }) {
   return (
     <div data-testid={testid} data-state={state} className="text-[15px]">
       <div className="flex items-center gap-[8px]">
-        <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${dotClassName}`} aria-hidden="true" />
+        <span
+          className={`h-[8px] w-[8px] shrink-0 rounded-full ${dotClassName} ${pop ? 'animate-track-pop' : ''}`}
+          style={pop ? delayAt(TRACK_MOTION.flipDot) : undefined}
+          data-testid={pop ? `${testid}-dot-pop` : undefined}
+          aria-hidden="true"
+        />
         <span className="font-semibold text-aito-ink">{title}</span>
       </div>
       <p className="mt-[4px] text-[13px] text-aito-muted">{sub}</p>

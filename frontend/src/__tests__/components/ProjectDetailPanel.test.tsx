@@ -3639,18 +3639,19 @@ describe('client rating on the masthead', () => {
       </QueryClientProvider>,
     );
 
-  it('shows the pill after the client name, inside the heading', async () => {
+  it('rings the client glyph inside the heading, before the name, with no visible word', async () => {
     server.use(http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(ratingBody('bad', 'overdue'))));
     renderPanel();
-    const pillText = await screen.findByText('Bad');
-    const heading = pillText.closest('h2');
+    const ring = await screen.findByRole('img', { name: /^Client rating: Bad\./ });
+    const heading = ring.closest('h2');
     expect(heading).toHaveTextContent(/ACME SARL/);
-    const pill = pillText.closest('[data-tier]');
-    expect(pill).not.toBeNull();
+    expect(ring).toHaveAttribute('data-tier', 'bad');
+    expect(ring.querySelector('svg')).not.toBeNull();
     expect(heading!.querySelectorAll('[data-tier]')).toHaveLength(1);
-    // The pill sits inside the Tooltip's wrapper span; the name is the
-    // wrapper's previous sibling in the heading, not the pill's own.
-    expect(pill!.parentElement?.previousElementSibling?.textContent).toBe('ACME SARL');
+    // The ring wraps the glyph, so it is the FIRST thing in the heading; the
+    // Tooltip's wrapper span is its parent and the sr-only label follows.
+    expect(heading!.firstElementChild).toBe(ring.parentElement);
+    expect(screen.queryByText('Bad')).not.toBeInTheDocument();
   });
 
   it('hides a new client on the masthead', async () => {

@@ -1438,6 +1438,75 @@ describe('TaskRow', () => {
     expect(await screen.findByTestId('impression-price-provenance')).toHaveTextContent('Manual');
   });
 
+  it('printing: clearing a print field and retyping it keeps the price linked and reprices', async () => {
+    // The reported bug: an operator selects the weight, deletes it to retype
+    // it, and types the new value — and the cost never moves again. While
+    // the field is empty the calculator has no figure, and "no figure" used
+    // to read as a hand-set price, so the very next keystroke hit the manual
+    // guard. A price the calculator wrote stays the calculator's across an
+    // incomplete parameter set: the badge keeps saying so, and the retyped
+    // value reprices.
+    const onChangeSpy = vi.fn();
+    const impression = { printerId: 1, filamentId: 1, weightG: 300, timeMin: 60, quantity: 1, color: 'Noir' };
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression,
+      impressionCost: roundUpTo50(
+        computeImpressionCost(impression, mockFilaments[0], mockPrinters[0], mockDefaults)!.total_ttc,
+      ),
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+    expect(await screen.findByTestId('impression-price-provenance')).toHaveTextContent('Calculator');
+
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '' } });
+    expect(screen.getByTestId('impression-computed')).toHaveTextContent('—');
+    expect(screen.getByTestId('impression-price-provenance')).toHaveTextContent('Calculator');
+    expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impressionCost).toBe(task.impressionCost);
+
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '500' } });
+    const priced500 = computeImpressionCost(
+      { ...impression, weightG: 500 },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    await waitFor(() => {
+      const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+      expect(lastTask.impressionCost).toBe(roundUpTo50(priced500!.total_ttc));
+    });
+    expect(roundUpTo50(priced500!.total_ttc)).not.toBe(task.impressionCost);
+    expect(screen.getByTestId('impression-price-provenance')).toHaveTextContent('Calculator');
+  });
+
+  it('printing: clearing a print field never launders a hand-set price into a linked one', async () => {
+    // The mirror of the test above: the carry-over is of whatever the price
+    // WAS, so a manual price stays manual across the gap and the retyped
+    // value still only proposes.
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 40_000,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+    expect(await screen.findByTestId('impression-price-provenance')).toHaveTextContent('Manual');
+
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '' } });
+    expect(screen.getByTestId('impression-price-provenance')).toHaveTextContent('Manual');
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '45' } });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impressionCost).toBe(40_000);
+    expect(screen.getByTestId('impression-price-provenance')).toHaveTextContent('Manual');
+    expect(screen.getByRole('button', { name: 'Follow calculator' })).toBeInTheDocument();
+  });
+
+  it('printing: the colour field does not offer browser autocomplete', async () => {
+    render(<ControlledTaskRow initial={{ ...emptyTaskDraft(), impressionCost: 500 }} onChangeSpy={vi.fn()} />);
+    expect(await screen.findByLabelText(/colou?r/i)).toHaveAttribute('autocomplete', 'off');
+  });
+
   it('printing: no provenance badge while the task has no stored cost', async () => {
     const task: TaskDraft = {
       ...emptyTaskDraft(),

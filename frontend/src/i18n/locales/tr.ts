@@ -322,7 +322,6 @@ export default {
         devisSub: 'Hazır olur olmaz e-posta ile alacaksınız.',
         waitingTitle: 'Onayınız bekleniyor',
         waitingSub: 'Teklifi onaylıyorsanız bize bildirin, üretime başlayalım.',
-        devisPaySub: 'Aşağıdan çevrimiçi ödeme yaparak teklifi şimdiden onaylayabilirsiniz.',
         acceptedTitle: 'Teklif onaylandı',
         acceptedSub: 'Üretimi planlıyoruz.',
         workingTitle: 'Üretimde',

@@ -322,7 +322,6 @@ export default {
         devisSub: 'Sie erhalten es per E-Mail, sobald es fertig ist.',
         waitingTitle: 'Warten auf Ihre Freigabe',
         waitingSub: 'Teilen Sie uns mit, ob Sie das Angebot annehmen, dann starten wir die Fertigung.',
-        devisPaySub: 'Sie können es bereits jetzt annehmen, indem Sie unten online bezahlen.',
         acceptedTitle: 'Angebot angenommen',
         acceptedSub: 'Wir planen die Fertigung.',
         workingTitle: 'In Fertigung',

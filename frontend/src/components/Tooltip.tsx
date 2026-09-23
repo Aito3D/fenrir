@@ -16,8 +16,10 @@ export function Tooltip({
    *  trigger's, so it grows leftward — for a trigger at the right edge of a
    *  clipping column (TaskRow's pencil/remove pair inside the panel's
    *  scrolling task column), where a centred bubble loses its right half to
-   *  `overflow` before the viewport shift below ever sees it. */
-  align?: 'center' | 'end';
+   *  `overflow` before the viewport shift below ever sees it. `start` is the
+   *  mirror, for a trigger at the LEFT edge of its column (the masthead's
+   *  client glyph). */
+  align?: 'start' | 'center' | 'end';
 }) {
   const id = useId();
   const tipRef = useRef<HTMLSpanElement>(null);
@@ -58,11 +60,11 @@ export function Tooltip({
         ref={tipRef}
         style={{
           transform:
-            align === 'end'
-              ? `translateX(${shift}px) translateY(var(--tip-y, 3px))`
-              : `translateX(calc(-50% + ${shift}px)) translateY(var(--tip-y, 3px))`,
+            align === 'center'
+              ? `translateX(calc(-50% + ${shift}px)) translateY(var(--tip-y, 3px))`
+              : `translateX(${shift}px) translateY(var(--tip-y, 3px))`,
         }}
-        className={`pointer-events-none absolute bottom-full ${align === 'end' ? 'right-0' : 'left-1/2'} z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tip:opacity-100 group-hover/tip:[--tip-y:0px] group-focus-visible/tip:opacity-100 group-focus-visible/tip:[--tip-y:0px] motion-reduce:transition-opacity`}
+        className={`pointer-events-none absolute bottom-full ${align === 'end' ? 'right-0' : align === 'start' ? 'left-0' : 'left-1/2'} z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tip:opacity-100 group-hover/tip:[--tip-y:0px] group-focus-visible/tip:opacity-100 group-focus-visible/tip:[--tip-y:0px] motion-reduce:transition-opacity`}
       >
         {content}
       </span>

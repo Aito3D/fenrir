@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse, delay } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ContactPersonPicker } from '../../components/aito/ContactPersonPicker';
@@ -56,6 +56,32 @@ describe('ContactPersonPicker', () => {
     expect(within(first).getByText('vaekehu@snp.pf')).toBeInTheDocument();
     expect(within(first).getByText('primary')).toBeInTheDocument();
     expect(rows[0]).toBeChecked();
+  });
+
+  it('draws the wait in the list\'s own shape, then cascades the rows into it', async () => {
+    server.use(
+      http.get('/api/v1/zoho/contacts/:id/persons', async () => {
+        await delay(80);
+        return HttpResponse.json([VAEKEHU, MOANA, HINA]);
+      }),
+    );
+    show({ value: 'cp1' });
+    // Label, bordered box and the status line are all there before Books
+    // answers, so the arrival changes the rows, not the section's layout.
+    const skeleton = screen.getByTestId('contact-persons-skeleton');
+    expect(skeleton).toHaveAttribute('aria-busy', 'true');
+    expect(within(skeleton).getByText('Contacts')).toBeInTheDocument();
+    expect(within(skeleton).getByRole('status')).toHaveTextContent(/reading contacts/i);
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+
+    const rows = await screen.findAllByRole('radio');
+    expect(screen.queryByTestId('contact-persons-skeleton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // Each row a beat after the last, the add button one beat after the rows.
+    const delays = rows.map((r) => (r.closest('label') as HTMLElement).style.animationDelay);
+    expect(delays).toEqual(['0ms', '40ms', '80ms']);
+    rows.forEach((r) => expect(r.closest('label')).toHaveClass('animate-rise'));
+    expect(screen.getByRole('button', { name: /add/i })).toHaveStyle({ animationDelay: '120ms' });
   });
 
   it('auto-selects the preferred person, else the primary, else the first', async () => {

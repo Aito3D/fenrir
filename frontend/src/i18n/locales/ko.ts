@@ -322,7 +322,6 @@ export default {
         devisSub: '준비되는 대로 이메일로 보내드립니다.',
         waitingTitle: '승인 대기 중',
         waitingSub: '견적을 승인해 주시면 제작을 시작합니다.',
-        devisPaySub: '아래에서 온라인으로 결제하시면 바로 승인하실 수 있습니다.',
         acceptedTitle: '견적 승인됨',
         acceptedSub: '제작 일정을 잡고 있습니다.',
         workingTitle: '제작 중',

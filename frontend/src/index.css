@@ -800,6 +800,47 @@ body {
   }
 }
 
+/* The client's payment rating on the masthead: a ring in the tier colour
+   around the client glyph. It arrives a beat after the panel (its own
+   fetch), so it must not pop: the ring scales in on the signature curve and
+   a halo — one box-shadow spread — dissipates outward, reading as "this was
+   just checked" rather than "something flashed". `both` keeps the from-
+   state until the animation starts and the end state after, so a ring is
+   never painted at full size before its first frame. The halo span sits at
+   opacity 0 without animation (reduced motion), so it never shows there. */
+@keyframes aito-rating-ring {
+  from { opacity: 0; transform: scale(0.7); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes aito-rating-halo {
+  from { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 40%, transparent); }
+  to { opacity: 0; box-shadow: 0 0 0 10px transparent; }
+}
+
+@keyframes aito-rating-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-aito-rating-ring {
+  animation: aito-rating-ring 0.5s var(--ease-signature) both;
+}
+
+.animate-aito-rating-halo {
+  animation: aito-rating-halo 0.9s ease-out 0.15s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aito-rating-ring {
+    animation: aito-rating-fade 0.25s ease both;
+  }
+  .animate-aito-rating-halo {
+    animation: none;
+  }
+}
+
 /* Modal entrance — referenced by SpoolBuddy modals and the calculator
    settings modal. Tailwind v4 does not load tailwind.config.js (no @config
    directive), so these utilities must live here. */
@@ -944,6 +985,48 @@ body {
 }
 .animate-rise {
   animation: rise 0.25s var(--ease-signature) backwards;
+}
+
+/* Horizontal unfold for a trailing sibling that arrives late — the client
+   rating pill, which lands beside the client name seconds after the client
+   was picked. The grid track opens 0fr→1fr from @starting-style, so the input
+   it sits beside narrows over the 250ms child-entrance budget instead of
+   jumping the width of the pill. `overflow` rides along as a discrete
+   transition twice as long: hidden throughout the opening (the item is
+   clipped to its still-narrow cell), flipped to visible at the midpoint,
+   which is exactly when the track has finished — so the Tooltip bubble, an
+   absolutely positioned descendant, is never clipped once the pill is at
+   rest. Reduced motion keeps the fade and drops the width tween, which is
+   the half that moves the input. */
+.aito-unfold-x {
+  display: grid;
+  grid-template-columns: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-columns 0.25s var(--ease-signature),
+    opacity 0.25s var(--ease-signature);
+}
+.aito-unfold-x > * {
+  min-width: 0;
+  overflow: visible;
+  transition: overflow 0.5s allow-discrete;
+}
+@starting-style {
+  .aito-unfold-x {
+    grid-template-columns: 0fr;
+    opacity: 0;
+  }
+  .aito-unfold-x > * {
+    overflow: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aito-unfold-x {
+    transition-property: opacity;
+  }
+  .aito-unfold-x > * {
+    transition: none;
+  }
 }
 
 /* The Aito contact sheet: slides out from UNDER the panel's masthead. The
@@ -2421,6 +2504,11 @@ tbody .calc-table-row:hover {
 .track-pane-wrap {
   transition: height 200ms var(--ease-signature);
 }
+/* The payment block after a refetch flipped it (unpaid card → paid row):
+   AitoTrackPage sets the from/to height inline, same recipe as the pane. */
+.track-flip-wrap {
+  transition: height 200ms var(--ease-signature);
+}
 @keyframes track-copied {
   from { background-color: rgb(52 211 153 / 0.12); }
   to { background-color: transparent; }
@@ -2441,7 +2529,8 @@ tbody .calc-table-row:hover {
     transition: opacity 150ms linear;
   }
   .track-seg-pill,
-  .track-pane-wrap {
+  .track-pane-wrap,
+  .track-flip-wrap {
     transition: none;
   }
   .animate-track-copied {
@@ -2767,7 +2856,12 @@ tbody .calc-table-row:hover {
   opacity: 0;
   transition: opacity 400ms var(--ease-signature);
 }
-.track-map iframe[data-ready] { opacity: 1; }
+.track-map[data-ready] iframe { opacity: 1; }
+/* The "loading" line under the frame dissolves as the tiles arrive. */
+.track-map-placeholder {
+  transition: opacity 200ms var(--ease-exit);
+}
+.track-map[data-ready] .track-map-placeholder { opacity: 0; }
 .track-map::after {
   content: '';
   position: absolute;
@@ -2861,7 +2955,8 @@ tbody .calc-table-row:hover {
     transition: opacity 150ms linear;
     transition-delay: 0s;
   }
-  .track-map iframe { transition: none; }
+  .track-map iframe,
+  .track-map-placeholder { transition: none; }
   .track-scrim { transition: none; }
   @media (max-width: 1119px) {
     .track-panel,

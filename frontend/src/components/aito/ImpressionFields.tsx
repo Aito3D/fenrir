@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
@@ -205,12 +205,37 @@ export function ImpressionFields({
   // not coming back. `null` while the reference data is still loading, not
   // `manual`: a linked price would flash "Manual" for the cold-cache window
   // otherwise.
+  //
+  // While the parameter set is INCOMPLETE — a weight cleared before it is
+  // retyped, a printer deselected — the calculator has no figure at all, and
+  // "no figure" is not evidence of a hand-set price. Reading it as one was a
+  // real bug: select the weight, delete it, type the new value, and the cost
+  // never moved again, because the empty-field render had badged the price
+  // "Manual" and the next keystroke hit the guard in `handleChange`. So the
+  // gap carries over whatever the price last was (`lastKnownRef`, stamped
+  // after every render that COULD tell, for this exact stored figure) and
+  // only defaults to `manual` when there is nothing to carry: a task mounted
+  // with a cost the calculator cannot recompute — the imported-quote shape —
+  // is still, correctly, not the calculator's.
+  const lastKnownRef = useRef<{ unitCost: number; provenance: PriceProvenance } | null>(null);
   const provenance: PriceProvenance =
     unitCost === null || referenceDataLoading
       ? null
-      : computedUnit !== null && unitCost === computedUnit
-        ? 'linked'
-        : 'manual';
+      : computedUnit !== null
+        ? unitCost === computedUnit
+          ? 'linked'
+          : 'manual'
+        : lastKnownRef.current?.unitCost === unitCost
+          ? lastKnownRef.current.provenance
+          : 'manual';
+  useEffect(() => {
+    // Only a render that actually compared the two figures may stamp the
+    // memory: a carried-over verdict must not re-stamp itself, or a stale
+    // `manual` would stick after a genuine relink.
+    if (unitCost !== null && computedUnit !== null) {
+      lastKnownRef.current = { unitCost, provenance };
+    }
+  }, [unitCost, computedUnit, provenance]);
   const canApplyComputed = computedUnit !== null && unitCost !== computedUnit;
 
   // Pricing is a side effect on the parent, so it happens here — at the moment
@@ -302,6 +327,10 @@ export function ImpressionFields({
             type="text"
             value={value.color}
             onChange={(e) => handleChange({ ...value, color: e.target.value })}
+            // The browser's own suggestion list (every colour ever typed
+            // here) hid the field's content and the row below it; the
+            // material select is where the shop's palette lives.
+            autoComplete="off"
             className={inputCls}
           />
         </GridRow>

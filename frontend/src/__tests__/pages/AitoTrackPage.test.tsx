@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import i18n from '../../i18n';
-import { screen, within, waitFor, render as rtlRender } from '@testing-library/react';
+import { fireEvent, screen, within, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -283,8 +283,13 @@ describe('AitoTrackPage', () => {
     );
     renderAt('down');
     const first = await screen.findByTestId('track-error');
-    expect(first).toHaveClass('animate-track-fade');
+    // The message and its button fade in as ONE block: the class is on the
+    // wrapper, and the button is inside it, not popping in beside it.
+    const block = screen.getByTestId('track-error-block');
+    expect(block).toHaveClass('animate-track-fade');
+    expect(first).not.toHaveClass('animate-track-fade');
     const retry = screen.getByRole('button', { name: 'Réessayer' });
+    expect(block).toContainElement(retry);
     expect(retry).toBeEnabled();
     await userEvent.click(retry);
     // While the retry is in flight the message stays put (no skeleton
@@ -300,7 +305,8 @@ describe('AitoTrackPage', () => {
     expect(again).toBeEnabled();
     expect(calls).toBe(2);
     expect(screen.getByTestId('track-error')).not.toBe(first);
-    expect(screen.getByTestId('track-error')).toHaveClass('animate-track-fade');
+    expect(screen.getByTestId('track-error-block')).not.toBe(block);
+    expect(screen.getByTestId('track-error-block')).toHaveClass('animate-track-fade');
   });
 
   // T-086: a client on a flaky connection whose request is accepted but
@@ -694,14 +700,15 @@ describe('AitoTrackPage — online payment', () => {
   });
 
   it('unpaid deposit before acceptance: the deposit validates the quote', async () => {
-    mockTrack({ ...FIXTURE, column: 'devis', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
+    // A sent quote sits in Accord: the backend only ships a pending link once
+    // the quote has left Devis (2026-09-23), so the state card above the pay
+    // button is the ordinary "waiting for your approval" one.
+    mockTrack({ ...FIXTURE, column: 'waiting', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: true } });
     renderAt('tok');
     const card = await screen.findByTestId('track-payment');
     expect(within(card).getByText('Validez votre devis')).toBeInTheDocument();
     expect(within(card).getByText('Un acompte valide votre devis et lance la fabrication.')).toBeInTheDocument();
-    // And the Devis state card no longer promises an e-mail.
-    expect(screen.getByRole('heading', { level: 2, name: 'Devis en préparation' })).toBeInTheDocument();
-    expect(screen.getByText('Vous pouvez déjà le valider en réglant en ligne ci-dessous.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'En attente de votre accord' })).toBeInTheDocument();
   });
 
   it('accepted in the Accord column: "Devis validé" above the paid line', async () => {
@@ -717,6 +724,65 @@ describe('AitoTrackPage — online payment', () => {
     renderAt('tok');
     await screen.findByRole('heading', { level: 2, name: 'Devis en préparation' });
     expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
+  });
+
+  // The client pays in the OSB tab and comes back; window focus refetches
+  // and the unpaid card becomes the paid row. That arrival is a moment: the
+  // block rises again and the dot pops. A refetch that changes nothing, or
+  // that changes something else, must not replay it.
+  it('a refetch that flips the payment to paid rises the block again and pops the dot; one that changes nothing does not', async () => {
+    let payment: AitoTracking['payment'] = { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false };
+    let column: AitoTracking['column'] = 'devis';
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column, accepted: true, payment })));
+    const { queryClient } = renderAt('flip');
+    const card = await screen.findByTestId('track-payment');
+    expect(card).toHaveAttribute('data-state', 'unpaid');
+    // The entrance: the block rises on the first-load clock, no dot pop.
+    const first = screen.getByTestId('track-payment-block');
+    expect(first).toHaveClass('animate-rise');
+    expect(first.style.animationDelay).not.toBe('');
+    expect(screen.queryByTestId('track-payment-dot-pop')).toBeNull();
+    // A refetch that changes nothing: same block, still the entrance classes,
+    // nothing new to play.
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'flip'] });
+    expect(screen.getByTestId('track-payment-block')).toBe(first);
+    expect(screen.queryByTestId('track-payment-dot-pop')).toBeNull();
+    // A refetch that changes something ELSE (the order advances): the block
+    // does not move — it was not the thing that changed.
+    column = 'waiting';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'flip'] });
+    await screen.findByRole('heading', { level: 2, name: 'Devis validé' });
+    expect(screen.getByTestId('track-payment-block')).toBe(first);
+    expect(screen.getByTestId('track-payment-block')).not.toHaveClass('animate-rise');
+    // The flip: the client paid and came back.
+    payment = { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: false };
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'flip'] });
+    await waitFor(() => expect(screen.getByTestId('track-payment')).toHaveAttribute('data-state', 'paid'));
+    const block = screen.getByTestId('track-payment-block');
+    expect(block).not.toBe(first);
+    expect(block).toHaveClass('animate-rise');
+    // On its own clock, not the first-load one: no inline delay.
+    expect(block.style.animationDelay).toBe('');
+    const dot = screen.getByTestId('track-payment-dot-pop');
+    expect(dot).toHaveClass('animate-track-pop');
+    expect(dot.style.animationDelay).toBe('80ms');
+    // And a later refetch that changes nothing keeps the same block: the
+    // finished animation does not replay.
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'flip'] });
+    expect(screen.getByTestId('track-payment-block')).toBe(block);
+  });
+
+  it('an invoice flipping to paid pops the paid row\'s dot too', async () => {
+    let invoice: AitoTracking['invoice'] = 'unpaid';
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column: 'finish', invoice })));
+    const { queryClient } = renderAt('inv-flip');
+    await screen.findByTestId('track-invoice');
+    expect(screen.queryByTestId('track-invoice-dot-pop')).toBeNull();
+    invoice = 'paid';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'inv-flip'] });
+    await waitFor(() => expect(screen.getByTestId('track-invoice')).toHaveAttribute('data-state', 'paid'));
+    expect(screen.getByTestId('track-payment-block')).toHaveClass('animate-rise');
+    expect(screen.getByTestId('track-invoice-dot-pop')).toHaveClass('animate-track-pop');
   });
 });
 
@@ -850,5 +916,25 @@ describe('AitoTrackPage — side panels', () => {
     await queryClient.refetchQueries({ queryKey: ['aito-track', 'cleared'] });
     await waitFor(() => expect(screen.queryByTestId('track-panel-pay')).not.toBeInTheDocument());
     expect(stage()).not.toHaveAttribute('data-open');
+  });
+
+  it('the map\'s loading line stays mounted and dissolves once the frame has loaded', async () => {
+    mockTrack(UNPAID);
+    renderAt('map');
+    await screen.findByTestId('track-invoice');
+    const map = screen.getByTestId('track-map');
+    const placeholder = within(map).getByText('Chargement du plan…');
+    expect(placeholder).toHaveClass('track-map-placeholder');
+    expect(map).not.toHaveAttribute('data-ready');
+    // The frame is only requested once the panel opens.
+    const frame = within(shopPanel()).getByTitle("Plan d'accès au magasin") as HTMLIFrameElement;
+    expect(frame).not.toHaveAttribute('src');
+    await userEvent.click(shopButton());
+    await waitFor(() => expect(frame).toHaveAttribute('src'));
+    fireEvent.load(frame);
+    expect(map).toHaveAttribute('data-ready', 'true');
+    // Still there, under the tiles: the stylesheet fades it, React never
+    // removes it.
+    expect(within(map).getByText('Chargement du plan…')).toBe(placeholder);
   });
 });
