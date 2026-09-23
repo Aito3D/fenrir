@@ -26,6 +26,7 @@ const link: AitoPaymentLink = {
 function project(overrides: Partial<AitoProject> = {}): AitoProject {
   return { id: 12, description: 'x', column: 'devis', position: 0, status: 'active', client_id: 'z1', client_name: 'ACME',
     client_phone: null, client_email: null, client_is_company: null, client_social_network: null, client_social_handle: null,
+    client_contact_person_id: null, client_contact_name: null,
     quote_id: 'E1', quote_number: 'DEV-2026-1234', quote_date: '2026-09-12', quote_total: 12500, quote_url: null, quote_salesperson: null,
     quote_status: 'sent', quote_accepted_at: null, quote_sent_at: null, invoice_status: null, invoice_balance: null,
     invoice_due_date: null, invoice_checked_at: null, quote_expiry_date: '2026-09-27', retainer_paid_total: null, customer_credit_total: null, payment_link: link,

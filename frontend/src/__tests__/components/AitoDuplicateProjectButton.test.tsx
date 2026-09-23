@@ -19,6 +19,8 @@ const project = {
   client_is_company: false,
   client_social_network: null,
   client_social_handle: null,
+  client_contact_person_id: null,
+  client_contact_name: null,
   due_date: '2026-09-20',
   flag: 'urgent',
   shipping_island: null,

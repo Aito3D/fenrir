@@ -4322,6 +4322,9 @@ export interface AitoClientHistory {
    *  `network` stays a plain string on the wire; the drawer narrows it with
    *  `isSocialNetwork` before trusting it. */
   latest_social: { network: string; handle: string } | null;
+  /** The newest active card's contact person id, beyond the limit too —
+   *  what the drawer pre-selects for a returning company. */
+  latest_contact_person_id: string | null;
 }
 
 export type AitoClientRatingTier = 'good' | 'medium' | 'bad' | 'new' | 'unavailable';
@@ -4428,6 +4431,11 @@ export interface AitoProject {
    *  client is picked for another project. Both fields are null or both set. */
   client_social_network: string | null;
   client_social_handle: string | null;
+  /** The Zoho contact person a COMPANY card is for. Card-only snapshot: the
+   *  id names Books' contactpersons row, the name is the display name at
+   *  pick time. Both null on person cards and on older company cards. */
+  client_contact_person_id: string | null;
+  client_contact_name: string | null;
   /** Snapshot of the Zoho quote this project was imported from; null on cards
    *  created by hand. `quote_total` is the QUOTE's total, which can exceed the
    *  project total when non-AITO lines were skipped. */
@@ -4588,6 +4596,8 @@ export interface AitoProjectUpdate {
    *  is a 422 — there is no "swap the network, keep the handle" partial edit. */
   client_social_network?: string | null;
   client_social_handle?: string | null;
+  client_contact_person_id?: string | null;
+  client_contact_name?: string | null;
   shipping_island?: string | null;
   shipping_first_name?: string | null;
   shipping_last_name?: string | null;
@@ -4832,6 +4842,19 @@ export interface ZohoContactDetail extends ZohoContact {
   last_name: string;
 }
 
+/** One person on a Books customer (GET /zoho/contacts/{id}/persons). `name`
+ *  is house-cased server side; the raw first/last are for edit prefill. */
+export interface ZohoContactPerson {
+  contact_person_id: string;
+  first_name: string;
+  last_name: string;
+  name: string;
+  email: string;
+  phone: string;
+  mobile: string;
+  is_primary: boolean;
+}
+
 /** Body of PUT /aito/{id}/client. Which name fields apply is the CARD's
  *  choice (`client_is_company`), not the caller's: a company card sends
  *  `company_name`, a person card `first_name` + `last_name`. */
@@ -4846,6 +4869,10 @@ export interface AitoClientEdit {
    *  present; the contact sheet always sends the pair. */
   client_social_network?: string | null;
   client_social_handle?: string | null;
+  /** Company cards only; sent as a pair by the contact sheet. Absent, the
+   *  card's current person receives the coordinates. */
+  client_contact_person_id?: string | null;
+  client_contact_name?: string | null;
   expected_version?: number;
 }
 
@@ -8154,6 +8181,8 @@ export const api = {
     client_is_company?: boolean | null;
     client_social_network?: string | null;
     client_social_handle?: string | null;
+    client_contact_person_id?: string | null;
+    client_contact_name?: string | null;
     tasks?: AitoTaskCreate[];
     quote_id?: string | null;
     quote_number?: string | null;
@@ -8425,6 +8454,16 @@ export const api = {
   ) =>
     request<void>(`/zoho/contacts/${encodeURIComponent(id)}`, {
       method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  listZohoContactPersons: (contactId: string) =>
+    request<ZohoContactPerson[]>(`/zoho/contacts/${encodeURIComponent(contactId)}/persons`),
+  createZohoContactPerson: (
+    contactId: string,
+    data: { first_name: string; last_name?: string; email?: string; phone?: string },
+  ) =>
+    request<ZohoContactPerson>(`/zoho/contacts/${encodeURIComponent(contactId)}/persons`, {
+      method: 'POST',
       body: JSON.stringify(data),
     }),
 

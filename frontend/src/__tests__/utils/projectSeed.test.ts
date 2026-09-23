@@ -15,6 +15,8 @@ const project = {
   client_is_company: false,
   client_social_network: 'instagram',
   client_social_handle: 'jp_dupont',
+  client_contact_person_id: null,
+  client_contact_name: null,
   quote_id: 'EST-9',
   quote_number: 'EST-000009',
   quote_status: 'accepted',

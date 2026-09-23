@@ -53,6 +53,8 @@ describe('ShippingCard', () => {
       client_is_company: false,
       client_social_network: null,
       client_social_handle: null,
+      client_contact_person_id: null,
+      client_contact_name: null,
     } as unknown as AitoProject;
     render(<ShippingCard project={withClient} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
@@ -72,6 +74,8 @@ describe('ShippingCard', () => {
       client_is_company: true,
       client_social_network: null,
       client_social_handle: null,
+      client_contact_person_id: null,
+      client_contact_name: null,
     } as unknown as AitoProject;
     render(<ShippingCard project={company} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
