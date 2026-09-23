@@ -63,6 +63,7 @@ const HISTORY: AitoClientHistory = {
     { id: 41, created_at: '2026-07-02T09:14:00', column: 'print', total: 0, tasks: [] },
   ],
   latest_social: null,
+  latest_contact_person_id: null,
 };
 
 function mockHistory(body: AitoClientHistory | null, status = 200) {
@@ -104,7 +105,7 @@ describe('ClientHistory', () => {
   });
 
   it('renders nothing when the history is empty', async () => {
-    const calls = mockHistory({ cards: [], latest_social: null });
+    const calls = mockHistory({ cards: [], latest_social: null, latest_contact_person_id: null });
     render(<ClientHistory clientId="zA" isDefault={false} onReuse={vi.fn()} />);
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(screen.queryByTestId('client-history')).not.toBeInTheDocument();
