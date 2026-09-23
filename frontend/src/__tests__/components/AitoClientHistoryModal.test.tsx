@@ -111,8 +111,12 @@ describe('ClientHistoryModal', () => {
     mockHistory({ cards });
     render(<ClientHistoryModal project={project} onClose={vi.fn()} />);
     const summary = await screen.findByTestId('client-history-summary');
-    expect(summary).toHaveTextContent(`4 projects · ${money(46250)}`);
-    expect(summary).toHaveTextContent(formatDate('2025-09-02T10:00:00', { month: 'short', year: 'numeric' }));
+    // Three stat tiles, each figure set in its own <b>: count, spend, first month.
+    expect(summary).toHaveTextContent('4 projects');
+    expect(summary).toHaveTextContent(money(46250));
+    const since = formatDate('2025-09-02T10:00:00', { month: 'short', year: 'numeric' });
+    expect(summary).toHaveTextContent(`since ${since}`);
+    expect(within(summary).getAllByText((_, el) => el?.tagName === 'B' && el.textContent === since)).toHaveLength(1);
   });
 
   it('shows the loading state, then the empty state', async () => {

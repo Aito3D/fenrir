@@ -193,7 +193,11 @@ export function ClientRatingRing({
         role="img"
         aria-label={ariaLabel}
         style={style}
-        className="relative inline-flex flex-shrink-0 items-center justify-center"
+        // mr-[6px]: the ring paints 5px outside the glyph (`-inset-[5px]`
+        // below) without taking layout room, so it ate the masthead's gap
+        // and sat against the name. Reserving that extent on the right
+        // keeps the glyph-to-name space the same whether or not it rings.
+        className="relative mr-[6px] inline-flex flex-shrink-0 items-center justify-center"
       >
         {children}
         {/* The halo goes first so the ring paints over its spread. */}

@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Loader2, User, X } from 'lucide-react';
 import { Card, CardContent } from '../Card';
@@ -16,14 +16,21 @@ import { CLIENT_TIMELINE_LIMIT, summariseTimeline, timelineItems } from './clien
 /** A beat past .animate-modal-out's 150ms — the margin CreateInvoiceModal gives. */
 const MODAL_OUT_MS = 170;
 
+/** One inset for the masthead, the stat tiles and the rows: content lines up
+ *  on a single left edge, and the rail sits just inside it. */
+const INSET = 'px-[24px]';
+
 /** Every project this client ever had, newest first, on a vertical rail.
  *
  *  Opened from the panel masthead (a 0.5 s hold on the name, or the History
- *  button). Each row is identified by `#id · quote number` and its total —
- *  the three things an operator quotes back to a returning client — with the
- *  description and stage under them. The row for the card the dialog was
- *  opened from is tinted and inert; every other row is a button that hands
- *  its id to `onOpenCard`, which the page turns into a panel swap.
+ *  button). The masthead is the client glyph beside the name with the
+ *  dialog's purpose under it, then a strip of stat tiles (projects, spend,
+ *  first month). Each row is two lines: date, `#id · quote number`, the
+ *  stage chip and the total on the first — the things an operator quotes
+ *  back to a returning client — and the description under them. The row for
+ *  the card the dialog was opened from is tinted and inert; every other row
+ *  is a button that hands its id to `onOpenCard`, which the page turns into
+ *  a panel swap.
  *
  *  It is rendered by the panel, so it stacks above it (z-[110] against the
  *  panel's z-50 backdrop) and never touches the masthead's height.
@@ -73,6 +80,7 @@ export function ClientHistoryModal({
   };
 
   const ClientGlyph = project.client_is_company ? Building2 : User;
+  const statFigure = <b className="text-[.88rem] font-semibold tabular-nums text-white" />;
 
   return (
     // z-[110], not z-50: the panel's own backdrop is z-50, so a lower overlay
@@ -110,36 +118,52 @@ export function ClientHistoryModal({
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <CardContent className="p-0 flex flex-col min-h-0">
-          <header className="flex items-start justify-between gap-3 px-5 pt-5 pb-3.5 border-b border-bambu-dark-tertiary">
+          <header className={`grid grid-cols-[36px_1fr_auto] items-center gap-x-3 ${INSET} pt-5 pb-4`}>
+            <span
+              aria-hidden="true"
+              className="grid h-9 w-9 place-items-center rounded-[9px] bg-bambu-dark-tertiary text-bambu-gray-light"
+            >
+              <ClientGlyph className="h-[17px] w-[17px]" strokeWidth={2.2} />
+            </span>
             <div className="min-w-0">
-              <p className="text-[.72rem] font-semibold uppercase tracking-[.08em] text-bambu-gray">
-                {t('aito.clientHistory')}
-              </p>
-              <h3 className="mt-0.5 flex items-center gap-2 text-[1.15rem] font-semibold tracking-[-0.01em] text-white min-w-0">
-                <ClientGlyph className="h-4 w-4 flex-shrink-0" strokeWidth={2.5} aria-hidden="true" />
-                <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+              <h3 className="truncate text-[1.15rem] font-semibold leading-tight tracking-[-0.012em] text-white">
+                {project.client_name ?? t('aito.noClient')}
               </h3>
-              {cards.length > 0 && (
-                <p data-testid="client-history-summary" className="mt-1 text-[.85rem] text-bambu-gray-light">
-                  {t('aito.clientHistorySummary', {
-                    count: summary.count,
-                    total: formatMoney(summary.total, currency),
-                    date: formatDate(summary.since, { month: 'short', year: 'numeric' }),
-                  })}
-                </p>
-              )}
+              <p className="mt-0.5 text-[.82rem] text-bambu-gray">{t('aito.clientHistory')}</p>
             </div>
             <button
               type="button"
               onClick={requestClose}
               aria-label={t('common.close')}
-              className={`flex-shrink-0 rounded-lg p-1.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+              className={`self-start rounded-lg p-1.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
             >
               <X className="h-4.5 w-4.5" aria-hidden="true" />
             </button>
           </header>
 
-          <div className="overflow-y-auto flex-1 min-h-0 px-5 pt-2 pb-5">
+          {cards.length > 0 && (
+            <div data-testid="client-history-summary" className={`flex flex-wrap items-center gap-1.5 ${INSET} pb-3.5`}>
+              <span className={STAT_CLS}>
+                <Trans i18nKey="aito.clientHistoryProjects" count={summary.count} components={{ b: statFigure }}>
+                  {'<b>{{count}}</b> projects'}
+                </Trans>
+              </span>
+              <span className={STAT_CLS}>
+                <b className="text-[.88rem] font-semibold tabular-nums text-white">{formatMoney(summary.total, currency)}</b>
+              </span>
+              <span className={STAT_CLS}>
+                <Trans
+                  i18nKey="aito.clientHistorySince"
+                  values={{ date: formatDate(summary.since, { month: 'short', year: 'numeric' }) }}
+                  components={{ b: statFigure }}
+                >
+                  {'since <b>{{date}}</b>'}
+                </Trans>
+              </span>
+            </div>
+          )}
+
+          <div className={`overflow-y-auto flex-1 min-h-0 border-t border-aito-line ${INSET} pt-3.5 pb-5`}>
             {history.isPending && hasClient && (
               <div className="flex items-center gap-2 py-8 text-sm text-bambu-gray">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -159,15 +183,15 @@ export function ClientHistoryModal({
             )}
             {cards.length > 0 && (
               // The rail is a pseudo-element on the list so it spans year
-              // markers and rows alike; its x matches the dot's centre
-              // (`left-[88px]`, the date column's width).
-              <ol className="relative before:absolute before:left-[88px] before:top-2.5 before:bottom-2.5 before:w-0.5 before:rounded-full before:bg-bambu-dark-tertiary">
+              // markers and rows alike; it sits 5px inside the inset and the
+              // list's padding (pl-5) is the room the dots and markers need.
+              <ol className="relative pl-5 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-bambu-dark-tertiary">
                 {items.map((item) =>
                   item.kind === 'year' ? (
                     <li
                       key={`year-${item.year}`}
                       data-testid="client-history-year"
-                      className="relative pl-[110px] pt-3.5 pb-1.5 text-[.72rem] font-semibold uppercase tracking-[.1em] text-bambu-gray before:absolute before:left-[85px] before:top-[17px] before:h-2 before:w-2 before:rotate-45 before:rounded-[2px] before:bg-bambu-dark-tertiary"
+                      className="relative mt-3 mb-1.5 text-[.74rem] font-semibold leading-5 tracking-[.04em] text-bambu-gray first:mt-0 before:absolute before:-left-[18px] before:top-[7px] before:h-[7px] before:w-[7px] before:rotate-45 before:rounded-[1.5px] before:bg-bambu-gray-dark"
                     >
                       {item.year}
                     </li>
@@ -190,6 +214,9 @@ export function ClientHistoryModal({
     </div>
   );
 }
+
+const STAT_CLS =
+  'flex items-baseline gap-1.5 rounded-lg bg-bambu-dark-tertiary/45 px-2.5 py-1.5 text-[.78rem] text-bambu-gray';
 
 function TimelineRow({
   card,
@@ -223,38 +250,35 @@ function TimelineRow({
         : 'border-aito-line bg-white/[0.04] text-aito-muted';
   const chip = declined ? t('aito.clientHistoryDeclined') : current ? t('aito.clientHistoryThisCard', { stage }) : stage;
 
+  // Two lines: the date spans both on the left; identity + chip and the
+  // total share the first, the description has the second to itself.
   const body = (
     <>
-      <div className="flex items-center gap-2.5 font-mono text-[.8rem] text-bambu-gray-light">
-        <span className="font-semibold text-white">#{card.id}</span>
-        {card.quote_number ? (
-          <span>{card.quote_number}</span>
-        ) : (
-          <span className="font-sans italic text-bambu-gray">{t('aito.clientHistoryNoQuote')}</span>
-        )}
-      </div>
-      <div className="whitespace-nowrap text-right text-[.95rem] font-semibold tabular-nums text-white">
-        {formatMoney(card.total, currency)}
-      </div>
-      <div className="col-start-1 truncate text-[.9rem] text-white">{card.description}</div>
-      <span className={`justify-self-end whitespace-nowrap rounded-full border px-2 py-0.5 text-[.7rem] font-semibold ${chipCls}`}>
-        {chip}
-      </span>
-    </>
-  );
-  const rowCls = 'my-1 ml-[18px] grid grid-cols-[1fr_auto] gap-x-3.5 gap-y-1 rounded-[10px] border px-3 py-2.5 text-left';
-
-  return (
-    <li
-      data-testid="client-history-row"
-      aria-current={current ? 'true' : undefined}
-      className="relative grid grid-cols-[88px_1fr] items-start"
-    >
-      <div className="pr-[22px] pt-3 text-right text-[.78rem] leading-tight tabular-nums text-bambu-gray-light">
+      <div className="row-span-2 self-start pt-px text-[.8rem] leading-tight tabular-nums text-bambu-gray-light">
         {formatDate(card.created_at, { day: 'numeric', month: 'short' })}
         <span className="block text-[.72rem] text-bambu-gray">{formatDate(card.created_at, { year: 'numeric' })}</span>
       </div>
-      <span aria-hidden="true" className={`absolute left-[83px] top-[15px] z-[1] h-3 w-3 rounded-full border-2 ${dotCls}`} />
+      <div className="flex min-w-0 items-center gap-2 text-[.8rem] text-bambu-gray-light">
+        <span className="font-semibold text-white">#{card.id}</span>
+        {card.quote_number ? (
+          <span className="tabular-nums">{card.quote_number}</span>
+        ) : (
+          <span className="italic text-bambu-gray">{t('aito.clientHistoryNoQuote')}</span>
+        )}
+        <span className={`whitespace-nowrap rounded-full border px-2 py-px text-[.7rem] font-semibold ${chipCls}`}>{chip}</span>
+      </div>
+      <div className="whitespace-nowrap text-[.95rem] font-semibold tabular-nums text-white">
+        {formatMoney(card.total, currency)}
+      </div>
+      <div className="col-span-2 col-start-2 truncate text-[.9rem] text-white">{card.description}</div>
+    </>
+  );
+  const rowCls =
+    'grid w-full grid-cols-[62px_1fr_auto] items-baseline gap-x-3 gap-y-[3px] rounded-[9px] border px-3 py-2.5 text-left';
+
+  return (
+    <li data-testid="client-history-row" aria-current={current ? 'true' : undefined} className="relative mb-1">
+      <span aria-hidden="true" className={`absolute -left-5 top-[13px] z-[1] h-3 w-3 rounded-full border-2 ${dotCls}`} />
       {current || !onOpen ? (
         <div className={`${rowCls} ${current ? 'border-bambu-green/35 bg-bambu-green/[0.07]' : 'border-transparent'}`}>{body}</div>
       ) : (
@@ -262,7 +286,7 @@ function TimelineRow({
           type="button"
           onClick={() => onOpen(card.id)}
           title={t('aito.clientHistoryOpenCard', { id: card.id })}
-          className={`${rowCls} w-full border-transparent transition-[background-color,border-color] duration-150 hover:border-bambu-dark-tertiary hover:bg-bambu-dark ${focusRingCls}`}
+          className={`${rowCls} border-transparent transition-[background-color,border-color] duration-150 hover:border-bambu-dark-tertiary hover:bg-bambu-dark ${focusRingCls}`}
         >
           {body}
         </button>

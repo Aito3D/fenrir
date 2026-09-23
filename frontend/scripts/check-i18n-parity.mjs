@@ -556,6 +556,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  '<b>{{count}}</b> project', // aito.clientHistoryProjects_one: the Dutch singular is the same word
   // Fork keys (calculator / filament-profiles): formulas, units and loanwords
   // that are the same word in Dutch.
   '{{n}} preset', '{{n}} presets', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
