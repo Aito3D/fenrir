@@ -730,7 +730,13 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 revealedUnpricedName={revealedUnpricedName}
                 hasUnpriced={hasUnpriced}
                 summaryState={summaryState}
-                clientAccountName={draft?.name ?? t('aito.noClient')}
+                clientAccountName={
+                  draft
+                    ? draft.isCompany && draft.contactName
+                      ? `${draft.name} · ${draft.contactName}`
+                      : draft.name
+                    : t('aito.noClient')
+                }
                 clientReachable={clientReachable}
                 clientContact={phone || email || socialHandle}
                 clientRevealed={clientRevealed}
