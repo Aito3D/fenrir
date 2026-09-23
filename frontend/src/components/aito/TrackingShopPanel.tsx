@@ -68,7 +68,7 @@ export function TrackingShopPanel({ open, onClose, titleRef }: { open: boolean; 
             title={t('aito.track.shop.mapTitle')}
             src={mapSrc ?? undefined}
             loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
+            referrerPolicy="no-referrer"
             allowFullScreen
             data-ready={mapReady || undefined}
             onLoad={() => {

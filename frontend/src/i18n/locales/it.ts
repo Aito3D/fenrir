@@ -283,6 +283,7 @@ export default {
         shopAddress: 'Indirizzo',
         shopHint: 'Da pagare in laboratorio al ritiro.',
         copied: 'Copiato',
+        copyFailed: 'Copia non riuscita — seleziona il testo',
         copyIban: "Copia l'IBAN",
         copyBeneficiary: 'Copia il beneficiario',
         copyBic: 'Copia il BIC',

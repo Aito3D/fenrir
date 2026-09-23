@@ -8117,6 +8117,7 @@ export default {
         shopAddress: 'Adres',
         shopHint: 'Te betalen in het atelier bij het ophalen.',
         copied: 'Gekopieerd',
+        copyFailed: 'Kopiëren mislukt — selecteer de tekst',
         copyIban: 'IBAN kopiëren',
         copyBeneficiary: 'Begunstigde kopiëren',
         copyBic: 'BIC kopiëren',

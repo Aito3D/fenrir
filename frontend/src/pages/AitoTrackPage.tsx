@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -13,7 +13,7 @@ import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
 import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
 import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
-import { CARD, FOCUS, PRESS, delayAt } from '../utils/trackingShell';
+import { CARD, FOCUS, I18N_SETTLE_TIMEOUT_MS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
 import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
 
@@ -73,7 +73,16 @@ export function AitoTrackPage() {
   // mounted — react-i18next re-renders it in place when the chunk lands.
   const everReady = useRef(false);
   if (ready) everReady.current = true;
-  const settled = everReady.current;
+  // A stalled locale chunk (the flaky mobile link TRACK_TIMEOUT_MS already
+  // guards against) must not hide data that has already landed forever:
+  // once this fires, `settled` goes true even if `ready` never does, and it
+  // never un-settles — same one-way latch as `everReady` itself.
+  const [i18nTimedOut, setI18nTimedOut] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setI18nTimedOut(true), I18N_SETTLE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const settled = everReady.current || i18nTimedOut;
   // The choreography plays on the FIRST data only. React Query refetches on
   // window focus once the 30 s stale time has passed; replaying the rail on
   // every tab switch would be the over-animation this page must avoid. A
@@ -143,6 +152,17 @@ export function AitoTrackPage() {
   const hasTerms = showContent && (data.invoice !== null ? data.invoice !== 'paid' : data.payment?.state === 'unpaid' && !!data.payment.url);
   const payTrigger = { open: panel.open === 'pay', controls: 'track-panel-pay', toggle: (from: HTMLElement) => panel.toggle('pay', from) };
   const shopTrigger = { open: panel.open === 'shop', controls: 'track-panel-shop', toggle: (from: HTMLElement) => panel.toggle('shop', from) };
+  // A refetch (e.g. the operator marking the invoice paid while the client
+  // is away) can flip hasTerms false while the payment panel is still open:
+  // its trigger unmounts along with it, so close() must drive the panel
+  // shut itself rather than wait for a button that is no longer there.
+  useEffect(() => {
+    if (!hasTerms && panel.open === 'pay') panel.close();
+    // panel.open and panel.close are the only fields read here; depending
+    // on the whole `panel` object (a fresh literal every render) would
+    // re-run this every render for no reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasTerms, panel.open, panel.close]);
   const retry = () => {
     setRetrying(true);
     void query.refetch().finally(() => setRetrying(false));
@@ -150,7 +170,7 @@ export function AitoTrackPage() {
 
   if (is404 && settled) {
     return (
-      <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+      <div className={PAGE}>
         <div className={CARD}>
           <TrackingLanguageSelect />
           {/* The same fade-and-rise contract as every other state of the
@@ -180,7 +200,7 @@ export function AitoTrackPage() {
   }
 
   return (
-    <div className="min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito-ink">
+    <div className={PAGE}>
       <div className="track-stage" data-open={panel.open ?? undefined} data-testid="track-stage">
         {/* Phones: the panel is a sheet and this dims the card behind it.
             Wide screens never show it. A tap on it closes the sheet. */}

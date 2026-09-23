@@ -283,6 +283,7 @@ export default {
         shopAddress: '地址',
         shopHint: '取貨時在工作室付款。',
         copied: '已複製',
+        copyFailed: '複製失敗——請選取文字',
         copyIban: '複製 IBAN',
         copyBeneficiary: '複製收款人',
         copyBic: '複製 BIC',

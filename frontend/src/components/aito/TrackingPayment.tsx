@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingPayment } from '../../api/client';
+import { FOCUS, TERMS_BUTTON } from '../../utils/trackingShell';
+import { TrackingPaidRow } from './trackingShell';
 
 /** What a card needs to drive one of the page's side panels: whether it is
  *  open, the panel's id for `aria-controls`, and a toggle that takes the
@@ -22,13 +24,13 @@ export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayme
 
   if (payment.state === 'paid') {
     return (
-      <div data-testid="track-payment" data-state="paid" className="text-[15px]">
-        <div className="flex items-center gap-[8px]">
-          <span className="h-[8px] w-[8px] shrink-0 rounded-full bg-green-500" aria-hidden="true" />
-          <span className="font-semibold text-aito-ink">{t(payment.deposit ? 'aito.track.payment.depositPaidTitle' : 'aito.track.payment.paidTitle')}</span>
-        </div>
-        <p className="mt-[4px] text-[13px] text-aito-muted">{t('aito.track.payment.paidSub')}</p>
-      </div>
+      <TrackingPaidRow
+        data-testid="track-payment"
+        data-state="paid"
+        dotClassName="bg-green-500"
+        title={t(payment.deposit ? 'aito.track.payment.depositPaidTitle' : 'aito.track.payment.paidTitle')}
+        sub={t('aito.track.payment.paidSub')}
+      />
     );
   }
 
@@ -36,7 +38,7 @@ export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayme
   // this card is actionable without one (§7.3 branch 4: otherwise, nothing).
   if (!payment.url) return null;
 
-  const button = 'inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan min-[400px]:w-auto';
+  const button = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
   return (
     <div data-testid="track-payment" data-state="unpaid">
       <div className="flex flex-wrap items-center gap-[16px] rounded-[12px] border border-aito-line px-[16px] py-[16px] text-[15px]">
@@ -55,7 +57,7 @@ export function TrackingPayment({ payment, terms }: { payment: AitoTrackingPayme
           aria-expanded={terms.open}
           aria-controls={terms.controls}
           onClick={(e) => terms.toggle(e.currentTarget)}
-          className={`${button} border text-aito-cyan hover:bg-aito-cyan/10 active:bg-aito-cyan/15 ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
+          className={`${TERMS_BUTTON} ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
         >
           {t('aito.track.paymentTermsToggle')}
         </button>

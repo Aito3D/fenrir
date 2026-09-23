@@ -283,6 +283,7 @@ export default {
         shopAddress: 'Dirección',
         shopHint: 'Se paga en el taller al recoger el pedido.',
         copied: 'Copiado',
+        copyFailed: 'No se pudo copiar — selecciona el texto',
         copyIban: 'Copiar el IBAN',
         copyBeneficiary: 'Copiar el beneficiario',
         copyBic: 'Copiar el BIC',

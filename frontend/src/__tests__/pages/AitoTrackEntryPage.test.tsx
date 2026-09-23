@@ -99,6 +99,35 @@ function mockTrackHung() {
   return seen;
 }
 
+/** One request per token, each held open until `release(token, status)` is
+ *  called by hand — lets a test park two overlapping `check()` calls at
+ *  will and choose which one answers first, to pin `check()`'s "only the
+ *  latest sequence number may speak" guard on both branches. */
+function mockTrackHeld() {
+  const seen: string[] = [];
+  const pending = new Map<string, (status: number) => void>();
+  server.use(
+    http.get('/api/v1/aito/track/:token', async ({ params }) => {
+      const token = String(params.token);
+      seen.push(token);
+      const status = await new Promise<number>((resolve) => {
+        pending.set(token, resolve);
+      });
+      if (status === 200) return HttpResponse.json(FIXTURE);
+      return HttpResponse.json({ detail: 'x' }, { status });
+    }),
+  );
+  return {
+    seen,
+    release(token: string, status: number) {
+      const resolve = pending.get(token);
+      if (!resolve) throw new Error(`no request in flight for ${token}`);
+      pending.delete(token);
+      resolve(status);
+    },
+  };
+}
+
 const input = () => screen.getByLabelText('Code de suivi');
 const row = () => screen.getByTestId('track-code');
 const status = () => screen.getByTestId('track-code-status');
@@ -201,6 +230,93 @@ describe('AitoTrackEntryPage', () => {
     await waitFor(() => expect(seen).toEqual(['K7F3XQ']));
   });
 
+  // T-005: `check()` stamps every call with `sequence.current` and, once its
+  // request answers, drops the answer unless it is still the latest call —
+  // a client who edits the code before an in-flight check comes back must
+  // see only the newer check's verdict, never the older one arriving after.
+  it('drops a stale success answer that lands after a newer check has already failed', async () => {
+    const held = mockTrackHeld();
+    const { queryClient } = renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'k7f3xq');
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'checking'));
+    expect(held.seen).toEqual(['K7F3XQ']);
+
+    // Edited before the first request answers — a second, later check for a
+    // different code, still in flight when the first one below is released.
+    fireEvent.change(input(), { target: { value: 'k7f3xz' } });
+    await waitFor(() => expect(held.seen).toEqual(['K7F3XQ', 'K7F3XZ']));
+
+    // The newer check answers first and fails.
+    held.release('K7F3XZ', 404);
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'error'));
+    expect(status()).toHaveTextContent('Code introuvable');
+
+    // The older check's answer — a success — lands after. It must not
+    // overwrite the newer, current verdict, seed its own cache entry or
+    // navigate anywhere.
+    held.release('K7F3XQ', 200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(row()).toHaveAttribute('data-state', 'error');
+    expect(status()).toHaveTextContent('Code introuvable');
+    expect(input()).toHaveValue('K7F3XZ');
+    expect(screen.queryByText(/^landed on /)).not.toBeInTheDocument();
+    // The stale success must never have reached the cache under its own key.
+    expect(queryClient.getQueryData(['aito-track', 'K7F3XQ'])).toBeUndefined();
+  });
+
+  it('drops a stale failure answer that lands after a newer check has already succeeded', async () => {
+    const held = mockTrackHeld();
+    renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'k7f3xq');
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'checking'));
+    expect(held.seen).toEqual(['K7F3XQ']);
+
+    // Edited before the first request answers.
+    fireEvent.change(input(), { target: { value: 'k7f3xz' } });
+    await waitFor(() => expect(held.seen).toEqual(['K7F3XQ', 'K7F3XZ']));
+
+    // The newer check answers first and succeeds.
+    held.release('K7F3XZ', 200);
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'found'));
+    expect(status()).toHaveTextContent('Code reconnu');
+
+    // The older check's answer — a failure — lands after. It must not
+    // knock the row back into the error state or clear the found verdict.
+    held.release('K7F3XQ', 500);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(row()).toHaveAttribute('data-state', 'found');
+    expect(status()).toHaveTextContent('Code reconnu');
+    expect(await screen.findByText('landed on K7F3XZ', {}, { timeout: 2500 })).toBeInTheDocument();
+  });
+
+  // Old line 117 (this file's own history): normalizing the field's raw
+  // value can produce the exact same six-character code as before even
+  // though a real keystroke landed — CODE_LENGTH is already reached, so
+  // `normalizeCode` stops before an extra, non-alphabet character (typed
+  // past the sixth square) ever gets appended. `onChange` must treat that
+  // as a no-op: no cleared failure, no re-issued check.
+  it('ignores a keystroke that normalizes to the same code already on screen', async () => {
+    const seen = mockTrack(404);
+    renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'ZZZZZZ');
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'error'));
+    expect(seen).toEqual(['ZZZZZZ']);
+    expect(status()).toHaveTextContent('Code introuvable');
+
+    // Not busy (state is 'error', not 'checking'/'found'), so the field is
+    // still editable. '!' is outside the code alphabet and typed past the
+    // sixth square, so normalizeCode drops it and yields 'ZZZZZZ' again.
+    await userEvent.type(input(), '!');
+
+    expect(seen).toEqual(['ZZZZZZ']);
+    expect(row()).toHaveAttribute('data-state', 'error');
+    expect(status()).toHaveTextContent('Code introuvable');
+    expect(input()).toHaveValue('ZZZZZZ');
+  });
+
   // T-072: a client on a flaky connection whose request is accepted but
   // never answered was left with six frozen squares forever — no retry, no
   // way out but a reload. An AbortController armed with a timeout now ends
@@ -256,5 +372,32 @@ describe('AitoTrackEntryPage', () => {
     expect(await screen.findByRole('heading', { name: 'Suivre ma commande' })).toBeInTheDocument();
     expect(screen.getByTestId('track-code')).toBeInTheDocument();
     expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
+  });
+
+  // T-018's twin on this page: the same stalled-locale-chunk deadline
+  // (I18N_SETTLE_TIMEOUT_MS, shared via utils/trackingShell) guards the
+  // front door too, but had no test pinning it — see AitoTrackPage.test.tsx's
+  // 'settles past the i18n deadline' case just above for the sibling.
+  it('settles past the i18n deadline and shows the code entry even though the locale chunk never becomes ready', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      setReadyOverride(false);
+      renderEntry();
+      expect(screen.getByAltText('Aito3D')).toBeInTheDocument();
+      // Comfortably inside the deadline: still the skeleton, no code entry.
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
+      expect(screen.queryByTestId('track-code')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+      // Cross the deadline: `i18nTimedOut` flips true on its own even
+      // though `ready` is still pinned false, and the code entry appears.
+      await vi.advanceTimersByTimeAsync(1_001);
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Suivre ma commande' })).toBeInTheDocument());
+      expect(screen.getByTestId('track-code')).toBeInTheDocument();
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+    }
   });
 });

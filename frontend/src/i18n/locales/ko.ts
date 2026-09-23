@@ -283,6 +283,7 @@ export default {
         shopAddress: '주소',
         shopHint: '수령 시 작업장에서 결제해 주세요.',
         copied: '복사됨',
+        copyFailed: '복사하지 못했습니다. 텍스트를 직접 선택하세요',
         copyIban: 'IBAN 복사',
         copyBeneficiary: '수취인 복사',
         copyBic: 'BIC 복사',

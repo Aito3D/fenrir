@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingInvoice } from '../../api/client';
 import type { PanelTrigger } from './TrackingPayment';
+import { TERMS_BUTTON } from '../../utils/trackingShell';
+import { TrackingPaidRow } from './trackingShell';
 
 const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid: 'bg-amber-500', overdue: 'bg-red-500' };
 
@@ -16,15 +18,7 @@ export function TrackingInvoice({ state, terms }: { state: AitoTrackingInvoice; 
   const sub = t(`aito.track.invoice.${state}Sub`);
 
   if (state === 'paid') {
-    return (
-      <div data-testid="track-invoice" data-state={state} className="text-[15px]">
-        <div className="flex items-center gap-[8px]">
-          <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${DOT[state]}`} aria-hidden="true" />
-          <span className="font-semibold text-aito-ink">{title}</span>
-        </div>
-        <p className="mt-[4px] text-[13px] text-aito-muted">{sub}</p>
-      </div>
-    );
+    return <TrackingPaidRow data-testid="track-invoice" data-state={state} dotClassName={DOT[state]} title={title} sub={sub} />;
   }
 
   return (
@@ -43,7 +37,7 @@ export function TrackingInvoice({ state, terms }: { state: AitoTrackingInvoice; 
           aria-expanded={terms.open}
           aria-controls={terms.controls}
           onClick={(e) => terms.toggle(e.currentTarget)}
-          className={`inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] border px-[16px] text-[13.5px] font-semibold text-aito-cyan transition-[color,background-color,border-color,transform] duration-150 hover:bg-aito-cyan/10 active:scale-[0.97] active:bg-aito-cyan/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan min-[400px]:w-auto ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
+          className={`${TERMS_BUTTON} ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
         >
           {t('aito.track.paymentTermsToggle')}
         </button>

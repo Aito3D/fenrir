@@ -1,0 +1,46 @@
+{"findings": [
+  {"severity": "medium", "category": "information-disclosure",
+   "file": "frontend/src/components/aito/TrackingShopPanel.tsx", "line": 71,
+   "title": "Google Maps iframe in TrackingShopPanel downgrades the referrer policy and leaks the tracking code to google.com",
+   "evidence": "referrerPolicy=\"no-referrer-when-downgrade\"  — on `<iframe ... src={mapSrc ?? undefined}>` whose src is `https://www.google.com/maps?...&output=embed` (frontend/src/utils/aitoShop.ts:19). The document is served with `Referrer-Policy: strict-origin-when-cross-origin` (backend/app/main.py:9886), which would send only the origin; the per-element attribute overrides it with a weaker policy that, https→https, sends the FULL embedding-document URL. That URL is `https://<host>/t/<CODE>` — and the code IS the credential for the page (routes/aito.py get_tracking: \"No auth: the token IS the credential\"). Opening \"Nous trouver\" therefore hands the tracking code to a third party in the Referer header, where it also lands in that party's logs.",
+   "fix": "set referrerPolicy=\"no-referrer\" (or \"origin\") on the iframe; the embed is the keyless `output=embed` form per the aitoShop.ts comment, so confirm against a live load that it still renders without a Referer before landing",
+   "behavior_change": true,
+   "behavior_change_note": "ORCHESTRATOR HOLD (auditor filed it as neutral): the map iframe would stop sending the page URL as Referer to google.com; if Google's keyless output=embed form requires a Referer the 'Nous trouver' map would stop rendering, and no automated gate here can tell — a live browser check is needed."},
+
+  {"severity": "medium", "category": "rate-limiting",
+   "file": "backend/app/api/routes/aito.py", "line": 1144,
+   "title": "_track_rate_net_key buckets IPv6 sources per /64, so the per-network miss budget multiplies for any attacker holding a routed prefix",
+   "evidence": "prefix = 24 if addr.version == 4 else 64  — the docstring one line above claims \"a flood spread over many addresses on one network still shares one budget\". That holds for IPv4 (a /24 is 256 addresses and costs money) but not for IPv6: any VPS or hosting account is routed a /64 at minimum and commonly a /56 or /48, so _TRACK_RATE_MAX_MISSES_PER_NET (600/min, line 1117) is granted once per /64 the attacker owns — 65,536 budgets for a /48, i.e. ~39M guesses/min against a 32**6 ≈ 1.07e9 code space (services/aito_tracking.py TOKEN_ALPHABET/TOKEN_LENGTH). The per-address caps do not bind, because each /64 holds 2**64 addresses to spread across. This is the compensating control for the deliberately-short code, so its IPv6 half being ~65k× weaker than its IPv4 half is worth closing.",
+   "fix": "collapse IPv6 hosts to a shorter prefix (a /48, or /56, is still one subscriber allocation) instead of /64, so one routed allocation maps to one budget the way a /24 does for IPv4",
+   "behavior_change": false},
+
+  {"severity": "medium", "category": "rate-limiting",
+   "file": "backend/app/api/routes/aito.py", "line": 1136,
+   "title": "_track_rate_net_key's `__no_ip_` fallback is per-request unique, so the tracking rate limiter is inert when request.client is None",
+   "evidence": "Docstring at 1135-1139: \"A host that does not parse as an IP — the `__no_ip_...` placeholder `_get_client_ip` mints when there is no peer ... gets its own key equal to the raw host: fail closed, one bucket per source rather than one shared by everything unparseable.\" But that placeholder is minted fresh per request — backend/app/api/routes/auth.py:230 `direct_ip = request.client.host if request.client else f\"__no_ip_{secrets.token_hex(8)}__\"` — so every such request gets a brand-new, empty per-IP and per-net bucket and no cap can ever be reached. `request.client` is None whenever uvicorn's get_remote_addr cannot produce an (addr, port) tuple, which is exactly the case for a unix-socket bind (`uvicorn --uds`, a standard nginx→app deployment). On such an install the only compensating control for the guessable code is entirely absent, and the docstring asserts the opposite.",
+   "fix": "detect the no-peer case explicitly (e.g. treat a host that does not parse as an IP as one shared, fixed bucket key such as \"__no_ip__\", or refuse the request) so it is genuinely fail-closed; correct the docstring either way",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "denial-of-service",
+   "file": "backend/app/api/routes/aito.py", "line": 1208,
+   "title": "_track_rate_limited's bucket sweep only drops fully-aged keys and costs O(n) on every request",
+   "evidence": "for stale in [h for h, calls in bucket.items() if not live(calls)]:  — guarded by `if len(bucket) > _TRACK_RATE_SWEEP_ABOVE` (line 1207) and run on every admitted request for all three dicts. `live()` (line 1203) walks each host's whole stamp list, so once a dict exceeds 1200 keys each request scans every key of every bucket. A key is deleted only when ALL its stamps have aged past the 60 s window, so while a flood is in progress every key is live and nothing is ever swept. That makes the docstring's claim at 1176-1178 — \"Once a dict outgrows what the window can hold, every host whose entries have all aged out is dropped, so a scanner cycling addresses cannot grow it without bound on a public route\" — false: growth is bounded only by the per-net caps, which the /64 keying above makes cheap to multiply, and the scan cost grows linearly with the flood.",
+   "fix": "bound the dicts directly (a fixed-capacity structure, or evict the oldest keys once a hard ceiling is reached) rather than relying on a full scan that can only reclaim idle keys, and correct the docstring's no-unbounded-growth claim",
+   "behavior_change": false},
+
+  {"severity": "low", "category": "information-disclosure",
+   "file": "backend/app/services/aito_tracking.py", "line": 263,
+   "title": "payment_state ships the Heimdall checkout URL on a PAID link, contrary to AitoTrackingPayment's own contract",
+   "evidence": "state=\"paid\" if row.status == \"paid\" else \"unpaid\", url=row.url, deposit=(await deposit_pct(db)) > 0  — `url` is populated for both branches, but the schema documents it as the unpaid-only field: backend/app/schemas/aito.py:1278-1280 \"The online payment link as the client sees it: a state and, while unpaid, the page to pay on.\" The public payload is deliberately state-only and never an amount (schemas/aito.py:1295 \"A state, never an amount\"), yet the checkout page the URL points at does show the amount. TrackingPayment.tsx returns early for `payment.state === 'paid'` and never renders the href, so the URL is pure over-disclosure to anyone who reads the JSON for a guessed code on a settled order.",
+   "fix": "return url=None when row.status == \"paid\" in payment_state, matching the schema's documented contract",
+   "behavior_change": true,
+   "behavior_change_note": "ORCHESTRATOR HOLD (auditor filed it as neutral): the public JSON for a paid order would carry payment.url = null instead of the Heimdall checkout URL; the page never renders it, but the tracking-backend and tracking-http golden probes pin the current value and would need a sanctioned re-record."},
+
+  {"severity": "low", "category": "token-lifetime",
+   "file": "backend/app/services/aito_tracking.py", "line": 230,
+   "title": "is_expired gives no expiry clock to the five production columns, so a card parked in scan/model/print/finish keeps a live code forever",
+   "evidence": "    return False  — reached for every column other than \"done\" and DORMANT_COLUMNS (line 46: `DORMANT_COLUMNS = frozenset({\"devis\", \"waiting\"})`). The module comment at 40-45 explains the dormant TTL was added because \"with only Done expiring, abandoned quotes kept live codes forever and the guessable space slowly filled with them\", but the same is still true for an order abandoned mid-production or never collected from \"finish\": its code never dies, and it keeps serving part names, quote reference, shipping island/waybill and the payment URL indefinitely into a guessable 30-bit space.",
+   "fix": "extend the dormant-silence clock (TRACKING_TTL_DORMANT, or a separate longer TTL) to the production and finish columns so every column has a clock, keyed on last_activity as the dormant rule already is",
+   "behavior_change": true,
+   "behavior_change_note": "a client whose order has sat untouched in a production or ready-for-pickup column past the TTL would find their tracking link starts returning the 'invalid link' page instead of their order, and would have to be sent a regenerated link."}
+]}

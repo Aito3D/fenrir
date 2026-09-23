@@ -90,29 +90,36 @@
     "files": []
   },
   {
-    "id": "stats-backend-aggregate",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_stats_backend.py 2>/dev/null",
+    "id": "tracking-backend",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_tracking_backend.py 2>/dev/null",
     "timeout": 300,
     "scrub": [],
     "files": []
   },
   {
-    "id": "stats-contract",
-    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_stats_contract.py 2>/dev/null",
+    "id": "tracking-contract",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_tracking_contract.py 2>/dev/null",
     "timeout": 300,
     "scrub": [],
     "files": []
   },
   {
-    "id": "stats-frontend-pure",
-    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_stats_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/statsFrontend.cjs >/dev/null 2>&1 && TZ=UTC node tools/probe_stats_frontend.cjs",
+    "id": "tracking-http",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_tracking_http.py 2>/dev/null",
     "timeout": 300,
     "scrub": [],
     "files": []
   },
   {
-    "id": "stats-i18n",
-    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_stats_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/statsI18n.cjs >/dev/null 2>&1 && node tools/probe_stats_i18n.cjs",
+    "id": "tracking-frontend-pure",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_tracking_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/trackingFrontend.cjs >/dev/null 2>&1 && TZ=UTC node tools/probe_tracking_frontend.cjs",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "tracking-i18n",
+    "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_tracking_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/trackingI18n.cjs >/dev/null 2>&1 && node tools/probe_tracking_i18n.cjs",
     "timeout": 300,
     "scrub": [],
     "files": []

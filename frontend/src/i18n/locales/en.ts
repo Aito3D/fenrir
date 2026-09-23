@@ -286,6 +286,7 @@ export default {
         shopAddress: 'Address',
         shopHint: 'Pay at the workshop when you collect your order.',
         copied: 'Copied',
+        copyFailed: 'Couldn\'t copy — select the text instead',
         copyIban: 'Copy the IBAN',
         copyBeneficiary: 'Copy the beneficiary',
         copyBic: 'Copy the BIC',

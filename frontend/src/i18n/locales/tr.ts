@@ -283,6 +283,7 @@ export default {
         shopAddress: 'Adres',
         shopHint: 'Siparişi teslim alırken atölyede ödenir.',
         copied: 'Kopyalandı',
+        copyFailed: 'Kopyalanamadı — metni seçin',
         copyIban: "IBAN'ı kopyala",
         copyBeneficiary: 'Alıcıyı kopyala',
         copyBic: "BIC'i kopyala",

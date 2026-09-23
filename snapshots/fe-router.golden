@@ -21,16 +21,16 @@
     19	element=StreamOverlayPage
     20	<Route
     21	path="/t"
-    22	element=AitoTrackEntryPage
+    22	element=TrackingErrorBoundary
     23	<Route
     24	path="/track"
-    25	element=AitoTrackEntryPage
+    25	element=TrackingErrorBoundary
     26	<Route
     27	path="/t/:token"
-    28	element=AitoTrackPage
+    28	element=TrackingErrorBoundary
     29	<Route
     30	path="/track/:token"
-    31	element=AitoTrackPage
+    31	element=TrackingErrorBoundary
     32	<Route
     33	path="/calculator/quote"
     34	<Route
