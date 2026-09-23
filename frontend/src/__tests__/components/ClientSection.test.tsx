@@ -404,6 +404,16 @@ describe('ClientSection — company contacts', () => {
     expect(screen.getByLabelText(/^email/i)).toHaveValue('vaekehu@snp.pf');
   });
 
+  it('the override disclosure names the panel it expands via aria-controls', async () => {
+    render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} />);
+    await screen.findByRole('radio', { name: 'Vaekehu VARNEY' });
+    const toggle = screen.getByRole('button', { name: /use a different phone/i });
+    const controlsId = toggle.getAttribute('aria-controls');
+    expect(controlsId).toBeTruthy();
+    await userEvent.click(toggle);
+    expect(document.getElementById(controlsId as string)).toBeInTheDocument();
+  });
+
   it('prefers the recalled person over the primary', async () => {
     render(<Harness initial={draftFromContact(acme, DEFAULT_ID)} preferred="cp2" />);
     await waitFor(() => expect(screen.getByRole('radio', { name: 'Moana TERIIPAIA' })).toBeChecked());

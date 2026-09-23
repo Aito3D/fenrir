@@ -154,7 +154,7 @@ export default {
     contactsHint: '이 프로젝트는 누구를 위한 것인가요?',
     contactsLoading: 'Zoho Books에서 연락처를 불러오는 중…',
     contactsUnavailable: 'Zoho Books에서 연락처를 불러올 수 없습니다 — 아래에 전화번호나 이메일을 입력하세요.',
-    contactPrimary: '주 담당자',
+    contactPrimary: '대표',
     contactAdd: '연락처 추가',
     contactAddTitle: '새 연락처',
     contactSaveToZoho: 'Zoho에 저장',

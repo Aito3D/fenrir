@@ -1322,11 +1322,11 @@ class ZohoService:
         contact = (await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {})
         persons = contact.get("contact_persons") or []
         if contact_person_id is not None:
-            primary = next((p for p in persons if p.get("contact_person_id") == contact_person_id), None)
-            if primary is None:
+            target = next((p for p in persons if p.get("contact_person_id") == contact_person_id), None)
+            if target is None:
                 raise ZohoNotFound(f"Contact person {contact_person_id} not found on contact {contact_id}")
         else:
-            primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
+            target = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
 
         fields: dict = {}
         if first_name is not None:
@@ -1340,10 +1340,8 @@ class ZohoService:
         if not fields:
             return
 
-        if primary:
-            await self._request(
-                db, "PUT", f"/contacts/contactpersons/{_seg(primary['contact_person_id'])}", json=fields
-            )
+        if target:
+            await self._request(db, "PUT", f"/contacts/contactpersons/{_seg(target['contact_person_id'])}", json=fields)
         else:
             await self._request(
                 db,
