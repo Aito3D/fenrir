@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import aito3dLogo from '../../assets/aito3d_logo.png';
 import { SHOP_MAIL_HREF, SHOP_TEL_HREF } from '../../utils/aitoShop';
-import { BRAND, FOCUS, delayAt } from '../../utils/trackingShell';
+import { BRAND, CARD, FOCUS, PAGE, PRESS, delayAt } from '../../utils/trackingShell';
 import { AITO3D_SENDER } from '../../utils/shippingLabel';
 import type { PanelTrigger } from './TrackingPayment';
 
@@ -113,4 +113,76 @@ export function Footer({ at, shop }: { at: number; shop?: PanelTrigger }) {
       )}
     </footer>
   );
+}
+
+// A redeploy that swaps the hashed chunk files while a client's tab is
+// still open (or a flaky mobile link mid-reload) makes `lazyWithReload`'s
+// own one-shot retry (App.tsx) rethrow instead of recovering silently.
+// Recognised by name (Firefox/older bundlers) or by the wording Vite and
+// most browsers use for a failed dynamic `import()`.
+const CHUNK_LOAD_ERROR_PATTERN = /dynamically imported module|loading chunk/i;
+function isChunkLoadError(error: Error): boolean {
+  return error.name === 'ChunkLoadError' || CHUNK_LOAD_ERROR_PATTERN.test(error.message);
+}
+
+/** The branded stand-in for `App.tsx`'s app-wide crash screen (logo, stack
+ *  trace, "UI Crash") on the four public tracking routes — a client who
+ *  followed a link printed on their quote must never see raw JavaScript,
+ *  only the same "something went wrong, try again" card the page already
+ *  shows for a failed fetch. A class component only for `getDerivedState-
+ *  FromError`/`componentDidCatch` (no hook equivalent exists); the text
+ *  itself is rendered by a plain function child so it can call
+ *  `useTranslation()`. Reuses `common.errorLoading` / `common.retry`
+ *  rather than adding tracking-specific copy, so no new key needs the
+ *  14-locale translation sweep. */
+function TrackingCrashCard({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className={PAGE} data-testid="track-crash">
+      <div className={CARD}>
+        <Logo className="mb-[20px]" />
+        <p className="mt-[32px] text-center text-[15px] text-aito-muted">{t('common.errorLoading')}</p>
+        <div className="mt-[16px] text-center">
+          <button
+            type="button"
+            onClick={onRetry}
+            className={`inline-flex min-h-[44px] items-center justify-center rounded-[8px] border border-aito-cyan/35 px-[24px] text-[14px] font-semibold text-aito-cyan hover:bg-aito-cyan/10 ${PRESS} ${FOCUS}`}
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export class TrackingErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Tracking page crash:', error, errorInfo);
+  }
+
+  // Clears the crash first so a second failure re-renders the same card
+  // instead of getting stuck; a chunk-load failure additionally forces a
+  // full reload (the fix a stale index.html needs) rather than retrying a
+  // React tree that can never mount without the missing chunk.
+  retry = () => {
+    const { error } = this.state;
+    this.setState({ error: null });
+    if (error && isChunkLoadError(error)) {
+      window.location.reload();
+    }
+  };
+
+  render() {
+    if (this.state.error) {
+      return <TrackingCrashCard onRetry={this.retry} />;
+    }
+    return this.props.children;
+  }
 }

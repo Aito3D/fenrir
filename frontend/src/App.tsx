@@ -12,6 +12,7 @@ import { SliceJobTrackerProvider } from './contexts/SliceJobTrackerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
 import { FullscreenProvider } from './contexts/FullscreenContext';
+import { TrackingErrorBoundary } from './components/aito/trackingShell';
 
 // After a redeploy the previous build's hashed chunk files no longer exist,
 // so a lazy route's dynamic import rejects. One forced reload picks up the
@@ -234,10 +235,10 @@ const router = createBrowserRouter(
       {/* Aito client tracking page — public, the token in the URL is the credential, no auth, no layout.
           `/t/` is what the backend emits (short, for QR codes and quote PDFs); `/track/` stays so the
           links already sent in quotes and SMS keep opening. */}
-      <Route path="/t" element={<AitoTrackEntryPage />} />
-      <Route path="/track" element={<AitoTrackEntryPage />} />
-      <Route path="/t/:token" element={<AitoTrackPage />} />
-      <Route path="/track/:token" element={<AitoTrackPage />} />
+      <Route path="/t" element={<TrackingErrorBoundary><AitoTrackEntryPage /></TrackingErrorBoundary>} />
+      <Route path="/track" element={<TrackingErrorBoundary><AitoTrackEntryPage /></TrackingErrorBoundary>} />
+      <Route path="/t/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
+      <Route path="/track/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
 
       {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}
       <Route

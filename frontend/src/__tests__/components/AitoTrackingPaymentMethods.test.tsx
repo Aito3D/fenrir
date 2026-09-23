@@ -187,7 +187,7 @@ describe('TrackingPaymentMethods', () => {
     await waitFor(() => expect(screen.queryByText('Copié')).not.toBeInTheDocument(), { timeout: 3000 });
   });
 
-  it('shows no confirmation when the clipboard write fails and the execCommand fallback also fails', async () => {
+  it('shows no confirmation when the clipboard write fails and the execCommand fallback also fails, but surfaces a failure hint instead', async () => {
     (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('blocked'));
     // Simulates the execCommand fallback also failing (e.g. Firefox on a
     // plain-HTTP LAN origin), so copyTextToClipboard resolves to false —
@@ -208,6 +208,15 @@ describe('TrackingPaymentMethods', () => {
     expect(iban).not.toHaveTextContent('Copié');
     expect(iban).not.toHaveAttribute('data-copied');
     expect(screen.queryByText('Copié')).not.toBeInTheDocument();
+    // Instead the row (and the live region) say the copy failed, and the
+    // value stays in the document as selectable text — not hidden away.
+    await waitFor(() => expect(iban).toHaveTextContent('Copie impossible — sélectionnez le texte'));
+    expect(within(iban).getByText(AITO3D_BANK.iban)).toBeInTheDocument();
+    expect(screen.getAllByText('Copie impossible — sélectionnez le texte').length).toBeGreaterThan(0);
+    // The failure hint fades on its own after the same hold as a success.
+    await waitFor(() => expect(screen.queryByText('Copie impossible — sélectionnez le texte')).not.toBeInTheDocument(), {
+      timeout: 3000,
+    });
 
     document.execCommand = originalExecCommand;
   });

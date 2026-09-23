@@ -284,6 +284,7 @@ export default {
         shopAddress: 'Адреса',
         shopHint: 'Оплата в майстерні під час отримання замовлення.',
         copied: 'Скопійовано',
+        copyFailed: 'Не вдалося скопіювати — виділіть текст',
         copyIban: 'Копіювати IBAN',
         copyBeneficiary: 'Копіювати отримувача',
         copyBic: 'Копіювати BIC',

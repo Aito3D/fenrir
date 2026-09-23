@@ -283,6 +283,7 @@ export default {
         shopAddress: 'Adresse',
         shopHint: "À régler à l'atelier lors du retrait.",
         copied: 'Copié',
+        copyFailed: 'Copie impossible — sélectionnez le texte',
         copyIban: "Copier l'IBAN",
         copyBeneficiary: 'Copier le bénéficiaire',
         copyBic: 'Copier le BIC',

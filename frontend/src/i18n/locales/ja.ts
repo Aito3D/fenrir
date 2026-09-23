@@ -283,6 +283,7 @@ export default {
         shopAddress: '住所',
         shopHint: 'お受け取り時に工房でお支払いください。',
         copied: 'コピーしました',
+        copyFailed: 'コピーできませんでした。テキストを選択してください',
         copyIban: 'IBAN をコピー',
         copyBeneficiary: '受取人をコピー',
         copyBic: 'BIC をコピー',

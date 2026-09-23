@@ -283,6 +283,7 @@ export default {
         shopAddress: 'Адрес',
         shopHint: 'Оплата в мастерской при получении заказа.',
         copied: 'Скопировано',
+        copyFailed: 'Не удалось скопировать — выделите текст',
         copyIban: 'Копировать IBAN',
         copyBeneficiary: 'Копировать получателя',
         copyBic: 'Копировать BIC',

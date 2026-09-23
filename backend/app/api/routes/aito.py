@@ -1100,7 +1100,12 @@ async def get_client_history(
 # cap — still keyed on the proxy's one address — is the bound instead. On
 # a collapsed bucket the "network" IS the proxy's own /24 or /48, so that
 # budget is once again a single site-wide one for that install, same as
-# before T-122. T-121: that presumption alone is spoofable on a DIRECT
+# before T-122. T-028: the suspended per-IP CALLS cap means hits alone
+# never trip the per-net MISS budget either — so a per-net CALLS ceiling
+# (_TRACK_RATE_MAX_CALLS_PER_NET, generous and whole-shop-sized) is
+# recorded on the same collapsed key for every admitted call, hit or miss,
+# and is never released; it is the backstop on a collapsed bucket's hits.
+# T-121: that presumption alone is spoofable on a DIRECT
 # install — any client could add its own X-Forwarded-For header to lift
 # its own ceiling from the 30-miss cap all the way to the 600-miss-per-net
 # budget — so the collapse additionally requires the direct TCP peer to
@@ -1116,12 +1121,20 @@ _TRACK_RATE_WINDOW_S = 60.0
 _TRACK_RATE_MAX_MISSES_PER_IP = 30
 _TRACK_RATE_MAX_MISSES_PER_NET = 600
 _TRACK_RATE_MAX_CALLS_PER_IP = 120
+# Whole-shop-sized ceiling on ALL admitted calls per network (T-028): unlike
+# the per-net MISS budget above, this one is never released by a hit — it
+# exists so a collapsed bucket (every visitor behind an unconfigured proxy
+# sharing one net key) cannot rack up unbounded free hits once its misses
+# stop growing. 10x the old per-IP CALLS cap, generous enough for a whole
+# shop's real traffic.
+_TRACK_RATE_MAX_CALLS_PER_NET = 1200
 # More host keys than this and the stale ones are swept: only addresses that
 # called inside the window can be live.
 _TRACK_RATE_SWEEP_ABOVE = 2 * _TRACK_RATE_MAX_MISSES_PER_NET
 _track_rate_ip_calls: dict[str, list[float]] = {}
 _track_rate_ip_misses: dict[str, list[float]] = {}
 _track_rate_net_misses: dict[str, list[float]] = {}
+_track_rate_net_calls: dict[str, list[float]] = {}
 
 
 def _reset_track_rate_limits() -> None:
@@ -1129,6 +1142,7 @@ def _reset_track_rate_limits() -> None:
     _track_rate_ip_calls.clear()
     _track_rate_ip_misses.clear()
     _track_rate_net_misses.clear()
+    _track_rate_net_calls.clear()
 
 
 def _track_rate_net_key(host: str) -> str:
@@ -1188,11 +1202,14 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     the direct peer is also plausibly the unconfigured proxy itself —
     loopback or private, per `_peer_is_private` (T-121) — since otherwise
     any public-internet client could set its own X-Forwarded-For to buy
-    the same suspension. The per-net miss cap, keyed on that same
-    collapsed address (T-122: on a collapsed bucket the "network" is the
-    proxy's own /24 or /48, so this is once again a single site-wide
-    budget), is the only bound left — the same budget that already limits
-    every other network's traffic too."""
+    the same suspension. What bounds a collapsed bucket is then the per-net
+    MISS cap, keyed on that same collapsed address (T-122: on a collapsed
+    bucket the "network" is the proxy's own /24 or /48, so this is once
+    again a single site-wide budget) — the same budget that already limits
+    every other network's traffic too — AND, since T-028, the per-net
+    CALLS cap recorded on that same key for every admitted call, hit or
+    miss, and never released: hits used to be entirely free on a collapsed
+    bucket once misses stopped growing."""
     now = time.monotonic()
     host = _get_client_ip(request)
     try:
@@ -1209,26 +1226,30 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     def live(calls: Iterable[float]) -> list[float]:
         return [t for t in calls if now - t < _TRACK_RATE_WINDOW_S]
 
-    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses, _track_rate_net_misses):
+    for bucket in (_track_rate_ip_calls, _track_rate_ip_misses, _track_rate_net_misses, _track_rate_net_calls):
         if len(bucket) > _TRACK_RATE_SWEEP_ABOVE:
             for stale in [h for h, calls in bucket.items() if not live(calls)]:
                 del bucket[stale]
     calls = live(_track_rate_ip_calls.get(host, ()))
     misses = live(_track_rate_ip_misses.get(host, ()))
     net_misses = live(_track_rate_net_misses.get(net, ()))
+    net_calls = live(_track_rate_net_calls.get(net, ()))
     if (
         (not collapsed and len(calls) >= _TRACK_RATE_MAX_CALLS_PER_IP)
         or (not collapsed and len(misses) >= _TRACK_RATE_MAX_MISSES_PER_IP)
         or len(net_misses) >= _TRACK_RATE_MAX_MISSES_PER_NET
+        or len(net_calls) >= _TRACK_RATE_MAX_CALLS_PER_NET
     ):
         return None
     if not collapsed:
         calls.append(now)
         misses.append(now)
     net_misses.append(now)
+    net_calls.append(now)
     _track_rate_ip_calls[host] = calls
     _track_rate_ip_misses[host] = misses
     _track_rate_net_misses[net] = net_misses
+    _track_rate_net_calls[net] = net_calls
     return host, now
 
 

@@ -283,6 +283,7 @@ export default {
         shopAddress: 'Endereço',
         shopHint: 'Pague na oficina ao retirar o pedido.',
         copied: 'Copiado',
+        copyFailed: 'Não foi possível copiar — selecione o texto',
         copyIban: 'Copiar o IBAN',
         copyBeneficiary: 'Copiar o beneficiário',
         copyBic: 'Copiar o BIC',

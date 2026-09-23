@@ -82,10 +82,12 @@ _TRACK_RATE_WINDOW_S =
 _TRACK_RATE_MAX_MISSES_PER_IP =
 _TRACK_RATE_MAX_MISSES_PER_NET =
 _TRACK_RATE_MAX_CALLS_PER_IP =
+_TRACK_RATE_MAX_CALLS_PER_NET =
 _TRACK_RATE_SWEEP_ABOVE =
 _track_rate_ip_calls:
 _track_rate_ip_misses:
 _track_rate_net_misses:
+_track_rate_net_calls:
 def _reset_track_rate_limits() -> None:
 def _track_rate_net_key(host: str) -> str:
 def _peer_is_private(request: Request) -> bool:
@@ -176,6 +178,7 @@ Index("ix_aito_tracking_views_project_id"
 ## Frontend exports — tracking pages, components, hooks, utils
 ```regen: grep -rhoE "^export (default function|function|const|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/pages/AitoTrackPage.tsx frontend/src/pages/AitoTrackEntryPage.tsx frontend/src/components/aito/TrackCollapse.tsx frontend/src/components/aito/TrackingCodeInput.tsx frontend/src/components/aito/TrackingInvoice.tsx frontend/src/components/aito/TrackingLanguageSelect.tsx frontend/src/components/aito/TrackingLinkControl.tsx frontend/src/components/aito/TrackingPanel.tsx frontend/src/components/aito/TrackingPayment.tsx frontend/src/components/aito/TrackingPaymentMethods.tsx frontend/src/components/aito/TrackingRail.tsx frontend/src/components/aito/TrackingShopPanel.tsx frontend/src/components/aito/trackingShell.tsx frontend/src/hooks/useTrackingLanguage.ts frontend/src/hooks/useTrackingPanel.ts frontend/src/utils/aitoTracking.ts frontend/src/utils/trackingCode.ts frontend/src/utils/trackingShell.ts | sort```
 ```
+export class TrackingErrorBoundary
 export const BRAND
 export const CARD
 export const CODE_LENGTH
@@ -226,13 +229,14 @@ export type TrackingPanelId
 ## App.tsx — tracking routes
 ```regen: grep -E "AitoTrack|/t/|/track" frontend/src/App.tsx```
 ```
+import { TrackingErrorBoundary } from './components/aito/trackingShell';
 const AitoTrackPage = lazyWithReload(() => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage })));
 const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPage').then(m => ({ default: m.AitoTrackEntryPage })));
           `/t/` is what the backend emits (short, for QR codes and quote PDFs); `/track/` stays so the
-      <Route path="/t" element={<AitoTrackEntryPage />} />
-      <Route path="/track" element={<AitoTrackEntryPage />} />
-      <Route path="/t/:token" element={<AitoTrackPage />} />
-      <Route path="/track/:token" element={<AitoTrackPage />} />
+      <Route path="/t" element={<TrackingErrorBoundary><AitoTrackEntryPage /></TrackingErrorBoundary>} />
+      <Route path="/track" element={<TrackingErrorBoundary><AitoTrackEntryPage /></TrackingErrorBoundary>} />
+      <Route path="/t/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
+      <Route path="/track/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
 ```
 
 ## API client — tracking types and methods
@@ -290,6 +294,7 @@ aito.track.paymentMethods.beneficiary
 aito.track.paymentMethods.copied
 aito.track.paymentMethods.copyBeneficiary
 aito.track.paymentMethods.copyBic
+aito.track.paymentMethods.copyFailed
 aito.track.paymentMethods.copyIban
 aito.track.paymentMethods.copyReference
 aito.track.paymentMethods.copyRib
@@ -419,6 +424,7 @@ aito.trackingSettingsLink
 1 data-testid="track-code"
 1 data-testid="track-collapse"
 1 data-testid="track-content"
+1 data-testid="track-crash"
 1 data-testid="track-error"
 1 data-testid="track-footer"
 1 data-testid="track-invalid"

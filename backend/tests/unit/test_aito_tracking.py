@@ -716,6 +716,86 @@ async def test_public_route_collapsed_bucket_never_429s_past_the_old_calls_cap_o
             assert r.status_code == 200
 
 
+# ── T-028: hits are not free on a collapsed bucket — a per-net CALLS ceiling ─
+
+
+@pytest.mark.asyncio
+async def test_public_route_collapsed_bucket_net_calls_cap_trips_on_hits(
+    async_client, db_session, track_rate_clock, monkeypatch
+):
+    """T-028: on a collapsed bucket the per-net MISS budget never grows from
+    hits (a hit releases its miss reservation, per `_track_rate_hit`), but
+    the per-net CALLS ceiling counts every admitted call — hit or miss —
+    and is never released. Enough real-code lookups alone must eventually
+    trip it, unlike before T-028 where hits there were entirely free."""
+    from httpx import ASGITransport, AsyncClient
+
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+    from backend.app.main import app
+
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_NET", 5)
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    transport = ASGITransport(app=app, client=("10.0.0.5", 5555))
+    async with AsyncClient(transport=transport, base_url="http://test") as private_client:
+        for _ in range(5):
+            r = await private_client.get(TRACK + token, headers={"X-Forwarded-For": "203.0.113.5"})
+            assert r.status_code == 200
+        r = await private_client.get(TRACK + token, headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_public_route_net_calls_cap_isolates_a_flood_of_hits_from_other_networks(
+    async_client, db_session, track_rate_clock, monkeypatch
+):
+    """Non-collapsed case: several distinct IPs on one /24, each well under
+    its own per-IP caps, still share the (here lowered) per-net CALLS
+    ceiling — the next hit on that network 429s once it trips, while a
+    visitor on an unrelated /24 keeps getting answered."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_NET", 5)
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    # Five hits spread over five different addresses on 198.51.100.0/24 —
+    # none anywhere near its own per-IP CALLS cap of 120.
+    for i in range(5):
+        r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": f"198.51.100.{i}"})
+        assert r.status_code == 200
+    r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": "198.51.100.250"})
+    assert r.status_code == 429
+    # A visitor on an unrelated /24 is untouched by that network's ceiling.
+    r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": "203.0.113.42"})
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_public_route_net_calls_cap_recovers_after_the_window(
+    async_client, db_session, track_rate_clock, monkeypatch
+):
+    """The per-net CALLS ceiling is a sliding window like every other cap
+    here: once every recorded call has aged out, the same network is served
+    again."""
+    from backend.app.api.routes import aito as aito_routes, auth as auth_routes
+
+    clock = track_rate_clock
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "testclient"}))
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_CALLS_PER_NET", 3)
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    for i in range(3):
+        r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": f"198.51.100.{i}"})
+        assert r.status_code == 200
+    r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": "198.51.100.9"})
+    assert r.status_code == 429
+    clock.now += aito_routes._TRACK_RATE_WINDOW_S + 1
+    r = await async_client.get(TRACK + token, headers={"X-Forwarded-For": "198.51.100.9"})
+    assert r.status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_public_route_collapsed_bucket_still_bounded_by_the_global_cap(
     async_client, track_rate_clock, monkeypatch
