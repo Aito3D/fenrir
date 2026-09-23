@@ -168,7 +168,11 @@ describe('ClientHistoryModal', () => {
     const { unmount } = render(<ClientHistoryModal project={project} onClose={onEscapeClose} />);
     const dialog = await screen.findByRole('dialog', { name: 'Client history' });
     expect(dialog).toHaveTextContent('PACIFIC MARINE');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    // On the dialog, not window: the overlay's onKeyDown stops this from
+    // reaching the panel's own window-level Escape listener (see the
+    // component's comment) — a window-level Escape would no longer reach
+    // this dialog's handler at all.
+    fireEvent.keyDown(dialog, { key: 'Escape' });
     await waitFor(() => expect(onEscapeClose).toHaveBeenCalledTimes(1));
     unmount();
 

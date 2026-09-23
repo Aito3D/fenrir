@@ -82,6 +82,19 @@ export function ClientHistoryModal({
         closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
       }`}
       onClick={requestClose}
+      // The panel's own window-level Escape listener (useDismissableDialog,
+      // in ProjectDetailPanel) is still mounted while this dialog is open, so
+      // one Escape would otherwise fire both: this dialog closes AND the
+      // panel closes back to the board. Stopping propagation here — in a
+      // React onKeyDown, before the event reaches window — is what keeps it
+      // from reaching that listener. Focus is inside the dialog on mount
+      // (`dialogRef.focus()`), so this fires; ClientEditor's Escape handler
+      // uses the same trick for the same reason.
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return;
+        e.stopPropagation();
+        if (!closing) requestClose();
+      }}
     >
       <Card
         ref={dialogRef}

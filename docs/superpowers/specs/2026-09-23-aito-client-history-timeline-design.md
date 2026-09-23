@@ -91,8 +91,10 @@ States:
 `AitoPage` passes `(id) => setExpandedId(id)` — a plain swap, no card morph:
 the panel already holds the shared view-transition name, and
 `useCardMorph.open` would claim it twice. The page keys the panel on
-`expandedProject.id` so the swap is a fresh mount (draft state, tabs and the
-contact sheet never bleed from one project to the next). Because the swap
+`expandedProject.id` so the swap is a fresh mount (draft state and the
+contact sheet never bleed from one project to the next; the tab is
+session-sticky on purpose — see `usePanelTab` — so it survives the swap).
+Because the swap
 replaces `project`, the dialog itself is unmounted by the remount; the panel
 closes `historyOpen` before calling `onOpenCard` anyway.
 
@@ -150,8 +152,10 @@ Frontend:
   `clientHistoryHint`, `clientHistorySummary_one/_other`,
   `clientHistoryNoQuote`, `clientHistoryThisCard`, `clientHistoryDeclined`,
   `clientHistoryOpenCard` ("Open project #{{id}}", the row button's title),
-  `clientHistoryEmpty`, `clientHistoryError`, `clientHistoryClose`. Real
-  translations everywhere — the parity gate rejects values identical to EN.
+  `clientHistoryEmpty`, `clientHistoryError`. Real translations everywhere —
+  the parity gate rejects values identical to EN. `clientHistoryClose` above
+  was never added: the close button reuses the pre-existing `common.close`
+  instead.
 - Tests: `__tests__/components/AitoClientHistoryModal.test.tsx` (new) and
   cases in `ProjectDetailPanel.test.tsx`.
 

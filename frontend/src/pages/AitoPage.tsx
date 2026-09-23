@@ -695,8 +695,9 @@ export function AitoPage() {
       {expandedProject && (
         <ProjectDetailPanel
           // Keyed on the project so a history-row swap is a fresh mount:
-          // draft state, tabs and the contact sheet never bleed from one
-          // project into the next.
+          // draft state and the contact sheet never bleed from one project
+          // into the next (the tab is session-sticky on purpose — see
+          // usePanelTab — so it survives the swap).
           key={expandedProject.id}
           project={expandedProject}
           canCreate={canCreate}

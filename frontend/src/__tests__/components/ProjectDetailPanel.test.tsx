@@ -3712,18 +3712,23 @@ describe('client history from the masthead', () => {
       }),
     );
 
-  const renderWith = (p = project, onOpenCard?: (id: number) => void) =>
-    rtlRender(
+  // `onClose` is captured (not the inline `vi.fn()` this used to pass) so the
+  // Escape test below can assert the panel's own close never fires — the
+  // whole point of finding #1's fix.
+  const renderWith = (p = project, onOpenCard?: (id: number) => void, onClose = vi.fn()) => ({
+    onClose,
+    ...rtlRender(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <BrowserRouter>
           <AuthProvider>
             <ToastProvider>
-              <ProjectDetailPanel canCreate canUpdate canDelete project={p} onClose={vi.fn()} onDelete={vi.fn()} onOpenCard={onOpenCard} />
+              <ProjectDetailPanel canCreate canUpdate canDelete project={p} onClose={onClose} onDelete={vi.fn()} onOpenCard={onOpenCard} />
             </ToastProvider>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>,
-    );
+    ),
+  });
 
   it('opens the history when the name is held for 500ms, not on a shorter press', async () => {
     server.use(status(), history());
@@ -3807,5 +3812,15 @@ describe('client history from the masthead', () => {
     fireEvent.click(within(rows[1]).getByRole('button'));
     expect(onOpenCard).toHaveBeenCalledWith(33);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
+  });
+
+  it('Escape on the history dialog closes only the dialog, not the panel behind it', async () => {
+    server.use(status(), history());
+    const { onClose } = renderWith();
+    fireEvent.click(await screen.findByRole('button', { name: 'Client history' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Client history' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

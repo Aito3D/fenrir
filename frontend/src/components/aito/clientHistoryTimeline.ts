@@ -1,5 +1,5 @@
 import type { AitoClientHistoryCard } from '../../api/client';
-import { parseUTCDate } from '../../utils/date';
+import { parseUTCDateStrict } from '../../utils/date';
 
 /** What the history dialog asks `GET /aito/clients/{id}/history` for: the
  *  route's ceiling, which is more cards than any client of the shop has. The
@@ -25,7 +25,7 @@ export function summariseTimeline(cards: AitoClientHistoryCard[]): TimelineSumma
   let sinceMs = Infinity;
   for (const card of cards) {
     if (card.quote_status !== 'declined') total += card.total;
-    const ms = parseUTCDate(card.created_at)?.getTime() ?? Infinity;
+    const ms = parseUTCDateStrict(card.created_at)?.getTime() ?? Infinity;
     if (ms < sinceMs) {
       sinceMs = ms;
       since = card.created_at;
@@ -44,7 +44,7 @@ export function timelineItems(cards: AitoClientHistoryCard[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   let currentYear: number | null = null;
   for (const card of cards) {
-    const year = parseUTCDate(card.created_at)?.getFullYear() ?? NaN;
+    const year = parseUTCDateStrict(card.created_at)?.getFullYear() ?? NaN;
     if (year !== currentYear) {
       items.push({ kind: 'year', year });
       currentYear = year;
