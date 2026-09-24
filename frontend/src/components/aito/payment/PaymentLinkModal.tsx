@@ -145,7 +145,7 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
             <dd className="text-white">{formatMoney(live.amount, live.currency)}</dd>
           </div>
           <div className="flex items-center justify-between">
-            <dt className="text-bambu-gray">{t('aito.paymentLink.label')}</dt>
+            <dt className="text-bambu-gray">{t('aito.payment.linkExpires')}</dt>
             <dd className="text-white" title={expiry.title}>{expiry.text}</dd>
           </div>
         </dl>
@@ -175,42 +175,68 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
         </Button>
       );
   } else if (document.kind === 'invoice') {
-    // A non-null link here is dead (paid/expired/failed/cancelled) — the
-    // create button reads "a new one" rather than "the link" so it is clear
-    // the old one is gone for good.
-    const dead = !!link;
-    body = (
-      <div className="space-y-4">
-        <AmountField id="link-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
-        <p className="text-xs text-bambu-gray">{t('aito.payment.linkHintInvoice')}</p>
-        {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
-      </div>
-    );
-    footer = (
-      <>
-        <Button variant="secondary" onClick={requestClose} className="flex-1" disabled={create.isPending}>
-          {t('common.cancel')}
+    // A `pending` link that isn't `live` is a reservation whose Heimdall
+    // create hasn't (yet) landed — never a dead link, since dead states are
+    // paid/expired/failed/cancelled. Left alone (no `sync_error`), it is
+    // still in flight: nothing to submit, just wait for the reconciler.
+    // Once it has a `sync_error` the backend is expected to replay that same
+    // stuck reservation under its own key on the next create, so the form
+    // shows the plain "Create the link" label, not "again".
+    const reservation = link && link.state === 'pending' ? link : null;
+    if (reservation && !reservation.sync_error) {
+      body = <p className="text-sm text-bambu-gray">{t('aito.payment.linkPending')}</p>;
+      footer = (
+        <Button onClick={requestClose} className="flex-1">
+          {t('common.close')}
         </Button>
-        <Button onClick={submitCreate} className="flex-1" disabled={create.isPending}>
-          {create.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              {t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')}
-            </>
-          ) : (
-            t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')
-          )}
-        </Button>
-      </>
-    );
+      );
+    } else {
+      // A non-null, non-reservation link here is dead (paid/expired/failed/
+      // cancelled) — the create button reads "a new one" rather than "the
+      // link" so it is clear the old one is gone for good.
+      const dead = !!link && !reservation;
+      body = (
+        <div className="space-y-4">
+          <AmountField id="link-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
+          <p className="text-xs text-bambu-gray">{t('aito.payment.linkHintInvoice')}</p>
+          {reservation?.sync_error && <p className="text-xs text-bambu-gray">{reservation.sync_error}</p>}
+          {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
+        </div>
+      );
+      footer = (
+        <>
+          <Button variant="secondary" onClick={requestClose} className="flex-1" disabled={create.isPending}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={submitCreate} className="flex-1" disabled={create.isPending}>
+            {create.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')}
+              </>
+            ) : (
+              t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')
+            )}
+          </Button>
+        </>
+      );
+    }
   } else {
     // A quote's link is only ever minted by the reconciler — nothing to
-    // create or cancel here, just today's state.
-    body = (
-      <p className="text-sm text-bambu-gray">
-        {link ? t(`aito.paymentLink.state.${link.state}`) : t('aito.payment.stateNoLink')}
-      </p>
-    );
+    // create or cancel here, just today's state. `aito.paymentLink.state`
+    // only covers expired/cancelled/failed, so paid and pending-unminted
+    // links need their own copy here rather than printing a raw key.
+    let stateText: string;
+    if (!link) {
+      stateText = t('aito.payment.stateNoLink');
+    } else if (link.state === 'paid') {
+      stateText = `${t('aito.paymentLink.paid')} ${formatMoney(link.amount, link.currency)}`;
+    } else if (link.state === 'pending') {
+      stateText = t('aito.payment.linkPending');
+    } else {
+      stateText = t(`aito.paymentLink.state.${link.state}`);
+    }
+    body = <p className="text-sm text-bambu-gray">{stateText}</p>;
     footer = (
       <Button onClick={requestClose} className="flex-1">
         {t('common.close')}
