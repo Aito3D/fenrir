@@ -52,6 +52,12 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'payment_link.updated': 'aito.history.paymentLinkUpdated',
   'payment_link.paid': 'aito.history.paymentLinkPaid',
   'payment_link.cancelled': 'aito.history.paymentLinkCancelled',
+  'payment.terminal.started': 'aito.history.paymentTerminalStarted',
+  'payment.terminal.paid': 'aito.history.paymentTerminalPaid',
+  'payment.terminal.failed': 'aito.history.paymentTerminalFailed',
+  'payment.terminal.attention': 'aito.history.paymentTerminalAttention',
+  'payment.manual.recorded': 'aito.history.paymentManualRecorded',
+  'payment.manual.partial': 'aito.history.paymentManualPartial',
 };
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
@@ -95,6 +101,15 @@ export function formatValue(value: unknown): string {
  *  - `quote.accepted` carries `detail.source`, but only the two automatic
  *    sources (`payment_link`, `retainer`) are shown: for a person's click
  *    the actor line already names who, and "user" would only repeat it.
+ *  - `payment.manual.recorded` carries `detail.mode`/`amount`/`reference` —
+ *    what the counter typed in. `payment.manual.partial` carries the
+ *    retainer number the Zoho payment leg failed against, plus why, in
+ *    `detail.retainer_number`/`error`. `payment.terminal.started` carries
+ *    `detail.amount`; `payment.terminal.paid` prefers Heimdall's confirmed
+ *    `detail.amount_confirmed` over the asked `amount`; `payment.terminal
+ *    .failed` carries the terminal's own `detail.native_state`.
+ *    `payment.terminal.attention` has nothing worth surfacing beyond the
+ *    label — the terminal gave no readable answer at all.
  *
  *  `detail` is `Record<string, unknown> | null` from the wire, so every read
  *  here is narrowed before use — never rendered as an object.
@@ -169,6 +184,40 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
     // Only the automatic acceptances carry a source worth showing; a
     // person's click says who in the actor line already.
     return detail.source === 'payment_link' || detail.source === 'retainer' ? String(detail.source) : null;
+  }
+
+  if (kind === 'payment.manual.recorded') {
+    // Mode, amount, and the cheque/reference number — what the counter
+    // typed in, so the operator can match it against the paper.
+    const parts: string[] = [];
+    if (typeof detail.mode === 'string' && detail.mode) parts.push(detail.mode);
+    if (typeof detail.amount === 'number') parts.push(formatValue(detail.amount));
+    if (typeof detail.reference === 'string' && detail.reference) parts.push(detail.reference);
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  if (kind === 'payment.manual.partial') {
+    // The retainer was raised but Zoho refused the payment leg — the
+    // retainer number is what the operator looks up in Books, and the
+    // reason says why it still needs finishing there by hand.
+    if (typeof detail.retainer_number !== 'string' || !detail.retainer_number) return null;
+    return typeof detail.error === 'string' && detail.error
+      ? `${detail.retainer_number} · ${detail.error}`
+      : detail.retainer_number;
+  }
+
+  if (kind === 'payment.terminal.started') {
+    return typeof detail.amount === 'number' ? formatValue(detail.amount) : null;
+  }
+
+  if (kind === 'payment.terminal.paid') {
+    // Heimdall's confirmed amount if it sent one back, else what was asked.
+    const amount = detail.amount_confirmed ?? detail.amount;
+    return typeof amount === 'number' ? formatValue(amount) : null;
+  }
+
+  if (kind === 'payment.terminal.failed') {
+    return typeof detail.native_state === 'string' && detail.native_state ? detail.native_state : null;
   }
 
   return null;
