@@ -1,7 +1,9 @@
 import httpx
 import pytest
+from sqlalchemy import select
 
 from backend.app.api.routes.settings import set_setting
+from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import heimdall_service
 
@@ -136,6 +138,27 @@ async def test_a_transport_failure_is_still_a_502_upstream(async_client):
     heimdall_service._transport = httpx.MockTransport(lambda r_: httpx.Response(202, json=_payment(id="h-replay")))
     again = await async_client.post(url, json=body)
     assert again.status_code == 201 and again.json()["id"] == row["id"]
+
+
+@pytest.mark.asyncio
+async def test_a_missing_heimdall_config_is_a_502_not_configured(async_client, db_session):
+    """`HeimdallNotConfigured` does NOT subclass `HeimdallUpstreamError` (see
+    FINDING 2, and the service-level
+    `test_start_marks_the_row_failed_when_heimdall_is_not_configured`) — the
+    route has its own narrow `except HeimdallNotConfigured` above the
+    `HeimdallUpstreamError` catch precisely so this never falls through as an
+    unmapped 500. Also asserts the reservation row is stamped `failed`, not
+    left `pending` forever."""
+    p = await _create(async_client)
+    await set_setting(db_session, "heimdall_api_token", "")
+    await db_session.commit()
+    url = f"/api/v1/aito/{p['id']}/terminal-payment"
+    body = {"document_kind": "invoice", "document_id": "inv-1", "amount": 23000}
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"] == {"code": "not_configured", "message": "Heimdall is not configured (see Settings)"}
+    row = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    assert row.status == "failed" and row.heimdall_id is None
 
 
 @pytest.mark.asyncio

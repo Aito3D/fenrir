@@ -104,6 +104,82 @@ async def test_amount_above_balance_and_quote_cancel(async_client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_missing_heimdall_config_is_a_502_not_configured_on_create(async_client, db_session):
+    """`HeimdallNotConfigured` does not subclass `HeimdallUpstreamError` (see
+    FINDING 2); the route's own narrow `except HeimdallNotConfigured` above
+    the `HeimdallUpstreamError` catch is what stops this route falling
+    through to an unmapped 500."""
+    p = await _create(async_client)
+    await set_setting(db_session, "heimdall_api_token", "")
+    await db_session.commit()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"] == {"code": "not_configured", "message": "Heimdall is not configured (see Settings)"}
+
+
+@pytest.mark.asyncio
+async def test_a_missing_heimdall_config_is_a_502_not_configured_on_cancel(async_client, db_session):
+    """Same mapping, on the cancel route: a live, minted link is seeded so
+    the request gets past the `not_cancellable` state guard and reaches
+    `cancel_invoice_link`, which lets `HeimdallNotConfigured` propagate
+    uncaught for this same route-level `except` to map."""
+    p = await _create(async_client)
+    row = AitoPaymentLink(
+        project_id=p["id"],
+        idempotency_key="k-cfg",
+        reference="FA-26-0001",
+        amount=23000,
+        expires_on="2026-12-31",
+        heimdall_id="h-live",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-26-0001",
+    )
+    db_session.add(row)
+    await db_session.commit()
+    await set_setting(db_session, "heimdall_api_token", "")
+    await db_session.commit()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/{row.id}/cancel")
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"] == {"code": "not_configured", "message": "Heimdall is not configured (see Settings)"}
+
+
+@pytest.mark.asyncio
+async def test_the_services_own_link_exists_guard_answers_409_when_the_routes_precheck_misses_the_race(
+    async_client, db_session, monkeypatch
+):
+    """`create_invoice_link`'s own `InvoiceLinkExists` guard (a second,
+    independent read of "is there already a live link") is the backstop for
+    a concurrent create racing past the route's own pre-check -- both read
+    the same state, so the route's pre-check is patched away here (as if it
+    had run a heartbeat earlier and seen no link yet) while a real minted,
+    pending link already sits in the database for the service's own guard to
+    find and refuse."""
+    p = await _create(async_client)
+    row = AitoPaymentLink(
+        project_id=p["id"],
+        idempotency_key="k-race",
+        reference="FA-26-0001",
+        amount=23000,
+        expires_on="2026-12-31",
+        heimdall_id="h-race",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-26-0001",
+    )
+    db_session.add(row)
+    await db_session.commit()
+
+    async def no_live_link_yet(db, project_id, *, kind="quote"):
+        return None
+
+    monkeypatch.setattr("backend.app.api.routes.aito_payments.current_link", no_live_link_yet)
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "link_exists"
+
+
+@pytest.mark.asyncio
 async def test_a_heimdall_422_on_the_link_route_reads_invalid_not_amount_above_balance(async_client):
     """Minor 5: the balance cap is checked by the route itself, so a 422 from
     Heimdall here is some OTHER invalid field — labelling it

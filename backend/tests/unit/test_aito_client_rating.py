@@ -299,6 +299,28 @@ def test_paid_invoice_without_a_payment_date_counts_as_on_time():
     assert (rating.tier, rating.on_time_count) == ("good", 3)
 
 
+def test_paid_row_with_empty_payment_date_ignores_last_modified_time_fallback():
+    # campaign-20 triage T-003: zoho.py's docstring once claimed
+    # ``last_modified_time`` was read as a fallback when
+    # ``last_payment_date`` is empty. ``rate_invoices`` has no such branch —
+    # ``last_modified_time`` is mapped through by ``_map_invoice_history`` but
+    # never read here. This pins the CURRENT rule (empty payment date ->
+    # lateness treated as 0 -> counted on-time), not the documented-but-never-
+    # -built fallback. If ``last_modified_time`` were honoured instead, these
+    # invoices (each "modified" 200 days after their due date) would not
+    # count as on-time.
+    rows = [
+        r
+        | {
+            "last_payment_date": "",
+            "last_modified_time": (date.fromisoformat(r["due_date"]) + timedelta(days=200)).isoformat(),
+        }
+        for r in _paid(3)
+    ]
+    rating = rate_invoices(rows, TODAY)
+    assert (rating.tier, rating.settled_count, rating.on_time_count) == ("good", 3, 3)
+
+
 def test_open_invoice_without_a_due_date_is_not_overdue():
     rows = _paid(3) + [_open(past_due=40) | {"due_date": ""}]
     assert rate_invoices(rows, TODAY).tier == "good"
