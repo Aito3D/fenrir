@@ -91,6 +91,43 @@ _BOOKS_TIME = "%Y-%m-%dT%H:%M:%S%z"
 
 _AITO_REFERENCE = re.compile(r"^aito-(\d+)$")
 
+# How many consecutive passes one invoice may fail adoption before the poll
+# stops letting it hold the watermark open. Three is one transient Books
+# outage's worth of retries (the pass runs every 5 minutes) — past that the
+# row is not transiently broken, it is poison: a stale reference, a garbled
+# figure, an estimate Books refuses to re-link. Nothing about a failure is
+# written, so ``quote_invoiced`` stays False and ``_adopt`` would attempt the
+# same repair on every single pass; with the watermark pinned at that row's
+# timestamp the window grows by five minutes a tick and, left alone for a
+# month, the poll re-lists and re-adopts a month of the org's invoices every
+# tick. Capping the rewind costs the poison row its retries; it does not cost
+# it the future, because an invoice edited in Books gets a fresh
+# ``last_modified_time`` and re-enters the window (and the count below is
+# dropped as soon as the row leaves it).
+MAX_ADOPT_FAILURES = 3
+
+# Consecutive adoption failures, per invoice. Module state rather than a
+# column: it is a property of this process's conversation with Books, not of
+# any card — most of these rows match no project at all — and a restart
+# re-earning three attempts is the right behaviour, not a bug.
+_adopt_failures: dict[str, int] = {}
+
+
+def _reset_adopt_failures() -> None:
+    """Forget every counted failure — tests run this around each pass."""
+    _adopt_failures.clear()
+
+
+def _failure_key(row: dict) -> str:
+    """The identity a failure count is kept under.
+
+    The Books invoice id, its number when the id is missing, and one shared
+    sentinel when the row carries neither: a row that anonymous cannot be
+    told apart from the next one anyway, and a single bucket for them is
+    better than an unbounded dict keyed on the empty string.
+    """
+    return str(row.get("id") or "") or str(row.get("number") or "") or "__no_id__"
+
 
 def _format_books_time(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).strftime(_BOOKS_TIME)
@@ -194,7 +231,7 @@ async def _adopt(db: AsyncSession, row: dict, project: AitoProject) -> bool:
     billed and locked while the panel's own estimate-filtered fetch still
     showed nothing — strictly worse than staying untouched and being retried
     on the next tick, which the watermark rule in ``poll_invoices``
-    guarantees.
+    guarantees for the next ``MAX_ADOPT_FAILURES`` passes.
     """
     status = str(row.get("status") or "") or None
     balance = float(row.get("balance") or 0)
@@ -264,16 +301,22 @@ async def poll_invoices(db: AsyncSession) -> int:
     newest: datetime | None = None
     # The oldest row this pass could not finish. The watermark must not
     # advance past it, or the retry the per-invoice recovery below counts on
-    # would never be offered another look at it.
+    # would never be offered another look at it — up to MAX_ADOPT_FAILURES
+    # passes, after which a row that is never going to succeed stops holding
+    # the window open for everything else.
     oldest_failure: datetime | None = None
+    seen: set[str] = set()
 
     for row in rows:
         moment = _parse_books_time(row.get("last_modified_time"))
+        key = _failure_key(row)
+        seen.add(key)
         try:
             project = await _match(db, str(row.get("reference_number") or ""), str(row.get("customer_id") or ""))
             if project is None:
                 # Not ours — most invoices in the org are not. Still counts as
                 # seen, so it advances the watermark with everything else.
+                _adopt_failures.pop(key, None)
                 if moment and (newest is None or moment > newest):
                     newest = moment
                 continue
@@ -281,20 +324,56 @@ async def poll_invoices(db: AsyncSession) -> int:
                 await db.commit()
                 updated += 1
         except ZohoRateLimited:
+            # Not an adoption failure: the org is throttled, this row was
+            # never judged. It must not spend a retry.
             raise
         except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError, ValueError, TypeError, KeyError) as exc:
-            logger.warning("Invoice poll skipped invoice %s: %s", row.get("number") or row.get("id"), exc)
+            failures = _adopt_failures.get(key, 0) + 1
+            _adopt_failures[key] = failures
             try:
                 await db.rollback()
             except SQLAlchemyError:
                 # Best-effort, same as the hourly sweep's: a failed rollback
                 # must not stop the pass from trying the next invoice.
                 pass
-            if moment and (oldest_failure is None or moment < oldest_failure):
-                oldest_failure = moment
+            if failures < MAX_ADOPT_FAILURES:
+                logger.warning("Invoice poll skipped invoice %s: %s", row.get("number") or row.get("id"), exc)
+                if moment and (oldest_failure is None or moment < oldest_failure):
+                    oldest_failure = moment
+                continue
+            if failures == MAX_ADOPT_FAILURES:
+                # Once, at ERROR — the count is kept so the next pass says it
+                # again at debug rather than filling the log every 5 minutes.
+                logger.error(
+                    "Invoice poll giving up on invoice %s after %d consecutive failures; "
+                    "the watermark will advance past it. Last error: %s",
+                    row.get("number") or row.get("id"),
+                    failures,
+                    exc,
+                )
+            else:
+                logger.debug(
+                    "Invoice poll still failing on invoice %s (%d consecutive): %s",
+                    row.get("number") or row.get("id"),
+                    failures,
+                    exc,
+                )
+            # Deliberately NOT fed into oldest_failure: a poison row counts as
+            # seen from here on, so the window stops growing.
+            if moment and (newest is None or moment > newest):
+                newest = moment
             continue
+        _adopt_failures.pop(key, None)
         if moment and (newest is None or moment > newest):
             newest = moment
+
+    # A counted row that is no longer in the window cannot be retried anyway;
+    # drop it so the dict stays the size of the current window's failures. If
+    # Books touches that invoice again it comes back with a fresh timestamp,
+    # and a fresh set of attempts is the right answer to a row someone has
+    # just edited.
+    for stale in [k for k in _adopt_failures if k not in seen]:
+        del _adopt_failures[stale]
 
     watermark = min(x for x in (newest, oldest_failure) if x is not None) if (newest or oldest_failure) else None
     if watermark is not None:

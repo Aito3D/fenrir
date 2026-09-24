@@ -90,6 +90,16 @@ async def _events(db, project_id: int, kind: str) -> list[AitoEvent]:
     return list((await db.execute(stmt)).scalars().all())
 
 
+@pytest.fixture(autouse=True)
+def _forget_adopt_failures():
+    """The consecutive-failure counts live in a module dict (T-013), so a
+    file whose tests fail the same invoice id twice would carry the count
+    into the next one. Empty it around every test."""
+    aito_invoice_poll._reset_adopt_failures()
+    yield
+    aito_invoice_poll._reset_adopt_failures()
+
+
 @pytest.mark.asyncio
 async def test_the_listing_asks_books_for_one_newest_first_window(monkeypatch):
     calls: list = []
@@ -456,3 +466,172 @@ async def test_a_malformed_balance_leaves_the_row_untouched(db_session, monkeypa
     db_session.expire_all()
     row = await db_session.get(AitoProject, pid)
     assert (row.quote_invoiced, row.invoice_status) == (False, None)
+
+
+@pytest.mark.asyncio
+async def test_a_poison_invoice_stops_holding_the_watermark_after_three_passes(db_session, monkeypatch, caplog):
+    """The watermark rewind is a retry budget, not a promise (T-013). An
+    invoice Books will never let this pass adopt writes nothing, so
+    ``quote_invoiced`` stays False and it is attempted again on every tick
+    with the window pinned at its timestamp — which then grows by
+    OVERLAP_SECONDS a tick until the poll is re-listing months of the org.
+    Three failures and it counts as seen instead."""
+    first = await _project(db_session)
+    second = await _project(db_session, quote_id="EST2")
+    first_id, second_id = first.id, second.id
+    failed_at = "2026-09-20T08:00:00-1000"
+    newest = "2026-09-21T09:18:07-1000"
+
+    async def get_invoice_raw(db, invoice_id):
+        if invoice_id == "INV1":
+            raise ZohoUpstreamError("books is grumpy")
+        return {"estimate_id": "EST2"}
+
+    def _arm():
+        _fake_books(
+            monkeypatch,
+            [
+                _row(id="INV2", reference_number=f"AITO-{second_id}", last_modified_time=newest),
+                _row(id="INV1", reference_number=f"AITO-{first_id}", last_modified_time=failed_at),
+            ],
+        )
+        monkeypatch.setattr(zoho_service, "get_invoice_raw", get_invoice_raw)
+
+    def _expected(moment: str) -> str:
+        parsed = datetime.strptime(moment, "%Y-%m-%dT%H:%M:%S%z").astimezone(timezone.utc)
+        return (parsed - timedelta(seconds=aito_invoice_poll.OVERLAP_SECONDS)).strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    # Passes 1 and 2: the failing row still pins the window open.
+    for _ in range(aito_invoice_poll.MAX_ADOPT_FAILURES - 1):
+        _arm()
+        await poll_invoices(db_session)
+        assert await get_setting(db_session, POLL_SINCE_SETTING) == _expected(failed_at)
+
+    # Pass 3 hits the cap: logged once at ERROR, and the window advances to
+    # the newest row the pass actually saw.
+    _arm()
+    with caplog.at_level("ERROR", logger="backend.app.services.aito_invoice_poll"):
+        await poll_invoices(db_session)
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == _expected(newest)
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "FA-26-4367" in errors[0].getMessage() and "books is grumpy" in errors[0].getMessage()
+
+    # Pass 4 says nothing more at ERROR and leaves the advanced window alone.
+    caplog.clear()
+    _arm()
+    with caplog.at_level("ERROR", logger="backend.app.services.aito_invoice_poll"):
+        await poll_invoices(db_session)
+    assert [r for r in caplog.records if r.levelname == "ERROR"] == []
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == _expected(newest)
+
+    # The failing card is still untouched — giving up on the rewind is not
+    # giving up on correctness.
+    db_session.expire_all()
+    assert (await db_session.get(AitoProject, first_id)).quote_invoiced is False
+    assert (await db_session.get(AitoProject, second_id)).quote_invoiced is True
+
+
+@pytest.mark.asyncio
+async def test_one_success_resets_the_failure_count(db_session, monkeypatch):
+    """The budget is CONSECUTIVE failures: a row that comes good has earned
+    its full rewind back, so a flapping Books does not exhaust it."""
+    project = await _project(db_session)
+    pid = project.id
+    failed_at = "2026-09-20T08:00:00-1000"
+    grumpy = True
+
+    async def get_invoice_raw(db, invoice_id):
+        if grumpy:
+            raise ZohoUpstreamError("books is grumpy")
+        return {"estimate_id": "EST1"}
+
+    def _arm():
+        _fake_books(
+            monkeypatch,
+            [_row(id="INV1", reference_number=f"AITO-{pid}", last_modified_time=failed_at)],
+        )
+        monkeypatch.setattr(zoho_service, "get_invoice_raw", get_invoice_raw)
+
+    for _ in range(aito_invoice_poll.MAX_ADOPT_FAILURES - 1):
+        _arm()
+        await poll_invoices(db_session)
+    assert aito_invoice_poll._adopt_failures["INV1"] == aito_invoice_poll.MAX_ADOPT_FAILURES - 1
+
+    grumpy = False
+    _arm()
+    assert await poll_invoices(db_session) == 1
+    assert "INV1" not in aito_invoice_poll._adopt_failures
+
+    # And the budget really is full again: the next failure pins the
+    # watermark rather than being the one that gives up. (A malformed figure
+    # this time — the link repair is attempted on first adoption only, so the
+    # now-invoiced card can no longer fail that way.)
+    await set_setting(db_session, POLL_SINCE_SETTING, "2026-09-01T00:00:00+0000")
+    await db_session.commit()
+    _fake_books(
+        monkeypatch,
+        [_row(id="INV1", reference_number=f"AITO-{pid}", last_modified_time=failed_at, balance="not a number")],
+    )
+    await poll_invoices(db_session)
+    assert aito_invoice_poll._adopt_failures["INV1"] == 1
+    expected = datetime.strptime(failed_at, "%Y-%m-%dT%H:%M:%S%z").astimezone(timezone.utc) - timedelta(
+        seconds=aito_invoice_poll.OVERLAP_SECONDS
+    )
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == expected.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_spends_no_failure_budget(db_session, monkeypatch):
+    """A 429 is the org being throttled, not this invoice being broken: the
+    row was never judged, so it must not lose a retry."""
+    project = await _project(db_session)
+    pid = project.id
+
+    async def get_invoice_raw(db, invoice_id):
+        raise ZohoRateLimited("429")
+
+    _fake_books(monkeypatch, [_row(id="INV1", reference_number=f"AITO-{pid}")])
+    monkeypatch.setattr(zoho_service, "get_invoice_raw", get_invoice_raw)
+
+    with pytest.raises(ZohoRateLimited):
+        await poll_invoices(db_session)
+
+    assert aito_invoice_poll._adopt_failures == {}
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_with_no_id_or_number_still_counts_without_crashing(db_session, monkeypatch):
+    """The counter is keyed on the Books id, then the number; a row carrying
+    neither lands in one shared bucket rather than blowing up the pass or
+    growing an unbounded dict of empty-string keys."""
+    project = await _project(db_session)
+    pid = project.id
+    _fake_books(
+        monkeypatch,
+        [_row(id="", number="", reference_number=f"AITO-{pid}", balance="not a number")],
+    )
+
+    assert await poll_invoices(db_session) == 0
+    assert aito_invoice_poll._adopt_failures == {"__no_id__": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_count_is_dropped_once_its_invoice_leaves_the_window(db_session, monkeypatch):
+    """An invoice Books has not touched since cannot be retried anyway, so
+    holding its count forever would only leak memory — and if Books does
+    touch it again it comes back with a fresh timestamp and a fresh budget."""
+    project = await _project(db_session)
+    pid = project.id
+
+    async def get_invoice_raw(db, invoice_id):
+        raise ZohoUpstreamError("books is grumpy")
+
+    _fake_books(monkeypatch, [_row(id="INV1", reference_number=f"AITO-{pid}")])
+    monkeypatch.setattr(zoho_service, "get_invoice_raw", get_invoice_raw)
+    await poll_invoices(db_session)
+    assert aito_invoice_poll._adopt_failures == {"INV1": 1}
+
+    _fake_books(monkeypatch, [])
+    await poll_invoices(db_session)
+    assert aito_invoice_poll._adopt_failures == {}

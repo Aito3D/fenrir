@@ -494,7 +494,18 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     @field_validator("description")
     @classmethod
     def _description_not_blank(cls, value: str | None) -> str | None:
-        if value is not None and not value.strip():
+        # An explicitly-sent `{"description": null}` is refused HERE rather
+        # than in update_project, which writes `fields["description"].strip()`
+        # for any key present in the body and used to raise AttributeError —
+        # a 500 the caller could make nothing of, and one taken AFTER
+        # _claim_expected_version had already burnt the row's version claim.
+        # Pydantic does not run field validators on defaults, so an OMITTED
+        # description still arrives as the default None and is left alone;
+        # only a null the caller actually typed reaches this branch. The
+        # annotation stays `str | None` so the field remains optional.
+        if value is None:
+            raise ValueError("description must not be null")
+        if not value.strip():
             raise ValueError("description must not be blank")
         return value
 

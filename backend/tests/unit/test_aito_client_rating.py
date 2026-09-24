@@ -569,6 +569,30 @@ async def test_cached_row_read_failure_returns_unavailable_without_raising(db_se
 
 
 @pytest.mark.asyncio
+async def test_default_contact_read_failure_returns_unavailable_without_raising(db_session, monkeypatch, caplog):
+    """``get_default_contact`` reads settings via ``db.execute``, not
+    ``db.get`` — a distinct failure point from the cached-row read below it,
+    and the earlier of the two ``except SQLAlchemyError`` guards in
+    ``read_client_rating``."""
+
+    async def failing_execute(*args, **kwargs):
+        raise OperationalError("db is locked", None, Exception("locked"))
+
+    monkeypatch.setattr(db_session, "execute", failing_execute)
+
+    with caplog.at_level("WARNING"):
+        body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert body == AitoClientRatingResponse(tier="unavailable", reason=None, computed_at=None, stale=False)
+    assert "could not read the default contact" in caplog.text
+
+    # The session itself is still usable afterwards — the guard swallowed
+    # the error rather than leaving the session in a broken state.
+    monkeypatch.undo()
+    assert (await db_session.execute(select(AitoClientRating))).first() is None
+
+
+@pytest.mark.asyncio
 async def test_route_returns_the_rating_and_honours_refresh(async_client, monkeypatch):
     calls: list[str] = []
     _fake_books(monkeypatch, _paid(4), calls)
