@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Banknote, Check, Copy, Link2, Loader2, Smartphone } from 'lucide-react';
 import type { AitoPaymentLink, AitoProject, AitoTerminalPayment } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
@@ -14,7 +15,7 @@ import { PaymentLinkModal } from './PaymentLinkModal';
 import { TerminalPaymentModal } from './TerminalPaymentModal';
 import type { PaymentDocument } from './paymentDocument';
 import { blockVisible, cellsEnabled, derivePaymentState, expiryText, type PaymentState } from './paymentState';
-import { isTerminalOpen, useTerminalPayment } from './useTerminalPayment';
+import { isTerminalOpen, settleTerminalPaymentInCache, useTerminalPayment } from './useTerminalPayment';
 
 type OpenModal = 'link' | 'terminal' | 'manual' | null;
 
@@ -47,6 +48,7 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [copied, flashCopied] = useCopiedFlash();
   const [open, setOpen] = useState<OpenModal>(null);
 
@@ -56,6 +58,20 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
   const openTerminalId = terminal && isTerminalOpen(terminal) ? terminal.id : null;
   const poll = useTerminalPayment(project.id, openTerminalId, terminal);
   const liveTerminal = openTerminalId !== null ? (poll.data ?? terminal) : terminal;
+
+  // Settles the charge into the board cache itself, independently of
+  // `TerminalPaymentModal`'s own identical effect: the modal only runs that
+  // effect while it is mounted, and "Close, I will come back" is a designed
+  // way to leave it before the charge settles. Without this, a payment that
+  // finishes after the operator closes the modal would show "paid" here
+  // (this block derives its own state from `poll.data`) while the head
+  // amount and the three cells stayed stuck on the pre-payment figures until
+  // the next unrelated board fetch. Reuses the same helper the modal calls,
+  // so the two settle paths cannot drift apart.
+  useEffect(() => {
+    if (openTerminalId === null || !poll.data || isTerminalOpen(poll.data)) return;
+    settleTerminalPaymentInCache(queryClient, project.id, poll.data);
+  }, [openTerminalId, poll.data, project.id, queryClient]);
 
   const state = derivePaymentState(link ?? null, liveTerminal ?? null);
   const due = document.due;
@@ -86,7 +102,14 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
         {due !== null && <span className="text-white font-medium">{formatMoney(due, document.currency)}</span>}
       </div>
 
-      <StateLine state={state} document={document} copied={copied} onCopy={copyLink} onReopenTerminal={() => setOpen('terminal')} />
+      <StateLine
+        state={state}
+        document={document}
+        copied={copied}
+        canUpdate={canUpdate}
+        onCopy={copyLink}
+        onReopenTerminal={() => setOpen('terminal')}
+      />
 
       {showCells && (
         <div className={ACTION_GROUP}>
@@ -146,27 +169,38 @@ function StateLine({
   state,
   document,
   copied,
+  canUpdate,
   onCopy,
   onReopenTerminal,
 }: {
   state: PaymentState;
   document: PaymentDocument;
   copied: ReturnType<typeof useCopiedFlash>[0];
+  canUpdate: boolean;
   onCopy: (url: string) => void;
   onReopenTerminal: () => void;
 }) {
   const { t, i18n } = useTranslation();
 
   switch (state.kind) {
-    case 'terminal_processing':
-      return (
-        <button type="button" onClick={onReopenTerminal} className="text-left w-full">
-          <span className="inline-flex items-center gap-1.5 text-bambu-gray">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-            {t('aito.payment.stateProcessing')}
-          </span>
-        </button>
+    case 'terminal_processing': {
+      const line = (
+        <span className="inline-flex items-center gap-1.5 text-bambu-gray">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+          {t('aito.payment.stateProcessing')}
+        </span>
       );
+      // A read-only viewer must never be offered a way back into the modal
+      // (it is the only way to reach the terminal flow's controls), so
+      // without `canUpdate` this is plain text instead of a button.
+      return canUpdate ? (
+        <button type="button" onClick={onReopenTerminal} className="text-left w-full">
+          {line}
+        </button>
+      ) : (
+        line
+      );
+    }
 
     case 'terminal_attention':
       return (

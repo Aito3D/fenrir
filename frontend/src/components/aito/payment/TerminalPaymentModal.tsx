@@ -11,7 +11,7 @@ import { formatMoney } from '../../../utils/pricing';
 import { AmountField } from './AmountField';
 import { parseAmount } from './amount';
 import type { PaymentDocument } from './paymentDocument';
-import { isTerminalOpen, useTerminalPayment } from './useTerminalPayment';
+import { isTerminalOpen, settleTerminalPaymentInCache, useTerminalPayment } from './useTerminalPayment';
 
 const MODAL_OUT_MS = 170;
 
@@ -53,19 +53,20 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
   // Every settled read seeds the board row so the block's state line moves
   // without waiting for the next board fetch. Bail out early while there is
   // no payment yet, or while it is still open and not yet paid (nothing to
-  // seed); once it is paid or otherwise settled, write it into the board
-  // cache, and once it is no longer open at all, also invalidate the queries
-  // that depend on it.
+  // seed); once it is paid but its booking is still pending, seed only — it
+  // is still "open" (`isTerminalOpen`) so there is nothing to invalidate
+  // yet; once it is no longer open at all, `settleTerminalPaymentInCache`
+  // does both (shared with `PaymentBlock`'s own poll, which reaches this
+  // same fully-settled case once the operator has left this modal).
   useEffect(() => {
     const stillOpenAndUnpaid = isTerminalOpen(payment) && payment?.status !== 'paid';
     if (!payment || stillOpenAndUnpaid) return;
-    queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) =>
-      rows?.map((r) => (r.id === project.id ? { ...r, terminal_payment: payment } : r)));
-    if (!isTerminalOpen(payment)) {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      queryClient.invalidateQueries({ queryKey: ['aito-invoice', project.id] });
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+    if (isTerminalOpen(payment)) {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) =>
+        rows?.map((r) => (r.id === project.id ? { ...r, terminal_payment: payment } : r)));
+      return;
     }
+    settleTerminalPaymentInCache(queryClient, project.id, payment);
   }, [payment, project.id, queryClient]);
 
   const submit = () => {

@@ -1,6 +1,7 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../api/client';
-import type { AitoTerminalPayment } from '../../../api/client';
+import type { AitoProject, AitoTerminalPayment } from '../../../api/client';
 
 export const TERMINAL_POLL_MS = 3000;
 
@@ -27,4 +28,22 @@ export function useTerminalPayment(projectId: number, paymentId: number | null, 
     retry: false,
     staleTime: 0,
   });
+}
+
+/** Writes a settled (no longer open) terminal payment into the board cache
+ *  and invalidates the three queries that depend on it — the invoice's own
+ *  balance, the project's event log, and the board row's own snapshot
+ *  fields. Shared by `TerminalPaymentModal` (while it is open) and
+ *  `PaymentBlock` (which polls its own charge in flight even with the modal
+ *  closed — see its doc), so the two settle paths can never drift apart. */
+export function settleTerminalPaymentInCache(
+  queryClient: QueryClient,
+  projectId: number,
+  payment: AitoTerminalPayment,
+): void {
+  queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) =>
+    rows?.map((r) => (r.id === projectId ? { ...r, terminal_payment: payment } : r)));
+  queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  queryClient.invalidateQueries({ queryKey: ['aito-invoice', projectId] });
+  queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
 }

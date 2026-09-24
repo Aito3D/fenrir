@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
-import type { AitoPaymentLink, AitoTerminalPayment } from '../../api/client';
+import type { AitoPaymentLink, AitoProject, AitoTerminalPayment } from '../../api/client';
 import { PaymentBlock } from '../../components/aito/payment/PaymentBlock';
 import { makeProject } from '../fixtures/aitoProject';
 import type { PaymentDocument } from '../../components/aito/payment/paymentDocument';
@@ -34,6 +37,25 @@ const tpe = (o: Partial<AitoTerminalPayment> = {}): AitoTerminalPayment => ({ id
 
 function block(over: Partial<Parameters<typeof PaymentBlock>[0]> = {}) {
   return render(<PaymentBlock project={makeProject({ id: 12 })} document={invoice} link={null} terminal={null} canUpdate heimdallConfigured {...over} />);
+}
+
+/** A second render helper, used only by the cache-settle test below, which
+ *  needs a handle on the QueryClient to pre-seed `['aito-projects']` and to
+ *  read/spy on it afterwards — the shared `render` in `../utils` keeps its
+ *  client behind `useState`, unreachable from the test. `PaymentBlock` and
+ *  its modals touch no context besides React Query, the router and toasts
+ *  (see `AitoActivityRail.test.tsx` for the same pattern), so that is the
+ *  full provider set needed here. */
+function renderWithClient(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const utils = rtlRender(
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ToastProvider>{ui}</ToastProvider>
+      </BrowserRouter>
+    </QueryClientProvider>,
+  );
+  return { queryClient, ...utils };
 }
 
 describe('PaymentBlock', () => {
@@ -125,6 +147,43 @@ describe('PaymentBlock', () => {
     block({ terminal: tpe() });
     await userEvent.click(screen.getByRole('button', { name: /Terminal · waiting for the card/ }));
     expect(screen.getByRole('dialog', { name: 'Pay by card' })).toBeInTheDocument();
+  });
+
+  // Ruling: a read-only viewer must never be offered a way back into the
+  // terminal flow's modal — the reopen button is the only door to it.
+  it('does not offer the reopen button to a read-only viewer while a charge is processing', () => {
+    vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(tpe());
+    block({ canUpdate: false, terminal: tpe() });
+    expect(screen.getByText('Terminal · waiting for the card')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /waiting for the card/i })).toBeNull();
+  });
+
+  // FINDING 1: TerminalPaymentModal.tsx's settle effect only runs while the
+  // modal is mounted — "Close, I will come back" is a designed way to leave
+  // it before the charge settles. The block polls the same charge itself
+  // (so its own state line moves), so it must also seed the board cache and
+  // invalidate the same three queries once the poll lands on a fully
+  // settled payment, or the head amount and the three cells stay stuck on
+  // the pre-payment figures until an unrelated board fetch happens by.
+  it('settles a charge it polls itself into the board cache, even with the modal never opened', async () => {
+    vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(
+      tpe({ status: 'paid', amount_confirmed: 23000, settled_at: '2026-09-23T01:01:00', booking_status: 'booked' }),
+    );
+    const processing = tpe();
+    const row = makeProject({ id: 12, terminal_payment: processing });
+    const { queryClient } = renderWithClient(
+      <PaymentBlock project={row} document={invoice} link={null} terminal={processing} canUpdate heimdallConfigured />,
+    );
+    queryClient.setQueryData<AitoProject[]>(['aito-projects'], [row]);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await screen.findByText(new RegExp(`Paid ${money(23000, 'XPF')} · terminal`));
+
+    const rows = queryClient.getQueryData<AitoProject[]>(['aito-projects']);
+    expect(rows?.[0].terminal_payment?.status).toBe('paid');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-invoice', 12] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-events', 12] });
   });
 
   it('opens the link modal from its cell', async () => {
