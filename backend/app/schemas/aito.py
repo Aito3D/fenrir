@@ -612,6 +612,7 @@ class AitoPaymentLinkView(BaseModel):
     `state` is Heimdall's unified status. `url` is public — the payment page
     the client opens — so it rides on the board payload like quote_url."""
 
+    id: int
     state: Literal["pending", "paid", "failed", "cancelled", "expired"]
     amount: int
     currency: str
@@ -624,6 +625,45 @@ class AitoPaymentLinkView(BaseModel):
     # `state`/`url`/etc. above are populated from Heimdall's own record at
     # that point, not just reserved locally.
     minted: bool
+
+
+class AitoTerminalPaymentView(BaseModel):
+    """The project's most recent Heimdall terminal (card) charge —
+    services/aito_terminal_payments.py's `terminal_view`. Unlike
+    `AitoPaymentLinkView` this is never "current and open only": once a card
+    charge exists it rides on the project until superseded by a newer one, so
+    the panel can show a settled/failed attempt instead of nothing."""
+
+    id: int
+    document_kind: Literal["quote", "invoice"]
+    document_number: str
+    status: Literal["pending", "processing", "paid", "failed", "cancelled", "expired", "needs_attention"]
+    amount: int
+    amount_confirmed: int | None
+    booking_status: Literal["pending", "booked", "failed", "not_booked"] | None
+    booking_error: str | None
+    sync_error: str | None
+    created_at: datetime
+    settled_at: datetime | None
+
+
+class AitoTerminalPaymentCreate(BaseModel):
+    document_kind: Literal["quote", "invoice"]
+    document_id: str = Field(min_length=1, max_length=100)
+    amount: int = Field(gt=0, le=999_999_999_999)
+
+
+class AitoManualPaymentCreate(BaseModel):
+    document_kind: Literal["quote", "invoice"]
+    document_id: str = Field(min_length=1, max_length=100)
+    mode: Literal["card", "cheque", "cash"]
+    amount: int = Field(gt=0, le=999_999_999_999)
+    reference: str | None = Field(default=None, max_length=64)
+
+
+class AitoInvoiceLinkCreate(BaseModel):
+    document_id: str = Field(min_length=1, max_length=100)
+    amount: int = Field(gt=0, le=999_999_999_999)
 
 
 class AitoProjectResponse(BaseModel):
@@ -671,6 +711,13 @@ class AitoProjectResponse(BaseModel):
     customer_credit_total: float | None
     # The current online payment link, or null when the project has none.
     payment_link: AitoPaymentLinkView | None
+    # Same as `payment_link` but for the project's invoice document
+    # (document_kind="invoice") rather than its quote — a project can carry
+    # both at once once the quote is paid and the invoice link is minted.
+    invoice_payment_link: AitoPaymentLinkView | None
+    # The most recent Heimdall terminal (card) charge for this project, or
+    # null when none has ever been started — see AitoTerminalPaymentView.
+    terminal_payment: AitoTerminalPaymentView | None
     created_by: str | None
     # 'idle' | 'pending' | 'error' | 'locked' | 'unmanaged' — see the column
     # comment on AitoProject.quote_sync_state for what each means.

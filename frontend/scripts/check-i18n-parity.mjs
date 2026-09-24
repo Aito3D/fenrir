@@ -182,6 +182,8 @@ const DE_COGNATES = [
   'Auto',  // DE: established abbreviation for "automatisch" in UI labels (camera grid quality)
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Score',  // #1546 AI detection modal — established DE loanword (Duden)
+  'Link',  // aito.payment.cellLink — "Link" is the German word too (see Tracking-Link)
+  'online',  // aito.payment.channelLink — same loanword used in "zahlen Sie online"
   // Task 14 — filament profile editor: German technical terms borrowed as-is.
   'Import', 'Extrusion', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
   // calculator formula notation — not translatable
@@ -198,6 +200,8 @@ const FR_COGNATES = [
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
   'Urgent',  // aito.urgent — same word in French (adjectif : « urgent »)
+  'Terminal',  // aito.payment.cellTerminal — same word in French (« terminal de paiement »)
+  'terminal',  // aito.payment.channelTerminal — same word, lowercase channel form
   'Cyan',  // settings.accentCyan — « cyan » is the French name of the colour
   'Minimum',  // calculator.floorGroup — same spelling/meaning in French
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -266,6 +270,8 @@ const IT_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
+  'Link',  // aito.payment.cellLink — "Link" is the Italian word too (see "Link di pagamento")
+  'online',  // aito.payment.channelLink — same loanword used in "Paga online"
   'Pipeline', 'slicing',  // #1425 — Slicer Pipelines (cognate in IT)
   'Slicing',  // pricing calculator — "slicing" is the standard IT loanword
   'min',  // minutes abbreviation — same in Italian
@@ -362,6 +368,8 @@ const PT_BR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Email',  // Task 6 Aito client email field — "Email" is used verbatim in PT-BR (see fromEmail, usernameOrEmail)
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "dia" in Portuguese (BR)
+  'Link',  // aito.payment.cellLink — "Link" is the Portuguese (BR) word too (see "Link de pagamento")
+  'Cheque',  // aito.payment.modeCheque / heimdall.paymentModeCheque — same word in Portuguese (BR)
   // Task 14 — filament profile editor: PT-BR loanwords / model codes.
   '{{n}} preset', '{{n}} presets', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
   // calculator formula notation — not translatable
@@ -467,6 +475,7 @@ const ES_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "día" in Spanish
   'Simple',  // slicer settings visibility tier — identical word in Spanish
+  'Cheque',  // aito.payment.modeCheque / heimdall.paymentModeCheque — same word in Spanish
   // Task 14 — filament profile editor: Spanish loanwords / model codes.
   '{{n}} preset', '{{n}} presets', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
   // calculator formula notation — not translatable
@@ -597,6 +606,9 @@ const NL_COGNATES = [
   'Timelapse', 'Topic', 'Trend', 'Type',
   'Type:', 'Updates', 'Uptime', 'Urgent',
   'Warm', '{{weight}}g', 'Workflow',
+  'Link',  // aito.payment.cellLink — "Link" is the Dutch word too (see "Betaallink")
+  'online',  // aito.payment.channelLink — same loanword used in "Betaal online"
+  'Cheque',  // aito.payment.modeCheque / heimdall.paymentModeCheque — same word in Dutch
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

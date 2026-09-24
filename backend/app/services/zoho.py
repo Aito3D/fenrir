@@ -1175,6 +1175,57 @@ class ZohoService:
         payload = await self._request(db, "GET", "/retainerinvoices", params={"customer_id": customer_id})
         return list(payload.get("retainerinvoices") or [])
 
+    async def create_retainer_invoice(
+        self, db: AsyncSession, *, customer_id: str, reference_number: str, description: str, amount: int, today: str
+    ) -> dict:
+        """Raise a retainer (deposit) invoice for a customer — the same body
+        Heimdall sends when it books a quote deposit, so the invoice sweep's
+        reference match (`reference_number` = the quote number) works for a
+        deposit taken by hand exactly as for one taken on the terminal."""
+        payload = {
+            "customer_id": customer_id,
+            "reference_number": reference_number,
+            "date": today,
+            "line_items": [{"description": description, "rate": int(amount), "quantity": 1}],
+        }
+        return (await self._request(db, "POST", "/retainerinvoices", json=payload)).get("retainerinvoice", {})
+
+    async def record_customer_payment(
+        self,
+        db: AsyncSession,
+        *,
+        customer_id: str,
+        payment_mode: str,
+        amount: int,
+        reference_number: str,
+        description: str,
+        today: str,
+        invoice_id: str | None = None,
+        retainerinvoice_id: str | None = None,
+    ) -> dict:
+        """One customer payment, applied to exactly one target: an invoice
+        (`invoices[{invoice_id, amount_applied}]`) or a retainer invoice
+        (top-level `retainerinvoice_id`, per Zoho's v3 docs — there is no
+        separate retainer-payment endpoint). No `account_id`: Books files
+        it under its default undeposited-funds account. An empty
+        `reference_number` is omitted rather than sent blank."""
+        if (invoice_id is None) == (retainerinvoice_id is None):
+            raise ValueError("record_customer_payment needs exactly one of invoice_id / retainerinvoice_id")
+        payload: dict = {
+            "customer_id": customer_id,
+            "payment_mode": payment_mode,
+            "amount": int(amount),
+            "date": today,
+            "description": description,
+        }
+        if reference_number:
+            payload["reference_number"] = reference_number
+        if invoice_id is not None:
+            payload["invoices"] = [{"invoice_id": invoice_id, "amount_applied": int(amount)}]
+        else:
+            payload["retainerinvoice_id"] = retainerinvoice_id
+        return (await self._request(db, "POST", "/customerpayments", json=payload)).get("payment", {})
+
     async def list_customer_invoices(self, db: AsyncSession, customer_id: str) -> list[dict]:
         """Every invoice Books holds for this customer, newest first (pinned
         below), mapped by ``_map_invoice_history``.

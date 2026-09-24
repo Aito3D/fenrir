@@ -46,22 +46,23 @@ async def test_board_and_detail_carry_the_current_link(async_client, db_session)
             superseded_at=datetime(2026, 9, 2),
         )
     )
-    db_session.add(
-        AitoPaymentLink(
-            project_id=p["id"],
-            idempotency_key=f"aito:{p['id']}:2",
-            heimdall_id="L1",
-            reference="DEV-1",
-            amount=12500,
-            expires_on="2026-09-27",
-            url="https://osb/pay/L1",
-            status="pending",
-        )
+    link_row = AitoPaymentLink(
+        project_id=p["id"],
+        idempotency_key=f"aito:{p['id']}:2",
+        heimdall_id="L1",
+        reference="DEV-1",
+        amount=12500,
+        expires_on="2026-09-27",
+        url="https://osb/pay/L1",
+        status="pending",
     )
+    db_session.add(link_row)
     await db_session.commit()
+    await db_session.refresh(link_row)
     board = (await async_client.get("/api/v1/aito/")).json()
     card = next(c for c in board if c["id"] == p["id"])
     assert card["payment_link"] == {
+        "id": link_row.id,
         "state": "pending",
         "amount": 12500,
         "currency": "XPF",
@@ -267,3 +268,50 @@ async def test_importing_a_quote_wakes_the_loop_for_its_link(async_client, db_se
     assert aito_quote_sync._debounce_deadline is None
     project = await db_session.get(AitoProject, p["id"])
     assert project.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_board_and_detail_carry_invoice_link_and_terminal_payment(async_client, db_session):
+    from backend.app.models.aito_terminal_payment import AitoTerminalPayment
+
+    p = await _create(async_client)
+    db_session.add(
+        AitoPaymentLink(
+            project_id=p["id"],
+            idempotency_key=f"aito:{p['id']}:1",
+            reference="FA-1",
+            amount=50,
+            expires_on="2026-12-31",
+            heimdall_id="h-inv",
+            status="pending",
+            url="https://pay.example/inv",
+            document_kind="invoice",
+            document_number="FA-1",
+        )
+    )
+    db_session.add(
+        AitoTerminalPayment(
+            project_id=p["id"],
+            document_kind="invoice",
+            document_id="i1",
+            document_number="FA-1",
+            idempotency_key=f"aito-tpe:{p['id']}:1",
+            heimdall_id="h-tpe",
+            amount=50,
+            status="processing",
+            native_state="awaiting_tpe",
+            created_at=datetime(2026, 9, 23, 1, 0),
+        )
+    )
+    await db_session.commit()
+    board = (await async_client.get("/api/v1/aito/")).json()
+    row = next(r for r in board if r["id"] == p["id"])
+    assert row["payment_link"] is None
+    assert row["invoice_payment_link"]["url"] == "https://pay.example/inv"
+    assert row["terminal_payment"]["status"] == "processing" and row["terminal_payment"]["document_number"] == "FA-1"
+    detail = (
+        await async_client.patch(
+            f"/api/v1/aito/{p['id']}", json={"description": "x", "expected_version": row["version"]}
+        )
+    ).json()
+    assert detail["invoice_payment_link"]["state"] == "pending" and detail["terminal_payment"]["amount"] == 50

@@ -32,6 +32,9 @@ export function HeimdallSettings() {
   const [token, setToken] = useState('');
   const [depositPct, setDepositPct] = useState('0');
   const [validityDays, setValidityDays] = useState('15');
+  const [paymentModeCard, setPaymentModeCard] = useState('');
+  const [paymentModeCheque, setPaymentModeCheque] = useState('');
+  const [paymentModeCash, setPaymentModeCash] = useState('');
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<HeimdallStatus | null>(null);
 
@@ -47,6 +50,9 @@ export function HeimdallSettings() {
       setToken('');
       setDepositPct(String(settings.aito_deposit_pct ?? 0));
       setValidityDays(String(settings.aito_quote_validity_days ?? 15));
+      setPaymentModeCard(settings.aito_payment_mode_card ?? '');
+      setPaymentModeCheque(settings.aito_payment_mode_cheque ?? '');
+      setPaymentModeCash(settings.aito_payment_mode_cash ?? '');
     }
   }, [settings]);
 
@@ -68,6 +74,9 @@ export function HeimdallSettings() {
       ...(token.trim() ? { heimdall_api_token: token.trim() } : {}),
       aito_deposit_pct: clampInt(depositPct, settings?.aito_deposit_pct ?? 0, 0, 100),
       aito_quote_validity_days: clampInt(validityDays, settings?.aito_quote_validity_days ?? 15, 1, 365),
+      aito_payment_mode_card: paymentModeCard.trim(),
+      aito_payment_mode_cheque: paymentModeCheque.trim(),
+      aito_payment_mode_cash: paymentModeCash.trim(),
     });
   };
 
@@ -184,6 +193,48 @@ export function HeimdallSettings() {
               className={INPUT}
             />
             <p className="text-sm text-bambu-gray mt-1">{t('heimdall.validityDaysDescription')}</p>
+          </div>
+        </div>
+        <div className="pt-4 border-t border-bambu-dark-tertiary">
+          <h4 className="text-sm font-semibold text-white mb-1">{t('heimdall.paymentModesTitle')}</h4>
+          <p className="text-sm text-bambu-gray mb-4">{t('heimdall.paymentModesHint')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="heimdall-mode-card" className="block text-sm text-bambu-gray mb-1">
+                {t('heimdall.paymentModeCard')}
+              </label>
+              <input
+                id="heimdall-mode-card"
+                type="text"
+                value={paymentModeCard}
+                onChange={(e) => setPaymentModeCard(e.target.value)}
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label htmlFor="heimdall-mode-cheque" className="block text-sm text-bambu-gray mb-1">
+                {t('heimdall.paymentModeCheque')}
+              </label>
+              <input
+                id="heimdall-mode-cheque"
+                type="text"
+                value={paymentModeCheque}
+                onChange={(e) => setPaymentModeCheque(e.target.value)}
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label htmlFor="heimdall-mode-cash" className="block text-sm text-bambu-gray mb-1">
+                {t('heimdall.paymentModeCash')}
+              </label>
+              <input
+                id="heimdall-mode-cash"
+                type="text"
+                value={paymentModeCash}
+                onChange={(e) => setPaymentModeCash(e.target.value)}
+                className={INPUT}
+              />
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-bambu-dark-tertiary">

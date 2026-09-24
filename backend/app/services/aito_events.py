@@ -102,6 +102,18 @@ KINDS: dict[str, str] = {
     "payment_link.updated": "story",
     "payment_link.paid": "story",
     "payment_link.cancelled": "story",
+    # Money collected at the counter (services/aito_terminal_payments.py and
+    # aito_manual_payments.py). Story depth: each is a sentence the operator
+    # would tell — "charged on the terminal", "cheque recorded", "terminal
+    # result unknown, check the paper roll".
+    "payment.terminal.started": "story",
+    "payment.terminal.paid": "story",
+    "payment.terminal.failed": "story",
+    "payment.terminal.attention": "story",
+    "payment.manual.recorded": "story",
+    # A quote deposit whose retainer invoice was raised but whose payment
+    # write failed: the operator has to finish it in Books by hand.
+    "payment.manual.partial": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

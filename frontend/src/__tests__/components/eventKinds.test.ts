@@ -116,6 +116,67 @@ describe('detailText', () => {
       detailText('payment_link.updated', { previous_amount: 12500, amount: 12500, expires_on: '2026-10-01' }),
     ).toBeNull();
   });
+
+  it('renders mode, amount, and reference for payment.manual.recorded', () => {
+    expect(detailText('payment.manual.recorded', { mode: 'cheque', amount: 23000, reference: '0004521' })).toBe(
+      'cheque · 23000 · 0004521'
+    );
+  });
+
+  it('omits missing parts for payment.manual.recorded', () => {
+    expect(detailText('payment.manual.recorded', { mode: 'cash', amount: 5000 })).toBe('cash · 5000');
+    expect(detailText('payment.manual.recorded', { amount: 5000 })).toBe('5000');
+  });
+
+  it('returns null for payment.manual.recorded when nothing is present', () => {
+    expect(detailText('payment.manual.recorded', {})).toBeNull();
+  });
+
+  it('renders the retainer number and error for payment.manual.partial', () => {
+    expect(
+      detailText('payment.manual.partial', { retainer_number: 'RET26-00295', error: 'Zoho rejected the request' }),
+    ).toBe('RET26-00295 · Zoho rejected the request');
+  });
+
+  it('renders just the retainer number for payment.manual.partial when there is no error', () => {
+    expect(detailText('payment.manual.partial', { retainer_number: 'RET26-00295' })).toBe('RET26-00295');
+  });
+
+  it('returns null for payment.manual.partial when the retainer number is missing', () => {
+    expect(detailText('payment.manual.partial', { error: 'boom' })).toBeNull();
+  });
+
+  it('shows the amount for payment.terminal.started', () => {
+    expect(detailText('payment.terminal.started', { amount: 12500 })).toBe('12500');
+  });
+
+  it('returns null for payment.terminal.started when the amount is missing', () => {
+    expect(detailText('payment.terminal.started', {})).toBeNull();
+  });
+
+  it('prefers amount_confirmed over amount for payment.terminal.paid', () => {
+    expect(detailText('payment.terminal.paid', { amount: 12500, amount_confirmed: 12000 })).toBe('12000');
+  });
+
+  it('falls back to amount for payment.terminal.paid when amount_confirmed is null', () => {
+    expect(detailText('payment.terminal.paid', { amount: 12500, amount_confirmed: null })).toBe('12500');
+  });
+
+  it('returns null for payment.terminal.paid when neither amount is present', () => {
+    expect(detailText('payment.terminal.paid', {})).toBeNull();
+  });
+
+  it('shows the native state for payment.terminal.failed', () => {
+    expect(detailText('payment.terminal.failed', { native_state: 'CARD_DECLINED' })).toBe('CARD_DECLINED');
+  });
+
+  it('returns null for payment.terminal.failed when there is no native state', () => {
+    expect(detailText('payment.terminal.failed', {})).toBeNull();
+  });
+
+  it('returns null for payment.terminal.attention — nothing extra to show', () => {
+    expect(detailText('payment.terminal.attention', { amount: 12500 })).toBeNull();
+  });
 });
 
 describe('elapsedBucket', () => {
@@ -153,6 +214,18 @@ describe('EVENT_LABEL_KEY', () => {
 
   it('labels invoice.deposit_applied', () => {
     expect(EVENT_LABEL_KEY['invoice.deposit_applied']).toBe('aito.history.invoiceDepositApplied');
+  });
+
+  it('labels the terminal payment kinds', () => {
+    expect(EVENT_LABEL_KEY['payment.terminal.started']).toBe('aito.history.paymentTerminalStarted');
+    expect(EVENT_LABEL_KEY['payment.terminal.paid']).toBe('aito.history.paymentTerminalPaid');
+    expect(EVENT_LABEL_KEY['payment.terminal.failed']).toBe('aito.history.paymentTerminalFailed');
+    expect(EVENT_LABEL_KEY['payment.terminal.attention']).toBe('aito.history.paymentTerminalAttention');
+  });
+
+  it('labels the manual payment kinds', () => {
+    expect(EVENT_LABEL_KEY['payment.manual.recorded']).toBe('aito.history.paymentManualRecorded');
+    expect(EVENT_LABEL_KEY['payment.manual.partial']).toBe('aito.history.paymentManualPartial');
   });
 });
 

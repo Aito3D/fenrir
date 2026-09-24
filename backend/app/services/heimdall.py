@@ -69,9 +69,17 @@ class HeimdallRateLimited(HeimdallUpstreamError):
         self.retry_after = retry_after
 
 
+class HeimdallInvalid(HeimdallUpstreamError):
+    """422 — Heimdall refused the body: a terminal amount above the
+    document's Books balance, or a link reference that resolves to no
+    document. The message names the reason (and the balance) verbatim."""
+
+
 @dataclass(frozen=True)
 class LinkView:
-    """The slice of Heimdall's PublicPayment the ledger stores."""
+    """The slice of Heimdall's PublicPayment the ledgers store. One shape
+    for both rails: a link leaves the terminal-only fields None, a terminal
+    payment leaves `url`/`expires_at` None."""
 
     id: str
     status: str
@@ -80,6 +88,14 @@ class LinkView:
     reference: str
     url: str | None
     expires_at: str | None
+    native_state: str | None = None
+    amount_confirmed: int | None = None
+    booking_status: str | None = None
+    booking_error: str | None = None
+    zoho_payment_id: str | None = None
+
+
+PaymentView = LinkView
 
 
 def parse_credential(token: str) -> tuple[str, str]:
@@ -153,6 +169,8 @@ def _to_view(data: dict) -> LinkView:
         reference = str(data.get("reference") or "")
         link = data.get("link") or {}
         url = _validate_link_url(link.get("url"))
+        booking = data.get("booking") or {}
+        confirmed = data.get("amount_confirmed")
         return LinkView(
             id=link_id,
             status=status,
@@ -161,6 +179,11 @@ def _to_view(data: dict) -> LinkView:
             reference=reference,
             url=url,
             expires_at=link.get("expires_at"),
+            native_state=str(data["native_state"]) if data.get("native_state") is not None else None,
+            amount_confirmed=int(confirmed) if confirmed is not None else None,
+            booking_status=str(booking["status"]) if booking.get("status") is not None else None,
+            booking_error=str(booking["error"]) if booking.get("error") is not None else None,
+            zoho_payment_id=str(booking["zoho_payment_id"]) if booking.get("zoho_payment_id") is not None else None,
         )
     except (KeyError, TypeError, ValueError) as e:
         raise HeimdallUpstreamError(f"Heimdall returned an unexpected payment shape: {e}") from e
@@ -250,6 +273,8 @@ class HeimdallService:
                 raise HeimdallNotFound(message)
             if response.status_code == 409:
                 raise HeimdallConflict(message, code)
+            if response.status_code == 422:
+                raise HeimdallInvalid(message)
             if response.status_code == 429:
                 raise HeimdallRateLimited(message, _parse_retry_after(response.headers.get("Retry-After")))
             raise HeimdallUpstreamError(message)
@@ -272,6 +297,23 @@ class HeimdallService:
             "reference": reference,
             "expires_in_days": int(expires_in_days),
         }
+        return _to_view(
+            await self._request(db, "POST", "/api/v1/payments", json_body=payload, idempotency_key=idempotency_key)
+        )
+
+    async def create_terminal_payment(
+        self, db: AsyncSession, *, idempotency_key: str, amount: int, document: dict | None
+    ) -> LinkView:
+        """`method: "terminal"` with `confirm: true`: Heimdall dials the
+        terminal at once and answers 202 (`processing`). Needs the key's
+        `payments:charge` scope (403 otherwise — nothing is created).
+        `document` is `{"type": "quote"|"invoice"|"retainer", "id": <Zoho id>}`
+        or None for a free amount Heimdall books nowhere. A 200 is a replay
+        or the document-level double-charge guard: the returned payment is
+        adopted as ours either way."""
+        payload: dict = {"method": "terminal", "amount": int(amount), "currency": "XPF", "confirm": True}
+        if document is not None:
+            payload["document"] = {"type": str(document["type"]), "id": str(document["id"])}
         return _to_view(
             await self._request(db, "POST", "/api/v1/payments", json_body=payload, idempotency_key=idempotency_key)
         )

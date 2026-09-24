@@ -3,7 +3,9 @@ import { ExternalLink } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
-import { PaymentLinkRow } from './PaymentLinkRow';
+import { PaymentBlock } from './payment/PaymentBlock';
+import { quoteDocument } from './payment/paymentDocument';
+import { terminalFor } from './payment/paymentState';
 import { QuoteDownloadButton } from './QuoteDownloadButton';
 import { QuotePrintButton } from './QuotePrintButton';
 import { SendQuoteButton } from './SendQuoteButton';
@@ -36,6 +38,7 @@ export function BillingCard({
   forcePending,
   depositPct = 0,
   currency,
+  heimdallConfigured,
 }: {
   project: AitoProject;
   canUpdate: boolean;
@@ -49,9 +52,14 @@ export function BillingCard({
    *  (POST /aito/{id}/sync — see the panel's `forceSyncMutation`). */
   onForceSync: () => void;
   forcePending: boolean;
-  /** `AppSettings.aito_deposit_pct`, passed through to `PaymentLinkRow` so it
-   *  can tell whether a paid link still covers the current quote total. */
+  /** `AppSettings.aito_deposit_pct`, passed through to the quote's
+   *  `PaymentBlock` (`quoteDocument`) to compute what is still due. */
   depositPct?: number;
+  /** Whether Heimdall is configured (`AppSettings.heimdall_base_url`) —
+   *  passed down to both `PaymentBlock`s so their terminal cell can disable
+   *  itself with an explanation rather than starting a charge Heimdall can
+   *  never process. */
+  heimdallConfigured: boolean;
 }) {
   const { t } = useTranslation();
   const { syncLabelKey, blockKey, hasQuoteMessage, canForceSync } = deriveQuoteSync(project);
@@ -115,10 +123,25 @@ export function BillingCard({
             )}
           </dl>
 
-          {/* The online payment link's row — part of the same quote story as
-              Number and Status above, so it sits inside this card, under
-              them, before the actions. Renders itself away without a link. */}
-          <PaymentLinkRow project={project} canUpdate={canUpdate} depositPct={depositPct} />
+          {/* The Encaissement block — part of the same quote story as Number
+              and Status above, so it sits inside this card, under them,
+              before the actions. Renders itself away when nothing is due and
+              nothing is in flight. */}
+          {(() => {
+            const doc = quoteDocument(project, depositPct, currency);
+            return (
+              doc && (
+                <PaymentBlock
+                  project={project}
+                  document={doc}
+                  link={project.payment_link ?? null}
+                  terminal={terminalFor(project, 'quote')}
+                  canUpdate={canUpdate}
+                  heimdallConfigured={heimdallConfigured}
+                />
+              )
+            );
+          })()}
 
           {/* Print / download / send as one segmented control; the labels
               live on aria-label + title (see quoteActionGroup.ts for the
@@ -225,7 +248,7 @@ export function BillingCard({
           itself away when there is no invoice — see InvoiceCard. `canUpdate`
           is passed through so it can gate its own Send button the same way
           the quote row gates SendQuoteButton above. */}
-      <InvoiceCard project={project} canUpdate={canUpdate} />
+      <InvoiceCard project={project} canUpdate={canUpdate} heimdallConfigured={heimdallConfigured} />
     </PanelCard>
   );
 }

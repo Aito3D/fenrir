@@ -41,8 +41,8 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
       // Both failure paths toast rather than dying quietly (T-090): an empty
       // `tracking_url` means the endpoint minted nothing,
       // and a false from `copyTextToClipboard` means the browser refused the
-      // write. PaymentLinkRow's copy already toasts on refusal, so this also
-      // keeps the two link rows behaving alike.
+      // write. PaymentBlock's link_pending copy button already toasts on
+      // refusal, so this also keeps the two link rows behaving alike.
       if (!tracking_url) {
         showToast(t('common.errorLoading'), 'error');
         return;

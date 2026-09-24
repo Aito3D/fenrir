@@ -20,6 +20,7 @@
     "invoice_balance": null,
     "invoice_checked_at": null,
     "invoice_due_date": null,
+    "invoice_payment_link": null,
     "invoice_status": null,
     "move_lock": "quote",
     "payment_link": null,
@@ -68,6 +69,7 @@
       }
     ],
     "tasks_total": 0.0,
+    "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
   },
@@ -92,6 +94,7 @@
     "invoice_balance": null,
     "invoice_checked_at": null,
     "invoice_due_date": null,
+    "invoice_payment_link": null,
     "invoice_status": null,
     "move_lock": "quote",
     "payment_link": null,
@@ -128,6 +131,7 @@
     "task_services": [],
     "task_steps": [],
     "tasks_total": 0.0,
+    "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
   },
@@ -152,6 +156,7 @@
     "invoice_balance": null,
     "invoice_checked_at": null,
     "invoice_due_date": null,
+    "invoice_payment_link": null,
     "invoice_status": null,
     "move_lock": null,
     "payment_link": null,
@@ -200,6 +205,7 @@
       }
     ],
     "tasks_total": 3000.0,
+    "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
   },
@@ -224,6 +230,7 @@
     "invoice_balance": null,
     "invoice_checked_at": null,
     "invoice_due_date": null,
+    "invoice_payment_link": null,
     "invoice_status": null,
     "move_lock": "steps",
     "payment_link": null,
@@ -285,6 +292,7 @@
       }
     ],
     "tasks_total": 8400.0,
+    "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
   },
@@ -309,6 +317,7 @@
     "invoice_balance": null,
     "invoice_checked_at": null,
     "invoice_due_date": null,
+    "invoice_payment_link": null,
     "invoice_status": null,
     "move_lock": "steps",
     "payment_link": null,
@@ -357,6 +366,7 @@
       }
     ],
     "tasks_total": 0.0,
+    "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
   }

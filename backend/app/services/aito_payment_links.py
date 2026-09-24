@@ -20,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
+from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
     HeimdallConflict,
+    HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
@@ -68,6 +70,12 @@ def outstanding_amount(required: int, retainer_paid_total: float | None) -> int:
 
 
 MAX_POLLS_PER_TICK = 40
+# How long an unminted INVOICE reservation may sit before the pass writes it
+# off (mirrors `aito_terminal_payments.ABANDONED_RESERVATION_SECONDS`). Only
+# an operator's own create replays a reservation; the sweep never calls
+# Heimdall about one, it only stops it standing in for a link that is never
+# coming.
+ABANDONED_RESERVATION_SECONDS = 600
 # One tick of the quote-sync loop; the per-row backoff counts in these.
 _TICK_SECONDS = 300
 _MAX_BACKOFF_TICKS = 6
@@ -254,23 +262,34 @@ def _in_backoff(row: AitoPaymentLink, now: datetime) -> bool:
     return now - row.checked_at < wait
 
 
-async def current_link(db: AsyncSession, project_id: int) -> AitoPaymentLink | None:
+async def current_link(db: AsyncSession, project_id: int, *, kind: str = "quote") -> AitoPaymentLink | None:
+    """The newest un-superseded link of one kind. The reconciler, the
+    tracking page and the board all mean the QUOTE link; invoice links are
+    reached only by the block that created them (`kind="invoice"`)."""
     stmt = (
         select(AitoPaymentLink)
-        .where(AitoPaymentLink.project_id == project_id, AitoPaymentLink.superseded_at.is_(None))
+        .where(
+            AitoPaymentLink.project_id == project_id,
+            AitoPaymentLink.superseded_at.is_(None),
+            AitoPaymentLink.document_kind == kind,
+        )
         .order_by(AitoPaymentLink.id.desc())
         .limit(1)
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def current_links(db: AsyncSession, project_ids: list[int]) -> dict[int, AitoPaymentLink]:
-    """One query for a whole board: the newest un-superseded row per project."""
+async def current_links(db: AsyncSession, project_ids: list[int], *, kind: str = "quote") -> dict[int, AitoPaymentLink]:
+    """One query for a whole board: the newest un-superseded row of one kind per project."""
     if not project_ids:
         return {}
     stmt = (
         select(AitoPaymentLink)
-        .where(AitoPaymentLink.project_id.in_(project_ids), AitoPaymentLink.superseded_at.is_(None))
+        .where(
+            AitoPaymentLink.project_id.in_(project_ids),
+            AitoPaymentLink.superseded_at.is_(None),
+            AitoPaymentLink.document_kind == kind,
+        )
         .order_by(AitoPaymentLink.project_id, AitoPaymentLink.id.desc())
     )
     out: dict[int, AitoPaymentLink] = {}
@@ -286,13 +305,25 @@ async def _next_key(db: AsyncSession, project_id: int) -> str:
     return f"aito:{project_id}:{len(count) + 1}"
 
 
+async def _after_invoice_paid(db: AsyncSession, project_id: int) -> None:
+    """Hook for the figures refresh a paid INVOICE link triggers. Filled by
+    aito_manual_payments.refresh_after_payment once that module exists; a
+    lazy import here keeps this module free of the Zoho client."""
+    from backend.app.services.aito_manual_payments import refresh_after_payment
+
+    await refresh_after_payment(db, project_id, "invoice")
+
+
 async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
     """Everything a link's transition to `paid` triggers, wherever it was
     discovered — a poll, a cancel racing a payment (409), a patch racing one
     (409). `row.status` must already be `'paid'` (the caller's `_adopt` set
     it) before this runs. Stamps `paid_at`, records the story event, commits,
-    then accepts the quote if the project is still active."""
+    then — for a QUOTE link — accepts the quote if the project is still
+    active. An INVOICE link accepts nothing: the quote was accepted long
+    before it was billed; it only refreshes the invoice figures."""
     project_id = row.project_id
+    kind = row.document_kind or "quote"
     row.paid_at = now
     await record(
         db,
@@ -301,9 +332,17 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
         actor_class="system",
         subject_type="project",
         subject_id=project_id,
-        detail={"reference": row.reference, "amount": row.amount, "heimdall_id": row.heimdall_id},
+        detail={
+            "reference": row.reference,
+            "amount": row.amount,
+            "heimdall_id": row.heimdall_id,
+            "document_kind": kind,
+        },
     )
     await db.commit()
+    if kind == "invoice":
+        await _after_invoice_paid(db, project_id)
+        return
     from backend.app.services.aito_quote_status import accept_quote
 
     project = await db.get(AitoProject, project_id)
@@ -334,6 +373,8 @@ async def _create(
         amount=wanted.amount,
         expires_on=wanted.expires_on,
         created_at=now,
+        document_kind="quote",
+        document_number=wanted.reference,
     )
     db.add(row)
     await db.commit()
@@ -724,6 +765,61 @@ async def reconcile_project(
         await _record_failure(db, project_id, exc, now)
 
 
+async def _age_out_abandoned_invoice_reservations(db: AsyncSession, *, now: datetime) -> int:
+    """Write off unminted INVOICE reservations older than
+    `ABANDONED_RESERVATION_SECONDS` — the create died between the reservation
+    commit and Heimdall's answer, and nothing in the pass would ever touch
+    that row again (the mint loop is quote-only, the poll needs a
+    `heimdall_id`). No Heimdall call: the row is simply marked `failed` so the
+    block offers to create a link again, and the story gets a
+    `payment_link.cancelled` with `reason: "abandoned"`. Quote reservations
+    are left alone — `reconcile_project` re-POSTs those under their own key
+    every pass, which is how they were always meant to resolve."""
+    cutoff = now - timedelta(seconds=ABANDONED_RESERVATION_SECONDS)
+    stmt = (
+        select(AitoPaymentLink.id)
+        .where(
+            AitoPaymentLink.document_kind == "invoice",
+            AitoPaymentLink.status == "pending",
+            AitoPaymentLink.heimdall_id.is_(None),
+            AitoPaymentLink.superseded_at.is_(None),
+            AitoPaymentLink.created_at < cutoff,
+        )
+        .order_by(AitoPaymentLink.id)
+        .limit(MAX_POLLS_PER_TICK)
+    )
+    aged = 0
+    for rid in list((await db.execute(stmt)).scalars().all()):
+        try:
+            row = await db.get(AitoPaymentLink, rid)
+            if row is None:
+                continue
+            row.status = "failed"
+            row.sync_error = "reservation abandoned"
+            row.checked_at = now
+            await db.commit()
+            await record(
+                db,
+                row.project_id,
+                "payment_link.cancelled",
+                actor_class="system",
+                subject_type="project",
+                subject_id=row.project_id,
+                detail={
+                    "reference": row.reference,
+                    "reason": "abandoned",
+                    "heimdall_id": None,
+                    "document_kind": "invoice",
+                },
+            )
+            await db.commit()
+            aged += 1
+        except SQLAlchemyError as exc:
+            logger.warning("payment link sweep: ageing out reservation %s failed: %s", rid, exc)
+            await db.rollback()
+    return aged
+
+
 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
     """One GET for a pending link. Spec §5.5. `paid` credits and accepts.
     A 404 propagates: the link is gone at Heimdall and the pass replaces it
@@ -842,6 +938,7 @@ async def _run_pass(
                 await db.rollback()
         if not changes_only:
             _throttled_until = None
+            await _age_out_abandoned_invoice_reservations(db, now=now)
             pending = (
                 select(AitoPaymentLink.id)
                 .where(
@@ -857,19 +954,30 @@ async def _run_pass(
             pending_ids = list((await db.execute(pending)).scalars().all())
             for rid in pending_ids:
                 project_id: int | None = None
+                row_kind = "quote"
                 try:
                     row = await db.get(AitoPaymentLink, rid)
                     if row is None or (not force and _in_backoff(row, now)):
                         continue
                     project_id = row.project_id
+                    row_kind = row.document_kind or "quote"
                     await poll_link(db, row, now=now)
                 except HeimdallNotFound as exc:
                     # The poll is the only thing that notices a lost link
                     # in the steady state (no drift, so the reconcile half
                     # had nothing to send). Replace it in this same pass.
-                    logger.warning("payment link row %s is gone at Heimdall, replacing: %s", rid, exc)
+                    logger.warning("payment link row %s is gone at Heimdall: %s", rid, exc)
                     await db.rollback()
                     if project_id is None:
+                        continue
+                    if row_kind == "invoice":
+                        # Nothing to replace: the block offers "create a new
+                        # link" once this one reads as failed.
+                        lost = await db.get(AitoPaymentLink, rid)
+                        if lost is not None:
+                            lost.status = "failed"
+                            _fail(lost, exc, now)
+                            await db.commit()
                         continue
                     try:
                         await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity, today=today)
@@ -905,6 +1013,7 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
     if row is None:
         return None
     return AitoPaymentLinkView(
+        id=row.id,
         state=row.status if row.status in ("pending", "paid", "failed", "cancelled", "expired") else "pending",
         amount=row.amount,
         currency=row.currency or "XPF",
@@ -914,3 +1023,129 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
         sync_error=row.sync_error,
         minted=row.heimdall_id is not None,
     )
+
+
+class InvoiceLinkExists(Exception):
+    """A MINTED pending invoice link already exists for this project. An
+    unminted reservation is not this: it is replayed (see
+    `create_invoice_link`)."""
+
+
+class QuoteLinkManaged(Exception):
+    """Quote links belong to the reconciler: cancelling one here would only
+    have it re-minted on the next tick."""
+
+
+async def create_invoice_link(
+    db: AsyncSession,
+    project: AitoProject,
+    *,
+    document: PaymentDocument,
+    amount: int,
+    actor_name: str | None,
+    now: datetime,
+    today: date,
+    validity_days: int,
+) -> AitoPaymentLink:
+    """On-demand link for an INVOICE (reference `FA…`). Same reservation
+    discipline as the quote links: reserve + commit, POST, adopt + commit. A
+    Heimdall failure — including `HeimdallNotConfigured`, which is NOT a
+    `HeimdallUpstreamError` subclass — is stored on the row (`_fail`) and
+    re-raised for the route; the row stays a reservation the next call
+    replays under its own key (identical body) rather than minting a second
+    link.
+
+    ANY unminted pending reservation is replayed that way — with or without a
+    `sync_error` (amended 2026-09-23). Refusing the no-`sync_error` case as
+    "a create is still in flight" left the invoice with no link and no button
+    whenever the handler died before it could store the failure (client
+    disconnect, restart): the reconciler's mint loop is quote-only and its
+    poll needs a `heimdall_id`, so nothing else would ever touch that row.
+    Unlike a terminal charge, replaying a link create moves no money — the
+    worst case is Heimdall handing back the link it already minted under that
+    key. A reservation the sweep has already written off (`failed`, see
+    `_age_out_abandoned_invoice_reservations`) is history: a new row is
+    reserved instead. The typed amount is ignored on a replay; the body must
+    stay identical to the one the key was first used with."""
+    project_id = project.id
+    existing = await current_link(db, project_id, kind="invoice")
+    if existing is not None and existing.heimdall_id is None and existing.status == "pending":
+        row = existing  # replay the reservation under its own key
+    elif existing is not None and existing.status == "pending":
+        raise InvoiceLinkExists("A payment link is already open for this invoice")
+    else:
+        row = AitoPaymentLink(
+            project_id=project_id,
+            idempotency_key=await _next_key(db, project_id),
+            reference=document.number,
+            amount=int(amount),
+            expires_on=(today + timedelta(days=validity_days)).isoformat(),
+            created_at=now,
+            document_kind="invoice",
+            document_number=document.number,
+        )
+        db.add(row)
+        await db.commit()
+    try:
+        view = await heimdall_service.create_link(
+            db,
+            idempotency_key=row.idempotency_key,
+            reference=row.reference,
+            amount=row.amount,
+            expires_in_days=expires_in_days(row.expires_on, row.created_at.date()),
+        )
+    except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
+        _fail(row, exc, now)
+        await db.commit()
+        raise
+    _adopt(row, view, now)
+    await record(
+        db,
+        project_id,
+        "payment_link.created",
+        actor_class="user",
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project_id,
+        detail={
+            "reference": row.reference,
+            "amount": row.amount,
+            "expires_on": row.expires_on,
+            "heimdall_id": row.heimdall_id,
+            "document_kind": "invoice",
+        },
+    )
+    await db.commit()
+    return row
+
+
+async def cancel_invoice_link(
+    db: AsyncSession, project: AitoProject, row: AitoPaymentLink, *, actor_name: str | None, now: datetime
+) -> bool:
+    """The block's "Annuler le lien". Returns True when the link turned out
+    PAID instead (money wins, `_became_paid` already ran). A
+    `HeimdallNotConfigured` from `_cancel` propagates uncaught — nothing on
+    the row to mark, and the route maps it to a 502 like any other Heimdall
+    outage."""
+    if (row.document_kind or "quote") != "invoice":
+        raise QuoteLinkManaged("Quote links are managed automatically")
+    paid = await _cancel(db, project, row, now=now, reason="operator", record_event=False)
+    if paid:
+        return True
+    await record(
+        db,
+        project.id,
+        "payment_link.cancelled",
+        actor_class="user",
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project.id,
+        detail={
+            "reference": row.reference,
+            "reason": "operator",
+            "heimdall_id": row.heimdall_id,
+            "document_kind": "invoice",
+        },
+    )
+    await db.commit()
+    return False

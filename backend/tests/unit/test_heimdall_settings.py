@@ -60,3 +60,21 @@ async def test_base_url_is_guarded_like_every_lan_service_url(async_client):
     assert r.status_code == 422, r.text
     r = await async_client.put("/api/v1/settings/", json={"heimdall_base_url": "gopher://pos.local"})
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_payment_modes_default_to_zoho_stock_names_and_round_trip(async_client):
+    r = await async_client.get("/api/v1/settings/")
+    body = r.json()
+    assert (
+        body["aito_payment_mode_card"],
+        body["aito_payment_mode_cheque"],
+        body["aito_payment_mode_cash"],
+    ) == (
+        "creditcard",
+        "check",
+        "cash",
+    )
+    r = await async_client.put("/api/v1/settings/", json={"aito_payment_mode_cash": "Espèces"})
+    assert r.status_code == 200, r.text
+    assert (await async_client.get("/api/v1/settings/")).json()["aito_payment_mode_cash"] == "Espèces"

@@ -15,7 +15,15 @@ describe('HeimdallSettings', () => {
     tests = [];
     server.use(
       http.get('/api/v1/settings/', () =>
-        HttpResponse.json({ heimdall_base_url: 'http://pos.local:8081', heimdall_api_token: '', aito_deposit_pct: 0, aito_quote_validity_days: 15 }),
+        HttpResponse.json({
+          heimdall_base_url: 'http://pos.local:8081',
+          heimdall_api_token: '',
+          aito_deposit_pct: 0,
+          aito_quote_validity_days: 15,
+          aito_payment_mode_card: '',
+          aito_payment_mode_cheque: '',
+          aito_payment_mode_cash: '',
+        }),
       ),
       http.put('/api/v1/settings/', async ({ request }) => {
         puts.push((await request.json()) as Record<string, unknown>);
@@ -37,7 +45,14 @@ describe('HeimdallSettings', () => {
     await userEvent.type(screen.getByLabelText('Deposit (%)'), '30');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0]).toEqual({ heimdall_base_url: 'http://pos.local:8081', aito_deposit_pct: 30, aito_quote_validity_days: 15 });
+    expect(puts[0]).toEqual({
+      heimdall_base_url: 'http://pos.local:8081',
+      aito_deposit_pct: 30,
+      aito_quote_validity_days: 15,
+      aito_payment_mode_card: '',
+      aito_payment_mode_cheque: '',
+      aito_payment_mode_cash: '',
+    });
     expect(puts[0]).not.toHaveProperty('heimdall_api_token');
   });
 
@@ -56,7 +71,15 @@ describe('HeimdallSettings', () => {
   it('says plainly that no quote gets a link while the URL is unset', async () => {
     server.use(
       http.get('/api/v1/settings/', () =>
-        HttpResponse.json({ heimdall_base_url: '', heimdall_api_token: '', aito_deposit_pct: 0, aito_quote_validity_days: 15 }),
+        HttpResponse.json({
+          heimdall_base_url: '',
+          heimdall_api_token: '',
+          aito_deposit_pct: 0,
+          aito_quote_validity_days: 15,
+          aito_payment_mode_card: '',
+          aito_payment_mode_cheque: '',
+          aito_payment_mode_cash: '',
+        }),
       ),
     );
     render(<HeimdallSettings />);
@@ -70,5 +93,31 @@ describe('HeimdallSettings', () => {
     render(<HeimdallSettings />);
     await screen.findByLabelText('Heimdall URL');
     expect(screen.queryByText(/Payment links are off/)).not.toBeInTheDocument();
+  });
+
+  it('shows and saves the three Zoho payment modes', async () => {
+    server.use(
+      http.get('/api/v1/settings/', () =>
+        HttpResponse.json({
+          heimdall_base_url: 'http://pos.local:8081',
+          heimdall_api_token: '',
+          aito_deposit_pct: 0,
+          aito_quote_validity_days: 15,
+          aito_payment_mode_card: 'creditcard',
+          aito_payment_mode_cheque: 'check',
+          aito_payment_mode_cash: 'cash',
+        }),
+      ),
+    );
+    render(<HeimdallSettings />);
+    const cash = await screen.findByLabelText('Cash');
+    expect(cash).toHaveValue('cash');
+    expect(screen.getByLabelText('Card')).toHaveValue('creditcard');
+    expect(screen.getByLabelText('Cheque')).toHaveValue('check');
+    await userEvent.clear(cash);
+    await userEvent.type(cash, 'Espèces');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({ aito_payment_mode_cash: 'Espèces' });
   });
 });

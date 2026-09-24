@@ -291,6 +291,7 @@ async def init_db():
         aito_payment_link,
         aito_project,
         aito_task,
+        aito_terminal_payment,
         aito_tracking_view,
         ams_history,
         ams_label,
@@ -5800,6 +5801,49 @@ async def run_migrations(conn):
         conn, "CREATE INDEX IF NOT EXISTS ix_aito_payment_links_project_id ON aito_payment_links(project_id)"
     )
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_aito_payment_links_status ON aito_payment_links(status)")
+
+    # Migration: terminal (TPE) charges started from a project card (2026-09-23).
+    # See models/aito_terminal_payment.py. New table: IF NOT EXISTS is the whole
+    # migration; create_all makes it on a fresh database.
+    await _safe_execute(
+        conn,
+        "CREATE TABLE IF NOT EXISTS aito_terminal_payments ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " project_id INTEGER NOT NULL,"
+        " document_kind VARCHAR(10) NOT NULL,"
+        " document_id VARCHAR(50) NOT NULL,"
+        " document_number VARCHAR(64) NOT NULL,"
+        " idempotency_key VARCHAR(64) NOT NULL UNIQUE,"
+        " heimdall_id VARCHAR(36) UNIQUE,"
+        " amount INTEGER NOT NULL,"
+        " amount_confirmed INTEGER,"
+        " status VARCHAR(20) NOT NULL DEFAULT 'pending',"
+        " native_state VARCHAR(30),"
+        " booking_status VARCHAR(20),"
+        " booking_error TEXT,"
+        " zoho_payment_id VARCHAR(50),"
+        " sync_error TEXT,"
+        " created_by VARCHAR(100),"
+        " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+        " checked_at DATETIME,"
+        " settled_at DATETIME,"
+        " updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_aito_terminal_payments_project_id ON aito_terminal_payments(project_id)",
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_terminal_payments_status ON aito_terminal_payments(status)"
+    )
+
+    # Migration: invoice payment links share the quote links' ledger (2026-09-23).
+    # Existing rows are all quote links whose `reference` IS the quote number.
+    await _safe_execute(
+        conn, "ALTER TABLE aito_payment_links ADD COLUMN document_kind VARCHAR(10) NOT NULL DEFAULT 'quote'"
+    )
+    await _safe_execute(conn, "ALTER TABLE aito_payment_links ADD COLUMN document_number VARCHAR(64)")
+    await _safe_execute(conn, "UPDATE aito_payment_links SET document_number = reference WHERE document_number IS NULL")
 
     await _backfill_aito_events(conn)
 

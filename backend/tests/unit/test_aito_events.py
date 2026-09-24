@@ -13,6 +13,7 @@ import pytest
 from backend.app.models.aito_event import AitoEvent
 from backend.app.services.aito_events import (
     COALESCE_WINDOW,
+    KINDS,
     diff_fields,
     kinds_for_depth,
     record,
@@ -330,3 +331,15 @@ async def test_an_unregistered_kind_is_refused_and_logged(db_session, caplog):
     assert "not.a.real.kind" in caplog.text
     rows = (await db_session.execute(AitoEvent.__table__.select())).all()
     assert rows == []
+
+
+def test_counter_payment_kinds_are_registered_as_story():
+    for kind in (
+        "payment.terminal.started",
+        "payment.terminal.paid",
+        "payment.terminal.failed",
+        "payment.terminal.attention",
+        "payment.manual.recorded",
+        "payment.manual.partial",
+    ):
+        assert KINDS[kind] == "story", kind

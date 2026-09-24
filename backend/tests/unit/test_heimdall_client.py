@@ -438,3 +438,103 @@ async def test_ping_accepts_overrides_for_the_settings_test_button(db_session):
     heimdall_service._transport = httpx.MockTransport(handler)
     await heimdall_service.ping(db_session, base_url="http://other:8081/", token=TOKEN)
     assert seen["url"] == "http://other:8081/api/v1/ping" and seen["key_id"] == "84f32b71ac095ed2"
+
+
+def _terminal_json(**overrides):
+    base = {
+        "id": "9a0b1c2d-0000-4000-8000-000000000002",
+        "method": "terminal",
+        "status": "processing",
+        "native_state": "sending_to_tpe",
+        "amount": 23000,
+        "amount_confirmed": None,
+        "currency": "XPF",
+        "reference": None,
+        "link": None,
+        "booking": {"status": "pending", "zoho_payment_id": None, "error": None},
+        "zoho_reference": {"kind": "invoice", "id": "460000000123456", "number": "FA-26-4358", "customer_name": "ACME"},
+        "created_at": "2026-09-23T01:00:00.000Z",
+        "updated_at": "2026-09-23T01:00:00.000Z",
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.asyncio
+async def test_create_terminal_payment_sends_confirm_true_with_the_document(db_session):
+    await _configure(db_session)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        seen["idem"] = request.headers["idempotency-key"]
+        return httpx.Response(202, json=_terminal_json())
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    view = await heimdall_service.create_terminal_payment(
+        db_session,
+        idempotency_key="aito-tpe:12:1",
+        amount=23000,
+        document={"type": "invoice", "id": "460000000123456"},
+    )
+    assert seen["idem"] == "aito-tpe:12:1"
+    assert seen["body"] == {
+        "method": "terminal",
+        "amount": 23000,
+        "currency": "XPF",
+        "confirm": True,
+        "document": {"type": "invoice", "id": "460000000123456"},
+    }
+    assert view.status == "processing" and view.native_state == "sending_to_tpe"
+    assert view.amount_confirmed is None and view.booking_status == "pending" and view.url is None
+
+
+@pytest.mark.asyncio
+async def test_create_terminal_payment_omits_document_for_a_free_amount(db_session):
+    await _configure(db_session)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(202, json=_terminal_json(zoho_reference=None))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    await heimdall_service.create_terminal_payment(db_session, idempotency_key="k", amount=100, document=None)
+    assert "document" not in seen["body"]
+
+
+def test_to_view_reads_booking_and_confirmed_amount():
+    view = _to_view(
+        _terminal_json(
+            status="paid",
+            native_state="synced",
+            amount_confirmed=23000,
+            booking={"status": "booked", "zoho_payment_id": "pay-1", "error": None},
+        )
+    )
+    assert view.amount_confirmed == 23000
+    assert view.booking_status == "booked" and view.zoho_payment_id == "pay-1" and view.booking_error is None
+
+
+def test_to_view_tolerates_a_missing_booking_block():
+    view = _to_view(_link_json())
+    assert view.native_state == "running"
+    assert view.booking_status == "pending"  # _link_json carries a booking block
+    view2 = _to_view({k: v for k, v in _link_json().items() if k != "booking"})
+    assert view2.booking_status is None and view2.amount_confirmed is None
+
+
+@pytest.mark.asyncio
+async def test_422_maps_to_heimdall_invalid_with_the_message(db_session):
+    from backend.app.services.heimdall import HeimdallInvalid
+
+    await _configure(db_session)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(
+            422, json={"error": {"code": "invalid_request", "message": "amount 30000 exceeds balance 23000"}}
+        )
+    )
+    with pytest.raises(HeimdallInvalid) as exc:
+        await heimdall_service.create_terminal_payment(db_session, idempotency_key="k", amount=30000, document=None)
+    assert "exceeds balance 23000" in str(exc.value)
+    assert isinstance(exc.value, HeimdallUpstreamError)

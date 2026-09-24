@@ -69,6 +69,8 @@ export function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     retainer_paid_total: null,
     customer_credit_total: null,
     payment_link: null,
+    invoice_payment_link: null,
+    terminal_payment: null,
     version: 1,
     created_at: '2026-07-27T00:00:00',
     updated_at: '2026-07-27T00:00:00',
